@@ -41,6 +41,8 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
 use tokio::time::{sleep_until, timeout};
+use tokio_tungstenite::tungstenite::protocol::frame::coding::{Data, OpCode};
+use tokio_tungstenite::tungstenite::protocol::frame::Frame;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
 use crate::auth::SpacetimeAuth;
@@ -1046,7 +1048,48 @@ async fn send_message<S: Sink<WsMessage> + Unpin>(
     report_ws_sent_metrics(database_identity, workload, num_rows, timing, &msg_data);
 
     let res = async {
-        ws.feed(datamsg_to_wsmsg(msg_data)).await?;
+        // EXPERIMENT: Send fragmented messages (RFC 6455, Section 5.4).
+        let (data, ty) = match datamsg_to_wsmsg(msg_data) {
+            WsMessage::Text(text) => (text.into(), Data::Text),
+            WsMessage::Binary(bin) => (bin, Data::Binary),
+            _ => unreachable!(),
+        };
+
+        const FRAGMENT_SIZE: usize = 4096;
+
+        let total_len = data.len();
+
+        let mut frames = Vec::with_capacity(total_len / FRAGMENT_SIZE);
+        let mut offset = 0;
+        while offset < total_len {
+            let end = (offset + FRAGMENT_SIZE).min(total_len);
+            let chunk = data.slice(offset..end);
+            frames.push(Frame::message(chunk, OpCode::Data(Data::Continue), false));
+            offset = end;
+        }
+
+        match frames.as_mut_slice() {
+            [] => {}
+            [single] => {
+                let hdr = single.header_mut();
+                hdr.is_final = true;
+                hdr.opcode = OpCode::Data(ty);
+            }
+            [first, .., last] => {
+                let hdr = first.header_mut();
+                hdr.is_final = false;
+                hdr.opcode = OpCode::Data(ty);
+
+                let hdr = last.header_mut();
+                hdr.is_final = true;
+                hdr.opcode = OpCode::Data(Data::Continue);
+            }
+        }
+
+        log::trace!("sending message in {} frames", frames.len());
+        for frame in frames {
+            ws.feed(WsMessage::Frame(frame)).await?;
+        }
         // To reclaim the `msg_alloc` memory, we need `SplitSink` to push down
         // its item slot to the inner sink, which will copy the `Bytes` and
         // drop the reference.
