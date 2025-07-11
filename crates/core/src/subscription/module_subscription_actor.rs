@@ -10,12 +10,9 @@ use crate::client::messages::{
     SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
-use spacetimedb_datastore::locking_tx_datastore::TxId;
-use spacetimedb_datastore::db_metrics::DB_METRICS;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
 use crate::subscription::execute_plans;
@@ -29,6 +26,9 @@ use spacetimedb_client_api_messages::websocket::{
     self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
     UnsubscribeMulti,
 };
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
+use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -938,7 +938,6 @@ mod tests {
         SubscriptionUpdateMessage, TransactionUpdateMessage,
     };
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, MeteredReceiver, Protocol};
-    use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use crate::db::relational_db::tests_utils::{
         begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
     };
@@ -958,6 +957,7 @@ mod tests {
         CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
         TableUpdate, Unsubscribe, UnsubscribeMulti,
     };
+    use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;

@@ -6,20 +6,22 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::{
-    db_metrics::DB_METRICS, error::{DatastoreError, TableError}, locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx}, traits::{InsertFlags, UpdateFlags}
-};
 use crate::execution_context::{Workload, WorkloadType};
 use crate::{
+    db_metrics::DB_METRICS,
+    error::{DatastoreError, TableError},
+    locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
+    traits::{InsertFlags, UpdateFlags},
+};
+use crate::{
+    execution_context::ExecutionContext,
     system_tables::{
-        read_bytes_from_col, read_hash_from_col, read_identity_from_col, system_table_schema, ModuleKind,
-        StClientRow, StModuleFields, StModuleRow, StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
+        read_bytes_from_col, read_hash_from_col, read_identity_from_col, system_table_schema, ModuleKind, StClientRow,
+        StModuleFields, StModuleRow, StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
     },
     traits::{
-        DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData,
-        TxDatastore,
+        DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData, TxDatastore,
     },
-    execution_context::ExecutionContext,
 };
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};

@@ -1,4 +1,3 @@
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use crate::{
     host::{
         module_host::{DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime},
@@ -8,6 +7,7 @@ use crate::{
     replica_context::ReplicaContext,
 };
 use anyhow::anyhow;
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use std::sync::{Arc, LazyLock};
 
 use super::module_host::CallReducerParams;

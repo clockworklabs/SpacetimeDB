@@ -1,6 +1,5 @@
 use super::query::{self, Supported};
 use super::subscription::{IncrementalJoin, SupportedQuery};
-use spacetimedb_datastore::locking_tx_datastore::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
@@ -11,6 +10,7 @@ use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::websocket::{
     Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate, WebsocketFormat,
 };
+use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{u256, ProductValue};

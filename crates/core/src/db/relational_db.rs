@@ -1,10 +1,25 @@
+use crate::db::MetricsRecorderQueue;
+use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
+use crate::messages::control_db::HostType;
+use crate::subscription::ExecutionCounters;
+use crate::util::{asyncify, spawn_rayon};
+use anyhow::{anyhow, Context};
+use enum_map::EnumMap;
+use fs2::FileExt;
+use futures::channel::mpsc;
+use futures::StreamExt;
+use parking_lot::RwLock;
+use spacetimedb_commitlog as commitlog;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError};
+use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::committed_state::CommittedState;
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
+use spacetimedb_datastore::system_tables::StModuleRow;
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
@@ -17,21 +32,6 @@ use spacetimedb_datastore::{
     },
     traits::TxData,
 };
-use spacetimedb_datastore::db_metrics::DB_METRICS;
-use spacetimedb_datastore::system_tables::StModuleRow;
-use crate::db::MetricsRecorderQueue;
-use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
-use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
-use crate::messages::control_db::HostType;
-use crate::subscription::ExecutionCounters;
-use crate::util::{asyncify, spawn_rayon};
-use anyhow::{anyhow, Context};
-use enum_map::EnumMap;
-use fs2::FileExt;
-use futures::channel::mpsc;
-use futures::StreamExt;
-use parking_lot::RwLock;
-use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
@@ -63,6 +63,8 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch;
 
+// NOTE(cloutiertyler): We should be using the associated types, but there is
+// a bug in the Rust compiler that prevents us from doing so.
 pub type MutTx = MutTxId; //<Locking as spacetimedb_datastore::traits::MutTx>::MutTx;
 pub type Tx = TxId; //<Locking as spacetimedb_datastore::traits::Tx>::Tx;
 
@@ -1683,10 +1685,10 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
     use super::*;
-    use spacetimedb_datastore::locking_tx_datastore::TxId;
-    use spacetimedb_datastore::locking_tx_datastore::MutTxId;
     use core::ops::Deref;
     use durability::EmptyHistory;
+    use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+    use spacetimedb_datastore::locking_tx_datastore::TxId;
     use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::{bsatn::to_vec, ser::Serialize};
     use spacetimedb_paths::server::SnapshotDirPath;
@@ -2066,15 +2068,9 @@ mod tests {
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
-    use spacetimedb_datastore::error::{DatastoreError, IndexError};
-    use spacetimedb_datastore::system_tables::{
-        system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ID,
-    };
     use crate::db::relational_db::tests_utils::{
         begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
     };
-    use spacetimedb_datastore::execution_context::ReducerContext;
     use anyhow::bail;
     use bytes::Bytes;
     use commitlog::payload::txdata;
@@ -2082,6 +2078,12 @@ mod tests {
     use durability::EmptyHistory;
     use pretty_assertions::{assert_eq, assert_matches};
     use spacetimedb_data_structures::map::IntMap;
+    use spacetimedb_datastore::error::{DatastoreError, IndexError};
+    use spacetimedb_datastore::execution_context::ReducerContext;
+    use spacetimedb_datastore::system_tables::{
+        system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
+        ST_SEQUENCE_ID, ST_TABLE_ID,
+    };
     use spacetimedb_fs_utils::compression::{CompressCount, CompressType};
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;

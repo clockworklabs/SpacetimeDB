@@ -23,7 +23,6 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
 use super::module_subscription_manager::Plan;
 use super::query;
-use spacetimedb_datastore::locking_tx_datastore::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, UpdatesRelValue};
@@ -34,6 +33,7 @@ use anyhow::Context;
 use itertools::Either;
 use spacetimedb_client_api_messages::websocket::{Compression, WebsocketFormat};
 use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;

@@ -1,11 +1,11 @@
 use super::ast::TableSchemaView;
 use super::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use super::type_check::TypeCheck;
-use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use core::ops::Deref;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::relation::{self, ColExpr, DbTable, FieldName, Header};

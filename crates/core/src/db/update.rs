@@ -1,8 +1,8 @@
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::sql::parser::RowLevelExpr;
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
@@ -262,11 +262,11 @@ fn auto_migrate_database(
 #[cfg(test)]
 mod test {
     use super::*;
-    use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use crate::{
         db::relational_db::tests_utils::{begin_mut_tx, insert, TestDB},
         host::module_host::create_table_from_def,
     };
+    use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, TableAccess};
     use spacetimedb_sats::{product, AlgebraicType::U64};
     use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};

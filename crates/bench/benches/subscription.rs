@@ -1,6 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use spacetimedb::error::DBError;
-use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::identity::AuthCtx;
 use spacetimedb::messages::websocket::BsatnFormat;
@@ -12,6 +11,7 @@ use spacetimedb::subscription::{collect_table_update, TableUpdateType};
 use spacetimedb::{db::relational_db::RelationalDB, messages::websocket::Compression};
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_query::compile_subscription;

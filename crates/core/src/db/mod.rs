@@ -3,9 +3,9 @@ use std::sync::Arc;
 use enum_map::EnumMap;
 use tokio::sync::mpsc;
 
-use spacetimedb_datastore::{locking_tx_datastore::datastore::TxMetrics, traits::TxData};
-use spacetimedb_datastore::execution_context::WorkloadType;
 use crate::subscription::ExecutionCounters;
+use spacetimedb_datastore::execution_context::WorkloadType;
+use spacetimedb_datastore::{locking_tx_datastore::datastore::TxMetrics, traits::TxData};
 
 pub mod relational_db;
 pub mod update;

@@ -11,14 +11,9 @@ use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
 
+use crate::{error::DBError, worker_metrics::WORKER_METRICS};
 use spacetimedb_datastore::{
-    locking_tx_datastore::datastore::MetricsRecorder,
-    db_metrics::DB_METRICS,
-    execution_context::WorkloadType,
-};
-use crate::{
-    error::DBError,
-    worker_metrics::WORKER_METRICS,
+    db_metrics::DB_METRICS, execution_context::WorkloadType, locking_tx_datastore::datastore::MetricsRecorder,
 };
 
 pub mod delta;

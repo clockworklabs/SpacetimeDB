@@ -8,6 +8,8 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
+use crate::execution_context::ExecutionContext;
+use crate::execution_context::Workload;
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
     error::{IndexError, SequenceError, TableError},
@@ -19,8 +21,6 @@ use crate::{
         ST_SEQUENCE_ID, ST_TABLE_ID,
     },
 };
-use crate::execution_context::ExecutionContext;
-use crate::execution_context::Workload;
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};

@@ -10,10 +10,7 @@ use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
-use spacetimedb_datastore::traits::Program;
-use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
-use spacetimedb::db::{Config, relational_db};
-use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb::db::{relational_db, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::{
     DiskStorage, DurabilityProvider, ExternalDurability, HostController, StartSnapshotWatcher, UpdateDatabaseResult,
@@ -25,6 +22,9 @@ use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
+use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::traits::Program;
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_table::page_pool::PagePool;
