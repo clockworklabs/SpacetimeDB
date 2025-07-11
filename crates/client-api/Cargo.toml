@@ -9,6 +9,7 @@ description = "The HTTP API for SpacetimeDB"
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-core.workspace = true
 spacetimedb-data-structures.workspace = true
+spacetimedb-datastore.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde"] }
 spacetimedb-paths.workspace = true
 spacetimedb-schema.workspace = true

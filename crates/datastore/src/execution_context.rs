@@ -150,7 +150,7 @@ impl ExecutionContext {
     }
 
     /// Returns an [ExecutionContext] with the provided [Workload] and empty metrics.
-    pub(crate) fn with_workload(database: Identity, workload: Workload) -> Self {
+    pub fn with_workload(database: Identity, workload: Workload) -> Self {
         match workload {
             #[cfg(any(test, feature = "test"))]
             Workload::ForTests => Self::new(database, None, WorkloadType::Internal),

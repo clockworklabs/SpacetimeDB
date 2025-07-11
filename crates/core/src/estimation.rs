@@ -1,4 +1,5 @@
-use crate::db::{datastore::locking_tx_datastore::state_view::StateView as _, relational_db::Tx};
+use crate::db::relational_db::Tx;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView as _;
 use spacetimedb_lib::query::Delta;
 use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, TableScan};
 use spacetimedb_primitives::{ColList, TableId};

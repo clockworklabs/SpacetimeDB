@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 spacetimedb-lib.workspace = true
 spacetimedb-core.workspace = true
+spacetimedb-datastore.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-vm.workspace = true
 

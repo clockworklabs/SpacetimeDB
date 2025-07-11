@@ -5,7 +5,6 @@ use crate::client::messages::{
     TransactionUpdateMessage,
 };
 use crate::client::{ClientConnectionSender, Protocol};
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
 use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
@@ -21,6 +20,7 @@ use spacetimedb_client_api_messages::websocket::{
     WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
@@ -1583,7 +1583,6 @@ mod tests {
 
     use super::{Plan, SubscriptionManager};
     use crate::db::relational_db::tests_utils::with_read_only;
-    use crate::execution_context::Workload;
     use crate::host::module_host::DatabaseTableUpdate;
     use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
@@ -1597,6 +1596,7 @@ mod tests {
         },
         subscription::execution_unit::QueryHash,
     };
+    use spacetimedb_datastore::execution_context::Workload;
 
     fn create_table(db: &RelationalDB, name: &str) -> ResultTest<TableId> {
         Ok(db.create_table_for_test(name, &[("a", AlgebraicType::U8)], &[])?)

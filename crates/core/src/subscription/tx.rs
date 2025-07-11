@@ -12,8 +12,8 @@ use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{IndexId, TableId};
 use spacetimedb_table::{blob_store::BlobStore, table::Table};
 
-use crate::db::datastore::{
-    locking_tx_datastore::{state_view::StateView, tx::TxId},
+use spacetimedb_datastore::{
+    locking_tx_datastore::{state_view::StateView, TxId},
     traits::TxData,
 };
 
