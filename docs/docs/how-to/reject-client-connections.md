@@ -20,7 +20,7 @@ pub fn client_connected(_ctx: &ReducerContext) -> Result<(), String> {
 
 Client behavior can vary by client type. For example:
 * **C# clients**: Client disconnection behavior is currently undefined and will generate an error reading:
-  `Unable to send subscribe message: WS sender loop has dropped its recv channel: TrySendError { kind: Disconnected }`
+  `Disconnected abnormally: System.Net.WebSockets.WebSocketException (0x80004005): The remote party closed the WebSocket connection without completing the close handshake.`
 
 * **Rust clients**: Client disconnection behavior is currently undefined and will generate an error reading:
   `Unable to send subscribe message: WS sender loop has dropped its recv channel: TrySendError { kind: Disconnected }`
