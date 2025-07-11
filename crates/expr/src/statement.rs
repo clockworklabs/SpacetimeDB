@@ -162,7 +162,7 @@ pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<Tabl
     let mut vars = Relvars::default();
     vars.insert(table_name.clone(), from.clone());
     let expr = filter
-        .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
+        .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool), &mut 0))
         .transpose()?;
     Ok(TableDelete {
         table: from,
@@ -216,7 +216,7 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
     vars.insert(table_name.clone(), schema.clone());
     let values = values.into_boxed_slice();
     let filter = filter
-        .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
+        .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool), &mut 0))
         .transpose()?;
     Ok(TableUpdate {
         table: schema,
