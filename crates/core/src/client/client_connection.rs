@@ -530,12 +530,13 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        asyncify(move || {
-            me.module
-                .subscriptions()
-                .add_single_subscription(me.sender, subscription, timer, None)
-        })
-        .await
+        self.module
+            .on_module_thread("subscribe_single", move || {
+                me.module
+                    .subscriptions()
+                    .add_single_subscription(me.sender, subscription, timer, None)
+            })
+            .await?
     }
 
     pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<Option<ExecutionMetrics>, DBError> {
@@ -554,12 +555,13 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        asyncify(move || {
-            me.module
-                .subscriptions()
-                .add_multi_subscription(me.sender, request, timer, None)
-        })
-        .await
+        self.module
+            .on_module_thread("subscribe_multi", move || {
+                me.module
+                    .subscriptions()
+                    .add_multi_subscription(me.sender, request, timer, None)
+            })
+            .await?
     }
 
     pub async fn unsubscribe_multi(
@@ -568,12 +570,13 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        asyncify(move || {
-            me.module
-                .subscriptions()
-                .remove_multi_subscription(me.sender, request, timer)
-        })
-        .await
+        self.module
+            .on_module_thread("unsubscribe_multi", move || {
+                me.module
+                    .subscriptions()
+                    .remove_multi_subscription(me.sender, request, timer)
+            })
+            .await?
     }
 
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {

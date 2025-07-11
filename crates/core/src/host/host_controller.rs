@@ -334,7 +334,9 @@ impl HostController {
             warn!("database operation panicked");
             on_panic();
         });
-        let result = asyncify(move || f(&module.replica_ctx().relational_db)).await;
+
+        let db = module.replica_ctx().relational_db.clone();
+        let result = module.on_module_thread("using_database", move || f(&db)).await?;
         Ok(result)
     }
 
@@ -643,6 +645,7 @@ async fn make_replica_ctx(
             let Some(subscriptions) = downgraded.upgrade() else {
                 break;
             };
+            // This should happen on the module thread, but we haven't created the module yet.
             asyncify(move || subscriptions.write().remove_dropped_clients()).await
         }
     });
