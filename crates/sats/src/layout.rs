@@ -310,7 +310,7 @@ impl HasLayout for ProductTypeLayoutView<'_> {
 impl ProductTypeLayoutView<'_> {
     /// Can `self` be changed compatibly to `new`?
     fn is_compatible_with(self, new: Self) -> bool {
-        self.elements.len() == new.elements.len()
+        self.elements.len() <= new.elements.len()
             && self
                 .elements
                 .iter()
