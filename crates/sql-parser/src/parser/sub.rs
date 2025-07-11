@@ -53,13 +53,13 @@
 //!     ;
 //! ```
 
+use crate::ast::sub::SqlSelect;
+use sqlparser::ast::SelectFlavor;
 use sqlparser::{
     ast::{GroupByExpr, Query, Select, SetExpr, Statement},
     dialect::PostgreSqlDialect,
     parser::Parser,
 };
-
-use crate::ast::sub::SqlSelect;
 
 use super::{
     errors::{SqlUnsupported, SubscriptionUnsupported},
@@ -96,12 +96,15 @@ impl RelParser for SubParser {
             Query {
                 with: None,
                 body,
-                order_by,
-                limit: None,
-                offset: None,
+                order_by: None,
+                limit_clause: None,
                 fetch: None,
                 locks,
-            } if order_by.is_empty() && locks.is_empty() => parse_set_op(*body),
+                for_clause: None,
+                settings: None,
+                format_clause: None,
+                pipe_operators,
+            } if locks.is_empty() && pipe_operators.is_empty() => parse_set_op(*body),
             _ => Err(SubscriptionUnsupported::feature(query).into()),
         }
     }
@@ -119,26 +122,35 @@ fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlSelect> {
 fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
     match select {
         Select {
+            select_token: _,
             distinct: None,
             top: None,
+            top_before_distinct: _,
             projection,
             into: None,
             from,
             lateral_views,
+            prewhere: None,
             selection,
-            group_by: GroupByExpr::Expressions(exprs),
+            group_by: GroupByExpr::Expressions(exprs, modifiers),
             cluster_by,
             distribute_by,
             sort_by,
             having: None,
             named_window,
             qualify: None,
+            window_before_qualify: false,
+            value_table_mode: None,
+            connect_by: None,
+            flavor: SelectFlavor::Standard,
         } if lateral_views.is_empty()
             && exprs.is_empty()
             && cluster_by.is_empty()
             && distribute_by.is_empty()
             && sort_by.is_empty()
-            && named_window.is_empty() =>
+            && named_window.is_empty()
+            && modifiers.is_empty()
+            && !projection.is_empty() =>
         {
             Ok(SqlSelect {
                 from: SubParser::parse_from(from)?,
@@ -163,7 +175,7 @@ mod tests {
             "select distinct a from t",
             "select * from (select * from t) join (select * from s) on a = b",
         ] {
-            assert!(parse_subscription(sql).is_err());
+            assert!(parse_subscription(sql).is_err(), "{sql}");
         }
     }
 
@@ -179,7 +191,7 @@ mod tests {
             "select a.* from t as a join s as b on a.c = b.d",
             "select * from t where x = :sender",
         ] {
-            assert!(parse_subscription(sql).is_ok());
+            assert!(parse_subscription(sql).is_ok(), "{sql}");
         }
     }
 }
