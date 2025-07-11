@@ -302,7 +302,7 @@ impl<'a, 'f> ser::Serializer for SatnFormatter<'a, 'f> {
     }
 
     fn serialize_str(mut self, v: &str) -> Result<Self::Ok, Self::Error> {
-        write!(self, "\"{}\"", v)
+        write!(self, "\"{v}\"")
     }
 
     fn serialize_bytes(mut self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
@@ -338,7 +338,7 @@ impl<'a, 'f> ser::Serializer for SatnFormatter<'a, 'f> {
         write!(self, "(")?;
         EntryWrapper::<','>::new(self.f.as_mut()).entry(|mut f| {
             if let Some(name) = name {
-                write!(f, "{}", name)?;
+                write!(f, "{name}")?;
             }
             write!(f, " = ")?;
             value.serialize(SatnFormatter { f })?;
@@ -408,7 +408,7 @@ impl ser::SerializeNamedProduct for NamedFormatter<'_, '_> {
         let res = self.f.entry(|mut f| {
             // Format the name or use the index if unnamed.
             if let Some(name) = name {
-                write!(f, "{}", name)?;
+                write!(f, "{name}")?;
             } else {
                 write!(f, "{}", self.idx)?;
             }
@@ -480,9 +480,9 @@ impl ser::SerializeNamedProduct for PsqlNamedFormatter<'_, '_> {
                 }
                 // Format the name or use the index if unnamed.
                 if let Some(name) = name {
-                    write!(f, "{}", name)?;
+                    write!(f, "{name}")?;
                 } else {
-                    write!(f, "{}", idx)?;
+                    write!(f, "{idx}")?;
                 }
                 write!(f, " = ")?;
             }

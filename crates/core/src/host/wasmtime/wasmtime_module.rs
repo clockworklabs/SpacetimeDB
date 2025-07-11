@@ -11,7 +11,7 @@ use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use wasmtime::{AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace};
 
 fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
-    log::info!("{} \"{}\" runtime error: {}", func_type, func, e);
+    log::info!("{func_type} \"{func}\" runtime error: {e}");
     if let Some(bt) = e.downcast_ref::<WasmBacktrace>() {
         let frames_len = bt.frames().len();
         for (i, frame) in bt.frames().iter().enumerate() {
@@ -168,7 +168,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let sink = store.data_mut().setup_standard_bytes_sink();
 
         let start = std::time::Instant::now();
-        log::trace!("Start describer \"{}\"...", describer_func_name);
+        log::trace!("Start describer \"{describer_func_name}\"...");
 
         let result = describer.call(&mut *store, sink);
 

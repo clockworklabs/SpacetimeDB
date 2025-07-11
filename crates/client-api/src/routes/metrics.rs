@@ -20,7 +20,7 @@ pub async fn metrics<S: NodeDelegate>(State(ctx): State<S>) -> axum::response::R
 
     let mut encode_to_buffer = |mfs: &[_]| {
         if let Err(e) = prometheus::TextEncoder.encode_utf8(mfs, &mut buf) {
-            log::error!("could not encode custom metrics: {}", e);
+            log::error!("could not encode custom metrics: {e}");
         }
     };
 

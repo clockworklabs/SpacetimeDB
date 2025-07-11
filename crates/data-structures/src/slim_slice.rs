@@ -160,7 +160,7 @@ pub unsafe trait SafelyExchangeable<T> {}
 /// Implementation detail of the other types.
 /// Provides some convenience but users of the type are responsible
 /// for safety, invariants and variance.
-#[repr(packed)]
+#[repr(Rust, packed)]
 struct SlimRawSlice<T> {
     /// A valid pointer to the slice data.
     ptr: NonNull<T>,
@@ -201,10 +201,10 @@ impl<T> SlimRawSlice<T> {
     /// must satisfy [`std::slice::from_raw_parts`]'s requirements.
     /// That is,
     /// * `self.ptr` must be valid for reads
-    ///    for `self.len * size_of::<T>` many bytes and must be aligned.
+    ///   for `self.len * size_of::<T>` many bytes and must be aligned.
     ///
     /// * `self.ptr` must point to `self.len`
-    ///    consecutive properly initialized values of type `T`.
+    ///   consecutive properly initialized values of type `T`.
     ///
     /// * The memory referenced by the returned slice
     ///   must not be mutated for the duration of lifetime `'a`,
@@ -228,7 +228,7 @@ impl<T> SlimRawSlice<T> {
     /// must satisfy [`std::slice::from_raw_parts_mut`]'s requirements.
     /// That is,
     /// * `self.ptr` must be [valid] for both reads and writes
-    ///    for `self.len * mem::size_of::<T>()` many bytes,
+    ///   for `self.len * mem::size_of::<T>()` many bytes,
     ///   and it must be properly aligned.
     ///
     /// * `self.ptr` must point to `self.len`
@@ -1597,8 +1597,8 @@ mod tests {
     }
 
     fn debug_properties<T: Debug, U: ?Sized + Debug>(a: &T, b: &T, a_cmp: &U, b_cmp: &U) {
-        assert_eq!(format!("{:?}", a), format!("{:?}", a_cmp));
-        assert_eq!(format!("{:?}", b), format!("{:?}", b_cmp));
+        assert_eq!(format!("{a:?}"), format!("{:?}", a_cmp));
+        assert_eq!(format!("{b:?}"), format!("{:?}", b_cmp));
     }
 
     fn display_properties<T: Debug + Display, U: ?Sized + Display>(a: &T, b: &T, a_cmp: &U, b_cmp: &U) {

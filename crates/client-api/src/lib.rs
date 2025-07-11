@@ -98,7 +98,7 @@ impl Host {
                         &mut header,
                     )
                     .map_err(|e| {
-                        log::warn!("{}", e);
+                        log::warn!("{e}");
                         if let Some(auth_err) = e.get_auth_error() {
                             (StatusCode::UNAUTHORIZED, auth_err.to_string())
                         } else {

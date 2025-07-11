@@ -77,7 +77,7 @@ impl WasmtimeRuntime {
             directory = (toml::Value::try_from(cache_dir.0)?)
         };
         let tmpfile = tempfile::NamedTempFile::new()?;
-        write!(&tmpfile, "{}", cache_config)?;
+        write!(&tmpfile, "{cache_config}")?;
         config.cache_config_load(tmpfile.path())?;
         Ok(())
     }

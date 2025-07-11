@@ -800,7 +800,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
         {
             #![allow(clippy::disallowed_macros)]
-            println!("{}", emission);
+            println!("{emission}");
         }
     }
 

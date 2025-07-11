@@ -50,3 +50,6 @@ proptest.workspace = true
 rand.workspace = true
 tempfile.workspace = true
 tokio-stream = { version = "0.1.17", features = ["fs"] }
+
+[lints]
+workspace = true

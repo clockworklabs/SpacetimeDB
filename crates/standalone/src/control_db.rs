@@ -521,7 +521,7 @@ impl ControlDb {
             let balance_entry = match balance_entry {
                 Ok(e) => e,
                 Err(e) => {
-                    log::error!("Invalid iteration in energy_budget control_db tree: {}", e);
+                    log::error!("Invalid iteration in energy_budget control_db tree: {e}");
                     continue;
                 }
             };

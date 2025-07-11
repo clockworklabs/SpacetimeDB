@@ -128,7 +128,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         url.host_str().unwrap_or("<default>").to_string()
     };
     if server_address != "localhost" && server_address != "127.0.0.1" {
-        println!("You are about to publish to a non-local server: {}", server_address);
+        println!("You are about to publish to a non-local server: {server_address}");
         if !y_or_n(force, "Are you sure you want to proceed?")? {
             println!("Aborting");
             return Ok(());
@@ -194,9 +194,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 PublishOp::Updated => "Updated",
             };
             if let Some(domain) = domain {
-                println!("{} database with name: {}, identity: {}", op, domain, database_identity);
+                println!("{op} database with name: {domain}, identity: {database_identity}");
             } else {
-                println!("{} database with identity: {}", op, database_identity);
+                println!("{op} database with identity: {database_identity}");
             }
         }
         PublishResult::PermissionDenied { name } => {

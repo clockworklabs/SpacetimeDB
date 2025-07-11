@@ -19,7 +19,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let client = reqwest::Client::new();
         client
             .post(host.join("auth/cli/logout")?)
-            .header("Authorization", format!("Bearer {}", web_session_token))
+            .header("Authorization", format!("Bearer {web_session_token}"))
             .send()
             .await?;
     }
