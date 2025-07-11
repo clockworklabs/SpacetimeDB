@@ -41,6 +41,7 @@ namespace SpacetimeDB
 
         public WebSocket(ConnectOptions options)
         {
+            Ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
             _options = options;
 #if UNITY_WEBGL && !UNITY_EDITOR
             InitializeWebGL();
