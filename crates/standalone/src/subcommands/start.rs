@@ -1,19 +1,20 @@
 use std::sync::Arc;
 
-use crate::StandaloneEnv;
+use crate::{StandaloneEnv, StandaloneOptions};
 use anyhow::Context;
 use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
-use spacetimedb::config::{CertificateAuthority, ConfigFile};
+use spacetimedb::config::{parse_config, CertificateAuthority};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
+use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
-use spacetimedb_paths::server::ServerDataDir;
+use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
 
 pub fn cli() -> clap::Command {
@@ -76,6 +77,20 @@ pub fn cli() -> clap::Command {
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
+#[derive(Default, serde::Deserialize)]
+struct ConfigFile {
+    #[serde(flatten)]
+    common: spacetimedb::config::ConfigFile,
+    #[serde(default)]
+    websocket: WebSocketOptions,
+}
+
+impl ConfigFile {
+    fn read(path: &ConfigToml) -> anyhow::Result<Option<Self>> {
+        parse_config(path.as_ref())
+    }
+}
+
 pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
@@ -124,7 +139,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     };
 
     startup::configure_tracing(TracingOptions {
-        config: config.logs,
+        config: config.common.logs,
         reload_config: cfg!(debug_assertions).then_some(config_path),
         disk_logging: std::env::var_os("SPACETIMEDB_DISABLE_DISK_LOGGING")
             .is_none()
@@ -139,12 +154,21 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     });
 
     let certs = certs
-        .or(config.certificate_authority)
+        .or(config.common.certificate_authority)
         .or_else(|| cert_dir.map(CertificateAuthority::in_cli_config_dir))
         .context("cannot omit --jwt-{pub,priv}-key-path when those options are not specified in config.toml")?;
 
     let data_dir = Arc::new(data_dir.clone());
-    let ctx = StandaloneEnv::init(db_config, &certs, data_dir, db_cores).await?;
+    let ctx = StandaloneEnv::init(
+        StandaloneOptions {
+            db_config,
+            websocket: config.websocket,
+        },
+        &certs,
+        data_dir,
+        db_cores,
+    )
+    .await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
     worker_metrics::spawn_tokio_stats(listen_addr.clone());
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
@@ -205,4 +229,40 @@ fn banner() {
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
     "#
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn options_from_partial_toml() {
+        let toml = r#"
+            [logs]
+            directives = [
+                "banana_shake=strawberry",
+            ]
+
+            [websocket]
+            idle-timeout = "1min"
+            close-handshake-timeout = "500ms"
+"#;
+
+        let config: ConfigFile = toml::from_str(toml).unwrap();
+
+        // `spacetimedb::config::ConfigFile` doesn't implement `PartialEq`,
+        // so check `common` in a pedestrian way.
+        assert_eq!(&config.common.logs.directives, &["banana_shake=strawberry"]);
+        assert!(config.common.certificate_authority.is_none());
+
+        assert_eq!(
+            config.websocket,
+            WebSocketOptions {
+                idle_timeout: Duration::from_secs(60),
+                close_handshake_timeout: Duration::from_millis(500),
+                ..<_>::default()
+            }
+        );
+    }
 }
