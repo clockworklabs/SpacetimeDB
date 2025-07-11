@@ -1059,7 +1059,7 @@ async fn send_message<S: Sink<WsMessage> + Unpin>(
 
         let total_len = data.len();
 
-        let mut frames = Vec::with_capacity(total_len / FRAGMENT_SIZE);
+        let mut frames = Vec::with_capacity((total_len / FRAGMENT_SIZE) + 1);
         let mut offset = 0;
         while offset < total_len {
             let end = (offset + FRAGMENT_SIZE).min(total_len);
