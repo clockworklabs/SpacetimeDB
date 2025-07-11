@@ -6,7 +6,7 @@ use std::{ops::RangeBounds, sync::Arc};
 use super::locking_tx_datastore::datastore::TxMetrics;
 use super::system_tables::ModuleKind;
 use super::Result;
-use crate::db::datastore::system_tables::ST_TABLE_ID;
+use crate::system_tables::ST_TABLE_ID;
 use crate::execution_context::{ReducerContext, Workload};
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::{hash_bytes, Identity};

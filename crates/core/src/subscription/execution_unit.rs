@@ -1,6 +1,6 @@
 use super::query::{self, Supported};
 use super::subscription::{IncrementalJoin, SupportedQuery};
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
+use spacetimedb_datastore::locking_tx_datastore::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;

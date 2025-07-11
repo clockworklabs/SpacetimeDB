@@ -2,13 +2,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::ast::SchemaViewer;
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::datastore::traits::IsolationLevel;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::traits::IsolationLevel;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use crate::execution_context::Workload;
+use spacetimedb_datastore::execution_context::Workload;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::ArgsTuple;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
@@ -310,7 +310,7 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::db::datastore::system_tables::{
+    use spacetimedb_datastore::system_tables::{
         StRowLevelSecurityRow, StTableFields, ST_ROW_LEVEL_SECURITY_ID, ST_TABLE_ID, ST_TABLE_NAME,
     };
     use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit, TestDB};

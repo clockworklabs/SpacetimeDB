@@ -28,7 +28,7 @@ use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageExecutionError, MessageHandleError,
     MeteredReceiver, Protocol,
 };
-use spacetimedb::execution_context::WorkloadType;
+use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::spawn_rayon;

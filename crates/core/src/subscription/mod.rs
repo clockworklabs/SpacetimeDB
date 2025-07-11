@@ -11,10 +11,13 @@ use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
 
-use crate::{
-    db::{datastore::locking_tx_datastore::datastore::MetricsRecorder, db_metrics::DB_METRICS},
-    error::DBError,
+use spacetimedb_datastore::{
+    locking_tx_datastore::datastore::MetricsRecorder,
+    db_metrics::DB_METRICS,
     execution_context::WorkloadType,
+};
+use crate::{
+    error::DBError,
     worker_metrics::WORKER_METRICS,
 };
 

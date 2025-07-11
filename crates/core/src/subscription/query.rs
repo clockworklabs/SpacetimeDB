@@ -150,7 +150,7 @@ mod tests {
         begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
     };
     use crate::db::relational_db::MutTx;
-    use crate::execution_context::Workload;
+    use spacetimedb_datastore::execution_context::Workload;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, UpdatesRelValue};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;

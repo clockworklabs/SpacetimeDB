@@ -8,8 +8,8 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::datastore::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
-use crate::db::datastore::{
+use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
+use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnFields, StColumnRow, StConstraintFields,
@@ -70,9 +70,9 @@ pub struct MutTxId {
     pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
-    pub(crate) timer: Instant,
-    pub(crate) ctx: ExecutionContext,
-    pub(crate) metrics: ExecutionMetrics,
+    pub timer: Instant,
+    pub ctx: ExecutionContext,
+    pub metrics: ExecutionMetrics,
 }
 
 static_assert_size!(MutTxId, 400);
@@ -151,8 +151,8 @@ impl MutTxId {
     }
 
     /// Get the list of current pending schema changes, for testing.
-    #[cfg(test)]
-    pub(crate) fn pending_schema_changes(&self) -> &[PendingSchemaChange] {
+    #[cfg(any(test, feature = "test"))]
+    pub fn pending_schema_changes(&self) -> &[PendingSchemaChange] {
         &self.tx_state.pending_schema_changes
     }
 
@@ -1293,7 +1293,7 @@ impl MutTxId {
 
 /// Either a row just inserted to a table or a row that already existed in some table.
 #[derive(Clone, Copy)]
-pub(crate) enum RowRefInsertion<'a> {
+pub enum RowRefInsertion<'a> {
     /// The row was just inserted.
     Inserted(RowRef<'a>),
     /// The row already existed.
@@ -1347,7 +1347,7 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
-    pub(crate) fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+    pub fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
         let row = &StClientRow {
             identity: identity.into(),
             connection_id: connection_id.into(),
@@ -1355,7 +1355,7 @@ impl MutTxId {
         self.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
     }
 
-    pub(crate) fn delete_st_client(
+    pub fn delete_st_client(
         &mut self,
         identity: Identity,
         connection_id: ConnectionId,
@@ -1383,7 +1383,7 @@ impl MutTxId {
         }
     }
 
-    pub(crate) fn insert_via_serialize_bsatn<'a, T: Serialize>(
+    pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
         &'a mut self,
         table_id: TableId,
         row: &T,

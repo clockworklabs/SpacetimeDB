@@ -1,4 +1,4 @@
-use super::datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::sql::parser::RowLevelExpr;
@@ -262,11 +262,9 @@ fn auto_migrate_database(
 #[cfg(test)]
 mod test {
     use super::*;
+    use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use crate::{
-        db::{
-            datastore::locking_tx_datastore::PendingSchemaChange,
-            relational_db::tests_utils::{begin_mut_tx, insert, TestDB},
-        },
+        db::relational_db::tests_utils::{begin_mut_tx, insert, TestDB},
         host::module_host::create_table_from_def,
     };
     use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, TableAccess};

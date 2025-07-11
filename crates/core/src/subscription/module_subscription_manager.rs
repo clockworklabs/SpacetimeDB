@@ -5,7 +5,7 @@ use crate::client::messages::{
     TransactionUpdateMessage,
 };
 use crate::client::{ClientConnectionSender, Protocol};
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
@@ -1583,7 +1583,7 @@ mod tests {
 
     use super::{Plan, SubscriptionManager};
     use crate::db::relational_db::tests_utils::with_read_only;
-    use crate::execution_context::Workload;
+    use spacetimedb_datastore::execution_context::Workload;
     use crate::host::module_host::DatabaseTableUpdate;
     use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;

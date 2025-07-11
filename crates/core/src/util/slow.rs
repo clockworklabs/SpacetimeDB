@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::execution_context::WorkloadType;
+use spacetimedb_datastore::execution_context::WorkloadType;
 
 /// Records the execution time of some `sql`
 /// and logs when the duration goes above a specific one.
@@ -48,8 +48,8 @@ impl<'a> SlowQueryLogger<'a> {
 mod tests {
     use super::*;
 
-    use crate::db::datastore::system_tables::ST_VARNAME_SLOW_QRY;
-    use crate::db::datastore::system_tables::{StVarName, ST_VARNAME_SLOW_INC, ST_VARNAME_SLOW_SUB};
+    use spacetimedb_datastore::system_tables::ST_VARNAME_SLOW_QRY;
+    use spacetimedb_datastore::system_tables::{StVarName, ST_VARNAME_SLOW_INC, ST_VARNAME_SLOW_SUB};
     use crate::sql::compiler::compile_sql;
     use crate::sql::execute::tests::execute_for_testing;
     use spacetimedb_lib::error::ResultTest;

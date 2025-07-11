@@ -4,16 +4,14 @@ use env_logger::Env;
 use log::info;
 use pretty_assertions::assert_matches;
 use rand::seq::IndexedRandom as _;
+use spacetimedb_datastore::locking_tx_datastore::datastore::Locking;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb::{
-    db::{
-        datastore::locking_tx_datastore::datastore::Locking,
-        relational_db::{
+    db::relational_db::{
             tests_utils::{TempReplicaDir, TestDB},
             SNAPSHOT_FREQUENCY,
         },
-    },
     error::DBError,
-    execution_context::Workload,
     Identity,
 };
 use spacetimedb_durability::{EmptyHistory, TxOffset};

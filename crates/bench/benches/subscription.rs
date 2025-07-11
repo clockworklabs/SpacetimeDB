@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use spacetimedb::error::DBError;
-use spacetimedb::execution_context::Workload;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::identity::AuthCtx;
 use spacetimedb::messages::websocket::BsatnFormat;

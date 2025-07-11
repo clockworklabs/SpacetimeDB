@@ -1,4 +1,4 @@
-use crate::execution_context::WorkloadType;
+use spacetimedb_datastore::execution_context::WorkloadType;
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};

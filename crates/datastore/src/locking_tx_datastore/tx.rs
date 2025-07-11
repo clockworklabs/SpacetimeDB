@@ -4,7 +4,7 @@ use super::{
     state_view::{IterByColRangeTx, StateView},
     IterByColEqTx, SharedReadGuard,
 };
-use crate::db::datastore::locking_tx_datastore::state_view::IterTx;
+use crate::locking_tx_datastore::state_view::IterTx;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -25,8 +25,8 @@ pub struct TxId {
     pub(super) committed_state_shared_lock: SharedReadGuard<CommittedState>,
     pub(super) lock_wait_time: Duration,
     pub(super) timer: Instant,
-    pub(crate) ctx: ExecutionContext,
-    pub(crate) metrics: ExecutionMetrics,
+    pub ctx: ExecutionContext,
+    pub metrics: ExecutionMetrics,
 }
 
 impl Datastore for TxId {
@@ -113,7 +113,7 @@ impl TxId {
     //
     // This method must never return 0, as it's used as the divisor in quotients.
     // Do not change its return type to a bare `u64`.
-    pub(crate) fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<NonZeroU64> {
+    pub fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<NonZeroU64> {
         let table = self.committed_state_shared_lock.get_table(table_id)?;
         let (_, index) = table.get_index_by_cols(cols)?;
         NonZeroU64::new(index.num_keys() as u64)

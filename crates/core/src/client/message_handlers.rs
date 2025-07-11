@@ -1,7 +1,7 @@
 use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtocol, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage, Protocol};
 use crate::energy::EnergyQuanta;
-use crate::execution_context::WorkloadType;
+use spacetimedb_datastore::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{ReducerArgs, ReducerId};
 use crate::identity::Identity;

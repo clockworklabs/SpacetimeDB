@@ -10,12 +10,12 @@ use crate::client::messages::{
     SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
-use crate::db::db_metrics::DB_METRICS;
+use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use crate::execution_context::{Workload, WorkloadType};
+use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
 use crate::subscription::execute_plans;
@@ -938,7 +938,7 @@ mod tests {
         SubscriptionUpdateMessage, TransactionUpdateMessage,
     };
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, MeteredReceiver, Protocol};
-    use crate::db::datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
+    use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use crate::db::relational_db::tests_utils::{
         begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
     };

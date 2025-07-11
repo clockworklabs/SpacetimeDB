@@ -2,7 +2,7 @@ use crate::db::DBRunner;
 use async_trait::async_trait;
 use spacetimedb::db::relational_db::tests_utils::TestDB;
 use spacetimedb::error::DBError;
-use spacetimedb::execution_context::Workload;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb::subscription::module_subscription_actor::ModuleSubscriptions;

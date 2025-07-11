@@ -4,7 +4,7 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_schema::schema::SequenceSchema;
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct Sequence {
+pub struct Sequence {
     schema: SequenceSchema,
     pub(super) value: i128,
 }

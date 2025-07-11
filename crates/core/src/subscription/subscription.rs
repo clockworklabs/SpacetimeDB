@@ -23,7 +23,7 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
 use super::module_subscription_manager::Plan;
 use super::query;
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
+use spacetimedb_datastore::locking_tx_datastore::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, UpdatesRelValue};

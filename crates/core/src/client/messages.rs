@@ -1,5 +1,5 @@
 use super::{ClientConfig, DataMessage, Protocol};
-use crate::execution_context::WorkloadType;
+use spacetimedb_datastore::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;

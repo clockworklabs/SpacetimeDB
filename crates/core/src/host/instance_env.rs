@@ -1,6 +1,6 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::replica_context::ReplicaContext;
