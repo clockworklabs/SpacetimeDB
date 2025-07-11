@@ -102,10 +102,15 @@ class Cluster:
 
     def wait_for_leader_change(self, previous_leader_node, max_attempts=10, delay=2):
         """Wait for leader to change and return new leader node_id."""
+
         for _ in range(max_attempts):
-            current_leader = self.get_leader_info()['node_id']
-            if current_leader != previous_leader_node:
-                return current_leader
+            try:
+                 current_leader_node = self.get_leader_info()['node_id']
+                 if current_leader_node != previous_leader_node:
+                    return current_leader_node
+            except Exception:
+                 print("No current leader")
+
             time.sleep(delay)
         return None
 
