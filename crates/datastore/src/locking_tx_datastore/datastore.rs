@@ -58,6 +58,8 @@ pub type Result<T> = std::result::Result<T, DatastoreError>;
 #[derive(Clone)]
 pub struct Locking {
     /// The state of the database up to the point of the last committed transaction.
+    // TODO(cloutiertyler): This was made `pub` for the datastore split. This should be
+    // made private again.
     pub committed_state: Arc<RwLock<CommittedState>>,
     /// The state of sequence generation in this database.
     sequence_state: Arc<Mutex<SequencesState>>,

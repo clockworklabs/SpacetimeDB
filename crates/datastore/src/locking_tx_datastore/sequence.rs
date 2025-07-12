@@ -4,6 +4,8 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_schema::schema::SequenceSchema;
 
 #[derive(Debug, PartialEq)]
+// TODO(cloutiertyler): The below was made `pub` for the datastore split. We should
+// investigate if this should be private again.
 pub struct Sequence {
     schema: SequenceSchema,
     pub(super) value: i128,

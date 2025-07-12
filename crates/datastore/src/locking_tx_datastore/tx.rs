@@ -25,6 +25,8 @@ pub struct TxId {
     pub(super) committed_state_shared_lock: SharedReadGuard<CommittedState>,
     pub(super) lock_wait_time: Duration,
     pub(super) timer: Instant,
+    // TODO(cloutiertyler): The below were made `pub` for the datastore split. We should
+    // make these private again.
     pub ctx: ExecutionContext,
     pub metrics: ExecutionMetrics,
 }
