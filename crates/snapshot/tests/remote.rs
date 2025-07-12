@@ -5,17 +5,15 @@ use log::info;
 use pretty_assertions::assert_matches;
 use rand::seq::IndexedRandom as _;
 use spacetimedb::{
-    db::{
-        datastore::locking_tx_datastore::datastore::Locking,
-        relational_db::{
-            tests_utils::{TempReplicaDir, TestDB},
-            SNAPSHOT_FREQUENCY,
-        },
+    db::relational_db::{
+        tests_utils::{TempReplicaDir, TestDB},
+        SNAPSHOT_FREQUENCY,
     },
     error::DBError,
-    execution_context::Workload,
     Identity,
 };
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::locking_tx_datastore::datastore::Locking;
 use spacetimedb_durability::{EmptyHistory, TxOffset};
 use spacetimedb_fs_utils::dir_trie::DirTrie;
 use spacetimedb_lib::{
