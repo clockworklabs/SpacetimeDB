@@ -6,27 +6,22 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::db::datastore::{
+use crate::execution_context::{Workload, WorkloadType};
+use crate::{
+    db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
     locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
     traits::{InsertFlags, UpdateFlags},
 };
-use crate::execution_context::{Workload, WorkloadType};
 use crate::{
-    db::{
-        datastore::{
-            system_tables::{
-                read_bytes_from_col, read_hash_from_col, read_identity_from_col, system_table_schema, ModuleKind,
-                StClientRow, StModuleFields, StModuleRow, StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
-            },
-            traits::{
-                DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData,
-                TxDatastore,
-            },
-        },
-        db_metrics::DB_METRICS,
-    },
     execution_context::ExecutionContext,
+    system_tables::{
+        read_bytes_from_col, read_hash_from_col, read_identity_from_col, system_table_schema, ModuleKind, StClientRow,
+        StModuleFields, StModuleRow, StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
+    },
+    traits::{
+        DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData, TxDatastore,
+    },
 };
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
@@ -63,7 +58,9 @@ pub type Result<T> = std::result::Result<T, DatastoreError>;
 #[derive(Clone)]
 pub struct Locking {
     /// The state of the database up to the point of the last committed transaction.
-    pub(crate) committed_state: Arc<RwLock<CommittedState>>,
+    // TODO(cloutiertyler): This was made `pub` for the datastore split. This should be
+    // made private again.
+    pub committed_state: Arc<RwLock<CommittedState>>,
     /// The state of sequence generation in this database.
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
@@ -246,7 +243,7 @@ impl Locking {
         Ok(maybe_offset_and_path.map(|(_, path)| path))
     }
 
-    pub(crate) fn take_snapshot_internal(
+    pub fn take_snapshot_internal(
         committed_state: &RwLock<CommittedState>,
         repo: &SnapshotRepository,
     ) -> Result<Option<(TxOffset, SnapshotDirPath)>> {
@@ -271,7 +268,7 @@ impl Locking {
         Ok(Some((tx_offset, snapshot_dir)))
     }
 
-    pub(crate) fn compress_older_snapshot_internal(repo: &SnapshotRepository, upper_bound: TxOffset) {
+    pub fn compress_older_snapshot_internal(repo: &SnapshotRepository, upper_bound: TxOffset) {
         log::info!(
             "Compressing snapshots of database {:?} older than TX offset {}",
             repo.database_identity(),
@@ -300,7 +297,7 @@ impl Locking {
         Ok(iter)
     }
 
-    pub(crate) fn alter_table_access_mut_tx(&self, tx: &mut MutTxId, name: &str, access: StAccess) -> Result<()> {
+    pub fn alter_table_access_mut_tx(&self, tx: &mut MutTxId, name: &str, access: StAccess) -> Result<()> {
         let table_id = self
             .table_id_from_name_mut_tx(tx, name)?
             .ok_or_else(|| TableError::NotFound(name.into()))?;
@@ -308,7 +305,7 @@ impl Locking {
         tx.alter_table_access(table_id, access)
     }
 
-    pub(crate) fn alter_table_row_type_mut_tx(
+    pub fn alter_table_row_type_mut_tx(
         &self,
         tx: &mut MutTxId,
         table_id: TableId,
@@ -1147,9 +1144,9 @@ fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::error::IndexError;
-    use crate::db::datastore::locking_tx_datastore::tx_state::PendingSchemaChange;
-    use crate::db::datastore::system_tables::{
+    use crate::error::IndexError;
+    use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
+    use crate::system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
         StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow,
         StTableRow, StVarFields, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
@@ -1157,8 +1154,8 @@ mod tests {
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
         ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
     };
-    use crate::db::datastore::traits::{IsolationLevel, MutTx};
-    use crate::db::datastore::Result;
+    use crate::traits::{IsolationLevel, MutTx};
+    use crate::Result;
     use bsatn::to_vec;
     use core::{fmt, mem};
     use itertools::Itertools;

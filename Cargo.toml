@@ -11,6 +11,7 @@ members = [
   "crates/commitlog",
   "crates/core",
   "crates/data-structures",
+  "crates/datastore",
   "crates/durability",
   "crates/execution",
   "crates/expr",
@@ -104,6 +105,7 @@ spacetimedb-codegen = { path = "crates/codegen", version = "1.2.0" }
 spacetimedb-commitlog = { path = "crates/commitlog", version = "1.2.0" }
 spacetimedb-core = { path = "crates/core", version = "1.2.0" }
 spacetimedb-data-structures = { path = "crates/data-structures", version = "1.2.0" }
+spacetimedb-datastore = { path = "crates/datastore", version = "1.2.0" }
 spacetimedb-durability = { path = "crates/durability", version = "1.2.0" }
 spacetimedb-execution = { path = "crates/execution", version = "1.2.0" }
 spacetimedb-expr = { path = "crates/expr", version = "1.2.0" }

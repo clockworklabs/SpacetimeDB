@@ -1,26 +1,5 @@
-use super::datastore::error::{DatastoreError, TableError};
-use super::datastore::locking_tx_datastore::committed_state::CommittedState;
-use super::datastore::locking_tx_datastore::datastore::TxMetrics;
-use super::datastore::locking_tx_datastore::state_view::{
-    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
-};
-use super::datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
-use super::datastore::traits::{
-    InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
-    UpdateFlags,
-};
-use super::datastore::{
-    locking_tx_datastore::{
-        datastore::Locking,
-        state_view::{IterByColEqTx, IterByColRangeTx},
-    },
-    traits::TxData,
-};
-use super::db_metrics::DB_METRICS;
-use crate::db::datastore::system_tables::StModuleRow;
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
-use crate::execution_context::{ReducerContext, Workload, WorkloadType};
 use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
 use crate::util::{asyncify, spawn_rayon};
@@ -31,6 +10,28 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::error::{DatastoreError, TableError};
+use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
+use spacetimedb_datastore::locking_tx_datastore::committed_state::CommittedState;
+use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
+use spacetimedb_datastore::locking_tx_datastore::state_view::{
+    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
+};
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
+use spacetimedb_datastore::system_tables::StModuleRow;
+use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
+use spacetimedb_datastore::traits::{
+    InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
+    UpdateFlags,
+};
+use spacetimedb_datastore::{
+    locking_tx_datastore::{
+        datastore::Locking,
+        state_view::{IterByColEqTx, IterByColRangeTx},
+    },
+    traits::TxData,
+};
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
@@ -62,8 +63,10 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch;
 
-pub type MutTx = <Locking as super::datastore::traits::MutTx>::MutTx;
-pub type Tx = <Locking as super::datastore::traits::Tx>::Tx;
+// NOTE(cloutiertyler): We should be using the associated types, but there is
+// a bug in the Rust compiler that prevents us from doing so.
+pub type MutTx = MutTxId; //<Locking as spacetimedb_datastore::traits::MutTx>::MutTx;
+pub type Tx = TxId; //<Locking as spacetimedb_datastore::traits::Tx>::Tx;
 
 type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 
@@ -855,7 +858,7 @@ impl RelationalDB {
     /// If `(tx_data, ctx)` should be appended to the commitlog, do so.
     ///
     /// Note that by this stage,
-    /// [`crate::db::datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
+    /// [`spacetimedb_datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
     /// has already decided based on the reducer and operations whether the transaction should be appended;
     /// this method is responsible only for reading its decision out of the `tx_data`
     /// and calling `durability.append_tx`.
@@ -1682,10 +1685,10 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
     use super::*;
-    use crate::db::datastore::locking_tx_datastore::tx::TxId;
-    use crate::db::datastore::locking_tx_datastore::MutTxId;
     use core::ops::Deref;
     use durability::EmptyHistory;
+    use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+    use spacetimedb_datastore::locking_tx_datastore::TxId;
     use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::{bsatn::to_vec, ser::Serialize};
     use spacetimedb_paths::server::SnapshotDirPath;
@@ -2065,15 +2068,9 @@ mod tests {
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
-    use crate::db::datastore::error::{DatastoreError, IndexError};
-    use crate::db::datastore::system_tables::{
-        system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ID,
-    };
     use crate::db::relational_db::tests_utils::{
         begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
     };
-    use crate::execution_context::ReducerContext;
     use anyhow::bail;
     use bytes::Bytes;
     use commitlog::payload::txdata;
@@ -2081,6 +2078,12 @@ mod tests {
     use durability::EmptyHistory;
     use pretty_assertions::{assert_eq, assert_matches};
     use spacetimedb_data_structures::map::IntMap;
+    use spacetimedb_datastore::error::{DatastoreError, IndexError};
+    use spacetimedb_datastore::execution_context::ReducerContext;
+    use spacetimedb_datastore::system_tables::{
+        system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
+        ST_SEQUENCE_ID, ST_TABLE_ID,
+    };
     use spacetimedb_fs_utils::compression::{CompressCount, CompressType};
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
@@ -2983,7 +2986,7 @@ mod tests {
     /// fixed a bug where replaying deletes to `st_client` would fail due to an unpopulated index.
     #[test]
     fn replay_delete_from_st_client() {
-        use crate::db::datastore::system_tables::{StClientRow, ST_CLIENT_ID};
+        use spacetimedb_datastore::system_tables::{StClientRow, ST_CLIENT_ID};
 
         let row_0 = StClientRow {
             identity: Identity::ZERO.into(),

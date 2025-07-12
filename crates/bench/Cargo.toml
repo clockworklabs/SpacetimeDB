@@ -40,6 +40,7 @@ bench = false
 spacetimedb-client-api = { path = "../client-api" }
 spacetimedb-core = { path = "../core", features = ["test"] }
 spacetimedb-data-structures.workspace = true
+spacetimedb-datastore.workspace = true
 spacetimedb-execution = { path = "../execution" }
 spacetimedb-lib = { path = "../lib" }
 spacetimedb-paths.workspace = true
