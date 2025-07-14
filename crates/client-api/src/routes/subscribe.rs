@@ -1058,7 +1058,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                 for frame in frames_batch.drain(..n) {
                     if let Err(e) = ws.feed(WsMessage::Frame(frame)).await {
                         log::warn!("error sending frame: {e:#}");
-                        break;
+                        break 'outer;
                     }
                 }
             },
