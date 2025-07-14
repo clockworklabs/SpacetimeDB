@@ -1134,7 +1134,7 @@ async fn ws_encode_task(
         };
 
         metrics.report(workload, num_rows, stats);
-        if in_use_bufs.len() <= BUF_POOL_CAPACITY {
+        if in_use_bufs.len() < BUF_POOL_CAPACITY {
             in_use_bufs.push(scopeguard::guard(in_use_buf, |in_use| {
                 let buf = in_use.try_reclaim().expect("buffer should be unique");
                 let _ = buf_pool.push(buf);
