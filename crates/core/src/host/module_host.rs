@@ -16,7 +16,6 @@ use crate::sql::parser::RowLevelExpr;
 use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
-use crate::util::asyncify;
 use crate::util::jobs::{JobCore, JobThread, JobThreadClosed, WeakJobThread};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -584,7 +583,24 @@ impl ModuleHost {
         &self.info.subscriptions
     }
 
-    async fn call<F, R>(&self, reducer: &str, f: F) -> Result<R, NoSuchModule>
+    /// Run a function on the JobThread for this module.
+    /// This would deadlock if it is called within another call to `on_module_thread`.
+    /// Since this is async, and `f` is sync, deadlocking shouldn't be a problem.
+    pub async fn on_module_thread<F, R>(&self, label: &str, f: F) -> Result<R, anyhow::Error>
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        // Run the provided function on the module instance.
+        // This is a convenience method that ensures the module instance is available
+        // and handles any errors that may occur.
+        self.call(label, |_| f())
+            .await
+            .map_err(|_| anyhow::Error::from(NoSuchModule))
+    }
+
+    /// Run a function on the JobThread for this module which has access to the module instance.
+    async fn call<F, R>(&self, label: &str, f: F) -> Result<R, NoSuchModule>
     where
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
@@ -592,7 +608,7 @@ impl ModuleHost {
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
             .reducer_wait_time
-            .with_label_values(&self.info.database_identity, reducer)
+            .with_label_values(&self.info.database_identity, label)
             .start_timer();
         let queue_length_gauge = WORKER_METRICS
             .instance_queue_length
@@ -623,7 +639,7 @@ impl ModuleHost {
         // If a reducer call panics, we **must** ensure to call `self.on_panic`
         // so that the module is discarded by the host controller.
         scopeguard::defer_on_unwind!({
-            log::warn!("reducer {reducer} panicked");
+            log::warn!("reducer {label} panicked");
             (self.on_panic)();
         });
         self.job_tx
@@ -638,10 +654,13 @@ impl ModuleHost {
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
         log::trace!("disconnecting client {}", client_id);
         let this = self.clone();
-        asyncify(move || this.subscriptions().remove_subscriber(client_id)).await;
-        // ignore NoSuchModule; if the module's already closed, that's fine
         if let Err(e) = self
-            .call_identity_disconnected(client_id.identity, client_id.connection_id)
+            .call("disconnect_client", move |inst| {
+                // Call the `client_disconnected` reducer, if it exists.
+                // This is a no-op if the module doesn't define such a reducer.
+                this.subscriptions().remove_subscriber(client_id);
+                this.call_identity_disconnected_inner(client_id.identity, client_id.connection_id, inst)
+            })
             .await
         {
             log::error!("Error from client_disconnected transaction: {e}");
@@ -666,15 +685,16 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ClientConnectedError> {
-        let reducer_lookup = self.info.module_def.lifecycle_reducer(Lifecycle::OnConnect);
+        let me = self.clone();
+        self.call("call_identity_connected", move |inst| {
+            let reducer_lookup = me.info.module_def.lifecycle_reducer(Lifecycle::OnConnect);
 
-        if let Some((reducer_id, reducer_def)) = reducer_lookup {
-            // The module defined a lifecycle reducer to handle new connections.
-            // Call this reducer.
-            // If the call fails (as in, something unexpectedly goes wrong with WASM execution),
-            // abort the connection: we can't really recover.
-            let reducer_outcome = self
-                .call_reducer_inner(
+            if let Some((reducer_id, reducer_def)) = reducer_lookup {
+                // The module defined a lifecycle reducer to handle new connections.
+                // Call this reducer.
+                // If the call fails (as in, something unexpectedly goes wrong with WASM execution),
+                // abort the connection: we can't really recover.
+                let reducer_outcome = me.call_reducer_inner_with_inst(
                     caller_identity,
                     Some(caller_connection_id),
                     None,
@@ -683,37 +703,80 @@ impl ModuleHost {
                     reducer_id,
                     reducer_def,
                     ReducerArgs::Nullary,
-                )
-                .await?;
+                    inst,
+                )?;
 
-            match reducer_outcome.outcome {
-                // If the reducer committed successfully, we're done.
-                // `WasmModuleInstance::call_reducer_with_tx` has already ensured
-                // that `st_client` is updated appropriately.
+                match reducer_outcome.outcome {
+                    // If the reducer committed successfully, we're done.
+                    // `WasmModuleInstance::call_reducer_with_tx` has already ensured
+                    // that `st_client` is updated appropriately.
+                    //
+                    // It's necessary to spread out the responsibility for updating `st_client` in this way
+                    // because it's important that `call_identity_connected` commit at most one transaction.
+                    // A naive implementation of this method would just run the reducer first,
+                    // then insert into `st_client`,
+                    // but if we crashed in between, we'd be left in an inconsistent state
+                    // where the reducer had run but `st_client` was not yet updated.
+                    ReducerOutcome::Committed => Ok(()),
+
+                    // If the reducer returned an error or couldn't run due to insufficient energy,
+                    // abort the connection: the module code has decided it doesn't want this client.
+                    ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(message)),
+                    ReducerOutcome::BudgetExceeded => Err(ClientConnectedError::OutOfEnergy),
+                }
+            } else {
+                // The module doesn't define a client_connected reducer.
+                // Commit a transaction to update `st_clients`
+                // and to ensure we always have those events paired in the commitlog.
                 //
-                // It's necessary to spread out the responsibility for updating `st_client` in this way
-                // because it's important that `call_identity_connected` commit at most one transaction.
-                // A naive implementation of this method would just run the reducer first,
-                // then insert into `st_client`,
-                // but if we crashed in between, we'd be left in an inconsistent state
-                // where the reducer had run but `st_client` was not yet updated.
-                ReducerOutcome::Committed => Ok(()),
+                // This is necessary to be able to disconnect clients after a server crash.
+                let reducer_name = reducer_lookup
+                    .as_ref()
+                    .map(|(_, def)| &*def.name)
+                    .unwrap_or("__identity_connected__");
 
-                // If the reducer returned an error or couldn't run due to insufficient energy,
-                // abort the connection: the module code has decided it doesn't want this client.
-                ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(message)),
-                ReducerOutcome::BudgetExceeded => Err(ClientConnectedError::OutOfEnergy),
+                let workload = Workload::Reducer(ReducerContext {
+                    name: reducer_name.to_owned(),
+                    caller_identity,
+                    caller_connection_id,
+                    timestamp: Timestamp::now(),
+                    arg_bsatn: Bytes::new(),
+                });
+
+                let stdb = me.module.replica_ctx().relational_db.clone();
+                stdb.with_auto_commit(workload, |mut_tx| {
+                    mut_tx
+                        .insert_st_client(caller_identity, caller_connection_id)
+                        .map_err(DBError::from)
+                })
+                .inspect_err(|e| {
+                    log::error!(
+                        "`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}"
+                    )
+                })
+                .map_err(DBError::from)
+                .map_err(Into::into)
             }
-        } else {
-            // The module doesn't define a client_connected reducer.
-            // Commit a transaction to update `st_clients`
-            // and to ensure we always have those events paired in the commitlog.
-            //
-            // This is necessary to be able to disconnect clients after a server crash.
+        })
+        .await
+        .map_err(Into::<ReducerCallError>::into)?
+    }
+
+    pub fn call_identity_disconnected_inner(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        inst: &mut dyn ModuleInstance,
+    ) -> Result<(), ReducerCallError> {
+        let me = self.clone();
+        let reducer_lookup = me.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
+
+        // A fallback transaction that deletes the client from `st_client`.
+        let fallback = || {
             let reducer_name = reducer_lookup
                 .as_ref()
                 .map(|(_, def)| &*def.name)
-                .unwrap_or("__identity_connected__");
+                .unwrap_or("__identity_disconnected__");
 
             let workload = Workload::Reducer(ReducerContext {
                 name: reducer_name.to_owned(),
@@ -722,21 +785,68 @@ impl ModuleHost {
                 timestamp: Timestamp::now(),
                 arg_bsatn: Bytes::new(),
             });
+            let stdb = me.module.replica_ctx().relational_db.clone();
+            let database_identity = me.info.database_identity;
+            stdb.with_auto_commit(workload, |mut_tx| {
+                mut_tx
+                    .delete_st_client(caller_identity, caller_connection_id, database_identity)
+                    .map_err(DBError::from)
+            })
+            .map_err(|err| {
+                log::error!(
+                    "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {err}"
+                );
+                InvalidReducerArguments {
+                    err: err.into(),
+                    reducer: reducer_name.into(),
+                }
+                .into()
+            })
+        };
 
-            let stdb = self.module.replica_ctx().relational_db.clone();
-            asyncify(move || {
-                stdb.with_auto_commit(workload, |mut_tx| {
-                    mut_tx
-                        .insert_st_client(caller_identity, caller_connection_id)
-                        .map_err(DBError::from)
-                })
-            })
-            .await
-            .inspect_err(|e| {
-                log::error!("`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}")
-            })
-            .map_err(DBError::from)
-            .map_err(Into::into)
+        if let Some((reducer_id, reducer_def)) = reducer_lookup {
+            // The module defined a lifecycle reducer to handle disconnects. Call it.
+            // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
+            // that `st_client` is updated appropriately.
+            let result = me.call_reducer_inner_with_inst(
+                caller_identity,
+                Some(caller_connection_id),
+                None,
+                None,
+                None,
+                reducer_id,
+                reducer_def,
+                ReducerArgs::Nullary,
+                inst,
+            );
+
+            // If it failed, we still need to update `st_client`: the client's not coming back.
+            // Commit a separate transaction that just updates `st_client`.
+            //
+            // It's OK for this to not be atomic with the previous transaction,
+            // since that transaction didn't commit. If we crash before committing this one,
+            // we'll run the `client_disconnected` reducer again unnecessarily,
+            // but the commitlog won't contain two invocations of it, which is what we care about.
+            match result {
+                Err(e) => {
+                    log::error!("call_reducer_inner of client_disconnected failed: {e:#?}");
+                    fallback()
+                }
+                Ok(ReducerCallResult {
+                    outcome: ReducerOutcome::Failed(_) | ReducerOutcome::BudgetExceeded,
+                    ..
+                }) => fallback(),
+
+                // If it succeeded, as mentioned above, `st_client` is already updated.
+                Ok(ReducerCallResult {
+                    outcome: ReducerOutcome::Committed,
+                    ..
+                }) => Ok(()),
+            }
+        } else {
+            // The module doesn't define a `client_disconnected` reducer.
+            // Commit a transaction to update `st_clients`.
+            fallback()
         }
     }
 
@@ -760,89 +870,12 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ReducerCallError> {
-        let reducer_lookup = self.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
-
-        // A fallback transaction that deletes the client from `st_client`.
-        let fallback = || async {
-            let reducer_name = reducer_lookup
-                .as_ref()
-                .map(|(_, def)| &*def.name)
-                .unwrap_or("__identity_disconnected__");
-
-            let workload = Workload::Reducer(ReducerContext {
-                name: reducer_name.to_owned(),
-                caller_identity,
-                caller_connection_id,
-                timestamp: Timestamp::now(),
-                arg_bsatn: Bytes::new(),
-            });
-            let stdb = self.module.replica_ctx().relational_db.clone();
-            let database_identity = self.info.database_identity;
-            asyncify(move || {
-                stdb.with_auto_commit(workload, |mut_tx| {
-                    mut_tx
-                        .delete_st_client(caller_identity, caller_connection_id, database_identity)
-                        .map_err(DBError::from)
-                })
-            })
-            .await
-            .map_err(|err| {
-                log::error!(
-                    "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {err}"
-                );
-                InvalidReducerArguments {
-                    err: err.into(),
-                    reducer: reducer_name.into(),
-                }
-                .into()
-            })
-        };
-
-        if let Some((reducer_id, reducer_def)) = reducer_lookup {
-            // The module defined a lifecycle reducer to handle disconnects. Call it.
-            // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
-            // that `st_client` is updated appropriately.
-            let result = self
-                .call_reducer_inner(
-                    caller_identity,
-                    Some(caller_connection_id),
-                    None,
-                    None,
-                    None,
-                    reducer_id,
-                    reducer_def,
-                    ReducerArgs::Nullary,
-                )
-                .await;
-
-            // If it failed, we still need to update `st_client`: the client's not coming back.
-            // Commit a separate transaction that just updates `st_client`.
-            //
-            // It's OK for this to not be atomic with the previous transaction,
-            // since that transaction didn't commit. If we crash before committing this one,
-            // we'll run the `client_disconnected` reducer again unnecessarily,
-            // but the commitlog won't contain two invocations of it, which is what we care about.
-            match result {
-                Err(e) => {
-                    log::error!("call_reducer_inner of client_disconnected failed: {e:#?}");
-                    fallback().await
-                }
-                Ok(ReducerCallResult {
-                    outcome: ReducerOutcome::Failed(_) | ReducerOutcome::BudgetExceeded,
-                    ..
-                }) => fallback().await,
-
-                // If it succeeded, as mentioned above, `st_client` is already updated.
-                Ok(ReducerCallResult {
-                    outcome: ReducerOutcome::Committed,
-                    ..
-                }) => Ok(()),
-            }
-        } else {
-            // The module doesn't define a `client_disconnected` reducer.
-            // Commit a transaction to update `st_clients`.
-            fallback().await
-        }
+        let me = self.clone();
+        self.call("call_identity_disconnected", move |inst| {
+            me.call_identity_disconnected_inner(caller_identity, caller_connection_id, inst)
+        })
+        .await
+        .map_err(Into::<ReducerCallError>::into)?
     }
 
     async fn call_reducer_inner(
@@ -877,6 +910,36 @@ impl ModuleHost {
         })
         .await
         .map_err(Into::into)
+    }
+    fn call_reducer_inner_with_inst(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_id: ReducerId,
+        reducer_def: &ReducerDef,
+        args: ReducerArgs,
+        module_instance: &mut dyn ModuleInstance,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
+        let args = args.into_tuple(reducer_seed)?;
+        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
+
+        Ok(module_instance.call_reducer(
+            None,
+            CallReducerParams {
+                timestamp: Timestamp::now(),
+                caller_identity,
+                caller_connection_id,
+                client,
+                request_id,
+                timer,
+                reducer_id,
+                args,
+            },
+        ))
     }
 
     pub async fn call_reducer(
@@ -1048,77 +1111,78 @@ impl ModuleHost {
         let subscriptions = replica_ctx.subscriptions.clone();
         let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
-        let metrics = asyncify(move || {
-            db.with_read_only(Workload::Sql, |tx| {
-                // We wrap the actual query in a closure so we can use ? to handle errors without making
-                // the entire transaction abort with an error.
-                let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
-                    let tx = SchemaViewer::new(tx, &auth);
+        let metrics = self
+            .on_module_thread("one_off_query", move || {
+                db.with_read_only(Workload::Sql, |tx| {
+                    // We wrap the actual query in a closure so we can use ? to handle errors without making
+                    // the entire transaction abort with an error.
+                    let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
+                        let tx = SchemaViewer::new(tx, &auth);
 
-                    let (
-                        // A query may compile down to several plans.
-                        // This happens when there are multiple RLS rules per table.
-                        // The original query is the union of these plans.
-                        plans,
-                        _,
-                        table_name,
-                        _,
-                    ) = compile_subscription(&query, &tx, &auth)?;
+                        let (
+                            // A query may compile down to several plans.
+                            // This happens when there are multiple RLS rules per table.
+                            // The original query is the union of these plans.
+                            plans,
+                            _,
+                            table_name,
+                            _,
+                        ) = compile_subscription(&query, &tx, &auth)?;
 
-                    // Optimize each fragment
-                    let optimized = plans
-                        .into_iter()
-                        .map(|plan| plan.optimize())
-                        .collect::<Result<Vec<_>, _>>()?;
+                        // Optimize each fragment
+                        let optimized = plans
+                            .into_iter()
+                            .map(|plan| plan.optimize())
+                            .collect::<Result<Vec<_>, _>>()?;
 
-                    check_row_limit(
-                        &optimized,
-                        &db,
-                        &tx,
-                        // Estimate the number of rows this query will scan
-                        |plan, tx| estimate_rows_scanned(tx, plan),
-                        &auth,
-                    )?;
+                        check_row_limit(
+                            &optimized,
+                            &db,
+                            &tx,
+                            // Estimate the number of rows this query will scan
+                            |plan, tx| estimate_rows_scanned(tx, plan),
+                            &auth,
+                        )?;
 
-                    let optimized = optimized
-                        .into_iter()
-                        // Convert into something we can execute
-                        .map(PipelinedProject::from)
-                        .collect::<Vec<_>>();
+                        let optimized = optimized
+                            .into_iter()
+                            // Convert into something we can execute
+                            .map(PipelinedProject::from)
+                            .collect::<Vec<_>>();
 
-                    // Execute the union and return the results
-                    execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
-                        .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
-                        .context("One-off queries are not allowed to modify the database")
-                })();
+                        // Execute the union and return the results
+                        execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
+                            .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
+                            .context("One-off queries are not allowed to modify the database")
+                    })();
 
-                let total_host_execution_duration = timer.elapsed().into();
-                let (message, metrics): (SerializableMessage, Option<ExecutionMetrics>) = match result {
-                    Ok((rows, metrics)) => (
-                        into_message(OneOffQueryResponseMessage {
-                            message_id,
-                            error: None,
-                            results: vec![rows],
-                            total_host_execution_duration,
-                        }),
-                        Some(metrics),
-                    ),
-                    Err(err) => (
-                        into_message(OneOffQueryResponseMessage {
-                            message_id,
-                            error: Some(format!("{}", err)),
-                            results: vec![],
-                            total_host_execution_duration,
-                        }),
-                        None,
-                    ),
-                };
+                    let total_host_execution_duration = timer.elapsed().into();
+                    let (message, metrics): (SerializableMessage, Option<ExecutionMetrics>) = match result {
+                        Ok((rows, metrics)) => (
+                            into_message(OneOffQueryResponseMessage {
+                                message_id,
+                                error: None,
+                                results: vec![rows],
+                                total_host_execution_duration,
+                            }),
+                            Some(metrics),
+                        ),
+                        Err(err) => (
+                            into_message(OneOffQueryResponseMessage {
+                                message_id,
+                                error: Some(format!("{}", err)),
+                                results: vec![],
+                                total_host_execution_duration,
+                            }),
+                            None,
+                        ),
+                    };
 
-                subscriptions.send_client_message(client, message, tx)?;
-                Ok::<Option<ExecutionMetrics>, anyhow::Error>(metrics)
+                    subscriptions.send_client_message(client, message, tx)?;
+                    Ok::<Option<ExecutionMetrics>, anyhow::Error>(metrics)
+                })
             })
-        })
-        .await?;
+            .await??;
 
         if let Some(metrics) = metrics {
             // Record the metrics for the one-off query
