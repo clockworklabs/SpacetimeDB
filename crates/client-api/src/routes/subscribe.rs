@@ -1143,7 +1143,7 @@ async fn ws_encode_task(
 
         for frame in frames {
             if outgoing_frames.send(frame).is_err() {
-                break;
+                return;
             }
         }
     }
