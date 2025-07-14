@@ -22,7 +22,7 @@ Open the project in your IDE of choice.
 
 ## Add the NuGet package for the C# SpacetimeDB SDK
 
-Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/spacetimedbsdk) using Visual Studio or Rider _NuGet Package Manager_ or via the .NET CLI:
+Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/SpacetimeDB.ClientSDK/) using Visual Studio or Rider _NuGet Package Manager_ or via the .NET CLI:
 
 ```bash
 dotnet add package SpacetimeDB.ClientSDK
@@ -141,7 +141,7 @@ To `Program.cs`, add:
 const string HOST = "http://localhost:3000";
 
 /// The database name we chose when we published our module.
-const string DBNAME = "quickstart-chat";
+const string DB_NAME = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
 DbConnection ConnectToDB()
@@ -149,7 +149,7 @@ DbConnection ConnectToDB()
     DbConnection? conn = null;
     conn = DbConnection.Builder()
         .WithUri(HOST)
-        .WithModuleName(DBNAME)
+        .WithModuleName(DB_NAME)
         .WithToken(AuthToken.Token)
         .OnConnect(OnConnected)
         .OnConnectError(OnConnectError)

@@ -7,7 +7,7 @@ Please note that TypeScript is supported as a client language only. **Before you
 - [Rust](/docs/modules/rust/quickstart)
 - [C#](/docs/modules/c-sharp/quickstart)
 
-By the end of this introduciton, you will have created a basic single page web app which connects to the `quickstart-chat` database created in the above module quickstart guides.
+By the end of this introduction, you will have created a basic single page web app which connects to the `quickstart-chat` database created in the above module quickstart guides.
 
 ## Project structure
 
@@ -387,7 +387,7 @@ module_bindings
 With `spacetime generate` we have generated TypeScript types derived from the types you specified in your module, which we can conveniently use in our client. We've placed these in the `module_bindings` folder. The main entry to the SpacetimeDB API is the `DbConnection`, a type which manages a connection to a remote database. Let's import it and a few other types into our `client/src/App.tsx`.
 
 ```tsx
-import { DbConnection, ErrorContext, EventContext, Message, User } from './module_bindings';
+import { DbConnection, type ErrorContext, type EventContext, Message, User } from './module_bindings';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 ```
 
@@ -404,18 +404,12 @@ Add the following to your `App` function, just below `const [newMessage, setNewM
 
   useEffect(() => {
     const subscribeToQueries = (conn: DbConnection, queries: string[]) => {
-      let count = 0;
-      for (const query of queries) {
-        conn
-          ?.subscriptionBuilder()
-          .onApplied(() => {
-            count++;
-            if (count === queries.length) {
-              console.log('SDK client cache initialized.');
-            }
-          })
-          .subscribe(query);
-      }
+      conn
+        ?.subscriptionBuilder()
+        .onApplied(() => {
+          console.log('SDK client cache initialized.');
+        })
+        .subscribe(queries);
     };
 
     const onConnect = (

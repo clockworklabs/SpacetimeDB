@@ -493,7 +493,7 @@ uint16_t _iter_start_filtered(
 
 [`bindings_sys::raw`]: https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/bindings-sys/src/lib.rs#L44-L215
 [`bindings`]: https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/bindings/src/lib.rs
-[module_ref]: /docs/languages/rust/rust-module-reference
-[module_quick_start]: /docs/languages/rust/rust-module-quick-start
+[module_ref]: /docs/modules/rust
+[module_quick_start]: /docs/modules/rust/quickstart
 [wasm_c_abi]: https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md
 [c_header]: #appendix-bindingsh

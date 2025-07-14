@@ -33,7 +33,7 @@ use spacetimedb::{client_visibility_filter, Filter};
 /// A client can only see their account
 #[client_visibility_filter]
 const ACCOUNT_FILTER: Filter = Filter::Sql(
-    "SELECT * FROM account WHERE identity = :sender"
+    "SELECT * FROM account WHERE account.identity = :sender"
 );
 ```
 :::
@@ -52,7 +52,7 @@ public partial class Module
     /// </summary>
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT * FROM account WHERE identity = :sender"
+        "SELECT * FROM account WHERE account.identity = :sender"
     );
 }
 ```
@@ -90,7 +90,7 @@ use spacetimedb::{client_visibility_filter, Filter};
 /// A client can only see their account
 #[client_visibility_filter]
 const ACCOUNT_FILTER: Filter = Filter::Sql(
-    "SELECT * FROM account WHERE identity = :sender"
+    "SELECT * FROM account WHERE account.identity = :sender"
 );
 
 /// An admin can see all accounts
@@ -113,7 +113,7 @@ public partial class Module
     /// </summary>
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT * FROM account WHERE identity = :sender"
+        "SELECT * FROM account WHERE account.identity = :sender"
     );
 
     /// <summary>
@@ -141,7 +141,7 @@ use spacetimedb::{client_visibility_filter, Filter};
 /// A client can only see their account
 #[client_visibility_filter]
 const ACCOUNT_FILTER: Filter = Filter::Sql(
-    "SELECT * FROM account WHERE identity = :sender"
+    "SELECT * FROM account WHERE account.identity = :sender"
 );
 
 /// An admin can see all accounts
@@ -170,7 +170,7 @@ public partial class Module
     /// </summary>
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT * FROM account WHERE identity = :sender"
+        "SELECT * FROM account WHERE account.identity = :sender"
     );
 
     /// <summary>

@@ -311,6 +311,6 @@ spacetime sql quickstart-chat "SELECT * FROM message"
 
 You've just set up your first database in SpacetimeDB! You can find the full code for this client [in the C# server module example](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/tree/master/examples~/quickstart-chat/server).
 
-The next step would be to create a client that interacts with this module. You can use any of SpacetimDB's supported client languages to do this. Take a look at the quick start guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart).
+The next step would be to create a client that interacts with this module. You can use any of SpacetimeDB's supported client languages to do this. Take a look at the quick start guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart).
 
 If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1).

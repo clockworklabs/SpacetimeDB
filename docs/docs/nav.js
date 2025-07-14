@@ -39,6 +39,7 @@ const nav = {
         page('SQL Reference', 'sql', 'sql/index.md'),
         section('Subscriptions'),
         page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
+        page('Subscription Semantics', 'subscriptions/semantics', 'subscriptions/semantics.md'),
         section('Row Level Security'),
         page('Row Level Security', 'rls', 'rls/index.md'),
         section('How To'),

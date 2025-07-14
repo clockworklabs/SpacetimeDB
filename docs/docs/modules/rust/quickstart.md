@@ -224,11 +224,15 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
 }
 ```
 
+## Start the Server
+
+If you haven't already started the SpacetimeDB server, run the `spacetime start` command in a _separate_ terminal and leave it running while you continue following along.
+
 ## Publish the module
 
 And that's all of our module code! We'll run `spacetime publish` to compile our module and publish it on SpacetimeDB. `spacetime publish` takes an optional name which will map to the database's unique `Identity`. Clients can connect either by name or by `Identity`, but names are much more user-friendly. If you'd like, come up with a unique name that contains only URL-safe characters (letters, numbers, hyphens and underscores), and fill it in where we've written `quickstart-chat`.
 
-From the `quickstart-chat` directory, run:
+From the `quickstart-chat` directory, run in another tab:
 
 ```bash
 spacetime publish --project-path server quickstart-chat
@@ -239,7 +243,7 @@ spacetime publish --project-path server quickstart-chat
 You can use the CLI (command line interface) to run reducers. The arguments to the reducer are passed in JSON format.
 
 ```bash
-spacetime call quickstart-chat send_message 'Hello, World!'
+spacetime call quickstart-chat send_message "Hello, World!"
 ```
 
 Once we've called our `send_message` reducer, we can check to make sure it ran by running the `logs` command.

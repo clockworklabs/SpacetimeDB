@@ -469,6 +469,9 @@ Both types of identifiers are case sensitive.
 Use quoted identifiers to avoid conflict with reserved SQL keywords,
 or if your table or column contains non-alphanumeric characters.
 
+Because SpacetimeDB uses a postgres compatible parser, identifiers which are
+reserved in postgres are automatically reserved in Spacetime SQL. See [SQL Key Words in the PostgreSQL documentation](https://www.postgresql.org/docs/current/sql-keywords-appendix.html).
+
 ### Example
 
 ```sql
@@ -640,9 +643,9 @@ column
 ```
 
 
-[sdk]:       /docs/sdks/rust/index.md#subscribe-to-queries
-[http]:      /docs/http/database#databasesqlname_or_address-post
-[cli]:       /docs/cli-reference.md#spacetime-sql
+[sdk]:       /docs/sdks/rust#subscribe-to-queries
+[http]:      /docs/http/database#post-v1databasename_or_identitysql
+[cli]:       /docs/cli-reference#spacetime-sql
 
-[Identity]: /docs/index.md#identity
-[ConnectionId]:  /docs/index.md#connectionid
+[Identity]: /docs#identity
+[ConnectionId]:  /docs#connectionid

@@ -23,7 +23,7 @@ The SpacetimeDB client for C# contains all the tools you need to build native cl
 If you would like to create a console application using .NET, you can create a new project using `dotnet new console` and add the SpacetimeDB SDK to your dependencies:
 
 ```bash
-dotnet add package spacetimedbsdk
+dotnet add package SpacetimeDB.ClientSDK
 ```
 
 (See also the [CSharp Quickstart](/docs/modules/c-sharp/quickstart) for an in-depth example of such a console application.)
