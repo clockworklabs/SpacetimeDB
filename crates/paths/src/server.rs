@@ -220,6 +220,10 @@ impl SnapshotDirPath {
         let invalid_path = self.0.with_extension("invalid_snapshot");
         fs::rename(self, invalid_path)
     }
+
+    pub fn tx_offset(&self) -> Option<u64> {
+        self.0.file_name()?.to_str()?.split(".").next()?.parse().ok()
+    }
 }
 
 path_type! {
@@ -295,6 +299,19 @@ mod tests {
         drop(lock);
         // Make sure it can be acquired now.
         sdd.pid_file()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_snapshot_dir_path_tx_offset() -> Result<()> {
+        let tempdir = TempDir::new()?;
+        let sdd = ServerDataDir(tempdir.path().to_path_buf());
+        let snapshots_path = sdd.replica(1).snapshots();
+        let tx_offset = 1234567890;
+        let snapshot_dir = snapshots_path.snapshot_dir(tx_offset);
+
+        assert_eq!(snapshot_dir.tx_offset(), Some(tx_offset));
+
         Ok(())
     }
 }
