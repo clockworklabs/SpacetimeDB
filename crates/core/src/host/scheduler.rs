@@ -15,17 +15,17 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio_util::time::delay_queue::{self, DelayQueue, Expired};
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::system_tables::{StFields, StScheduledFields, ST_SCHEDULED_ID};
-use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::RelationalDB;
-use crate::execution_context::Workload;
 
 use super::module_host::ModuleEvent;
 use super::module_host::ModuleFunctionCall;
 use super::module_host::{CallReducerParams, WeakModuleHost};
 use super::module_host::{DatabaseUpdate, EventStatus};
 use super::{ModuleHost, ReducerArgs, ReducerCallError};
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::system_tables::{StFields, StScheduledFields, ST_SCHEDULED_ID};
+use spacetimedb_datastore::traits::IsolationLevel;
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ScheduledReducerId {
