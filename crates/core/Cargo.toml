@@ -140,6 +140,7 @@ perfmap = []
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
+spacetimedb-datastore = { path = "../datastore/", features = ["test"] }
 
 criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
