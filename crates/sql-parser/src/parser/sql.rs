@@ -202,7 +202,7 @@ fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
         } if joins.is_empty() && with_hints.is_empty() && partitions.is_empty() => Ok(SqlAst::Update(SqlUpdate {
             table: parse_ident(name)?,
             assignments: parse_assignments(assignments)?,
-            filter: parse_expr_opt(selection, &mut 0)?,
+            filter: parse_expr_opt(selection)?,
         })),
         Statement::Delete {
             tables,
@@ -297,7 +297,7 @@ fn parse_delete(mut from: Vec<TableWithJoins>, selection: Option<Expr>) -> SqlPa
                 joins,
             } if joins.is_empty() && with_hints.is_empty() && partitions.is_empty() => Ok(SqlDelete {
                 table: parse_ident(name)?,
-                filter: parse_expr_opt(selection, &mut 0)?,
+                filter: parse_expr_opt(selection)?,
             }),
             t => Err(SqlUnsupported::DeleteTable(t).into()),
         }
@@ -395,7 +395,7 @@ fn parse_select(select: Select, limit: Option<Box<str>>) -> SqlParseResult<SqlSe
             Ok(SqlSelect {
                 project: parse_projection(projection)?,
                 from: SqlParser::parse_from(from)?,
-                filter: parse_expr_opt(selection, &mut 0)?,
+                filter: parse_expr_opt(selection)?,
                 limit,
             })
         }

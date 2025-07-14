@@ -111,7 +111,7 @@ impl RelParser for SubParser {
 fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlSelect> {
     match expr {
         SetExpr::Select(select) => parse_select(*select).map(SqlSelect::qualify_vars),
-        _ => Err(SqlUnsupported::SetOp(expr).into()),
+        _ => Err(SqlUnsupported::SetOp(Box::new(expr)).into()),
     }
 }
 
@@ -142,7 +142,7 @@ fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
         {
             Ok(SqlSelect {
                 from: SubParser::parse_from(from)?,
-                filter: parse_expr_opt(selection, &mut 0)?,
+                filter: parse_expr_opt(selection)?,
                 project: parse_projection(projection)?,
             })
         }

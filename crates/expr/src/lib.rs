@@ -31,7 +31,7 @@ pub mod statement;
 pub(crate) fn type_select(input: RelExpr, expr: SqlExpr, vars: &Relvars) -> TypingResult<RelExpr> {
     Ok(RelExpr::Select(
         Box::new(input),
-        type_expr(vars, expr, Some(&AlgebraicType::Bool), &mut 0)?,
+        type_expr(vars, expr, Some(&AlgebraicType::Bool))?,
     ))
 }
 
@@ -69,7 +69,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
                     return Err(DuplicateName(alias.into_string()).into());
                 }
 
-                if let Expr::Field(p) = type_expr(vars, expr.into(), None, &mut 0)? {
+                if let Expr::Field(p) = type_expr(vars, expr.into(), None)? {
                     projections.push((alias, p));
                 }
             }
@@ -79,13 +79,12 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
     }
 }
 
-/// Type check and lower a [SqlExpr] into a logical [Expr].
-pub(crate) fn type_expr(
-    vars: &Relvars,
-    expr: SqlExpr,
-    expected: Option<&AlgebraicType>,
-    depth: &mut usize,
-) -> TypingResult<Expr> {
+// These types determine the size of each stack frame during type checking.
+// Changing their sizes will require updating the recursion limit to avoid stack overflows.
+const _: () = assert!(size_of::<TypingResult<Expr>>() == 64);
+const _: () = assert!(size_of::<SqlExpr>() == 40);
+
+fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, depth: usize) -> TypingResult<Expr> {
     recursion::guard(depth, recursion::MAX_RECURSION_TYP_EXPR, "expr::type_expr")?;
 
     match (expr, expected) {
@@ -125,21 +124,21 @@ pub(crate) fn type_expr(
             }))
         }
         (SqlExpr::Log(a, b, op), None | Some(AlgebraicType::Bool)) => {
-            let a = type_expr(vars, *a, Some(&AlgebraicType::Bool), depth)?;
-            let b = type_expr(vars, *b, Some(&AlgebraicType::Bool), depth)?;
+            let a = _type_expr(vars, *a, Some(&AlgebraicType::Bool), depth + 1)?;
+            let b = _type_expr(vars, *b, Some(&AlgebraicType::Bool), depth + 1)?;
             Ok(Expr::LogOp(op, Box::new(a), Box::new(b)))
         }
         (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) if matches!(&*a, SqlExpr::Lit(_)) => {
-            let b = type_expr(vars, *b, None, depth)?;
-            let a = type_expr(vars, *a, Some(b.ty()), depth)?;
+            let b = _type_expr(vars, *b, None, depth + 1)?;
+            let a = _type_expr(vars, *a, Some(b.ty()), depth + 1)?;
             if !op_supports_type(op, a.ty()) {
                 return Err(InvalidOp::new(op, a.ty()).into());
             }
             Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
         }
         (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) => {
-            let a = type_expr(vars, *a, None, depth)?;
-            let b = type_expr(vars, *b, Some(a.ty()), depth)?;
+            let a = _type_expr(vars, *a, None, depth + 1)?;
+            let b = _type_expr(vars, *b, Some(a.ty()), depth + 1)?;
             if !op_supports_type(op, a.ty()) {
                 return Err(InvalidOp::new(op, a.ty()).into());
             }
@@ -150,6 +149,11 @@ pub(crate) fn type_expr(
         // Unqualified names are qualified and parameters are resolved before type checking.
         (SqlExpr::Var(_) | SqlExpr::Param(_), _) => unreachable!(),
     }
+}
+
+/// Type check and lower a [SqlExpr] into a logical [Expr].
+pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>) -> TypingResult<Expr> {
+    _type_expr(vars, expr, expected, 0)
 }
 
 /// Is this type compatible with this binary operator?
