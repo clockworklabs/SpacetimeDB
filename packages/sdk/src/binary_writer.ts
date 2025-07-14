@@ -1,3 +1,5 @@
+import { fromByteArray } from 'base64-js';
+
 export default class BinaryWriter {
   #buffer: Uint8Array;
   #view: DataView;
@@ -17,6 +19,10 @@ export default class BinaryWriter {
     newBuffer.set(this.#buffer);
     this.#buffer = newBuffer;
     this.#view = new DataView(this.#buffer.buffer);
+  }
+
+  toBase64(): string {
+    return fromByteArray(this.#buffer.subarray(0, this.#offset));
   }
 
   getBuffer(): Uint8Array {
