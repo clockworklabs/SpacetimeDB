@@ -5340,6 +5340,7 @@ dependencies = [
  "bytes",
  "bytestring",
  "chrono",
+ "crossbeam-queue",
  "derive_more",
  "email_address",
  "futures",

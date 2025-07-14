@@ -1,5 +1,5 @@
 use std::fmt::Display;
-use std::future::{poll_fn, Future};
+use std::future::Future;
 use std::num::NonZeroUsize;
 use std::panic;
 use std::pin::{pin, Pin};
@@ -15,14 +15,16 @@ use axum::Extension;
 use axum_extra::TypedHeader;
 use bytes::Bytes;
 use bytestring::ByteString;
+use crossbeam_queue::ArrayQueue;
 use derive_more::From;
 use futures::{pin_mut, Sink, SinkExt, Stream, StreamExt};
 use http::{HeaderValue, StatusCode};
-use prometheus::IntGauge;
+use prometheus::{Histogram, IntGauge};
 use scopeguard::{defer, ScopeGuard};
 use serde::Deserialize;
 use spacetimedb::client::messages::{
-    serialize, IdentityTokenMessage, SerializableMessage, SerializeBuffer, SwitchedServerMessage, ToProtocol,
+    serialize, IdentityTokenMessage, InUseSerializeBuffer, SerializableMessage, SerializeBuffer, SwitchedServerMessage,
+    ToProtocol,
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageExecutionError, MessageHandleError,
@@ -705,6 +707,7 @@ fn ws_recv_loop(
 
                     if !state.closed() {
                         yield ClientMessage::from_message(m);
+                        continue;
                     }
                     // If closed, keep polling until either:
                     //
@@ -927,22 +930,51 @@ async fn ws_send_loop(
     mut messages: MeteredReceiver<SerializableMessage>,
     mut unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
 ) {
-    let mut messages_buf = Vec::with_capacity(32);
-    let mut serialize_buf = SerializeBuffer::new(config);
+    // The number of frames we'll `feed` to the `ws` sink in one iteration
+    // of the `select!` loop.
+    //
+    // This batching is done to allow control messages appearing on `unordered`
+    // to be interleaved with the sending of large messages split across some
+    // number of frames.
+    //
+    // This allows clients with slow connections to respond to `Ping`s, and
+    // avoid timing out while receiving large messages.
+    //
+    // The default frame size is 4KiB, hence we write in batches of 32KiB.
+    const FRAME_BATCH_SIZE: usize = 8;
+    let mut frames_batch = Vec::with_capacity(FRAME_BATCH_SIZE);
+    let (frames_tx, mut frames_rx) = mpsc::unbounded_channel();
 
-    loop {
+    let (encode_tx, encode_rx) = mpsc::unbounded_channel();
+    // Spawn the encode task.
+    //
+    // NOTE: It is not technically required to introduce parallelism for encoding.
+    // We spawn mainly to avoid having to manually poll the `ws_encode_task`
+    // future in the `select!` loop below, which would be quite error prone.
+    tokio::spawn(ws_encode_task(
+        SendMetrics::new(state.database),
+        config,
+        encode_rx,
+        frames_tx,
+    ));
+
+    'outer: loop {
         let closed = state.closed();
 
         tokio::select! {
-            // `biased` towards the unordered queue,
-            // which may initiate a connection shutdown.
+            // `biased` because we want to:
+            //
+            // - give control messages precedence
+            // - and flush outstanding messages
+            //   before taking on more encoding work
             biased;
 
+            // Check for control messages or execution errors.
             maybe_msg = unordered.recv() => {
                 let Some(msg) = maybe_msg else {
                     break;
                 };
-                // We shall not sent more data after a close frame,
+                // We shall not send more data after a close frame,
                 // but keep polling `unordered` so that `ws_client_actor` keeps
                 // waiting for an acknowledgement from the client,
                 // even if it spuriously initiates another close itself.
@@ -951,18 +983,33 @@ async fn ws_send_loop(
                 }
                 match msg {
                     UnorderedWsMessage::Close(close_frame) => {
+                        log::trace!("intiating close");
+                        state.close();
+                        // We won't be polling `messages` anymore,
+                        // so let senders know.
+                        messages.close();
+
+                        // Send outstanding frames until one that has the FIN
+                        // bit set. Ensures the client won't receive partial
+                        // messages before we shut down.
+                        log::trace!("draining outgoing frames");
+                        while let Some(frame) = frames_rx.recv().await {
+                            let eof = frame.header().is_final;
+                            if let Err(e) = ws.feed(WsMessage::Frame(frame)).await {
+                                log::warn!("error sending frame: {e:#}");
+                                break 'outer;
+                            }
+
+                            if eof {
+                                break;
+                            }
+                        }
+                        // Then send the close frame.
                         log::trace!("sending close frame");
                         if let Err(e) = ws.send(WsMessage::Close(Some(close_frame))).await {
                             log::warn!("error sending close frame: {e:#}");
                             break;
                         }
-                        // NOTE: It's ok to not update the state if we fail to
-                        // send the close frame, because we assume that the main
-                        // loop will exit when this future terminates.
-                        state.close();
-                        // We won't be polling `messages` anymore,
-                        // so let senders know.
-                        messages.close();
                     },
                     UnorderedWsMessage::Ping(bytes) => {
                         log::trace!("sending ping");
@@ -972,47 +1019,39 @@ async fn ws_send_loop(
                         }
                     },
                     UnorderedWsMessage::Error(err) => {
-                        log::trace!("sending error result");
-                        let (msg_alloc, res) = send_message(
-                            &state.database,
-                            config,
-                            serialize_buf,
-                            None,
-                            &mut ws,
-                            err
-                        ).await;
-                        serialize_buf = msg_alloc;
-
-                        if let Err(e) = res {
-                            log::warn!("websocket send error: {e}");
-                            break;
-                        }
+                        log::trace!("encoding execution error");
+                        encode_tx.send(OutboundMessage::Error(err)).unwrap();
                     },
                 }
             },
 
-            n = messages.recv_many(&mut messages_buf, 32), if !closed => {
-                if n == 0 {
-                    continue;
-                }
-                log::trace!("sending {n} outgoing messages");
-                for msg in messages_buf.drain(..n) {
-                    let (msg_alloc, res) = send_message(
-                        &state.database,
-                        config,
-                        serialize_buf,
-                        msg.workload().zip(msg.num_rows()),
-                        &mut ws,
-                        msg
-                    ).await;
-                    serialize_buf = msg_alloc;
-
-                    if let Err(e) = res {
-                        log::warn!("websocket send error: {e}");
-                        return;
+            // Send a batch of frames.
+            //
+            // Branch is disabled if we already sent a close frame.
+            //
+            // TODO: If the client sent us a close frame and we're in the middle
+            // of a large message, we may not send them the whole message.
+            // If that turns out to be a problem, we'll need to keep track of
+            // which side initiated the close handshake.
+            // Unsure if `tungstenite` will support us here, i.e. allows to keep
+            // sending when the other side initiated the close.
+            n = frames_rx.recv_many(&mut frames_batch, FRAME_BATCH_SIZE), if !closed => {
+                log::trace!("sending batch of {n} frames");
+                for frame in frames_batch.drain(..n) {
+                    if let Err(e) = ws.feed(WsMessage::Frame(frame)).await {
+                        log::warn!("error sending frame: {e:#}");
+                        break;
                     }
                 }
             },
+
+            // Take on more work.
+            //
+            // Branch is disabled if we already sent a close frame.
+            Some(message) = messages.recv(), if !closed => {
+                encode_tx.send(OutboundMessage::Message(message)).unwrap();
+            },
+
         }
 
         if let Err(e) = ws.flush().await {
@@ -1022,88 +1061,162 @@ async fn ws_send_loop(
     }
 }
 
-/// Serialize and potentially compress `message`, and feed it to the `ws` sink.
-async fn send_message<S: Sink<WsMessage> + Unpin>(
-    database_identity: &Identity,
+enum OutboundMessage {
+    Error(MessageExecutionError),
+    Message(SerializableMessage),
+}
+
+/// Task that reads [`OutboundMessage`]s from `messages`, encodes them via
+/// [`ws_encode_message`], and sends the resuling [`Frame`]s to `outgoing_frames`.
+///
+/// Meant to be [`tokio::spawn`]ed.
+///
+/// The function also takes care of reusing serialization buffers and reporting
+/// metrics via [`SendMetrics`]..
+async fn ws_encode_task(
+    metrics: SendMetrics,
     config: ClientConfig,
-    serialize_buf: SerializeBuffer,
-    metrics_metadata: Option<(WorkloadType, usize)>,
-    ws: &mut S,
+    mut messages: mpsc::UnboundedReceiver<OutboundMessage>,
+    outgoing_frames: mpsc::UnboundedSender<Frame>,
+) {
+    // Serialize buffers can be reclaimed once all frames of a message are
+    // copied to the wire. Since we don't know when that will happen, we prepare
+    // for a few messages to be in-flight, i.e. encoded but not yet sent.
+    const BUF_POOL_CAPACITY: usize = 16;
+    let buf_pool = ArrayQueue::new(BUF_POOL_CAPACITY);
+    let mut in_use_bufs: Vec<ScopeGuard<InUseSerializeBuffer, _>> = Vec::with_capacity(BUF_POOL_CAPACITY);
+
+    while let Some(message) = messages.recv().await {
+        // Drop serialize buffers with no external referent,
+        // returning them to the pool.
+        in_use_bufs.retain(|in_use| !in_use.is_unique());
+        // Get a serialize buffer from the pool,
+        // or create a fresh one.
+        let buf = buf_pool.pop().unwrap_or_else(|| SerializeBuffer::new(config));
+
+        let (workload, num_rows, stats, in_use_buf, frames) = match message {
+            OutboundMessage::Error(message) => {
+                let (stats, in_use, frames) = ws_encode_message(config, buf, message, false).await;
+                (None, None, stats, in_use, frames)
+            }
+            OutboundMessage::Message(message) => {
+                let workload = message.workload();
+                let num_rows = message.num_rows();
+                let is_large = num_rows.is_some_and(|n| n > 1024);
+
+                let (stats, in_use, frames) = ws_encode_message(config, buf, message, is_large).await;
+
+                (workload, num_rows, stats, in_use, frames)
+            }
+        };
+
+        metrics.report(workload, num_rows, stats);
+        if in_use_bufs.len() <= BUF_POOL_CAPACITY {
+            in_use_bufs.push(scopeguard::guard(in_use_buf, |in_use| {
+                let buf = in_use.try_reclaim().expect("buffer should be unique");
+                let _ = buf_pool.push(buf);
+            }));
+        }
+
+        for frame in frames {
+            if outgoing_frames.send(frame).is_err() {
+                break;
+            }
+        }
+    }
+}
+
+/// Some stats about serialization and compression.
+///
+/// Returned by [`ws_encode_message`].
+struct EncodeMetrics {
+    /// Time it took to serialize and (potentially) compress a message.
+    /// Does not include scheduling overhead.
+    timing: Duration,
+    /// Length in bytes of the serialized and (potentially) compressed message.
+    encoded_len: usize,
+}
+
+/// Encodes `message` into zero or more WebSocket [`Frame`]s.
+///
+/// The `message` is first [`serialize`]d. Depending on the serialized size,
+/// client `config` and format (see [`SwitchedServerMessage`]), compression may
+/// be applied to the serialized bytes.
+///
+/// If `is_large_message` is true, serialization and compression if performed
+/// on a `rayon` thread. The value should be chosen s.t. the overhead of
+/// scheduling is likely to be lower than the overhead of compression itself.
+///
+/// The resulting bytes are then split into [`Frame`]s of at most 4096 bytes
+/// of payload each, according to the rules laid out in [RFC6455], Section
+/// 5.4 Fragmentation.
+///
+/// Returns [`EncodeMetrics`], the [`InUseSerializeBuffer`] that was passed in
+/// as `buf` for later reuse, and the [`Frame`]s.
+///
+/// NOTE: When sending, the frames of a single message MUST NOT be interleaved
+/// with the frames of another message, except for control frames (`Close`,
+/// `Ping`, `Pong`).
+///
+/// [RFC6455]: https://datatracker.ietf.org/doc/html/rfc6455#section-5.4
+async fn ws_encode_message(
+    config: ClientConfig,
+    buf: SerializeBuffer,
     message: impl ToProtocol<Encoded = SwitchedServerMessage> + Send + 'static,
-) -> (SerializeBuffer, Result<(), S::Error>) {
-    let (workload, num_rows) = metrics_metadata.unzip();
-    // Move large messages to a rayon thread,
-    // as serialization and compression can take a long time.
-    // The threshold of 1024 rows is arbitrary, and may need to be refined.
+    is_large_message: bool,
+) -> (EncodeMetrics, InUseSerializeBuffer, Vec<Frame>) {
+    const FRAGMENT_SIZE: usize = 4096;
+
     let serialize_and_compress = |serialize_buf, message, config| {
         let start = Instant::now();
         let (msg_alloc, msg_data) = serialize(serialize_buf, message, config);
         (start.elapsed(), msg_alloc, msg_data)
     };
-    let (timing, msg_alloc, msg_data) = if num_rows.is_some_and(|n| n > 1024) {
-        spawn_rayon(move || serialize_and_compress(serialize_buf, message, config)).await
+    let (timing, msg_alloc, msg_data) = if is_large_message {
+        spawn_rayon(move || serialize_and_compress(buf, message, config)).await
     } else {
-        serialize_and_compress(serialize_buf, message, config)
+        serialize_and_compress(buf, message, config)
     };
-    report_ws_sent_metrics(database_identity, workload, num_rows, timing, &msg_data);
 
-    let res = async {
-        // EXPERIMENT: Send fragmented messages (RFC 6455, Section 5.4).
-        let (data, ty) = match datamsg_to_wsmsg(msg_data) {
-            WsMessage::Text(text) => (text.into(), Data::Text),
-            WsMessage::Binary(bin) => (bin, Data::Binary),
-            _ => unreachable!(),
-        };
+    let metrics = EncodeMetrics {
+        timing,
+        encoded_len: msg_data.len(),
+    };
 
-        const FRAGMENT_SIZE: usize = 4096;
+    let (data, ty) = match msg_data {
+        DataMessage::Text(text) => (bytestring_to_utf8bytes(text).into(), Data::Text),
+        DataMessage::Binary(bin) => (bin, Data::Binary),
+    };
 
-        let total_len = data.len();
-
-        let mut frames = Vec::with_capacity((total_len / FRAGMENT_SIZE) + 1);
-        let mut offset = 0;
-        while offset < total_len {
-            let end = (offset + FRAGMENT_SIZE).min(total_len);
-            let chunk = data.slice(offset..end);
-            frames.push(Frame::message(chunk, OpCode::Data(Data::Continue), false));
-            offset = end;
-        }
-
-        match frames.as_mut_slice() {
-            [] => {}
-            [single] => {
-                let hdr = single.header_mut();
-                hdr.is_final = true;
-                hdr.opcode = OpCode::Data(ty);
-            }
-            [first, .., last] => {
-                let hdr = first.header_mut();
-                hdr.is_final = false;
-                hdr.opcode = OpCode::Data(ty);
-
-                let hdr = last.header_mut();
-                hdr.is_final = true;
-                hdr.opcode = OpCode::Data(Data::Continue);
-            }
-        }
-
-        log::trace!("sending message in {} frames", frames.len());
-        for frame in frames {
-            ws.feed(WsMessage::Frame(frame)).await?;
-        }
-        // To reclaim the `msg_alloc` memory, we need `SplitSink` to push down
-        // its item slot to the inner sink, which will copy the `Bytes` and
-        // drop the reference.
-        // We don't want to flush the inner sink just yet, as we might be
-        // writing many messages.
-        // `SplitSink::poll_ready` does what we want.
-        poll_fn(|cx| ws.poll_ready_unpin(cx)).await
+    let total_len = data.len();
+    let mut frames = Vec::with_capacity((total_len / FRAGMENT_SIZE) + total_len % FRAGMENT_SIZE);
+    let mut offset = 0;
+    while offset < total_len {
+        let end = (offset + FRAGMENT_SIZE).min(total_len);
+        let chunk = data.slice(offset..end);
+        frames.push(Frame::message(chunk, OpCode::Data(Data::Continue), false));
+        offset = end;
     }
-    .await;
-    // Reclaim can fail if we didn't succeed pushing down the data to the
-    // websocket. We must return a buffer, though, so create a fresh one.
-    let buf = msg_alloc.try_reclaim().unwrap_or_else(|| SerializeBuffer::new(config));
 
-    (buf, res)
+    match frames.as_mut_slice() {
+        [] => {}
+        [single] => {
+            let hdr = single.header_mut();
+            hdr.is_final = true;
+            hdr.opcode = OpCode::Data(ty);
+        }
+        [first, .., last] => {
+            let hdr = first.header_mut();
+            hdr.is_final = false;
+            hdr.opcode = OpCode::Data(ty);
+
+            let hdr = last.header_mut();
+            hdr.is_final = true;
+            hdr.opcode = OpCode::Data(Data::Continue);
+        }
+    }
+
+    (metrics, msg_alloc, frames)
 }
 
 #[derive(Debug)]
@@ -1128,37 +1241,34 @@ impl ClientMessage {
     }
 }
 
-/// Report metrics on sent rows and message sizes to a websocket client.
-fn report_ws_sent_metrics(
-    addr: &Identity,
-    workload: Option<WorkloadType>,
-    num_rows: Option<usize>,
-    serialize_duration: Duration,
-    msg_ws: &DataMessage,
-) {
-    // These metrics should be updated together,
-    // or not at all.
-    if let (Some(workload), Some(num_rows)) = (workload, num_rows) {
-        WORKER_METRICS
-            .websocket_sent_num_rows
-            .with_label_values(addr, &workload)
-            .observe(num_rows as f64);
-        WORKER_METRICS
-            .websocket_sent_msg_size
-            .with_label_values(addr, &workload)
-            .observe(msg_ws.len() as f64);
-    }
-
-    WORKER_METRICS
-        .websocket_serialize_secs
-        .with_label_values(addr)
-        .observe(serialize_duration.as_secs_f64());
+struct SendMetrics {
+    database: Identity,
+    encode_timing: Histogram,
 }
 
-fn datamsg_to_wsmsg(msg: DataMessage) -> WsMessage {
-    match msg {
-        DataMessage::Text(text) => WsMessage::Text(bytestring_to_utf8bytes(text)),
-        DataMessage::Binary(bin) => WsMessage::Binary(bin),
+impl SendMetrics {
+    fn new(database: Identity) -> Self {
+        Self {
+            encode_timing: WORKER_METRICS.websocket_serialize_secs.with_label_values(&database),
+            database,
+        }
+    }
+
+    fn report(&self, workload: Option<WorkloadType>, num_rows: Option<usize>, encode: EncodeMetrics) {
+        self.encode_timing.observe(encode.timing.as_secs_f64());
+
+        // These metrics should be updated together,
+        // or not at all.
+        if let (Some(workload), Some(num_rows)) = (workload, num_rows) {
+            WORKER_METRICS
+                .websocket_sent_num_rows
+                .with_label_values(&self.database, &workload)
+                .observe(num_rows as f64);
+            WORKER_METRICS
+                .websocket_sent_msg_size
+                .with_label_values(&self.database, &workload)
+                .observe(encode.encoded_len as f64);
+        }
     }
 }
 
@@ -1174,7 +1284,7 @@ fn bytestring_to_utf8bytes(s: ByteString) -> Utf8Bytes {
 #[cfg(test)]
 mod tests {
     use std::{
-        future::Future,
+        future::{poll_fn, Future},
         pin::Pin,
         sync::atomic::AtomicUsize,
         task::{Context, Poll},
