@@ -938,7 +938,7 @@ async fn ws_send_loop(
     // number of frames.
     //
     // This allows clients with slow connections to respond to `Ping`s, and
-    // avoid timing out while receiving large messages.
+    // avoid timing out, while receiving large messages.
     //
     // The default frame size is 4KiB, hence we write in batches of 32KiB.
     const FRAME_BATCH_SIZE: usize = 8;
@@ -1020,7 +1020,11 @@ async fn ws_send_loop(
                     },
                     UnorderedWsMessage::Error(err) => {
                         log::trace!("encoding execution error");
-                        encode_tx.send(OutboundMessage::Error(err)).unwrap();
+                        encode_tx
+                            .send(OutboundMessage::Error(err))
+                            // `ws_encode_task` shouldn't terminate until
+                            // `encode_tx` is dropped, except by panicking.
+                            .expect("encode task panicked");
                     },
                 }
             },
@@ -1049,7 +1053,11 @@ async fn ws_send_loop(
             //
             // Branch is disabled if we already sent a close frame.
             Some(message) = messages.recv(), if !closed => {
-                encode_tx.send(OutboundMessage::Message(message)).unwrap();
+                encode_tx
+                    .send(OutboundMessage::Message(message))
+                    // `ws_encode_task` shouldn't terminate until
+                    // `encode_tx` is dropped, except by panicking.
+                    .expect("encode task panicked");
             },
 
         }
