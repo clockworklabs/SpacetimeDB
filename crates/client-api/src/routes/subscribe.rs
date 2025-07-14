@@ -1143,9 +1143,9 @@ struct EncodeMetrics {
 /// client `config` and format (see [`SwitchedServerMessage`]), compression may
 /// be applied to the serialized bytes.
 ///
-/// If `is_large_message` is true, serialization and compression if performed
+/// If `is_large_message` is true, serialization and compression is performed
 /// on a `rayon` thread. The value should be chosen s.t. the overhead of
-/// scheduling is likely to be lower than the overhead of compression itself.
+/// scheduling is expected to be lower than the overhead of compression itself.
 ///
 /// The resulting bytes are then split into [`Frame`]s of at most 4096 bytes
 /// of payload each, according to the rules laid out in [RFC6455], Section
