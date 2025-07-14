@@ -482,12 +482,12 @@ public static partial class Module {
     [Reducer]
     void Demo(ReducerContext ctx) {
         var idIndex = ctx.Db.user.Id;
-        var exampleUser = idIndex.find(357).unwrap();
-        exampleUser.dog_count += 5;
-        idIndex.update(exampleUser);
+        var exampleUser = idIndex.Find(357).Value;
+        exampleUser.DogCount += 5;
+        idIndex.Update(exampleUser);
 
         var usernameIndex = ctx.Db.user.Username;
-        usernameIndex.delete("Evil Bob");
+        usernameIndex.Delete("Evil Bob");
     }
 }
 ```
