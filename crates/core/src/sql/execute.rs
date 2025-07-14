@@ -1126,9 +1126,11 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    /// Test we are protected against recursion when:
-    /// 1. The query is too large
+    /// Test we are protected against stack overflows when:
+    /// 1. The query is too large (too many characters)
     /// 2. The AST is too deep
+    ///
+    /// Exercise the limit [`recursion::MAX_RECURSION_EXPR`]
     #[test]
     fn test_large_query_no_panic() -> ResultTest<()> {
         let db = TestDB::durable()?;
@@ -1143,13 +1145,11 @@ pub(crate) mod tests {
 
         let build_query = |total| {
             let mut sql = "select * from test where ".to_string();
-            for x in 0..total {
-                for y in 0..total {
-                    let fragment = format!("((x = {x}) and (y = {y})) or ");
-                    sql.push_str(&fragment);
-                }
+            for x in 1..total {
+                let fragment = format!("x = {x} or ");
+                sql.push_str(&fragment.repeat((total - 1) as usize));
             }
-            sql.push_str("((x = 1000) and (y = 1000))");
+            sql.push_str("(y = 0)");
             sql
         };
         let run = |db: &RelationalDB, sep: char, sql_text: &str| {
@@ -1161,16 +1161,15 @@ pub(crate) mod tests {
             Err("SQL query exceeds maximum allowed length".to_string())
         );
 
-        // Exercise the limit [recursion::MAX_RECURSION_EXPR] && [recursion::MAX_RECURSION_TYP_EXPR]
-        let sql = build_query(8);
+        let sql = build_query(41); // This causes stack overflow without the limit
         assert_eq!(run(&db, ',', &sql), Err("Recursion limit exceeded".to_string()));
 
-        let sql = build_query(7);
+        let sql = build_query(40); // The max we can with the current limit
         assert!(run(&db, ',', &sql).is_ok(), "Expected query to run without panic");
 
         // Check no overflow with lot of joins
         let mut sql = "SELECT test.* FROM test ".to_string();
-        // We could pust up to 700 joins without overflow as long we don't have any conditions,
+        // We could push up to 700 joins without overflow as long we don't have any conditions,
         // but here execution become too slow.
         // TODO: Move this test to the `Plan`
         for i in 0..200 {
