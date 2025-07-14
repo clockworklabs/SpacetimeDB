@@ -926,10 +926,28 @@ enum UnorderedWsMessage {
 async fn ws_send_loop(
     state: Arc<ActorState>,
     config: ClientConfig,
-    mut ws: impl Sink<WsMessage, Error: Display> + Unpin,
-    mut messages: MeteredReceiver<SerializableMessage>,
-    mut unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
+    ws: impl Sink<WsMessage, Error: Display> + Unpin,
+    messages: MeteredReceiver<SerializableMessage>,
+    unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
 ) {
+    let metrics = SendMetrics::new(state.database);
+    ws_send_loop_inner(state, ws, messages, unordered, |encode_rx, frames_tx| {
+        ws_encode_task(metrics, config, encode_rx, frames_tx)
+    })
+    .await
+}
+
+async fn ws_send_loop_inner<T, U, Encoder>(
+    state: Arc<ActorState>,
+    mut ws: impl Sink<WsMessage, Error: Display> + Unpin,
+    mut messages: MeteredReceiver<T>,
+    mut unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
+    encoder: impl FnOnce(mpsc::UnboundedReceiver<U>, mpsc::UnboundedSender<Frame>) -> Encoder,
+) where
+    T: Into<U>,
+    U: From<MessageExecutionError>,
+    Encoder: Future<Output = ()> + Send + 'static,
+{
     // The number of frames we'll `feed` to the `ws` sink in one iteration
     // of the `select!` loop.
     //
@@ -948,15 +966,11 @@ async fn ws_send_loop(
     let (encode_tx, encode_rx) = mpsc::unbounded_channel();
     // Spawn the encode task.
     //
-    // NOTE: It is not technically required to introduce parallelism for encoding.
-    // We spawn mainly to avoid having to manually poll the `ws_encode_task`
-    // future in the `select!` loop below, which would be quite error prone.
-    tokio::spawn(ws_encode_task(
-        SendMetrics::new(state.database),
-        config,
-        encode_rx,
-        frames_tx,
-    ));
+    // NOTE: It is not technically required to introduce parallelism for
+    // encoding. We spawn mainly to avoid having to manually poll the `Encoder`
+    // future in the `select!` loop below, which proved to be quite error
+    // prone in the past (looking at you, `also_poll`).
+    tokio::spawn(encoder(encode_rx, frames_tx));
 
     'outer: loop {
         let closed = state.closed();
@@ -993,7 +1007,7 @@ async fn ws_send_loop(
                         // bit set. Ensures the client won't receive partial
                         // messages before we shut down.
                         log::trace!("draining outgoing frames");
-                        while let Some(frame) = frames_rx.recv().await {
+                        while let Ok(frame) = frames_rx.try_recv() {
                             let eof = frame.header().is_final;
                             if let Err(e) = ws.feed(WsMessage::Frame(frame)).await {
                                 log::warn!("error sending frame: {e:#}");
@@ -1021,7 +1035,7 @@ async fn ws_send_loop(
                     UnorderedWsMessage::Error(err) => {
                         log::trace!("encoding execution error");
                         encode_tx
-                            .send(OutboundMessage::Error(err))
+                            .send(err.into())
                             // `ws_encode_task` shouldn't terminate until
                             // `encode_tx` is dropped, except by panicking.
                             .expect("encode task panicked");
@@ -1054,7 +1068,7 @@ async fn ws_send_loop(
             // Branch is disabled if we already sent a close frame.
             Some(message) = messages.recv(), if !closed => {
                 encode_tx
-                    .send(OutboundMessage::Message(message))
+                    .send(message.into())
                     // `ws_encode_task` shouldn't terminate until
                     // `encode_tx` is dropped, except by panicking.
                     .expect("encode task panicked");
@@ -1069,6 +1083,7 @@ async fn ws_send_loop(
     }
 }
 
+#[derive(From)]
 enum OutboundMessage {
     Error(MessageExecutionError),
     Message(SerializableMessage),
@@ -1195,12 +1210,21 @@ async fn ws_encode_message(
         DataMessage::Text(text) => (bytestring_to_utf8bytes(text).into(), Data::Text),
         DataMessage::Binary(bin) => (bin, Data::Binary),
     };
+    let frames = fragment(data, ty, FRAGMENT_SIZE);
 
+    (metrics, msg_alloc, frames)
+}
+
+/// Split payload `data` of type `ty` into `fragment_size`d [`Frame`]s,
+/// according to the rules laid out in [RFC6455], Section 5.4.
+///
+/// [RFC6455]: https://datatracker.ietf.org/doc/html/rfc6455#section-5.4
+fn fragment(data: Bytes, ty: Data, fragment_size: usize) -> Vec<Frame> {
     let total_len = data.len();
-    let mut frames = Vec::with_capacity((total_len / FRAGMENT_SIZE) + total_len % FRAGMENT_SIZE);
+    let mut frames = Vec::with_capacity((total_len / fragment_size) + total_len % fragment_size);
     let mut offset = 0;
     while offset < total_len {
-        let end = (offset + FRAGMENT_SIZE).min(total_len);
+        let end = (offset + fragment_size).min(total_len);
         let chunk = data.slice(offset..end);
         frames.push(Frame::message(chunk, OpCode::Data(Data::Continue), false));
         offset = end;
@@ -1224,7 +1248,7 @@ async fn ws_encode_message(
         }
     }
 
-    (metrics, msg_alloc, frames)
+    frames
 }
 
 #[derive(Debug)]
@@ -1807,6 +1831,71 @@ mod tests {
         assert!(state.closed());
         // Should have received up to capacity.
         assert_eq!(received.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn send_loop_interleaves_pings_with_frames() {
+        let state = Arc::new(dummy_actor_state());
+        let mut received = Vec::new();
+        let (messages_tx, messages_rx) = mpsc::channel(1);
+        let messages = MeteredReceiver::new(messages_rx);
+        let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+
+        #[derive(From)]
+        enum OutgoingBytes {
+            #[allow(unused)]
+            Error(MessageExecutionError),
+            Bytes(Bytes),
+        }
+
+        async fn encoder(mut rx: mpsc::UnboundedReceiver<OutgoingBytes>, tx: mpsc::UnboundedSender<Frame>) {
+            while let Some(data) = rx.recv().await {
+                if let OutgoingBytes::Bytes(data) = data {
+                    let frames = fragment(data, Data::Binary, 4096);
+                    for frame in frames {
+                        tx.send(frame).unwrap();
+                    }
+                }
+            }
+        }
+
+        const MESSAGE_SIZE: usize = 10 * 1024 * 1024;
+        const FRAME_SIZE: usize = 4096;
+        const NUM_CONTROL_FRAMES: usize = 2;
+
+        let send_loop = tokio::spawn(async move {
+            ws_send_loop_inner(state, &mut received, messages, unordered_rx, encoder).await;
+            received
+        });
+        messages_tx.send(Bytes::from_static(&[1; MESSAGE_SIZE])).await.unwrap();
+        // Yield task to give the send loop a chance to receive the message.
+        tokio::task::yield_now().await;
+        // Send ping, then close.
+        unordered_tx.send(UnorderedWsMessage::Ping(Bytes::new())).unwrap();
+        unordered_tx
+            .send(UnorderedWsMessage::Close(CloseFrame {
+                code: CloseCode::Away,
+                reason: "we're done".into(),
+            }))
+            .unwrap();
+
+        // Shut down the loop.
+        drop(messages_tx);
+        drop(unordered_tx);
+        let received = send_loop.await.unwrap();
+
+        let ping_pos = received
+            .iter()
+            .position(|message| matches!(message, WsMessage::Ping(_)))
+            .unwrap();
+        log::info!("received={} ping-at={}", received.len(), ping_pos);
+        assert!(ping_pos > 0);
+        assert!(ping_pos < received.len() - NUM_CONTROL_FRAMES);
+        // All frames of the message should have been sent before the close frame.
+        assert_eq!(received.len(), (MESSAGE_SIZE / FRAME_SIZE) + NUM_CONTROL_FRAMES);
+        assert!(received
+            .last()
+            .is_some_and(|message| matches!(message, WsMessage::Close(_))));
     }
 
     async fn is_pending(fut: &mut (impl Future + Unpin)) -> bool {
