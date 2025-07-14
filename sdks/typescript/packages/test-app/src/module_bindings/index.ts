@@ -40,6 +40,8 @@ export { CreatePlayer };
 // Import and reexport all table handle types
 import { PlayerTableHandle } from './player_table.ts';
 export { PlayerTableHandle };
+import { UnindexedPlayerTableHandle } from './unindexed_player_table.ts';
+export { UnindexedPlayerTableHandle };
 import { UserTableHandle } from './user_table.ts';
 export { UserTableHandle };
 
@@ -48,6 +50,8 @@ import { Player } from './player_type.ts';
 export { Player };
 import { Point } from './point_type.ts';
 export { Point };
+import { UnindexedPlayer } from './unindexed_player_type.ts';
+export { UnindexedPlayer };
 import { User } from './user_type.ts';
 export { User };
 
@@ -62,6 +66,10 @@ const REMOTE_MODULE = {
         colType:
           Player.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
       },
+    },
+    unindexed_player: {
+      tableName: 'unindexed_player',
+      rowType: UnindexedPlayer.getTypeScriptAlgebraicType(),
     },
     user: {
       tableName: 'user',
@@ -158,6 +166,14 @@ export class RemoteTables {
     return new PlayerTableHandle(
       this.connection.clientCache.getOrCreateTable<Player>(
         REMOTE_MODULE.tables.player
+      )
+    );
+  }
+
+  get unindexedPlayer(): UnindexedPlayerTableHandle {
+    return new UnindexedPlayerTableHandle(
+      this.connection.clientCache.getOrCreateTable<UnindexedPlayer>(
+        REMOTE_MODULE.tables.unindexed_player
       )
     );
   }

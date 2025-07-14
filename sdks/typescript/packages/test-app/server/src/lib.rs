@@ -21,6 +21,13 @@ pub struct User {
     pub username: String,
 }
 
+#[table(name = unindexed_player, public)]
+pub struct UnindexedPlayer {
+    owner_id: String,
+    name: String,
+    location: Point,
+}
+
 #[reducer]
 pub fn create_player(ctx: &ReducerContext, name: String, location: Point) {
     ctx.db.player().insert(Player {

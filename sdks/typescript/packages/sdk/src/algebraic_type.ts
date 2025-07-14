@@ -2,7 +2,7 @@ import { TimeDuration } from './time_duration';
 import { Timestamp } from './timestamp';
 import { ConnectionId } from './connection_id';
 import type BinaryReader from './binary_reader';
-import type BinaryWriter from './binary_writer';
+import BinaryWriter from './binary_writer';
 import { Identity } from './identity';
 import ScheduleAt from './schedule_at';
 
@@ -164,7 +164,31 @@ export class ProductType {
     }
   };
 
-  deserialize = (reader: BinaryReader): any => {
+  intoMapKey(value: any): ComparablePrimitive {
+    if (this.elements.length === 1) {
+      if (this.elements[0].name === '__time_duration_micros__') {
+        return (value as TimeDuration).__time_duration_micros__;
+      }
+
+      if (this.elements[0].name === '__timestamp_micros_since_unix_epoch__') {
+        return (value as Timestamp).__timestamp_micros_since_unix_epoch__;
+      }
+
+      if (this.elements[0].name === '__identity__') {
+        return (value as Identity).__identity__;
+      }
+
+      if (this.elements[0].name === '__connection_id__') {
+        return (value as ConnectionId).__connection_id__;
+      }
+    }
+    // The fallback is to serialize and base64 encode the bytes.
+    const writer = new BinaryWriter(10);
+    this.serialize(writer, value);
+    return writer.toBase64();
+  }
+
+  deserialize = (reader: BinaryReader): { [key: string]: any } => {
     let result: { [key: string]: any } = {};
     if (this.elements.length === 1) {
       if (this.elements[0].name === '__time_duration_micros__') {
@@ -215,6 +239,8 @@ type AnyType =
   | EnumLabel
   | TypeRef
   | None;
+
+export type ComparablePrimitive = number | string | String | boolean | bigint;
 
 /**
  * The SpacetimeDB Algebraic Type System (SATS) is a structural type system in
@@ -447,6 +473,39 @@ export class AlgebraicType {
 
   isTimeDuration(): boolean {
     return this.#isI64Newtype('__time_duration_micros__');
+  }
+
+  /**
+   * Convert a value of the algebraic type into something that can be used as a key in a map.
+   * There are no guarantees about being able to order it.
+   * This is only guaranteed to be comparable to other values of the same type.
+   * @param value A value of the algebraic type
+   * @returns Something that can be used as a key in a map.
+   */
+  intoMapKey(value: any): ComparablePrimitive {
+    switch (this.type) {
+      case Type.U8:
+      case Type.U16:
+      case Type.U32:
+      case Type.U64:
+      case Type.U128:
+      case Type.U256:
+      case Type.I8:
+      case Type.I16:
+      case Type.I64:
+      case Type.I128:
+      case Type.F32:
+      case Type.F64:
+      case Type.String:
+      case Type.Bool:
+        return value;
+      case Type.ProductType:
+        return this.product.intoMapKey(value);
+      default:
+        const writer = new BinaryWriter(10);
+        this.serialize(writer, value);
+        return writer.toBase64();
+    }
   }
 
   serialize(writer: BinaryWriter, value: any): void {

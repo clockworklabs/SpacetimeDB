@@ -4,7 +4,12 @@ import type { DbConnectionImpl } from './db_connection_impl';
 export interface TableRuntimeTypeInfo {
   tableName: string;
   rowType: AlgebraicType;
-  primaryKey?: string | undefined;
+  primaryKeyInfo?: PrimaryKeyInfo;
+}
+
+export interface PrimaryKeyInfo {
+  colName: string;
+  colType: AlgebraicType;
 }
 
 export interface ReducerRuntimeTypeInfo {

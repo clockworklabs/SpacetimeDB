@@ -45,5 +45,8 @@
     "@clockworklabs/test-app": "file:../test-app",
     "tsup": "^8.1.0",
     "undici": "^6.19.2"
+  },
+  "dependencies": {
+    "base64-js": "^1.5.1"
   }
 }
