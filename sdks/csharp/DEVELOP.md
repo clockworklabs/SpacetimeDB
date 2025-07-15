@@ -29,18 +29,18 @@ See [`examples~/quickstart-chat/client/module_bindings`](./examples~/quickstart-
 
 If you need to debug `SpacetimeDB.BSATN.Codegen`, you can set `<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>` in the `<PropertyGroup.` of your `.csproj`, build the project, and then look in `obj/Debug/.../generated`. This is where the C# compiler dumps Roslyn-generated code.
 
-A client created with this SDK stores is at root a `DbConnection`. This class lives in the generated code in the file `SpacetimeDBClient.g.cs`. See e.g. [`examples~/quickstart-chat/client/module_bindings/SpacetimeDBClient.g.cs`](./examples~/quickstart-chat/client/module_bindings/SpacetimeDBClient.g.cs).
+A client created with this SDK is at root a `DbConnection`. This class lives in the generated code in the file `SpacetimeDBClient.g.cs`. See e.g. [`examples~/quickstart-chat/client/module_bindings/SpacetimeDBClient.g.cs`](./examples~/quickstart-chat/client/module_bindings/SpacetimeDBClient.g.cs).
 (Note that `SpacetimeDBClient` is a vestigial name that should probably be retired at some point...)
 
 `DbConnection` in the generated code inherits from `DbConnectionBase<...>` in the SDK code, which lives in [`src/SpacetimeDBClient.cs`](./src/SpacetimeDBClient.cs). This is a general pattern. Similar inheritance patterns are used for tables and indexes: the generated code defines a class that inherits most of its behavior from a class in the SDK.
 
 We require that **a DbConnection is only accessed from a single thread**, which should call the `DbConnection.FrameTick()` method frequently. See [threading model](#threading-model), below.
 
-(In general, the generated code tries to implement as little functionality as possible, leaving most of the behavior to the SDK. This makes updates easier, since it is generally easier to update SDK code instead of the generated code.
+In general, the generated code tries to implement as little functionality as possible, leaving most of the behavior to the SDK. This makes updates easier, since it is generally easier to update SDK code instead of the generated code.
 
 When SDK code needs to refer to generated types, we have two options:
 - Make the SDK code generic, and instantiate the generics in the generated code. E.g. `DbConnectionBase<...>` (SDK) is generic, but `DbConnection` (generated) is not.
-- Or, just move the code entirely into the generated code.)
+- Or, just move the code entirely into the generated code. This was done for e.g. `ReducerEventContext`, which no longer lives in the SDK at all.
 
 The most important generated types are `RemoteTables` -- also known as the **client cache** -- and `RemoteReducers`. `RemoteTables` stores the local view of subscribed data from the database. For a `DbConnection conn`, `conn.Db` is an instance of `RemoteTables`. `RemoteReducers` allows calling reducers on the server, and is accessible at `conn.Reducers`. Types are also generated for all server-side types referred to by tables or modules.
 
