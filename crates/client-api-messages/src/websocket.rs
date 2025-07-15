@@ -98,6 +98,12 @@ pub trait WebsocketFormat: Sized {
         + Clone
         + Default;
 
+    /// The type used to encode query updates.
+    /// This type exists so that some formats, e.g., BSATN, can compress an update.
+    type QueryUpdate: SpacetimeType + for<'de> Deserialize<'de> + Serialize + Debug + Clone + Send;
+}
+
+pub trait BuildableWebsocketFormat: WebsocketFormat {
     /// The builder for [`Self::List`].
     type ListBuilder: RowListBuilder<FinishedList = Self::List>;
 
@@ -111,10 +117,6 @@ pub trait WebsocketFormat: Sized {
         }
         (list.finish(), num_rows)
     }
-
-    /// The type used to encode query updates.
-    /// This type exists so that some formats, e.g., BSATN, can compress an update.
-    type QueryUpdate: SpacetimeType + for<'de> Deserialize<'de> + Serialize + Debug + Clone + Send;
 
     /// Convert a `QueryUpdate` into `Self::QueryUpdate`.
     /// This allows some formats to e.g., compress the update.
@@ -779,11 +781,12 @@ pub struct JsonFormat;
 
 impl WebsocketFormat for JsonFormat {
     type Single = ByteString;
-
     type List = Vec<ByteString>;
-    type ListBuilder = Self::List;
-
     type QueryUpdate = QueryUpdate<Self>;
+}
+
+impl BuildableWebsocketFormat for JsonFormat {
+    type ListBuilder = Self::List;
 
     fn into_query_update(qu: QueryUpdate<Self>, _: Compression) -> Self::QueryUpdate {
         qu
@@ -807,11 +810,12 @@ pub struct BsatnFormat;
 
 impl WebsocketFormat for BsatnFormat {
     type Single = Box<[u8]>;
-
     type List = BsatnRowList;
-    type ListBuilder = BsatnRowListBuilder;
-
     type QueryUpdate = CompressableQueryUpdate<Self>;
+}
+
+impl BuildableWebsocketFormat for BsatnFormat {
+    type ListBuilder = BsatnRowListBuilder;
 
     fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate {
         let qu_len_would_have_been = bsatn::to_len(&qu).unwrap();

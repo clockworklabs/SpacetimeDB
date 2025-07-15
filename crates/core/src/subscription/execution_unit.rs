@@ -8,7 +8,7 @@ use crate::messages::websocket::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::websocket::{
-    Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate, WebsocketFormat,
+    BuildableWebsocketFormat, Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate,
 };
 use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_lib::Identity;
@@ -236,7 +236,7 @@ impl ExecutionUnit {
 
     /// Evaluate this execution unit against the database using the specified format.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn eval<F: WebsocketFormat>(
+    pub fn eval<F: BuildableWebsocketFormat>(
         &self,
         db: &RelationalDB,
         tx: &Tx,

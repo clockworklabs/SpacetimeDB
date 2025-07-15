@@ -25,7 +25,9 @@ use derive_more::From;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
-use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{
+    BuildableWebsocketFormat, ByteListLen, Compression, OneOffTable, QueryUpdate,
+};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
@@ -134,7 +136,7 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    pub fn encode<F: WebsocketFormat>(&self) -> (F::QueryUpdate, u64, usize) {
+    pub fn encode<F: BuildableWebsocketFormat>(&self) -> (F::QueryUpdate, u64, usize) {
         let (deletes, nr_del) = F::encode_list(self.deletes.iter());
         let (inserts, nr_ins) = F::encode_list(self.inserts.iter());
         let num_rows = nr_del + nr_ins;
@@ -1096,7 +1098,7 @@ impl ModuleHost {
     /// This only returns an error if there is a db-level problem.
     /// An error with the query itself will be sent to the client.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn one_off_query<F: WebsocketFormat>(
+    pub async fn one_off_query<F: BuildableWebsocketFormat>(
         &self,
         caller_identity: Identity,
         query: String,

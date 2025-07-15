@@ -5,8 +5,8 @@ use module_subscription_manager::Plan;
 use prometheus::IntCounter;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, RowListBuilder as _, SingleQueryUpdate, TableUpdate,
-    WebsocketFormat,
+    BuildableWebsocketFormat, ByteListLen, Compression, DatabaseUpdate, QueryUpdate, RowListBuilder as _,
+    SingleQueryUpdate, TableUpdate,
 };
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
@@ -96,7 +96,7 @@ impl MetricsRecorder for ExecutionCounters {
 pub fn execute_plan<Tx, F>(plan_fragments: &[PipelinedProject], tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
-    F: WebsocketFormat,
+    F: BuildableWebsocketFormat,
 {
     let mut count = 0;
     let mut list = F::ListBuilder::default();
@@ -134,7 +134,7 @@ pub fn collect_table_update<Tx, F>(
 ) -> Result<(TableUpdate<F>, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
-    F: WebsocketFormat,
+    F: BuildableWebsocketFormat,
 {
     execute_plan::<Tx, F>(plan_fragments, tx).map(|(rows, num_rows, metrics)| {
         let empty = F::List::default();
@@ -167,7 +167,7 @@ pub fn execute_plans<Tx, F>(
 ) -> Result<(DatabaseUpdate<F>, ExecutionMetrics), DBError>
 where
     Tx: Datastore + DeltaStore + Sync,
-    F: WebsocketFormat,
+    F: BuildableWebsocketFormat,
 {
     plans
         .par_iter()

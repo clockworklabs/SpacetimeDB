@@ -16,8 +16,8 @@ use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
 use prometheus::IntGauge;
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, SingleQueryUpdate,
-    WebsocketFormat,
+    BsatnFormat, BuildableWebsocketFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate,
+    SingleQueryUpdate,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
@@ -1187,7 +1187,7 @@ impl SubscriptionManager {
                 let mut ops_bin_uncompressed: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
                 let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
 
-                fn memo_encode<F: WebsocketFormat>(
+                fn memo_encode<F: BuildableWebsocketFormat>(
                     updates: &UpdatesRelValue<'_>,
                     memory: &mut Option<(F::QueryUpdate, u64, usize)>,
                     metrics: &mut ExecutionMetrics,

@@ -31,7 +31,7 @@ use crate::sql::ast::SchemaViewer;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::Either;
-use spacetimedb_client_api_messages::websocket::{Compression, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{BuildableWebsocketFormat, Compression};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -512,7 +512,7 @@ pub struct ExecutionSet {
 }
 
 impl ExecutionSet {
-    pub fn eval<F: WebsocketFormat>(
+    pub fn eval<F: BuildableWebsocketFormat>(
         &self,
         db: &RelationalDB,
         tx: &Tx,
