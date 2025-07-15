@@ -20,6 +20,7 @@ spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-commitlog.workspace = true
+spacetimedb-datastore.workspace = true
 spacetimedb-durability.workspace = true
 spacetimedb-memory-usage.workspace = true
 spacetimedb-metrics.workspace = true
@@ -131,7 +132,7 @@ default = ["unindexed_iter_by_col_range_warn"]
 # Enable timing for wasm ABI calls
 spacetimedb-wasm-instance-env-times = []
 # Enable test helpers and utils
-test = ["spacetimedb-commitlog/test"]
+test = ["spacetimedb-commitlog/test", "spacetimedb-datastore/test"]
 # Perfmaps for profiling modules
 perfmap = []
 
@@ -139,6 +140,7 @@ perfmap = []
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
+spacetimedb-datastore = { path = "../datastore/", features = ["test"] }
 
 criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
@@ -151,5 +153,5 @@ jsonwebtoken.workspace = true
 axum.workspace = true
 reqwest.workspace = true
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
+[lints]
+workspace = true

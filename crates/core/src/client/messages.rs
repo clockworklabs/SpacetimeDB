@@ -1,5 +1,4 @@
 use super::{ClientConfig, DataMessage, Protocol};
-use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
@@ -10,6 +9,7 @@ use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, Compression, FormatSwitch, JsonFormat, OneOffTable, RowListLen, WebsocketFormat,
     SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
+use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{ConnectionId, TimeDuration};
@@ -26,7 +26,7 @@ pub trait ToProtocol {
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded;
 }
 
-pub(super) type SwitchedServerMessage = FormatSwitch<ws::ServerMessage<BsatnFormat>, ws::ServerMessage<JsonFormat>>;
+pub type SwitchedServerMessage = FormatSwitch<ws::ServerMessage<BsatnFormat>, ws::ServerMessage<JsonFormat>>;
 pub(super) type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
 
 /// The initial size of a `serialize` buffer.

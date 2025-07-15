@@ -39,31 +39,31 @@ use v9::{RawModuleDefV9Builder, TableType};
 use super::error::DatastoreError;
 
 /// The static ID of the table that defines tables
-pub(crate) const ST_TABLE_ID: TableId = TableId(1);
+pub const ST_TABLE_ID: TableId = TableId(1);
 /// The static ID of the table that defines columns
-pub(crate) const ST_COLUMN_ID: TableId = TableId(2);
+pub const ST_COLUMN_ID: TableId = TableId(2);
 /// The static ID of the table that defines sequences
-pub(crate) const ST_SEQUENCE_ID: TableId = TableId(3);
+pub const ST_SEQUENCE_ID: TableId = TableId(3);
 /// The static ID of the table that defines indexes
-pub(crate) const ST_INDEX_ID: TableId = TableId(4);
+pub const ST_INDEX_ID: TableId = TableId(4);
 /// The static ID of the table that defines constraints
-pub(crate) const ST_CONSTRAINT_ID: TableId = TableId(5);
+pub const ST_CONSTRAINT_ID: TableId = TableId(5);
 /// The static ID of the table that defines the stdb module associated with
 /// the database
-pub(crate) const ST_MODULE_ID: TableId = TableId(6);
+pub const ST_MODULE_ID: TableId = TableId(6);
 /// The static ID of the table that defines connected clients
-pub(crate) const ST_CLIENT_ID: TableId = TableId(7);
+pub const ST_CLIENT_ID: TableId = TableId(7);
 /// The static ID of the table that defines system variables
-pub(crate) const ST_VAR_ID: TableId = TableId(8);
+pub const ST_VAR_ID: TableId = TableId(8);
 /// The static ID of the table that defines scheduled tables
-pub(crate) const ST_SCHEDULED_ID: TableId = TableId(9);
+pub const ST_SCHEDULED_ID: TableId = TableId(9);
 
 /// The static ID of the table that defines the row level security (RLS) policies
-pub(crate) const ST_ROW_LEVEL_SECURITY_ID: TableId = TableId(10);
-pub(crate) const ST_TABLE_NAME: &str = "st_table";
-pub(crate) const ST_COLUMN_NAME: &str = "st_column";
-pub(crate) const ST_SEQUENCE_NAME: &str = "st_sequence";
-pub(crate) const ST_INDEX_NAME: &str = "st_index";
+pub const ST_ROW_LEVEL_SECURITY_ID: TableId = TableId(10);
+pub const ST_TABLE_NAME: &str = "st_table";
+pub const ST_COLUMN_NAME: &str = "st_column";
+pub const ST_SEQUENCE_NAME: &str = "st_sequence";
+pub const ST_INDEX_NAME: &str = "st_index";
 pub(crate) const ST_CONSTRAINT_NAME: &str = "st_constraint";
 pub(crate) const ST_MODULE_NAME: &str = "st_module";
 pub(crate) const ST_CLIENT_NAME: &str = "st_client";
@@ -83,7 +83,7 @@ pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
 ///
 /// However unlikely it may seem, it is advisable to check for overflow in the
 /// test suite when adding sequences to system tables.
-pub(crate) const ST_RESERVED_SEQUENCE_RANGE: u32 = 4096;
+pub const ST_RESERVED_SEQUENCE_RANGE: u32 = 4096;
 
 // This help to keep the correct order when bootstrapping
 #[allow(non_camel_case_types)]
@@ -97,7 +97,7 @@ pub enum SystemTable {
     st_row_level_security,
 }
 
-pub(crate) fn system_tables() -> [TableSchema; 10] {
+pub fn system_tables() -> [TableSchema; 10] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -480,14 +480,14 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StTableRow {
-    pub(crate) table_id: TableId,
-    pub(crate) table_name: Box<str>,
-    pub(crate) table_type: StTableType,
-    pub(crate) table_access: StAccess,
+    pub table_id: TableId,
+    pub table_name: Box<str>,
+    pub table_type: StTableType,
+    pub table_access: StAccess,
     /// The primary key of the table.
     /// This is a `ColId` everywhere else, but we make it a `ColList` here
     /// for future compatibility in case we ever have composite primary keys.
-    pub(crate) table_primary_key: Option<ColList>,
+    pub table_primary_key: Option<ColList>,
 }
 
 impl TryFrom<RowRef<'_>> for StTableRow {
@@ -505,7 +505,7 @@ impl From<StTableRow> for ProductValue {
 
 /// A wrapper around `AlgebraicType` that acts like `AlgegbraicType::bytes()` for serialization purposes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AlgebraicTypeViaBytes(pub AlgebraicType);
+pub struct AlgebraicTypeViaBytes(pub AlgebraicType);
 impl_st!([] AlgebraicTypeViaBytes, AlgebraicType::bytes());
 impl<'de> Deserialize<'de> for AlgebraicTypeViaBytes {
     fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -538,10 +538,10 @@ impl From<AlgebraicType> for AlgebraicTypeViaBytes {
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StColumnRow {
-    pub(crate) table_id: TableId,
-    pub(crate) col_pos: ColId,
-    pub(crate) col_name: Box<str>,
-    pub(crate) col_type: AlgebraicTypeViaBytes,
+    pub table_id: TableId,
+    pub col_pos: ColId,
+    pub col_name: Box<str>,
+    pub col_type: AlgebraicTypeViaBytes,
 }
 
 impl TryFrom<RowRef<'_>> for StColumnRow {
@@ -576,10 +576,10 @@ impl From<StColumnRow> for ColumnSchema {
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StIndexRow {
-    pub(crate) index_id: IndexId,
-    pub(crate) table_id: TableId,
-    pub(crate) index_name: Box<str>,
-    pub(crate) index_algorithm: StIndexAlgorithm,
+    pub index_id: IndexId,
+    pub table_id: TableId,
+    pub index_name: Box<str>,
+    pub index_algorithm: StIndexAlgorithm,
 }
 
 /// An index algorithm for storing in the system tables.
@@ -665,15 +665,15 @@ impl From<IndexSchema> for StIndexRow {
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StSequenceRow {
-    pub(crate) sequence_id: SequenceId,
-    pub(crate) sequence_name: Box<str>,
-    pub(crate) table_id: TableId,
-    pub(crate) col_pos: ColId,
-    pub(crate) increment: i128,
-    pub(crate) start: i128,
-    pub(crate) min_value: i128,
-    pub(crate) max_value: i128,
-    pub(crate) allocated: i128,
+    pub sequence_id: SequenceId,
+    pub sequence_name: Box<str>,
+    pub table_id: TableId,
+    pub col_pos: ColId,
+    pub increment: i128,
+    pub start: i128,
+    pub min_value: i128,
+    pub max_value: i128,
+    pub allocated: i128,
 }
 
 impl TryFrom<RowRef<'_>> for StSequenceRow {
@@ -715,7 +715,7 @@ impl From<StSequenceRow> for SequenceSchema {
 pub struct StConstraintRow {
     pub(crate) constraint_id: ConstraintId,
     pub(crate) constraint_name: Box<str>,
-    pub(crate) table_id: TableId,
+    pub table_id: TableId,
     pub(crate) constraint_data: StConstraintData,
 }
 
@@ -780,8 +780,8 @@ impl From<StConstraintRow> for ConstraintSchema {
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StRowLevelSecurityRow {
-    pub(crate) table_id: TableId,
-    pub(crate) sql: RawSql,
+    pub table_id: TableId,
+    pub sql: RawSql,
 }
 
 impl TryFrom<RowRef<'_>> for StRowLevelSecurityRow {
@@ -816,14 +816,8 @@ pub struct ModuleKind(u8);
 impl ModuleKind {
     /// The [`ModuleKind`] of WASM-based modules.
     pub const WASM: ModuleKind = ModuleKind(0);
-}
-
-impl From<crate::messages::control_db::HostType> for ModuleKind {
-    fn from(host_type: crate::messages::control_db::HostType) -> Self {
-        match host_type {
-            crate::messages::control_db::HostType::Wasm => Self::WASM,
-        }
-    }
+    /// The [`ModuleKind`] of JS modules.
+    pub const JS: ModuleKind = ModuleKind(1);
 }
 
 impl_serialize!([] ModuleKind, (self, ser) => self.0.serialize(ser));
@@ -871,12 +865,12 @@ impl From<Identity> for IdentityViaU256 {
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StModuleRow {
-    pub(crate) database_identity: IdentityViaU256,
-    pub(crate) owner_identity: IdentityViaU256,
-    pub(crate) program_kind: ModuleKind,
-    pub(crate) program_hash: Hash,
-    pub(crate) program_bytes: Box<[u8]>,
-    pub(crate) module_version: Box<str>,
+    pub database_identity: IdentityViaU256,
+    pub owner_identity: IdentityViaU256,
+    pub program_kind: ModuleKind,
+    pub program_hash: Hash,
+    pub program_bytes: Box<[u8]>,
+    pub module_version: Box<str>,
 }
 
 /// Read bytes directly from the column `col` in `row`.
@@ -929,8 +923,8 @@ impl From<StModuleRow> for ProductValue {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StClientRow {
-    pub(crate) identity: IdentityViaU256,
-    pub(crate) connection_id: ConnectionIdViaU128,
+    pub identity: IdentityViaU256,
+    pub connection_id: ConnectionIdViaU128,
 }
 
 impl From<StClientRow> for ProductValue {

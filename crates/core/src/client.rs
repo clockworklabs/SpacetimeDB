@@ -11,7 +11,7 @@ pub use client_connection::{
     MeteredReceiver, Protocol,
 };
 pub use client_connection_index::ClientActorIndex;
-pub use message_handlers::MessageHandleError;
+pub use message_handlers::{MessageExecutionError, MessageHandleError};
 use spacetimedb_lib::ConnectionId;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]

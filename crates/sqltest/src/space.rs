@@ -2,10 +2,10 @@ use crate::db::DBRunner;
 use async_trait::async_trait;
 use spacetimedb::db::relational_db::tests_utils::TestDB;
 use spacetimedb::error::DBError;
-use spacetimedb::execution_context::Workload;
 use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb::subscription::module_subscription_actor::ModuleSubscriptions;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::algebraic_value::Packed;
 use spacetimedb_sats::meta_type::MetaType;
@@ -123,7 +123,7 @@ impl AsyncDB for SpaceDb {
                         AlgebraicValue::U256(x) => x.to_string(),
                         AlgebraicValue::F32(x) => format!("{:?}", x.as_ref()),
                         AlgebraicValue::F64(x) => format!("{:?}", x.as_ref()),
-                        AlgebraicValue::String(x) => format!("'{}'", x),
+                        AlgebraicValue::String(x) => format!("'{x}'"),
                         x => x.to_satn(),
                     })
                     .collect()

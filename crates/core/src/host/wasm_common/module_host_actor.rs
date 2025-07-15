@@ -8,11 +8,7 @@ use std::time::Duration;
 
 use super::instrumentation::CallTimes;
 use crate::database_logger::{self, SystemLogger};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{IsolationLevel, Program};
-use crate::db::db_metrics::DB_METRICS;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
-use crate::execution_context::{self, ReducerContext, Workload};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, DynModule, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
@@ -26,6 +22,10 @@ use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
@@ -122,8 +122,6 @@ pub enum DescribeError {
     Decode(#[from] DecodeError),
     #[error(transparent)]
     RuntimeError(anyhow::Error),
-    #[error("unimplemented RawModuleDef version")]
-    UnimplementedRawModuleDefVersion,
 }
 
 impl<T: WasmModule> WasmModuleHostActor<T> {

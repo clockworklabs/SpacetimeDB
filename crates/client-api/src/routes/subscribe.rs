@@ -1,37 +1,51 @@
-use std::mem;
+use std::fmt::Display;
+use std::future::{poll_fn, Future};
+use std::num::NonZeroUsize;
+use std::panic;
 use std::pin::{pin, Pin};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
+use async_stream::stream;
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::Extension;
 use axum_extra::TypedHeader;
 use bytes::Bytes;
 use bytestring::ByteString;
-use futures::future::MaybeDone;
-use futures::{Future, FutureExt, SinkExt, StreamExt};
+use derive_more::From;
+use futures::{pin_mut, Sink, SinkExt, Stream, StreamExt};
 use http::{HeaderValue, StatusCode};
-use scopeguard::ScopeGuard;
+use prometheus::IntGauge;
+use scopeguard::{defer, ScopeGuard};
 use serde::Deserialize;
-use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage, SerializeBuffer};
-use spacetimedb::client::{
-    ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, MeteredDeque, MeteredReceiver,
-    Protocol,
+use spacetimedb::client::messages::{
+    serialize, IdentityTokenMessage, SerializableMessage, SerializeBuffer, SwitchedServerMessage, ToProtocol,
 };
-use spacetimedb::execution_context::WorkloadType;
+use spacetimedb::client::{
+    ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageExecutionError, MessageHandleError,
+    MeteredReceiver, Protocol,
+};
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
-use spacetimedb::util::also_poll;
+use spacetimedb::util::spawn_rayon;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
+use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
+use tokio::sync::{mpsc, watch};
+use tokio::task::JoinHandle;
+use tokio::time::error::Elapsed;
+use tokio::time::{sleep_until, timeout};
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
 use crate::auth::SpacetimeAuth;
 use crate::util::websocket::{
-    CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
+    CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade, WsError,
 };
 use crate::util::{NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
@@ -137,14 +151,14 @@ where
         let ws = match ws_upgrade.upgrade(ws_config).await {
             Ok(ws) => ws,
             Err(err) => {
-                log::error!("WebSocket init error: {}", err);
+                log::error!("WebSocket init error: {err}");
                 return;
             }
         };
 
         match forwarded_for {
             Some(TypedHeader(XForwardedFor(ip))) => {
-                log::debug!("New client connected from ip {}", ip)
+                log::debug!("New client connected from ip {ip}")
             }
             None => log::debug!("New client connected from unknown ip"),
         }
@@ -181,8 +195,88 @@ where
     Ok(res)
 }
 
-const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
-const SEND_TIMEOUT: Duration = Duration::from_secs(5);
+struct ActorState {
+    pub client_id: ClientActorId,
+    pub database: Identity,
+    config: ActorConfig,
+    closed: AtomicBool,
+    got_pong: AtomicBool,
+}
+
+impl ActorState {
+    pub fn new(database: Identity, client_id: ClientActorId, config: ActorConfig) -> Self {
+        Self {
+            database,
+            client_id,
+            config,
+            closed: AtomicBool::new(false),
+            got_pong: AtomicBool::new(true),
+        }
+    }
+
+    pub fn closed(&self) -> bool {
+        self.closed.load(Ordering::Relaxed)
+    }
+
+    pub fn close(&self) -> bool {
+        self.closed.swap(true, Ordering::Relaxed)
+    }
+
+    pub fn set_ponged(&self) {
+        self.got_pong.store(true, Ordering::Relaxed);
+    }
+
+    pub fn reset_ponged(&self) -> bool {
+        self.got_pong.swap(false, Ordering::Relaxed)
+    }
+
+    pub fn next_idle_deadline(&self) -> Instant {
+        Instant::now() + self.config.idle_timeout
+    }
+}
+
+struct ActorConfig {
+    /// Interval at which to send `Ping` frames.
+    ///
+    /// We use pings for connection keep-alive.
+    /// Value must be smaller than `idle_timeout`.
+    ///
+    /// Default: 15s
+    ping_interval: Duration,
+    /// Amount of time after which an idle connection is closed.
+    ///
+    /// A connection is considered idle if no data is received nor sent.
+    /// This includes `Ping`/`Pong` frames used for keep-alive.
+    ///
+    /// Value must be greater than `ping_interval`.
+    ///
+    /// Default: 30s
+    idle_timeout: Duration,
+    /// For how long to keep draining the incoming messages until a client close
+    /// is received.
+    ///
+    /// Default: 250ms
+    close_handshake_timeout: Duration,
+    /// Maximum number of messages to queue for processing.
+    ///
+    /// If this number is exceeded, the client is disconnected.
+    ///
+    /// Default: 2048
+    incoming_queue_length: NonZeroUsize,
+}
+
+impl Default for ActorConfig {
+    fn default() -> Self {
+        Self {
+            ping_interval: Duration::from_secs(15),
+            idle_timeout: Duration::from_secs(30),
+            close_handshake_timeout: Duration::from_millis(250),
+            incoming_queue_length:
+                // SAFETY: 2048 > 0, qed
+                unsafe { NonZeroUsize::new_unchecked(2048) }
+        }
+    }
+}
 
 async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: MeteredReceiver<SerializableMessage>) {
     // ensure that even if this task gets cancelled, we always cleanup the connection
@@ -190,347 +284,793 @@ async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: 
         tokio::spawn(client.disconnect());
     });
 
-    ws_client_actor_inner(&mut client, ws, sendrx).await;
+    ws_client_actor_inner(&mut client, <_>::default(), ws, sendrx).await;
 
     ScopeGuard::into_inner(client).disconnect().await;
 }
 
-async fn make_progress<Fut: Future>(fut: &mut Pin<&mut MaybeDone<Fut>>) {
-    if let MaybeDone::Gone = **fut {
-        // nothing to do
-    } else {
-        fut.await
+async fn ws_client_actor_inner(
+    client: &mut ClientConnection,
+    config: ActorConfig,
+    ws: WebSocketStream,
+    sendrx: MeteredReceiver<SerializableMessage>,
+) {
+    let database = client.module.info().database_identity;
+    let client_id = client.id;
+    let client_closed_metric = WORKER_METRICS.ws_clients_closed_connection.with_label_values(&database);
+    let state = Arc::new(ActorState::new(database, client_id, config));
+
+    // Channel for [`UnorderedWsMessage`]s.
+    let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+
+    // Split websocket into send and receive halves.
+    let (ws_send, ws_recv) = ws.split();
+
+    // Set up the idle timer.
+    let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+    let idle_timer = ws_idle_timer(idle_rx);
+
+    // Spawn a task to send outgoing messages
+    // obtained from `sendrx` and `unordered_rx`.
+    let send_task = tokio::spawn(ws_send_loop(
+        state.clone(),
+        client.config,
+        ws_send,
+        sendrx,
+        unordered_rx,
+    ));
+    // Spawn a task to handle incoming messages.
+    let recv_task = tokio::spawn(ws_recv_task(
+        state.clone(),
+        idle_tx,
+        client_closed_metric,
+        {
+            let client = client.clone();
+            move |data, timer| {
+                let client = client.clone();
+                async move { client.handle_message(data, timer).await }
+            }
+        },
+        unordered_tx.clone(),
+        ws_recv,
+    ));
+    let hotswap = {
+        let client = client.clone();
+        move || {
+            let mut client = client.clone();
+            async move { client.watch_module_host().await }
+        }
+    };
+
+    ws_main_loop(state, hotswap, idle_timer, send_task, recv_task, move |msg| {
+        let _ = unordered_tx.send(msg);
+    })
+    .await;
+    log::info!("Client connection ended: {client_id}");
+}
+
+/// The main `select!` loop of the websocket client actor.
+///
+/// > This function is defined standalone with generic parameters so that its
+/// > behavior can be tested in isolation, not requiring I/O and allowing to
+/// > mock effects easily.
+///
+/// The loop's responsibilities are:
+///
+/// - Drive the tasks handling the send and receive ends of the websockets to
+///   completion, terminating when either of them completes.
+///
+/// - Terminating if the connection is idle for longer than [`ActorConfig::idle_timeout`].
+///   The connection becomes idle if nothing is received from the socket.
+///
+/// - Periodically sending `Ping` frames to prevent the connection from becoming
+///   idle (the client is supposed to respond with `Pong`, which resets the
+///   idle timer). See [`ActorConfig::ping_interval`].
+///
+/// - Watch for changes to the [`ClientConnection`]'s module reference.
+///   If it changes, the [`ClientConnection`] "hotswaps" the module, if it
+///   is exited, the loop schedules a `Close` frame to be sent, initiating a
+///   connection shutdown.
+///
+/// A peculiarity of handling termination is the websocket [close handshake]:
+/// whichever side wants to close the connection sends a `Close` frame and needs
+/// to wait for the other end to respond with a `Close` for the connection to
+/// end cleanly.
+///
+/// `tungstenite` handles the protocol details of the close handshake for us,
+/// but for it to work properly, we must keep polling the socket until the
+/// handshake is complete.
+///
+/// This is straightforward when the client initiates the close, as the receive
+/// stream will just become exhausted, and we'll exit the loop.
+///
+/// In the case of a server-initiated close, it's a bit more tricky, as we're
+/// not supposed to send any more data after a `Close` frame (and `tungstenite`
+/// prevents it). Yet, we need to keep polling the receive end until either
+/// the `Close` response (which could be queued behind a large number of
+/// outstanding messages) arrives, or a timeout elapses (in case the client
+/// never responds).
+///
+/// The implementations [`ws_recv_loop`] and [`ws_send_loop`] thus share the
+/// [`ActorState`], which tracks whether the connection is in the closing phase
+/// ([`ActorState::closed()`]). If closed, both the send and receive loops keep
+/// running, but drop any incoming or outgoing messages respectively until
+/// either the `Close` response arrives or [`ActorConfig::close_handshake_timeout`]
+/// elapses.
+///
+///
+/// Parameters:
+///
+/// * **state**:
+///   The shared [`ActorState`], updated here when a `Pong` message is received.
+///
+/// * **hotswap**:
+///   An abstraction for [`ClientConnection::watch_module_host`], which updates
+///   the connection's internal reference to the module if it was updated,
+///   allowing database updates without disconnecting clients.
+///
+///   It is polled here for its error return value: if the output of the future
+///   is `Err(NoSuchModule)`, the database was shut down and existing clients
+///   must be disconnected.
+///
+/// * **idle_timer**:
+///   Abstraction for [`ws_idle_timer`]: if and when the future completes, the
+///   connection is considered unresponsive, and the connection is closed.
+///
+///   The idle timer should be reset whenever data is received from the websocket.
+///
+/// * **send_task**:
+///   Task handling outgoing messages. Holds the receive end of `unordered_tx`.
+///
+///   If the task returns, the connection is considered bad, and the main loop
+///   exits. If the task panicked, the panic is resumed on the current thread.
+///
+///   Note that the send task must not terminate after it has sent a `Close`
+///   frame (via `unordered_tx`) -- the websocket protocol mandates that the
+///   initiator of the close handshake wait for the other end to respond with
+///   a `Close` frame. Thus, the loop must continue to poll `recv_task` and not
+///   exit due to `send_task` being complete.
+///
+///   See [`ws_send_loop`].
+///
+/// * **recv_task**:
+///   Task handling incoming messages.
+///
+///   If the task returns, the connection is considered closed, and the main
+///   loop exits. If the task panicked, the panic is resumed on the current
+///   thread.
+///
+///   See [`ws_recv_task`].
+///
+/// * **unordered_tx**:
+///   Channel connected to `send_task` that allows the loop to send `Ping` and
+///   `Close` frames.
+///
+///   Note that messages sent while the receiving `send_task` is already
+///   terminated are silently ignored. This is safe because the loop will exit
+///   anyway when the `send_task` is complete.
+///
+///
+/// [close handshake]: https://datatracker.ietf.org/doc/html/rfc6455#section-7
+async fn ws_main_loop<HotswapWatcher>(
+    state: Arc<ActorState>,
+    hotswap: impl Fn() -> HotswapWatcher,
+    idle_timer: impl Future<Output = ()>,
+    mut send_task: JoinHandle<()>,
+    mut recv_task: JoinHandle<()>,
+    unordered_tx: impl Fn(UnorderedWsMessage),
+) where
+    HotswapWatcher: Future<Output = Result<(), NoSuchModule>>,
+{
+    // Ensure we terminate both tasks if either exits.
+    let abort_send = send_task.abort_handle();
+    let abort_recv = recv_task.abort_handle();
+    defer! {
+        abort_send.abort();
+        abort_recv.abort();
+    };
+    // Set up the ping interval.
+    let mut ping_interval = tokio::time::interval(state.config.ping_interval);
+    // Arm the first hotswap watcher.
+    let watch_hotswap = hotswap();
+
+    pin_mut!(watch_hotswap);
+    pin_mut!(idle_timer);
+
+    loop {
+        let closed = state.closed();
+
+        tokio::select! {
+            // Drive send and receive tasks to completion,
+            // propagating panics.
+            //
+            // If either task completes,
+            // the connection is considered closed and we break the loop.
+            //
+            // NOTE: We don't abort the tasks until this function returns,
+            // so the `Err` can't contain an `is_cancelled()` value.
+            //
+            // Even if the tasks were cancelled (e.g. if the caller retains
+            // [`tokio::task::AbortHandle`]s), the reasonable thing to do is to
+            // exit the loop as if the tasks completed normally.
+            res = &mut send_task => {
+                if let Err(e) = res {
+                    if e.is_panic() {
+                        panic::resume_unwind(e.into_panic())
+                    }
+                }
+                break;
+            },
+            res = &mut recv_task => {
+                if let Err(e) = res {
+                    if e.is_panic() {
+                        panic::resume_unwind(e.into_panic())
+                    }
+                }
+                break;
+            },
+
+            // Exit if we haven't heard from the client for too long.
+            _ = &mut idle_timer => {
+                log::warn!("Client {} timed out", state.client_id);
+                break;
+            },
+
+            // Update the client's module host if it was hotswapped,
+            // or close the session if the module exited.
+            //
+            // Branch is disabled if we already sent a close frame.
+            res = &mut watch_hotswap, if !closed => {
+                if let Err(NoSuchModule) = res {
+                    let close = CloseFrame {
+                        code: CloseCode::Away,
+                        reason: "module exited".into()
+                    };
+                    unordered_tx(close.into());
+                }
+                watch_hotswap.set(hotswap());
+            },
+
+            // Send ping.
+            //
+            // If we didn't receive a response to the last ping,
+            // we don't bother sending a fresh one.
+            //
+            // Either the connection is idle (in which case the timer will kick
+            // in), or there is a massive backlog to process until the pong
+            // appears on the ordered stream. In either case, adding more pings
+            // is of no value.
+            //
+            // Branch is disabled if we already sent a close frame.
+            _ = ping_interval.tick(), if !closed => {
+                let was_ponged = state.reset_ponged();
+                if was_ponged {
+                    unordered_tx(UnorderedWsMessage::Ping(Bytes::new()));
+                }
+            }
+        }
     }
 }
 
-async fn ws_client_actor_inner(
-    client: &mut ClientConnection,
-    mut ws: WebSocketStream,
-    mut sendrx: MeteredReceiver<SerializableMessage>,
-) {
-    let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
-    let mut got_pong = true;
+/// A sleep that can be extended by sending it new deadlines.
+///
+/// Sleeps until the deadline appearing on the `activity` channel,
+/// i.e. if a new deadline appears before the sleep finishes,
+/// the sleep is reset to the new deadline.
+///
+/// The `activity` should be updated whenever a new message is received.
+async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
+    let mut deadline = *activity.borrow();
+    let sleep = sleep_until(deadline.into());
+    pin_mut!(sleep);
 
-    let addr = client.module.info().database_identity;
-
-    // Build a queue of incoming messages to handle, to be processed one at a time,
-    // in the order they're received.
-    //
-    // N.B. if you're refactoring this code: you must ensure the handle_queue is dropped before
-    // client.disconnect() is called. Otherwise, we can be left with a stale future that's never
-    // awaited, which can lead to bugs like:
-    // https://rust-lang.github.io/wg-async/vision/submitted_stories/status_quo/aws_engineer/solving_a_deadlock.html
-    //
-    // NOTE: never let this go unpolled while you're awaiting something; otherwise, it's possible
-    //       to deadlock or delay for a long time. see usage of `also_poll()` in the branches of the
-    //       `select!` for examples of how to do this.
-    //
-    // TODO: do we want this to have a fixed capacity? or should it be unbounded
-    let mut message_queue = MeteredDeque::<(DataMessage, Instant)>::new(
-        WORKER_METRICS.total_incoming_queue_length.with_label_values(&addr),
-    );
-    let mut current_message = pin!(MaybeDone::Gone);
-
-    let mut closed = false;
-    let mut rx_buf = Vec::new();
-
-    let mut msg_buffer = SerializeBuffer::new(client.config);
     loop {
-        rx_buf.clear();
-        enum Item {
-            Message(ClientMessage),
-            HandleResult(Result<(), MessageHandleError>),
-        }
-        if let MaybeDone::Gone = *current_message {
-            if let Some((message, timer)) = message_queue.pop_front() {
-                let client = client.clone();
-                let fut = async move { client.handle_message(message, timer).await };
-                current_message.set(MaybeDone::Future(fut));
-            }
-        }
-        let message = tokio::select! {
-            // NOTE: all of the futures for these branches **must** be cancel safe. do not
-            //       change this if you don't know what that means.
+        tokio::select! {
+            biased;
 
-            // If we have a result from handling a past message to report,
-            // grab it to handle in the next `match`.
-            Some(res) = async {
-                make_progress(&mut current_message).await;
-                current_message.as_mut().take_output()
-            } => {
-                Item::HandleResult(res)
-            }
-
-            // If we've received an incoming message,
-            // grab it to handle in the next `match`.
-            message = ws.next() => match message {
-                Some(Ok(m)) => Item::Message(ClientMessage::from_message(m)),
-                Some(Err(error)) => {
-                    log::warn!("Websocket receive error: {}", error);
-                    break;
-                }
-                // the client sent us a close frame
-                None => {
-                    break;
+            Ok(()) = activity.changed() => {
+                let new_deadline = *activity.borrow_and_update();
+                if new_deadline != deadline {
+                    deadline = new_deadline;
+                    sleep.as_mut().reset(deadline.into());
                 }
             },
 
-            // If we have an outgoing message to send, send it off.
-            // No incoming `message` to handle, so `continue`.
-            Some(n) = sendrx.recv_many(&mut rx_buf, 32).map(|n| (n != 0).then_some(n)) => {
-                if closed {
-                    // TODO: this isn't great. when we receive a close request from the peer,
-                    //       tungstenite doesn't let us send any new messages on the socket,
-                    //       even though the websocket RFC allows it. should we fork tungstenite?
-                    log::info!("dropping {n} messages due to ws already being closed");
-                    log::debug!("dropped messages: {:?}", &rx_buf[..n]);
-                } else {
-                    let send_all = async {
-                        for msg in rx_buf.drain(..n) {
-                            let workload = msg.workload();
-                            let num_rows = msg.num_rows();
+            () = &mut sleep => {
+                break;
+            },
+        }
+    }
+}
 
-                            // Serialize the message, report metrics,
-                            // and keep a handle to the buffer.
-                            let (msg_alloc, msg_data) = serialize(msg_buffer, msg, client.config);
-                            report_ws_sent_metrics(&addr, workload, num_rows, &msg_data);
+/// Consumes `ws` by composing [`ws_recv_queue`], [`ws_recv_loop`],
+/// [`ws_client_message_handler`] and `message_handler`.
+///
+/// `idle_tx` is the sending end of a [`ws_idle_timer`]. The [`ws_recv_loop`]
+/// sends a new, extended deadline whenever it receives a message.
+///
+/// `unordered_tx` is used to send message execution errors
+/// or to initiate a close handshake.
+///
+/// Initiates a close handshake if the `message_handler` returns any variant
+/// of [`MessageHandleError`] that is **not** [`MessageHandleError::Execution`].
+///
+/// Terminates if:
+///
+/// - the `ws` stream is exhausted
+/// - or, `unordered_tx` is already closed
+///
+/// In the latter case, we assume that the connection is in an errored state,
+/// such that we wouldn't be able to receive any more messages anyway.
+async fn ws_recv_task<MessageHandler>(
+    state: Arc<ActorState>,
+    idle_tx: watch::Sender<Instant>,
+    client_closed_metric: IntGauge,
+    message_handler: impl Fn(DataMessage, Instant) -> MessageHandler,
+    unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
+    ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin + Send + 'static,
+) where
+    MessageHandler: Future<Output = Result<(), MessageHandleError>>,
+{
+    let recv_queue = ws_recv_queue(state.clone(), unordered_tx.clone(), ws);
+    let recv_loop = pin!(ws_recv_loop(state.clone(), idle_tx, recv_queue));
+    let recv_handler = ws_client_message_handler(state.clone(), client_closed_metric, recv_loop);
+    pin_mut!(recv_handler);
 
-                            // Buffer the message without necessarily sending it.
-                            let res = ws.feed(datamsg_to_wsmsg(msg_data)).await;
-
-                            // At this point,
-                            // the underlying allocation of `msg_data` should have a single referent
-                            // and this should be `msg_alloc`.
-                            // We can put this back into our pool.
-                            msg_buffer = msg_alloc.try_reclaim()
-                                .expect("should have a unique referent to `msg_alloc`");
-
-                            if res.is_err() {
-                                return (res, msg_buffer);
-                            }
-                        }
-                        // now we flush all the messages to the socket
-                        (ws.flush().await, msg_buffer)
-                    };
-                    // Build a future that both times out and drives the send.
-                    //
-                    // Note that if flushing cannot immediately complete for whatever reason,
-                    // it will wait without polling the other futures in the `select!` arms.
-                    // Among other things, this means our liveness tick will not be polled.
-                    //
-                    // To avoid waiting indefinitely, we wrap the send in a timeout.
-                    // A timeout is treated as an unresponsive client and we drop the connection.
-                    let send_all = tokio::time::timeout(SEND_TIMEOUT, send_all);
-                    // Flush the websocket while continuing to poll the `handle_queue`,
-                    // to avoid deadlocks or delays due to enqueued futures holding resources.
-                    let send_all = also_poll(send_all, make_progress(&mut current_message));
-                    let t1 = Instant::now();
-                    let (send_all_result, buf) = match send_all.await {
-                        Ok((send_all_result, buf)) => {
-                            (send_all_result, buf)
-                        }
-                        Err(e) => {
-                            // Our send timed out; drop client without trying to send them a Close
-                            log::warn!("send_all timed out: {e}");
-                            break;
-                        }
-                    };
-                    msg_buffer = buf;
-                    if let Err(error) = send_all_result {
-                        log::warn!("Websocket send error: {error}")
-                    }
-                    let time = t1.elapsed();
-                    if time > Duration::from_millis(50) {
-                        tracing::warn!(?time, "send_all took a very long time");
-                    }
-                }
-                continue;
-            }
-
-            res = client.watch_module_host(), if !closed => {
-                match res {
-                    Ok(()) => {}
-                    // If the module has exited, close the websocket.
-                    Err(NoSuchModule) => {
-                        // Send a close frame while continuing to poll the `handle_queue`,
-                        // to avoid deadlocks or delays due to enqueued futures holding resources.
-                        let close = ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() }));
-                        // Wrap the close in a timeout
-                        let close = tokio::time::timeout(SEND_TIMEOUT, close);
-                        match also_poll(close, make_progress(&mut current_message)).await {
-                            Ok(Err(e)) => {
-                                log::warn!("error closing websocket: {e:#}")
-                            }
-                            Err(e) => {
-                                // Our send timed out; drop client without trying to send them a Close.
-                                //
-                                // Is it correct to break if a reducer is still in progress?
-                                // Answer: Yes it is.
-                                //
-                                // If a reducer is currently being executed,
-                                // we are waiting for the `current_message` future to complete.
-                                // When we break, the task completes and this future is dropped.
-                                //
-                                // Notably though the reducer itself will run to completion,
-                                // however when it tries to notify this task that it is done,
-                                // it will encounter a closed sender in `JobThread::run`,
-                                // dropping the value that it's trying to send.
-                                // In particular it will not throw an error or panic.
-                                log::warn!("websocket close timed out: {e}");
-                                break;
-                            }
-                            _ => {}
-                        };
-                        closed = true;
-                    }
-                }
-                continue;
-            }
-
-            // If it's time to send a ping...
-            _ = liveness_check_interval.tick() => {
-                // If we received a pong at some point, send a fresh ping.
-                if mem::take(&mut got_pong) {
-                    // Build a future that both times out and drives the send.
-                    //
-                    // Note that if the send cannot immediately complete for whatever reason,
-                    // it will wait without polling the other futures in the `select!` arms.
-                    // Among other things, this means we won't poll the websocket for a Close frame.
-                    //
-                    // To avoid waiting indefinitely, we wrap the ping in a timeout.
-                    // A timeout is treated as an unresponsive client and we drop the connection.
-                    let ping = ws.send(WsMessage::Ping(Bytes::new()));
-                    let ping_with_timeout = tokio::time::timeout(SEND_TIMEOUT, ping);
-
-                    // Send a ping message while continuing to poll the `handle_queue`,
-                    // to avoid deadlocks or delays due to enqueued futures holding resources.
-                    match also_poll(ping_with_timeout, make_progress(&mut current_message)).await {
-                        Ok(Err(e)) => {
-                            log::warn!("error sending ping: {e:#}");
-                        }
-                        Err(e) => {
-                            // Our ping timed out; drop them without trying to send them a Close
-                            log::warn!("ping timed out after: {e}");
-                            break;
-                        }
-                        _ => {}
-                    }
-                    continue;
-                } else {
-                    // the client never responded to our ping; drop them without trying to send them a Close
-                    log::warn!("client {} timed out", client.id);
+    while let Some((data, timer)) = recv_handler.next().await {
+        let result = message_handler(data, timer).await;
+        if let Err(e) = result {
+            if let MessageHandleError::Execution(err) = e {
+                log::error!("{err:#}");
+                // If the send task has exited, also exit this recv task.
+                if unordered_tx.send(err.into()).is_err() {
                     break;
                 }
+                continue;
             }
-        };
+            log::debug!("Client caused error: {e}");
+            let close = CloseFrame {
+                code: CloseCode::Error,
+                reason: format!("{e:#}").into(),
+            };
+            // If the send task has exited, also exit this recv task.
+            // No need to send the close handshake in that case; the client is already gone.
+            if unordered_tx.send(close.into()).is_err() {
+                break;
+            };
+        }
+    }
+}
 
-        // Handle the incoming message we grabbed in the previous `select!`.
-
-        // TODO: Data flow appears to not require `enum Item` or this distinct `match`,
-        //       since `Item::HandleResult` comes from exactly one `select!` branch,
-        //       and `Item::Message` comes from exactly one distinct `select!` branch.
-        //       Consider merging this `match` with the previous `select!`.
-        match message {
-            Item::Message(ClientMessage::Message(message)) => {
-                let timer = Instant::now();
-                message_queue.push_back((message, timer))
-            }
-            Item::HandleResult(res) => {
-                if let Err(e) = res {
-                    if let MessageHandleError::Execution(err) = e {
-                        log::error!("reducer execution error: {err:#}");
-                        // Serialize the message and keep a handle to the buffer.
-                        let (msg_alloc, msg_data) = serialize(msg_buffer, err, client.config);
-
-                        let send = async { ws.send(datamsg_to_wsmsg(msg_data)).await };
-                        let send = tokio::time::timeout(SEND_TIMEOUT, send);
-
-                        match send.await {
-                            Ok(Err(error)) => {
-                                log::warn!("Websocket send error: {error}")
-                            }
-                            Err(error) => {
-                                log::warn!("send timed out after: {error}");
-                                break;
-                            }
-                            _ => {}
+/// Stream that consumes a stream of [`WsMessage`]s and yields [`ClientMessage`]s.
+///
+/// Terminates if:
+///
+/// - the input stream is exhausted
+/// - the input stream yields an error
+///
+/// If `state.closed`, continues to poll the input stream in order for the
+/// websocket close handshake to complete. Any messages received while in this
+/// state are dropped.
+fn ws_recv_loop(
+    state: Arc<ActorState>,
+    idle_tx: watch::Sender<Instant>,
+    mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin,
+) -> impl Stream<Item = ClientMessage> {
+    // Get the next message from `ws`, or `None` if the stream is exhausted.
+    //
+    // If `state.closed`, `ws` is drained until it either yields an `Err`, is
+    // exhausted, or a timeout of 250ms has elapsed.
+    async fn next_message(
+        state: &ActorState,
+        ws: &mut (impl Stream<Item = Result<WsMessage, WsError>> + Unpin),
+    ) -> Option<Result<WsMessage, WsError>> {
+        if state.closed() {
+            log::trace!("drain websocket waiting for client close");
+            let res: Result<Option<Result<WsMessage, WsError>>, Elapsed> =
+                timeout(state.config.close_handshake_timeout, async {
+                    while let Some(item) = ws.next().await {
+                        match item {
+                            Ok(message) => drop(message),
+                            Err(e) => return Some(Err(e)),
                         }
-
-                        // At this point,
-                        // the underlying allocation of `msg_data` should have a single referent
-                        // and this should be `msg_alloc`.
-                        // We can put this back into our pool.
-                        msg_buffer = msg_alloc
-                            .try_reclaim()
-                            .expect("should have a unique referent to `msg_alloc`");
-
-                        continue;
                     }
-                    log::warn!("Client caused error on text message: {}", e);
-                    let close = ws.close(Some(CloseFrame {
-                        code: CloseCode::Error,
-                        reason: format!("{e:#}").into(),
-                    }));
+                    None
+                })
+                .await;
+            match res {
+                Err(_elapsed) => {
+                    log::warn!("timeout waiting for client close");
+                    None
+                }
+                Ok(item) => item, // either error or `None`
+            }
+        } else {
+            log::trace!("await next client message without timeout");
+            ws.next().await
+        }
+    }
 
-                    // Wrap the close in a timeout
-                    match tokio::time::timeout(SEND_TIMEOUT, close).await {
-                        Ok(Err(e)) => {
-                            log::warn!("error closing websocket: {e:#}")
-                        }
-                        Err(e) => {
-                            log::warn!("send timed out after: {e}");
-                            break;
-                        }
-                        _ => {}
+    stream! {
+        loop {
+            let Some(res) = next_message(&state, &mut ws).await else {
+                log::trace!("recv stream exhausted");
+                break;
+            };
+            match res {
+                Ok(m) => {
+                    idle_tx.send(state.next_idle_deadline()).ok();
+
+                    if !state.closed() {
+                        yield ClientMessage::from_message(m);
                     }
+                    // If closed, keep polling until either:
+                    //
+                    // - the client sends a close frame (`ws` returns `None)
+                    // - or `ws` yields an error
+                    log::trace!("message received while already closed");
                 }
-            }
-            Item::Message(ClientMessage::Ping(_message)) => {
-                log::trace!("Received ping from client {}", client.id);
-                // No need to explicitly respond with a `Pong`, as tungstenite handles this automatically.
-                // See [https://github.com/snapview/tokio-tungstenite/issues/88].
-            }
-            Item::Message(ClientMessage::Pong(_message)) => {
-                log::trace!("Received heartbeat from client {}", client.id);
-                got_pong = true;
-            }
-            Item::Message(ClientMessage::Close(close_frame)) => {
-                // This happens in 2 cases:
-                // a) We sent a Close frame and this is the ack.
-                // b) This is the client telling us they want to close.
-                // in either case, after the remaining messages in the queue flush,
-                // ws.next() will return None and we'll exit the loop.
-                // NOTE: No need to send a close frame, it's is queued
-                //       automatically by tungstenite.
-
-                // if this is the closed-by-them case, let the ClientConnectionSenders know now.
-                sendrx.close();
-                log::trace!("Close frame {:?}", close_frame);
-                if !closed {
-                    // This is the client telling us they want to close.
-                    WORKER_METRICS
-                        .ws_clients_closed_connection
-                        .with_label_values(&addr)
-                        .inc();
-                }
-
-                // Can't we just break out of the loop here?
-                // Not, if we want tungstenite to send a close frame back to the client.
-                // That will only happen once `ws.next()` returns `None`.
-                closed = true;
+                // None of the error cases can be meaningfully recovered from
+                // (and some can't even occur on the `ws` stream).
+                // Exit here but spell out an exhaustive match
+                // in order to bring any future library changes to our attention.
+                Err(e) => match e {
+                    e @ (WsError::ConnectionClosed
+                    | WsError::AlreadyClosed
+                    | WsError::Io(_)
+                    | WsError::Tls(_)
+                    | WsError::Capacity(_)
+                    | WsError::Protocol(_)
+                    | WsError::WriteBufferFull(_)
+                    | WsError::Utf8
+                    | WsError::AttackAttempt
+                    | WsError::Url(_)
+                    | WsError::Http(_)
+                    | WsError::HttpFormat(_)) => {
+                        log::warn!("Websocket receive error: {e}");
+                        break;
+                    }
+                },
             }
         }
     }
-    log::debug!("Client connection ended");
-    sendrx.close();
 }
 
+/// Consumes `ws` and queues its items in a channel.
+///
+/// The channel is initialized with [`ActorConfig::incoming_queue_length`].
+/// If it is at capacity, a connection shutdown is initiated by sending
+/// [`UnorderedWsMessage::Close`] via `unordered_tx`.
+///
+/// Returns the channel receiver.
+///
+/// NOTE: This function is provided for backwards-compatibility, in particular
+/// SDK clients not handling backpressure gracefully, and for observability of
+/// transaction backlogging. It will probably go away in the future, see [#1851].
+///
+/// [#1851]: https://github.com/clockworklabs/SpacetimeDBPrivate/issues/1851
+fn ws_recv_queue(
+    state: Arc<ActorState>,
+    unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
+    mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin + Send + 'static,
+) -> impl Stream<Item = Result<WsMessage, WsError>> {
+    const CLOSE: UnorderedWsMessage = UnorderedWsMessage::Close(CloseFrame {
+        code: CloseCode::Again,
+        reason: Utf8Bytes::from_static("too many requests"),
+    });
+    let on_message_after_close = move |client_id| {
+        log::warn!("client {client_id} sent message after close or error");
+    };
+
+    let (tx, rx) = mpsc::channel(state.config.incoming_queue_length.get());
+    let rx = MeteredReceiverStream {
+        inner: MeteredReceiver::with_gauge(
+            rx,
+            WORKER_METRICS
+                .total_incoming_queue_length
+                .with_label_values(&state.database),
+        ),
+    };
+
+    tokio::spawn(async move {
+        while let Some(item) = ws.next().await {
+            if let Err(e) = tx.try_send(item) {
+                match e {
+                    // If the queue is full, disconnect the client.
+                    mpsc::error::TrySendError::Full(item) => {
+                        // If we can't send close (send task already terminated):
+                        //
+                        // - Let downstream handlers know that we're closing,
+                        //   so that remaining items in the queue are dropped.
+                        //
+                        // - Then exit the loop, as we won't be processing any
+                        //   more messages, and we don't expect a close response
+                        //   to arrive from the client.
+                        if unordered_tx.send(CLOSE).is_err() {
+                            state.close();
+                            break;
+                        }
+                        // If we successfully enqueued `CLOSE`, enqueue `item`
+                        // as well, as soon as there is space in the channel.
+                        //
+                        // This is to allow the client to complete the close
+                        // handshake, for which the downstream handler needs to
+                        // drain the queue.
+                        //
+                        // If `tx.send` fails, the pipeline is broken, so exit.
+                        // See commentary on the `TrySendError::Closed` match
+                        // arm below.
+                        if tx.send(item).await.is_err() {
+                            on_message_after_close(state.client_id);
+                            break;
+                        }
+                    }
+                    // If the downstream consumer went away,
+                    // it has consumed a `Close` frame or `Err` value
+                    // from the queue and thus has determined that it's done.
+                    //
+                    // Well-behaved clients shouldn't send anything after
+                    // closing, so issue a warning.
+                    //
+                    // We're done either way, so break.
+                    mpsc::error::TrySendError::Closed(_item) => {
+                        on_message_after_close(state.client_id);
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    rx
+}
+
+/// Turns a [`MeteredReceiver`] into a [`Stream`],
+/// like [`tokio_stream::wrappers::ReceiverStream`] does for [`mpsc::Receiver`].
+struct MeteredReceiverStream<T> {
+    inner: MeteredReceiver<T>,
+}
+
+impl<T> Stream for MeteredReceiverStream<T> {
+    type Item = T;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.inner.poll_recv(cx)
+    }
+}
+
+/// Stream that consumes [`ClientMessage`]s and yields [`DataMessage`]s for
+/// evaluation.
+///
+/// Calls `state.set_ponged()` if and when the input yields a pong message.
+/// Calls `state.close()` if and when the input yields a close frame,
+/// i.e. the client initiated a close handshake, which we track using the
+/// `client_closed_metric`.
+///
+/// Terminates if and when the input stream terminates.
+fn ws_client_message_handler(
+    state: Arc<ActorState>,
+    client_closed_metric: IntGauge,
+    mut messages: impl Stream<Item = ClientMessage> + Unpin,
+) -> impl Stream<Item = (DataMessage, Instant)> {
+    stream! {
+        while let Some(message) = messages.next().await {
+            match message {
+                ClientMessage::Message(message) => {
+                    log::trace!("Received client message");
+                    yield (message, Instant::now());
+                },
+                ClientMessage::Ping(_bytes) => {
+                    log::trace!("Received ping from client {}", state.client_id);
+                    // `tungstenite` will respond with `Pong` for us,
+                    // no need to send it ourselves.
+                },
+                ClientMessage::Pong(_bytes) => {
+                    log::trace!("Received pong from client {}", state.client_id);
+                    state.set_ponged();
+                },
+                ClientMessage::Close(close_frame) => {
+                    log::trace!("Received Close frame from client {}: {:?}", state.client_id, close_frame);
+                    let was_closed = state.close();
+                    // This is the client telling us they want to close.
+                    if !was_closed {
+                        client_closed_metric.inc();
+                    }
+                }
+            }
+        }
+        log::trace!("client message handler done");
+    }
+}
+
+/// Outgoing messages that don't need to be ordered wrt subscription updates.
+#[derive(Debug, From)]
+enum UnorderedWsMessage {
+    /// Server-initiated close.
+    Close(CloseFrame),
+    /// Server-initiated ping.
+    Ping(Bytes),
+    /// Error calling a reducer.
+    ///
+    /// The error indicates that the reducer was **not** called,
+    /// and can thus be unordered wrt subscription updates.
+    Error(MessageExecutionError),
+}
+
+/// Sink that sends outgoing messages to the `ws` sink.
+///
+/// Consumes `messages`, which yields subscription updates and reducer call
+/// results. Note that [`SerializableMessage`]s require serialization and
+/// potentially compression, which can be costly.
+/// Also consumes `unordered`, which yields [`UnorderedWsMessage`]s.
+///
+/// Terminates if:
+///
+/// - `unordered` is closed
+/// - an error occurs sending to the `ws` sink
+///
+/// If an [`UnorderedWsMessage::Close`] is encountered, a close frame is sent
+/// to the `ws` sink, and `state.close()` is called. When this happens,
+/// `messages` will no longer be polled (no data can be sent after a close
+/// frame anyways), so `messages.close()` will be called.
+///
+/// Keeps polling `unordered` if `state.closed()`, but discards all data.
+/// This is so `ws_client_actor_inner` keeps polling the receive end of the
+/// socket until the close handshake completes -- it would otherwise exit early
+/// when sending to `unordered` fails.
+async fn ws_send_loop(
+    state: Arc<ActorState>,
+    config: ClientConfig,
+    mut ws: impl Sink<WsMessage, Error: Display> + Unpin,
+    mut messages: MeteredReceiver<SerializableMessage>,
+    mut unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
+) {
+    let mut messages_buf = Vec::with_capacity(32);
+    let mut serialize_buf = SerializeBuffer::new(config);
+
+    loop {
+        let closed = state.closed();
+
+        tokio::select! {
+            // `biased` towards the unordered queue,
+            // which may initiate a connection shutdown.
+            biased;
+
+            maybe_msg = unordered.recv() => {
+                let Some(msg) = maybe_msg else {
+                    break;
+                };
+                // We shall not sent more data after a close frame,
+                // but keep polling `unordered` so that `ws_client_actor` keeps
+                // waiting for an acknowledgement from the client,
+                // even if it spuriously initiates another close itself.
+                if closed {
+                    continue;
+                }
+                match msg {
+                    UnorderedWsMessage::Close(close_frame) => {
+                        log::trace!("sending close frame");
+                        if let Err(e) = ws.send(WsMessage::Close(Some(close_frame))).await {
+                            log::warn!("error sending close frame: {e:#}");
+                            break;
+                        }
+                        // NOTE: It's ok to not update the state if we fail to
+                        // send the close frame, because we assume that the main
+                        // loop will exit when this future terminates.
+                        state.close();
+                        // We won't be polling `messages` anymore,
+                        // so let senders know.
+                        messages.close();
+                    },
+                    UnorderedWsMessage::Ping(bytes) => {
+                        log::trace!("sending ping");
+                        if let Err(e) = ws.feed(WsMessage::Ping(bytes)).await {
+                            log::warn!("error sending ping: {e:#}");
+                            break;
+                        }
+                    },
+                    UnorderedWsMessage::Error(err) => {
+                        log::trace!("sending error result");
+                        let (msg_alloc, res) = send_message(
+                            &state.database,
+                            config,
+                            serialize_buf,
+                            None,
+                            &mut ws,
+                            err
+                        ).await;
+                        serialize_buf = msg_alloc;
+
+                        if let Err(e) = res {
+                            log::warn!("websocket send error: {e}");
+                            break;
+                        }
+                    },
+                }
+            },
+
+            n = messages.recv_many(&mut messages_buf, 32), if !closed => {
+                if n == 0 {
+                    continue;
+                }
+                log::trace!("sending {n} outgoing messages");
+                for msg in messages_buf.drain(..n) {
+                    let (msg_alloc, res) = send_message(
+                        &state.database,
+                        config,
+                        serialize_buf,
+                        msg.workload().zip(msg.num_rows()),
+                        &mut ws,
+                        msg
+                    ).await;
+                    serialize_buf = msg_alloc;
+
+                    if let Err(e) = res {
+                        log::warn!("websocket send error: {e}");
+                        return;
+                    }
+                }
+            },
+        }
+
+        if let Err(e) = ws.flush().await {
+            log::warn!("error flushing websocket: {e}");
+            break;
+        }
+    }
+}
+
+/// Serialize and potentially compress `message`, and feed it to the `ws` sink.
+async fn send_message<S: Sink<WsMessage> + Unpin>(
+    database_identity: &Identity,
+    config: ClientConfig,
+    serialize_buf: SerializeBuffer,
+    metrics_metadata: Option<(WorkloadType, usize)>,
+    ws: &mut S,
+    message: impl ToProtocol<Encoded = SwitchedServerMessage> + Send + 'static,
+) -> (SerializeBuffer, Result<(), S::Error>) {
+    let (workload, num_rows) = metrics_metadata.unzip();
+    // Move large messages to a rayon thread,
+    // as serialization and compression can take a long time.
+    // The threshold of 1024 rows is arbitrary, and may need to be refined.
+    let serialize_and_compress = |serialize_buf, message, config| {
+        let start = Instant::now();
+        let (msg_alloc, msg_data) = serialize(serialize_buf, message, config);
+        (start.elapsed(), msg_alloc, msg_data)
+    };
+    let (timing, msg_alloc, msg_data) = if num_rows.is_some_and(|n| n > 1024) {
+        spawn_rayon(move || serialize_and_compress(serialize_buf, message, config)).await
+    } else {
+        serialize_and_compress(serialize_buf, message, config)
+    };
+    report_ws_sent_metrics(database_identity, workload, num_rows, timing, &msg_data);
+
+    let res = async {
+        ws.feed(datamsg_to_wsmsg(msg_data)).await?;
+        // To reclaim the `msg_alloc` memory, we need `SplitSink` to push down
+        // its item slot to the inner sink, which will copy the `Bytes` and
+        // drop the reference.
+        // We don't want to flush the inner sink just yet, as we might be
+        // writing many messages.
+        // `SplitSink::poll_ready` does what we want.
+        poll_fn(|cx| ws.poll_ready_unpin(cx)).await
+    }
+    .await;
+    // Reclaim can fail if we didn't succeed pushing down the data to the
+    // websocket. We must return a buffer, though, so create a fresh one.
+    let buf = msg_alloc.try_reclaim().unwrap_or_else(|| SerializeBuffer::new(config));
+
+    (buf, res)
+}
+
+#[derive(Debug)]
 enum ClientMessage {
     Message(DataMessage),
     Ping(Bytes),
     Pong(Bytes),
     Close(Option<CloseFrame>),
 }
+
 impl ClientMessage {
     fn from_message(msg: WsMessage) -> Self {
         match msg {
@@ -550,6 +1090,7 @@ fn report_ws_sent_metrics(
     addr: &Identity,
     workload: Option<WorkloadType>,
     num_rows: Option<usize>,
+    serialize_duration: Duration,
     msg_ws: &DataMessage,
 ) {
     // These metrics should be updated together,
@@ -564,6 +1105,11 @@ fn report_ws_sent_metrics(
             .with_label_values(addr, &workload)
             .observe(msg_ws.len() as f64);
     }
+
+    WORKER_METRICS
+        .websocket_serialize_secs
+        .with_label_values(addr)
+        .observe(serialize_duration.as_secs_f64());
 }
 
 fn datamsg_to_wsmsg(msg: DataMessage) -> WsMessage {
@@ -580,4 +1126,573 @@ fn utf8bytes_to_bytestring(s: Utf8Bytes) -> ByteString {
 fn bytestring_to_utf8bytes(s: ByteString) -> Utf8Bytes {
     // SAFETY: `Utf8Bytes` and `ByteString` have the same invariant of UTF-8 validity
     unsafe { Utf8Bytes::from_bytes_unchecked(s.into_bytes()) }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::atomic::AtomicUsize,
+        task::{Context, Poll},
+    };
+
+    use anyhow::anyhow;
+    use futures::{
+        future::{self, Either, FutureExt as _},
+        sink, stream,
+    };
+    use pretty_assertions::assert_matches;
+    use spacetimedb::client::ClientName;
+    use tokio::time::sleep;
+
+    use super::*;
+
+    fn dummy_client_id() -> ClientActorId {
+        ClientActorId {
+            identity: Identity::ZERO,
+            connection_id: ConnectionId::ZERO,
+            name: ClientName(0),
+        }
+    }
+
+    fn dummy_actor_state() -> ActorState {
+        dummy_actor_state_with_config(<_>::default())
+    }
+
+    fn dummy_actor_state_with_config(config: ActorConfig) -> ActorState {
+        ActorState::new(Identity::ZERO, dummy_client_id(), config)
+    }
+
+    #[tokio::test]
+    async fn idle_timer_extends_sleep() {
+        let timeout = Duration::from_millis(10);
+
+        let start = Instant::now();
+        let (tx, rx) = watch::channel(start + timeout);
+        tokio::join!(ws_idle_timer(rx), async {
+            for _ in 0..5 {
+                sleep(Duration::from_millis(1)).await;
+                tx.send(Instant::now() + timeout).unwrap();
+            }
+        });
+        let elapsed = start.elapsed();
+        let expected = timeout + Duration::from_millis(5);
+        assert!(
+            elapsed >= expected,
+            "{}ms elapsed, expected >= {}ms",
+            elapsed.as_millis(),
+            expected.as_millis(),
+        );
+    }
+
+    #[tokio::test]
+    async fn recv_loop_terminates_when_input_exhausted() {
+        let state = Arc::new(dummy_actor_state());
+        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
+
+        let input = stream::iter(vec![Ok(WsMessage::Ping(Bytes::new()))]);
+        pin_mut!(input);
+
+        let recv_loop = ws_recv_loop(state, idle_tx, input);
+        pin_mut!(recv_loop);
+
+        assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
+        assert_matches!(recv_loop.next().await, None);
+    }
+
+    #[tokio::test]
+    async fn recv_loop_terminates_when_input_yields_err() {
+        let state = Arc::new(dummy_actor_state());
+        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
+
+        let input = stream::iter(vec![
+            Ok(WsMessage::Ping(Bytes::new())),
+            Err(WsError::ConnectionClosed),
+            Ok(WsMessage::Pong(Bytes::new())),
+        ]);
+        pin_mut!(input);
+
+        let recv_loop = ws_recv_loop(state, idle_tx, input);
+        pin_mut!(recv_loop);
+
+        assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
+        assert_matches!(recv_loop.next().await, None);
+    }
+
+    #[tokio::test]
+    async fn recv_loop_drains_remaining_messages_when_closed() {
+        let state = Arc::new(dummy_actor_state());
+        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
+
+        let input = stream::iter(vec![
+            Ok(WsMessage::Ping(Bytes::new())),
+            Ok(WsMessage::Pong(Bytes::new())),
+        ]);
+        pin_mut!(input);
+        {
+            let recv_loop = ws_recv_loop(state.clone(), idle_tx, &mut input);
+            pin_mut!(recv_loop);
+
+            state.close();
+            assert_matches!(recv_loop.next().await, None);
+        }
+        assert_matches!(input.next().await, None);
+    }
+
+    #[tokio::test]
+    async fn recv_loop_stops_at_error_while_draining() {
+        let state = Arc::new(dummy_actor_state());
+        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
+
+        let input = stream::iter(vec![
+            Ok(WsMessage::Ping(Bytes::new())),
+            Err(WsError::ConnectionClosed),
+            Ok(WsMessage::Pong(Bytes::new())),
+        ]);
+        pin_mut!(input);
+        {
+            let recv_loop = ws_recv_loop(state.clone(), idle_tx, &mut input);
+            pin_mut!(recv_loop);
+
+            state.close();
+            assert_matches!(recv_loop.next().await, None);
+        }
+        assert_matches!(input.next().await, Some(Ok(WsMessage::Pong(_))));
+    }
+
+    #[tokio::test]
+    async fn recv_loop_updates_idle_channel() {
+        let state = Arc::new(dummy_actor_state());
+        let idle_deadline = Instant::now() + state.config.idle_timeout;
+        let (idle_tx, mut idle_rx) = watch::channel(idle_deadline);
+
+        let input = stream::iter(vec![
+            Ok(WsMessage::Ping(Bytes::new())),
+            Ok(WsMessage::Pong(Bytes::new())),
+        ]);
+        let recv_loop = ws_recv_loop(state, idle_tx, input);
+        pin_mut!(recv_loop);
+
+        let mut new_idle_deadline = *idle_rx.borrow();
+        while let Some(message) = recv_loop.next().await {
+            drop(message);
+            assert!(idle_rx.has_changed().unwrap());
+            new_idle_deadline = *idle_rx.borrow_and_update();
+        }
+        assert!(new_idle_deadline > idle_deadline);
+    }
+
+    #[tokio::test]
+    async fn client_message_handler_terminates_when_input_exhausted() {
+        let state = Arc::new(dummy_actor_state());
+        let metric = IntGauge::new("bleep", "unhelpful").unwrap();
+
+        let input = stream::iter(vec![
+            ClientMessage::Ping(Bytes::new()),
+            ClientMessage::Message(DataMessage::from("hello".to_owned())),
+        ]);
+        let handler = ws_client_message_handler(state, metric, input);
+        pin_mut!(handler);
+
+        assert_matches!(
+            handler.next().await,
+            Some((DataMessage::Text(data), _instant)) if data == "hello"
+        );
+        assert_matches!(handler.next().await, None);
+    }
+
+    #[tokio::test]
+    async fn client_message_handler_updates_pong_and_closed_states_and_metric() {
+        let state = Arc::new(dummy_actor_state());
+        state.reset_ponged();
+        let metric = IntGauge::new("bleep", "unhelpful").unwrap();
+
+        let input = stream::iter(vec![ClientMessage::Pong(Bytes::new()), ClientMessage::Close(None)]);
+        let handler = ws_client_message_handler(state.clone(), metric.clone(), input);
+        handler.map(drop).for_each(future::ready).await;
+
+        assert!(state.closed());
+        assert!(state.reset_ponged());
+        assert_eq!(metric.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn send_loop_terminates_when_unordered_closed() {
+        let state = Arc::new(dummy_actor_state());
+        let (messages_tx, messages_rx) = mpsc::channel(64);
+        let messages = MeteredReceiver::new(messages_rx);
+        let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+
+        let send_loop = ws_send_loop(state, ClientConfig::for_test(), sink::drain(), messages, unordered_rx);
+        pin_mut!(send_loop);
+
+        assert!(is_pending(&mut send_loop).await);
+        drop(messages_tx);
+        assert!(is_pending(&mut send_loop).await);
+
+        drop(unordered_tx);
+        send_loop.await;
+    }
+
+    #[tokio::test]
+    async fn send_loop_close_message_closes_state_and_messages() {
+        let state = Arc::new(dummy_actor_state());
+        let (messages_tx, messages_rx) = mpsc::channel(64);
+        let messages = MeteredReceiver::new(messages_rx);
+        let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+
+        let send_loop = ws_send_loop(
+            state.clone(),
+            ClientConfig::for_test(),
+            sink::drain(),
+            messages,
+            unordered_rx,
+        );
+        pin_mut!(send_loop);
+
+        unordered_tx
+            .send(UnorderedWsMessage::Close(CloseFrame {
+                code: CloseCode::Away,
+                reason: "done".into(),
+            }))
+            .unwrap();
+
+        assert!(is_pending(&mut send_loop).await);
+        assert!(state.closed());
+        assert!(messages_tx.is_closed());
+    }
+
+    #[tokio::test]
+    async fn send_loop_terminates_if_sink_cant_be_fed() {
+        let input = [
+            Either::Left(UnorderedWsMessage::Close(CloseFrame {
+                code: CloseCode::Away,
+                reason: "bah!".into(),
+            })),
+            Either::Left(UnorderedWsMessage::Ping(Bytes::new())),
+            Either::Left(UnorderedWsMessage::Error(MessageExecutionError {
+                reducer: None,
+                reducer_id: None,
+                caller_identity: Identity::ZERO,
+                caller_connection_id: None,
+                err: anyhow!("it did not work"),
+            })),
+            // TODO: This is the easiest to construct,
+            // but maybe we want other variants, too.
+            Either::Right(SerializableMessage::Identity(IdentityTokenMessage {
+                identity: Identity::ZERO,
+                token: "macaron".into(),
+                connection_id: ConnectionId::ZERO,
+            })),
+        ];
+
+        for msg in input {
+            let state = Arc::new(dummy_actor_state());
+            let (messages_tx, messages_rx) = mpsc::channel(64);
+            let messages = MeteredReceiver::new(messages_rx);
+            let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+
+            let send_loop = ws_send_loop(
+                state.clone(),
+                ClientConfig::for_test(),
+                UnfeedableSink,
+                messages,
+                unordered_rx,
+            );
+            pin_mut!(send_loop);
+
+            match msg {
+                Either::Left(unordered) => unordered_tx.send(unordered).unwrap(),
+                Either::Right(msg) => messages_tx.send(msg).await.unwrap(),
+            }
+            send_loop.await;
+        }
+    }
+
+    #[tokio::test]
+    async fn send_loop_terminates_if_sink_cant_be_flushed() {
+        let input = [
+            Either::Left(UnorderedWsMessage::Close(CloseFrame {
+                code: CloseCode::Away,
+                reason: "bah!".into(),
+            })),
+            Either::Left(UnorderedWsMessage::Ping(Bytes::new())),
+            Either::Left(UnorderedWsMessage::Error(MessageExecutionError {
+                reducer: None,
+                reducer_id: None,
+                caller_identity: Identity::ZERO,
+                caller_connection_id: None,
+                err: anyhow!("it did not work"),
+            })),
+            // TODO: This is the easiest to construct,
+            // but maybe we want other variants, too.
+            Either::Right(SerializableMessage::Identity(IdentityTokenMessage {
+                identity: Identity::ZERO,
+                token: "macaron".into(),
+                connection_id: ConnectionId::ZERO,
+            })),
+        ];
+
+        for msg in input {
+            let state = Arc::new(dummy_actor_state());
+            let (messages_tx, messages_rx) = mpsc::channel(64);
+            let messages = MeteredReceiver::new(messages_rx);
+            let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+
+            let send_loop = ws_send_loop(
+                state.clone(),
+                ClientConfig::for_test(),
+                UnflushableSink,
+                messages,
+                unordered_rx,
+            );
+            pin_mut!(send_loop);
+
+            match msg {
+                Either::Left(unordered) => unordered_tx.send(unordered).unwrap(),
+                Either::Right(msg) => messages_tx.send(msg).await.unwrap(),
+            }
+            send_loop.await;
+        }
+    }
+
+    #[tokio::test]
+    async fn main_loop_terminates_if_either_send_or_recv_terminates() {
+        let state = Arc::new(dummy_actor_state());
+        ws_main_loop(
+            state.clone(),
+            future::pending,
+            future::pending(),
+            tokio::spawn(sleep(Duration::from_millis(10))),
+            tokio::spawn(future::pending()),
+            drop,
+        )
+        .await;
+        ws_main_loop(
+            state,
+            future::pending,
+            future::pending(),
+            tokio::spawn(future::pending()),
+            tokio::spawn(sleep(Duration::from_millis(10))),
+            drop,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn main_loop_terminates_on_idle_timeout() {
+        let state = Arc::new(dummy_actor_state_with_config(ActorConfig {
+            idle_timeout: Duration::from_millis(10),
+            ..<_>::default()
+        }));
+        let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+
+        let start = Instant::now();
+        let mut t = tokio::spawn({
+            let state = state.clone();
+            async move {
+                ws_main_loop(
+                    state,
+                    future::pending,
+                    ws_idle_timer(idle_rx),
+                    tokio::spawn(future::pending()),
+                    tokio::spawn(future::pending()),
+                    drop,
+                )
+                .await
+            }
+        });
+
+        let loop_start = Instant::now();
+        for _ in 0..5 {
+            sleep(Duration::from_millis(5)).await;
+            idle_tx.send(state.next_idle_deadline()).unwrap();
+            assert!(is_pending(&mut t).await);
+        }
+        let timeout = loop_start.elapsed() + Duration::from_millis(10);
+
+        t.await.unwrap();
+        let elapsed = start.elapsed();
+        assert!(elapsed >= timeout);
+        assert!(elapsed < timeout + Duration::from_millis(10));
+    }
+
+    #[tokio::test]
+    async fn main_loop_keepalive_keeps_alive() {
+        let state = Arc::new(dummy_actor_state_with_config(ActorConfig {
+            ping_interval: Duration::from_millis(5),
+            idle_timeout: Duration::from_millis(10),
+            ..<_>::default()
+        }));
+        let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+        // Pretend we received a pong immediately after sending a ping,
+        // but only five times.
+        let unordered_tx = {
+            let state = state.clone();
+            let pings = AtomicUsize::new(0);
+            move |m| {
+                if let UnorderedWsMessage::Ping(_) = m {
+                    let n = pings.fetch_add(1, Ordering::Relaxed);
+                    if n < 5 {
+                        state.set_ponged();
+                        idle_tx.send(state.next_idle_deadline()).ok();
+                    }
+                }
+            }
+        };
+
+        let start = Instant::now();
+        let t = tokio::spawn({
+            let state = state.clone();
+            async move {
+                ws_main_loop(
+                    state,
+                    future::pending,
+                    ws_idle_timer(idle_rx),
+                    tokio::spawn(future::pending()),
+                    tokio::spawn(future::pending()),
+                    unordered_tx,
+                )
+                .await
+            }
+        });
+
+        let expected_timeout = (5 * state.config.ping_interval) + state.config.idle_timeout;
+        let res = timeout(expected_timeout, t).await;
+        let elapsed = start.elapsed();
+
+        // It didn't time out.
+        assert_matches!(res, Ok(Ok(())));
+        // It didn't exit early. Allow it to miss a ping.
+        assert!(elapsed >= expected_timeout - state.config.ping_interval);
+    }
+
+    #[tokio::test]
+    async fn main_loop_terminates_when_module_exits() {
+        let state = Arc::new(dummy_actor_state());
+
+        let (_idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+        let unordered_tx = {
+            let state = state.clone();
+            move |m| {
+                if let UnorderedWsMessage::Close(_) = m {
+                    state.close();
+                }
+            }
+        };
+
+        let start = Instant::now();
+        tokio::spawn(async move {
+            let hotswap = || async {
+                sleep(Duration::from_millis(5)).await;
+                Err(NoSuchModule)
+            };
+
+            ws_main_loop(
+                state.clone(),
+                hotswap,
+                ws_idle_timer(idle_rx),
+                // Pretend we received a close immediately after sending one.
+                tokio::spawn(async move {
+                    loop {
+                        if state.closed() {
+                            break;
+                        }
+                        sleep(Duration::from_millis(1)).await
+                    }
+                }),
+                tokio::spawn(future::pending()),
+                unordered_tx,
+            )
+            .await
+        })
+        .await
+        .unwrap();
+        let elapsed = start.elapsed();
+        assert!(elapsed >= Duration::from_millis(5));
+        assert!(elapsed < Duration::from_millis(10));
+    }
+
+    #[tokio::test]
+    async fn recv_queue_sends_close_when_at_capacity() {
+        let state = Arc::new(dummy_actor_state_with_config(ActorConfig {
+            incoming_queue_length: 10.try_into().unwrap(),
+            ..<_>::default()
+        }));
+
+        let (unordered_tx, mut unordered_rx) = mpsc::unbounded_channel();
+        let input = stream::iter((0..20).map(|i| Ok(WsMessage::text(format!("message {i}")))));
+
+        let received = ws_recv_queue(state, unordered_tx, input).collect::<Vec<_>>().await;
+        assert_matches!(unordered_rx.recv().await, Some(UnorderedWsMessage::Close(_)));
+        // Should have received all of the input.
+        assert_eq!(received.len(), 20);
+    }
+
+    #[tokio::test]
+    async fn recv_queue_closes_state_if_sender_gone() {
+        let state = Arc::new(dummy_actor_state_with_config(ActorConfig {
+            incoming_queue_length: 10.try_into().unwrap(),
+            ..<_>::default()
+        }));
+
+        let (unordered_tx, _) = mpsc::unbounded_channel();
+        let input = stream::iter((0..20).map(|i| Ok(WsMessage::text(format!("message {i}")))));
+
+        let received = ws_recv_queue(state.clone(), unordered_tx, input)
+            .collect::<Vec<_>>()
+            .await;
+        assert!(state.closed());
+        // Should have received up to capacity.
+        assert_eq!(received.len(), 10);
+    }
+
+    async fn is_pending(fut: &mut (impl Future + Unpin)) -> bool {
+        poll_fn(|cx| Poll::Ready(fut.poll_unpin(cx).is_pending())).await
+    }
+
+    struct UnfeedableSink;
+
+    impl<T> Sink<T> for UnfeedableSink {
+        type Error = &'static str;
+
+        fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn start_send(self: Pin<&mut Self>, _: T) -> Result<(), Self::Error> {
+            Err("don't feed the sink")
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    struct UnflushableSink;
+
+    impl<T> Sink<T> for UnflushableSink {
+        type Error = &'static str;
+
+        fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn start_send(self: Pin<&mut Self>, _: T) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Err("don't flush the sink"))
+        }
+
+        fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
 }

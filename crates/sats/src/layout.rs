@@ -9,12 +9,12 @@
 use crate::{
     de::{
         Deserialize, DeserializeSeed, Deserializer, Error, NamedProductAccess, ProductVisitor, SeqProductAccess,
-        SumAccess, SumVisitor, ValidNames, VariantAccess as _, VariantVisitor,
+        SumAccess, SumVisitor, VariantAccess as _, VariantVisitor,
     },
     i256, impl_deserialize, impl_serialize,
     sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG},
-    u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
-    SumValue, WithTypespace,
+    u256, AlgebraicType, AlgebraicValue, ArrayType, ProductType, ProductTypeElement, ProductValue, SumType,
+    SumTypeVariant, SumValue, WithTypespace,
 };
 use core::ops::{Index, Mul};
 use core::{mem, ops::Deref};
@@ -199,8 +199,8 @@ impl AlgebraicTypeLayout {
                 // but we don't care to avoid that and optimize right now,
                 // as this is only executed during upgrade / migration,
                 // and that doesn't need to be fast right now.
-                let old = AlgebraicTypeLayout::from(old.deref().clone());
-                let new = AlgebraicTypeLayout::from(new.deref().clone());
+                let old = AlgebraicTypeLayout::from(old.elem_ty.deref().clone());
+                let new = AlgebraicTypeLayout::from(new.elem_ty.deref().clone());
                 old.is_compatible_with(&new)
             }
             (Self::VarLen(VarLenType::String), Self::VarLen(VarLenType::String)) => true,
@@ -515,11 +515,11 @@ impl HasLayout for PrimitiveType {
 pub enum VarLenType {
     /// The string type corresponds to `AlgebraicType::String`.
     String,
-    /// An array type. The whole outer `AlgebraicType` is stored here.
+    /// An array type. The inner `AlgebraicType` is stored here.
     ///
-    /// Storing the whole `AlgebraicType` here allows us to directly call BSATN ser/de,
-    /// and to report type errors.
-    Array(Box<AlgebraicType>),
+    /// Previously, the outer type, i.e., `AlgebraicType::Array` was stored.
+    /// However, this is both more inefficient and bug prone.
+    Array(ArrayType),
 }
 
 #[cfg(feature = "memory-usage")]
@@ -554,7 +554,7 @@ impl From<AlgebraicType> for AlgebraicTypeLayout {
             AlgebraicType::Product(prod) => AlgebraicTypeLayout::Product(prod.into()),
 
             AlgebraicType::String => AlgebraicTypeLayout::VarLen(VarLenType::String),
-            AlgebraicType::Array(_) => AlgebraicTypeLayout::VarLen(VarLenType::Array(Box::new(ty))),
+            AlgebraicType::Array(array) => AlgebraicTypeLayout::VarLen(VarLenType::Array(array)),
 
             AlgebraicType::Bool => AlgebraicTypeLayout::Bool,
             AlgebraicType::I8 => AlgebraicTypeLayout::I8,
@@ -690,19 +690,11 @@ impl AlgebraicTypeLayout {
     /// It is intended for use in error paths, where performance is a secondary concern.
     pub fn algebraic_type(&self) -> AlgebraicType {
         match self {
-            AlgebraicTypeLayout::Primitive(prim) => prim.algebraic_type(),
-            AlgebraicTypeLayout::VarLen(var_len) => var_len.algebraic_type(),
-            AlgebraicTypeLayout::Product(prod) => AlgebraicType::Product(prod.view().product_type()),
-            AlgebraicTypeLayout::Sum(sum) => AlgebraicType::Sum(sum.sum_type()),
-        }
-    }
-}
-
-impl VarLenType {
-    fn algebraic_type(&self) -> AlgebraicType {
-        match self {
-            VarLenType::String => AlgebraicType::String,
-            VarLenType::Array(ty) => ty.as_ref().clone(),
+            Self::Primitive(prim) => prim.algebraic_type(),
+            Self::VarLen(VarLenType::String) => AlgebraicType::String,
+            Self::VarLen(VarLenType::Array(array)) => AlgebraicType::Array(array.clone()),
+            Self::Product(prod) => AlgebraicType::Product(prod.view().product_type()),
+            Self::Sum(sum) => AlgebraicType::Sum(sum.sum_type()),
         }
     }
 }
@@ -828,7 +820,9 @@ impl<'de> DeserializeSeed<'de> for &AlgebraicTypeLayout {
             AlgebraicTypeLayout::Primitive(PrimitiveType::U256) => u256::deserialize(de).map(Into::into),
             AlgebraicTypeLayout::Primitive(PrimitiveType::F32) => f32::deserialize(de).map(Into::into),
             AlgebraicTypeLayout::Primitive(PrimitiveType::F64) => f64::deserialize(de).map(Into::into),
-            AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => WithTypespace::empty(&**ty).deserialize(de),
+            AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => {
+                WithTypespace::empty(ty).deserialize(de).map(AlgebraicValue::Array)
+            }
             AlgebraicTypeLayout::VarLen(VarLenType::String) => <Box<str>>::deserialize(de).map(Into::into),
         }
     }
@@ -906,12 +900,12 @@ impl<'de> SumVisitor<'de> for &SumTypeLayout {
     }
 }
 
-impl VariantVisitor for &SumTypeLayout {
+impl VariantVisitor<'_> for &SumTypeLayout {
     type Output = u8;
 
-    fn variant_names(&self, names: &mut dyn ValidNames) {
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
         // Provide the names known from the `SumType`.
-        names.extend(self.variants.iter().filter_map(|v| v.name.as_deref()));
+        self.variants.iter().filter_map(|v| v.name.as_deref())
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -1123,5 +1117,16 @@ mod test {
                 assert_eq!(layout.size() % layout.align(), 0);
             }
         }
+    }
+
+    #[test]
+    fn infinite_recursion_in_is_compatible_with_with_array_type() {
+        let ty = AlgebraicTypeLayout::from(AlgebraicType::array(AlgebraicType::U64));
+        // This would previously cause an infinite recursion / stack overflow
+        // due the setup where `AlgebraicTypeLayout::VarLen(Array(x))` stored
+        // `x = Box::new(AlgebraicType::Array(elem_ty))`.
+        // The method `AlgebraicTypeLayout::is_compatible_with` was not setup to handle that.
+        // To avoid such bugs in the future, `x` is now `elem_ty` instead.
+        assert!(ty.is_compatible_with(&ty));
     }
 }

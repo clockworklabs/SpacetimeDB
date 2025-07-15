@@ -55,7 +55,7 @@ where
             let segment = repo.open_segment_reader_async(segment_offset).await?;
 
             for await chunk in read_segment(repo.clone(), segment, segment_offset, range) {
-                yield chunk.inspect_err(|e| warn!("error reading segment {}: {}", segment_offset, e))?;
+                yield chunk.inspect_err(|e| warn!("error reading segment {segment_offset}: {e}"))?;
             }
         }
     }
