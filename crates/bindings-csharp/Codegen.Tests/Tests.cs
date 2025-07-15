@@ -7,6 +7,16 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 
+/// <summary>
+/// Snapshot tests for the <c>SpacetimeDB.Codegen</c> library.
+/// 
+/// These run code generation for the sample projects in <c>fixtures</c>. We compare the generated code
+/// to known-good examples of generated code using the Verify library: https://github.com/VerifyTests/Verify
+/// 
+/// If you need to update the generated code, you probably want to install the Verify.Terminal tool: https://github.com/VerifyTests/Verify.Terminal
+/// Run <c>dotnet tool restore; dotnet verify accept</c> after changing the code generation to compare the old and new generated code and approve it.
+/// You'll need to check the updated snapshots into Git with your PR; the .gitignores in this project are set up to add the right files.
+/// </summary>
 public static class GeneratorSnapshotTests
 {
     // Note that we can't use assembly path here because it will be put in some deep nested folder.
