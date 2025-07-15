@@ -97,7 +97,7 @@ pub async fn set_energy_balance<S: ControlStateDelegate>(
         .map(|balance| balance.parse::<i128>())
         .transpose()
         .map_err(|err| {
-            log::error!("Failed to parse balance: {:?}", err);
+            log::error!("Failed to parse balance: {err:?}");
             StatusCode::BAD_REQUEST
         })?
         .unwrap_or(0);

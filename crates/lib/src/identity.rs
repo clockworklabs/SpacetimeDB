@@ -117,7 +117,7 @@ impl Identity {
     }
 
     pub fn from_claims(issuer: &str, subject: &str) -> Self {
-        let input = format!("{}|{}", issuer, subject);
+        let input = format!("{issuer}|{subject}");
         let first_hash = blake3::hash(input.as_bytes());
         let id_hash = &first_hash.as_bytes()[..26];
         let mut checksum_input = [0u8; 28];

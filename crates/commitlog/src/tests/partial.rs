@@ -116,9 +116,7 @@ fn overwrite_reopen() {
                     commit,
                     Err(error::Traversal::Checksum { offset, .. }) if offset == last_good_offset as u64,
                 ),
-                "expected checksum error with offset={}: {:?}",
-                last_good_offset,
-                commit
+                "expected checksum error with offset={last_good_offset}: {commit:?}"
             );
         }
     }

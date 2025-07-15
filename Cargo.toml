@@ -91,7 +91,7 @@ debug = true
 version = "1.2.0"
 edition = "2021"
 # update rust-toolchain.toml too!
-rust-version = "1.84.0"
+rust-version = "1.88.0"
 
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "1.2.0" }
@@ -326,3 +326,10 @@ features = [
   "broadcast",
   "ondemand",
 ]
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
+
+[workspace.lints.clippy]
+# FIXME: we should work on this lint incrementally
+result_large_err = "allow"

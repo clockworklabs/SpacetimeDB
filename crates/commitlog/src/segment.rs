@@ -149,7 +149,7 @@ impl<W: io::Write> Writer<W> {
             index
                 .append_after_commit(self.commit.min_tx_offset, self.bytes_written, commit_len)
                 .map_err(|e| {
-                    debug!("failed to append to offset index: {:?}", e);
+                    debug!("failed to append to offset index: {e:?}");
                 })
         });
 
@@ -348,12 +348,8 @@ impl FileLike for IndexFileMut<TxOffset> {
     }
 
     fn ftruncate(&mut self, tx_offset: u64, _size: u64) -> io::Result<()> {
-        self.truncate(tx_offset).map_err(|e| {
-            io::Error::new(
-                ErrorKind::Other,
-                format!("failed to truncate offset index at {tx_offset}: {e:?}"),
-            )
-        })
+        self.truncate(tx_offset)
+            .map_err(|e| io::Error::other(format!("failed to truncate offset index at {tx_offset}: {e:?}")))
     }
 }
 
@@ -621,7 +617,7 @@ impl Metadata {
     ///
     /// Returns
     /// * `Ok((Metadata)` - If a valid commit is found containing the commit, It adds a default
-    ///     header, which should be replaced with the actual header.
+    ///   header, which should be replaced with the actual header.
     /// * `Err` - If no valid commit is found or if the index is empty
     fn find_valid_indexed_commit<R: io::Read + io::Seek>(
         min_tx_offset: u64,
@@ -658,7 +654,7 @@ impl Metadata {
 
         Err(io::Error::new(
             ErrorKind::InvalidData,
-            format!("No valid commit found in index up to key: {}", candidate_last_key),
+            format!("No valid commit found in index up to key: {candidate_last_key}"),
         ))
     }
 

@@ -266,7 +266,7 @@ impl WsConnection {
 
     fn maybe_log_error<T, U: std::fmt::Debug>(cause: &str, res: std::result::Result<T, U>) {
         if let Err(e) = res {
-            log::warn!("{}: {:?}", cause, e);
+            log::warn!("{cause}: {e:?}");
         }
     }
 
@@ -367,7 +367,7 @@ impl WsConnection {
                     },
 
                     Ok(Some(other)) => {
-                        log::warn!("Unexpected WebSocket message {:?}", other);
+                        log::warn!("Unexpected WebSocket message {other:?}");
                         idle = false;
                         record_metrics(other.len());
                     },

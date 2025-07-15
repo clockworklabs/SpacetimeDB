@@ -449,8 +449,8 @@ mod test {
                         prop_assert_eq!(&found_col.algebraic_type, &ty_col.algebraic_type);
                     }
                 }
-                Err(e) => panic!("Expected TypeError::IndexOutOfBounds but found {:?}", e),
-                Ok(val) => panic!("Expected error but found Ok({:?})", val),
+                Err(e) => panic!("Expected TypeError::IndexOutOfBounds but found {e:?}"),
+                Ok(val) => panic!("Expected error but found Ok({val:?})"),
             }
         }
     }
@@ -471,8 +471,8 @@ mod test {
                     prop_assert_eq!(desired, std::any::type_name::<Col>());
                     prop_assert_eq!(&found, col_ty);
                 }
-                Err(e) => panic!("Expected TypeError::WrongType but found {:?}", e),
-                Ok(val) => panic!("Expected error but found Ok({:?})", val),
+                Err(e) => panic!("Expected TypeError::WrongType but found {e:?}"),
+                Ok(val) => panic!("Expected error but found Ok({val:?})"),
             }
         }
         Ok(())
