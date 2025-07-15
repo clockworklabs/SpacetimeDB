@@ -1,21 +1,19 @@
-use std::sync::Arc;
-
+use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilder as _};
+use crate::{error::DBError, worker_metrics::WORKER_METRICS};
 use anyhow::Result;
 use module_subscription_manager::Plan;
 use prometheus::IntCounter;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    BuildableWebsocketFormat, ByteListLen, Compression, DatabaseUpdate, QueryUpdate, RowListBuilder as _,
-    SingleQueryUpdate, TableUpdate,
+    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, SingleQueryUpdate, TableUpdate,
+};
+use spacetimedb_datastore::{
+    db_metrics::DB_METRICS, execution_context::WorkloadType, locking_tx_datastore::datastore::MetricsRecorder,
 };
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
-
-use crate::{error::DBError, worker_metrics::WORKER_METRICS};
-use spacetimedb_datastore::{
-    db_metrics::DB_METRICS, execution_context::WorkloadType, locking_tx_datastore::datastore::MetricsRecorder,
-};
+use std::sync::Arc;
 
 pub mod delta;
 pub mod execution_unit;
@@ -25,6 +23,7 @@ pub mod query;
 #[allow(clippy::module_inception)] // it's right this isn't ideal :/
 pub mod subscription;
 pub mod tx;
+pub mod websocket_building;
 
 #[derive(Debug)]
 pub struct ExecutionCounters {

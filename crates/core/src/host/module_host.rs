@@ -16,6 +16,7 @@ use crate::sql::parser::RowLevelExpr;
 use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
+use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::util::jobs::{JobCore, JobThread, JobThreadClosed, WeakJobThread};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -25,9 +26,7 @@ use derive_more::From;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
-use spacetimedb_client_api_messages::websocket::{
-    BuildableWebsocketFormat, ByteListLen, Compression, OneOffTable, QueryUpdate,
-};
+use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};

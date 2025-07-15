@@ -9,6 +9,7 @@ use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
+use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::worker_metrics::WORKER_METRICS;
 use core::mem;
 use hashbrown::hash_map::OccupiedError;
@@ -16,8 +17,7 @@ use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
 use prometheus::IntGauge;
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, BuildableWebsocketFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate,
-    SingleQueryUpdate,
+    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, SingleQueryUpdate,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;

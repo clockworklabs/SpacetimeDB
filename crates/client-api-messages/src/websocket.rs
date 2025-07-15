@@ -26,18 +26,12 @@ use smallvec::SmallVec;
 use spacetimedb_lib::{ConnectionId, Identity, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{
-    bsatn,
     de::{Deserialize, Error},
     impl_deserialize, impl_serialize, impl_st,
     ser::Serialize,
     AlgebraicType, SpacetimeType,
 };
-use std::{
-    io::{self, Read as _},
-    sync::Arc,
-};
-
-pub use crate::websocket_building::*;
+use std::sync::Arc;
 
 pub const TEXT_PROTOCOL: &str = "v1.json.spacetimedb";
 pub const BIN_PROTOCOL: &str = "v1.bsatn.spacetimedb";
@@ -661,22 +655,6 @@ pub enum CompressableQueryUpdate<F: WebsocketFormat> {
     Gzip(Bytes),
 }
 
-impl CompressableQueryUpdate<BsatnFormat> {
-    pub fn maybe_decompress(self) -> QueryUpdate<BsatnFormat> {
-        match self {
-            Self::Uncompressed(qu) => qu,
-            Self::Brotli(bytes) => {
-                let bytes = brotli_decompress(&bytes).unwrap();
-                bsatn::from_slice(&bytes).unwrap()
-            }
-            Self::Gzip(bytes) => {
-                let bytes = gzip_decompress(&bytes).unwrap();
-                bsatn::from_slice(&bytes).unwrap()
-            }
-        }
-    }
-}
-
 #[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub struct QueryUpdate<F: WebsocketFormat> {
@@ -775,18 +753,6 @@ pub enum Compression {
     Brotli,
     /// Compress using gzip if a certain size threshold was met.
     Gzip,
-}
-
-pub fn brotli_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
-    let mut decompressed = Vec::new();
-    brotli::BrotliDecompress(&mut &bytes[..], &mut decompressed)?;
-    Ok(decompressed)
-}
-
-pub fn gzip_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
-    let mut decompressed = Vec::new();
-    let _ = flate2::read::GzDecoder::new(bytes).read_to_end(&mut decompressed)?;
-    Ok(decompressed)
 }
 
 pub type RowSize = u16;

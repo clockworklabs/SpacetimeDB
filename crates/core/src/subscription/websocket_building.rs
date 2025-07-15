@@ -1,9 +1,9 @@
-use crate::websocket::{
+use bytestring::ByteString;
+use core::mem;
+use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, BsatnRowList, CompressableQueryUpdate, Compression, JsonFormat, QueryUpdate, RowOffset, RowSize,
     RowSizeHint, WebsocketFormat,
 };
-use bytestring::ByteString;
-use core::mem;
 use spacetimedb_sats::bsatn::{self, ToBsatn};
 use spacetimedb_sats::ser::serde::SerializeWrapper;
 use spacetimedb_sats::Serialize;
