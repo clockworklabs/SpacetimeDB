@@ -121,7 +121,7 @@ export class WebsocketDecompressAdapter {
       databaseUrl.searchParams.set('light', 'true');
     }
 
-    const ws = new WS(databaseUrl, wsProtocol);
+    const ws = new WS(databaseUrl.toString(), wsProtocol);
 
     return new WebsocketDecompressAdapter(ws);
   }
