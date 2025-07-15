@@ -212,7 +212,7 @@ impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
         // TODO: We should probably add debouncing to avoid spamming the logs.
         // Alternatively we could add a backoff before retrying.
         if let Err(e) = &key_or_error {
-            log::warn!("Error fetching public key for issuer {}: {:?}", raw_issuer, e);
+            log::warn!("Error fetching public key for issuer {raw_issuer}: {e:?}");
         }
         let keys = key_or_error?;
         let validator = JwksValidator {
@@ -264,7 +264,7 @@ impl TokenValidator for OidcTokenValidator {
         // TODO: We should probably add debouncing to avoid spamming the logs.
         // Alternatively we could add a backoff before retrying.
         if let Err(e) = &key_or_error {
-            log::warn!("Error fetching public key for issuer {}: {:?}", raw_issuer, e);
+            log::warn!("Error fetching public key for issuer {raw_issuer}: {e:?}");
         }
         let keys = key_or_error?;
         let validator = JwksValidator {
@@ -301,7 +301,7 @@ impl TokenValidator for JwksValidator {
         // For now, lets just try all the keys.
         let mut last_error = TokenValidationError::Other(anyhow::anyhow!("No kid found"));
         for (kid, key) in &self.keyset.keys {
-            log::debug!("Trying key {}", kid);
+            log::debug!("Trying key {kid}");
             let validator = BasicTokenValidator {
                 public_key: key.decoding_key.clone(),
                 issuer: Some(self.issuer.clone()),
@@ -310,7 +310,7 @@ impl TokenValidator for JwksValidator {
                 Ok(claims) => return Ok(claims),
                 Err(e) => {
                     last_error = e;
-                    log::debug!("Validating with key {} failed", kid);
+                    log::debug!("Validating with key {kid} failed");
                     continue;
                 }
             }
@@ -507,9 +507,9 @@ mod tests {
             let listener = TcpListener::bind("0.0.0.0:0").await.unwrap();
             let addr = listener.local_addr()?;
             let port = addr.port();
-            let base_url = format!("http://localhost:{}", port);
+            let base_url = format!("http://localhost:{port}");
             let config = OIDCConfig {
-                jwks_uri: format!("{}/jwks.json", base_url),
+                jwks_uri: format!("{base_url}/jwks.json"),
             };
             let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
@@ -542,7 +542,7 @@ mod tests {
 
             // Wait for server to be ready
             let client = reqwest::Client::new();
-            let health_check_url = format!("{}/ok", base_url);
+            let health_check_url = format!("{base_url}/ok");
 
             let mut attempts = 0;
             const MAX_ATTEMPTS: u32 = 10;
@@ -597,7 +597,7 @@ mod tests {
 
         let issuer = handle.base_url.clone();
         let issuer = if opts.issuer_trailing_slash {
-            format!("{}/", issuer)
+            format!("{issuer}/")
         } else {
             issuer
         };

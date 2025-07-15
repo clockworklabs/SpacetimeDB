@@ -148,7 +148,7 @@ pub mod raw {
         ///
         /// Traps if:
         /// - `prefix_elems > 0`
-        ///    and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+        ///   and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
         /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
         /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
         /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
@@ -161,11 +161,11 @@ pub mod raw {
         /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
         /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
         /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
-        ///    a `prefix_elems` number of `AlgebraicValue`
-        ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
-        ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
-        ///    where the inner `AlgebraicValue`s are
-        ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+        ///   a `prefix_elems` number of `AlgebraicValue`
+        ///   typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+        ///   Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+        ///   where the inner `AlgebraicValue`s are
+        ///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
         pub fn datastore_index_scan_range_bsatn(
             index_id: IndexId,
             prefix_ptr: *const u8,
@@ -212,7 +212,7 @@ pub mod raw {
         ///
         /// Traps if:
         /// - `prefix_elems > 0`
-        ///    and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+        ///   and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
         /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
         /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
         /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
@@ -225,11 +225,11 @@ pub mod raw {
         /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
         /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
         /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
-        ///    a `prefix_elems` number of `AlgebraicValue`
-        ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
-        ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
-        ///    where the inner `AlgebraicValue`s are
-        ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+        ///   a `prefix_elems` number of `AlgebraicValue`
+        ///   typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+        ///   Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+        ///   where the inner `AlgebraicValue`s are
+        ///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
         pub fn datastore_delete_by_index_scan_range_bsatn(
             index_id: IndexId,
             prefix_ptr: *const u8,
@@ -364,7 +364,7 @@ pub mod raw {
         /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
         /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
         /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`.
-        ///    typed at the `ProductType` the table's schema specifies.
+        ///   typed at the `ProductType` the table's schema specifies.
         /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
         /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
         pub fn datastore_insert_bsatn(table_id: TableId, row_ptr: *mut u8, row_len_ptr: *mut usize) -> u16;
@@ -406,8 +406,8 @@ pub mod raw {
         /// - `INDEX_NOT_UNIQUE`, when the index was not unique.
         /// - `NO_SUCH_ROW`, when the row was not found in the unique index.
         /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`
-        ///    typed at the `ProductType` the table's schema specifies
-        ///    or when it cannot be projected to the index identified by `index_id`.
+        ///   typed at the `ProductType` the table's schema specifies
+        ///   or when it cannot be projected to the index identified by `index_id`.
         /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
         /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
         pub fn datastore_update_bsatn(
@@ -942,11 +942,11 @@ pub fn datastore_table_scan_bsatn(table_id: TableId) -> Result<RowIter, Errno> {
 /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
 /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
 /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
-///    a `prefix_elems` number of `AlgebraicValue`
-///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
-///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
-///    where the inner `AlgebraicValue`s are
-///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+///   a `prefix_elems` number of `AlgebraicValue`
+///   typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+///   Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+///   where the inner `AlgebraicValue`s are
+///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
 pub fn datastore_index_scan_range_bsatn(
     index_id: IndexId,
     prefix: &[u8],
@@ -990,11 +990,11 @@ pub fn datastore_index_scan_range_bsatn(
 /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
 /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
 /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
-///    a `prefix_elems` number of `AlgebraicValue`
-///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
-///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
-///    where the inner `AlgebraicValue`s are
-///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+///   a `prefix_elems` number of `AlgebraicValue`
+///   typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+///   Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+///   where the inner `AlgebraicValue`s are
+///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
 pub fn datastore_delete_by_index_scan_range_bsatn(
     index_id: IndexId,
     prefix: &[u8],

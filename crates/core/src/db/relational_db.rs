@@ -358,7 +358,7 @@ impl RelationalDB {
         metrics_recorder_queue: Option<MetricsRecorderQueue>,
         page_pool: PagePool,
     ) -> Result<(Self, ConnectedClients), DBError> {
-        log::trace!("[{}] DATABASE: OPEN", database_identity);
+        log::trace!("[{database_identity}] DATABASE: OPEN");
 
         let lock = LockFile::lock(root)?;
 
@@ -507,10 +507,7 @@ impl RelationalDB {
             snapshot_offset: TxOffset,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
-            log::info!(
-                "[{database_identity}] DATABASE: restoring snapshot of tx_offset {}",
-                snapshot_offset
-            );
+            log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {snapshot_offset}");
             let start = std::time::Instant::now();
             let snapshot = snapshot_repo
                 .read_snapshot(snapshot_offset, page_pool)
@@ -542,9 +539,7 @@ impl RelationalDB {
                 })
                 .inspect_err(|e| {
                     log::warn!(
-                        "[{database_identity}] DATABASE: failed to restore snapshot of tx_offset {}: {}",
-                        snapshot_offset,
-                        e
+                        "[{database_identity}] DATABASE: failed to restore snapshot of tx_offset {snapshot_offset}: {e}"
                     )
                 })
                 .map_err(DBError::from)
@@ -594,11 +589,7 @@ impl RelationalDB {
                     break;
                 };
                 if min_commitlog_offset > 0 && min_commitlog_offset > snapshot_offset + 1 {
-                    log::debug!(
-                        "snapshot_offset={} min_commitlog_offset={}",
-                        snapshot_offset,
-                        min_commitlog_offset
-                    );
+                    log::debug!("snapshot_offset={snapshot_offset} min_commitlog_offset={min_commitlog_offset}");
                     break;
                 }
                 match try_load_snapshot(&database_identity, snapshot_repo, snapshot_offset, &page_pool) {
@@ -1505,7 +1496,7 @@ impl RelationalDB {
             ErrorVm::Type(ErrorType::Parse {
                 value: literal.to_string(),
                 ty: fmt_algebraic_type(&name.type_of()).to_string(),
-                err: format!("error parsing value: {:?}", v),
+                err: format!("error parsing value: {v:?}"),
             })
             .into()
         })
@@ -1544,7 +1535,7 @@ fn apply_history<H>(datastore: &Locking, database_identity: Identity, history: H
 where
     H: durability::History<TxData = Txdata>,
 {
-    log::info!("[{}] DATABASE: applying transaction history...", database_identity);
+    log::info!("[{database_identity}] DATABASE: applying transaction history...");
 
     // TODO: Revisit once we actually replay history suffixes, ie. starting
     // from an offset larger than the history's min offset.
@@ -1558,18 +1549,12 @@ where
         if let Some(max_tx_offset) = max_tx_offset {
             let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
             if percentage > last_logged_percentage && percentage % 10 == 0 {
-                log::info!(
-                    "[{}] Loaded {}% ({}/{})",
-                    database_identity,
-                    percentage,
-                    tx_offset,
-                    max_tx_offset
-                );
+                log::info!("[{database_identity}] Loaded {percentage}% ({tx_offset}/{max_tx_offset})");
                 last_logged_percentage = percentage;
             }
         // Print _something_ even if we don't know what's still ahead.
         } else if tx_offset % 10_000 == 0 {
-            log::info!("[{}] Loading transaction {}", database_identity, tx_offset);
+            log::info!("[{database_identity}] Loading transaction {tx_offset}");
         }
     };
 
@@ -1578,9 +1563,9 @@ where
     history
         .fold_transactions_from(start, &mut replay)
         .map_err(anyhow::Error::from)?;
-    log::info!("[{}] DATABASE: applied transaction history", database_identity);
+    log::info!("[{database_identity}] DATABASE: applied transaction history");
     datastore.rebuild_state_after_replay()?;
-    log::info!("[{}] DATABASE: rebuilt state after replay", database_identity);
+    log::info!("[{database_identity}] DATABASE: rebuilt state after replay");
 
     Ok(())
 }

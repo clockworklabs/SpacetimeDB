@@ -184,7 +184,7 @@ mod tests {
         let tx = begin_tx(db);
         match &*compile_sql(db, &AuthCtx::for_testing(), &tx, sql).expect("Failed to compile sql") {
             [CrudExpr::Query(expr)] => num_rows(&tx, expr),
-            exprs => panic!("unexpected result from compilation: {:#?}", exprs),
+            exprs => panic!("unexpected result from compilation: {exprs:#?}"),
         }
     }
 

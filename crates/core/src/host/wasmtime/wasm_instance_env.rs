@@ -466,7 +466,7 @@ impl WasmInstanceEnv {
     ///
     /// Traps if:
     /// - `prefix_elems > 0`
-    ///    and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+    ///   and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
     /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
     /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
     /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
@@ -479,11 +479,11 @@ impl WasmInstanceEnv {
     /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
     /// - `WRONG_INDEX_ALGO` if the index is not a range-scan compatible index.
     /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
-    ///    a `prefix_elems` number of `AlgebraicValue`
-    ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
-    ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
-    ///    where the inner `AlgebraicValue`s are
-    ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+    ///   a `prefix_elems` number of `AlgebraicValue`
+    ///   typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+    ///   Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+    ///   where the inner `AlgebraicValue`s are
+    ///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
     pub fn datastore_index_scan_range_bsatn(
         caller: Caller<'_, Self>,
         index_id: u32,
@@ -805,7 +805,7 @@ impl WasmInstanceEnv {
     ///
     /// Traps if:
     /// - `prefix_elems > 0`
-    ///    and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+    ///   and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
     /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
     /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
     /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
@@ -818,11 +818,11 @@ impl WasmInstanceEnv {
     /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
     /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
     /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
-    ///    a `prefix_elems` number of `AlgebraicValue`
-    ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
-    ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
-    ///    where the inner `AlgebraicValue`s are
-    ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+    ///   a `prefix_elems` number of `AlgebraicValue`
+    ///   typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+    ///   Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+    ///   where the inner `AlgebraicValue`s are
+    ///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
     pub fn datastore_delete_by_index_scan_range_bsatn(
         caller: Caller<'_, Self>,
         index_id: u32,
@@ -1075,7 +1075,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NO_SUCH_BYTES`, when `sink` is not a valid bytes sink.
     /// - `NO_SPACE`, when there is no room for more bytes in `sink`.
-    ///    (Doesn't currently happen.)
+    ///   (Doesn't currently happen.)
     pub fn bytes_sink_write(
         caller: Caller<'_, Self>,
         sink: u32,

@@ -107,7 +107,7 @@ pub mod test_helpers {
 
     pub fn header_for_mem_table(table_id: TableId, fields: ProductType) -> Header {
         let hash = DefaultHashBuilder::default().hash_one(&fields);
-        let table_name = format!("mem#{:x}", hash).into();
+        let table_name = format!("mem#{hash:x}").into();
 
         let cols = Vec::from(fields.elements)
             .into_iter()
