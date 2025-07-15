@@ -4,3 +4,4 @@ pub mod energy;
 pub mod http;
 pub mod name;
 pub mod websocket;
+mod websocket_building;
