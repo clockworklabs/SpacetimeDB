@@ -54,6 +54,10 @@ The user creates a single `DbConnection` (which inherits from `DbConnectionBase<
 
 The server periodically sends updates (via websocket) to the `DbConnection`. The `DbConnection` is responsible for updating its local view of the server state (`conn.Db`) using these messages, and invoking callbacks registered by the user.
 
+Codegen also generates code for each table implementing the `ITable` interface in [`src/Table.cs`](./src/Table.cs). `DbConnection` only sees tables as `ITable`s -- it does not know anything more about the specific implementation of each table. `RemoteTableHandle<...>` in `src/Table.cs` implements the `ITable` interface in combination with the generated code. It also has a callback structure, `OnInternalInsert` and `OnInternalDelete`, used by generated code to maintain indexes.
+
+Roughly speaking, code pertaining to specific tables should live in `Table.cs`, and code pertaining to the connectino as a whole should live in `DbConnectionBase<...>`.
+
 ### Threading model
 
 The C# SDK, unlike the [Rust SDK](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/sdk), **assumes a DbConnection is only accessed from a single thread**. This thread is referred to as the "main thread". The "main thread" is:
