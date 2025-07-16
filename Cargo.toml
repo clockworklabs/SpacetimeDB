@@ -285,6 +285,7 @@ unicode-normalization = "0.1.23"
 url = "2.3.1"
 urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
+v8 = "137.2"
 walkdir = "2.2.5"
 wasmbin = "0.6"
 webbrowser = "1.0.2"
