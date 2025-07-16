@@ -143,7 +143,7 @@ impl TableSchema {
             .map(|(col_pos, element)| ColumnSchema {
                 table_id: TableId::SENTINEL,
                 col_pos: ColId(col_pos as _),
-                col_name: element.name.clone().unwrap_or_else(|| format!("col{}", col_pos).into()),
+                col_name: element.name.clone().unwrap_or_else(|| format!("col{col_pos}").into()),
                 col_type: element.algebraic_type.clone(),
             })
             .collect();

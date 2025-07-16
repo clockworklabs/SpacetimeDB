@@ -22,10 +22,7 @@ use crate::Config;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("subscribe")
-        .about(format!(
-            "Subscribe to SQL queries on the database. {}",
-            UNSTABLE_WARNING
-        ))
+        .about(format!("Subscribe to SQL queries on the database. {UNSTABLE_WARNING}"))
         .arg(
             Arg::new("database")
                 .required(true)
@@ -125,7 +122,7 @@ struct SubscriptionTable {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    eprintln!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{UNSTABLE_WARNING}\n");
 
     let queries = args.get_many::<String>("query").unwrap();
     let num = args.get_one::<u32>("num-updates").copied();

@@ -3,9 +3,6 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_logger::DatabaseLogger;
-use crate::db::datastore::traits::Program;
-use crate::db::db_metrics::data_size::DATA_SIZE_METRICS;
-use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
@@ -25,6 +22,9 @@ use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
@@ -334,7 +334,9 @@ impl HostController {
             warn!("database operation panicked");
             on_panic();
         });
-        let result = asyncify(move || f(&module.replica_ctx().relational_db)).await;
+
+        let db = module.replica_ctx().relational_db.clone();
+        let result = module.on_module_thread("using_database", move || f(&db)).await?;
         Ok(result)
     }
 
@@ -480,9 +482,9 @@ impl HostController {
             // - `Some` expected hash, in which case we update to the desired one
             // - `None` expected hash, in which case we also update
             let stored_hash = stored_program_hash(host.db())?
-                .with_context(|| format!("[{}] database improperly initialized", db_addr))?;
+                .with_context(|| format!("[{db_addr}] database improperly initialized"))?;
             if stored_hash == program_hash {
-                info!("[{}] database up-to-date with {}", db_addr, program_hash);
+                info!("[{db_addr}] database up-to-date with {program_hash}");
                 *guard = Some(host);
             } else {
                 if let Some(expected_hash) = expected_hash {
@@ -494,10 +496,7 @@ impl HostController {
                         stored_hash
                     );
                 }
-                info!(
-                    "[{}] updating database from `{}` to `{}`",
-                    db_addr, stored_hash, program_hash
-                );
+                info!("[{db_addr}] updating database from `{stored_hash}` to `{program_hash}`");
                 let program = load_program(&this.program_storage, program_hash).await?;
                 let update_result = host
                     .update_module(
@@ -533,7 +532,7 @@ impl HostController {
     /// and deregister it from the controller.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64) -> Result<(), anyhow::Error> {
-        trace!("exit module host {}", replica_id);
+        trace!("exit module host {replica_id}");
         let lock = self.hosts.lock().remove(&replica_id);
         if let Some(lock) = lock {
             if let Some(host) = lock.write_owned().await.take() {
@@ -554,7 +553,7 @@ impl HostController {
     /// the host if it is not running.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn get_module_host(&self, replica_id: u64) -> Result<ModuleHost, NoSuchModule> {
-        trace!("get module host {}", replica_id);
+        trace!("get module host {replica_id}");
         let guard = self.acquire_read_lock(replica_id).await;
         guard
             .as_ref()
@@ -569,7 +568,7 @@ impl HostController {
     /// launches the host if it is not running.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn watch_module_host(&self, replica_id: u64) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
-        trace!("watch module host {}", replica_id);
+        trace!("watch module host {replica_id}");
         let guard = self.acquire_read_lock(replica_id).await;
         guard
             .as_ref()
@@ -643,6 +642,7 @@ async fn make_replica_ctx(
             let Some(subscriptions) = downgraded.upgrade() else {
                 break;
             };
+            // This should happen on the module thread, but we haven't created the module yet.
             asyncify(move || subscriptions.write().remove_dropped_clients()).await
         }
     });
@@ -704,7 +704,7 @@ async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Pr
     let bytes = storage
         .lookup(hash)
         .await?
-        .with_context(|| format!("program {} not found", hash))?;
+        .with_context(|| format!("program {hash} not found"))?;
     Ok(Program { hash, bytes })
 }
 

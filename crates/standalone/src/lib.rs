@@ -10,10 +10,7 @@ use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
-use spacetimedb::db::datastore::traits::Program;
-use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
-use spacetimedb::db::relational_db;
-use spacetimedb::db::{db_metrics::DB_METRICS, Config};
+use spacetimedb::db::{relational_db, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::{
     DiskStorage, DurabilityProvider, ExternalDurability, HostController, StartSnapshotWatcher, UpdateDatabaseResult,
@@ -25,6 +22,9 @@ use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
+use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::traits::Program;
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_table::page_pool::PagePool;
@@ -149,7 +149,7 @@ impl NodeDelegate for StandaloneEnv {
         let database = self
             .control_db
             .get_database_by_id(database_id)?
-            .with_context(|| format!("Database {} not found", database_id))?;
+            .with_context(|| format!("Database {database_id} not found"))?;
 
         self.host_controller
             .get_or_launch_module_host(database, leader.id)
@@ -292,7 +292,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
                     let desired_replicas = num_replicas as usize;
                     if desired_replicas == 0 {
-                        log::info!("Decommissioning all replicas of database {}", database_identity);
+                        log::info!("Decommissioning all replicas of database {database_identity}");
                         for instance in replicas {
                             self.delete_replica(instance.id).await?;
                         }
@@ -326,9 +326,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                         }
                     } else {
                         log::debug!(
-                            "Desired replica count {} for database {} already satisfied",
-                            desired_replicas,
-                            database_identity
+                            "Desired replica count {desired_replicas} for database {database_identity} already satisfied"
                         );
                     }
                 }
