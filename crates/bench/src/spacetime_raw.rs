@@ -4,7 +4,7 @@ use crate::{
     ResultBench,
 };
 use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
-use spacetimedb::execution_context::Workload;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::{bsatn, AlgebraicValue};
 use spacetimedb_schema::{

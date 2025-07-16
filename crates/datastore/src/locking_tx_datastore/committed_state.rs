@@ -7,22 +7,18 @@ use super::{
     IterByColEqTx,
 };
 use crate::{
-    db::{
-        datastore::{
-            error::{IndexError, TableError},
-            system_tables::{
-                system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow,
-                StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX,
-                ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX,
-                ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
-                ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX,
-                ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
-            },
-            traits::TxData,
-        },
-        db_metrics::DB_METRICS,
-    },
+    db_metrics::DB_METRICS,
+    error::{IndexError, TableError},
     execution_context::ExecutionContext,
+    system_tables::{
+        system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
+        StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
+        ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME,
+        ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX,
+        ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID,
+        ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
+    },
+    traits::TxData,
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
@@ -584,7 +580,7 @@ impl CommittedState {
                     tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
                 }
             } else if !row_ptrs.is_empty() {
-                panic!("Deletion for non-existent table {:?}... huh?", table_id);
+                panic!("Deletion for non-existent table {table_id:?}... huh?");
             }
         }
     }
@@ -777,7 +773,7 @@ impl CommittedState {
     }
 
     pub fn report_data_size(&self, database_identity: Identity) {
-        use crate::db::db_metrics::data_size::DATA_SIZE_METRICS;
+        use crate::db_metrics::data_size::DATA_SIZE_METRICS;
 
         for (_, table) in &self.tables {
             let table_name = &table.schema.table_name;

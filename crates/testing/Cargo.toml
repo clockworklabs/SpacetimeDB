@@ -30,3 +30,6 @@ serde.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
+
+[lints]
+workspace = true

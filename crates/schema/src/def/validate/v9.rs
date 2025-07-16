@@ -795,7 +795,7 @@ impl TableValidator<'_, '_> {
             .get(col_id.idx())
             .and_then(|col| col.name())
             .map(|name| name.into())
-            .unwrap_or_else(|| format!("{}", col_id).into());
+            .unwrap_or_else(|| format!("{col_id}").into());
 
         RawColumnName {
             table: self.raw_name.clone(),

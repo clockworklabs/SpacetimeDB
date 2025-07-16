@@ -8,10 +8,11 @@ mod sequence;
 pub mod state_view;
 pub use state_view::{IterByColEqTx, IterByColRangeTx};
 pub mod delete_table;
-pub(crate) mod tx;
+mod tx;
+pub use tx::TxId;
 mod tx_state;
-#[cfg(test)]
-pub(crate) use tx_state::PendingSchemaChange;
+#[cfg(any(test, feature = "test"))]
+pub use tx_state::PendingSchemaChange;
 
 use parking_lot::{
     lock_api::{ArcMutexGuard, ArcRwLockReadGuard, ArcRwLockWriteGuard},
