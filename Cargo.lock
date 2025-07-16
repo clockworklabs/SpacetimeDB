@@ -5355,6 +5355,7 @@ dependencies = [
  "mime",
  "pretty_assertions",
  "prometheus",
+ "proptest",
  "rand 0.9.1",
  "regex",
  "scopeguard",

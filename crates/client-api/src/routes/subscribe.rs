@@ -1117,34 +1117,36 @@ async fn ws_encode_task(
         // or create a fresh one.
         let buf = buf_pool.pop().unwrap_or_else(|| SerializeBuffer::new(config));
 
-        let (workload, num_rows, stats, in_use_buf, frames) = match message {
+        let in_use_buf = match message {
             OutboundMessage::Error(message) => {
-                let (stats, in_use, frames) = ws_encode_message(config, buf, message, false).await;
-                (None, None, stats, in_use, frames)
+                let (stats, in_use, mut frames) = ws_encode_message(config, buf, message, false).await;
+                metrics.report(None, None, stats);
+                if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
+                    break;
+                }
+
+                in_use
             }
             OutboundMessage::Message(message) => {
                 let workload = message.workload();
                 let num_rows = message.num_rows();
                 let is_large = num_rows.is_some_and(|n| n > 1024);
 
-                let (stats, in_use, frames) = ws_encode_message(config, buf, message, is_large).await;
+                let (stats, in_use, mut frames) = ws_encode_message(config, buf, message, is_large).await;
+                metrics.report(workload, num_rows, stats);
+                if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
+                    break;
+                }
 
-                (workload, num_rows, stats, in_use, frames)
+                in_use
             }
         };
 
-        metrics.report(workload, num_rows, stats);
         if in_use_bufs.len() < BUF_POOL_CAPACITY {
             in_use_bufs.push(scopeguard::guard(in_use_buf, |in_use| {
                 let buf = in_use.try_reclaim().expect("buffer should be unique");
                 let _ = buf_pool.push(buf);
             }));
-        }
-
-        for frame in frames {
-            if outgoing_frames.send(frame).is_err() {
-                return;
-            }
         }
     }
 }
@@ -1187,7 +1189,7 @@ async fn ws_encode_message(
     buf: SerializeBuffer,
     message: impl ToProtocol<Encoded = SwitchedServerMessage> + Send + 'static,
     is_large_message: bool,
-) -> (EncodeMetrics, InUseSerializeBuffer, Vec<Frame>) {
+) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame>) {
     const FRAGMENT_SIZE: usize = 4096;
 
     let serialize_and_compress = |serialize_buf, message, config| {
@@ -1219,36 +1221,18 @@ async fn ws_encode_message(
 /// according to the rules laid out in [RFC6455], Section 5.4.
 ///
 /// [RFC6455]: https://datatracker.ietf.org/doc/html/rfc6455#section-5.4
-fn fragment(data: Bytes, ty: Data, fragment_size: usize) -> Vec<Frame> {
-    let total_len = data.len();
-    let mut frames = Vec::with_capacity((total_len / fragment_size) + total_len % fragment_size);
-    let mut offset = 0;
-    while offset < total_len {
-        let end = (offset + fragment_size).min(total_len);
-        let chunk = data.slice(offset..end);
-        frames.push(Frame::message(chunk, OpCode::Data(Data::Continue), false));
-        offset = end;
-    }
+fn fragment(data: Bytes, ty: Data, fragment_size: usize) -> impl Iterator<Item = Frame> {
+    let len = data.len();
 
-    match frames.as_mut_slice() {
-        [] => {}
-        [single] => {
-            let hdr = single.header_mut();
-            hdr.is_final = true;
-            hdr.opcode = OpCode::Data(ty);
-        }
-        [first, .., last] => {
-            let hdr = first.header_mut();
-            hdr.is_final = false;
-            hdr.opcode = OpCode::Data(ty);
+    (0..len).step_by(fragment_size).enumerate().map(move |(i, start)| {
+        let end = (start + fragment_size).min(len);
+        let chunk = data.slice(start..end);
 
-            let hdr = last.header_mut();
-            hdr.is_final = true;
-            hdr.opcode = OpCode::Data(Data::Continue);
-        }
-    }
+        let opcode = OpCode::Data(if i == 0 { ty } else { Data::Continue });
+        let is_final = end == len;
 
-    frames
+        Frame::message(chunk, opcode, is_final)
+    })
 }
 
 #[derive(Debug)]
@@ -1323,11 +1307,13 @@ mod tests {
     };
 
     use anyhow::anyhow;
+    use bytes::BytesMut;
     use futures::{
         future::{self, Either, FutureExt as _},
         sink, stream,
     };
     use pretty_assertions::assert_matches;
+    use proptest::prelude::*;
     use spacetimedb::client::ClientName;
     use tokio::time::sleep;
 
@@ -1896,6 +1882,66 @@ mod tests {
         assert!(received
             .last()
             .is_some_and(|message| matches!(message, WsMessage::Close(_))));
+    }
+
+    #[test]
+    fn fragment_yields_no_frames_if_input_is_empty() {
+        assert!(fragment(Bytes::new(), Data::Binary, 4096)
+            .collect::<Vec<_>>()
+            .is_empty());
+    }
+
+    const MAX_DATA_SIZE: usize = 1024 * 1024;
+    const MAX_FRAME_SIZE: usize = 1024;
+
+    proptest! {
+        #[test]
+        fn fragment_input_can_be_reconstructed_from_output(
+            input in prop::collection::vec(any::<u8>(), 1..MAX_DATA_SIZE),
+            fragment_size in 1..MAX_FRAME_SIZE,
+        ) {
+            let data = Bytes::from(input);
+            let mut payloads = BytesMut::new();
+            for frame in fragment(data.clone(), Data::Binary, fragment_size) {
+                payloads.extend(Some(frame.into_payload()));
+            }
+            prop_assert_eq!(data, payloads.freeze());
+        }
+
+        #[test]
+        fn fragment_all_frames_except_last_do_not_have_the_fin_bit(
+            input in prop::collection::vec(any::<u8>(), 1..MAX_DATA_SIZE),
+            fragment_size in 1..MAX_FRAME_SIZE,
+        ) {
+            let mut frames = fragment(Bytes::from(input), Data::Binary, fragment_size).collect::<Vec<_>>();
+            prop_assert!(frames.pop().unwrap().header().is_final);
+            prop_assert!(frames.into_iter().all(|frame| !frame.header().is_final));
+        }
+
+        #[test]
+        fn fragment_first_frame_has_original_opcode_rest_are_continue(
+            input in prop::collection::vec(any::<u8>(), 1..MAX_DATA_SIZE),
+            fragment_size in 1..MAX_FRAME_SIZE,
+            ty in Just(Data::Text).prop_union(Just(Data::Binary)),
+        ) {
+            let mut frames = fragment(Bytes::from(input), ty, fragment_size);
+            prop_assert_eq!(frames.next().unwrap().header().opcode, OpCode::Data(ty));
+            for frame in frames {
+                prop_assert_eq!(frame.header().opcode, OpCode::Data(Data::Continue));
+            }
+        }
+
+        #[test]
+        fn fragment_produces_expected_number_of_equal_sized_frames(
+            input in prop::collection::vec(any::<u8>(), 1..MAX_DATA_SIZE),
+            fragment_size in 1..MAX_FRAME_SIZE,
+        ) {
+            let input = Bytes::from(input);
+            let mut frames = fragment(input.clone(), Data::Binary, fragment_size).collect::<Vec<_>>();
+            prop_assert_eq!(frames.len(), input.len().div_ceil(fragment_size));
+            prop_assert!(frames.pop().unwrap().payload().len() <= fragment_size);
+            prop_assert!(frames.iter().all(|frame| frame.payload().len() == fragment_size));
+        }
     }
 
     async fn is_pending(fut: &mut (impl Future + Unpin)) -> bool {
