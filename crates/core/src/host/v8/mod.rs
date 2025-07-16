@@ -1,3 +1,4 @@
+use super::module_host::CallReducerParams;
 use crate::{
     host::{
         module_common::{build_common_module_from_raw, ModuleCommon},
@@ -11,7 +12,7 @@ use anyhow::anyhow;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use std::sync::{Arc, LazyLock};
 
-use super::module_host::CallReducerParams;
+mod to_value;
 
 /// The V8 runtime, for modules written in e.g., JS or TypeScript.
 #[derive(Default)]
