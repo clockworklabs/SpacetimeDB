@@ -99,9 +99,7 @@ impl Default for Options {
 impl Options {
     pub const DEFAULT_MAX_SEGMENT_SIZE: u64 = 1024 * 1024 * 1024;
     pub const DEFAULT_MAX_RECORDS_IN_COMMIT: NonZeroU16 = NonZeroU16::MAX;
-    pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 =
-        // SAFETY: 4096 > 0, qed
-        unsafe { NonZeroU64::new_unchecked(4096) };
+    pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
     pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = false;
 
     pub const DEFAULT: Self = Self {
