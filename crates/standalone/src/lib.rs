@@ -10,9 +10,6 @@ use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
-use spacetimedb::db::datastore::traits::Program;
-use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
-use spacetimedb::db::db_metrics::DB_METRICS;
 use spacetimedb::db::{self, relational_db};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::{

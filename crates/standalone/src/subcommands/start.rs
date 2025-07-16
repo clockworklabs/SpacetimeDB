@@ -6,7 +6,7 @@ use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
-use spacetimedb::db::{Config, Storage};
+use spacetimedb::db::{self, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics;
@@ -115,7 +115,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         .transpose()
         .context("unrecognized format in `page_pool_max_size`")?
         .map(|size| size as usize);
-    let db_config = Config {
+    let db_config = db::Config {
         storage,
         page_pool_max_size,
     };

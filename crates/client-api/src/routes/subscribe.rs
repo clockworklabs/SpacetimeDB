@@ -297,9 +297,7 @@ impl WebSocketOptions {
     const DEFAULT_PING_INTERVAL: Duration = Duration::from_secs(15);
     const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
     const DEFAULT_CLOSE_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(250);
-    const DEFAULT_INCOMING_QUEUE_LENGTH: NonZeroUsize =
-        // SAFETY: 2048 > 0, qed
-        unsafe { NonZeroUsize::new_unchecked(2048) };
+    const DEFAULT_INCOMING_QUEUE_LENGTH: NonZeroUsize = NonZeroUsize::new(2048).expect("2048 > 0, qed");
 
     const DEFAULT: Self = Self {
         ping_interval: Self::DEFAULT_PING_INTERVAL,
