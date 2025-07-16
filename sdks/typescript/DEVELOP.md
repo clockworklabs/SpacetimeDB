@@ -1,6 +1,6 @@
 # Migration note
 
-We are in the process of moving from the `spacetimedb-typescript-sdk` repo to the `sdks/typescript` subdirectory of [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB). **Any new changes should be made there**. Apologies in advance for any sharp edges while the migration is in progress.
+We are in the process of moving from the `spacetimedb-typescript-sdk` repo to the `sdks/typescript` subdirectory of [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB). **Any new changes should be made there**. The `spacetimedb-typescript-sdk` repo will only be updated on release. Apologies in advance for any sharp edges while the migration is in progress.
 
 # Notes for maintainers
 
