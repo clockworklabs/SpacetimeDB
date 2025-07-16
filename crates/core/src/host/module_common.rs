@@ -38,7 +38,7 @@ pub fn build_common_module_from_raw(
     Ok(ModuleCommon::new(replica_ctx, mcc.scheduler, info, mcc.energy_monitor))
 }
 
-/// Non-runtime specific parts of a module.
+/// Non-runtime-specific parts of a module.
 #[derive(Clone)]
 pub(crate) struct ModuleCommon {
     replica_context: Arc<ReplicaContext>,
