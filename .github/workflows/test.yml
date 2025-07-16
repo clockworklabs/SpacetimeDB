@@ -97,6 +97,7 @@ jobs:
         working-directory: modules/quickstart-chat
         run: |
           spacetime generate --lang typescript --out-dir ../../sdks/typescript/examples/quickstart-chat/src/module_bindings
+          cd ../../sdks/typescript
           pnpm lint --write
 
       - name: Check for changes
