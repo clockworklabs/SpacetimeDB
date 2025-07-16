@@ -1,0 +1,52 @@
+{
+  "name": "@clockworklabs/spacetimedb-sdk",
+  "version": "1.2.2",
+  "description": "SDK for SpacetimeDB",
+  "author": {
+    "name": "Clockwork Labs",
+    "email": "no-reply@clockworklabs.io"
+  },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "browser": "./dist/browser/index.js",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "browser": "./dist/browser/index.js",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "compile": "tsup",
+    "test": "vitest run",
+    "size": "brotli-size dist/min/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/clockworklabs/spacetimedb-typescript-sdk"
+  },
+  "publishConfig": {
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "undici": "^6.19.2"
+  },
+  "devDependencies": {
+    "@clockworklabs/test-app": "file:../test-app",
+    "tsup": "^8.1.0",
+    "undici": "^6.19.2"
+  },
+  "dependencies": {
+    "base64-js": "^1.5.1"
+  }
+}
