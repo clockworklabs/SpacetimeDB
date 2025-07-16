@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "An executable for running a single SpacetimeDB standalone instance"
+rust-version.workspace = true
 
 [[bin]]
 name = "spacetimedb-standalone"   # The name of the target.
@@ -23,6 +24,7 @@ perfmap = ["spacetimedb-core/perfmap"]
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-client-api.workspace = true
 spacetimedb-core.workspace = true
+spacetimedb-datastore.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-table.workspace = true
@@ -56,3 +58,6 @@ tikv-jemalloc-ctl = {workspace = true}
 [dev-dependencies]
 once_cell.workspace = true
 tempfile.workspace = true
+
+[lints]
+workspace = true

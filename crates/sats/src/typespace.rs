@@ -447,7 +447,7 @@ mod tests {
 
         fn assert_not_valid(ty: AlgebraicType) {
             let typespace = Typespace::new(vec![ty.clone()]);
-            assert!(!typespace.is_valid_for_client_code_generation(), "{:?}", ty);
+            assert!(!typespace.is_valid_for_client_code_generation(), "{ty:?}");
         }
         assert_not_valid(AlgebraicType::product([AlgebraicType::U8, bad_inner_1.clone()]));
         assert_not_valid(AlgebraicType::product([AlgebraicType::U8, bad_inner_2.clone()]));

@@ -24,7 +24,7 @@ use spacetimedb_schema::relation::FieldName;
 use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use spacetimedb_vm::expr::Crud;
 
-pub use crate::db::datastore::error::{DatastoreError, IndexError, SequenceError, TableError};
+pub use spacetimedb_datastore::error::{DatastoreError, IndexError, SequenceError, TableError};
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum ClientError {
@@ -82,6 +82,8 @@ pub enum DatabaseError {
     DatabasedOpened(PathBuf, anyhow::Error),
 }
 
+// FIXME: reduce type size
+#[expect(clippy::large_enum_variant)]
 #[derive(Error, Debug, EnumAsInner)]
 pub enum DBError {
     #[error("LibError: {0}")]

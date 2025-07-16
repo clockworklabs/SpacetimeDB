@@ -8,8 +8,7 @@ use crate::util::{self, get_login_token_or_log_in, UNSTABLE_WARNING};
 pub fn cli() -> clap::Command {
     clap::Command::new("energy")
         .about(format!(
-            "Invokes commands related to database budgets. {}",
-            UNSTABLE_WARNING
+            "Invokes commands related to database budgets. {UNSTABLE_WARNING}"
         ))
         .args_conflicts_with_subcommands(true)
         .subcommand_required(true)
@@ -42,7 +41,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    eprintln!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{UNSTABLE_WARNING}\n");
     exec_subcommand(config, cmd, subcommand_args).await
 }
 
@@ -67,7 +66,7 @@ async fn exec_status(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
         .text()
         .await?;
 
-    println!("{}", status);
+    println!("{status}");
 
     Ok(())
 }

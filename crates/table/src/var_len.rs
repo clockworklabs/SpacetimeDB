@@ -171,8 +171,7 @@ impl VarLenGranuleHeader {
         let capped_len = (len as u16) & Self::LEN_BITMASK;
         debug_assert_eq!(
             capped_len, len as u16,
-            "Len {} overflows the length of a `VarLenGranule`",
-            len
+            "Len {len} overflows the length of a `VarLenGranule`",
         );
 
         // Insert the truncated `len`.
@@ -200,7 +199,7 @@ impl VarLenGranuleHeader {
         // Ensure that the `next` is aligned,
         // and therefore doesn't overwrite any of the `len`.
         let aligned_next = next & Self::NEXT_BITMASK;
-        debug_assert_eq!(aligned_next, next, "Next {:x} is unaligned", next);
+        debug_assert_eq!(aligned_next, next, "Next {next:x} is unaligned");
 
         // Insert the aligned `next`.
         new.0 |= aligned_next;

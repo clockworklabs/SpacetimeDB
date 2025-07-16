@@ -11,3 +11,6 @@ derive_more.workspace = true
 sqlparser.workspace = true
 thiserror.workspace = true
 spacetimedb-lib.workspace = true
+
+[lints]
+workspace = true

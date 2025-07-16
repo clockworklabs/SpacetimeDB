@@ -5,7 +5,6 @@ use crate::client::messages::{
     TransactionUpdateMessage,
 };
 use crate::client::{ClientConnectionSender, Protocol};
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
 use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
@@ -21,6 +20,7 @@ use spacetimedb_client_api_messages::websocket::{
     WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
@@ -158,8 +158,7 @@ impl ClientInfo {
             for query_hash in query_hashes {
                 assert!(
                     self.subscription_ref_count.contains_key(query_hash),
-                    "Query hash not found: {:?}",
-                    query_hash
+                    "Query hash not found: {query_hash:?}"
                 );
                 expected_ref_count
                     .entry(*query_hash)
@@ -1583,7 +1582,6 @@ mod tests {
 
     use super::{Plan, SubscriptionManager};
     use crate::db::relational_db::tests_utils::with_read_only;
-    use crate::execution_context::Workload;
     use crate::host::module_host::DatabaseTableUpdate;
     use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
@@ -1597,6 +1595,7 @@ mod tests {
         },
         subscription::execution_unit::QueryHash,
     };
+    use spacetimedb_datastore::execution_context::Workload;
 
     fn create_table(db: &RelationalDB, name: &str) -> ResultTest<TableId> {
         Ok(db.create_table_for_test(name, &[("a", AlgebraicType::U8)], &[])?)
@@ -1890,7 +1889,7 @@ mod tests {
             .collect::<ResultTest<Vec<_>>>()?;
         let queries = table_names
             .iter()
-            .map(|name| format!("select * from {}", name))
+            .map(|name| format!("select * from {name}"))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
@@ -1935,7 +1934,7 @@ mod tests {
             .collect::<ResultTest<Vec<_>>>()?;
         let queries = table_names
             .iter()
-            .map(|name| format!("select * from {}", name))
+            .map(|name| format!("select * from {name}"))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
@@ -1992,7 +1991,7 @@ mod tests {
 
         // Subscribe to queries that have search arguments
         let queries = (0u8..5)
-            .map(|name| format!("select * from t where a = {}", name))
+            .map(|name| format!("select * from t where a = {name}"))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
@@ -2064,7 +2063,7 @@ mod tests {
         let mut subscriptions = SubscriptionManager::for_test_without_metrics();
 
         let queries = (0u8..5)
-            .map(|name| format!("select * from t where a = {}", name))
+            .map(|name| format!("select * from t where a = {name}"))
             .chain(std::iter::once(String::from("select * from t")))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;

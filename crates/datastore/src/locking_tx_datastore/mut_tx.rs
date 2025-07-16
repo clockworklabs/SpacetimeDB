@@ -8,8 +8,10 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::datastore::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
-use crate::db::datastore::{
+use crate::execution_context::ExecutionContext;
+use crate::execution_context::Workload;
+use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
+use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnFields, StColumnRow, StConstraintFields,
@@ -19,8 +21,6 @@ use crate::db::datastore::{
         ST_SEQUENCE_ID, ST_TABLE_ID,
     },
 };
-use crate::execution_context::ExecutionContext;
-use crate::execution_context::Workload;
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
@@ -70,9 +70,11 @@ pub struct MutTxId {
     pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
-    pub(crate) timer: Instant,
-    pub(crate) ctx: ExecutionContext,
-    pub(crate) metrics: ExecutionMetrics,
+    // TODO(cloutiertyler): The below were made `pub` for the datastore split. We should
+    // make these private again.
+    pub timer: Instant,
+    pub ctx: ExecutionContext,
+    pub metrics: ExecutionMetrics,
 }
 
 static_assert_size!(MutTxId, 400);
@@ -151,8 +153,8 @@ impl MutTxId {
     }
 
     /// Get the list of current pending schema changes, for testing.
-    #[cfg(test)]
-    pub(crate) fn pending_schema_changes(&self) -> &[PendingSchemaChange] {
+    #[cfg(any(test, feature = "test"))]
+    pub fn pending_schema_changes(&self) -> &[PendingSchemaChange] {
         &self.tx_state.pending_schema_changes
     }
 
@@ -192,7 +194,7 @@ impl MutTxId {
         }
 
         let table_name = table_schema.table_name.clone();
-        log::trace!("TABLE CREATING: {}", table_name);
+        log::trace!("TABLE CREATING: {table_name}");
 
         // Insert the table row into `st_tables`
         // NOTE: Because `st_tables` has a unique index on `table_name`, this will
@@ -272,7 +274,7 @@ impl MutTxId {
             self.create_sequence(seq)?;
         }
 
-        log::trace!("TABLE CREATED: {}, table_id: {table_id}", table_name);
+        log::trace!("TABLE CREATED: {table_name}, table_id: {table_id}");
 
         Ok(table_id)
     }
@@ -480,7 +482,7 @@ impl MutTxId {
     /// - `index.index_id == IndexId::SENTINEL`
     /// - `index.table_id != TableId::SENTINEL`
     /// - `is_unique` must be `true` if and only if a unique constraint will exist on
-    ///     `ColSet::from(&index.index_algorithm.columns())` after this transaction is committed.
+    ///   `ColSet::from(&index.index_algorithm.columns())` after this transaction is committed.
     ///
     /// Ensures:
     /// - The index metadata is inserted into the system tables (and other data structures reflecting them).
@@ -573,7 +575,7 @@ impl MutTxId {
     }
 
     pub fn drop_index(&mut self, index_id: IndexId) -> Result<()> {
-        log::trace!("INDEX DROPPING: {}", index_id);
+        log::trace!("INDEX DROPPING: {index_id}");
         // Find the index in `st_indexes`.
         let st_index_ref = self
             .iter_by_col_eq(ST_INDEX_ID, StIndexFields::IndexId, &index_id.into())?
@@ -609,7 +611,7 @@ impl MutTxId {
             index_schema,
         ));
 
-        log::trace!("INDEX DROPPED: {}", index_id);
+        log::trace!("INDEX DROPPED: {index_id}");
         Ok(())
     }
 
@@ -746,7 +748,7 @@ impl MutTxId {
             let mut vals: Vec<_> = prefix.elements.into();
             vals.reserve(1 + suffix_len);
             vals.push(val);
-            vals.extend(iter::repeat(fill).take(suffix_len));
+            vals.extend(iter::repeat_n(fill, suffix_len));
             AlgebraicValue::product(vals)
         };
         // The start endpoint needs `Min` as the suffix-filling element,
@@ -897,7 +899,7 @@ impl MutTxId {
         self.sequence_state_lock.insert(Sequence::new(schema));
         self.push_schema_change(PendingSchemaChange::SequenceAdded(table_id, seq_id));
 
-        log::trace!("SEQUENCE CREATED: id = {}", seq_id);
+        log::trace!("SEQUENCE CREATED: id = {seq_id}");
 
         Ok(seq_id)
     }
@@ -945,7 +947,7 @@ impl MutTxId {
     /// - `constraint.constraint_id == ConstraintId::SENTINEL`
     /// - `constraint.table_id != TableId::SENTINEL`
     /// - `is_unique` must be `true` if and only if a unique constraint will exist on
-    ///     `ColSet::from(&constraint.constraint_algorithm.columns())` after this transaction is committed.
+    ///   `ColSet::from(&constraint.constraint_algorithm.columns())` after this transaction is committed.
     ///
     /// Ensures:
     /// - The constraint metadata is inserted into the system tables (and other data structures reflecting them).
@@ -1293,7 +1295,7 @@ impl MutTxId {
 
 /// Either a row just inserted to a table or a row that already existed in some table.
 #[derive(Clone, Copy)]
-pub(crate) enum RowRefInsertion<'a> {
+pub enum RowRefInsertion<'a> {
     /// The row was just inserted.
     Inserted(RowRef<'a>),
     /// The row already existed.
@@ -1347,7 +1349,7 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
-    pub(crate) fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+    pub fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
         let row = &StClientRow {
             identity: identity.into(),
             connection_id: connection_id.into(),
@@ -1355,7 +1357,7 @@ impl MutTxId {
         self.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
     }
 
-    pub(crate) fn delete_st_client(
+    pub fn delete_st_client(
         &mut self,
         identity: Identity,
         connection_id: ConnectionId,
@@ -1383,7 +1385,7 @@ impl MutTxId {
         }
     }
 
-    pub(crate) fn insert_via_serialize_bsatn<'a, T: Serialize>(
+    pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
         &'a mut self,
         table_id: TableId,
         row: &T,

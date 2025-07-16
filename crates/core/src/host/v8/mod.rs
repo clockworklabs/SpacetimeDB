@@ -1,5 +1,4 @@
 use crate::{
-    db::datastore::locking_tx_datastore::MutTxId,
     host::{
         module_host::{DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime},
         Scheduler,
@@ -8,6 +7,7 @@ use crate::{
     replica_context::ReplicaContext,
 };
 use anyhow::anyhow;
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use std::sync::{Arc, LazyLock};
 
 use super::module_host::CallReducerParams;
@@ -84,7 +84,7 @@ impl ModuleInstance for JsInstance {
 
     fn update_database(
         &mut self,
-        _program: crate::db::datastore::traits::Program,
+        _program: spacetimedb_datastore::traits::Program,
         _old_module_info: Arc<ModuleInfo>,
     ) -> anyhow::Result<super::UpdateDatabaseResult> {
         todo!()

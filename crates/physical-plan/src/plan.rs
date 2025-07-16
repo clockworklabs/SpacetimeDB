@@ -1326,7 +1326,7 @@ mod tests {
             ProjectPlan::None(PhysicalPlan::TableScan(TableScan { schema, .. }, _)) => {
                 assert_eq!(schema.table_id, t_id);
             }
-            proj => panic!("unexpected project: {:#?}", proj),
+            proj => panic!("unexpected project: {proj:#?}"),
         };
     }
 
@@ -1362,10 +1362,10 @@ mod tests {
                     PhysicalPlan::TableScan(TableScan { schema, .. }, _) => {
                         assert_eq!(schema.table_id, t_id);
                     }
-                    plan => panic!("unexpected plan: {:#?}", plan),
+                    plan => panic!("unexpected plan: {plan:#?}"),
                 }
             }
-            proj => panic!("unexpected project: {:#?}", proj),
+            proj => panic!("unexpected project: {proj:#?}"),
         };
     }
 
@@ -1462,7 +1462,7 @@ mod tests {
         // ix(u)  l
         let plan = match pp {
             ProjectPlan::None(plan) => plan,
-            proj => panic!("unexpected project: {:#?}", proj),
+            proj => panic!("unexpected project: {proj:#?}"),
         };
 
         // Plan:
@@ -1488,7 +1488,7 @@ mod tests {
                 assert_eq!(rhs.table_id, b_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan:
@@ -1512,7 +1512,7 @@ mod tests {
                 assert_eq!(rhs.table_id, l_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan:
@@ -1534,7 +1534,7 @@ mod tests {
                 assert_eq!(rhs.table_id, l_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan: ix(u)
@@ -1551,7 +1551,7 @@ mod tests {
                 assert!(prefix.is_empty());
                 assert_eq!(schema.table_id, u_id);
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         }
     }
 
@@ -1656,7 +1656,7 @@ mod tests {
         // ix(m)  m
         let plan = match pp {
             ProjectPlan::None(plan) => plan,
-            proj => panic!("unexpected project: {:#?}", proj),
+            proj => panic!("unexpected project: {proj:#?}"),
         };
 
         // Plan:
@@ -1684,7 +1684,7 @@ mod tests {
                 assert_eq!(rhs.table_id, p_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan:
@@ -1706,7 +1706,7 @@ mod tests {
                 },
                 Semi::Rhs,
             ) => (*rhs, *lhs),
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan: ix(w)
@@ -1723,7 +1723,7 @@ mod tests {
                 assert!(prefix.is_empty());
                 assert_eq!(schema.table_id, w_id);
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         }
 
         // Plan:
@@ -1747,7 +1747,7 @@ mod tests {
                 assert_eq!(rhs.table_id, w_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan:
@@ -1769,7 +1769,7 @@ mod tests {
                 assert_eq!(rhs.table_id, m_id);
                 *lhs
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan: ix(m)
@@ -1786,7 +1786,7 @@ mod tests {
                 assert!(prefix.is_empty());
                 assert_eq!(schema.table_id, m_id);
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         }
     }
 
@@ -1832,7 +1832,7 @@ mod tests {
                     vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
                 );
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
 
         // Test permutations of the same query
@@ -1854,7 +1854,7 @@ mod tests {
                     vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
                 );
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
 
         let sql = "select * from t where x = 3 and y = 4";
@@ -1868,7 +1868,7 @@ mod tests {
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(4))));
                 *input
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
 
         match plan {
@@ -1882,7 +1882,7 @@ mod tests {
                 assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(3)));
                 assert!(prefix.is_empty());
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         let sql = "select * from t where w = 5 and x = 4";
@@ -1896,7 +1896,7 @@ mod tests {
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(5))));
                 *input
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
 
         match plan {
@@ -1910,7 +1910,7 @@ mod tests {
                 assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(4)));
                 assert!(prefix.is_empty());
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         let sql = "select * from t where y = 1";
@@ -1924,7 +1924,7 @@ mod tests {
                 assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 2, .. })));
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(1))));
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
 
         // Select index on [y, z]
@@ -1943,7 +1943,7 @@ mod tests {
                 assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2)));
                 assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
 
         // Check permutations of the same query
@@ -1962,7 +1962,7 @@ mod tests {
                 assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2)));
                 assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
 
         // Select index on (y, z) and filter on (w)
@@ -1976,7 +1976,7 @@ mod tests {
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(1))));
                 *input
             }
-            proj => panic!("unexpected plan: {:#?}", proj),
+            proj => panic!("unexpected plan: {proj:#?}"),
         };
 
         match plan {
@@ -1990,7 +1990,7 @@ mod tests {
                 assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(3)));
                 assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(2))]);
             }
-            plan => panic!("unexpected plan: {:#?}", plan),
+            plan => panic!("unexpected plan: {plan:#?}"),
         };
     }
 
