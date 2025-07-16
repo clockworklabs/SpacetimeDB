@@ -51,6 +51,7 @@ jsonwebtoken.workspace = true
 scopeguard.workspace = true
 serde_with.workspace = true
 async-stream.workspace = true
+humantime.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemalloc_pprof.workspace = true
@@ -58,6 +59,7 @@ jemalloc_pprof.workspace = true
 [dev-dependencies]
 jsonwebtoken.workspace = true
 pretty_assertions = { workspace = true, features = ["unstable"] }
+toml.workspace = true
 
 [lints]
 workspace = true
