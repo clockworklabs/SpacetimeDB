@@ -90,7 +90,7 @@ Note that messages are actually double-encoded. The `SpacetimeDB.ClientApi` mess
 
 The user may subscribe to the same row in multiple ways, e.g. `SELECT * FROM students WHERE student.age > 5` and `SELECT * FROM students WHERE student.class = 4`. If the user subscribes to both of these queries, the server will send multiple copies of all students in class 4 of age greater than 5.
 
-We could deduplicate queries server-side, but this represents a large amount of work, so for performance reasons we deduplicate them client-side instead. We rely on the [`MultiDictionary`](src/MultiDictionary.cs) class to do this. This class is like a regular dictionary, but it can store multiple "copies" of a (key, value) pair. See the comments on that class for more information, and [`tests~/MultiDictionaryTests.cs`](./tests~/MultiDictionaryTests.cs) for randomized tests of its behavior.
+We could deduplicate multiply-subscribed rows server-side, but this represents a large amount of work, so for performance reasons we deduplicate them client-side instead. We rely on the [`MultiDictionary`](src/MultiDictionary.cs) class to do this. This class is like a regular dictionary, but it can store multiple "copies" of a (key, value) pair. See the comments on that class for more information, and [`tests~/MultiDictionaryTests.cs`](./tests~/MultiDictionaryTests.cs) for randomized tests of its behavior.
 
 There is also a class `MultiDictionaryDelta`. This represents a pre-processed batch of changes to a `MultiDictionary`. We prepare `MultiDictionaryDelta`s on a background thread and `Apply` them on the main thread. This allows us to do at least some work without blocking the main thread.
 
