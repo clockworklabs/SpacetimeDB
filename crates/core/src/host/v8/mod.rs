@@ -1,5 +1,4 @@
 use crate::{
-    db::datastore::locking_tx_datastore::MutTxId,
     host::{
         module_host::{DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime},
         Scheduler,
@@ -8,6 +7,7 @@ use crate::{
     replica_context::ReplicaContext,
 };
 use anyhow::anyhow;
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use std::sync::{Arc, LazyLock};
 
 use super::module_host::CallReducerParams;
@@ -24,7 +24,7 @@ impl ModuleRuntime for V8Runtime {
     }
 }
 
-static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::new);
+static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::init);
 
 /// The actual V8 runtime, with initialization of V8.
 struct V8RuntimeInner {
@@ -32,9 +32,14 @@ struct V8RuntimeInner {
 }
 
 impl V8RuntimeInner {
-    #[allow(clippy::new_without_default)]
-    const fn new() -> Self {
-        // TODO: actually setup V8.
+    fn init() -> Self {
+        // Our current configuration:
+        // - will pick a number of worker threads for background jobs based on the num CPUs.
+        // - does not allow idle tasks
+        let platform = v8::new_default_platform(0, false).make_shared();
+        // Initialize V8. Internally, this uses a global lock so it's safe that we don't.
+        v8::V8::initialize_platform(platform);
+        v8::V8::initialize();
 
         Self { _priv: () }
     }
@@ -84,7 +89,7 @@ impl ModuleInstance for JsInstance {
 
     fn update_database(
         &mut self,
-        _program: crate::db::datastore::traits::Program,
+        _program: spacetimedb_datastore::traits::Program,
         _old_module_info: Arc<ModuleInfo>,
     ) -> anyhow::Result<super::UpdateDatabaseResult> {
         todo!()

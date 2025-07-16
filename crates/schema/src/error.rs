@@ -197,14 +197,14 @@ impl fmt::Display for TypeLocation<'_> {
                 position,
                 arg_name,
             } => {
-                write!(f, "reducer `{}` argument {}", reducer_name, position)?;
+                write!(f, "reducer `{reducer_name}` argument {position}")?;
                 if let Some(arg_name) = arg_name {
-                    write!(f, " (`{}`)", arg_name)?;
+                    write!(f, " (`{arg_name}`)")?;
                 }
                 Ok(())
             }
             TypeLocation::InTypespace { ref_ } => {
-                write!(f, "typespace ref `{}`", ref_)
+                write!(f, "typespace ref `{ref_}`")
             }
         }
     }
