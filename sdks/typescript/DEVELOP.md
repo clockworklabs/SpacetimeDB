@@ -1,3 +1,7 @@
+# Migration note
+
+We are in the process of moving from the `spacetimedb-typescript-sdk` repo to the `sdks/typescript` subdirectory of [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB). **Any new changes should be made there**. Apologies in advance for any sharp edges while the migration is in progress.
+
 # Notes for maintainers
 
 The directory `packages/sdk/src/client_api` is generated from [the SpacetimeDB client-api-messages](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/client-api-messages).
