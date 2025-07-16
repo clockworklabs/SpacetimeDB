@@ -658,7 +658,7 @@ impl<R: Repo> Commits<R> {
                         }
                     // Not the expected offset: report out-of-order.
                     } else if self.last_commit.expected_offset() != &commit.min_tx_offset {
-                        warn!("out-of-order: commit={:?} last-error={:?}", commit, prev_error);
+                        warn!("out-of-order: commit={commit:?} last-error={prev_error:?}");
                         return Some(Err(error::Traversal::OutOfOrder {
                             expected_offset: *self.last_commit.expected_offset(),
                             actual_offset: commit.min_tx_offset,

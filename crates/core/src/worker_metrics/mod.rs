@@ -1,7 +1,7 @@
-use crate::execution_context::WorkloadType;
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
+use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_metrics::metrics_group;
 use spacetimedb_sats::memory_usage::MemoryUsage;

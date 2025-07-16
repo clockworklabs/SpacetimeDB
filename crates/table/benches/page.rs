@@ -234,7 +234,7 @@ const VL_SIZES: [usize; 6] = [
 ];
 
 fn insert_var_len_clean_page(c: &mut Criterion, visitor: &impl VarLenMembers, visitor_name: &str) {
-    let mut group = c.benchmark_group(format!("insert_var_len/{}/clean_page", visitor_name));
+    let mut group = c.benchmark_group(format!("insert_var_len/{visitor_name}/clean_page"));
 
     for len_in_bytes in VL_SIZES {
         group.throughput(Throughput::Bytes(
@@ -258,7 +258,7 @@ fn insert_var_len_clean_page(c: &mut Criterion, visitor: &impl VarLenMembers, vi
 }
 
 fn insert_var_len_dirty_page(c: &mut Criterion, visitor: &impl VarLenMembers, visitor_name: &str) {
-    let mut group = c.benchmark_group(format!("insert_var_len/{}/dirty_page", visitor_name));
+    let mut group = c.benchmark_group(format!("insert_var_len/{visitor_name}/dirty_page"));
 
     for len_in_bytes in VL_SIZES {
         group.throughput(Throughput::Bytes(
@@ -326,7 +326,7 @@ fn insert_opt_str(c: &mut Criterion) {
             clean_page_group.bench_with_input(
                 BenchmarkId::new(
                     "(some_ratio, length_in_bytes)",
-                    format!("({}, {})", some_ratio, data_length_in_bytes),
+                    format!("({some_ratio}, {data_length_in_bytes})"),
                 ),
                 &input,
                 |b, &(some_ratio, _)| {
@@ -708,7 +708,7 @@ fn ty_page_visitor(ty: ProductType) -> (RowTypeLayout, Box<Page>, VarLenVisitorP
 #[inline(never)]
 fn insert_product_value_into_page(c: &mut Criterion) {
     for (name, ty, value, null_visitor, aligned_offsets_visitor) in product_value_test_cases() {
-        let mut group = c.benchmark_group(format!("insert_product_value/{}", name));
+        let mut group = c.benchmark_group(format!("insert_product_value/{name}"));
         let (ty, mut page, program_visitor) = ty_page_visitor(ty);
 
         if let Some(null_visitor) = null_visitor {

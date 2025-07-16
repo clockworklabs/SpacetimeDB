@@ -23,12 +23,12 @@ fn main() {
     let connection = DbConnection::builder()
         .with_module_name(db_name_or_panic())
         .with_uri(LOCALHOST)
-        .on_connect_error(|_ctx, error| panic!("on_connect_error: {:?}", error))
+        .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
         .on_connect(move |ctx, _, _| {
             connected_result(Ok(()));
             ctx.subscription_builder()
                 .on_error(|_ctx, error| {
-                    panic!("Subscription failed: {:?}", error);
+                    panic!("Subscription failed: {error:?}");
                 })
                 .on_applied(move |ctx| {
                     let check = || {
@@ -71,7 +71,7 @@ fn main() {
     let sub_applied_one_row_result = reconnect_test_counter.add_test("disconnected_row");
 
     let new_connection = DbConnection::builder()
-        .on_connect_error(|_ctx, error| panic!("on_connect_error: {:?}", error))
+        .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
         .on_connect(move |_ctx, _, _| {
             reconnected_result(Ok(()));
         })
@@ -94,7 +94,7 @@ fn main() {
             };
             sub_applied_one_row_result(check());
         })
-        .on_error(|_ctx, error| panic!("subscription on_error: {:?}", error))
+        .on_error(|_ctx, error| panic!("subscription on_error: {error:?}"))
         .subscribe("SELECT * FROM disconnected");
 
     new_connection.run_threaded();

@@ -89,10 +89,10 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     };
 
     let identity = decode_identity(token)?;
-    println!("You are logged in as {}", identity);
+    println!("You are logged in as {identity}");
 
     if include_token {
-        println!("Your auth token (don't share this!) is {}", token);
+        println!("Your auth token (don't share this!) is {token}");
     }
 
     Ok(())
@@ -213,7 +213,7 @@ async fn web_login(remote: &Url) -> Result<String, anyhow::Error> {
     browser_url
         .query_pairs_mut()
         .append_pair("token", web_login_request_token);
-    println!("Opening {} in your browser.", browser_url);
+    println!("Opening {browser_url} in your browser.");
     if webbrowser::open(browser_url.as_str()).is_err() {
         println!("Unable to open your browser! Please open the URL above manually.");
     }
@@ -251,7 +251,7 @@ async fn spacetimedb_login(remote: &Url, web_session_token: &String) -> Result<S
 
     let response: SpacetimeDBTokenResponse = client
         .post(remote.join("api/spacetimedb-token")?)
-        .header("Authorization", format!("Bearer {}", web_session_token))
+        .header("Authorization", format!("Bearer {web_session_token}"))
         .send()
         .await?
         .json()
