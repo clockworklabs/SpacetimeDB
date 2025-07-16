@@ -1,5 +1,6 @@
 use crate::{
     host::{
+        module_common::{build_common_module_from_raw, ModuleCommon},
         module_host::{DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime},
         Scheduler,
     },
@@ -44,21 +45,39 @@ impl V8RuntimeInner {
         Self { _priv: () }
     }
 
-    fn make_actor(&self, _: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
-        Err::<JsModule, _>(anyhow!("v8_todo"))
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
+        #![allow(unreachable_code, unused_variables)]
+
+        log::trace!(
+            "Making new V8 module host actor for database {} with module {}",
+            mcc.replica_ctx.database_identity,
+            mcc.program.hash,
+        );
+
+        if true {
+            return Err::<JsModule, _>(anyhow!("v8_todo"));
+        }
+
+        let desc = todo!();
+        // Validate and create a common module rom the raw definition.
+        let common = build_common_module_from_raw(mcc, desc)?;
+
+        Ok(JsModule { common })
     }
 }
 
 #[derive(Clone)]
-struct JsModule;
+struct JsModule {
+    common: ModuleCommon,
+}
 
 impl DynModule for JsModule {
     fn replica_ctx(&self) -> &Arc<ReplicaContext> {
-        todo!()
+        self.common.replica_ctx()
     }
 
     fn scheduler(&self) -> &Scheduler {
-        todo!()
+        self.common.scheduler()
     }
 }
 
