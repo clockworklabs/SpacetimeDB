@@ -42,3 +42,41 @@ Can be one of `"error"`, `"warn"`, `"info"`, `"debug"`, `"trace"`, or `"off"`, c
 #### `logs.directives`
 
 A list of filtering directives controlling what messages get logged, which overwrite the global [`logs.level`](#logslevel). See [`tracing documentation`](https://docs.rs/tracing-subscriber/0.3/tracing_subscriber/filter/struct.EnvFilter.html#directives) for syntax. Note that this is primarily intended as a debugging tool, and log message fields and targets are not considered stable.
+
+### `websocket`
+
+```toml
+[websocket]
+ping-interval = "15s"
+idle-timeout = "30s"
+close-handshake-timeout = "250ms"
+incoming-queue-length = 2048
+```
+
+#### `websocket.ping-interval`
+
+Interval at which the server will send `Ping` frames to keep the connection alive.
+Should be smaller than `websocket.idle-timeout` to be effective.
+
+Values are strings of any format the [`humantime`] crate can parse.
+
+#### `websocket.idle-timeout`
+
+If the server hasn't received any data from the client (including `Pong` responses to previous `Ping`s it sent), it will consider the client unresponsive and close the connection.
+Should be greater than `websocket.ping-interval` to be effective.
+
+Values are strings of any format the [`humantime`] crate can parse.
+
+#### `websocket.close-handshake-timeout`
+
+Time the server waits for the client to respond to a graceful connection close. If the client doesn't respond within this timeout, the connection is dropped.
+
+Values are strings of any format the [`humantime`] crate can parse.
+
+#### `websocket.incoming-queue-length`
+
+Maximum number of client messages the server will queue up in case it is not able to process them quickly enough. When the queue length exceeds this value, the server will start disconnecting clients.
+Note that the limit is per client, not across all clients of a particular database.
+
+
+[`humantime`]: https://crates.io/crates/humantime
