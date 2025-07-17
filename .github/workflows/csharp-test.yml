@@ -1,4 +1,4 @@
-name: Test Suite
+name: C#/Unity - Test Suite
 
 on:
   push:
