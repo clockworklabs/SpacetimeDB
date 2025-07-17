@@ -33,8 +33,8 @@ If you just want to checkout the final project and play around a bit, follow the
 2. Start SpacetimeDB in a separate terminal with `spacetime start`.
 3. Clone this repository:
    ```bash
-   git clone https://github.com/ClockworkLabs/Blackholio.git
-   cd Blackholio
+   git clone https://github.com/ClockworkLabs/SpacetimeDB.git
+   cd SpacetimeDB/demo/Blackholio
    ```
 4. Publish the server logic. You can either publish the csharp server or the rust server.
    ```bash
