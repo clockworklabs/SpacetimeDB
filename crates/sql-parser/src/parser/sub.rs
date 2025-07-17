@@ -111,7 +111,7 @@ impl RelParser for SubParser {
 fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlSelect> {
     match expr {
         SetExpr::Select(select) => parse_select(*select).map(SqlSelect::qualify_vars),
-        _ => Err(SqlUnsupported::SetOp(expr).into()),
+        _ => Err(SqlUnsupported::SetOp(Box::new(expr)).into()),
     }
 }
 

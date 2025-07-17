@@ -2,8 +2,14 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+use super::{
+    errors::{DuplicateName, TypingError, Unresolved, Unsupported},
+    expr::RelExpr,
+    type_expr, type_proj, type_select, StatementCtx, StatementSource,
+};
 use crate::expr::LeftDeepJoin;
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
+use crate::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::TableId;
@@ -12,12 +18,6 @@ use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
     ast::{sub::SqlSelect, SqlFrom, SqlIdent, SqlJoin},
     parser::sub::parse_subscription,
-};
-
-use super::{
-    errors::{DuplicateName, TypingError, Unresolved, Unsupported},
-    expr::RelExpr,
-    type_expr, type_proj, type_select,
 };
 
 /// The result of type checking and name resolution
@@ -173,6 +173,27 @@ fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
         ProjectList::Limit(input, _) => expect_table_type(*input),
         ProjectList::Name(..) | ProjectList::List(..) | ProjectList::Agg(..) => Err(Unsupported::ReturnType.into()),
     }
+}
+
+/// Parse and type check a *subscription* query into a `StatementCtx`
+pub fn compile_sql_sub<'a>(
+    sql: &'a str,
+    tx: &impl SchemaView,
+    auth: &AuthCtx,
+    with_timings: bool,
+) -> TypingResult<StatementCtx<'a>> {
+    let planning_time = if with_timings {
+        Some(std::time::Instant::now())
+    } else {
+        None
+    };
+    let (plan, _) = parse_and_type_sub(sql, tx, auth)?;
+    Ok(StatementCtx {
+        statement: Statement::Select(ProjectList::Name(vec![plan])),
+        sql,
+        source: StatementSource::Subscription,
+        planning_time: planning_time.map(|t| t.elapsed()),
+    })
 }
 
 pub mod test_utils {

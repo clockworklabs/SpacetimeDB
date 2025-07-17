@@ -539,8 +539,6 @@ pub enum InitDatabaseError {
     Other(anyhow::Error),
 }
 
-// FIXME: reduce type size
-#[expect(clippy::large_enum_variant)]
 #[derive(thiserror::Error, Debug)]
 pub enum ClientConnectedError {
     #[error(transparent)]
