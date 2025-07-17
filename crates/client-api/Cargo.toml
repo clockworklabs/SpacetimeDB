@@ -52,6 +52,7 @@ scopeguard.workspace = true
 serde_with.workspace = true
 async-stream.workspace = true
 crossbeam-queue.workspace = true
+humantime.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemalloc_pprof.workspace = true
@@ -60,6 +61,7 @@ jemalloc_pprof.workspace = true
 jsonwebtoken.workspace = true
 pretty_assertions = { workspace = true, features = ["unstable"] }
 proptest.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

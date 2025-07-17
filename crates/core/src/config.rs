@@ -136,7 +136,7 @@ impl CertificateAuthority {
 }
 
 #[serde_with::serde_as]
-#[derive(serde::Deserialize, Default)]
+#[derive(Clone, serde::Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct LogConfig {
     #[serde_as(as = "Option<serde_with::DisplayFromStr>")]

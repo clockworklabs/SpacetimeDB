@@ -12,6 +12,7 @@ use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 
 mod disk_storage;
 mod host_controller;
+mod module_common;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
 pub mod scheduler;
