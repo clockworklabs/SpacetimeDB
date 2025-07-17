@@ -12,8 +12,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: true
 
       # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
@@ -47,9 +45,9 @@ jobs:
       # Now, setup the Unity tests.
 
       - name: Patch spacetimedb dependency in Cargo.toml
-        working-directory: sdks/csharp/unity-tests~/server-rust
+        working-directory: demo/Blackholio/server-rust
         run: |
-          sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../SpacetimeDB~/crates/bindings\" \}|" Cargo.toml
+          sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../../crates/bindings\" \}|" Cargo.toml
           cat Cargo.toml
 
       - name: Install Rust toolchain
@@ -59,7 +57,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         id: cache-rust-deps
         with:
-          workspaces: sdks/csharp/unity-tests~/server-rust
+          workspaces: demo/Blackholio/server-rust
           key: ${{ steps.checkout-stdb.outputs.commit }}
           # Cache Rust deps even if unit tests have failed.
           cache-on-failure: true
@@ -76,15 +74,15 @@ jobs:
           ln -sf $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
         env:
           # Share the target directory with our local project to avoid rebuilding same SpacetimeDB crates twice.
-          CARGO_TARGET_DIR: sdks/csharp/unity-tests~/server-rust/target
+          CARGO_TARGET_DIR: demo/Blackholio/server-rust/target
 
       - name: Generate client bindings
-        working-directory: sdks/csharp/unity-tests~/server-rust
+        working-directory: demo/Blackholio/server-rust
         run: bash ./generate.sh -y
 
       - name: Check for changes
         run: |
-          git diff --exit-code sdks/csharp/unity-tests~/client-unity/Assets/Scripts/autogen || {
+          git diff --exit-code demo/Blackholio/client-unity/Assets/Scripts/autogen || {
               echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
               exit 1
           }
@@ -105,13 +103,13 @@ jobs:
         run: bash sdks/csharp/tools~/run-regression-tests.sh .
 
       - name: Publish unity-tests module to SpacetimeDB
-        working-directory: sdks/csharp/unity-tests~/server-rust
+        working-directory: demo/Blackholio/server-rust
         run: |
           spacetime logout && spacetime login --server-issued-login local
           bash ./publish.sh
 
       - name: Patch com.clockworklabs.spacetimedbsdk dependency in manifest.json
-        working-directory: sdks/csharp/unity-tests~/client-unity/Packages
+        working-directory: demo/Blackholio/client-unity/Packages
         run: |
           # Replace the com.clockworklabs.spacetimedbsdk dependency with the current branch.
           # TODO: find out why pointing to a local directory doesn't work - is it because Unity CI action uses Docker?
@@ -120,7 +118,7 @@ jobs:
 
       - uses: actions/cache@v3
         with:
-          path: sdks/csharp/unity-tests~/client-unity/Library
+          path: demo/Blackholio/client-unity/Library
           key: Unity-${{ github.head_ref }}
           restore-keys: Unity-
 
@@ -128,7 +126,7 @@ jobs:
         uses: game-ci/unity-test-runner@v4
         with:
           unityVersion: 2022.3.32f1  # Adjust Unity version to a valid tag
-          projectPath: sdks/csharp/unity-tests~/client-unity  # Path to the Unity project subdirectory
+          projectPath: demo/Blackholio/client-unity  # Path to the Unity project subdirectory
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           testMode: playmode
           useHostNetwork: true
