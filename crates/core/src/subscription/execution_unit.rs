@@ -5,11 +5,10 @@ use crate::error::DBError;
 use crate::estimation;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue, UpdatesRelValue};
 use crate::messages::websocket::TableUpdate;
+use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::websocket::{
-    Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate, WebsocketFormat,
-};
+use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate};
 use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
@@ -236,7 +235,7 @@ impl ExecutionUnit {
 
     /// Evaluate this execution unit against the database using the specified format.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn eval<F: WebsocketFormat>(
+    pub fn eval<F: BuildableWebsocketFormat>(
         &self,
         db: &RelationalDB,
         tx: &Tx,
