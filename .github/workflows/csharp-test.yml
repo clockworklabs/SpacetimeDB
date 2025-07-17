@@ -118,7 +118,7 @@ jobs:
         run: |
           # Replace the com.clockworklabs.spacetimedbsdk dependency with the current branch.
           # TODO: find out why pointing to a local directory doesn't work - is it because Unity CI action uses Docker?
-          yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git#${{ github.head_ref }}"' manifest.json
+          yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "../../../sdks/csharp"' manifest.json
           cat manifest.json
 
       - uses: actions/cache@v3
