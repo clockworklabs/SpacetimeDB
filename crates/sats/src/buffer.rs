@@ -10,7 +10,7 @@ use core::fmt;
 use core::str::Utf8Error;
 
 /// An error that occurred when decoding.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DecodeError {
     /// Not enough data was provided in the input.
     BufferLength {

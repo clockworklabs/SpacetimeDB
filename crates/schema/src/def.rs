@@ -32,13 +32,14 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors,
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
-    Lifecycle, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm, RawIndexDefV9,
-    RawModuleDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9, RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9,
-    RawSql, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
+    Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm,
+    RawIndexDefV9, RawMiscModuleExportV9, RawModuleDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9, RawScheduleDefV9,
+    RawScopedTypeNameV9, RawSequenceDefV9, RawSql, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess,
+    TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ReducerId, TableId};
-use spacetimedb_sats::AlgebraicType;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 
 pub mod deserialize;
@@ -659,6 +660,9 @@ pub struct ColumnDef {
 
     /// The table this `ColumnDef` is stored in.
     pub table_name: Identifier,
+
+    /// The default value of this column, if present.
+    pub default_value: Option<AlgebraicValue>,
 }
 
 /// A constraint definition attached to a table.
