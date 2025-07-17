@@ -1,9 +1,7 @@
-name: Validate nav.ts Matches nav.js
+name: Docs - Validate nav.ts Matches nav.js
 
 on:
   pull_request:
-    branches:
-      - master
   push:
     branches:
       - master
@@ -23,22 +21,27 @@ jobs:
           node-version: '16'
 
       - name: Install dependencies
+        working-directory: docs
         run: |
           npm install
 
       - name: Backup existing nav.js
+        working-directory: docs
         run: |
           mv docs/nav.js docs/nav.js.original
 
       - name: Build nav.ts
+        working-directory: docs
         run: |
           npm run build
 
       - name: Compare generated nav.js with original nav.js
+        working-directory: docs
         run: |
           diff -q docs/nav.js docs/nav.js.original || (echo "Generated nav.js differs from committed version. Run 'npm run build' and commit the updated file." && exit 1)
 
       - name: Restore original nav.js
+        working-directory: docs
         if: success() || failure()
         run: |
           mv docs/nav.js.original docs/nav.js
