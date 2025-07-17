@@ -82,7 +82,11 @@ jobs:
 
       - name: Check for changes
         run: |
-          git diff --exit-code demo/Blackholio/client-unity/Assets/Scripts/autogen || {
+          # This was copied from tools/check-diff.sh.
+          # It's required because `spacetime generate` creates lines with the SpacetimeDB commit
+          # version, which would make this `git diff` check very brittle if included.
+          PATTERN='^// This was generated using spacetimedb cli version.*'
+          git diff --exit-code --ignore-matching-lines="$PATTERN" -- demo/Blackholio/client-unity/Assets/Scripts/autogen || {
               echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
               exit 1
           }
