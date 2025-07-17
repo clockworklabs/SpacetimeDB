@@ -10,6 +10,7 @@ use crate::ast::{
 };
 
 pub mod errors;
+pub mod recursion;
 pub mod sql;
 pub mod sub;
 
@@ -61,11 +62,14 @@ trait RelParser {
                 Ok(SqlJoin {
                     var,
                     alias,
-                    on: Some(parse_expr(Expr::BinaryOp {
-                        left,
-                        op: BinaryOperator::Eq,
-                        right,
-                    })?),
+                    on: Some(parse_expr(
+                        Expr::BinaryOp {
+                            left,
+                            op: BinaryOperator::Eq,
+                            right,
+                        },
+                        0,
+                    )?),
                 })
             }
             _ => Err(SqlUnsupported::JoinType.into()),
@@ -203,16 +207,22 @@ pub(crate) fn parse_proj(expr: Expr) -> SqlParseResult<ProjectExpr> {
     }
 }
 
+// These types determine the size of [`parse_expr`]'s stack frame.
+// Changing their sizes will require updating the recursion limit to avoid stack overflows.
+const _: () = assert!(size_of::<Expr>() == 168);
+const _: () = assert!(size_of::<SqlParseResult<SqlExpr>>() == 40);
+
 /// Parse a scalar expression
-pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
-    fn signed_num(sign: impl Into<String>, expr: Expr) -> Result<SqlExpr, SqlUnsupported> {
+fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
+    fn signed_num(sign: impl Into<String>, expr: Expr) -> Result<SqlExpr, Box<SqlUnsupported>> {
         match expr {
             Expr::Value(Value::Number(n, _)) => Ok(SqlExpr::Lit(SqlLiteral::Num((sign.into() + &n).into_boxed_str()))),
-            expr => Err(SqlUnsupported::Expr(expr)),
+            expr => Err(SqlUnsupported::Expr(expr).into()),
         }
     }
+    recursion::guard(depth, recursion::MAX_RECURSION_EXPR, "sql-parser::parse_expr")?;
     match expr {
-        Expr::Nested(expr) => parse_expr(*expr),
+        Expr::Nested(expr) => parse_expr(*expr, depth + 1),
         Expr::Value(Value::Placeholder(param)) if &param == ":sender" => Ok(SqlExpr::Param(Parameter::Sender)),
         Expr::Value(v) => Ok(SqlExpr::Lit(parse_literal(v)?)),
         Expr::UnaryOp {
@@ -238,8 +248,8 @@ pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
             op: BinaryOperator::And,
             right,
         } => {
-            let l = parse_expr(*left)?;
-            let r = parse_expr(*right)?;
+            let l = parse_expr(*left, depth + 1)?;
+            let r = parse_expr(*right, depth + 1)?;
             Ok(SqlExpr::Log(Box::new(l), Box::new(r), LogOp::And))
         }
         Expr::BinaryOp {
@@ -247,13 +257,13 @@ pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
             op: BinaryOperator::Or,
             right,
         } => {
-            let l = parse_expr(*left)?;
-            let r = parse_expr(*right)?;
+            let l = parse_expr(*left, depth + 1)?;
+            let r = parse_expr(*right, depth + 1)?;
             Ok(SqlExpr::Log(Box::new(l), Box::new(r), LogOp::Or))
         }
         Expr::BinaryOp { left, op, right } => {
-            let l = parse_expr(*left)?;
-            let r = parse_expr(*right)?;
+            let l = parse_expr(*left, depth + 1)?;
+            let r = parse_expr(*right, depth + 1)?;
             Ok(SqlExpr::Bin(Box::new(l), Box::new(r), parse_binop(op)?))
         }
         _ => Err(SqlUnsupported::Expr(expr).into()),
@@ -262,7 +272,7 @@ pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
 
 /// Parse an optional scalar expression
 pub(crate) fn parse_expr_opt(opt: Option<Expr>) -> SqlParseResult<Option<SqlExpr>> {
-    opt.map(parse_expr).transpose()
+    opt.map(|expr| parse_expr(expr, 0)).transpose()
 }
 
 /// Parse a scalar binary operator
