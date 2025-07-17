@@ -1,3 +1,3 @@
 [submodule "SpacetimeDBCircleGame"]
-	path = unity-tests~
+	path = sdks/csharp/unity-tests~
 	url = https://github.com/clockworklabs/SpacetimeDBCircleGame
