@@ -1048,11 +1048,6 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                 match msg {
                     UnorderedWsMessage::Close(close_frame) => {
                         log::trace!("intiating close");
-                        state.close();
-                        // We won't be polling `messages` anymore,
-                        // so let senders know.
-                        messages.close();
-
                         // Send outstanding frames until one that has the FIN
                         // bit set. Ensures the client won't receive partial
                         // messages before we shut down.
@@ -1074,6 +1069,20 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                             log::warn!("error sending close frame: {e:#}");
                             break;
                         }
+
+                        // Lastly, update the state.
+                        //
+                        // NOTE: It's ok to not update the state if we fail to
+                        // send the close frame, because we assume that the main
+                        // loop with exit when this future terminates.
+                        // We shouldn't set the state to closed before sending
+                        // the close frame, however, as we would start dropping
+                        // messages immediately (defeating the purpose of the
+                        // close handshake).
+                        state.close();
+                        // We won't be polling `messages` anymore,
+                        // so let senders know.
+                        messages.close();
                     },
                     UnorderedWsMessage::Ping(bytes) => {
                         log::trace!("sending ping");
