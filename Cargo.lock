@@ -4392,6 +4392,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "recursive"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0786a43debb760f491b1bc0269fe5e84155353c67482b9e60d0cfb596054b43e"
+dependencies = [
+ "recursive-proc-macro-impl",
+ "stacker",
+]
+
+[[package]]
+name = "recursive-proc-macro-impl"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76009fbe0614077fc1a2ce255e3a1881a2e3a3527097d5dc6d8212c585e7e38b"
+dependencies = [
+ "quote",
+ "syn 2.0.101",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5643,7 +5663,7 @@ dependencies = [
  "spacetimedb-subscription",
  "spacetimedb-table",
  "spacetimedb-vm",
- "sqlparser",
+ "sqlparser 0.38.0",
  "strum",
  "tabled",
  "tempfile",
@@ -6046,7 +6066,7 @@ version = "1.2.0"
 dependencies = [
  "derive_more",
  "spacetimedb-lib",
- "sqlparser",
+ "sqlparser 0.57.0",
  "thiserror 1.0.69",
 ]
 
@@ -6272,6 +6292,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sqlparser"
+version = "0.57.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07c5f081b292a3d19637f0b32a79e28ff14a9fd23ef47bd7fce08ff5de221eca"
+dependencies = [
+ "log",
+ "recursive",
+]
+
+[[package]]
 name = "sqltest"
 version = "1.2.0"
 dependencies = [
@@ -6307,6 +6337,19 @@ name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
+
+[[package]]
+name = "stacker"
+version = "0.1.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cddb07e32ddb770749da91081d8d0ac3a16f1a569a18b20348cd371f5dead06b"
+dependencies = [
+ "cc",
+ "cfg-if",
+ "libc",
+ "psm",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "str-buf"
