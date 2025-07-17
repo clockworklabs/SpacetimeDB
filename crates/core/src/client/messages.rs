@@ -118,6 +118,13 @@ impl InUseSerializeBuffer {
             compressed,
         })
     }
+
+    pub fn is_unique(&self) -> bool {
+        match self {
+            InUseSerializeBuffer::Uncompressed { uncompressed, .. } => uncompressed.is_unique(),
+            InUseSerializeBuffer::Compressed { compressed, .. } => compressed.is_unique(),
+        }
+    }
 }
 
 /// Serialize `msg` into a [`DataMessage`] containing a [`ws::ServerMessage`].
