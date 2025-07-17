@@ -1,4 +1,4 @@
-name: Check Link Validity in Documentation
+name: Docs - Check Link Validity
 
 on:
   pull_request:
