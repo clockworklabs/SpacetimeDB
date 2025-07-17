@@ -1,4 +1,5 @@
 mod flat_csv;
+pub(crate) mod serde;
 pub mod websocket;
 
 use core::fmt;
@@ -111,16 +112,16 @@ impl NameOrIdentity {
     }
 }
 
-impl<'de> serde::Deserialize<'de> for NameOrIdentity {
+impl<'de> ::serde::Deserialize<'de> for NameOrIdentity {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: ::serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
         if let Ok(addr) = Identity::from_hex(&s) {
             Ok(NameOrIdentity::Identity(IdentityForUrl::from(addr)))
         } else {
-            let name: DatabaseName = s.try_into().map_err(serde::de::Error::custom)?;
+            let name: DatabaseName = s.try_into().map_err(::serde::de::Error::custom)?;
             Ok(NameOrIdentity::Name(name))
         }
     }
