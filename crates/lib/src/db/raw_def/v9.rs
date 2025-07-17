@@ -14,6 +14,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::AlgebraicTypeRef;
+use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_sats::ProductType;
 use spacetimedb_sats::ProductTypeElement;
 use spacetimedb_sats::SpacetimeType;
@@ -361,7 +362,25 @@ pub struct RawRowLevelSecurityDefV9 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[non_exhaustive]
-pub enum RawMiscModuleExportV9 {}
+pub enum RawMiscModuleExportV9 {
+    ColumnDefaultValue(RawColumnDefaultValueV9),
+}
+
+/// Marks a field as having a particularly default
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawColumnDefaultValueV9 {
+    /// Must point to a `ProductType` or an error will be thrown during validation.
+    pub table: RawIdentifier,
+
+    /// Must be the index of a valid column within `ty`.
+    pub col_id: ColId,
+
+    /// A BSATN-encoded AlgebraicValue valid at `ty`.
+    /// (We can't use AlgebraicValue directly because it isn't serializable!)
+    pub value: Box<[u8]>,
+}
 
 /// A type declaration.
 ///
@@ -791,6 +810,20 @@ impl RawTableDefBuilder<'_> {
             reducer_name,
             scheduled_at_column,
         });
+        self
+    }
+
+    /// Adds a default value for the field.
+    /// Note: this sets the value for all other tables defined on the same
+    pub fn with_default_column_value(self, column: impl Into<ColId>, value: AlgebraicValue) -> Self {
+        // Added to misc_exports for backwards-compatibility reasons
+        self.module_def
+            .misc_exports
+            .push(RawMiscModuleExportV9::ColumnDefaultValue(RawColumnDefaultValueV9 {
+                table: self.table.name.clone(),
+                col_id: column.into(),
+                value: spacetimedb_sats::bsatn::to_vec(&value).unwrap().into(),
+            }));
         self
     }
 
