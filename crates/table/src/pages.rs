@@ -176,8 +176,8 @@ impl Pages {
     /// - `var_len_visitor` must be suitable for visiting var-len refs in `fixed_row`.
     /// - `fixed_row.len()` matches the row type size exactly.
     /// - `fixed_row.len()` is consistent
-    ///    with what has been passed to the manager in all other ops
-    ///    and must be consistent with the `var_len_visitor` the manager was made with.
+    ///   with what has been passed to the manager in all other ops
+    ///   and must be consistent with the `var_len_visitor` the manager was made with.
     // TODO(bikeshedding): rename to make purpose as bench interface clear?
     pub unsafe fn insert_row(
         &mut self,

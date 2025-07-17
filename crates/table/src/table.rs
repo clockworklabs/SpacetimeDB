@@ -309,15 +309,11 @@ impl Table {
             let row_layout = this.row_layout();
 
             // Require that a scheduler table doesn't change the `id` and `at` fields.
-            let schedule_compat = schema
-                .schedule
-                .as_ref()
-                .zip(schema.pk())
-                .map_or(true, |(schedule, pk)| {
-                    let at_col = schedule.at_column.idx();
-                    let id_col = pk.col_pos.idx();
-                    row_layout[at_col] == new_row_layout[at_col] && row_layout[id_col] == new_row_layout[id_col]
-                });
+            let schedule_compat = schema.schedule.as_ref().zip(schema.pk()).is_none_or(|(schedule, pk)| {
+                let at_col = schedule.at_column.idx();
+                let id_col = pk.col_pos.idx();
+                row_layout[at_col] == new_row_layout[at_col] && row_layout[id_col] == new_row_layout[id_col]
+            });
 
             // The `row_layout` must also be compatible with the new.
             if schedule_compat && row_layout.is_compatible_with(new_row_layout) {
@@ -2245,7 +2241,7 @@ pub(crate) mod test {
                 assert_eq!(cols.iter().map(|c| c.to_string()).collect::<Vec<_>>(), &["unique_col"]);
                 assert_eq!(value, AlgebraicValue::I32(0));
             }
-            Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
+            Err(e) => panic!("Expected UniqueConstraintViolation but found {e:?}"),
         }
 
         // Second insert did clear the hash while we had a constraint violation,

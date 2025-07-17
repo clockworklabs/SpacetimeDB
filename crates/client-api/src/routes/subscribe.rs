@@ -28,13 +28,13 @@ use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageExecutionError, MessageHandleError,
     MeteredReceiver, Protocol,
 };
-use spacetimedb::execution_context::WorkloadType;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::spawn_rayon;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
+use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
 use tokio::sync::{mpsc, watch};
@@ -44,6 +44,7 @@ use tokio::time::{sleep_until, timeout};
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
 use crate::auth::SpacetimeAuth;
+use crate::util::serde::humantime_duration;
 use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade, WsError,
 };
@@ -54,6 +55,16 @@ use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_api::TEXT_PROTOCOL);
 #[allow(clippy::declare_interior_mutable_const)]
 pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_api::BIN_PROTOCOL);
+
+pub trait HasWebSocketOptions {
+    fn websocket_options(&self) -> WebSocketOptions;
+}
+
+impl<T: HasWebSocketOptions> HasWebSocketOptions for Arc<T> {
+    fn websocket_options(&self) -> WebSocketOptions {
+        (**self).websocket_options()
+    }
+}
 
 #[derive(Deserialize)]
 pub struct SubscribeParams {
@@ -88,7 +99,7 @@ pub async fn handle_websocket<S>(
     ws: WebSocketUpgrade,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: NodeDelegate + ControlStateDelegate,
+    S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions,
 {
     if connection_id.is_some() {
         // TODO: Bump this up to `log::warn!` after removing the client SDKs' uses of that parameter.
@@ -146,24 +157,25 @@ where
         .max_message_size(Some(0x2000000))
         .max_frame_size(None)
         .accept_unmasked_frames(false);
+    let ws_opts = ctx.websocket_options();
 
     tokio::spawn(async move {
         let ws = match ws_upgrade.upgrade(ws_config).await {
             Ok(ws) => ws,
             Err(err) => {
-                log::error!("WebSocket init error: {}", err);
+                log::error!("WebSocket init error: {err}");
                 return;
             }
         };
 
         match forwarded_for {
             Some(TypedHeader(XForwardedFor(ip))) => {
-                log::debug!("New client connected from ip {}", ip)
+                log::debug!("New client connected from ip {ip}")
             }
             None => log::debug!("New client connected from unknown ip"),
         }
 
-        let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
+        let actor = |client, sendrx| ws_client_actor(ws_opts, client, ws, sendrx);
         let client = match ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor).await
         {
             Ok(s) => s,
@@ -198,13 +210,13 @@ where
 struct ActorState {
     pub client_id: ClientActorId,
     pub database: Identity,
-    config: ActorConfig,
+    config: WebSocketOptions,
     closed: AtomicBool,
     got_pong: AtomicBool,
 }
 
 impl ActorState {
-    pub fn new(database: Identity, client_id: ClientActorId, config: ActorConfig) -> Self {
+    pub fn new(database: Identity, client_id: ClientActorId, config: WebSocketOptions) -> Self {
         Self {
             database,
             client_id,
@@ -235,14 +247,19 @@ impl ActorState {
     }
 }
 
-struct ActorConfig {
+/// Configuration for WebSocket connections.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct WebSocketOptions {
     /// Interval at which to send `Ping` frames.
     ///
     /// We use pings for connection keep-alive.
     /// Value must be smaller than `idle_timeout`.
     ///
     /// Default: 15s
-    ping_interval: Duration,
+    #[serde(with = "humantime_duration")]
+    #[serde(default = "WebSocketOptions::default_ping_interval")]
+    pub ping_interval: Duration,
     /// Amount of time after which an idle connection is closed.
     ///
     /// A connection is considered idle if no data is received nor sent.
@@ -251,47 +268,80 @@ struct ActorConfig {
     /// Value must be greater than `ping_interval`.
     ///
     /// Default: 30s
-    idle_timeout: Duration,
+    #[serde(with = "humantime_duration")]
+    #[serde(default = "WebSocketOptions::default_idle_timeout")]
+    pub idle_timeout: Duration,
     /// For how long to keep draining the incoming messages until a client close
     /// is received.
     ///
     /// Default: 250ms
-    close_handshake_timeout: Duration,
+    #[serde(with = "humantime_duration")]
+    #[serde(default = "WebSocketOptions::default_close_handshake_timeout")]
+    pub close_handshake_timeout: Duration,
     /// Maximum number of messages to queue for processing.
     ///
     /// If this number is exceeded, the client is disconnected.
     ///
     /// Default: 2048
-    incoming_queue_length: NonZeroUsize,
+    #[serde(default = "WebSocketOptions::default_incoming_queue_length")]
+    pub incoming_queue_length: NonZeroUsize,
 }
 
-impl Default for ActorConfig {
+impl Default for WebSocketOptions {
     fn default() -> Self {
-        Self {
-            ping_interval: Duration::from_secs(15),
-            idle_timeout: Duration::from_secs(30),
-            close_handshake_timeout: Duration::from_millis(250),
-            incoming_queue_length:
-                // SAFETY: 2048 > 0, qed
-                unsafe { NonZeroUsize::new_unchecked(2048) }
-        }
+        Self::DEFAULT
     }
 }
 
-async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: MeteredReceiver<SerializableMessage>) {
+impl WebSocketOptions {
+    const DEFAULT_PING_INTERVAL: Duration = Duration::from_secs(15);
+    const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+    const DEFAULT_CLOSE_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(250);
+    const DEFAULT_INCOMING_QUEUE_LENGTH: NonZeroUsize = NonZeroUsize::new(2048).expect("2048 > 0, qed");
+
+    const DEFAULT: Self = Self {
+        ping_interval: Self::DEFAULT_PING_INTERVAL,
+        idle_timeout: Self::DEFAULT_IDLE_TIMEOUT,
+        close_handshake_timeout: Self::DEFAULT_CLOSE_HANDSHAKE_TIMEOUT,
+        incoming_queue_length: Self::DEFAULT_INCOMING_QUEUE_LENGTH,
+    };
+
+    const fn default_ping_interval() -> Duration {
+        Self::DEFAULT_PING_INTERVAL
+    }
+
+    const fn default_idle_timeout() -> Duration {
+        Self::DEFAULT_IDLE_TIMEOUT
+    }
+
+    const fn default_close_handshake_timeout() -> Duration {
+        Self::DEFAULT_CLOSE_HANDSHAKE_TIMEOUT
+    }
+
+    const fn default_incoming_queue_length() -> NonZeroUsize {
+        Self::DEFAULT_INCOMING_QUEUE_LENGTH
+    }
+}
+
+async fn ws_client_actor(
+    options: WebSocketOptions,
+    client: ClientConnection,
+    ws: WebSocketStream,
+    sendrx: MeteredReceiver<SerializableMessage>,
+) {
     // ensure that even if this task gets cancelled, we always cleanup the connection
     let mut client = scopeguard::guard(client, |client| {
         tokio::spawn(client.disconnect());
     });
 
-    ws_client_actor_inner(&mut client, <_>::default(), ws, sendrx).await;
+    ws_client_actor_inner(&mut client, options, ws, sendrx).await;
 
     ScopeGuard::into_inner(client).disconnect().await;
 }
 
 async fn ws_client_actor_inner(
     client: &mut ClientConnection,
-    config: ActorConfig,
+    config: WebSocketOptions,
     ws: WebSocketStream,
     sendrx: MeteredReceiver<SerializableMessage>,
 ) {
@@ -346,7 +396,7 @@ async fn ws_client_actor_inner(
         let _ = unordered_tx.send(msg);
     })
     .await;
-    log::info!("Client connection ended: {}", client_id);
+    log::info!("Client connection ended: {client_id}");
 }
 
 /// The main `select!` loop of the websocket client actor.
@@ -1160,7 +1210,7 @@ mod tests {
         dummy_actor_state_with_config(<_>::default())
     }
 
-    fn dummy_actor_state_with_config(config: ActorConfig) -> ActorState {
+    fn dummy_actor_state_with_config(config: WebSocketOptions) -> ActorState {
         ActorState::new(Identity::ZERO, dummy_client_id(), config)
     }
 
@@ -1482,7 +1532,7 @@ mod tests {
 
     #[tokio::test]
     async fn main_loop_terminates_on_idle_timeout() {
-        let state = Arc::new(dummy_actor_state_with_config(ActorConfig {
+        let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
             idle_timeout: Duration::from_millis(10),
             ..<_>::default()
         }));
@@ -1520,7 +1570,7 @@ mod tests {
 
     #[tokio::test]
     async fn main_loop_keepalive_keeps_alive() {
-        let state = Arc::new(dummy_actor_state_with_config(ActorConfig {
+        let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
             ping_interval: Duration::from_millis(5),
             idle_timeout: Duration::from_millis(10),
             ..<_>::default()
@@ -1616,7 +1666,7 @@ mod tests {
 
     #[tokio::test]
     async fn recv_queue_sends_close_when_at_capacity() {
-        let state = Arc::new(dummy_actor_state_with_config(ActorConfig {
+        let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
             incoming_queue_length: 10.try_into().unwrap(),
             ..<_>::default()
         }));
@@ -1632,7 +1682,7 @@ mod tests {
 
     #[tokio::test]
     async fn recv_queue_closes_state_if_sender_gone() {
-        let state = Arc::new(dummy_actor_state_with_config(ActorConfig {
+        let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
             incoming_queue_length: 10.try_into().unwrap(),
             ..<_>::default()
         }));
@@ -1694,5 +1744,28 @@ mod tests {
         fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
+    }
+
+    #[test]
+    fn options_toml_roundtrip() {
+        let options = WebSocketOptions::default();
+        let toml = toml::to_string(&options).unwrap();
+        assert_eq!(options, toml::from_str::<WebSocketOptions>(&toml).unwrap());
+    }
+
+    #[test]
+    fn options_from_partial_toml() {
+        let toml = r#"
+            ping-interval = "53s"
+            idle-timeout = "1m 3s"
+"#;
+
+        let expected = WebSocketOptions {
+            ping_interval: Duration::from_secs(53),
+            idle_timeout: Duration::from_secs(63),
+            ..<_>::default()
+        };
+
+        assert_eq!(expected, toml::from_str(toml).unwrap());
     }
 }

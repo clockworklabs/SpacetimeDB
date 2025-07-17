@@ -9,3 +9,6 @@ license-file = "LICENSE"
 [dependencies]
 spacetimedb-data-structures.workspace = true
 anyhow.workspace = true
+
+[lints]
+workspace = true

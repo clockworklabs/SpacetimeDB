@@ -2,13 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::ast::SchemaViewer;
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use crate::execution_context::Workload;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::ArgsTuple;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
@@ -16,6 +13,9 @@ use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{check_row_limit, DbProgram, TxMode};
 use anyhow::anyhow;
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -310,13 +310,13 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::db::datastore::system_tables::{
-        StRowLevelSecurityRow, StTableFields, ST_ROW_LEVEL_SECURITY_ID, ST_TABLE_ID, ST_TABLE_NAME,
-    };
     use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit, TestDB};
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
+    use spacetimedb_datastore::system_tables::{
+        StRowLevelSecurityRow, StTableFields, ST_ROW_LEVEL_SECURITY_ID, ST_TABLE_ID, ST_TABLE_NAME,
+    };
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::{ResultTest, TestError};
@@ -909,7 +909,7 @@ pub(crate) mod tests {
 
         let result = run_for_testing(
             &db,
-            &format!("SELECT * FROM {} WHERE table_id = {}", ST_TABLE_NAME, ST_TABLE_ID),
+            &format!("SELECT * FROM {ST_TABLE_NAME} WHERE table_id = {ST_TABLE_ID}"),
         )?;
 
         let pk_col_id: ColId = StTableFields::TableId.into();
@@ -1171,7 +1171,7 @@ pub(crate) mod tests {
         assert!(result.is_empty());
 
         let result = run_for_testing(&db, "select * from test where x >= 5 and x < 4").unwrap();
-        assert!(result.is_empty(), "Expected no rows but found {:#?}", result);
+        assert!(result.is_empty(), "Expected no rows but found {result:#?}");
 
         let result = run_for_testing(&db, "select * from test where x > 5 and x <= 4").unwrap();
         assert!(result.is_empty());

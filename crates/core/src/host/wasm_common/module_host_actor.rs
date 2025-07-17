@@ -2,18 +2,14 @@ use bytes::Bytes;
 use prometheus::IntGauge;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_schema::auto_migrate::ponder_migrate;
-use spacetimedb_schema::def::ModuleDef;
 use std::sync::Arc;
 use std::time::Duration;
 
 use super::instrumentation::CallTimes;
 use crate::database_logger::{self, SystemLogger};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{IsolationLevel, Program};
-use crate::db::db_metrics::DB_METRICS;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
-use crate::execution_context::{self, ReducerContext, Workload};
 use crate::host::instance_env::InstanceEnv;
+use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, DynModule, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
     ModuleInstance,
@@ -26,6 +22,10 @@ use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
@@ -81,11 +81,8 @@ pub struct ExecuteResult<E> {
 pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
     initial_instance: Option<Box<WasmModuleInstance<T::Instance>>>,
-    replica_context: Arc<ReplicaContext>,
-    scheduler: Scheduler,
+    common: ModuleCommon,
     func_names: Arc<FuncNames>,
-    info: Arc<ModuleInfo>,
-    energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -126,56 +123,35 @@ pub enum DescribeError {
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
     pub fn new(mcc: ModuleCreationContext, module: T) -> Result<Self, InitializationError> {
-        let ModuleCreationContext {
-            replica_ctx: replica_context,
-            scheduler,
-            program,
-            energy_monitor,
-        } = mcc;
-        let module_hash = program.hash;
         log::trace!(
-            "Making new module host actor for database {} with module {}",
-            replica_context.database_identity,
-            module_hash,
+            "Making new WASM module host actor for database {} with module {}",
+            mcc.replica_ctx.database_identity,
+            mcc.program.hash,
         );
-        let log_tx = replica_context.logger.tx.clone();
 
-        FuncNames::check_required(|name| module.get_export(name))?;
-        let mut func_names = FuncNames::default();
-        module.for_each_export(|sym, ty| func_names.update_from_general(sym, ty))?;
-        func_names.preinits.sort_unstable();
-
+        let func_names = {
+            FuncNames::check_required(|name| module.get_export(name))?;
+            let mut func_names = FuncNames::default();
+            module.for_each_export(|sym, ty| func_names.update_from_general(sym, ty))?;
+            func_names.preinits.sort_unstable();
+            func_names
+        };
         let uninit_instance = module.instantiate_pre()?;
-        let mut instance = uninit_instance.instantiate(
-            InstanceEnv::new(replica_context.clone(), scheduler.clone()),
-            &func_names,
-        )?;
+        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone());
+        let mut instance = uninit_instance.instantiate(instance_env, &func_names)?;
 
         let desc = instance.extract_descriptions()?;
         let desc: RawModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
 
-        // Perform a bunch of validation on the raw definition.
-        let def: ModuleDef = desc.try_into()?;
-
-        // Note: assigns Reducer IDs based on the alphabetical order of reducer names.
-        let info = ModuleInfo::new(
-            def,
-            replica_context.owner_identity,
-            replica_context.database_identity,
-            module_hash,
-            log_tx,
-            replica_context.subscriptions.clone(),
-        );
+        // Validate and create a common module rom the raw definition.
+        let common = build_common_module_from_raw(mcc, desc)?;
 
         let func_names = Arc::new(func_names);
         let mut module = WasmModuleHostActor {
             module: uninit_instance,
             initial_instance: None,
             func_names,
-            info,
-            replica_context,
-            scheduler,
-            energy_monitor,
+            common,
         };
         module.initial_instance = Some(Box::new(module.make_from_instance(instance)));
 
@@ -187,13 +163,13 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, instance: T::Instance) -> WasmModuleInstance<T::Instance> {
         WasmModuleInstance {
             instance,
-            info: self.info.clone(),
-            energy_monitor: self.energy_monitor.clone(),
+            info: self.common.info(),
+            energy_monitor: self.common.energy_monitor(),
             // will be updated on the first reducer call
             allocated_memory: 0,
             metric_wasm_memory_bytes: WORKER_METRICS
                 .wasm_memory_bytes
-                .with_label_values(&self.info.database_identity),
+                .with_label_values(self.common.database_identity()),
             trapped: false,
         }
     }
@@ -201,11 +177,11 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
 impl<T: WasmModule> DynModule for WasmModuleHostActor<T> {
     fn replica_ctx(&self) -> &Arc<ReplicaContext> {
-        &self.replica_context
+        self.common.replica_ctx()
     }
 
     fn scheduler(&self) -> &Scheduler {
-        &self.scheduler
+        self.common.scheduler()
     }
 }
 
@@ -219,11 +195,12 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     }
 
     fn info(&self) -> Arc<ModuleInfo> {
-        self.info.clone()
+        self.common.info()
     }
 
     fn create_instance(&self) -> Self::Instance {
-        let env = InstanceEnv::new(self.replica_context.clone(), self.scheduler.clone());
+        let common = &self.common;
+        let env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
         let mut instance = self
