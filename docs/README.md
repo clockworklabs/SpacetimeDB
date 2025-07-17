@@ -1,3 +1,6 @@
+## Migration note
+We are in the process of moving from the `spacetimedb-docs` repo to the `docs` subdirectory of [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB). **Any new changes should be made there**. The `spacetimedb-docs` repo will only be updated on release. Apologies in advance for any sharp edges while the migration is in progress.
+
 ## SpacetimeDB Documentation
 
 This repository contains the markdown files which are used to display documentation on our [website](https://spacetimedb.com/docs).
@@ -10,7 +13,8 @@ To make changes to our docs, you can open a pull request in this repository. You
 2. Clone your fork:
 
 ```bash
-git clone ssh://git@github.com/<username>/spacetime-docs
+git clone ssh://git@github.com/<username>/SpacetimeDB
+cd SpacetimeDB/docs
 ```
 
 3. Make your edits to the docs that you want to make + test them locally
@@ -33,7 +37,6 @@ git push -u origin a-branch-name-that-describes-my-change
 > NOTE! If you make a change to `nav.ts` you will have to run `npm run build` to generate a new `docs/nav.js` file.
 
 #### CLI Reference Section
-1. Make sure that https://github.com/clockworklabs/SpacetimeDB/pull/2276 is included in your `spacetimedb-cli` binary
 1. Run `cargo run --features markdown-docs -p spacetimedb-cli > cli-reference.md`
 
 We currently don't properly render markdown backticks and bolding that are inside of headers, so do these two manual replacements to make them look okay (these have only been tested on Linux):
