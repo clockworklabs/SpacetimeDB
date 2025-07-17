@@ -2,8 +2,6 @@ name: Docs - Validate nav.ts Matches nav.js
 
 on:
   pull_request:
-    branches:
-      - master
   push:
     branches:
       - master

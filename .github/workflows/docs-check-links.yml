@@ -2,8 +2,6 @@ name: Docs - Check Link Validity
 
 on:
   pull_request:
-    branches:
-      - master
   push:
     branches:
       - master
