@@ -10,6 +10,11 @@ pub mod convert;
 pub mod de;
 pub mod hash;
 pub mod hex;
+pub mod layout;
+#[cfg(feature = "memory-usage")]
+mod memory_usage_impls;
+#[cfg(feature = "memory-usage")]
+pub use spacetimedb_memory_usage as memory_usage;
 pub mod meta_type;
 pub mod primitives;
 pub mod product_type;
@@ -72,7 +77,7 @@ pub use crate as sats;
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
 pub use algebraic_value::{i256, u256, AlgebraicValue, F32, F64};
-pub use algebraic_value_hash::hash_bsatn;
+pub use algebraic_value_hash::hash_bsatn_array;
 pub use array_type::ArrayType;
 pub use array_value::ArrayValue;
 pub use product_type::ProductType;

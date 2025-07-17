@@ -60,6 +60,9 @@ pub struct Identity {
 
 impl_st!([] Identity, AlgebraicType::identity());
 
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for Identity {}
+
 #[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
     fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
@@ -114,7 +117,7 @@ impl Identity {
     }
 
     pub fn from_claims(issuer: &str, subject: &str) -> Self {
-        let input = format!("{}|{}", issuer, subject);
+        let input = format!("{issuer}|{subject}");
         let first_hash = blake3::hash(input.as_bytes());
         let id_hash = &first_hash.as_bytes()[..26];
         let mut checksum_input = [0u8; 28];

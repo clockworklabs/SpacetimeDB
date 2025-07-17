@@ -31,7 +31,7 @@ use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{sats, Timestamp};
 
-use super::subscribe::handle_websocket;
+use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
 #[derive(Deserialize)]
 pub struct CallParams {
@@ -120,16 +120,16 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
                 }
                 ReducerCallError::NoSuchModule(_) | ReducerCallError::ScheduleReducerNotFound => StatusCode::NOT_FOUND,
                 ReducerCallError::NoSuchReducer => {
-                    log::debug!("Attempt to call non-existent reducer {}", reducer);
+                    log::debug!("Attempt to call non-existent reducer {reducer}");
                     StatusCode::NOT_FOUND
                 }
                 ReducerCallError::LifecycleReducer(lifecycle) => {
-                    log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {}", reducer);
+                    log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {reducer}");
                     StatusCode::BAD_REQUEST
                 }
             };
 
-            log::debug!("Error while invoking reducer {:#}", e);
+            log::debug!("Error while invoking reducer {e:#}");
             Err((status_code, format!("{:#}", anyhow::anyhow!(e))))
         }
     };
@@ -164,11 +164,7 @@ fn reducer_outcome_response(identity: &Identity, reducer: &str, outcome: Reducer
             (StatusCode::from_u16(530).unwrap(), errmsg)
         }
         ReducerOutcome::BudgetExceeded => {
-            log::warn!(
-                "Node's energy budget exceeded for identity: {} while executing {}",
-                identity,
-                reducer
-            );
+            log::warn!("Node's energy budget exceeded for identity: {identity} while executing {reducer}");
             (
                 StatusCode::PAYMENT_REQUIRED,
                 "Module energy budget exhausted.".to_owned(),
@@ -263,7 +259,7 @@ pub async fn db_info<S: ControlStateDelegate>(
     State(worker_ctx): State<S>,
     Path(DatabaseParam { name_or_identity }): Path<DatabaseParam>,
 ) -> axum::response::Result<impl IntoResponse> {
-    log::trace!("Trying to resolve database identity: {:?}", name_or_identity);
+    log::trace!("Trying to resolve database identity: {name_or_identity:?}");
     let database_identity = name_or_identity.resolve(&worker_ctx).await?;
     log::trace!("Resolved identity to: {database_identity:?}");
     let database = worker_ctx_find_database(&worker_ctx, &database_identity)
@@ -794,7 +790,7 @@ pub struct DatabaseRoutes<S> {
 
 impl<S> Default for DatabaseRoutes<S>
 where
-    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
+    S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Clone + 'static,
 {
     fn default() -> Self {
         use axum::routing::{delete, get, post, put};

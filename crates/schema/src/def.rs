@@ -42,6 +42,7 @@ use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 
 pub mod deserialize;
+pub mod error;
 pub mod validate;
 
 /// A map from `Identifier`s to values of type `T`.
@@ -284,7 +285,7 @@ impl ModuleDef {
         if let Some(result) = T::lookup(self, key) {
             result
         } else {
-            panic!("expected ModuleDef to contain {:?}, but it does not", key);
+            panic!("expected ModuleDef to contain {key:?}, but it does not");
         }
     }
 
@@ -293,8 +294,7 @@ impl ModuleDef {
         if let Some(my_def) = self.lookup(def.key()) {
             assert_eq!(
                 def as *const Def, my_def as *const Def,
-                "expected ModuleDef to contain {:?}, but it contained {:?}",
-                def, my_def
+                "expected ModuleDef to contain {def:?}, but it contained {my_def:?}"
             );
         } else {
             panic!("expected ModuleDef to contain {:?}, but it does not", def.key());
@@ -865,7 +865,7 @@ impl fmt::Debug for ScopedTypeName {
         // none of its elements contain quotes.
         f.write_char('"')?;
         for scope in &*self.scope {
-            write!(f, "{}::", scope)?;
+            write!(f, "{scope}::")?;
         }
         write!(f, "{}\"", self.name)
     }
@@ -873,7 +873,7 @@ impl fmt::Debug for ScopedTypeName {
 impl fmt::Display for ScopedTypeName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for scope in &*self.scope {
-            write!(f, "{}::", scope)?;
+            write!(f, "{scope}::")?;
         }
         fmt::Display::fmt(&self.name, f)
     }

@@ -1,20 +1,20 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
-use crate::db::datastore::locking_tx_datastore::state_view::IterByColRangeMutTx;
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
-use crate::db::datastore::locking_tx_datastore::IterByColRangeTx;
-use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
-use crate::execution_context::ExecutionContext;
 use core::ops::{Bound, RangeBounds};
 use itertools::Itertools;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_datastore::execution_context::ExecutionContext;
+use spacetimedb_datastore::locking_tx_datastore::state_view::IterByColRangeMutTx;
+use spacetimedb_datastore::locking_tx_datastore::IterByColRangeTx;
+use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_datastore::system_tables::{st_var_schema, StVarName, StVarRow};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{ColExpr, DbTable};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_schema::relation::{ColExpr, DbTable};
 use spacetimedb_table::static_assert_size;
 use spacetimedb_table::table::RowRef;
 use spacetimedb_vm::errors::ErrorVm;
@@ -284,7 +284,7 @@ where
     Rhs: RelOps<'a>,
 {
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
-        self.index_select.as_ref().map_or(true, |op| op.eval_bool(index_row))
+        self.index_select.as_ref().is_none_or(|op| op.eval_bool(index_row))
     }
 }
 
@@ -383,7 +383,7 @@ where
     IndexIter: Iterator<Item = RowRef<'a>>,
 {
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
-        self.index_select.as_ref().map_or(true, |op| op.eval_bool(index_row))
+        self.index_select.as_ref().is_none_or(|op| op.eval_bool(index_row))
     }
 }
 
@@ -643,18 +643,18 @@ impl ProgramVm for DbProgram<'_, '_> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::db::datastore::system_tables::{
+    use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit, with_read_only, TestDB};
+    use pretty_assertions::assert_eq;
+    use spacetimedb_datastore::system_tables::{
         StColumnFields, StColumnRow, StFields as _, StIndexAlgorithm, StIndexFields, StIndexRow, StSequenceFields,
         StSequenceRow, StTableFields, StTableRow, ST_COLUMN_ID, ST_COLUMN_NAME, ST_INDEX_ID, ST_INDEX_NAME,
         ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCE_ID, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_NAME,
     };
-    use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit, with_read_only, TestDB};
-    use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::relation::{FieldName, Header};
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm};
+    use spacetimedb_schema::relation::{FieldName, Header};
     use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, TableSchema};
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_one_u64, scalar};

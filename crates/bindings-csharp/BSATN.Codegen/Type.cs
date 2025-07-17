@@ -73,7 +73,11 @@ public abstract record TypeUse(string Name, string BSATNName)
                     Parse(member, named.TypeArguments[0], diag)
                 ),
                 _ => named.IsValueType
-                    ? new ValueUse(type, typeInfo)
+                    ? (
+                        named.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum
+                            ? new EnumUse(type, typeInfo)
+                            : new ValueUse(type, typeInfo)
+                    )
                     : new ReferenceUse(type, typeInfo),
             },
             _ => throw new InvalidOperationException($"Unsupported type {type}"),
@@ -113,7 +117,32 @@ public abstract record TypeUse(string Name, string BSATNName)
 }
 
 /// <summary>
-/// A use of a value type.
+/// A use of an enum type.
+/// (This is a C# enum, not one of our tagged enums.)
+/// </summary>
+/// <param name="Type"></param>
+/// <param name="TypeInfo"></param>
+public record EnumUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
+{
+    // We just use `==` here, rather than `.Equals`, because
+    // C# enums don't provide a `bool Equals(Self other)`, and
+    // using `.Equals(object other)` allocates, which we want to avoid.
+    //
+    // We could instead generate custom .Equals for enums -- except that requires
+    // partial enums, and I'm not sure such things exist.
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    ) => $"var {outVar} = {inVar1} == {inVar2};";
+
+    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
+        $"var {outVar} = {inVar}.GetHashCode();";
+}
+
+/// <summary>
+/// A use of a value type (that is not an enum).
 /// </summary>
 /// <param name="Type"></param>
 /// <param name="TypeInfo"></param>

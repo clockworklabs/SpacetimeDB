@@ -2,12 +2,9 @@
 //! which serializes `value = page.get_row_data(fixed_offset, fixed_row_size)` typed at `ty`
 //! and associated var len objects in `value` into the serializer `ser`.
 
-use crate::layout::ProductTypeLayoutView;
-
 use super::{
     blob_store::BlobStore,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout as _, RowTypeLayout, SumTypeLayout, VarLenType},
     page::Page,
     row_hash,
     var_len::VarLenRef,
@@ -16,8 +13,11 @@ use core::cell::Cell;
 use core::str;
 use spacetimedb_sats::{
     i256, impl_serialize,
+    layout::{
+        align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayoutView, RowTypeLayout, SumTypeLayout, VarLenType,
+    },
     ser::{SerializeNamedProduct, Serializer},
-    u256, AlgebraicType,
+    u256, ArrayType,
 };
 
 /// Serializes the row in `page` where the fixed part starts at `fixed_offset`
@@ -243,7 +243,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
         }
         AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { serialize_bsatn(ser, bytes, page, blob_store, curr_offset, ty) }
+            unsafe { serialize_array(ser, bytes, page, blob_store, curr_offset, ty) }
         }
     }
 }
@@ -285,13 +285,13 @@ unsafe fn serialize_string<S: Serializer>(
     }
 }
 
-unsafe fn serialize_bsatn<S: Serializer>(
+unsafe fn serialize_array<S: Serializer>(
     ser: S,
     bytes: &Bytes,
     page: &Page,
     blob_store: &dyn BlobStore,
     curr_offset: CurrOffset<'_>,
-    ty: &AlgebraicType,
+    ty: &ArrayType,
 ) -> Result<S::Ok, S::Error> {
     // SAFETY: `value` was valid at and aligned for `ty`.
     // These `ty` store a `vlr: VarLenRef` as their fixed value.

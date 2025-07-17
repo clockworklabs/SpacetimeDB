@@ -1,10 +1,11 @@
-use crate::execution_context::WorkloadType;
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
+use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_metrics::metrics_group;
-use spacetimedb_table::{page_pool::PagePool, MemoryUsage};
+use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_table::page_pool::PagePool;
 use std::{sync::Once, time::Duration};
 use tokio::{spawn, time::sleep};
 
@@ -205,6 +206,12 @@ metrics_group!(
         #[buckets(5, 10, 50, 100, 500, 1e3, 5e3, 10e3, 50e3, 100e3, 250e3, 500e3, 750e3, 1e6, 5e6)]
         pub websocket_sent_num_rows: HistogramVec,
 
+        #[name = spacetime_websocket_serialize_secs]
+        #[help = "How long it took to serialize and maybe compress an outgoing websocket message"]
+        #[labels(db: Identity)]
+        #[buckets(0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0)]
+        pub websocket_serialize_secs: HistogramVec,
+
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(database_identity: Identity)]
@@ -325,10 +332,10 @@ pub fn spawn_page_pool_stats(node_id: String, page_pool: PagePool) {
 
             loop {
                 resident_bytes.set(page_pool.heap_usage() as i64);
-                dropped_pages.set(page_pool.dropped_pages_count() as i64);
-                new_pages.set(page_pool.new_pages_allocated_count() as i64);
-                reused_pages.set(page_pool.pages_reused_count() as i64);
-                returned_pages.set(page_pool.pages_reused_count() as i64);
+                dropped_pages.set(page_pool.dropped_count() as i64);
+                new_pages.set(page_pool.new_allocated_count() as i64);
+                reused_pages.set(page_pool.reused_count() as i64);
+                returned_pages.set(page_pool.reused_count() as i64);
 
                 sleep(Duration::from_secs(10)).await;
             }

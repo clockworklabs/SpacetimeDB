@@ -16,3 +16,6 @@ zstd-framed.workspace = true
 
 [dev-dependencies]
 tempdir.workspace = true
+
+[lints]
+workspace = true

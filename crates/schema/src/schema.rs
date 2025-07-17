@@ -6,17 +6,16 @@
 // TODO(1.0): change all the `Box<str>`s in this file to `Identifier`.
 // This doesn't affect the ABI so can wait until 1.0.
 
+use crate::def::error::{DefType, SchemaError};
+use crate::relation::{combine_constraints, Column, DbTable, FieldName, Header};
 use core::mem;
 use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::error::{DefType, SchemaError};
 use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::{generate_cols_name, RawConstraintDefV8};
-use spacetimedb_lib::relation::{combine_constraints, Column, DbTable, FieldName, Header};
-use spacetimedb_lib::{AlgebraicType, ProductType, ProductTypeElement};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::WithTypespace;
+use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, WithTypespace};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -65,9 +64,8 @@ pub struct TableSchema {
     pub table_name: Box<str>,
 
     /// The columns of the table.
-    /// Inaccessible to prevent mutation.
     /// The ordering of the columns is significant. Columns are frequently identified by `ColId`, that is, position in this list.
-    columns: Vec<ColumnSchema>,
+    pub columns: Vec<ColumnSchema>,
 
     /// The primary key of the table, if present. Must refer to a valid column.
     ///
@@ -96,7 +94,12 @@ pub struct TableSchema {
     pub schedule: Option<ScheduleSchema>,
 
     /// Cache for `row_type_for_table` in the data store.
-    row_type: ProductType,
+    pub row_type: ProductType,
+}
+
+/// Converts a list of columns to a table's row type.
+pub fn columns_to_row_type(columns: &[ColumnSchema]) -> ProductType {
+    ProductType::new(columns.iter().map(ProductTypeElement::from).collect())
 }
 
 impl TableSchema {
@@ -114,17 +117,8 @@ impl TableSchema {
         schedule: Option<ScheduleSchema>,
         primary_key: Option<ColId>,
     ) -> Self {
-        let row_type = ProductType::new(
-            columns
-                .iter()
-                .map(|c| ProductTypeElement {
-                    name: Some(c.col_name.clone()),
-                    algebraic_type: c.col_type.clone(),
-                })
-                .collect(),
-        );
-
         Self {
+            row_type: columns_to_row_type(&columns),
             table_id,
             table_name,
             columns,
@@ -133,7 +127,6 @@ impl TableSchema {
             sequences,
             table_type,
             table_access,
-            row_type,
             schedule,
             primary_key,
         }
@@ -150,7 +143,7 @@ impl TableSchema {
             .map(|(col_pos, element)| ColumnSchema {
                 table_id: TableId::SENTINEL,
                 col_pos: ColId(col_pos as _),
-                col_name: element.name.clone().unwrap_or_else(|| format!("col{}", col_pos).into()),
+                col_name: element.name.clone().unwrap_or_else(|| format!("col{col_pos}").into()),
                 col_type: element.algebraic_type.clone(),
             })
             .collect();
@@ -571,6 +564,15 @@ macro_rules! ensure_eq {
     };
 }
 
+/// Returns the list of [`ColumnSchema`]s for a certain list of [`ColumnDef`]s.
+pub fn column_schemas_from_defs(module_def: &ModuleDef, columns: &[ColumnDef], table_id: TableId) -> Vec<ColumnSchema> {
+    columns
+        .iter()
+        .enumerate()
+        .map(|(col_pos, def)| ColumnSchema::from_module_def(module_def, def, (), (table_id, col_pos.into())))
+        .collect()
+}
+
 impl Schema for TableSchema {
     type Def = TableDef;
     type Id = TableId;
@@ -598,11 +600,7 @@ impl Schema for TableSchema {
             table_access,
         } = def;
 
-        let columns: Vec<ColumnSchema> = columns
-            .iter()
-            .enumerate()
-            .map(|(col_pos, def)| ColumnSchema::from_module_def(module_def, def, (), (table_id, col_pos.into())))
-            .collect();
+        let columns = column_schemas_from_defs(module_def, columns, table_id);
 
         // note: these Ids are fixed up somewhere else, so we can just use 0 here...
         // but it would be nice to pass the correct values into this method.
@@ -705,16 +703,7 @@ impl Schema for TableSchema {
 
 impl From<&TableSchema> for ProductType {
     fn from(value: &TableSchema) -> Self {
-        ProductType::new(
-            value
-                .columns
-                .iter()
-                .map(|c| ProductTypeElement {
-                    name: Some(c.col_name.clone()),
-                    algebraic_type: c.col_type.clone(),
-                })
-                .collect(),
-        )
+        value.row_type.clone()
     }
 }
 
@@ -806,7 +795,7 @@ impl Schema for ColumnSchema {
         ensure_eq!(&self.col_name[..], &def.name[..], "Column name mismatch");
         let resolved_def_ty = WithTypespace::new(module_def.typespace(), &def.ty).resolve_refs()?;
         ensure_eq!(self.col_type, resolved_def_ty, "Column type mismatch");
-        ensure_eq!(self.col_pos, def.col_id, "Columnh ID mismatch");
+        ensure_eq!(self.col_pos, def.col_id, "Column ID mismatch");
         Ok(())
     }
 }

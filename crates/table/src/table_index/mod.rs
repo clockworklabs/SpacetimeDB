@@ -26,12 +26,13 @@
 /// we support direct unique indices, where key are indices into `Vec`s.
 use super::indexes::RowPointer;
 use super::table::RowRef;
-use crate::{read_column::ReadColumn, static_assert_size, MemoryUsage};
+use crate::{read_column::ReadColumn, static_assert_size};
 use core::ops::RangeBounds;
 use spacetimedb_primitives::ColList;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::Packed, i256, product_value::InvalidFieldError, sum_value::SumTag, u256, AlgebraicType,
-    AlgebraicValue, ProductType,
+    AlgebraicValue, ProductType, F32, F64,
 };
 
 mod key_size;
@@ -104,6 +105,8 @@ enum TypedIndexRangeIter<'a> {
     BtreeI128(BtreeIndexRangeIter<'a, Packed<i128>>),
     BtreeU256(BtreeIndexRangeIter<'a, u256>),
     BtreeI256(BtreeIndexRangeIter<'a, i256>),
+    BtreeF32(BtreeIndexRangeIter<'a, F32>),
+    BtreeF64(BtreeIndexRangeIter<'a, F64>),
     BtreeString(BtreeIndexRangeIter<'a, Box<str>>),
     BtreeAV(BtreeIndexRangeIter<'a, AlgebraicValue>),
 
@@ -121,6 +124,8 @@ enum TypedIndexRangeIter<'a> {
     UniqueBtreeI128(BtreeUniqueIndexRangeIter<'a, Packed<i128>>),
     UniqueBtreeU256(BtreeUniqueIndexRangeIter<'a, u256>),
     UniqueBtreeI256(BtreeUniqueIndexRangeIter<'a, i256>),
+    UniqueBtreeF32(BtreeUniqueIndexRangeIter<'a, F32>),
+    UniqueBtreeF64(BtreeUniqueIndexRangeIter<'a, F64>),
     UniqueBtreeString(BtreeUniqueIndexRangeIter<'a, Box<str>>),
     UniqueBtreeAV(BtreeUniqueIndexRangeIter<'a, AlgebraicValue>),
 
@@ -145,6 +150,8 @@ impl Iterator for TypedIndexRangeIter<'_> {
             Self::BtreeI128(this) => this.next().copied(),
             Self::BtreeU256(this) => this.next().copied(),
             Self::BtreeI256(this) => this.next().copied(),
+            Self::BtreeF32(this) => this.next().copied(),
+            Self::BtreeF64(this) => this.next().copied(),
             Self::BtreeString(this) => this.next().copied(),
             Self::BtreeAV(this) => this.next().copied(),
 
@@ -161,6 +168,8 @@ impl Iterator for TypedIndexRangeIter<'_> {
             Self::UniqueBtreeI128(this) => this.next().copied(),
             Self::UniqueBtreeU256(this) => this.next().copied(),
             Self::UniqueBtreeI256(this) => this.next().copied(),
+            Self::UniqueBtreeF32(this) => this.next().copied(),
+            Self::UniqueBtreeF64(this) => this.next().copied(),
             Self::UniqueBtreeString(this) => this.next().copied(),
             Self::UniqueBtreeAV(this) => this.next().copied(),
 
@@ -204,6 +213,8 @@ enum TypedIndex {
     BtreeI128(BtreeIndex<Packed<i128>>),
     BtreeU256(BtreeIndex<u256>),
     BtreeI256(BtreeIndex<i256>),
+    BtreeF32(BtreeIndex<F32>),
+    BtreeF64(BtreeIndex<F64>),
     BtreeString(BtreeIndex<Box<str>>),
     BtreeAV(BtreeIndex<AlgebraicValue>),
 
@@ -222,6 +233,8 @@ enum TypedIndex {
     UniqueBtreeI128(BtreeUniqueIndex<Packed<i128>>),
     UniqueBtreeU256(BtreeUniqueIndex<u256>),
     UniqueBtreeI256(BtreeUniqueIndex<i256>),
+    UniqueBtreeF32(BtreeUniqueIndex<F32>),
+    UniqueBtreeF64(BtreeUniqueIndex<F64>),
     UniqueBtreeString(BtreeUniqueIndex<Box<str>>),
     UniqueBtreeAV(BtreeUniqueIndex<AlgebraicValue>),
 
@@ -249,6 +262,8 @@ impl MemoryUsage for TypedIndex {
             TypedIndex::BtreeI128(this) => this.heap_usage(),
             TypedIndex::BtreeU256(this) => this.heap_usage(),
             TypedIndex::BtreeI256(this) => this.heap_usage(),
+            TypedIndex::BtreeF32(this) => this.heap_usage(),
+            TypedIndex::BtreeF64(this) => this.heap_usage(),
             TypedIndex::BtreeString(this) => this.heap_usage(),
             TypedIndex::BtreeAV(this) => this.heap_usage(),
 
@@ -265,6 +280,8 @@ impl MemoryUsage for TypedIndex {
             TypedIndex::UniqueBtreeI128(this) => this.heap_usage(),
             TypedIndex::UniqueBtreeU256(this) => this.heap_usage(),
             TypedIndex::UniqueBtreeI256(this) => this.heap_usage(),
+            TypedIndex::UniqueBtreeF32(this) => this.heap_usage(),
+            TypedIndex::UniqueBtreeF64(this) => this.heap_usage(),
             TypedIndex::UniqueBtreeString(this) => this.heap_usage(),
             TypedIndex::UniqueBtreeAV(this) => this.heap_usage(),
 
@@ -318,6 +335,8 @@ impl TypedIndex {
                 AlgebraicType::U128 => UniqueBtreeU128(<_>::default()),
                 AlgebraicType::I256 => UniqueBtreeI256(<_>::default()),
                 AlgebraicType::U256 => UniqueBtreeU256(<_>::default()),
+                AlgebraicType::F32 => UniqueBtreeF32(<_>::default()),
+                AlgebraicType::F64 => UniqueBtreeF64(<_>::default()),
                 AlgebraicType::String => UniqueBtreeString(<_>::default()),
                 // For a plain enum, use `u8` as the native type.
                 // We use a direct index here
@@ -343,6 +362,8 @@ impl TypedIndex {
                 AlgebraicType::U128 => BtreeU128(<_>::default()),
                 AlgebraicType::I256 => BtreeI256(<_>::default()),
                 AlgebraicType::U256 => BtreeU256(<_>::default()),
+                AlgebraicType::F32 => BtreeF32(<_>::default()),
+                AlgebraicType::F64 => BtreeF64(<_>::default()),
                 AlgebraicType::String => BtreeString(<_>::default()),
 
                 // For a plain enum, use `u8` as the native type.
@@ -375,6 +396,8 @@ impl TypedIndex {
             BtreeI128(_) => BtreeI128(<_>::default()),
             BtreeU256(_) => BtreeU256(<_>::default()),
             BtreeI256(_) => BtreeI256(<_>::default()),
+            BtreeF32(_) => BtreeF32(<_>::default()),
+            BtreeF64(_) => BtreeF64(<_>::default()),
             BtreeString(_) => BtreeString(<_>::default()),
             BtreeAV(_) => BtreeAV(<_>::default()),
             UniqueBtreeBool(_) => UniqueBtreeBool(<_>::default()),
@@ -391,6 +414,8 @@ impl TypedIndex {
             UniqueBtreeI128(_) => UniqueBtreeI128(<_>::default()),
             UniqueBtreeU256(_) => UniqueBtreeU256(<_>::default()),
             UniqueBtreeI256(_) => UniqueBtreeI256(<_>::default()),
+            UniqueBtreeF32(_) => UniqueBtreeF32(<_>::default()),
+            UniqueBtreeF64(_) => UniqueBtreeF64(<_>::default()),
             UniqueBtreeString(_) => UniqueBtreeString(<_>::default()),
             UniqueBtreeAV(_) => UniqueBtreeAV(<_>::default()),
             UniqueDirectU8(_) => UniqueDirectU8(<_>::default()),
@@ -407,7 +432,7 @@ impl TypedIndex {
         match self {
             BtreeBool(_) | BtreeU8(_) | BtreeSumTag(_) | BtreeI8(_) | BtreeU16(_) | BtreeI16(_) | BtreeU32(_)
             | BtreeI32(_) | BtreeU64(_) | BtreeI64(_) | BtreeU128(_) | BtreeI128(_) | BtreeU256(_) | BtreeI256(_)
-            | BtreeString(_) | BtreeAV(_) => false,
+            | BtreeF32(_) | BtreeF64(_) | BtreeString(_) | BtreeAV(_) => false,
             UniqueBtreeBool(_)
             | UniqueBtreeU8(_)
             | UniqueBtreeSumTag(_)
@@ -422,6 +447,8 @@ impl TypedIndex {
             | UniqueBtreeI128(_)
             | UniqueBtreeU256(_)
             | UniqueBtreeI256(_)
+            | UniqueBtreeF32(_)
+            | UniqueBtreeF64(_)
             | UniqueBtreeString(_)
             | UniqueBtreeAV(_)
             | UniqueDirectU8(_)
@@ -541,6 +568,8 @@ impl TypedIndex {
             Self::BtreeI128(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::BtreeU256(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::BtreeI256(idx) => mm_insert_at_type(idx, cols, row_ref),
+            Self::BtreeF32(idx) => mm_insert_at_type(idx, cols, row_ref),
+            Self::BtreeF64(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::BtreeString(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::BtreeAV(this) => {
                 // SAFETY: Caller promised that any `col` in `cols` is in-bounds of `row_ref`'s layout.
@@ -567,6 +596,8 @@ impl TypedIndex {
             Self::UniqueBtreeI128(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueBtreeU256(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueBtreeI256(idx) => um_insert_at_type(idx, cols, row_ref),
+            Self::UniqueBtreeF32(idx) => um_insert_at_type(idx, cols, row_ref),
+            Self::UniqueBtreeF64(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueBtreeString(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueBtreeAV(this) => {
                 // SAFETY: Caller promised that any `col` in `cols` is in-bounds of `row_ref`'s layout.
@@ -667,6 +698,8 @@ impl TypedIndex {
             Self::BtreeI128(this) => mm_delete_at_type(this, cols, row_ref),
             Self::BtreeU256(this) => mm_delete_at_type(this, cols, row_ref),
             Self::BtreeI256(this) => mm_delete_at_type(this, cols, row_ref),
+            Self::BtreeF32(this) => mm_delete_at_type(this, cols, row_ref),
+            Self::BtreeF64(this) => mm_delete_at_type(this, cols, row_ref),
             Self::BtreeString(this) => mm_delete_at_type(this, cols, row_ref),
             Self::BtreeAV(this) => {
                 let key = row_ref.project(cols)?;
@@ -692,6 +725,8 @@ impl TypedIndex {
             Self::UniqueBtreeI128(this) => um_delete_at_type(this, cols, row_ref),
             Self::UniqueBtreeU256(this) => um_delete_at_type(this, cols, row_ref),
             Self::UniqueBtreeI256(this) => um_delete_at_type(this, cols, row_ref),
+            Self::UniqueBtreeF32(this) => um_delete_at_type(this, cols, row_ref),
+            Self::UniqueBtreeF64(this) => um_delete_at_type(this, cols, row_ref),
             Self::UniqueBtreeString(this) => um_delete_at_type(this, cols, row_ref),
             Self::UniqueBtreeAV(this) => {
                 let key = row_ref.project(cols)?;
@@ -748,6 +783,8 @@ impl TypedIndex {
             BtreeI128(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i128)),
             BtreeU256(this) => BTree(mm_iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
             BtreeI256(this) => BTree(mm_iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            BtreeF32(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_f32)),
+            BtreeF64(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_f64)),
             BtreeString(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_string)),
             BtreeAV(this) => BTree(this.values_in_point(key)),
 
@@ -765,6 +802,8 @@ impl TypedIndex {
             UniqueBtreeI128(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i128)),
             UniqueBtreeU256(this) => UniqueBTree(um_iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
             UniqueBtreeI256(this) => UniqueBTree(um_iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            UniqueBtreeF32(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_f32)),
+            UniqueBtreeF64(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_f64)),
             UniqueBtreeString(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_string)),
             UniqueBtreeAV(this) => UniqueBTree(this.values_in_point(key)),
 
@@ -836,6 +875,8 @@ impl TypedIndex {
             Self::BtreeI128(this) => BtreeI128(mm_iter_at_type(this, range, AlgebraicValue::as_i128)),
             Self::BtreeU256(this) => BtreeU256(mm_iter_at_type(this, range, |av| av.as_u256().map(|x| &**x))),
             Self::BtreeI256(this) => BtreeI256(mm_iter_at_type(this, range, |av| av.as_i256().map(|x| &**x))),
+            Self::BtreeF32(this) => BtreeF32(mm_iter_at_type(this, range, AlgebraicValue::as_f32)),
+            Self::BtreeF64(this) => BtreeF64(mm_iter_at_type(this, range, AlgebraicValue::as_f64)),
             Self::BtreeString(this) => BtreeString(mm_iter_at_type(this, range, AlgebraicValue::as_string)),
             Self::BtreeAV(this) => BtreeAV(this.values_in_range(range)),
 
@@ -851,6 +892,8 @@ impl TypedIndex {
             Self::UniqueBtreeI64(this) => UniqueBtreeI64(um_iter_at_type(this, range, AlgebraicValue::as_i64)),
             Self::UniqueBtreeU128(this) => UniqueBtreeU128(um_iter_at_type(this, range, AlgebraicValue::as_u128)),
             Self::UniqueBtreeI128(this) => UniqueBtreeI128(um_iter_at_type(this, range, AlgebraicValue::as_i128)),
+            Self::UniqueBtreeF32(this) => UniqueBtreeF32(um_iter_at_type(this, range, AlgebraicValue::as_f32)),
+            Self::UniqueBtreeF64(this) => UniqueBtreeF64(um_iter_at_type(this, range, AlgebraicValue::as_f64)),
             Self::UniqueBtreeU256(this) => {
                 UniqueBtreeU256(um_iter_at_type(this, range, |av| av.as_u256().map(|x| &**x)))
             }
@@ -903,6 +946,8 @@ impl TypedIndex {
             Self::BtreeI128(this) => this.clear(),
             Self::BtreeU256(this) => this.clear(),
             Self::BtreeI256(this) => this.clear(),
+            Self::BtreeF32(this) => this.clear(),
+            Self::BtreeF64(this) => this.clear(),
             Self::BtreeString(this) => this.clear(),
             Self::BtreeAV(this) => this.clear(),
 
@@ -919,6 +964,8 @@ impl TypedIndex {
             Self::UniqueBtreeI128(this) => this.clear(),
             Self::UniqueBtreeU256(this) => this.clear(),
             Self::UniqueBtreeI256(this) => this.clear(),
+            Self::UniqueBtreeF32(this) => this.clear(),
+            Self::UniqueBtreeF64(this) => this.clear(),
             Self::UniqueBtreeString(this) => this.clear(),
             Self::UniqueBtreeAV(this) => this.clear(),
 
@@ -951,6 +998,8 @@ impl TypedIndex {
             Self::BtreeI128(this) => this.len(),
             Self::BtreeU256(this) => this.len(),
             Self::BtreeI256(this) => this.len(),
+            Self::BtreeF32(this) => this.len(),
+            Self::BtreeF64(this) => this.len(),
             Self::BtreeString(this) => this.len(),
             Self::BtreeAV(this) => this.len(),
 
@@ -967,6 +1016,8 @@ impl TypedIndex {
             Self::UniqueBtreeI128(this) => this.len(),
             Self::UniqueBtreeU256(this) => this.len(),
             Self::UniqueBtreeI256(this) => this.len(),
+            Self::UniqueBtreeF32(this) => this.len(),
+            Self::UniqueBtreeF64(this) => this.len(),
             Self::UniqueBtreeString(this) => this.len(),
             Self::UniqueBtreeAV(this) => this.len(),
 
@@ -993,6 +1044,8 @@ impl TypedIndex {
             Self::BtreeI128(this) => this.num_keys(),
             Self::BtreeU256(this) => this.num_keys(),
             Self::BtreeI256(this) => this.num_keys(),
+            Self::BtreeF32(this) => this.num_keys(),
+            Self::BtreeF64(this) => this.num_keys(),
             Self::BtreeString(this) => this.num_keys(),
             Self::BtreeAV(this) => this.num_keys(),
 
@@ -1009,6 +1062,8 @@ impl TypedIndex {
             Self::UniqueBtreeI128(this) => this.num_keys(),
             Self::UniqueBtreeU256(this) => this.num_keys(),
             Self::UniqueBtreeI256(this) => this.num_keys(),
+            Self::UniqueBtreeF32(this) => this.num_keys(),
+            Self::UniqueBtreeF64(this) => this.num_keys(),
             Self::UniqueBtreeString(this) => this.num_keys(),
             Self::UniqueBtreeAV(this) => this.num_keys(),
 

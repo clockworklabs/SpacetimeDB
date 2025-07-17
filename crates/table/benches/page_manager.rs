@@ -10,14 +10,13 @@ use rand::{Rng, SeedableRng};
 use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_sats::layout::{row_size_for_bytes, row_size_for_type, Size};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::BTreeAlgorithm;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::blob_store::NullBlobStore;
-use spacetimedb_table::indexes::Byte;
-use spacetimedb_table::indexes::{Bytes, PageOffset, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE};
-use spacetimedb_table::layout::{row_size_for_bytes, row_size_for_type};
+use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowPointer, SquashedOffset, PAGE_DATA_SIZE};
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::pages::Pages;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
@@ -353,7 +352,7 @@ fn retrieve_one_page_fixed_len(c: &mut Criterion) {
 // then time to insert into those holes
 fn insert_with_holes_fixed_len(c: &mut Criterion) {
     fn bench_insert_with_holes<R: FixedLenRow>(c: &mut Criterion, var_len_visitor: &impl VarLenMembers, name: &str) {
-        let mut group = c.benchmark_group(format!("insert_with_holes_fixed_len/{}", name));
+        let mut group = c.benchmark_group(format!("insert_with_holes_fixed_len/{name}"));
         let val = R::from_u64(0xdeadbeef_0badbeef);
         for delete_ratio in [0.1f64, 0.25, 0.5, 0.75, 0.9, 1.0] {
             let num_pages = 16;
@@ -431,7 +430,7 @@ fn insert_with_holes_fixed_len(c: &mut Criterion) {
 
 fn copy_filter_fixed_len(c: &mut Criterion) {
     fn bench_copy_filter<R: FixedLenRow>(c: &mut Criterion, name: &str) {
-        let mut group = c.benchmark_group(format!("copy_filter_fixed_len/{}", name));
+        let mut group = c.benchmark_group(format!("copy_filter_fixed_len/{name}"));
         let row_size = black_box(row_size_for_type::<R>());
 
         let val = R::from_u64(0xdeadbeef_0badbeef);
@@ -782,8 +781,7 @@ fn insert_num_same<R: IndexedRow>(
     mut make_row: impl FnMut() -> R,
     num_same: usize,
 ) -> Option<RowPointer> {
-    iter::repeat(make_row().to_product())
-        .take(num_same)
+    iter::repeat_n(make_row().to_product(), num_same)
         .zip(0u32..)
         .map(|(mut row, n)| {
             if let Some(slot) = row.elements.get_mut(1) {

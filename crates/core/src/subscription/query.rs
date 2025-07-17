@@ -150,7 +150,6 @@ mod tests {
         begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
     };
     use crate::db::relational_db::MutTx;
-    use crate::execution_context::Workload;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, UpdatesRelValue};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
@@ -161,15 +160,16 @@ mod tests {
     use crate::vm::DbProgram;
     use itertools::Itertools;
     use spacetimedb_client_api_messages::websocket::{BsatnFormat, Compression};
+    use spacetimedb_datastore::execution_context::Workload;
     use spacetimedb_lib::bsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::metrics::ExecutionMetrics;
-    use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
+    use spacetimedb_schema::relation::FieldName;
     use spacetimedb_schema::schema::*;
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_without_table_name, scalar};

@@ -1,25 +1,5 @@
-use super::datastore::error::{DatastoreError, TableError};
-use super::datastore::locking_tx_datastore::committed_state::CommittedState;
-use super::datastore::locking_tx_datastore::datastore::TxMetrics;
-use super::datastore::locking_tx_datastore::state_view::{
-    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
-};
-use super::datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
-use super::datastore::traits::{
-    InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
-    UpdateFlags,
-};
-use super::datastore::{
-    locking_tx_datastore::{
-        datastore::Locking,
-        state_view::{IterByColEqTx, IterByColRangeTx},
-    },
-    traits::TxData,
-};
-use super::db_metrics::DB_METRICS;
-use crate::db::datastore::system_tables::StModuleRow;
+use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
-use crate::execution_context::{ReducerContext, Workload, WorkloadType};
 use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
 use crate::util::{asyncify, spawn_rayon};
@@ -30,6 +10,28 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::error::{DatastoreError, TableError};
+use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
+use spacetimedb_datastore::locking_tx_datastore::committed_state::CommittedState;
+use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
+use spacetimedb_datastore::locking_tx_datastore::state_view::{
+    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
+};
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
+use spacetimedb_datastore::system_tables::StModuleRow;
+use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
+use spacetimedb_datastore::traits::{
+    InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
+    UpdateFlags,
+};
+use spacetimedb_datastore::{
+    locking_tx_datastore::{
+        datastore::Locking,
+        state_view::{IterByColEqTx, IterByColRangeTx},
+    },
+    traits::TxData,
+};
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
@@ -39,14 +41,16 @@ use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef};
-use spacetimedb_schema::schema::{IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{
+    ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
+};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::RowRef;
-use spacetimedb_table::MemoryUsage;
 use spacetimedb_vm::errors::{ErrorType, ErrorVm};
 use spacetimedb_vm::ops::parse;
 use std::borrow::Cow;
@@ -59,8 +63,10 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch;
 
-pub type MutTx = <Locking as super::datastore::traits::MutTx>::MutTx;
-pub type Tx = <Locking as super::datastore::traits::Tx>::Tx;
+// NOTE(cloutiertyler): We should be using the associated types, but there is
+// a bug in the Rust compiler that prevents us from doing so.
+pub type MutTx = MutTxId; //<Locking as spacetimedb_datastore::traits::MutTx>::MutTx;
+pub type Tx = TxId; //<Locking as spacetimedb_datastore::traits::Tx>::Tx;
 
 type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 
@@ -108,14 +114,17 @@ pub struct RelationalDB {
     /// `Some` if `durability` is `Some`, `None` otherwise.
     disk_size_fn: Option<DiskSizeFn>,
 
+    /// A map from workload types to their cached prometheus counters.
+    workload_type_to_exec_counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
+
+    /// An async queue for recording transaction metrics off the main thread
+    metrics_recorder_queue: Option<MetricsRecorderQueue>,
+
     // DO NOT ADD FIELDS AFTER THIS.
     // By default, fields are dropped in declaration order.
     // We want to release the file lock last.
     // TODO(noa): is this lockfile still necessary now that we have data-dir?
     _lock: LockFile,
-
-    /// A map from workload types to their cached prometheus counters.
-    workload_type_to_exec_counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
 }
 
 #[derive(Clone)]
@@ -229,6 +238,7 @@ impl RelationalDB {
         inner: Locking,
         durability: Option<(Arc<Durability>, DiskSizeFn)>,
         snapshot_repo: Option<Arc<SnapshotRepository>>,
+        metrics_recorder_queue: Option<MetricsRecorderQueue>,
     ) -> Self {
         let (durability, disk_size_fn) = durability.unzip();
         let snapshot_worker =
@@ -247,8 +257,10 @@ impl RelationalDB {
             row_count_fn: default_row_count_fn(database_identity),
             disk_size_fn,
 
-            _lock: lock,
             workload_type_to_exec_counters,
+            metrics_recorder_queue,
+
+            _lock: lock,
         }
     }
 
@@ -322,6 +334,10 @@ impl RelationalDB {
     ///   If restoring from an existing database, the `snapshot_repo` must
     ///   store views of the same sequence of TXes as the `history`.
     ///
+    /// - `metrics_recorder_queue`
+    ///
+    ///   The send side of a queue for recording transaction metrics.
+    ///
     /// # Return values
     ///
     /// Alongside `Self`, [`ConnectedClients`] is returned, which is the set of
@@ -331,6 +347,7 @@ impl RelationalDB {
     /// gracefully. The caller is responsible for disconnecting the clients.
     ///
     /// [ModuleHost]: crate::host::module_host::ModuleHost
+    #[allow(clippy::too_many_arguments)]
     pub fn open(
         root: &ReplicaDir,
         database_identity: Identity,
@@ -338,9 +355,10 @@ impl RelationalDB {
         history: impl durability::History<TxData = Txdata>,
         durability: Option<(Arc<Durability>, DiskSizeFn)>,
         snapshot_repo: Option<Arc<SnapshotRepository>>,
+        metrics_recorder_queue: Option<MetricsRecorderQueue>,
         page_pool: PagePool,
     ) -> Result<(Self, ConnectedClients), DBError> {
-        log::trace!("[{}] DATABASE: OPEN", database_identity);
+        log::trace!("[{database_identity}] DATABASE: OPEN");
 
         let lock = LockFile::lock(root)?;
 
@@ -371,6 +389,7 @@ impl RelationalDB {
             inner,
             durability,
             snapshot_repo,
+            metrics_recorder_queue,
         );
 
         if let Some(meta) = db.metadata()? {
@@ -488,10 +507,7 @@ impl RelationalDB {
             snapshot_offset: TxOffset,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
-            log::info!(
-                "[{database_identity}] DATABASE: restoring snapshot of tx_offset {}",
-                snapshot_offset
-            );
+            log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {snapshot_offset}");
             let start = std::time::Instant::now();
             let snapshot = snapshot_repo
                 .read_snapshot(snapshot_offset, page_pool)
@@ -523,9 +539,7 @@ impl RelationalDB {
                 })
                 .inspect_err(|e| {
                     log::warn!(
-                        "[{database_identity}] DATABASE: failed to restore snapshot of tx_offset {}: {}",
-                        snapshot_offset,
-                        e
+                        "[{database_identity}] DATABASE: failed to restore snapshot of tx_offset {snapshot_offset}: {e}"
                     )
                 })
                 .map_err(DBError::from)
@@ -575,11 +589,7 @@ impl RelationalDB {
                     break;
                 };
                 if min_commitlog_offset > 0 && min_commitlog_offset > snapshot_offset + 1 {
-                    log::debug!(
-                        "snapshot_offset={} min_commitlog_offset={}",
-                        snapshot_offset,
-                        min_commitlog_offset
-                    );
+                    log::debug!("snapshot_offset={snapshot_offset} min_commitlog_offset={min_commitlog_offset}");
                     break;
                 }
                 match try_load_snapshot(&database_identity, snapshot_repo, snapshot_offset, &page_pool) {
@@ -747,6 +757,11 @@ impl RelationalDB {
         Ok(AlgebraicValue::decode(col_ty, &mut &*bytes)?)
     }
 
+    /// Returns the execution counters for this database.
+    pub fn exec_counter_map(&self) -> Arc<EnumMap<WorkloadType, ExecutionCounters>> {
+        self.workload_type_to_exec_counters.clone()
+    }
+
     /// Returns the execution counters for `workload_type` for this database.
     pub fn exec_counters_for(&self, workload_type: WorkloadType) -> &ExecutionCounters {
         &self.workload_type_to_exec_counters[workload_type]
@@ -834,7 +849,7 @@ impl RelationalDB {
     /// If `(tx_data, ctx)` should be appended to the commitlog, do so.
     ///
     /// Note that by this stage,
-    /// [`crate::db::datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
+    /// [`spacetimedb_datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
     /// has already decided based on the reducer and operations whether the transaction should be appended;
     /// this method is responsible only for reading its decision out of the `tx_data`
     /// and calling `durability.append_tx`.
@@ -986,7 +1001,7 @@ impl RelationalDB {
         let mut tx = self.begin_tx(workload);
         let res = f(&mut tx);
         let (tx_metrics, reducer) = self.release_tx(tx);
-        self.report_tx_metricses(&reducer, None, None, &tx_metrics);
+        self.report_read_tx_metrics(reducer, tx_metrics);
         res
     }
 
@@ -997,11 +1012,11 @@ impl RelationalDB {
     {
         if res.is_err() {
             let (tx_metrics, reducer) = self.rollback_mut_tx(tx);
-            self.report(&reducer, &tx_metrics, None);
+            self.report_mut_tx_metrics(reducer, tx_metrics, None);
         } else {
             match self.commit_tx(tx).map_err(E::from)? {
                 Some((tx_data, tx_metrics, reducer)) => {
-                    self.report(&reducer, &tx_metrics, Some(&tx_data));
+                    self.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                 }
                 None => panic!("TODO: retry?"),
             }
@@ -1016,7 +1031,7 @@ impl RelationalDB {
         match res {
             Err(e) => {
                 let (tx_metrics, reducer) = self.rollback_mut_tx(tx);
-                self.report(&reducer, &tx_metrics, None);
+                self.report_mut_tx_metrics(reducer, tx_metrics, None);
 
                 Err(e)
             }
@@ -1024,24 +1039,38 @@ impl RelationalDB {
         }
     }
 
-    pub(crate) fn alter_table_access(&self, tx: &mut MutTx, name: Box<str>, access: StAccess) -> Result<(), DBError> {
+    pub(crate) fn alter_table_access(&self, tx: &mut MutTx, name: &str, access: StAccess) -> Result<(), DBError> {
         Ok(self.inner.alter_table_access_mut_tx(tx, name, access)?)
+    }
+
+    pub(crate) fn alter_table_row_type(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_row_type_mut_tx(tx, table_id, column_schemas)?)
     }
 
     /// Reports the `TxMetrics`s passed.
     ///
     /// Should only be called after the tx lock has been fully released.
-    pub(crate) fn report_tx_metricses(
+    pub(crate) fn report_tx_metrics(
         &self,
-        reducer: &str,
-        tx_data: Option<&TxData>,
-        metrics_mut: Option<&TxMetrics>,
-        metrics_read: &TxMetrics,
+        reducer: String,
+        tx_data: Option<Arc<TxData>>,
+        metrics_for_writer: Option<TxMetrics>,
+        metrics_for_reader: Option<TxMetrics>,
     ) {
-        if let Some(metrics_mut) = metrics_mut {
-            self.report(reducer, metrics_mut, tx_data);
+        if let Some(recorder) = &self.metrics_recorder_queue {
+            recorder.send_metrics(
+                reducer,
+                metrics_for_writer,
+                metrics_for_reader,
+                tx_data,
+                self.exec_counter_map(),
+            );
         }
-        self.report(reducer, metrics_read, None);
     }
 }
 
@@ -1392,8 +1421,13 @@ impl RelationalDB {
     }
 
     /// Reports the metrics for `reducer`, using counters provided by `db`.
-    pub fn report(&self, reducer: &str, metrics: &TxMetrics, tx_data: Option<&TxData>) {
-        metrics.report(tx_data, reducer, |wl: WorkloadType| self.exec_counters_for(wl));
+    pub fn report_mut_tx_metrics(&self, reducer: String, metrics: TxMetrics, tx_data: Option<TxData>) {
+        self.report_tx_metrics(reducer, tx_data.map(Arc::new), Some(metrics), None);
+    }
+
+    /// Reports subscription metrics for `reducer`, using counters provided by `db`.
+    pub fn report_read_tx_metrics(&self, reducer: String, metrics: TxMetrics) {
+        self.report_tx_metrics(reducer, None, None, Some(metrics));
     }
 
     /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
@@ -1462,7 +1496,7 @@ impl RelationalDB {
             ErrorVm::Type(ErrorType::Parse {
                 value: literal.to_string(),
                 ty: fmt_algebraic_type(&name.type_of()).to_string(),
-                err: format!("error parsing value: {:?}", v),
+                err: format!("error parsing value: {v:?}"),
             })
             .into()
         })
@@ -1501,7 +1535,7 @@ fn apply_history<H>(datastore: &Locking, database_identity: Identity, history: H
 where
     H: durability::History<TxData = Txdata>,
 {
-    log::info!("[{}] DATABASE: applying transaction history...", database_identity);
+    log::info!("[{database_identity}] DATABASE: applying transaction history...");
 
     // TODO: Revisit once we actually replay history suffixes, ie. starting
     // from an offset larger than the history's min offset.
@@ -1515,18 +1549,12 @@ where
         if let Some(max_tx_offset) = max_tx_offset {
             let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
             if percentage > last_logged_percentage && percentage % 10 == 0 {
-                log::info!(
-                    "[{}] Loaded {}% ({}/{})",
-                    database_identity,
-                    percentage,
-                    tx_offset,
-                    max_tx_offset
-                );
+                log::info!("[{database_identity}] Loaded {percentage}% ({tx_offset}/{max_tx_offset})");
                 last_logged_percentage = percentage;
             }
         // Print _something_ even if we don't know what's still ahead.
         } else if tx_offset % 10_000 == 0 {
-            log::info!("[{}] Loading transaction {}", database_identity, tx_offset);
+            log::info!("[{database_identity}] Loading transaction {tx_offset}");
         }
     };
 
@@ -1535,9 +1563,9 @@ where
     history
         .fold_transactions_from(start, &mut replay)
         .map_err(anyhow::Error::from)?;
-    log::info!("[{}] DATABASE: applied transaction history", database_identity);
+    log::info!("[{database_identity}] DATABASE: applied transaction history");
     datastore.rebuild_state_after_replay()?;
-    log::info!("[{}] DATABASE: rebuilt state after replay", database_identity);
+    log::info!("[{database_identity}] DATABASE: rebuilt state after replay");
 
     Ok(())
 }
@@ -1642,10 +1670,10 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
     use super::*;
-    use crate::db::datastore::locking_tx_datastore::tx::TxId;
-    use crate::db::datastore::locking_tx_datastore::MutTxId;
     use core::ops::Deref;
     use durability::EmptyHistory;
+    use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+    use spacetimedb_datastore::locking_tx_datastore::TxId;
     use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::{bsatn::to_vec, ser::Serialize};
     use spacetimedb_paths::server::SnapshotDirPath;
@@ -1768,7 +1796,7 @@ pub mod tests_utils {
             expected_num_clients: usize,
         ) -> Result<Self, DBError> {
             let dir = TempReplicaDir::new()?;
-            let db = Self::open_db(&dir, history, None, None, expected_num_clients)?;
+            let db = Self::open_db(&dir, history, None, None, None, expected_num_clients)?;
             Ok(Self {
                 db,
                 durable: None,
@@ -1859,7 +1887,7 @@ pub mod tests_utils {
         }
 
         fn in_memory_internal(root: &ReplicaDir) -> Result<RelationalDB, DBError> {
-            Self::open_db(root, EmptyHistory::new(), None, None, 0)
+            Self::open_db(root, EmptyHistory::new(), None, None, None, 0)
         }
 
         fn durable_internal(
@@ -1873,7 +1901,7 @@ pub mod tests_utils {
             let snapshot_repo = want_snapshot_repo
                 .then(|| open_snapshot_repo(root.snapshots(), Identity::ZERO, 0))
                 .transpose()?;
-            let db = Self::open_db(root, history, Some((durability, disk_size_fn)), snapshot_repo, 0)?;
+            let db = Self::open_db(root, history, Some((durability, disk_size_fn)), snapshot_repo, None, 0)?;
 
             Ok((db, local))
         }
@@ -1883,6 +1911,7 @@ pub mod tests_utils {
             history: impl durability::History<TxData = Txdata>,
             durability: Option<(Arc<Durability>, DiskSizeFn)>,
             snapshot_repo: Option<Arc<SnapshotRepository>>,
+            metrics_recorder_queue: Option<MetricsRecorderQueue>,
             expected_num_clients: usize,
         ) -> Result<RelationalDB, DBError> {
             let (db, connected_clients) = RelationalDB::open(
@@ -1892,6 +1921,7 @@ pub mod tests_utils {
                 history,
                 durability,
                 snapshot_repo,
+                metrics_recorder_queue,
                 PagePool::new_for_test(),
             )?;
             assert_eq!(connected_clients.len(), expected_num_clients);
@@ -2023,15 +2053,9 @@ mod tests {
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
-    use crate::db::datastore::error::{DatastoreError, IndexError};
-    use crate::db::datastore::system_tables::{
-        system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ID,
-    };
     use crate::db::relational_db::tests_utils::{
         begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
     };
-    use crate::execution_context::ReducerContext;
     use anyhow::bail;
     use bytes::Bytes;
     use commitlog::payload::txdata;
@@ -2039,6 +2063,12 @@ mod tests {
     use durability::EmptyHistory;
     use pretty_assertions::{assert_eq, assert_matches};
     use spacetimedb_data_structures::map::IntMap;
+    use spacetimedb_datastore::error::{DatastoreError, IndexError};
+    use spacetimedb_datastore::execution_context::ReducerContext;
+    use spacetimedb_datastore::system_tables::{
+        system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
+        ST_SEQUENCE_ID, ST_TABLE_ID,
+    };
     use spacetimedb_fs_utils::compression::{CompressCount, CompressType};
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
@@ -2138,6 +2168,7 @@ mod tests {
             Identity::ZERO,
             Identity::ZERO,
             EmptyHistory::new(),
+            None,
             None,
             None,
             PagePool::new_for_test(),
@@ -2940,7 +2971,7 @@ mod tests {
     /// fixed a bug where replaying deletes to `st_client` would fail due to an unpopulated index.
     #[test]
     fn replay_delete_from_st_client() {
-        use crate::db::datastore::system_tables::{StClientRow, ST_CLIENT_ID};
+        use spacetimedb_datastore::system_tables::{StClientRow, ST_CLIENT_ID};
 
         let row_0 = StClientRow {
             identity: Identity::ZERO.into(),

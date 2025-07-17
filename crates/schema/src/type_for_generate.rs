@@ -1,5 +1,9 @@
 //! `AlgebraicType` extensions for generating client code.
 
+use crate::{
+    error::{IdentifierError, PrettyAlgebraicType},
+    identifier::Identifier,
+};
 use enum_as_inner::EnumAsInner;
 use petgraph::{
     algo::tarjan_scc,
@@ -11,13 +15,10 @@ use spacetimedb_data_structures::{
     map::{HashMap, HashSet},
 };
 use spacetimedb_lib::{AlgebraicType, ProductTypeElement};
-use spacetimedb_sats::{typespace::TypeRefError, AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace};
-use std::{cell::RefCell, ops::Index, sync::Arc};
-
-use crate::{
-    error::{IdentifierError, PrettyAlgebraicType},
-    identifier::Identifier,
+use spacetimedb_sats::{
+    layout::PrimitiveType, typespace::TypeRefError, AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace,
 };
+use std::{cell::RefCell, ops::Index, sync::Arc};
 
 /// Errors that can occur when rearranging types for client codegen.
 #[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
@@ -239,49 +240,6 @@ pub struct SumTypeDef {
 #[derive(Debug, Clone)]
 pub struct PlainEnumTypeDef {
     pub variants: Box<[Identifier]>,
-}
-
-/// Scalar types, i.e. bools, integers and floats.
-/// These types do not require a `VarLenRef` indirection when stored in a `spacetimedb_table::table::Table`.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub enum PrimitiveType {
-    Bool,
-    I8,
-    U8,
-    I16,
-    U16,
-    I32,
-    U32,
-    I64,
-    U64,
-    I128,
-    U128,
-    I256,
-    U256,
-    F32,
-    F64,
-}
-
-impl PrimitiveType {
-    pub fn algebraic_type(&self) -> AlgebraicType {
-        match self {
-            PrimitiveType::Bool => AlgebraicType::Bool,
-            PrimitiveType::I8 => AlgebraicType::I8,
-            PrimitiveType::U8 => AlgebraicType::U8,
-            PrimitiveType::I16 => AlgebraicType::I16,
-            PrimitiveType::U16 => AlgebraicType::U16,
-            PrimitiveType::I32 => AlgebraicType::I32,
-            PrimitiveType::U32 => AlgebraicType::U32,
-            PrimitiveType::I64 => AlgebraicType::I64,
-            PrimitiveType::U64 => AlgebraicType::U64,
-            PrimitiveType::I128 => AlgebraicType::I128,
-            PrimitiveType::U128 => AlgebraicType::U128,
-            PrimitiveType::I256 => AlgebraicType::I256,
-            PrimitiveType::U256 => AlgebraicType::U256,
-            PrimitiveType::F32 => AlgebraicType::F32,
-            PrimitiveType::F64 => AlgebraicType::F64,
-        }
-    }
 }
 
 impl<'a> IntoIterator for &'a SumTypeDef {

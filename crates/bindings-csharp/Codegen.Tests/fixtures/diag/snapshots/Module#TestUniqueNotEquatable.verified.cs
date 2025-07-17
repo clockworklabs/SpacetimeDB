@@ -76,7 +76,7 @@ partial struct TestUniqueNotEquatable
     public bool Equals(TestUniqueNotEquatable that)
     {
         var ___eqUniqueField = this.UniqueField.Equals(that.UniqueField);
-        var ___eqPrimaryKeyField = this.PrimaryKeyField.Equals(that.PrimaryKeyField);
+        var ___eqPrimaryKeyField = this.PrimaryKeyField == that.PrimaryKeyField;
         return ___eqUniqueField && ___eqPrimaryKeyField;
     }
 

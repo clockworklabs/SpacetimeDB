@@ -20,16 +20,13 @@
 
 #![allow(unused)]
 
-use crate::layout::ProductTypeLayoutView;
-
-use super::{
-    layout::{AlgebraicTypeLayout, HasLayout as _, ProductTypeLayout, RowTypeLayout},
-    static_layout::StaticLayout,
-    MemoryUsage,
-};
+use super::static_layout::StaticLayout;
 use itertools::{repeat_n, Itertools as _};
 use spacetimedb_sats::bsatn::DecodeError;
-use spacetimedb_schema::type_for_generate::PrimitiveType;
+use spacetimedb_sats::layout::{
+    AlgebraicTypeLayout, HasLayout as _, PrimitiveType, ProductTypeLayout, ProductTypeLayoutView, RowTypeLayout,
+};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::sync::Arc;
 
 /// Constructs a validator for a row encoded in BSATN

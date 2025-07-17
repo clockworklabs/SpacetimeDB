@@ -310,12 +310,12 @@ impl IntoResponse for AuthorizationRejection {
         // Sensible fallback if no auth header is present.
         const REQUIRED: (StatusCode, &str) = (StatusCode::UNAUTHORIZED, "Authorization required");
 
-        log::trace!("Authorization rejection: {:?}", self);
+        log::trace!("Authorization rejection: {self:?}");
 
         match self {
             AuthorizationRejection::Jwt(e) if *e.kind() == JwtErrorKind::InvalidSignature => ROTATED.into_response(),
             AuthorizationRejection::Jwt(_) | AuthorizationRejection::Header(_) => INVALID.into_response(),
-            AuthorizationRejection::Custom(msg) => (StatusCode::UNAUTHORIZED, format!("{:?}", msg)).into_response(),
+            AuthorizationRejection::Custom(msg) => (StatusCode::UNAUTHORIZED, format!("{msg:?}")).into_response(),
             AuthorizationRejection::Required => REQUIRED.into_response(),
         }
     }

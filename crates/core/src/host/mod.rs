@@ -12,12 +12,15 @@ use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 
 mod disk_storage;
 mod host_controller;
+mod module_common;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
 pub mod scheduler;
 pub mod wasmtime;
+
 // Visible for integration testing.
 pub mod instance_env;
+pub mod v8; // only pub for testing
 mod wasm_common;
 
 pub use disk_storage::DiskStorage;

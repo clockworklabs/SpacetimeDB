@@ -70,10 +70,10 @@ impl<L: ModuleLanguage> BenchDatabase for SpacetimeModule<L> {
         });
 
         for table in module.client.module.info.module_def.tables() {
-            log::trace!("SPACETIME_MODULE: LOADED TABLE: {:?}", table);
+            log::trace!("SPACETIME_MODULE: LOADED TABLE: {table:?}");
         }
         for reducer in module.client.module.info.module_def.reducers() {
-            log::trace!("SPACETIME_MODULE: LOADED REDUCER: {:?}", reducer);
+            log::trace!("SPACETIME_MODULE: LOADED REDUCER: {reducer:?}");
         }
         Ok(SpacetimeModule {
             runtime,

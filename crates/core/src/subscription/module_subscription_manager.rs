@@ -5,12 +5,12 @@ use crate::client::messages::{
     TransactionUpdateMessage,
 };
 use crate::client::{ClientConnectionSender, Protocol};
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
 use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
 use crate::worker_metrics::WORKER_METRICS;
+use core::mem;
 use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
@@ -20,11 +20,13 @@ use spacetimedb_client_api_messages::websocket::{
     WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -156,8 +158,7 @@ impl ClientInfo {
             for query_hash in query_hashes {
                 assert!(
                     self.subscription_ref_count.contains_key(query_hash),
-                    "Query hash not found: {:?}",
-                    query_hash
+                    "Query hash not found: {query_hash:?}"
                 );
                 expected_ref_count
                     .entry(*query_hash)
@@ -1323,6 +1324,14 @@ struct SendWorker {
     ///
     /// If `Some`, this type's `drop` method will do `remove_label_values` to clean up the metric on exit.
     database_identity_to_clean_up_metric: Option<Identity>,
+
+    /// A map (re)used by [`SendWorker::send_one_computed_queries`]
+    /// to avoid creating new allocations.
+    table_updates_client_id_table_id: HashMap<(ClientId, TableId), SwitchedTableUpdate>,
+
+    /// A map (re)used by [`SendWorker::send_one_computed_queries`]
+    /// to avoid creating new allocations.
+    table_updates_client_id: HashMap<ClientId, SwitchedDbUpdate>,
 }
 
 impl Drop for SendWorker {
@@ -1382,6 +1391,8 @@ impl SendWorker {
             queue_length_metric,
             clients: Default::default(),
             database_identity_to_clean_up_metric,
+            table_updates_client_id_table_id: <_>::default(),
+            table_updates_client_id: <_>::default(),
         }
     }
 
@@ -1428,7 +1439,7 @@ impl SendWorker {
     }
 
     fn send_one_computed_queries(
-        &self,
+        &mut self,
         ComputedQueries {
             updates,
             errs,
@@ -1442,52 +1453,54 @@ impl SendWorker {
 
         let span = tracing::info_span!("eval_incr_group_messages_by_client");
 
-        let mut eval = updates
+        // Reuse the aggregation maps from the worker.
+        let client_table_id_updates = mem::take(&mut self.table_updates_client_id_table_id);
+        let client_id_updates = mem::take(&mut self.table_updates_client_id);
+
+        // For each subscriber, aggregate all the updates for the same table.
+        // That is, we build a map `(subscriber_id, table_id) -> updates`.
+        // A particular subscriber uses only one format,
+        // so their `TableUpdate` will contain either JSON (`Protocol::Text`)
+        // or BSATN (`Protocol::Binary`).
+        let mut client_table_id_updates = updates
             .into_iter()
             // Filter out dropped or cancelled clients
             .filter(|upd| !self.is_client_dropped_or_cancelled(&upd.id))
             // Filter out clients whose subscriptions failed
             .filter(|upd| !clients_with_errors.contains(&upd.id))
-            // For each subscriber, aggregate all the updates for the same table.
-            // That is, we build a map `(subscriber_id, table_id) -> updates`.
-            // A particular subscriber uses only one format,
-            // so their `TableUpdate` will contain either JSON (`Protocol::Text`)
-            // or BSATN (`Protocol::Binary`).
-            .fold(
-                HashMap::<(ClientId, TableId), SwitchedTableUpdate>::new(),
-                |mut tables, upd| {
-                    match tables.entry((upd.id, upd.table_id)) {
-                        Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
-                            Bsatn((tbl_upd, update)) => tbl_upd.push(update),
-                            Json((tbl_upd, update)) => tbl_upd.push(update),
-                        },
-                        Entry::Vacant(entry) => drop(entry.insert(match upd.update {
-                            Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
-                            Json(update) => Json(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
-                        })),
-                    }
-                    tables
-                },
-            )
-            .into_iter()
-            // Each client receives a single list of updates per transaction.
-            // So before sending the updates to each client,
-            // we must stitch together the `TableUpdate*`s into an aggregated list.
-            .fold(
-                HashMap::<ClientId, SwitchedDbUpdate>::new(),
-                |mut updates, ((id, _), update)| {
-                    let entry = updates.entry(id);
-                    let entry = entry.or_insert_with(|| match &update {
-                        Bsatn(_) => Bsatn(<_>::default()),
-                        Json(_) => Json(<_>::default()),
-                    });
-                    match entry.zip_mut(update) {
-                        Bsatn((list, elem)) => list.tables.push(elem),
-                        Json((list, elem)) => list.tables.push(elem),
-                    }
-                    updates
-                },
-            );
+            // Do the aggregation.
+            .fold(client_table_id_updates, |mut tables, upd| {
+                match tables.entry((upd.id, upd.table_id)) {
+                    Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
+                        Bsatn((tbl_upd, update)) => tbl_upd.push(update),
+                        Json((tbl_upd, update)) => tbl_upd.push(update),
+                    },
+                    Entry::Vacant(entry) => drop(entry.insert(match upd.update {
+                        Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
+                        Json(update) => Json(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
+                    })),
+                }
+                tables
+            });
+
+        // Each client receives a single list of updates per transaction.
+        // So before sending the updates to each client,
+        // we must stitch together the `TableUpdate*`s into an aggregated list.
+        let mut client_id_updates = client_table_id_updates
+            .drain()
+            // Do the aggregation.
+            .fold(client_id_updates, |mut updates, ((id, _), update)| {
+                let entry = updates.entry(id);
+                let entry = entry.or_insert_with(|| match &update {
+                    Bsatn(_) => Bsatn(<_>::default()),
+                    Json(_) => Json(<_>::default()),
+                });
+                match entry.zip_mut(update) {
+                    Bsatn((list, elem)) => list.tables.push(elem),
+                    Json((list, elem)) => list.tables.push(elem),
+                }
+                updates
+            });
 
         drop(clients_with_errors);
         drop(span);
@@ -1502,7 +1515,7 @@ impl SendWorker {
         // That is, in the case of the caller, we don't respect the light setting.
         if let Some(caller) = caller {
             let caller_id = (caller.id.identity, caller.id.connection_id);
-            let database_update = eval
+            let database_update = client_id_updates
                 .remove(&caller_id)
                 .map(|update| SubscriptionUpdateMessage::from_event_and_update(&event, update))
                 .unwrap_or_else(|| {
@@ -1516,7 +1529,7 @@ impl SendWorker {
         }
 
         // Send all the other updates.
-        for (id, update) in eval {
+        for (id, update) in client_id_updates.drain() {
             let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);
             let client = self.clients[&id].outbound_ref.clone();
             // Conditionally send out a full update or a light one otherwise.
@@ -1524,6 +1537,10 @@ impl SendWorker {
             let message = TransactionUpdateMessage { event, database_update };
             send_to_client(&client, message);
         }
+
+        // Put back the aggregation maps into the worker.
+        self.table_updates_client_id_table_id = client_table_id_updates;
+        self.table_updates_client_id = client_id_updates;
 
         // Send error messages and mark clients for removal
         for (id, message) in errs {
@@ -1565,7 +1582,6 @@ mod tests {
 
     use super::{Plan, SubscriptionManager};
     use crate::db::relational_db::tests_utils::with_read_only;
-    use crate::execution_context::Workload;
     use crate::host::module_host::DatabaseTableUpdate;
     use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
@@ -1579,6 +1595,7 @@ mod tests {
         },
         subscription::execution_unit::QueryHash,
     };
+    use spacetimedb_datastore::execution_context::Workload;
 
     fn create_table(db: &RelationalDB, name: &str) -> ResultTest<TableId> {
         Ok(db.create_table_for_test(name, &[("a", AlgebraicType::U8)], &[])?)
@@ -1872,7 +1889,7 @@ mod tests {
             .collect::<ResultTest<Vec<_>>>()?;
         let queries = table_names
             .iter()
-            .map(|name| format!("select * from {}", name))
+            .map(|name| format!("select * from {name}"))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
@@ -1917,7 +1934,7 @@ mod tests {
             .collect::<ResultTest<Vec<_>>>()?;
         let queries = table_names
             .iter()
-            .map(|name| format!("select * from {}", name))
+            .map(|name| format!("select * from {name}"))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
@@ -1974,7 +1991,7 @@ mod tests {
 
         // Subscribe to queries that have search arguments
         let queries = (0u8..5)
-            .map(|name| format!("select * from t where a = {}", name))
+            .map(|name| format!("select * from t where a = {name}"))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
@@ -2046,7 +2063,7 @@ mod tests {
         let mut subscriptions = SubscriptionManager::for_test_without_metrics();
 
         let queries = (0u8..5)
-            .map(|name| format!("select * from t where a = {}", name))
+            .map(|name| format!("select * from t where a = {name}"))
             .chain(std::iter::once(String::from("select * from t")))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
