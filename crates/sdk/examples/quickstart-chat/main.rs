@@ -63,7 +63,7 @@ fn creds_store() -> credentials::File {
 /// Our `on_connect` callback: save our credentials to a file.
 fn on_connected(_ctx: &DbConnection, _identity: Identity, token: &str) {
     if let Err(e) = creds_store().save(token) {
-        eprintln!("Failed to save credentials: {:?}", e);
+        eprintln!("Failed to save credentials: {e:?}");
     }
 }
 
@@ -71,14 +71,14 @@ fn on_connected(_ctx: &DbConnection, _identity: Identity, token: &str) {
 
 /// Our `on_connect_error` callback: print the error, then exit the process.
 fn on_connect_error(_ctx: &ErrorContext, err: Error) {
-    eprintln!("Connection error: {}", err);
+    eprintln!("Connection error: {err}");
     std::process::exit(1);
 }
 
 /// Our `on_disconnect` callback: print a note, then exit the process.
 fn on_disconnected(_ctx: &ErrorContext, err: Option<Error>) {
     if let Some(err) = err {
-        eprintln!("Disconnected: {}", err);
+        eprintln!("Disconnected: {err}");
         std::process::exit(1);
     } else {
         println!("Disconnected.");
@@ -166,14 +166,14 @@ fn print_message(ctx: &impl RemoteDbContext, message: &Message) {
 /// Our `on_set_name` callback: print a warning if the reducer failed.
 fn on_name_set(ctx: &ReducerEventContext, name: &String) {
     if let Status::Failed(err) = &ctx.event.status {
-        eprintln!("Failed to change name to {:?}: {}", name, err);
+        eprintln!("Failed to change name to {name:?}: {err}");
     }
 }
 
 /// Our `on_send_message` callback: print a warning if the reducer failed.
 fn on_message_sent(ctx: &ReducerEventContext, text: &String) {
     if let Status::Failed(err) = &ctx.event.status {
-        eprintln!("Failed to send message {:?}: {}", text, err);
+        eprintln!("Failed to send message {text:?}: {err}");
     }
 }
 
@@ -206,7 +206,7 @@ fn on_sub_applied(ctx: &SubscriptionEventContext) {
 /// Or `on_error` callback:
 /// print the error, then exit the process.
 fn on_sub_error(_ctx: &ErrorContext, err: Error) {
-    eprintln!("Subscription failed: {}", err);
+    eprintln!("Subscription failed: {err}");
     std::process::exit(1);
 }
 
