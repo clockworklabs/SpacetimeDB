@@ -8,7 +8,7 @@ def psql(identity: str, sql: str) -> str:
     """Call `psql` and execute the given SQL statement."""
 
     result = subprocess.run(
-        ["psql", "port=5432 host=127.0.0.1 user=postgres dbname=quickstart", "--quiet", "-c", sql],
+        ["psql", "-h", "127.0.0.1", "-p", "5432", "-U", "postgres", "-d", "quickstart", "--quiet", "-c", sql],
         encoding="utf8",
         env={**os.environ, "PGPASSWORD": identity},
         stdout=subprocess.PIPE,

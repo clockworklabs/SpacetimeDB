@@ -21,7 +21,7 @@ jobs:
         include:
           - { runner: spacetimedb-runner, smoketest_args: --docker }
           - { runner: windows-latest, smoketest_args: --no-build-cli }
-        runner: [spacetimedb-runner, windows-latest]
+        runner: [ spacetimedb-runner, windows-latest ]
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Find Git ref
@@ -44,6 +44,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: modules/global.json
+      - name: Install psql (Windows)
+        if: runner.os == 'Windows'
+        run: choco install psql -y --no-progress
+        shell: powershell
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
         run: docker compose up -d
