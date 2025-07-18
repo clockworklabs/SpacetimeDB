@@ -427,7 +427,10 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 
                 // Note that the diff algorithm relies on `ModuleDefLookup` for `ColumnDef`,
                 // which looks up columns by NAME, NOT position: precisely to allow this step to work!
-                // We reject changes to
+
+                // Note: We reject changes to positions. This means that, if a column was present in the old version of the table,
+                // it must be in the same place in the new version of the table.
+                // This guarantees that any added columns live at the end of the table.
                 let positions_ok = if old.col_id == new.col_id {
                     Ok(())
                 } else {
@@ -439,6 +442,7 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 
                 (types_ok, positions_ok)
                     .combine_errors()
+                    // row_type_changed, column_added
                     .map(|(x, _)| ProductMonoid(x, Any(false)))
             }
         }
@@ -871,7 +875,7 @@ mod tests {
             )
             // add column sequence
             .with_column_sequence(0)
-            .with_default_column_value(3, AlgebraicValue::U32(5))
+            .with_default_column_value(3, AlgebraicValue::U32(5)) // we need a new
             // change access
             .with_access(TableAccess::Private)
             .finish();
@@ -1123,7 +1127,7 @@ mod tests {
                     ("sum1", new_sum1_refty.into()),
                     ("prod1", new_prod1_refty.into()),
                     // remove count
-                    ("weight", AlgebraicType::U16), // add weight
+                    ("weight", AlgebraicType::U16), // add weight; we don't set a default, which makes this an error.
                 ]),
                 true,
             )
@@ -1164,6 +1168,7 @@ mod tests {
 
         expect_error_matching!(
             result,
+            // This is an error because we didn't set a default value.
             AutoMigrateError::AddColumn {
                 table,
                 column
