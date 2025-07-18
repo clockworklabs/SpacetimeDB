@@ -369,7 +369,7 @@ impl WsConnection {
                     },
 
                     Ok(Some(other)) => {
-                        log::warn!("Unexpected WebSocket message {:?}", other);
+                        log::warn!("Unexpected WebSocket message {other:?}");
                         idle = false;
                         record_metrics(other.len());
                     },

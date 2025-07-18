@@ -10,12 +10,9 @@ use crate::client::messages::{
     SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
-use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use crate::execution_context::{Workload, WorkloadType};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
 use crate::subscription::execute_plans;
@@ -29,6 +26,9 @@ use spacetimedb_client_api_messages::websocket::{
     self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
     UnsubscribeMulti,
 };
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
+use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -938,7 +938,6 @@ mod tests {
         SubscriptionUpdateMessage, TransactionUpdateMessage,
     };
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, MeteredReceiver, Protocol};
-    use crate::db::datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use crate::db::relational_db::tests_utils::{
         begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
     };
@@ -958,6 +957,7 @@ mod tests {
         CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
         TableUpdate, Unsubscribe, UnsubscribeMulti,
     };
+    use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
@@ -1237,7 +1237,7 @@ mod tests {
                     deletes.into_iter().sorted().collect::<Vec<_>>()
                 );
             }
-            Some(msg) => panic!("expected a TxUpdate, but got {:#?}", msg),
+            Some(msg) => panic!("expected a TxUpdate, but got {msg:#?}"),
             None => panic!("The receiver closed due to an error"),
         }
     }
@@ -1314,7 +1314,7 @@ mod tests {
             );
             return;
         }
-        panic!("Expected a subscription error message, but got: {:?}", result);
+        panic!("Expected a subscription error message, but got: {result:?}");
     }
 
     /// Test that clients receive error messages on subscribe
@@ -2301,7 +2301,7 @@ mod tests {
 
         // We should have evaluated queries for `x = 3` and `x = 4`
         assert_eq!(metrics.delta_queries_evaluated, 2);
-        assert_eq!(metrics.delta_queries_matched, 2);
+        assert_eq!(metrics.delta_queries_matched, 1);
 
         // UPDATE v SET x = 0 WHERE id = 3
         let metrics = commit_tx(
@@ -2319,6 +2319,7 @@ mod tests {
 
         // Insert new row into `u` that joins with `x = 5`
         // UPDATE v SET x = 6 WHERE id = 5
+        // Should result in a no-op
         let metrics = commit_tx(
             &db,
             &subs,
@@ -2326,12 +2327,9 @@ mod tests {
             [(v_id, product![5u64, 6u64, 6u64]), (u_id, product![5u64, 6u64, 7u64])],
         )?;
 
-        // Results in a no-op
-        assert_tx_update_for_table(&mut rx, u_id, &schema, [], []).await;
-
         // We should only have evaluated the query for `x = 5`
         assert_eq!(metrics.delta_queries_evaluated, 1);
-        assert_eq!(metrics.delta_queries_matched, 1);
+        assert_eq!(metrics.delta_queries_matched, 0);
 
         Ok(())
     }

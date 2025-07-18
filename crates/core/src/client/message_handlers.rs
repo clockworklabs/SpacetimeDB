@@ -1,12 +1,12 @@
 use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtocol, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage, Protocol};
 use crate::energy::EnergyQuanta;
-use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{ReducerArgs, ReducerId};
 use crate::identity::Identity;
 use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
+use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
@@ -141,7 +141,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
+#[error("error executing message (reducer: {reducer:?}) (err: {err:#})")]
 pub struct MessageExecutionError {
     pub reducer: Option<Box<str>>,
     pub reducer_id: Option<ReducerId>,

@@ -1,3 +1,4 @@
+use spacetimedb_datastore::system_tables::ModuleKind;
 use spacetimedb_lib::Identity;
 use spacetimedb_sats::de::Deserialize;
 use spacetimedb_sats::hash::Hash;
@@ -74,4 +75,14 @@ pub struct NodeStatus {
 #[repr(i32)]
 pub enum HostType {
     Wasm = 0,
+    Js = 1,
+}
+
+impl From<crate::messages::control_db::HostType> for ModuleKind {
+    fn from(host_type: crate::messages::control_db::HostType) -> Self {
+        match host_type {
+            crate::messages::control_db::HostType::Wasm => Self::WASM,
+            crate::messages::control_db::HostType::Js => Self::JS,
+        }
+    }
 }

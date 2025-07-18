@@ -115,11 +115,24 @@ pub trait DeltaStore {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub enum Row<'a> {
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
 }
+
+impl PartialEq for Row<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Ptr(x), Self::Ptr(y)) => x == y,
+            (Self::Ref(x), Self::Ref(y)) => x == y,
+            (Self::Ptr(x), Self::Ref(y)) => x == *y,
+            (Self::Ref(x), Self::Ptr(y)) => y == *x,
+        }
+    }
+}
+
+impl Eq for Row<'_> {}
 
 impl Hash for Row<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
