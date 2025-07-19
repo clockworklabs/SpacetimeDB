@@ -102,8 +102,8 @@ impl Serialize for u8 {
 
 impl_serialize!([] F32, (self, ser) => f32::from(*self).serialize(ser));
 impl_serialize!([] F64, (self, ser) => f64::from(*self).serialize(ser));
-impl_serialize!([T: Serialize] Vec<T>, (self, ser)  => (**self).serialize(ser));
-impl_serialize!([T: Serialize, const N: usize] SmallVec<[T; N]>, (self, ser)  => (**self).serialize(ser));
+impl_serialize!([T: Serialize] Vec<T>, (self, ser) => (**self).serialize(ser));
+impl_serialize!([T: Serialize, const N: usize] SmallVec<[T; N]>, (self, ser) => (**self).serialize(ser));
 impl_serialize!([T: Serialize] [T], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize, const N: usize] [T; N], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize + ?Sized] Box<T>, (self, ser) => (**self).serialize(ser));
@@ -152,6 +152,12 @@ impl_serialize!([] ProductValue, (self, ser) => {
     for elem in &*self.elements {
         tup.serialize_element(elem)?;
     }
+    tup.end()
+});
+impl_serialize!([U: Serialize, V: Serialize] (U, V), (self, ser) => {
+    let mut tup = ser.serialize_seq_product(2)?;
+    tup.serialize_element(&self.0)?;
+    tup.serialize_element(&self.1)?;
     tup.end()
 });
 impl_serialize!([] SumValue, (self, ser) => ser.serialize_variant(self.tag, None, &*self.value));
