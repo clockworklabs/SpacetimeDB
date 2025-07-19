@@ -5,16 +5,22 @@ import { BinaryWriter } from '../';
 import BsatnRowList from './client_api/bsatn_row_list_type.ts';
 import ClientMessage from './client_api/client_message_type.ts';
 import DatabaseUpdate from './client_api/database_update_type.ts';
+import OneOffTable from './client_api/one_off_table_type.ts';
 import QueryUpdate from './client_api/query_update_type.ts';
 import ServerMessage from './client_api/server_message_type.ts';
 import RawTableUpdate from './client_api/table_update_type.ts';
-import { ClientCache } from './client_cache.ts';
+import {
+  ClientCache,
+  type TableDefForTableName,
+  type TableName,
+} from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { type DbContext } from './db_context.ts';
 import type { Event } from './event.ts';
 import {
   type ErrorContextInterface,
   type EventContextInterface,
+  type QueryEventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
@@ -25,6 +31,7 @@ import type {
   IdentityTokenMessage,
   Message,
   ProcedureResultMessage,
+  QueryResolvedMessage,
   SubscribeAppliedMessage,
   UnsubscribeAppliedMessage,
 } from './message_types.ts';
@@ -39,6 +46,12 @@ import {
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
 import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
 import {
+  QueryBuilderImpl,
+  QueryHandleImpl,
+  QueryManager,
+  type QueryEvent,
+} from './query_builder_impl.ts';
+import {
   SubscriptionBuilderImpl,
   SubscriptionHandleImpl,
   SubscriptionManager,
@@ -47,6 +60,7 @@ import {
 import { stdbLogger } from './logger.ts';
 import { fromByteArray } from 'base64-js';
 import type {
+  QueryEventCallback,
   ReducerEventCallback,
   ReducerEventInfo,
   ReducersView,
@@ -54,7 +68,7 @@ import type {
   SubscriptionEventCallback,
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
-import type { UntypedTableDef } from '../lib/table.ts';
+import type { RowType, UntypedTableDef } from '../lib/table.ts';
 import { toCamelCase, toPascalCase } from '../lib/util.ts';
 import type { ProceduresView } from './procedures.ts';
 
@@ -160,6 +174,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     new EventEmitter();
   #onApplied?: SubscriptionEventCallback<RemoteModule>;
   #messageQueue = Promise.resolve();
+  #queryManager = new QueryManager<RemoteModule>();
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #callReducerFlags = new Map<string, CallReducerFlags>();
@@ -370,6 +385,32 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     };
   }
 
+  queryBuilder = (): QueryBuilderImpl<RemoteModule> => {
+    return new QueryBuilderImpl(this);
+  };
+
+  registerQuery(
+    handle: QueryHandleImpl<RemoteModule>,
+    handleEmitter: EventEmitter<
+      QueryEvent,
+      QueryEventCallback<RemoteModule>
+    >,
+    querySql: string,
+  ): number {
+    const queryId = this.#getNextQueryId();
+    this.#queryManager.queries.set(queryId, {
+      handle,
+      emitter: handleEmitter,
+    });
+    this.#sendMessage(
+      ClientMessage.OneOffQuery({
+        queryString: querySql,
+        messageId: new Uint8Array([queryId]),
+      })
+    );
+    return queryId;
+  }
+
   // NOTE: This is very important!!! This is the actual function that
   // gets called when you call `connection.subscriptionBuilder()`.
   // The `subscriptionBuilder` function which is generated, just shadows
@@ -417,56 +458,56 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     );
   }
 
+  #parseRowList(
+    type: 'insert' | 'delete',
+    tableName: string,
+    rowList: Infer<typeof BsatnRowList>
+  ): Operation[] {
+    const buffer = rowList.rowsData;
+    const reader = new BinaryReader(buffer);
+    const rows: Operation[] = [];
+
+    // TODO: performance
+    const table = this.#remoteModule.tables.find(t => t.name === tableName);
+    const rowType = table!.rowType;
+    const columnsArray = Object.entries(table!.columns);
+    const primaryKeyColumnEntry = columnsArray.find(
+      col => col[1].columnMetadata.isPrimaryKey
+    );
+    let previousOffset = 0;
+    while (reader.remaining > 0) {
+      const row = ProductType.deserializeValue(reader, rowType);
+      let rowId: ComparablePrimitive | undefined = undefined;
+      if (primaryKeyColumnEntry !== undefined) {
+        const primaryKeyColName = primaryKeyColumnEntry[0];
+        const primaryKeyColType =
+          primaryKeyColumnEntry[1].typeBuilder.algebraicType;
+        rowId = AlgebraicType.intoMapKey(
+          primaryKeyColType,
+          row[primaryKeyColName]
+        );
+      } else {
+        // Get a view of the bytes for this row.
+        const rowBytes = buffer.subarray(previousOffset, reader.offset);
+        // Convert it to a base64 string, so we can use it as a map key.
+        const asBase64 = fromByteArray(rowBytes);
+        rowId = asBase64;
+      }
+      previousOffset = reader.offset;
+
+      rows.push({
+        type,
+        rowId,
+        row,
+      });
+    }
+    return rows;
+  }
+
   // This function is async because we decompress the message async
   async #processParsedMessage(
     message: Infer<typeof ServerMessage>
   ): Promise<Message | undefined> {
-    const parseRowList = (
-      type: 'insert' | 'delete',
-      tableName: string,
-      rowList: Infer<typeof BsatnRowList>
-    ): Operation[] => {
-      const buffer = rowList.rowsData;
-      const reader = new BinaryReader(buffer);
-      const rows: Operation[] = [];
-
-      // TODO: performance
-      const table = this.#remoteModule.tables.find(t => t.name === tableName);
-      const rowType = table!.rowType;
-      const columnsArray = Object.entries(table!.columns);
-      const primaryKeyColumnEntry = columnsArray.find(
-        col => col[1].columnMetadata.isPrimaryKey
-      );
-      let previousOffset = 0;
-      while (reader.remaining > 0) {
-        const row = ProductType.deserializeValue(reader, rowType);
-        let rowId: ComparablePrimitive | undefined = undefined;
-        if (primaryKeyColumnEntry !== undefined) {
-          const primaryKeyColName = primaryKeyColumnEntry[0];
-          const primaryKeyColType =
-            primaryKeyColumnEntry[1].typeBuilder.algebraicType;
-          rowId = AlgebraicType.intoMapKey(
-            primaryKeyColType,
-            row[primaryKeyColName]
-          );
-        } else {
-          // Get a view of the bytes for this row.
-          const rowBytes = buffer.subarray(previousOffset, reader.offset);
-          // Convert it to a base64 string, so we can use it as a map key.
-          const asBase64 = fromByteArray(rowBytes);
-          rowId = asBase64;
-        }
-        previousOffset = reader.offset;
-
-        rows.push({
-          type,
-          rowId,
-          row,
-        });
-      }
-      return rows;
-    };
-
     const parseTableUpdate = async (
       rawTableUpdate: Infer<typeof RawTableUpdate>
     ): Promise<CacheTableUpdate<UntypedTableDef>> => {
@@ -488,10 +529,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           decompressed = update.value;
         }
         operations = operations.concat(
-          parseRowList('insert', tableName, decompressed.inserts)
+          this.#parseRowList('insert', tableName, decompressed.inserts)
         );
         operations = operations.concat(
-          parseRowList('delete', tableName, decompressed.deletes)
+          this.#parseRowList('delete', tableName, decompressed.deletes)
         );
       }
       return {
@@ -602,9 +643,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       }
 
       case 'OneOffQueryResponse': {
-        throw new Error(
-          `TypeScript SDK never sends one-off queries, but got OneOffQueryResponse ${message}`
-        );
+        const queryResolvedMessage: QueryResolvedMessage = {
+          tag: 'QueryResolved',
+          messageId: message.value.messageId,
+          error: message.value.error,
+          tables: message.value.tables,
+          totalHostExecutionDuration: message.value.totalHostExecutionDuration,
+        };
+        return queryResolvedMessage;
       }
 
       case 'SubscribeMultiApplied': {
@@ -679,6 +725,28 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    */
   #handleOnOpen(): void {
     this.isActive = true;
+  }
+
+  #applyTablesState<N extends TableName<RemoteModule>>(
+    tableStates: Infer<typeof OneOffTable>[],
+    eventContext: EventContextInterface<RemoteModule>
+  ): ClientCache<RemoteModule> {
+    const state = new ClientCache<RemoteModule>();
+    for (const tableState of tableStates) {
+      // Get table information for the table being updated
+      const tableName = tableState.tableName;
+      // TODO: performance
+      const tableDef = this.#remoteModule.tables.find(
+        t => t.name === tableName
+      )!;
+      const table = state.getOrCreateTable(tableDef);
+      const operations = this.#parseRowList('insert', tableState.tableName, tableState.rows);
+      table.applyOperations(
+        operations as Operation<RowType<TableDefForTableName<RemoteModule, string>>>[],
+        eventContext,
+      );
+    }
+    return state;
   }
 
   #applyTableUpdates(
@@ -839,6 +907,53 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         }
         this.connectionId = message.connectionId;
         this.#emitter.emit('connect', this, this.identity, this.token);
+        break;
+      }
+      case 'QueryResolved': {
+        const query = this.#queryManager.queries.get(message.messageId[0]);
+        if (query === undefined) {
+          stdbLogger(
+            'error',
+            `Received QueryResolved for unknown messageId ${message.messageId}.`
+          );
+          break;
+        }
+        if (message.error !== undefined) {
+          const error = Error(message.error);
+          const event: Event<never> = { tag: 'Error', value: error };
+          const eventContext = this.#makeEventContext(event);
+          const errorContext = {
+            ...eventContext,
+            event: error,
+          };
+          if (message.messageId === undefined) {
+            console.error('Received an error message without a messageId: ', error);
+            break;
+          }
+          this.#queryManager.queries
+            .get(message.messageId[0])
+            ?.emitter.emit(
+              'error',
+              errorContext,
+              error,
+              message.totalHostExecutionDuration
+            );
+        } else {
+          const event: Event<never> = { tag: 'QueryResolved' };
+          const eventContext = this.#makeEventContext(event);
+          const { event: _, ...queryEventContext } = eventContext;
+          const state = this.#applyTablesState(
+            message.tables,
+            eventContext
+          );
+          query?.emitter.emit(
+            'resolved',
+            queryEventContext,
+            state.tables,
+            message.totalHostExecutionDuration
+          );
+        }
+        this.#queryManager.queries.delete(message.messageId[0]);
         break;
       }
       case 'SubscribeApplied': {

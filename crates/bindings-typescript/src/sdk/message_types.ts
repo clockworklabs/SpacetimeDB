@@ -1,8 +1,9 @@
 import { ConnectionId, type Infer } from '../';
 import { Identity } from '../';
 import type { TableUpdate } from './table_cache.ts';
-import { Timestamp } from '../';
+import { TimeDuration, Timestamp } from '../';
 import type { UntypedTableDef } from '../lib/table.ts';
+import type OneOffTable from './client_api/one_off_table_type.ts';
 import type UpdateStatus from './client_api/update_status_type.ts';
 
 export type InitialSubscriptionMessage = {
@@ -37,6 +38,20 @@ export type IdentityTokenMessage = {
   connectionId: ConnectionId;
 };
 
+export type QueryResolvedMessage = {
+  tag: 'QueryResolved';
+  messageId: Uint8Array;
+  error?: string;
+  tables: Infer<typeof OneOffTable>[];
+  totalHostExecutionDuration: TimeDuration;
+};
+
+export type QueryErrorMessage = {
+  tag: 'QueryError';
+  messageId?: Uint8Array;
+  error: string;
+};
+
 export type SubscribeAppliedMessage = {
   tag: 'SubscribeApplied';
   queryId: number;
@@ -66,6 +81,8 @@ export type Message =
   | TransactionUpdateMessage
   | TransactionUpdateLightMessage
   | IdentityTokenMessage
+  | QueryResolvedMessage
+  | QueryErrorMessage
   | SubscribeAppliedMessage
   | UnsubscribeAppliedMessage
   | SubscriptionError

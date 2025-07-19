@@ -3,7 +3,7 @@ import type { UntypedTableDef } from '../lib/table.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
 import { type TableCache, TableCacheImpl } from './table_cache.ts';
 
-type TableName<SchemaDef> = [SchemaDef] extends [UntypedSchemaDef]
+export type TableName<SchemaDef> = [SchemaDef] extends [UntypedSchemaDef]
   ? TableNamesOf<SchemaDef>
   : string;
 

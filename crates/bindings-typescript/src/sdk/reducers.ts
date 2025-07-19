@@ -6,9 +6,14 @@ import type { CamelCase, PascalCase } from '../lib/type_util';
 import type { CallReducerFlags } from './db_connection_impl';
 import type { UntypedRemoteModule } from './spacetime_module';
 import type {
+  QueryEventContextInterface,
   ReducerEventContextInterface,
   SubscriptionEventContextInterface,
 } from './event_context';
+
+export type QueryEventCallback<
+  RemoteModule extends UntypedRemoteModule,
+> = (ctx: QueryEventContextInterface<RemoteModule>) => void;
 
 export type ReducerEventCallback<
   RemoteModule extends UntypedRemoteModule,
