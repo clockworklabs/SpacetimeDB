@@ -44,6 +44,10 @@ jobs:
 
       # Now, setup the Unity tests.
 
+      - name: Pack Unity packages
+        working-directory: sdks/csharp
+        run: dotnet pack
+
       - name: Patch spacetimedb dependency in Cargo.toml
         working-directory: demo/Blackholio/server-rust
         run: |
