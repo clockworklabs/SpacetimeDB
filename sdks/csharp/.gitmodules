@@ -1,0 +1,3 @@
+[submodule "SpacetimeDBCircleGame"]
+	path = unity-tests~
+	url = https://github.com/clockworklabs/SpacetimeDBCircleGame
