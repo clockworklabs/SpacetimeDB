@@ -34,26 +34,15 @@ jobs:
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
 
-      - name: Git status
-        run: |
-          git status
-          git diff
-
-      # temporarily commented out to speed up debugging
-      # - name: Run .NET tests
-      #   working-directory: sdks/csharp
-      #   run: dotnet test -warnaserror
-      #
-      # - name: Verify C# formatting
-      #   working-directory: sdks/csharp
-      #   run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
+      - name: Run .NET tests
+        working-directory: sdks/csharp
+        run: dotnet test -warnaserror
+      
+      - name: Verify C# formatting
+        working-directory: sdks/csharp
+        run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
 
       # Now, setup the Unity tests.
-
-      - name: Git status
-        run: |
-          git status
-          git diff
 
       - name: Patch spacetimedb dependency in Cargo.toml
         working-directory: demo/Blackholio/server-rust
@@ -87,19 +76,9 @@ jobs:
           # Share the target directory with our local project to avoid rebuilding same SpacetimeDB crates twice.
           CARGO_TARGET_DIR: demo/Blackholio/server-rust/target
 
-      - name: Git status
-        run: |
-          git status
-          git diff
-
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
         run: bash ./generate.sh -y
-
-      - name: Git status
-        run: |
-          git status
-          git diff
 
       - name: Check for changes
         run: |
@@ -125,9 +104,8 @@ jobs:
           spacetime start &
           disown
 
-      # temporarily commented out to speed up debugging
-      # - name: Run regression tests
-      #   run: bash sdks/csharp/tools~/run-regression-tests.sh .
+      - name: Run regression tests
+        run: bash sdks/csharp/tools~/run-regression-tests.sh .
 
       - name: Publish unity-tests module to SpacetimeDB
         working-directory: demo/Blackholio/server-rust
@@ -149,11 +127,6 @@ jobs:
           key: Unity-${{ github.head_ref }}
           restore-keys: Unity-
 
-      - name: Git status
-        run: |
-          git status
-          git diff
-
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
@@ -166,8 +139,3 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-
-      - name: Git status
-        run: |
-          git status
-          git diff
