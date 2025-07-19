@@ -54,6 +54,11 @@ jobs:
         working-directory: sdks/csharp
         run: dotnet restore
 
+      - name: Git status
+        run: |
+          git status
+          git diff
+
       - name: Patch spacetimedb dependency in Cargo.toml
         working-directory: demo/Blackholio/server-rust
         run: |
@@ -85,6 +90,11 @@ jobs:
         env:
           # Share the target directory with our local project to avoid rebuilding same SpacetimeDB crates twice.
           CARGO_TARGET_DIR: demo/Blackholio/server-rust/target
+
+      - name: Git status
+        run: |
+          git status
+          git diff
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
