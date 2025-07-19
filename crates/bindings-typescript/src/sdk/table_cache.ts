@@ -50,6 +50,13 @@ export class TableCache<
   }
 
   /**
+   * @returns name of the table
+   */
+  name(): string {
+    return this.tableTypeInfo.tableName;
+  }
+
+  /**
    * @returns number of rows in the table
    */
   count(): number {
