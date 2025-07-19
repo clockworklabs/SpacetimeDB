@@ -117,7 +117,8 @@ jobs:
         working-directory: demo/Blackholio/client-unity/Packages
         run: |
           # Replace the com.clockworklabs.spacetimedbsdk dependency with the current branch.
-          # TODO: find out why pointing to a local directory doesn't work - is it because Unity CI action uses Docker?
+          # Note: Pointing to a local directory does not work, because our earlier steps nuke our meta files, which then causes Unity to not properly respect the DLLs (e.g.
+          # codegen does not work properly).
           yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "https://github.com/clockworklabs/SpacetimeDB.git?path=sdks/csharp#${{ github.head_ref }}"' manifest.json
           cat manifest.json
 
