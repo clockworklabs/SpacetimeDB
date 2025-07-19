@@ -37,7 +37,7 @@ jobs:
       - name: Run .NET tests
         working-directory: sdks/csharp
         run: dotnet test -warnaserror
-      
+
       - name: Verify C# formatting
         working-directory: sdks/csharp
         run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
