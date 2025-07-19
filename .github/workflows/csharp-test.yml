@@ -50,10 +50,6 @@ jobs:
 
       # Now, setup the Unity tests.
 
-      - name: Refresh DLLs
-        working-directory: sdks/csharp
-        run: dotnet restore
-
       - name: Git status
         run: |
           git status
