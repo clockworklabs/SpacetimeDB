@@ -131,6 +131,10 @@ jobs:
           key: Unity-${{ github.head_ref }}
           restore-keys: Unity-
 
+      - name: Git status
+        run: |
+          git status
+
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
@@ -143,3 +147,7 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+
+      - name: Git status
+        run: |
+          git status
