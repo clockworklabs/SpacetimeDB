@@ -1,3 +1,4 @@
+import type { QueryBuilderImpl } from './query_builder_impl';
 import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
 
 /**
@@ -23,6 +24,17 @@ export interface DbContext<
    * @returns The subscription builder.
    */
   subscriptionBuilder(): SubscriptionBuilderImpl<
+    DBView,
+    Reducers,
+    SetReducerFlags
+  >;
+
+  /**
+   * Creates a new one-off query builder.
+   *
+   * @returns The one-off query builder.
+   */
+  queryBuilder(): QueryBuilderImpl<
     DBView,
     Reducers,
     SetReducerFlags
