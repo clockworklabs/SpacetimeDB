@@ -1,5 +1,4 @@
-use std::time::{Duration, SystemTime};
-
+use anyhow::anyhow;
 use axum::extract::{Query, Request, State};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
@@ -15,9 +14,11 @@ use spacetimedb::auth::token_validation::{
 use spacetimedb::auth::JwtKeys;
 use spacetimedb::energy::EnergyQuanta;
 use spacetimedb::identity::Identity;
+use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
+use base64::{engine::general_purpose, Engine};
 
 /// Credentials for login for a spacetime identity, represented as a JWT.
 ///
@@ -39,6 +40,19 @@ impl SpacetimeCreds {
 
     pub fn from_signed_token(token: String) -> Self {
         Self { token }
+    }
+
+    fn extract_jwt_payload_string(&self) -> Option<String> {
+        let parts: Vec<&str> = self.token.split('.').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+
+        let payload_encoded = parts[1];
+        let decoded_bytes = general_purpose::URL_SAFE_NO_PAD.decode(payload_encoded).ok()?;
+        let json_str = String::from_utf8(decoded_bytes).ok()?;
+
+        Some(json_str)
     }
 
     pub fn to_header_value(&self) -> HeaderValue {
@@ -73,6 +87,8 @@ pub struct SpacetimeAuth {
     pub identity: Identity,
     pub subject: String,
     pub issuer: String,
+    // The decoded JWT payload.
+    pub raw_payload: String,
 }
 
 use jsonwebtoken;
@@ -148,12 +164,17 @@ impl SpacetimeAuth {
             let token = claims.encode_and_sign(ctx.jwt_auth_provider()).map_err(log_and_500)?;
             SpacetimeCreds::from_signed_token(token)
         };
+        // Pulling out the payload should never fail, since we just made it.
+        let payload = creds
+            .extract_jwt_payload_string()
+            .ok_or_else(|| log_and_500("internal error"))?;
 
         Ok(Self {
             creds,
             identity,
             subject,
             issuer: ctx.jwt_auth_provider().local_issuer().to_string(),
+            raw_payload: payload,
         })
     }
 
@@ -237,9 +258,11 @@ impl<TV: TokenValidator + Send + Sync> JwtAuthProvider for JwtKeyAuthProvider<TV
 
 #[cfg(test)]
 mod tests {
-    use crate::auth::TokenClaims;
+    use crate::auth::{SpacetimeCreds, TokenClaims};
     use anyhow::Ok;
+
     use spacetimedb::auth::{token_validation::TokenValidator, JwtKeys};
+    use std::collections::HashSet;
 
     // Make sure that when we encode TokenClaims, we can decode to get the expected identity.
     #[tokio::test]
@@ -256,6 +279,42 @@ mod tests {
         let decoded = kp.public.validate_token(&token).await?;
 
         assert_eq!(decoded.identity, id);
+        Ok(())
+    }
+
+    // Test that extracting a JWT payload from a valid token gets the json representation.
+    #[tokio::test]
+    async fn extract_payload() -> Result<(), anyhow::Error> {
+        let kp = JwtKeys::generate()?;
+
+        let dummy_audience = "spacetimedb".to_string();
+        let claims = TokenClaims {
+            issuer: "localhost".to_string(),
+            subject: "test-subject".to_string(),
+            audience: vec![dummy_audience.clone()],
+        };
+        let token = claims.encode_and_sign(&kp.private)?;
+        let st_creds = SpacetimeCreds::from_signed_token(token);
+        let payload = st_creds
+            .extract_jwt_payload_string()
+            .ok_or_else(|| anyhow::anyhow!("Failed to extract JWT payload"))?;
+        // Make sure it is valid json.
+        let parsed: serde_json::Value = serde_json::from_str(&payload)?;
+        assert_eq!(parsed.get("iss").unwrap().as_str().unwrap(), claims.issuer);
+        assert_eq!(parsed.get("sub").unwrap().as_str().unwrap(), claims.subject);
+        assert_eq!(
+            parsed.get("aud").unwrap().as_array().unwrap()[0].as_str().unwrap(),
+            dummy_audience
+        );
+        let as_object = parsed
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse JWT payload as object"))?;
+        let keys: HashSet<String> = as_object.keys().map(|s| s.to_string()).collect();
+        let expected_keys = vec!["iss", "sub", "aud", "iat", "exp", "hex_identity"]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<HashSet<String>>();
+        assert_eq!(keys, expected_keys);
         Ok(())
     }
 }
@@ -279,11 +338,15 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
             .await
             .map_err(AuthorizationRejection::Custom)?;
 
+        let payload = creds.extract_jwt_payload_string().ok_or_else(|| {
+            AuthorizationRejection::Custom(TokenValidationError::Other(anyhow!("Internal error parsing token")))
+        })?;
         let auth = SpacetimeAuth {
             creds,
             identity: claims.identity,
             subject: claims.subject,
             issuer: claims.issuer,
+            raw_payload: payload,
         };
         Ok(Self { auth: Some(auth) })
     }
