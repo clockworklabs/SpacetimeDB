@@ -13,10 +13,14 @@ export class QueryBuilderImpl<
   SetReducerFlags = any,
 > {
   #onResolved?: (
-    ctx: QueryEventContextInterface<DBView, Reducers, SetReducerFlags>
+    ctx: QueryEventContextInterface<DBView, Reducers, SetReducerFlags>,
+    tables: Map<string, any>,
+    totalHostExecutionDuration: TimeDuration
   ) => void = undefined;
   #onError?: (
-    ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>
+    ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>,
+    error: Error,
+    totalHostExecutionDuration: TimeDuration
   ) => void = undefined;
   constructor(
     private db: DbConnectionImpl<DBView, Reducers, SetReducerFlags>
@@ -24,7 +28,9 @@ export class QueryBuilderImpl<
 
   onResolved(
     cb: (
-      ctx: QueryEventContextInterface<DBView, Reducers, SetReducerFlags>
+      ctx: QueryEventContextInterface<DBView, Reducers, SetReducerFlags>,
+      tables: Map<string, any>,
+      totalHostExecutionDuration: TimeDuration
     ) => void
   ): QueryBuilderImpl<DBView, Reducers, SetReducerFlags> {
     this.#onResolved = cb;
@@ -32,7 +38,11 @@ export class QueryBuilderImpl<
   }
 
   onError(
-    cb: (ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>) => void
+    cb: (
+      ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>,
+      error: Error,
+      totalHostExecutionDuration: TimeDuration
+    ) => void
   ): QueryBuilderImpl<DBView, Reducers, SetReducerFlags> {
     this.#onError = cb;
     return this;
