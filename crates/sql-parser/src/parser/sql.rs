@@ -127,6 +127,13 @@
 //!     ;
 //! ```
 
+use crate::ast::{
+    sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate, SqlValues},
+    SqlIdent,
+};
+use sqlparser::ast::{
+    AssignmentTarget, Delete, FromTable, Insert, LimitClause, SelectFlavor, Set, TableObject, ValueWithSpan,
+};
 use sqlparser::{
     ast::{
         Assignment, Expr, GroupByExpr, ObjectName, Query, Select, SetExpr, Statement, TableFactor, TableWithJoins,
@@ -134,11 +141,6 @@ use sqlparser::{
     },
     dialect::PostgreSqlDialect,
     parser::Parser,
-};
-
-use crate::ast::{
-    sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate, SqlValues},
-    SqlIdent,
 };
 
 use super::{
@@ -164,19 +166,18 @@ pub fn parse_sql(sql: &str) -> SqlParseResult<SqlAst> {
 fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
     match stmt {
         Statement::Query(query) => Ok(SqlAst::Select(SqlParser::parse_query(*query)?)),
-        Statement::Insert {
+        Statement::Insert(Insert {
             or: None,
-            table_name,
+            table: TableObject::TableName(table_name),
             columns,
             overwrite: false,
-            source,
+            source: Some(source),
             partitioned: None,
             after_columns,
-            table: false,
             on: None,
             returning: None,
             ..
-        } if after_columns.is_empty() => Ok(SqlAst::Insert(SqlInsert {
+        }) if after_columns.is_empty() => Ok(SqlAst::Insert(SqlInsert {
             table: parse_ident(table_name)?,
             fields: columns.into_iter().map(SqlIdent::from).collect(),
             values: parse_values(*source)?,
@@ -191,7 +192,11 @@ fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
                             args: None,
                             with_hints,
                             version: None,
+                            with_ordinality: false,
                             partitions,
+                            json_path: None,
+                            sample: None,
+                            index_hints,
                         },
                     joins,
                 },
@@ -199,24 +204,29 @@ fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
             from: None,
             selection,
             returning: None,
-        } if joins.is_empty() && with_hints.is_empty() && partitions.is_empty() => Ok(SqlAst::Update(SqlUpdate {
-            table: parse_ident(name)?,
-            assignments: parse_assignments(assignments)?,
-            filter: parse_expr_opt(selection)?,
-        })),
-        Statement::Delete {
+            or: None,
+        } if joins.is_empty() && with_hints.is_empty() && partitions.is_empty() && index_hints.is_empty() => {
+            Ok(SqlAst::Update(SqlUpdate {
+                table: parse_ident(name)?,
+                assignments: parse_assignments(assignments)?,
+                filter: parse_expr_opt(selection)?,
+            }))
+        }
+        Statement::Delete(Delete {
             tables,
-            from,
+            from: FromTable::WithFromKeyword(from),
             using: None,
             selection,
             returning: None,
-        } if tables.is_empty() => Ok(SqlAst::Delete(parse_delete(from, selection)?)),
-        Statement::SetVariable {
-            local: false,
+            order_by,
+            limit: None,
+        }) if tables.is_empty() && order_by.is_empty() => Ok(SqlAst::Delete(parse_delete(from, selection)?)),
+        Statement::Set(Set::SingleAssignment {
+            scope: None,
             hivevar: false,
             variable,
-            value,
-        } => Ok(SqlAst::Set(parse_set_var(variable, value)?)),
+            values,
+        }) => Ok(SqlAst::Set(parse_set_var(variable, values)?)),
         Statement::ShowVariable { variable } => Ok(SqlAst::Show(SqlShow(parse_parts(variable)?))),
         _ => Err(SqlUnsupported::feature(stmt).into()),
     }
@@ -228,12 +238,15 @@ fn parse_values(values: Query) -> SqlParseResult<SqlValues> {
         Query {
             with: None,
             body,
-            order_by,
-            limit: None,
-            offset: None,
+            order_by: None,
+            limit_clause: None,
             fetch: None,
             locks,
-        } if order_by.is_empty() && locks.is_empty() => match *body {
+            for_clause: None,
+            settings: None,
+            format_clause: None,
+            pipe_operators,
+        } if locks.is_empty() && pipe_operators.is_empty() => match *body {
             SetExpr::Values(Values {
                 explicit_row: false,
                 rows,
@@ -243,7 +256,7 @@ fn parse_values(values: Query) -> SqlParseResult<SqlValues> {
                     let mut literals = Vec::new();
                     for expr in row {
                         if let Expr::Value(value) = expr {
-                            literals.push(parse_literal(value)?);
+                            literals.push(parse_literal(value.into())?);
                         } else {
                             return Err(SqlUnsupported::InsertValue(expr).into());
                         }
@@ -255,11 +268,14 @@ fn parse_values(values: Query) -> SqlParseResult<SqlValues> {
             _ => Err(SqlUnsupported::Insert(Query {
                 with: None,
                 body,
-                order_by,
-                limit: None,
-                offset: None,
+                order_by: None,
+                limit_clause: None,
                 fetch: None,
                 locks,
+                for_clause: None,
+                settings: None,
+                format_clause: None,
+                pipe_operators,
             })
             .into()),
         },
@@ -273,9 +289,11 @@ fn parse_assignments(assignments: Vec<Assignment>) -> SqlParseResult<Vec<SqlSet>
 }
 
 /// Parse a column/variable assignment in an UPDATE or SET statement
-fn parse_assignment(Assignment { id, value }: Assignment) -> SqlParseResult<SqlSet> {
-    match value {
-        Expr::Value(value) => Ok(SqlSet(parse_parts(id)?, parse_literal(value)?)),
+fn parse_assignment(Assignment { target, value }: Assignment) -> SqlParseResult<SqlSet> {
+    match (target, &value) {
+        (AssignmentTarget::ColumnName(target), Expr::Value(value)) => {
+            Ok(SqlSet(parse_ident(target)?, parse_literal(value.clone().into())?))
+        }
         _ => Err(SqlUnsupported::Assignment(value).into()),
     }
 }
@@ -292,13 +310,19 @@ fn parse_delete(mut from: Vec<TableWithJoins>, selection: Option<Expr>) -> SqlPa
                         args: None,
                         with_hints,
                         version: None,
+                        with_ordinality: false,
                         partitions,
+                        json_path: None,
+                        sample: None,
+                        index_hints,
                     },
                 joins,
-            } if joins.is_empty() && with_hints.is_empty() && partitions.is_empty() => Ok(SqlDelete {
-                table: parse_ident(name)?,
-                filter: parse_expr_opt(selection)?,
-            }),
+            } if joins.is_empty() && with_hints.is_empty() && partitions.is_empty() && index_hints.is_empty() => {
+                Ok(SqlDelete {
+                    table: parse_ident(name)?,
+                    filter: parse_expr_opt(selection)?,
+                })
+            }
             t => Err(SqlUnsupported::DeleteTable(t).into()),
         }
     } else {
@@ -307,24 +331,24 @@ fn parse_delete(mut from: Vec<TableWithJoins>, selection: Option<Expr>) -> SqlPa
 }
 
 /// Parse a SET variable statement
-fn parse_set_var(variable: ObjectName, mut value: Vec<Expr>) -> SqlParseResult<SqlSet> {
-    if value.len() == 1 {
+fn parse_set_var(variable: ObjectName, mut values: Vec<Expr>) -> SqlParseResult<SqlSet> {
+    if values.len() == 1 {
         Ok(SqlSet(
             parse_ident(variable)?,
-            match value.swap_remove(0) {
-                Expr::Value(value) => parse_literal(value)?,
+            match values.swap_remove(0) {
+                Expr::Value(value) => parse_literal(value.into())?,
                 expr => {
                     return Err(SqlUnsupported::Assignment(expr).into());
                 }
             },
         ))
     } else {
-        Err(SqlUnsupported::feature(Statement::SetVariable {
-            local: false,
+        Err(SqlUnsupported::feature(Statement::Set(Set::SingleAssignment {
+            scope: None,
             hivevar: false,
             variable,
-            value,
-        })
+            values,
+        }))
         .into())
     }
 }
@@ -339,21 +363,27 @@ impl RelParser for SqlParser {
             Query {
                 with: None,
                 body,
-                order_by,
-                limit: None,
-                offset: None,
+                order_by: None,
+                limit_clause,
                 fetch: None,
                 locks,
-            } if order_by.is_empty() && locks.is_empty() => parse_set_op(*body, None),
-            Query {
-                with: None,
-                body,
-                order_by,
-                limit: Some(Expr::Value(Value::Number(n, _))),
-                offset: None,
-                fetch: None,
-                locks,
-            } if order_by.is_empty() && locks.is_empty() => parse_set_op(*body, Some(n.into_boxed_str())),
+                for_clause: None,
+                settings: None,
+                format_clause: None,
+                pipe_operators,
+            } if locks.is_empty() && pipe_operators.is_empty() => match limit_clause {
+                Some(LimitClause::LimitOffset {
+                    limit:
+                        Some(Expr::Value(ValueWithSpan {
+                            value: Value::Number(n, _),
+                            ..
+                        })),
+                    offset: None,
+                    limit_by,
+                }) if limit_by.is_empty() => parse_set_op(*body, Some(n.into_boxed_str())),
+                None => parse_set_op(*body, None),
+                Some(x) => Err(SqlUnsupported::feature(x).into()),
+            },
             _ => Err(SqlUnsupported::feature(query).into()),
         }
     }
@@ -371,26 +401,35 @@ fn parse_set_op(expr: SetExpr, limit: Option<Box<str>>) -> SqlParseResult<SqlSel
 fn parse_select(select: Select, limit: Option<Box<str>>) -> SqlParseResult<SqlSelect> {
     match select {
         Select {
+            select_token: _,
             distinct: None,
             top: None,
+            top_before_distinct: _,
             projection,
             into: None,
             from,
             lateral_views,
+            prewhere: None,
             selection,
-            group_by: GroupByExpr::Expressions(exprs),
+            group_by: GroupByExpr::Expressions(exprs, modifiers),
             cluster_by,
             distribute_by,
             sort_by,
             having: None,
             named_window,
             qualify: None,
+            window_before_qualify: false,
+            value_table_mode: None,
+            connect_by: None,
+            flavor: SelectFlavor::Standard,
         } if lateral_views.is_empty()
             && exprs.is_empty()
             && cluster_by.is_empty()
             && distribute_by.is_empty()
             && sort_by.is_empty()
-            && named_window.is_empty() =>
+            && named_window.is_empty()
+            && modifiers.is_empty()
+            && !projection.is_empty() =>
         {
             Ok(SqlSelect {
                 project: parse_projection(projection)?,
@@ -431,7 +470,7 @@ mod tests {
             // Joins require qualified vars
             "select t.* from t join s on int = u32",
         ] {
-            assert!(parse_sql(sql).is_err());
+            assert!(parse_sql(sql).is_err(), "{sql}");
         }
     }
 
@@ -450,7 +489,7 @@ mod tests {
             "update t set a = 1, b = 2 where c = 3",
             "update t set a = 1, b = 2 where x = :sender",
         ] {
-            assert!(parse_sql(sql).is_ok());
+            assert!(parse_sql(sql).is_ok(), "{sql}");
         }
     }
 
@@ -471,7 +510,7 @@ mod tests {
             "",
             " ",
         ] {
-            assert!(parse_sql(sql).is_err());
+            assert!(parse_sql(sql).is_err(), "{sql}");
         }
     }
 }
