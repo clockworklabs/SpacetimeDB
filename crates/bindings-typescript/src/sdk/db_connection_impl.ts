@@ -379,6 +379,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       reducers: this.reducers,
       setReducerFlags: this.setReducerFlags,
       isActive: this.isActive,
+      queryBuilder: this.queryBuilder.bind(this),
       subscriptionBuilder: this.subscriptionBuilder.bind(this),
       disconnect: this.disconnect.bind(this),
       event,
