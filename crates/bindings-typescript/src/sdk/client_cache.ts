@@ -23,7 +23,7 @@ type TableCacheForTableName<
  * This is a helper class that provides a mapping from table names to their corresponding TableCache instances
  * while preserving the correspondence between the key and value type.
  */
-class TableMap<RemoteModule extends UntypedRemoteModule> {
+export class TableMap<RemoteModule extends UntypedRemoteModule> {
   private readonly map: Map<
     string,
     TableCacheForTableName<RemoteModule, TableName<RemoteModule>>

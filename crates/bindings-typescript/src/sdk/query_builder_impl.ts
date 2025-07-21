@@ -1,3 +1,4 @@
+import type { TableMap } from './client_cache';
 import type { DbConnectionImpl } from './db_connection_impl';
 import type {
   ErrorContextInterface,
@@ -8,19 +9,35 @@ import type { TimeDuration } from '../';
 import type { UntypedRemoteModule } from './spacetime_module';
 
 export class QueryBuilderImpl<RemoteModule extends UntypedRemoteModule> {
-  #onResolved?: (ctx: QueryEventContextInterface<RemoteModule>) => void = undefined;
-  #onError?: (ctx: ErrorContextInterface<RemoteModule>) => void = undefined;
+  #onResolved?: (
+    ctx: QueryEventContextInterface<RemoteModule>,
+    tables: TableMap<RemoteModule>,
+    totalHostExecutionDuration: TimeDuration
+  ) => void = undefined;
+  #onError?: (
+    ctx: ErrorContextInterface<RemoteModule>,
+    error: Error,
+    totalHostExecutionDuration: TimeDuration
+  ) => void = undefined;
   constructor(private db: DbConnectionImpl<RemoteModule>) {}
 
   onResolved(
-    cb: (ctx: QueryEventContextInterface<RemoteModule>) => void
+    cb: (
+      ctx: QueryEventContextInterface<RemoteModule>,
+      tables: TableMap<RemoteModule>,
+      totalHostExecutionDuration: TimeDuration
+    ) => void
   ): QueryBuilderImpl<RemoteModule> {
     this.#onResolved = cb;
     return this;
   }
 
   onError(
-    cb: (ctx: ErrorContextInterface<RemoteModule>) => void
+    cb: (
+      ctx: ErrorContextInterface<RemoteModule>,
+      error: Error,
+      totalHostExecutionDuration: TimeDuration
+    ) => void
   ): QueryBuilderImpl<RemoteModule> {
     this.#onError = cb;
     return this;
@@ -62,7 +79,7 @@ export class QueryHandleImpl<RemoteModule extends UntypedRemoteModule> {
     querySql: string,
     onResolved?: (
       ctx: QueryEventContextInterface<RemoteModule>,
-      tables: Map<string, any>,
+      tables: TableMap<RemoteModule>,
       totalHostExecutionDuration: TimeDuration
     ) => void,
     onError?: (
@@ -75,7 +92,7 @@ export class QueryHandleImpl<RemoteModule extends UntypedRemoteModule> {
       'resolved',
       (
         ctx: QueryEventContextInterface<RemoteModule>,
-        tables: Map<string, any>,
+        tables: TableMap<RemoteModule>,
         totalHostExecutionDuration: TimeDuration
       ) => {
         this.#resolvedState = true;
