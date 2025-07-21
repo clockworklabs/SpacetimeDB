@@ -1,11 +1,10 @@
 {
   "dependencies": {
     "com.clockworklabs.spacetimedbsdk": {
-      "version": "git@github.com:clockworklabs/com.clockworklabs.spacetimedbsdk.git#staging",
+      "version": "file:../../../../sdks/csharp",
       "depth": 0,
-      "source": "git",
-      "dependencies": {},
-      "hash": "812e7c3e014005d31a5af41097b9c64a04c8c7df"
+      "source": "local",
+      "dependencies": {}
     },
     "com.unity.2d.animation": {
       "version": "9.1.1",
