@@ -170,6 +170,9 @@ importers:
 
   packages/sdk:
     dependencies:
+      '@zxing/text-encoding':
+        specifier: ^0.9.0
+        version: 0.9.0
       base64-js:
         specifier: ^1.5.1
         version: 1.5.1
@@ -1315,6 +1318,9 @@ packages:
 
   '@vitest/utils@2.1.2':
     resolution: {integrity: sha512-zMO2KdYy6mx56btx9JvAqAZ6EyS3g49krMPPrgOp1yxGZiA93HumGk+bZ5jIZtOg5/VBYl5eBmGRQHqq4FG6uQ==}
+
+  '@zxing/text-encoding@0.9.0':
+    resolution: {integrity: sha512-U/4aVJ2mxI0aDNI8Uq0wEhMgY+u4CNtEb0om3+y3+niDAsoTCOB33UF0sxpzqzdqXLqmvc+vZyAt4O8pPdfkwA==}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -3981,6 +3987,8 @@ snapshots:
       '@vitest/pretty-format': 2.1.2
       loupe: 3.1.2
       tinyrainbow: 1.2.0
+
+  '@zxing/text-encoding@0.9.0': {}
 
   acorn-jsx@5.3.2(acorn@8.14.0):
     dependencies:
