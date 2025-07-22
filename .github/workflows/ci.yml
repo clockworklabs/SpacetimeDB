@@ -61,7 +61,8 @@ jobs:
         if: runner.os == 'Windows'
       - name: Run smoketests
         # Note: clear_database and replication only work in private
-        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication
+        # zz_docker disabled temporarily until https://github.com/clockworklabs/SpacetimeDB/issues/2965
+        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication zz_docker
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose down
