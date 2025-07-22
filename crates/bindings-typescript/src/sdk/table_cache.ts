@@ -1,3 +1,4 @@
+import type { DbContext } from './db_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 
 import { stdbLogger } from './logger.ts';
@@ -248,6 +249,22 @@ export class TableCacheImpl<
     Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
   > {
     return this.iter();
+  }
+
+  remoteQuery(
+    ctx: DbContext<RemoteModule>,
+    filters: string
+  ): Promise<IterableIterator<
+    Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+  >> {
+    return new Promise((resolve, reject) => {
+      const name = this.tableDef.name;
+
+      ctx.queryBuilder()
+        .onResolved((ctx, tables) => resolve(tables.get(name)!.iter()))
+        .onError((ctx, error) => reject(error))
+        .query(`SELECT ${name}.* FROM ${name} ${filters}`);
+    });
   }
 
   applyOperations = (
