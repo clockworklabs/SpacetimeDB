@@ -1,3 +1,8 @@
+import {
+  BinaryWriter,
+  type EventContextInterface,
+} from './db_connection_impl.ts';
+import type { DbContext } from './db_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import type { TableRuntimeTypeInfo } from './spacetime_module.ts';
 
@@ -68,6 +73,17 @@ export class TableCache<
    */
   iter(): RowType[] {
     return Array.from(this.rows.values()).map(([row]) => row);
+  }
+
+  remoteQuery(ctx: DbContext, filters: string): Promise<RowType[]> {
+    return new Promise((resolve, reject) => {
+      const name = this.name();
+
+      ctx.queryBuilder()
+        .onResolved((ctx, tables) => resolve(tables.get(name)?.iter()))
+        .onError((ctx, error) => reject(error))
+        .query(`SELECT ${name}.* FROM ${name} ${filters}`);
+    });
   }
 
   applyOperations = (
