@@ -186,6 +186,13 @@ export class {table_handle}<TableName extends string> implements __TableHandle<T
             writeln!(out, "return this.tableCache.iter();");
         });
         writeln!(out, "}}");
+        writeln!(out);
+        writeln!(out, "remoteQuery(ctx: DbContext, filters: string): Promise<Iterable<{row_type}>> {{");
+        out.with_indent(|out| {
+            writeln!(out, "return this.tableCache.remoteQuery(ctx, filters);");
+        });
+        writeln!(out, "}}");
+        writeln!(out);
 
         for (unique_field_ident, unique_field_type_use) in
             iter_unique_cols(module.typespace_for_generate(), &schema, product_def)
