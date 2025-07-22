@@ -5,6 +5,7 @@ import {
   BinaryWriter,
   type EventContextInterface,
 } from './db_connection_impl.ts';
+import type { DbContext } from './db_context.ts';
 import { stdbLogger } from './logger.ts';
 import type { ComparablePrimitive } from 'spacetimedb';
 
@@ -64,8 +65,19 @@ export class TableCache<RowType = any> {
   /**
    * @returns The values of the rows in the table
    */
-  iter(): any[] {
+  iter(): RowType[] {
     return Array.from(this.rows.values()).map(([row]) => row);
+  }
+
+  remoteQuery(ctx: DbContext, filters: string): Promise<RowType[]> {
+    return new Promise((resolve, reject) => {
+      const name = this.name();
+
+      ctx.queryBuilder()
+        .onResolved((ctx, tables) => resolve(tables.get(name)?.iter()))
+        .onError((ctx, error) => reject(error))
+        .query(`SELECT ${name}.* FROM ${name} ${filters}`);
+    });
   }
 
   applyOperations = (
