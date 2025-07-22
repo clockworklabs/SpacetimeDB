@@ -9,6 +9,7 @@ import type {
 import type { ColumnBuilder } from '../lib/type_builders';
 import type { Prettify } from '../lib/type_util';
 import type { TableDefForTableName } from './client_cache';
+import type { DbContext } from './db_context.ts';
 import type { EventContextInterface } from './event_context';
 import type { UntypedRemoteModule } from './spacetime_module';
 
@@ -46,6 +47,13 @@ export type ClientTableMethods<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,
 > = {
+  remoteQuery(
+    ctx: DbContext<RemoteModule>,
+    filters: string
+  ): Promise<IterableIterator<
+    Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
+  >>;
+
   /**
    * Registers a callback to be invoked when a row is inserted into the table.
    */
