@@ -772,7 +772,7 @@ fn ws_recv_loop(
                     | WsError::Capacity(_)
                     | WsError::Protocol(_)
                     | WsError::WriteBufferFull(_)
-                    | WsError::Utf8
+                    | WsError::Utf8(_)
                     | WsError::AttackAttempt
                     | WsError::Url(_)
                     | WsError::Http(_)
