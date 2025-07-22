@@ -167,18 +167,23 @@ namespace SpacetimeDB
             {
                 uri += "&light=true";
             }
-            var url = new Uri(uri);
             Ws.Options.AddSubProtocol(_options.Protocol);
 
             var source = new CancellationTokenSource(10000);
             if (!string.IsNullOrEmpty(auth))
             {
-                Ws.Options.SetRequestHeader("Authorization", $"Bearer {auth}");
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Create("Browser")))
+                {
+                    // For WebAssembly, we need to pass the auth token as a query parameter
+                    uri += $"&token={Uri.EscapeDataString(auth)}";
+                }
+                else
+                {
+                    Ws.Options.SetRequestHeader("Authorization", $"Bearer {auth}");
+                }
             }
-            else
-            {
-                Ws.Options.UseDefaultCredentials = true;
-            }
+
+            var url = new Uri(uri);
 
             try
             {

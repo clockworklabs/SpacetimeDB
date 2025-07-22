@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="1.2.*" />
+	<PackageReference Include="System.Threading.Channels" Version="9.0.7" />
 
     <InternalsVisibleTo Include="SpacetimeDB.Tests" />
   </ItemGroup>
