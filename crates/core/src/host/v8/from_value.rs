@@ -75,6 +75,10 @@ int32_from_value!(Int32, i16);
 int32_from_value!(Int32, i32);
 
 // `FromValue for f32, f64`.
+//
+// Note that, as per the rust-reference,
+// - "Casting from an f64 to an f32 will produce the closest possible f32"
+// https://doc.rust-lang.org/reference/expressions/operator-expr.html#r-expr.as.numeric.float-narrowing
 macro_rules! float_from_value {
     ($rust_ty:ty) => {
         impl_from_value!($rust_ty, (val, scope) => {
