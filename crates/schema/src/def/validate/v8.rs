@@ -57,7 +57,9 @@ fn upgrade_module(def: RawModuleDefV8, extra_errors: &mut Vec<ValidationError>) 
         tables,
         reducers,
         types,
+        // v8 doesn't have procedures, which are all we use the `misc_exports` for at this time (pgoldman 2025-07-23).
         misc_exports: Default::default(),
+
         row_level_security: vec![], // v8 doesn't have row-level security
     }
 }

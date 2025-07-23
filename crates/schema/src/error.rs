@@ -7,7 +7,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef};
 use std::borrow::Cow;
 use std::fmt;
 
-use crate::def::ScopedTypeName;
+use crate::def::{FunctionKind, ScopedTypeName};
 use crate::identifier::Identifier;
 use crate::type_for_generate::ClientCodegenError;
 
@@ -108,11 +108,12 @@ pub enum ValidationError {
     MissingPrimaryKeyUniqueConstraint { column: RawColumnName },
     #[error("Table {table} should have a type definition for its product_type_element, but does not")]
     TableTypeNameMismatch { table: Identifier },
-    #[error("Schedule {schedule} refers to a scheduled reducer {reducer} that does not exist")]
-    MissingScheduledReducer { schedule: Box<str>, reducer: Identifier },
-    #[error("Scheduled reducer {reducer} expected to have type {expected}, but has type {actual}")]
-    IncorrectScheduledReducerParams {
-        reducer: RawIdentifier,
+    #[error("Schedule {schedule} refers to a scheduled reducer or procedure {function} that does not exist")]
+    MissingScheduledFunction { schedule: Box<str>, function: Identifier },
+    #[error("Scheduled {function_kind} {function_name} expected to have type {expected}, but has type {actual}")]
+    IncorrectScheduledFunctionParams {
+        function_name: RawIdentifier,
+        function_kind: FunctionKind,
         expected: PrettyAlgebraicType,
         actual: PrettyAlgebraicType,
     },
@@ -120,6 +121,22 @@ pub enum ValidationError {
     TableNameReserved { table: Identifier },
     #[error("Row-level security invalid: `{error}`, query: `{sql}")]
     InvalidRowLevelQuery { sql: String, error: String },
+    #[error("Name {name} is used for multiple reducers and/or procedures")]
+    DuplicateFunctionName { name: Identifier },
+    #[error("Procedure {procedure} lists non-existent reducer {reducer} as its `on_abort` handler")]
+    MissingOnAbortHandler { procedure: Identifier, reducer: Identifier },
+    #[error("Procedure {procedure} lists another procedure {other_procedure} as its `on_abort` handler, but `on_abort` handlers must be reducers")]
+    OnAbortHandlerIsProcedure {
+        procedure: Identifier,
+        other_procedure: Identifier,
+    },
+    #[error("Expected reducer {reducer_name} to have type {expected} because it is the `on_abort` handler for procedure {procedure_name}, but it has type {actual}")]
+    IncorrectOnAbortReducerParams {
+        reducer_name: RawIdentifier,
+        procedure_name: RawIdentifier,
+        expected: PrettyAlgebraicType,
+        actual: PrettyAlgebraicType,
+    },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.
@@ -163,6 +180,12 @@ pub enum TypeLocation<'a> {
         position: usize,
         arg_name: Option<Cow<'a, str>>,
     },
+    /// A procedure argument.
+    ProcedureArg {
+        procedure_name: Cow<'a, str>,
+        position: usize,
+        arg_name: Option<Cow<'a, str>>,
+    },
     /// A type in the typespace.
     InTypespace {
         /// The reference to the type within the typespace.
@@ -183,6 +206,15 @@ impl TypeLocation<'_> {
                 position,
                 arg_name: arg_name.map(|s| s.to_string().into()),
             },
+            TypeLocation::ProcedureArg {
+                procedure_name,
+                position,
+                arg_name,
+            } => TypeLocation::ProcedureArg {
+                procedure_name: procedure_name.to_string().into(),
+                position,
+                arg_name: arg_name.map(|s| s.to_string().into()),
+            },
             // needed to convince rustc this is allowed.
             TypeLocation::InTypespace { ref_ } => TypeLocation::InTypespace { ref_ },
         }
@@ -198,6 +230,17 @@ impl fmt::Display for TypeLocation<'_> {
                 arg_name,
             } => {
                 write!(f, "reducer `{reducer_name}` argument {position}")?;
+                if let Some(arg_name) = arg_name {
+                    write!(f, " (`{arg_name}`)")?;
+                }
+                Ok(())
+            }
+            TypeLocation::ProcedureArg {
+                procedure_name,
+                position,
+                arg_name,
+            } => {
+                write!(f, "procedure `{procedure_name}` argument {position}")?;
                 if let Some(arg_name) = arg_name {
                     write!(f, " (`{arg_name}`)")?;
                 }

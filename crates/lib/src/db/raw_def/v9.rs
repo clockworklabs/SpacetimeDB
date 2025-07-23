@@ -81,9 +81,17 @@ pub struct RawModuleDefV9 {
     pub types: Vec<RawTypeDefV9>,
 
     /// Miscellaneous additional module exports.
+    ///
+    /// The enum `RawMiscModuleExportV9` can have new variants added
+    /// without breaking existing compiled modules.
+    /// As such, this acts as a sort of dumping ground for any exports added after we defined `RawModuleDefV9`.
+    /// Currently, this contains only procedure definitions.
+    ///
+    /// If/when we define `RawModuleDefV10`, these should be moved out of `misc_exports` and into their own fields,
+    /// and the new `misc_exports` should once again be initially empty.
     pub misc_exports: Vec<RawMiscModuleExportV9>,
 
-    /// Low level security definitions.
+    /// Row level security definitions.
     ///
     /// Each definition must have a unique name.
     pub row_level_security: Vec<RawRowLevelSecurityDefV9>,
@@ -293,7 +301,7 @@ pub fn direct(col: impl Into<ColId>) -> RawIndexAlgorithm {
     RawIndexAlgorithm::Direct { column: col.into() }
 }
 
-/// Marks a table as a timer table for a scheduled reducer.
+/// Marks a table as a timer table for a scheduled reducer or procedure.
 ///
 /// The table must have columns:
 /// - `scheduled_id` of type `u64`.
@@ -306,7 +314,9 @@ pub struct RawScheduleDefV9 {
     /// Even though there is ABSOLUTELY NO REASON TO.
     pub name: Option<Box<str>>,
 
-    /// The name of the reducer to call.
+    /// The name of the reducer or procedure to call.
+    ///
+    /// Despite the field name here, this may be either a reducer or a procedure.
     pub reducer_name: RawIdentifier,
 
     /// The column of the `scheduled_at` field of this scheduled table.
@@ -361,7 +371,12 @@ pub struct RawRowLevelSecurityDefV9 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[non_exhaustive]
-pub enum RawMiscModuleExportV9 {}
+pub enum RawMiscModuleExportV9 {
+    /// A procedure definition.
+    // Included here because procedures were added after the format of [`RawModuleDefV9`] was already stabilized.
+    // If/when we define `RawModuleDefV10`, this should be moved out of `misc_exports` and into its own field.
+    Procedure(RawProcedureDefV9),
+}
 
 /// A type declaration.
 ///
@@ -439,6 +454,38 @@ pub enum Lifecycle {
     OnConnect,
     /// The reducer will be invoked when a client disconnects.
     OnDisconnect,
+}
+
+/// A procedure definition.
+///
+/// Will be wrapped in [`RawMiscModuleExportV9`] and included in the [`RawModuleDefV9`]'s `misc_exports` vec.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawProcedureDefV9 {
+    /// The name of the procedure.
+    pub name: RawIdentifier,
+
+    /// The types and optional names of the parameters, in order.
+    /// This `ProductType` need not be registered in the typespace.
+    pub params: ProductType,
+
+    /// If the procedure has designated an `on_abort` reducer, it should be marked here.
+    pub on_abort: OnAbortBehavior,
+}
+
+/// Possible behaviors when a procedure is aborted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SpacetimeType)]
+#[cfg_attr(feature = "enum-map", derive(enum_map::Enum))]
+#[sats(crate = crate)]
+#[non_exhaustive]
+pub enum OnAbortBehavior {
+    /// Silently ignore the terminated procedure.
+    Ignore,
+
+    /// Invoke a reducer.
+    CallHandler(RawIdentifier),
+    // TODO: Add `Retry` variant?
 }
 
 /// A builder for a [`RawModuleDefV9`].
@@ -613,6 +660,27 @@ impl RawModuleDefV9Builder {
         });
     }
 
+    /// Add a procedure to the in-progress module.
+    ///
+    /// Accepts a `ProductType` of arguments.
+    /// The arguments `ProductType` need not be registered in the typespace.
+    ///
+    /// The `&mut ProcedureContext` first argument to the procedure should not be included in the `params`.
+    pub fn add_procedure(
+        &mut self,
+        name: impl Into<RawIdentifier>,
+        params: spacetimedb_sats::ProductType,
+        on_abort: Option<impl Into<RawIdentifier>>,
+    ) {
+        self.module
+            .misc_exports
+            .push(RawMiscModuleExportV9::Procedure(RawProcedureDefV9 {
+                name: name.into(),
+                params,
+                on_abort: on_abort.map(Into::into),
+            }))
+    }
+
     /// Add a row-level security policy to the module.
     ///
     /// The `sql` expression should be a valid SQL expression that will be used to filter rows.
@@ -781,10 +849,10 @@ impl RawTableDefBuilder<'_> {
     /// The table must have the appropriate columns for a scheduled table.
     pub fn with_schedule(
         mut self,
-        reducer_name: impl Into<RawIdentifier>,
+        function_name: impl Into<RawIdentifier>,
         scheduled_at_column: impl Into<ColId>,
     ) -> Self {
-        let reducer_name = reducer_name.into();
+        let reducer_name = function_name.into();
         let scheduled_at_column = scheduled_at_column.into();
         self.table.schedule = Some(RawScheduleDefV9 {
             name: None,

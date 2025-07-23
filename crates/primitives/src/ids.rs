@@ -116,3 +116,9 @@ system_id! {
     // This is never stored in a system table, but is useful to have defined here.
     pub struct ReducerId(pub u32);
 }
+
+system_id! {
+    /// The index of a procedure as defined in a module's procedure list.
+    // This is never stored in a system table, but is useful to have defined here.
+    pub struct ProcedureId(pub u32);
+}

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::def::*;
 use crate::error::{RawColumnName, ValidationError};
 use crate::type_for_generate::{ClientCodegenError, ProductTypeDef, TypespaceForGenerateBuilder};
@@ -5,6 +7,7 @@ use crate::{def::validate::Result, error::TypeLocation};
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
+use spacetimedb_lib::db::raw_def::v9::RawProcedureDefV9;
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
 
@@ -50,6 +53,18 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         })
         .collect_all_errors();
 
+    let procedures = misc_exports
+        .into_iter()
+        .map(|misc_export| {
+            let RawMiscModuleExportV9::Procedure(procedure) = misc_export else {
+                unreachable!("`RawMiscModuleExportV9` has only one variant, `::Procedure`");
+            };
+            validator
+                .validate_procedure_def(procedure)
+                .map(|procedure_def| (procedure_def.name.clone(), procedure_def))
+        })
+        .collect_all_errors();
+
     let tables = tables
         .into_iter()
         .map(|table| {
@@ -75,19 +90,18 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         })
         .collect_all_errors::<HashMap<_, _>>();
 
-    // It's statically impossible for this assert to fire until `RawMiscModuleExportV9` grows some variants.
-    assert_eq!(
-        misc_exports.len(),
-        0,
-        "Misc module exports are not yet supported in ABI v9."
-    );
-
-    let tables_types_reducers = (tables, types, reducers)
-        .combine_errors()
-        .and_then(|(tables, types, reducers)| {
-            check_scheduled_reducers_exist(&tables, &reducers)?;
-            Ok((tables, types, reducers))
-        });
+    let tables_types_reducers_procedures =
+        (tables, types, reducers, procedures)
+            .combine_errors()
+            .and_then(|(mut tables, types, reducers, procedures)| {
+                (
+                    check_scheduled_functions_exist(&mut tables, &reducers, &procedures),
+                    check_on_abort_reducers_exist(&procedures, &reducers),
+                    check_function_names_are_unique(&reducers, &procedures),
+                )
+                    .combine_errors()?;
+                Ok((tables, types, reducers, procedures))
+            });
 
     let ModuleValidator {
         stored_in_table_def,
@@ -96,7 +110,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         ..
     } = validator;
 
-    let (tables, types, reducers) = (tables_types_reducers).map_err(|errors| errors.sort_deduplicate())?;
+    let (tables, types, reducers, procedures) =
+        (tables_types_reducers_procedures).map_err(|errors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -110,6 +125,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         refmap,
         row_level_security_raw,
         lifecycle_reducers,
+        procedures,
     })
 }
 
@@ -289,26 +305,19 @@ impl ModuleValidator<'_> {
         })
     }
 
-    /// Validate a reducer definition.
-    fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV9, reducer_id: ReducerId) -> Result<ReducerDef> {
-        let RawReducerDefV9 {
-            name,
-            params,
-            lifecycle,
-        } = reducer_def;
-
-        let params_for_generate: Result<_> = params
+    fn params_for_generate<'a>(
+        &mut self,
+        params: &'a ProductType,
+        make_type_location: impl Fn(usize, Option<Cow<'a, str>>) -> TypeLocation<'a>,
+    ) -> Result<Box<[(Identifier, AlgebraicTypeUse)]>> {
+        params
             .elements
             .iter()
             .enumerate()
             .map(|(position, param)| {
                 // Note: this does not allocate, since `TypeLocation` is defined using `Cow`.
                 // We only allocate if an error is returned.
-                let location = TypeLocation::ReducerArg {
-                    reducer_name: (&*name).into(),
-                    position,
-                    arg_name: param.name().map(Into::into),
-                };
+                let location = make_type_location(position, param.name().map(Into::into));
                 let param_name = param
                     .name()
                     .ok_or_else(|| {
@@ -322,10 +331,27 @@ impl ModuleValidator<'_> {
                 let ty_use = self.validate_for_type_use(&location, &param.algebraic_type);
                 (param_name, ty_use).combine_errors()
             })
-            .collect_all_errors();
+            .collect_all_errors()
+    }
 
-        // reducers don't live in the global namespace.
-        let name = identifier(name);
+    /// Validate a reducer definition.
+    fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV9, reducer_id: ReducerId) -> Result<ReducerDef> {
+        let RawReducerDefV9 {
+            name,
+            params,
+            lifecycle,
+        } = reducer_def;
+
+        let params_for_generate: Result<_> =
+            self.params_for_generate(&params, |position, arg_name| TypeLocation::ReducerArg {
+                reducer_name: (&*name).into(),
+                position,
+                arg_name,
+            });
+
+        // Reducers share the "function namespace" with procedures.
+        // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
+        let name = identifier(name.clone());
 
         let lifecycle = lifecycle
             .map(|lifecycle| match &mut self.lifecycle_reducers[lifecycle] {
@@ -347,6 +373,37 @@ impl ModuleValidator<'_> {
                 recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
             },
             lifecycle,
+        })
+    }
+
+    fn validate_procedure_def(&mut self, procedure_def: RawProcedureDefV9) -> Result<ProcedureDef> {
+        let RawProcedureDefV9 { name, params, on_abort } = procedure_def;
+
+        let params_for_generate = self.params_for_generate(&params, |position, arg_name| TypeLocation::ProcedureArg {
+            procedure_name: (&*name).into(),
+            position,
+            arg_name,
+        });
+
+        // Procedures share the "function namespace" with reducers.
+        // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
+        let name = identifier(name);
+
+        // We'll validate that the `on_abort` handler exists and is a reducer later,
+        // in `check_on_abort_reducers_exist`.
+        // For now, we just check that it's a valid identifier.
+        let on_abort = on_abort.map(identifier).transpose();
+
+        let (name, params_for_generate, on_abort) = (name, params_for_generate, on_abort).combine_errors()?;
+
+        Ok(ProcedureDef {
+            name,
+            params,
+            params_for_generate: ProductTypeDef {
+                elements: params_for_generate,
+                recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
+            },
+            on_abort,
         })
     }
 
@@ -682,7 +739,8 @@ impl TableValidator<'_, '_> {
     /// Validate a schedule definition.
     fn validate_schedule_def(&mut self, schedule: RawScheduleDefV9, primary_key: Option<ColId>) -> Result<ScheduleDef> {
         let RawScheduleDefV9 {
-            reducer_name,
+            // Despite the field name, a `RawScheduleDefV9` may refer to either a reducer or a function.
+            reducer_name: function_name,
             scheduled_at_column,
             name,
         } = schedule;
@@ -714,15 +772,20 @@ impl TableValidator<'_, '_> {
         });
 
         let name = self.add_to_global_namespace(name);
-        let reducer_name = identifier(reducer_name);
+        let function_name = identifier(function_name);
 
-        let (name, (at_column, id_column), reducer_name) = (name, at_id, reducer_name).combine_errors()?;
+        let (name, (at_column, id_column), function_name) = (name, at_id, function_name).combine_errors()?;
 
         Ok(ScheduleDef {
             name,
             at_column,
             id_column,
-            reducer_name,
+            function_name,
+
+            // Fill this in as a placeholder now.
+            // It will be populated with the correct `FunctionKind` later,
+            // in `check_scheduled_functions_exist`.
+            function_kind: FunctionKind::Unknown,
         })
     }
 
@@ -862,35 +925,88 @@ fn identifier(name: Box<str>) -> Result<Identifier> {
     Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
 }
 
-fn check_scheduled_reducers_exist(
-    tables: &IdentifierMap<TableDef>,
+/// Check that every [`ScheduleDef`]'s `function_name` refers to a real reducer or procedure
+/// and that the function's arguments are appropriate for the table,
+/// then record the scheduled function's [`FunctionKind`] in the [`ScheduleDef`].
+fn check_scheduled_functions_exist(
+    tables: &mut IdentifierMap<TableDef>,
     reducers: &IndexMap<Identifier, ReducerDef>,
+    procedures: &IndexMap<Identifier, ProcedureDef>,
 ) -> Result<()> {
+    let validate_params =
+        |params_from_function: &ProductType, table_row_type_ref: AlgebraicTypeRef, function_name: &str| {
+            if params_from_function.elements.len() == 1
+                && params_from_function.elements[0].algebraic_type == table_row_type_ref.into()
+            {
+                Ok(())
+            } else {
+                Err(ValidationError::IncorrectScheduledFunctionParams {
+                    function_name: function_name.into(),
+                    function_kind: FunctionKind::Reducer,
+                    expected: AlgebraicType::product([AlgebraicType::Ref(table_row_type_ref)]).into(),
+                    actual: params_from_function.clone().into(),
+                })
+            }
+        };
     tables
-        .values()
+        .values_mut()
         .map(|table| -> Result<()> {
-            if let Some(schedule) = &table.schedule {
-                let reducer = reducers.get(&schedule.reducer_name);
-                if let Some(reducer) = reducer {
-                    if reducer.params.elements.len() == 1
-                        && reducer.params.elements[0].algebraic_type == table.product_type_ref.into()
-                    {
-                        Ok(())
-                    } else {
-                        Err(ValidationError::IncorrectScheduledReducerParams {
-                            reducer: (&*schedule.reducer_name).into(),
-                            expected: AlgebraicType::product([AlgebraicType::Ref(table.product_type_ref)]).into(),
-                            actual: reducer.params.clone().into(),
-                        }
-                        .into())
-                    }
+            if let Some(schedule) = &mut table.schedule {
+                if let Some(reducer) = reducers.get(&schedule.function_name) {
+                    schedule.function_kind = FunctionKind::Reducer;
+                    validate_params(&reducer.params, table.product_type_ref, &reducer.name).map_err(Into::into)
+                } else if let Some(procedure) = procedures.get(&schedule.function_name) {
+                    schedule.function_kind = FunctionKind::Procedure;
+                    validate_params(&procedure.params, table.product_type_ref, &procedure.name).map_err(Into::into)
                 } else {
-                    Err(ValidationError::MissingScheduledReducer {
+                    Err(ValidationError::MissingScheduledFunction {
                         schedule: schedule.name.clone(),
-                        reducer: schedule.reducer_name.clone(),
+                        function: schedule.function_name.clone(),
                     }
                     .into())
                 }
+            } else {
+                Ok(())
+            }
+        })
+        .collect_all_errors()
+}
+
+fn check_on_abort_reducers_exist(
+    procedures: &IndexMap<Identifier, ProcedureDef>,
+    reducers: &IndexMap<Identifier, ReducerDef>,
+) -> Result<()> {
+    procedures.values().map(|procedure_def| -> Result<()> {
+        if let Some(on_abort) = &procedure_def.on_abort {
+            if let Some(reducer) = reducers.get(on_abort) {
+                todo!("Figure out the correct argument types for on_abort reducers. How do they get the original caller and call time?")
+            } else if procedures.contains_key(on_abort) {
+                Err(ValidationError::OnAbortHandlerIsProcedure {
+                    procedure: procedure_def.name.clone(),
+                    other_procedure: on_abort.clone(),
+                }.into())
+            } else {
+                Err(ValidationError::MissingOnAbortHandler {
+                    procedure: procedure_def.name.clone(),
+                    reducer: on_abort.clone()
+                }.into())
+            }
+        } else {
+            Ok(())
+        }
+    }).collect_all_errors()
+}
+
+fn check_function_names_are_unique(
+    reducers: &IndexMap<Identifier, ReducerDef>,
+    procedures: &IndexMap<Identifier, ProcedureDef>,
+) -> Result<()> {
+    let names = reducers.keys().collect::<HashSet<_>>();
+    procedures
+        .keys()
+        .map(|name| -> Result<()> {
+            if names.contains(name) {
+                Err(ValidationError::DuplicateFunctionName { name: name.clone() }.into())
             } else {
                 Ok(())
             }
