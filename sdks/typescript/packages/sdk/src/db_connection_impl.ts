@@ -221,7 +221,7 @@ export class DbConnectionImpl<
     let connectionId = this.connectionId.toHexString();
     url.searchParams.set('connection_id', connectionId);
 
-    this.clientCache = new ClientCache();
+    this.clientCache = new ClientCache(this);
     this.db = this.#remoteModule.dbViewConstructor(this);
     this.setReducerFlags = this.#remoteModule.setReducerFlagsConstructor();
     this.reducers = this.#remoteModule.reducersConstructor(
@@ -580,7 +580,7 @@ export class DbConnectionImpl<
       // Get table information for the table being updated
       const tableName = tableState.tableName;
       const tableTypeInfo = this.#remoteModule.tables[tableName]!;
-      const table = new TableCache(tableTypeInfo);
+      const table = new TableCache(eventContext, tableTypeInfo);
       const newCallbacks = table.applyOperations(
         this.#parseRowList('insert', tableState.tableName, tableState.rows),
         eventContext,
