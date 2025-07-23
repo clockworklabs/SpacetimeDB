@@ -221,7 +221,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const connectionId = this.connectionId.toHexString();
     url.searchParams.set('connection_id', connectionId);
 
-    this.clientCache = new ClientCache<RemoteModule>();
+    this.clientCache = new ClientCache<RemoteModule>(this);
     this.db = this.#makeDbView(remoteModule);
     this.reducers = this.#makeReducers(remoteModule);
     this.setReducerFlags = this.#makeSetReducerFlags(remoteModule);
@@ -732,7 +732,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     tableStates: Infer<typeof OneOffTable>[],
     eventContext: EventContextInterface<RemoteModule>
   ): ClientCache<RemoteModule> {
-    const state = new ClientCache<RemoteModule>();
+    const state = new ClientCache<RemoteModule>(this);
     for (const tableState of tableStates) {
       // Get table information for the table being updated
       const tableName = tableState.tableName;

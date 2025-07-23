@@ -1,3 +1,4 @@
+import type { DbContext } from './db_context.ts';
 import type { TableNamesOf, UntypedSchemaDef } from '../lib/schema.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
@@ -83,6 +84,11 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
    * The tables in the database.
    */
   readonly tables = new TableMap<RemoteModule>();
+  private ctx: DbContext<RemoteModule>;
+
+  constructor(ctx: DbContext<RemoteModule>) {
+    this.ctx = ctx;
+  }
 
   /**
    * Returns the table with the given name.
@@ -120,6 +126,7 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
     }
 
     const newTable = new TableCacheImpl<RemoteModule, N>(
+      this.ctx,
       tableDef
     ) as TableCache<RemoteModule, N>;
     this.tables.set(name, newTable);
