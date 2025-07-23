@@ -33,6 +33,7 @@ export type PendingCallback = {
  */
 export class TableCache<RowType = any> {
   private rows: Map<ComparablePrimitive, [RowType, number]>;
+  private ctx: DbContext;
   private tableTypeInfo: TableRuntimeTypeInfo;
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
 
@@ -42,7 +43,8 @@ export class TableCache<RowType = any> {
    * @param primaryKey column name designated as `#[primarykey]`
    * @param entityClass the entityClass
    */
-  constructor(tableTypeInfo: TableRuntimeTypeInfo) {
+  constructor(ctx: DbContext, tableTypeInfo: TableRuntimeTypeInfo) {
+    this.ctx = ctx;
     this.tableTypeInfo = tableTypeInfo;
     this.rows = new Map();
     this.emitter = new EventEmitter();
@@ -69,11 +71,11 @@ export class TableCache<RowType = any> {
     return Array.from(this.rows.values()).map(([row]) => row);
   }
 
-  remoteQuery(ctx: DbContext, filters: string): Promise<RowType[]> {
+  remoteQuery(filters: string): Promise<RowType[]> {
     return new Promise((resolve, reject) => {
       const name = this.name();
 
-      ctx.queryBuilder()
+      this.ctx.queryBuilder()
         .onResolved((ctx, tables) => resolve(tables.get(name)?.iter()))
         .onError((ctx, error) => reject(error))
         .query(`SELECT ${name}.* FROM ${name} ${filters}`);
