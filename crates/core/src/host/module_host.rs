@@ -750,6 +750,9 @@ impl ModuleHost {
                 stdb.with_auto_commit(workload, |mut_tx| {
                     mut_tx
                         .insert_st_client(caller_auth.claims.identity, caller_connection_id)
+                        .map_err(DBError::from)?;
+                    mut_tx
+                        .insert_st_client_credentials(caller_connection_id, &caller_auth.jwt_payload)
                         .map_err(DBError::from)
                 })
                 .inspect_err(|e| {

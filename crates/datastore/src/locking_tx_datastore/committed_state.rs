@@ -25,10 +25,7 @@ use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
 use itertools::Itertools;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
-use spacetimedb_lib::{
-    db::auth::StTableType,
-    Identity,
-};
+use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};

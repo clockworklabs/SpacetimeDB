@@ -363,8 +363,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .with_label_values(&database_identity, reducer_name);
 
         let workload = Workload::Reducer(ReducerContext::from(op.clone()));
-        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
+        let mut tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
         let _guard = metric_reducer_plus_query_duration.with_timer(tx.timer);
+
+        if let Some(Lifecycle::OnConnect) = reducer_def.lifecycle {
+            tx.insert_st_client_credentials(caller_connection_id, &client.clone().unwrap().auth.jwt_payload)
+                .unwrap();
+        };
 
         let mut tx_slot = self.instance.instance_env().tx.clone();
 
