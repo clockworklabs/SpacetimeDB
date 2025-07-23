@@ -242,6 +242,37 @@ type AnyType =
 
 export type ComparablePrimitive = number | string | String | boolean | bigint;
 
+type AT =
+  { tag: 'u8' } |
+  { tag: 'u16' } |
+  { tag: 'u32' } |
+  { tag: 'u64' } |
+  { tag: 'u128' } |
+  { tag: 'u256' } |
+  { tag: 'i8' } |
+  { tag: 'i16' } |
+  { tag: 'i32' } |
+  { tag: 'i64' } |
+  { tag: 'i128' } |
+  { tag: 'f32' } |
+  { tag: 'f64' } |
+  { tag: 'string' } |
+  { tag: 'bool' } |
+  { tag: 'product', value: PT } |
+  { tag: 'sum', value: ST };
+
+type PT = { elements: { name: string, element: AT }[] };
+type ST = { variants: { tag: string, ty: AT }[] };
+
+const at: AT = {
+  tag: 'product',
+  value: {
+    elements: [
+      { name: '__identity__', element: { tag: 'u256' } },
+    ],
+  },
+}
+
 /**
  * The SpacetimeDB Algebraic Type System (SATS) is a structural type system in
  * which a nominal type system can be constructed.
