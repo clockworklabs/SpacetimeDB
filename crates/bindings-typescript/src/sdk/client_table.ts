@@ -47,10 +47,7 @@ export type ClientTableMethods<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,
 > = {
-  remoteQuery(
-    ctx: DbContext<RemoteModule>,
-    filters: string
-  ): Promise<IterableIterator<
+  remoteQuery(filters: string): Promise<IterableIterator<
     Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
   >>;
 
