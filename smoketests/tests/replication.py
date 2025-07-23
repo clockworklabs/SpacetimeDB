@@ -75,7 +75,7 @@ class Cluster:
         leader_node_id = get_int(leader_node_tb)
 
         # Query leader hostname
-        sql = f"select network_addr from node where id={leader_node_id}"
+        sql = f"select network_addr from node_v2 where id={leader_node_id}"
         leader_host_tb = str(self.read_controldb(sql))
         lines = leader_host_tb.splitlines()
 
