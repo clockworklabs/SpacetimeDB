@@ -136,8 +136,9 @@ where
 
     let module_rx = leader.module_watcher().await.map_err(log_and_500)?;
 
+    let client_identity = auth.claims.identity;
     let client_id = ClientActorId {
-        identity: auth.identity,
+        identity: client_identity,
         connection_id,
         name: ctx.client_actor_index().next_client_name(),
     };
@@ -164,7 +165,15 @@ where
         }
 
         let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor).await
+        let client = match ClientConnection::spawn(
+            client_id,
+            auth.into(),
+            client_config,
+            leader.replica_id,
+            module_rx,
+            actor,
+        )
+        .await
         {
             Ok(s) => s,
             Err(e @ (ClientConnectedError::Rejected(_) | ClientConnectedError::OutOfEnergy)) => {
@@ -183,7 +192,7 @@ where
         // Clients that receive the token from the response headers should ignore this
         // message.
         let message = IdentityTokenMessage {
-            identity: auth.identity,
+            identity: client_identity,
             token: identity_token,
             connection_id,
         };

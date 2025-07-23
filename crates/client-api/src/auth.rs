@@ -6,7 +6,7 @@ use axum_extra::typed_header::TypedHeader;
 use headers::{authorization, HeaderMapExt};
 use http::{request, HeaderValue, StatusCode};
 use serde::{Deserialize, Serialize};
-use spacetimedb::auth::identity::SpacetimeIdentityClaims;
+use spacetimedb::auth::identity::{ConnectionAuthCtx, SpacetimeIdentityClaims};
 use spacetimedb::auth::identity::{JwtError, JwtErrorKind};
 use spacetimedb::auth::token_validation::{
     new_validator, DefaultValidator, TokenSigner, TokenValidationError, TokenValidator,
@@ -84,11 +84,23 @@ impl SpacetimeCreds {
 #[derive(Clone)]
 pub struct SpacetimeAuth {
     pub creds: SpacetimeCreds,
+    pub claims: SpacetimeIdentityClaims,
+    /*
     pub identity: Identity,
     pub subject: String,
     pub issuer: String,
+     */
     // The decoded JWT payload.
     pub raw_payload: String,
+}
+
+impl From<SpacetimeAuth> for ConnectionAuthCtx {
+    fn from(auth: SpacetimeAuth) -> Self {
+        ConnectionAuthCtx {
+            claims: auth.claims,
+            jwt_payload: auth.raw_payload.clone(),
+        }
+    }
 }
 
 use jsonwebtoken;
@@ -100,10 +112,10 @@ pub struct TokenClaims {
 }
 
 impl From<SpacetimeAuth> for TokenClaims {
-    fn from(claims: SpacetimeAuth) -> Self {
+    fn from(auth: SpacetimeAuth) -> Self {
         Self {
-            issuer: claims.issuer,
-            subject: claims.subject,
+            issuer: auth.claims.issuer,
+            subject: auth.claims.subject,
             // This will need to be changed when we care about audiencies.
             audience: Vec::new(),
         }
@@ -128,7 +140,7 @@ impl TokenClaims {
         &self,
         signer: &impl TokenSigner,
         expiry: Option<Duration>,
-    ) -> Result<String, JwtError> {
+    ) -> Result<(SpacetimeIdentityClaims, String), JwtError> {
         let iat = SystemTime::now();
         let exp = expiry.map(|dur| iat + dur);
         let claims = SpacetimeIdentityClaims {
@@ -139,10 +151,11 @@ impl TokenClaims {
             iat,
             exp,
         };
-        signer.sign(&claims)
+        let token = signer.sign(&claims)?;
+        Ok((claims, token))
     }
 
-    pub fn encode_and_sign(&self, signer: &impl TokenSigner) -> Result<String, JwtError> {
+    pub fn encode_and_sign(&self, signer: &impl TokenSigner) -> Result<(SpacetimeIdentityClaims, String), JwtError> {
         self.encode_and_sign_with_expiry(signer, None)
     }
 }
@@ -159,11 +172,8 @@ impl SpacetimeAuth {
             audience: vec!["spacetimedb".to_string()],
         };
 
-        let identity = claims.id();
-        let creds = {
-            let token = claims.encode_and_sign(ctx.jwt_auth_provider()).map_err(log_and_500)?;
-            SpacetimeCreds::from_signed_token(token)
-        };
+        let (claims, token) = claims.encode_and_sign(ctx.jwt_auth_provider()).map_err(log_and_500)?;
+        let creds = SpacetimeCreds::from_signed_token(token);
         // Pulling out the payload should never fail, since we just made it.
         let payload = creds
             .extract_jwt_payload_string()
@@ -171,9 +181,7 @@ impl SpacetimeAuth {
 
         Ok(Self {
             creds,
-            identity,
-            subject,
-            issuer: ctx.jwt_auth_provider().local_issuer().to_string(),
+            claims,
             raw_payload: payload,
         })
     }
@@ -181,7 +189,7 @@ impl SpacetimeAuth {
     /// Get the auth credentials as headers to be returned from an endpoint.
     pub fn into_headers(self) -> (TypedHeader<SpacetimeIdentity>, TypedHeader<SpacetimeIdentityToken>) {
         (
-            TypedHeader(SpacetimeIdentity(self.identity)),
+            TypedHeader(SpacetimeIdentity(self.claims.identity)),
             TypedHeader(SpacetimeIdentityToken(self.creds)),
         )
     }
@@ -189,7 +197,11 @@ impl SpacetimeAuth {
     // Sign a new token with the same claims and a new expiry.
     // Note that this will not change the issuer, so the private_key might not match.
     // We do this to create short-lived tokens that we will be able to verify.
-    pub fn re_sign_with_expiry(&self, signer: &impl TokenSigner, expiry: Duration) -> Result<String, JwtError> {
+    pub fn re_sign_with_expiry(
+        &self,
+        signer: &impl TokenSigner,
+        expiry: Duration,
+    ) -> Result<(SpacetimeIdentityClaims, String), JwtError> {
         TokenClaims::from(self.clone()).encode_and_sign_with_expiry(signer, Some(expiry))
     }
 }
@@ -275,7 +287,7 @@ mod tests {
             audience: vec!["spacetimedb".to_string()],
         };
         let id = claims.id();
-        let token = claims.encode_and_sign(&kp.private)?;
+        let (_, token) = claims.encode_and_sign(&kp.private)?;
         let decoded = kp.public.validate_token(&token).await?;
 
         assert_eq!(decoded.identity, id);
@@ -293,7 +305,7 @@ mod tests {
             subject: "test-subject".to_string(),
             audience: vec![dummy_audience.clone()],
         };
-        let token = claims.encode_and_sign(&kp.private)?;
+        let (_, token) = claims.encode_and_sign(&kp.private)?;
         let st_creds = SpacetimeCreds::from_signed_token(token);
         let payload = st_creds
             .extract_jwt_payload_string()
@@ -343,9 +355,7 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
         })?;
         let auth = SpacetimeAuth {
             creds,
-            identity: claims.identity,
-            subject: claims.subject,
-            issuer: claims.issuer,
+            claims,
             raw_payload: payload,
         };
         Ok(Self { auth: Some(auth) })

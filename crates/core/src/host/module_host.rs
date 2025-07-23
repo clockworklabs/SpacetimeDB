@@ -25,6 +25,7 @@ use derive_more::From;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
+use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
@@ -684,7 +685,7 @@ impl ModuleHost {
     /// In this case, the caller should terminate the connection.
     pub async fn call_identity_connected(
         &self,
-        caller_identity: Identity,
+        caller_auth: ConnectionAuthCtx,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ClientConnectedError> {
         let me = self.clone();
@@ -697,7 +698,7 @@ impl ModuleHost {
                 // If the call fails (as in, something unexpectedly goes wrong with WASM execution),
                 // abort the connection: we can't really recover.
                 let reducer_outcome = me.call_reducer_inner_with_inst(
-                    caller_identity,
+                    caller_auth.claims.identity,
                     Some(caller_connection_id),
                     None,
                     None,
@@ -739,7 +740,7 @@ impl ModuleHost {
 
                 let workload = Workload::Reducer(ReducerContext {
                     name: reducer_name.to_owned(),
-                    caller_identity,
+                    caller_identity: caller_auth.claims.identity,
                     caller_connection_id,
                     timestamp: Timestamp::now(),
                     arg_bsatn: Bytes::new(),
@@ -748,7 +749,7 @@ impl ModuleHost {
                 let stdb = me.module.replica_ctx().relational_db.clone();
                 stdb.with_auto_commit(workload, |mut_tx| {
                     mut_tx
-                        .insert_st_client(caller_identity, caller_connection_id)
+                        .insert_st_client(caller_auth.claims.identity, caller_connection_id)
                         .map_err(DBError::from)
                 })
                 .inspect_err(|e| {

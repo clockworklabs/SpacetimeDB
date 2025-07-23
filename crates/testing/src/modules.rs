@@ -184,7 +184,7 @@ impl CompiledModule {
                 .unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
-        let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().identity;
+        let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;
         let connection_id = generate_random_connection_id();
 
         let program_bytes = self.program_bytes().to_owned();
