@@ -381,8 +381,7 @@ impl ModuleValidator<'_> {
         let col = &mut table.columns[cdv.col_id.idx()];
         // First time we have a type for it, so decode it.
         let mut reader = &cdv.value[..];
-        println!("{reader:?}");
-        let ty = WithTypespace::new(&self.typespace, &col.ty);
+        let ty = WithTypespace::new(self.typespace, &col.ty);
         let field_value = match ty.deserialize(Deserializer::new(&mut reader)) {
             Ok(field_value) => Some(field_value),
             Err(decode_error) => {
