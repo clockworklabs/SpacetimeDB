@@ -303,6 +303,15 @@ namespace SpacetimeDB
             // This is a local operation -- it only looks at our indices and doesn't invoke user code.
             // So we don't need to wait for other tables to be updated to do it.
             // (And we need to do it before any PostApply is called.)
+            // Reminder: We need to loop through the removed entries to delete them prior to inserting the new entries,
+            // in order to avoid keys an error with the same key already added.
+            foreach (var (_, value) in wasRemoved)
+            {
+                if (value is Row oldRow)
+                {
+                    OnInternalDeleteHandler.Invoke(oldRow);
+                }
+            }
             foreach (var (_, value) in wasInserted)
             {
                 if (value is Row newRow)
@@ -333,14 +342,6 @@ namespace SpacetimeDB
                 else
                 {
                     throw new Exception($"Invalid row type for table {RemoteTableName}: {newValue.GetType().Name}");
-                }
-            }
-
-            foreach (var (_, value) in wasRemoved)
-            {
-                if (value is Row oldRow)
-                {
-                    OnInternalDeleteHandler.Invoke(oldRow);
                 }
             }
         }
