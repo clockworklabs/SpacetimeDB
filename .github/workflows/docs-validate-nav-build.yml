@@ -25,17 +25,10 @@ jobs:
         run: |
           npm install
 
-      - name: Check that all files are listed in nav.js
-        working-directory: docs
-        run: |
-          cp docs/nav.js docs/nav.mjs
-          find docs -name '*.md' | sed 's!^docs/!!' > scripts/docs-files.txt
-          node scripts/checkNav.mjs docs-files.txt
-
       - name: Backup existing nav.js
         working-directory: docs
         run: |
-          cp docs/nav.js docs/nav.js.original
+          mv docs/nav.js docs/nav.js.original
 
       - name: Build nav.ts
         working-directory: docs
@@ -46,3 +39,16 @@ jobs:
         working-directory: docs
         run: |
           diff -q docs/nav.js docs/nav.js.original || (echo "Generated nav.js differs from committed version. Run 'npm run build' and commit the updated file." && exit 1)
+
+      - name: Check that all files are listed in nav.js
+        working-directory: docs
+        run: |
+          cp docs/nav.js docs/nav.mjs
+          find docs -name '*.md' | sed 's!^docs/!!' > scripts/docs-files.txt
+          node scripts/checkNav.mjs docs-files.txt
+
+      - name: Restore original nav.js
+        working-directory: docs
+        if: success() || failure()
+        run: |
+          mv docs/nav.js.original docs/nav.js
