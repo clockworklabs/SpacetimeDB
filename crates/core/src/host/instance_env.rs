@@ -527,7 +527,7 @@ mod test {
     /// An `InstanceEnv` requires a `DatabaseLogger`
     fn temp_logger() -> Result<DatabaseLogger> {
         let temp = TempDir::new()?;
-        let path = ModuleLogsDir::from_path_unchecked(temp.into_path());
+        let path = ModuleLogsDir::from_path_unchecked(temp.keep());
         let path = path.today();
         Ok(DatabaseLogger::open(path))
     }

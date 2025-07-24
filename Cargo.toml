@@ -257,7 +257,7 @@ syntect = { version = "5.0.0", default-features = false, features = ["default-fa
 tabled = "0.14.0"
 tar = "0.4"
 tempdir = "0.3.7"
-tempfile = "3.8"
+tempfile = "3.20"
 termcolor = "1.2.0"
 thin-vec = "0.2.13"
 thiserror = "1.0.37"
@@ -293,7 +293,7 @@ windows-sys = "0.59"
 xdg = "2.5"
 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
 tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"] }
-jemalloc_pprof = { version = "0.7", features = ["symbolize", "flamegraph"] }
+jemalloc_pprof = { version = "0.8", features = ["symbolize", "flamegraph"] }
 zstd-framed = { version = "0.1.1", features = ["tokio"] }
 
 # Vendor the openssl we rely on, rather than depend on a

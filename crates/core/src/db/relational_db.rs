@@ -1708,7 +1708,7 @@ pub mod tests_utils {
     impl TempReplicaDir {
         pub fn new() -> io::Result<Self> {
             let dir = TempDir::with_prefix("stdb_test")?;
-            Ok(Self(ReplicaDir::from_path_unchecked(dir.into_path())))
+            Ok(Self(ReplicaDir::from_path_unchecked(dir.keep())))
         }
     }
     impl Deref for TempReplicaDir {
