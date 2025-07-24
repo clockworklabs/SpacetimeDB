@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const navPath = '../docs/nav.js';
+const navPath = '../docs/nav.mjs';
 
 const mdListPath = process.argv[2];
 if (!mdListPath) {
