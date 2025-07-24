@@ -40,6 +40,8 @@ jobs:
         run: |
           diff -q docs/nav.js docs/nav.js.original || (echo "Generated nav.js differs from committed version. Run 'npm run build' and commit the updated file." && exit 1)
 
+      # We do this after checking that nav.js matches nav.ts, to avoid confusing error messages if an author updates one but not the other.
+      # If the .ts and .js are in sync, it doesn't matter which one we check against here.
       - name: Check that all files are listed in nav.js
         working-directory: docs
         run: |
