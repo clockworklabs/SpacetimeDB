@@ -22,7 +22,7 @@ pub fn ensure_standalone_process() -> &'static SpacetimePaths {
             // TODO: This leaks the tempdir.
             //       We need the tempdir to live for the duration of the process,
             //       and all the options for post-`main` cleanup seem sketchy.
-            .into_path();
+            .keep();
         SpacetimePaths::from_root_dir(&RootDir(dir))
     });
 
