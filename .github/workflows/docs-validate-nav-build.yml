@@ -25,17 +25,17 @@ jobs:
         run: |
           npm install
 
-      - name: Backup existing nav.js
-        working-directory: docs
-        run: |
-          mv docs/nav.js docs/nav.js.original
-
       - name: Check that all files are listed in nav.js
         working-directory: docs
         run: |
           cp docs/nav.js docs/nav.mjs
           find docs -name '*.md' | sed 's!^docs/!!' > scripts/docs-files.txt
           node scripts/checkNav.mjs docs-files.txt
+
+      - name: Backup existing nav.js
+        working-directory: docs
+        run: |
+          mv docs/nav.js docs/nav.js.original
 
       - name: Build nav.ts
         working-directory: docs
