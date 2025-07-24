@@ -36,19 +36,19 @@ const extraInNav = navPaths.filter(p => !expectedPathSet.has(p));
 let failed = false;
 
 if (missingInNav.length > 0) {
-    console.error('❌ Files missing from nav:');
+    console.error('❌ New docs added missing from nav:');
     missingInNav.forEach(p => console.error(`- ${p}`));
     failed = true;
 }
 
 if (extraInNav.length > 0) {
-    console.error('❌ Files in nav but not in list:');
+    console.error('❌ Files listed in nav but not found on filesystem:');
     extraInNav.forEach(p => console.error(`- ${p}`));
     failed = true;
 }
 
 if (!failed) {
-    console.log('✅ nav and list match.');
+    console.log('✅ nav list matches filesystem.');
 } else {
     process.exit(1);
 }
