@@ -385,11 +385,11 @@ namespace SpacetimeDB.Types
 
         /// <summary>
         /// Subscribe to the following SQL queries.
-        /// 
+        ///
         /// This method returns immediately, with the data not yet added to the DbConnection.
         /// The provided callbacks will be invoked once the data is returned from the remote server.
         /// Data from all the provided queries will be returned at the same time.
-        /// 
+        ///
         /// See the SpacetimeDB SQL docs for more information on SQL syntax:
         /// <a href="https://spacetimedb.com/docs/sql">https://spacetimedb.com/docs/sql</a>
         /// </summary>
