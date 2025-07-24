@@ -14,17 +14,12 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void SendMessageHandler(ReducerEventContext ctx, string text);
-        public event SendMessageHandler? OnSendMessage;
+        public delegate void IdentityDisconnectedHandler(ReducerEventContext ctx);
+        public event IdentityDisconnectedHandler? OnIdentityDisconnected;
 
-        public void SendMessage(string text)
+        public bool InvokeIdentityDisconnected(ReducerEventContext ctx, Reducer.IdentityDisconnected args)
         {
-            conn.InternalCallReducer(new Reducer.SendMessage(text), this.SetCallReducerFlags.SendMessageFlags);
-        }
-
-        public bool InvokeSendMessage(ReducerEventContext ctx, Reducer.SendMessage args)
-        {
-            if (OnSendMessage == null)
+            if (OnIdentityDisconnected == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -36,9 +31,8 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnSendMessage(
-                ctx,
-                args.Text
+            OnIdentityDisconnected(
+                ctx
             );
             return true;
         }
@@ -48,28 +42,9 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class SendMessage : Reducer, IReducerArgs
+        public sealed partial class IdentityDisconnected : Reducer, IReducerArgs
         {
-            [DataMember(Name = "text")]
-            public string Text;
-
-            public SendMessage(string Text)
-            {
-                this.Text = Text;
-            }
-
-            public SendMessage()
-            {
-                this.Text = "";
-            }
-
-            string IReducerArgs.ReducerName => "send_message";
+            string IReducerArgs.ReducerName => "identity_disconnected";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags SendMessageFlags;
-        public void SendMessage(CallReducerFlags flags) => SendMessageFlags = flags;
     }
 }

@@ -1,4 +1,4 @@
-{
+﻿{
   Events: {
     Log: SpacetimeDBClient: Connecting to wss://spacetimedb.com example,
     OnConnect: {
@@ -18,8 +18,8 @@
         ConnectionId: Guid_1
       },
       user: {
-        Identity: Identity_1,
-        Online: true
+        identity: Identity_1,
+        online: true
       }
     },
     OnInsertUser: {
@@ -35,14 +35,26 @@
         ConnectionId: Guid_1
       },
       user: {
-        Identity: Identity_2,
-        Online: true
+        identity: Identity_2,
+        online: true
       }
     },
     OnInsertUser: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: 1718487763059031,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_3,
+            CallerConnectionId: Guid_2,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.IdentityConnected
+            }
+          }
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
@@ -52,14 +64,27 @@
         ConnectionId: Guid_1
       },
       user: {
-        Identity: Identity_3,
-        Online: true
+        identity: Identity_3,
+        online: true
       }
     },
     OnUpdateUser: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: 1718487768057579,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_1,
+            CallerConnectionId: Guid_3,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SetName,
+              name: A
+            }
+          }
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
@@ -69,19 +94,61 @@
         ConnectionId: Guid_1
       },
       oldUser: {
-        Identity: Identity_1,
-        Online: true
+        identity: Identity_1,
+        online: true
       },
       newUser: {
-        Identity: Identity_1,
-        Name: A,
-        Online: true
+        identity: Identity_1,
+        name: A,
+        online: true
       }
+    },
+    OnSetName: {
+      Event: {
+        Timestamp: 1718487768057579,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_1,
+        CallerConnectionId: Guid_3,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SetName,
+          name: A
+        }
+      },
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 3
+        }
+      },
+      Reducers: {},
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     },
     OnInsertMessage: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: 1718487775346381,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_3,
+            CallerConnectionId: Guid_2,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SendMessage,
+              text: Hello, A!
+            }
+          }
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
@@ -91,15 +158,57 @@
         ConnectionId: Guid_1
       },
       message: {
-        Sender: Identity_3,
-        Sent: 1718487775346381,
-        Text: Hello, A!
+        sender: Identity_3,
+        sent: 1718487775346381,
+        text: Hello, A!
       }
+    },
+    OnSendMessage: {
+      Event: {
+        Timestamp: 1718487775346381,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_3,
+        CallerConnectionId: Guid_2,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Hello, A!
+        }
+      },
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 3
+        }
+      },
+      Reducers: {},
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     },
     OnUpdateUser: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: 1718487777307855,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_3,
+            CallerConnectionId: Guid_2,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SetName,
+              name: B
+            }
+          }
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
@@ -109,19 +218,61 @@
         ConnectionId: Guid_1
       },
       oldUser: {
-        Identity: Identity_3,
-        Online: true
+        identity: Identity_3,
+        online: true
       },
       newUser: {
-        Identity: Identity_3,
-        Name: B,
-        Online: true
+        identity: Identity_3,
+        name: B,
+        online: true
       }
+    },
+    OnSetName: {
+      Event: {
+        Timestamp: 1718487777307855,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_3,
+        CallerConnectionId: Guid_2,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SetName,
+          name: B
+        }
+      },
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 3
+        }
+      },
+      Reducers: {},
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     },
     OnInsertMessage: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: 1718487783175083,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_1,
+            CallerConnectionId: Guid_3,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SendMessage,
+              text: Hello, B!
+            }
+          }
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
@@ -131,15 +282,57 @@
         ConnectionId: Guid_1
       },
       message: {
-        Sender: Identity_1,
-        Sent: 1718487783175083,
-        Text: Hello, B!
+        sender: Identity_1,
+        sent: 1718487783175083,
+        text: Hello, B!
       }
+    },
+    OnSendMessage: {
+      Event: {
+        Timestamp: 1718487783175083,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_1,
+        CallerConnectionId: Guid_3,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Hello, B!
+        }
+      },
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 3
+        }
+      },
+      Reducers: {},
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     },
     OnInsertMessage: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: 1718487787645364,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_3,
+            CallerConnectionId: Guid_2,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SendMessage,
+              text: Goodbye!
+            }
+          }
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
@@ -149,15 +342,56 @@
         ConnectionId: Guid_1
       },
       message: {
-        Sender: Identity_3,
-        Sent: 1718487787645364,
-        Text: Goodbye!
+        sender: Identity_3,
+        sent: 1718487787645364,
+        text: Goodbye!
       }
+    },
+    OnSendMessage: {
+      Event: {
+        Timestamp: 1718487787645364,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_3,
+        CallerConnectionId: Guid_2,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Goodbye!
+        }
+      },
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 3
+        }
+      },
+      Reducers: {},
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     },
     OnUpdateUser: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: 1718487791901504,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_3,
+            CallerConnectionId: Guid_2,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.IdentityDisconnected
+            }
+          }
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
@@ -167,20 +401,33 @@
         ConnectionId: Guid_1
       },
       oldUser: {
-        Identity: Identity_3,
-        Name: B,
-        Online: true
+        identity: Identity_3,
+        name: B,
+        online: true
       },
       newUser: {
-        Identity: Identity_3,
-        Name: B,
-        Online: false
+        identity: Identity_3,
+        name: B,
+        online: false
       }
     },
     OnInsertMessage: {
       eventContext: {
         Event: {
-          $type: Event<Reducer>.UnknownTransaction
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: 1718487794937841,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_1,
+            CallerConnectionId: Guid_3,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SendMessage,
+              text: Goodbye!
+            }
+          }
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
@@ -190,49 +437,78 @@
         ConnectionId: Guid_1
       },
       message: {
-        Sender: Identity_1,
-        Sent: 1718487794937841,
-        Text: Goodbye!
+        sender: Identity_1,
+        sent: 1718487794937841,
+        text: Goodbye!
       }
+    },
+    OnSendMessage: {
+      Event: {
+        Timestamp: 1718487794937841,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_1,
+        CallerConnectionId: Guid_3,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Goodbye!
+        }
+      },
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 3
+        }
+      },
+      Reducers: {},
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     }
   },
   FinalSnapshot: {
     User: [
       {
-        Identity: Identity_1,
-        Name: A,
-        Online: true
+        identity: Identity_1,
+        name: A,
+        online: true
       },
       {
-        Identity: Identity_2,
-        Online: true
+        identity: Identity_2,
+        online: true
       },
       {
-        Identity: Identity_3,
-        Name: B,
-        Online: false
+        identity: Identity_3,
+        name: B,
+        online: false
       }
     ],
     Message: [
       {
-        Sender: Identity_3,
-        Sent: 1718487775346381,
-        Text: Hello, A!
+        sender: Identity_3,
+        sent: 1718487775346381,
+        text: Hello, A!
       },
       {
-        Sender: Identity_1,
-        Sent: 1718487783175083,
-        Text: Hello, B!
+        sender: Identity_1,
+        sent: 1718487783175083,
+        text: Hello, B!
       },
       {
-        Sender: Identity_3,
-        Sent: 1718487787645364,
-        Text: Goodbye!
+        sender: Identity_3,
+        sent: 1718487787645364,
+        text: Goodbye!
       },
       {
-        Sender: Identity_1,
-        Sent: 1718487794937841,
-        Text: Goodbye!
+        sender: Identity_1,
+        sent: 1718487794937841,
+        text: Goodbye!
       }
     ]
   },
