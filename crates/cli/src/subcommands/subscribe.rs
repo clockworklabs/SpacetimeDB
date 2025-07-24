@@ -178,15 +178,23 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         task.await
     };
 
-    // Close the connection gracefully, unless it's a websocket error,
-    // in which case the connection is most likely already unusable.
-    if !matches!(res, Err(Error::Subscribe { .. } | Error::Websocket { .. })) {
-        // Ignore errors here, we're going to drop the connection anyways.
-        let _ = ws.close(None).await;
-    }
-
-    res.or_else(|e| if e.is_closed_normally() { Ok(()) } else { Err(e) })
-        .map_err(anyhow::Error::from)
+    // Close the connection gracefully.
+    // This will return an error if the server already closed,
+    // or the connection is in a bad state.
+    // The error (if any) relevant to the user is already stored in `res`,
+    // so we can ignore errors here -- graceful close is basically a
+    // courtesy to the server.
+    let _ = ws.close(None).await;
+    // The server closing the connection is not considered an error,
+    // but any other error is.
+    res.or_else(|e| {
+        if e.is_server_closed_connection() {
+            Ok(())
+        } else {
+            Err(e)
+        }
+    })
+    .map_err(anyhow::Error::from)
 }
 
 #[derive(Debug, Error)]
@@ -217,7 +225,7 @@ enum Error {
 }
 
 impl Error {
-    fn is_closed_normally(&self) -> bool {
+    fn is_server_closed_connection(&self) -> bool {
         matches!(
             self,
             Self::Websocket {
