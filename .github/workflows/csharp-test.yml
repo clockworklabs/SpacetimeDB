@@ -85,7 +85,7 @@ jobs:
           # version, which would make this `git diff` check very brittle if included.
           PATTERN='^// This was generated using spacetimedb cli version.*'
           git diff --exit-code --ignore-matching-lines="$PATTERN" -- . || {
-              echo "Error: Bindings have changed. Please generate bindings again and commit them to this branch."
+              echo "Error: quickstart-chat bindings have changed. Please regenerate the bindings and commit them to this branch."
               exit 1
           }
 
