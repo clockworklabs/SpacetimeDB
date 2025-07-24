@@ -31,7 +31,7 @@ use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{sats, Timestamp};
 
-use super::subscribe::handle_websocket;
+use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
 #[derive(Deserialize)]
 pub struct CallParams {
@@ -797,7 +797,7 @@ pub struct DatabaseRoutes<S> {
 
 impl<S> Default for DatabaseRoutes<S>
 where
-    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
+    S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Clone + 'static,
 {
     fn default() -> Self {
         use axum::routing::{delete, get, post, put};

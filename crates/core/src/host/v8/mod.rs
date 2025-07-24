@@ -1,3 +1,4 @@
+use super::module_host::CallReducerParams;
 use crate::{
     host::{
         module_common::{build_common_module_from_raw, ModuleCommon},
@@ -11,7 +12,9 @@ use anyhow::anyhow;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use std::sync::{Arc, LazyLock};
 
-use super::module_host::CallReducerParams;
+mod error;
+mod from_value;
+mod to_value;
 
 /// The V8 runtime, for modules written in e.g., JS or TypeScript.
 #[derive(Default)]
@@ -22,6 +25,13 @@ pub struct V8Runtime {
 impl ModuleRuntime for V8Runtime {
     fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
         V8_RUNTIME_GLOBAL.make_actor(mcc)
+    }
+}
+
+#[cfg(test)]
+impl V8Runtime {
+    fn init_for_test() {
+        LazyLock::force(&V8_RUNTIME_GLOBAL);
     }
 }
 

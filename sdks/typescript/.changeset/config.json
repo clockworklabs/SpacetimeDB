@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/@changesets/config@3.0.2/schema.json",
   "changelog": [
     "@changesets/changelog-github",
-    { "repo": "clockworklabs/spacetimedb-typescript-sdk" }
+    { "repo": "clockworklabs/SpacetimeDB" }
   ],
   "commit": false,
   "fixed": [],

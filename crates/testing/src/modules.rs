@@ -7,9 +7,10 @@ use std::time::Instant;
 
 use spacetimedb::config::CertificateAuthority;
 use spacetimedb::messages::control_db::HostType;
+use spacetimedb::util::jobs::JobCores;
 use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
-use spacetimedb_client_api::routes::subscribe::generate_random_connection_id;
+use spacetimedb_client_api::routes::subscribe::{generate_random_connection_id, WebSocketOptions};
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use spacetimedb_schema::def::ModuleDef;
 use tokio::runtime::{Builder, Runtime};
@@ -178,10 +179,17 @@ impl CompiledModule {
         };
 
         let certs = CertificateAuthority::in_cli_config_dir(&paths.cli_config_dir);
-        let env =
-            spacetimedb_standalone::StandaloneEnv::init(config, &certs, paths.data_dir.into(), Default::default())
-                .await
-                .unwrap();
+        let env = spacetimedb_standalone::StandaloneEnv::init(
+            spacetimedb_standalone::StandaloneOptions {
+                db_config: config,
+                websocket: WebSocketOptions::default(),
+            },
+            &certs,
+            paths.data_dir.into(),
+            JobCores::default(),
+        )
+        .await
+        .unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;
