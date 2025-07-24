@@ -85,11 +85,6 @@ impl SpacetimeCreds {
 pub struct SpacetimeAuth {
     pub creds: SpacetimeCreds,
     pub claims: SpacetimeIdentityClaims,
-    /*
-    pub identity: Identity,
-    pub subject: String,
-    pub issuer: String,
-     */
     // The decoded JWT payload.
     pub raw_payload: String,
 }

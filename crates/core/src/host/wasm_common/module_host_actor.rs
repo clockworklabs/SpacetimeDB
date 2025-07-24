@@ -366,9 +366,31 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let mut tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
         let _guard = metric_reducer_plus_query_duration.with_timer(tx.timer);
 
+        // For OnConnect, we insert the credentials before the reducer, so we can look them up
+        // inside that reducer.
+        // If the connection is rejected, this should get rolled back.
         if let Some(Lifecycle::OnConnect) = reducer_def.lifecycle {
-            tx.insert_st_client_credentials(caller_connection_id, &client.clone().unwrap().auth.jwt_payload)
-                .unwrap();
+            let client_clone = match client.clone() {
+                Some(client) => client,
+                None => {
+                    log::error!("OnConnect reducer called without a client");
+                    return ReducerCallResult {
+                        outcome: ReducerOutcome::Failed("OnConnect reducer called without a client".into()),
+                        energy_used: EnergyQuanta::ZERO,
+                        execution_duration: Duration::ZERO,
+                    };
+                }
+            };
+            if let Some(err) = tx
+                .insert_st_client_credentials(caller_connection_id, &client_clone.auth.jwt_payload)
+                .err()
+            {
+                return ReducerCallResult {
+                    outcome: ReducerOutcome::Failed(format!("Error inserting client credentials: {err}")),
+                    energy_used: EnergyQuanta::ZERO,
+                    execution_duration: Duration::ZERO,
+                };
+            }
         };
 
         let mut tx_slot = self.instance.instance_env().tx.clone();
