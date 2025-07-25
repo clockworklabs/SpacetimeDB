@@ -469,23 +469,6 @@ pub struct RawProcedureDefV9 {
     /// The types and optional names of the parameters, in order.
     /// This `ProductType` need not be registered in the typespace.
     pub params: ProductType,
-
-    /// If the procedure has designated an `on_abort` reducer, it should be marked here.
-    pub on_abort: OnAbortBehavior,
-}
-
-/// Possible behaviors when a procedure is aborted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SpacetimeType)]
-#[cfg_attr(feature = "enum-map", derive(enum_map::Enum))]
-#[sats(crate = crate)]
-#[non_exhaustive]
-pub enum OnAbortBehavior {
-    /// Silently ignore the terminated procedure.
-    Ignore,
-
-    /// Invoke a reducer.
-    CallHandler(RawIdentifier),
-    // TODO: Add `Retry` variant?
 }
 
 /// A builder for a [`RawModuleDefV9`].
@@ -666,18 +649,12 @@ impl RawModuleDefV9Builder {
     /// The arguments `ProductType` need not be registered in the typespace.
     ///
     /// The `&mut ProcedureContext` first argument to the procedure should not be included in the `params`.
-    pub fn add_procedure(
-        &mut self,
-        name: impl Into<RawIdentifier>,
-        params: spacetimedb_sats::ProductType,
-        on_abort: Option<impl Into<RawIdentifier>>,
-    ) {
+    pub fn add_procedure(&mut self, name: impl Into<RawIdentifier>, params: spacetimedb_sats::ProductType) {
         self.module
             .misc_exports
             .push(RawMiscModuleExportV9::Procedure(RawProcedureDefV9 {
                 name: name.into(),
                 params,
-                on_abort: on_abort.map(Into::into),
             }))
     }
 

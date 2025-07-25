@@ -994,11 +994,6 @@ pub struct ProcedureDef {
     ///
     /// This `ProductType` need not be registered in the module's `TypespaceForGenerate`.
     pub params_for_generate: ProductTypeDef,
-
-    /// The reducer to invoke when the procedure is aborted, if any.
-    ///
-    /// Not currently validated.
-    pub on_abort: Option<Identifier>,
 }
 
 impl From<ProcedureDef> for RawProcedureDefV9 {
@@ -1006,7 +1001,6 @@ impl From<ProcedureDef> for RawProcedureDefV9 {
         RawProcedureDefV9 {
             name: val.name.into(),
             params: val.params,
-            on_abort: val.on_abort.map(Into::into),
         }
     }
 }

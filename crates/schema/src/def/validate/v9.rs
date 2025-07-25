@@ -96,7 +96,6 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
             .and_then(|(mut tables, types, reducers, procedures)| {
                 (
                     check_scheduled_functions_exist(&mut tables, &reducers, &procedures),
-                    check_on_abort_reducers_exist(&procedures, &reducers),
                     check_function_names_are_unique(&reducers, &procedures),
                 )
                     .combine_errors()?;
@@ -377,7 +376,7 @@ impl ModuleValidator<'_> {
     }
 
     fn validate_procedure_def(&mut self, procedure_def: RawProcedureDefV9) -> Result<ProcedureDef> {
-        let RawProcedureDefV9 { name, params, on_abort } = procedure_def;
+        let RawProcedureDefV9 { name, params } = procedure_def;
 
         let params_for_generate = self.params_for_generate(&params, |position, arg_name| TypeLocation::ProcedureArg {
             procedure_name: (&*name).into(),
@@ -389,12 +388,7 @@ impl ModuleValidator<'_> {
         // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
         let name = identifier(name);
 
-        // We'll validate that the `on_abort` handler exists and is a reducer later,
-        // in `check_on_abort_reducers_exist`.
-        // For now, we just check that it's a valid identifier.
-        let on_abort = on_abort.map(identifier).transpose();
-
-        let (name, params_for_generate, on_abort) = (name, params_for_generate, on_abort).combine_errors()?;
+        let (name, params_for_generate) = (name, params_for_generate).combine_errors()?;
 
         Ok(ProcedureDef {
             name,
@@ -403,7 +397,6 @@ impl ModuleValidator<'_> {
                 elements: params_for_generate,
                 recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
             },
-            on_abort,
         })
     }
 
@@ -970,31 +963,6 @@ fn check_scheduled_functions_exist(
             }
         })
         .collect_all_errors()
-}
-
-fn check_on_abort_reducers_exist(
-    procedures: &IndexMap<Identifier, ProcedureDef>,
-    reducers: &IndexMap<Identifier, ReducerDef>,
-) -> Result<()> {
-    procedures.values().map(|procedure_def| -> Result<()> {
-        if let Some(on_abort) = &procedure_def.on_abort {
-            if let Some(reducer) = reducers.get(on_abort) {
-                todo!("Figure out the correct argument types for on_abort reducers. How do they get the original caller and call time?")
-            } else if procedures.contains_key(on_abort) {
-                Err(ValidationError::OnAbortHandlerIsProcedure {
-                    procedure: procedure_def.name.clone(),
-                    other_procedure: on_abort.clone(),
-                }.into())
-            } else {
-                Err(ValidationError::MissingOnAbortHandler {
-                    procedure: procedure_def.name.clone(),
-                    reducer: on_abort.clone()
-                }.into())
-            }
-        } else {
-            Ok(())
-        }
-    }).collect_all_errors()
 }
 
 fn check_function_names_are_unique(
