@@ -454,10 +454,10 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             }
                         }
 
-                        fn visit_seq<__E: #spacetimedb_lib::de::Error>(self, index: usize, name: &str) -> Result<Self::Output, __E> {
+                        fn visit_seq(self, index: usize) -> Self::Output {
                             match index {
-                                #(#iter_n4 => Ok(__ProductFieldIdent::#field_names),)*
-                                _ => Err(#spacetimedb_lib::de::Error::unknown_field_name(name, &self)),
+                                #(#iter_n4 => __ProductFieldIdent::#field_names,)*
+                                _ => core::unreachable!(),
                             }
                         }
                     }

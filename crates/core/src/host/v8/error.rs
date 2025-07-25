@@ -33,3 +33,13 @@ impl<M: IntoJsString> IntoException for TypeError<M> {
         Exception::type_error(scope, msg)
     }
 }
+
+#[derive(Debug)]
+pub(super) struct ExceptionThrown {
+    _priv: (),
+}
+
+/// Indicates that the JS side had thrown an exception.
+pub(super) fn exception_already_thrown() -> ExceptionThrown {
+    ExceptionThrown { _priv: () }
+}
