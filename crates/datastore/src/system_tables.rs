@@ -60,6 +60,11 @@ pub const ST_SCHEDULED_ID: TableId = TableId(9);
 
 /// The static ID of the table that defines the row level security (RLS) policies
 pub const ST_ROW_LEVEL_SECURITY_ID: TableId = TableId(10);
+
+/// The static ID of the table that stores the credentials for each connection.
+pub const ST_CONNECTION_CREDENTIALS_ID: TableId = TableId(11);
+
+pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
 pub const ST_COLUMN_NAME: &str = "st_column";
 pub const ST_SEQUENCE_NAME: &str = "st_sequence";
@@ -97,7 +102,7 @@ pub enum SystemTable {
     st_row_level_security,
 }
 
-pub fn system_tables() -> [TableSchema; 10] {
+pub fn system_tables() -> [TableSchema; 11] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -109,6 +114,7 @@ pub fn system_tables() -> [TableSchema; 10] {
         st_var_schema(),
         st_scheduled_schema(),
         st_row_level_security_schema(),
+        st_connection_credential_schema(),
         // Is important this is always last, so the starting sequence for each
         // system table is correct.
         st_sequence_schema(),
@@ -149,8 +155,9 @@ pub(crate) const ST_CLIENT_IDX: usize = 5;
 pub(crate) const ST_VAR_IDX: usize = 6;
 pub(crate) const ST_SCHEDULED_IDX: usize = 7;
 pub(crate) const ST_ROW_LEVEL_SECURITY_IDX: usize = 8;
+pub(crate) const ST_CONNECTION_CREDENTIALS_IDX: usize = 9;
 // Must be the last index in the array.
-pub(crate) const ST_SEQUENCE_IDX: usize = 9;
+pub(crate) const ST_SEQUENCE_IDX: usize = 10;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -248,6 +255,13 @@ st_fields_enum!(enum StClientFields {
     "identity", Identity = 0,
     "connection_id", ConnectionId = 1,
 });
+
+// WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum StConnectionCredentialsFields {
+    "connection_id", ConnectionId = 0,
+    "jwt_payload", JwtPayload = 1,
+});
+
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StVarFields {
     "name", Name = 0,
@@ -341,6 +355,19 @@ fn system_module_def() -> ModuleDef {
         .with_type(TableType::System);
     // TODO: add empty unique constraint here, once we've implemented those.
 
+    let st_connection_credentials_type = builder.add_type::<StConnectionCredentialsRow>();
+    // let st_connection_credentials_unique_cols = [StConnectionCredentialsFields::ConnectionId];
+    builder
+        .build_table(
+            ST_CONNECTION_CREDENTIALS_NAME,
+            *st_connection_credentials_type.as_ref().expect("should be ref"),
+        )
+        .with_type(TableType::System)
+        .with_unique_constraint(StConnectionCredentialsFields::ConnectionId)
+        .with_index_no_accessor_name(btree(StConnectionCredentialsFields::ConnectionId))
+        .with_access(v9::TableAccess::Private)
+        .with_primary_key(StConnectionCredentialsFields::ConnectionId);
+
     let st_client_type = builder.add_type::<StClientRow>();
     let st_client_unique_cols = [StClientFields::Identity, StClientFields::ConnectionId];
     builder
@@ -382,6 +409,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StClientFields>(&result, ST_CLIENT_NAME);
     validate_system_table::<StVarFields>(&result, ST_VAR_NAME);
     validate_system_table::<StScheduledFields>(&result, ST_SCHEDULED_NAME);
+    validate_system_table::<StConnectionCredentialsFields>(&result, ST_CONNECTION_CREDENTIALS_NAME);
 
     result
 }
@@ -442,6 +470,10 @@ fn st_client_schema() -> TableSchema {
     st_schema(ST_CLIENT_NAME, ST_CLIENT_ID)
 }
 
+fn st_connection_credential_schema() -> TableSchema {
+    st_schema(ST_CONNECTION_CREDENTIALS_NAME, ST_CONNECTION_CREDENTIALS_ID)
+}
+
 fn st_scheduled_schema() -> TableSchema {
     st_schema(ST_SCHEDULED_NAME, ST_SCHEDULED_ID)
 }
@@ -466,6 +498,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_ROW_LEVEL_SECURITY_ID => Some(st_row_level_security_schema()),
         ST_MODULE_ID => Some(st_module_schema()),
         ST_CLIENT_ID => Some(st_client_schema()),
+        ST_CONNECTION_CREDENTIALS_ID => Some(st_connection_credential_schema()),
         ST_VAR_ID => Some(st_var_schema()),
         ST_SCHEDULED_ID => Some(st_scheduled_schema()),
         _ => None,
@@ -925,6 +958,18 @@ impl From<StModuleRow> for ProductValue {
 pub struct StClientRow {
     pub identity: IdentityViaU256,
     pub connection_id: ConnectionIdViaU128,
+}
+
+/// System table [ST_CONNECTION_CREDENTIALS_NAME]
+///
+/// | connection_id                      | jwt_payload                                             |
+/// |------------------------------------|---------------------------------------------------------|
+/// | 0x6bdea3ab517f5857dc9b1b5fe99e1b14 | '{"iss":"issuer","sub":"user-id","iat":1629212345,...}' |
+#[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StConnectionCredentialsRow {
+    pub connection_id: ConnectionIdViaU128,
+    pub jwt_payload: String,
 }
 
 impl From<StClientRow> for ProductValue {

@@ -10,6 +10,7 @@ use super::{
 };
 use crate::execution_context::ExecutionContext;
 use crate::execution_context::Workload;
+use crate::system_tables::{StConnectionCredentialsFields, StConnectionCredentialsRow, ST_CONNECTION_CREDENTIALS_ID};
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
     error::{IndexError, SequenceError, TableError},
@@ -1357,6 +1358,36 @@ impl MutTxId {
         self.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
     }
 
+    pub fn insert_st_client_credentials(&mut self, connection_id: ConnectionId, jwt_payload: &str) -> Result<()> {
+        let row = &StConnectionCredentialsRow {
+            connection_id: connection_id.into(),
+            jwt_payload: jwt_payload.to_owned(),
+        };
+        self.insert_via_serialize_bsatn(ST_CONNECTION_CREDENTIALS_ID, row)
+            .map(|_| ())
+    }
+
+    pub fn delete_st_client_credentials(
+        &mut self,
+        database_identity: Identity,
+        connection_id: ConnectionId,
+    ) -> Result<()> {
+        if let Some(ptr) = self
+            .iter_by_col_eq(
+                ST_CONNECTION_CREDENTIALS_ID,
+                StConnectionCredentialsFields::ConnectionId,
+                &connection_id.into(),
+            )?
+            .next()
+            .map(|row| row.pointer())
+        {
+            self.delete(ST_CONNECTION_CREDENTIALS_ID, ptr).map(drop)
+        } else {
+            log::warn!("[{database_identity}]: delete_st_client_credentials: attempting to credentials for missing connection id ({connection_id})");
+            Ok(())
+        }
+    }
+
     pub fn delete_st_client(
         &mut self,
         identity: Identity,
@@ -1378,11 +1409,11 @@ impl MutTxId {
             .next()
             .map(|row| row.pointer())
         {
-            self.delete(ST_CLIENT_ID, ptr).map(drop)
+            self.delete(ST_CLIENT_ID, ptr).map(drop)?
         } else {
             log::error!("[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident");
-            Ok(())
         }
+        self.delete_st_client_credentials(database_identity, connection_id)
     }
 
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
