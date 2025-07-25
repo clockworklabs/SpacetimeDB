@@ -22,18 +22,46 @@ impl SqlFrom {
     }
 }
 
-/// An inner join in a FROM clause
+/// A join in a FROM clause
 #[derive(Debug)]
-pub struct SqlJoin {
+pub enum SqlJoin {
+    Cross(CrossJoin),
+    Inner(InnerJoin),
+    Left(OuterJoin),
+}
+
+impl SqlJoin {
+    pub fn has_unqualified_vars(&self) -> bool {
+        match self {
+            SqlJoin::Cross(_) => false,
+            SqlJoin::Inner(InnerJoin { on: None, .. }) => false,
+            SqlJoin::Inner(InnerJoin { on: Some(on), .. }) => on.has_unqualified_vars(),
+            SqlJoin::Left(OuterJoin { on, .. }) => on.has_unqualified_vars(),
+        }
+    }
+}
+
+/// Cross join
+#[derive(Debug)]
+pub struct CrossJoin {
+    pub var: SqlIdent,
+    pub alias: SqlIdent,
+}
+
+/// Inner join
+#[derive(Debug)]
+pub struct InnerJoin {
     pub var: SqlIdent,
     pub alias: SqlIdent,
     pub on: Option<SqlExpr>,
 }
 
-impl SqlJoin {
-    pub fn has_unqualified_vars(&self) -> bool {
-        self.on.as_ref().is_some_and(|expr| expr.has_unqualified_vars())
-    }
+/// Outer join
+#[derive(Debug)]
+pub struct OuterJoin {
+    pub var: SqlIdent,
+    pub alias: SqlIdent,
+    pub on: SqlExpr,
 }
 
 /// A projection expression in a SELECT clause
