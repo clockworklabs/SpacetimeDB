@@ -25,7 +25,7 @@ mergeInto(LibraryManager.library, {
             var uri = UTF8ToString(uriPtr);
             var protocol = UTF8ToString(protocolPtr);
             var authToken = UTF8ToString(authTokenPtr);
-                        if (authToken)
+            if (authToken)
             {
                 var tokenUrl = new URL('v1/identity/websocket-token', host);
                 tokenUrl.protocol = host.startsWith("wss://") ? 'https:' : 'http:';
