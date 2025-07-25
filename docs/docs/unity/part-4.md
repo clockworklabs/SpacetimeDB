@@ -630,6 +630,6 @@ There's still plenty more we can do to build this into a proper game though. For
 
 Fortunately, we've done that for you! If you'd like to check out the completed tutorial game, with these additional features, you can download it on GitHub:
 
-https://github.com/ClockworkLabs/Blackholio
+https://github.com/ClockworkLabs/tree/master/demo/Blackholio
 
-If you have any suggestions or comments on the tutorial, either open an issue in our [docs repo](https://github.com/ClockworkLabs/spacetime-docs), or join our Discord (https://discord.gg/SpacetimeDB) and chat with us! 
+If you have any suggestions or comments on the tutorial, either [open an issue](https://github.com/clockworklabs/SpacetimeDB/issues/new), or join our Discord (https://discord.gg/SpacetimeDB) and chat with us!
