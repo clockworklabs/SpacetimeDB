@@ -12,6 +12,7 @@ use spacetimedb_schema::schema::TableSchema;
 use crate::{compile::compile_select, plan::ProjectPlan};
 
 /// A plan for mutating a table in the database
+#[derive(Debug)]
 pub enum MutationPlan {
     Insert(InsertPlan),
     Delete(DeletePlan),
@@ -30,6 +31,7 @@ impl MutationPlan {
 }
 
 /// A plan for inserting rows into a table
+#[derive(Debug)]
 pub struct InsertPlan {
     pub table: Arc<TableSchema>,
     pub rows: Vec<ProductValue>,
@@ -44,6 +46,7 @@ impl From<TableInsert> for InsertPlan {
 }
 
 /// A plan for deleting rows from a table
+#[derive(Debug)]
 pub struct DeletePlan {
     pub table: Arc<TableSchema>,
     pub filter: ProjectPlan,
@@ -77,6 +80,7 @@ impl DeletePlan {
 }
 
 /// A plan for updating rows in a table
+#[derive(Debug)]
 pub struct UpdatePlan {
     pub table: Arc<TableSchema>,
     pub columns: Vec<(ColId, AlgebraicValue)>,
