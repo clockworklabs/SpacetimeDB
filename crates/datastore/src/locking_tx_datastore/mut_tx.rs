@@ -245,7 +245,7 @@ impl MutTxId {
                 table_id: schedule.table_id,
                 schedule_id: ScheduleId::SENTINEL,
                 schedule_name: schedule.schedule_name,
-                reducer_name: schedule.reducer_name,
+                reducer_name: schedule.function_name,
                 at_column: schedule.at_column,
             };
             let id = self
