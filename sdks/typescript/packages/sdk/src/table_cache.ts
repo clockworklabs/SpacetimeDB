@@ -5,6 +5,7 @@ import {
   BinaryWriter,
   type EventContextInterface,
 } from './db_connection_impl.ts';
+import type { DbContext } from './db_context.ts';
 import { stdbLogger } from './logger.ts';
 import type { ComparablePrimitive } from './algebraic_type.ts';
 
@@ -32,6 +33,7 @@ export type PendingCallback = {
  */
 export class TableCache<RowType = any> {
   private rows: Map<ComparablePrimitive, [RowType, number]>;
+  private ctx: DbContext;
   private tableTypeInfo: TableRuntimeTypeInfo;
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
 
@@ -41,10 +43,18 @@ export class TableCache<RowType = any> {
    * @param primaryKey column name designated as `#[primarykey]`
    * @param entityClass the entityClass
    */
-  constructor(tableTypeInfo: TableRuntimeTypeInfo) {
+  constructor(ctx: DbContext, tableTypeInfo: TableRuntimeTypeInfo) {
+    this.ctx = ctx;
     this.tableTypeInfo = tableTypeInfo;
     this.rows = new Map();
     this.emitter = new EventEmitter();
+  }
+
+  /**
+   * @returns name of the table
+   */
+  name(): string {
+    return this.tableTypeInfo.tableName;
   }
 
   /**
@@ -57,8 +67,19 @@ export class TableCache<RowType = any> {
   /**
    * @returns The values of the rows in the table
    */
-  iter(): any[] {
+  iter(): RowType[] {
     return Array.from(this.rows.values()).map(([row]) => row);
+  }
+
+  remoteQuery(filters: string): Promise<RowType[]> {
+    return new Promise((resolve, reject) => {
+      const name = this.name();
+
+      this.ctx.queryBuilder()
+        .onResolved((ctx, tables) => resolve(tables.get(name)?.iter()))
+        .onError((ctx, error) => reject(error))
+        .query(`SELECT ${name}.* FROM ${name} ${filters}`);
+    });
   }
 
   applyOperations = (

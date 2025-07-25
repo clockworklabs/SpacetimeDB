@@ -12,6 +12,14 @@ export interface EventContextInterface<
   event: Event<Reducer>;
 }
 
+export interface QueryEventContextInterface<
+  DBView = any,
+  Reducers = any,
+  SetReducerFlags = any,
+> extends DbContext<DBView, Reducers, SetReducerFlags> {
+  /** No event is provided **/
+}
+
 export interface ReducerEventContextInterface<
   DBView = any,
   Reducers = any,
