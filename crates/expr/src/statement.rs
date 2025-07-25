@@ -450,15 +450,16 @@ pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView, auth: &AuthCtx) 
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
-    use spacetimedb_schema::def::ModuleDef;
-
+    use super::Statement;
+    use crate::ast::LogOp;
     use crate::check::{
         test_utils::{build_module_def, SchemaViewer},
-        SchemaView, TypingResult,
+        Relvars, SchemaView, TypingResult,
     };
-
-    use super::Statement;
+    use crate::type_expr;
+    use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
+    use spacetimedb_schema::def::ModuleDef;
+    use spacetimedb_sql_parser::ast::{SqlExpr, SqlLiteral};
 
     fn module_def() -> ModuleDef {
         build_module_def(vec![
@@ -518,5 +519,28 @@ mod tests {
             let result = parse_and_type_sql(sql, &tx);
             assert!(result.is_err());
         }
+    }
+
+    /// Manually build the AST for a recursive query,
+    /// because we limit the length of the query to prevent stack overflow on parsing.
+    /// Exercise the limit [`recursion::MAX_RECURSION_TYP_EXPR`]
+    #[test]
+    fn typing_recursion() {
+        let build_query = |total, sep: char| {
+            let mut expr = SqlExpr::Lit(SqlLiteral::Bool(true));
+            for _ in 1..total {
+                let next = SqlExpr::Log(
+                    Box::new(SqlExpr::Lit(SqlLiteral::Bool(true))),
+                    Box::new(SqlExpr::Lit(SqlLiteral::Bool(false))),
+                    LogOp::And,
+                );
+                expr = SqlExpr::Log(Box::new(expr), Box::new(next), LogOp::And);
+            }
+            type_expr(&Relvars::default(), expr, Some(&AlgebraicType::Bool))
+                .map_err(|e| e.to_string().split(sep).next().unwrap_or_default().to_string())
+        };
+        assert_eq!(build_query(2_501, ','), Err("Recursion limit exceeded".to_string()));
+
+        assert!(build_query(2_500, ',').is_ok());
     }
 }
