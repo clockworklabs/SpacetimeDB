@@ -9,6 +9,7 @@ use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
+use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::worker_metrics::WORKER_METRICS;
 use core::mem;
 use hashbrown::hash_map::OccupiedError;
@@ -17,7 +18,6 @@ use parking_lot::RwLock;
 use prometheus::IntGauge;
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, SingleQueryUpdate,
-    WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
@@ -1186,13 +1186,15 @@ impl SubscriptionManager {
                 let mut ops_bin_uncompressed: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
                 let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
 
-                fn memo_encode<F: WebsocketFormat>(
+                fn memo_encode<F: BuildableWebsocketFormat>(
                     updates: &UpdatesRelValue<'_>,
                     memory: &mut Option<(F::QueryUpdate, u64, usize)>,
                     metrics: &mut ExecutionMetrics,
                 ) -> SingleQueryUpdate<F> {
                     let (update, num_rows, num_bytes) = memory
                         .get_or_insert_with(|| {
+                            // TODO(centril): consider pushing the encoding of each row into
+                            // `eval_delta` instead, to avoid building the temporary `Vec`s in `UpdatesRelValue`.
                             let encoded = updates.encode::<F>();
                             // The first time we insert into this map, we call encode.
                             // This is when we serialize the rows to BSATN/JSON.

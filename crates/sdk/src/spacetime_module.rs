@@ -9,6 +9,7 @@ use crate::{
     subscription::{OnEndedCallback, SubscriptionHandleImpl},
     Event, ReducerEvent,
     __codegen::InternalError,
+    compression::maybe_decompress_cqu,
 };
 use bytes::Bytes;
 use spacetimedb_client_api_messages::websocket::{self as ws, RowListLen as _};
@@ -228,7 +229,7 @@ impl<Row: DeserializeOwned + Debug> TableUpdate<Row> {
         let mut inserts = Vec::new();
         let mut deletes = Vec::new();
         for update in raw_updates.updates {
-            let update = update.maybe_decompress();
+            let update = maybe_decompress_cqu(update);
             Self::parse_from_row_list(&mut deletes, &update.deletes)?;
             Self::parse_from_row_list(&mut inserts, &update.inserts)?;
         }
