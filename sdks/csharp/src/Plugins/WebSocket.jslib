@@ -18,12 +18,33 @@ mergeInto(LibraryManager.library, {
         manager.callbacks.error = errorCallback;
     },
 
-    WebSocket_Connect: function(uriPtr, protocolPtr, authTokenPtr) {
+    WebSocket_Connect: async function(baseUriPtr, uriPtr, protocolPtr, authTokenPtr, callbackPtr) {
         try {
             var manager = this._webSocketManager;
+            var host = UTF8ToString(baseUriPtr);
             var uri = UTF8ToString(uriPtr);
             var protocol = UTF8ToString(protocolPtr);
             var authToken = UTF8ToString(authTokenPtr);
+            if (authToken)
+            {
+                var tokenUrl = new URL('v1/identity/websocket-token', host);
+                tokenUrl.protocol = host.startsWith("wss://") ? 'https:' : 'http:';
+                var headers = new Headers();
+                headers.set('Authorization', `Bearer ${authToken}`);
+
+                var response = await fetch(tokenUrl, {
+                    method: 'POST',
+                    headers: headers
+                });
+                if (response.ok) {
+                    const { token } = await response.json();
+                    if (token) {
+                        uri += `&token=${token}`;
+                    }
+                } else {
+                    throw new Error(`Failed to verify token: ${response.statusText}`);
+                }
+            }
 
             var socket = new window.WebSocket(uri, protocol);
             socket.binaryType = "arraybuffer";
@@ -63,10 +84,10 @@ mergeInto(LibraryManager.library, {
                 }
             };
 
-            return socketId;
+            dynCall('vi', callbackPtr, [socketId]);
         } catch (e) {
             console.error("WebSocket connection error:", e);
-            return -1;
+            dynCall('vi', callbackPtr, [-1]);
         }
     },
 
