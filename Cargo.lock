@@ -5944,6 +5944,7 @@ name = "spacetimedb-schema"
 version = "1.3.0"
 dependencies = [
  "anyhow",
+ "colored",
  "derive_more",
  "enum-as-inner",
  "enum-map",

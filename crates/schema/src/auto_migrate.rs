@@ -1,6 +1,8 @@
 use core::{cmp::Ordering, ops::BitOr};
 
 use crate::{def::*, error::PrettyAlgebraicType, identifier::Identifier};
+use ansi_formatter::{AnsiFormatter, ColorScheme};
+use formatter::format_plan;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
     map::HashSet,
@@ -13,6 +15,8 @@ use spacetimedb_sats::{
     layout::{HasLayout, SumTypeLayout},
     WithTypespace,
 };
+mod ansi_formatter;
+mod formatter;
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
@@ -37,6 +41,20 @@ impl<'def> MigratePlan<'def> {
         match self {
             MigratePlan::Manual(plan) => plan.new,
             MigratePlan::Auto(plan) => plan.new,
+        }
+    }
+
+    pub fn pretty_print(&self) -> anyhow::Result<String> {
+        match self {
+            MigratePlan::Manual(_) => {
+                anyhow::bail!("Manual migration plans are not yet supported for pretty printing.")
+            }
+            MigratePlan::Auto(plan) => {
+                let mut fmt = AnsiFormatter::new(1024, ColorScheme::default());
+                format_plan(&mut fmt, plan)
+                    .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}"))
+                    .map(|_| fmt.to_string())
+            }
         }
     }
 }
