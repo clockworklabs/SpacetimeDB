@@ -13,6 +13,7 @@ use spacetimedb_sats::{
     layout::{HasLayout, SumTypeLayout},
     WithTypespace,
 };
+mod pretty_print;
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
