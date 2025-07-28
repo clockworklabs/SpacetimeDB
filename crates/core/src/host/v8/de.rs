@@ -11,7 +11,7 @@ use spacetimedb_sats::de::{
 };
 use spacetimedb_sats::{i256, u256};
 use std::borrow::{Borrow, Cow};
-use v8::{Array, Global, HandleScope, Local, Object, Uint8Array, Value};
+use v8::{Array, Global, HandleScope, Local, Name, Object, Uint8Array, Value};
 
 /// Deserializes from V8 values.
 pub(super) struct Deserializer<'a, 's> {
@@ -48,7 +48,7 @@ impl<'s> DeserializerCommon<'_, 's> {
 }
 
 /// The possible errors that [`Deserializer`] can produce.
-#[derive(From)]
+#[derive(Debug, From)]
 pub(super) enum Error<'s> {
     Value(Local<'s, Value>),
     Exception(ExceptionThrown),
@@ -104,7 +104,7 @@ impl KeyCache {
 }
 
 // Creates an interned [`v8::String`].
-fn v8_interned_string<'s>(scope: &mut HandleScope<'s>, field: &str) -> Local<'s, v8::String> {
+pub(super) fn v8_interned_string<'s>(scope: &mut HandleScope<'s>, field: &str) -> Local<'s, v8::String> {
     // Internalized v8 strings are significantly faster than "normal" v8 strings
     // since v8 deduplicates re-used strings minimizing new allocations
     // see: https://github.com/v8/v8/blob/14ac92e02cc3db38131a57e75e2392529f405f2f/include/v8.h#L3165-L3171
@@ -268,6 +268,15 @@ struct ProductAccess<'a, 's> {
     index: usize,
 }
 
+/// Normalizes `field` into an interned `v8::String`.
+pub(super) fn intern_field_name<'s>(scope: &mut HandleScope<'s>, field: Option<&str>, index: usize) -> Local<'s, Name> {
+    let field = match field {
+        Some(field) => Cow::Borrowed(field),
+        None => Cow::Owned(format!("{index}")),
+    };
+    v8_interned_string(scope, field).into()
+}
+
 impl<'de, 's: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 's> {
     type Error = Error<'s>;
 
@@ -282,13 +291,9 @@ impl<'de, 's: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 's> {
             // Normalize the field name.
             // Integer keys are converted to strings,
             // as that is supported on JS objects.
-            let field = match field {
-                Some(field) => Cow::Borrowed(field),
-                None => Cow::Owned(format!("{index}")),
-            };
+            let key = intern_field_name(scope, field, index);
 
             // Check that such a field/key exists.
-            let key = v8_interned_string(scope, &field).into();
             if !self
                 .object
                 .has_own_property(scope, key)

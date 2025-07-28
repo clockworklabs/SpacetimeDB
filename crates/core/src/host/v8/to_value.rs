@@ -103,7 +103,7 @@ impl_to_value!(i256, (val, scope) => {
 });
 
 #[cfg(test)]
-mod test {
+pub(in super::super) mod test {
     use super::super::from_value::FromValue;
     use super::super::V8Runtime;
     use super::*;
@@ -112,23 +112,29 @@ mod test {
     use spacetimedb_sats::proptest::{any_i256, any_u256};
     use v8::{Context, ContextScope, HandleScope, Isolate};
 
-    /// Roundtrips `rust_val` via `ToValue` to the V8 representation
-    /// and then back via `FromValue`,
-    /// asserting that it's the same as the passed value.
-    fn assert_roundtrips<T: ToValue + FromValue + PartialEq + Debug>(rust_val: T) {
-        // Setup V8 and get a `HandleScope`.
+    /// Sets up V8 and runs `logic` with a [`HandleScope`].
+    pub(in super::super) fn with_scope<R>(logic: impl FnOnce(&mut HandleScope<'_>) -> R) -> R {
         V8Runtime::init_for_test();
         let isolate = &mut Isolate::new(<_>::default());
         let scope = &mut HandleScope::new(isolate);
         let context = Context::new(scope, Default::default());
         let scope = &mut ContextScope::new(scope, context);
 
-        // Convert to JS and then back.
-        let js_val = rust_val.to_value(scope);
-        let rust_val_prime = T::from_value(js_val, scope).unwrap();
+        logic(scope)
+    }
 
-        // We should end up where we started.
-        assert_eq!(rust_val, rust_val_prime);
+    /// Roundtrips `rust_val` via `ToValue` to the V8 representation
+    /// and then back via `FromValue`,
+    /// asserting that it's the same as the passed value.
+    fn assert_roundtrips<T: ToValue + FromValue + PartialEq + Debug>(rust_val: T) {
+        with_scope(|scope| {
+            // Convert to JS and then back.
+            let js_val = rust_val.to_value(scope);
+            let rust_val_prime = T::from_value(js_val, scope).unwrap();
+
+            // We should end up where we started.
+            assert_eq!(rust_val, rust_val_prime);
+        })
     }
 
     proptest! {
