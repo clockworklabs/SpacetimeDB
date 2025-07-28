@@ -1,3 +1,5 @@
+import { TextDecoder } from '@zxing/text-encoding';
+
 export default class BinaryReader {
   #buffer: DataView;
   #offset: number = 0;
