@@ -8,6 +8,7 @@ import {
 } from '../src/algebraic_value';
 import BinaryReader from '../src/binary_reader';
 import BinaryWriter from '../src/binary_writer';
+import { deepEqual, Identity, TimeDuration, Timestamp } from '../src';
 
 describe('AlgebraicValue', () => {
   test('when created with a ProductValue it assigns the product property', () => {
@@ -165,6 +166,39 @@ describe('AlgebraicValue', () => {
       );
 
       expect(result.asString()).toEqual('zażółć gęślą jaźń');
+    });
+
+    test('should correctly compare values', () => {
+      const identity_a = Identity.fromString(
+        '0000000000000000000000000000000000000000000000000000000000000069'
+      );
+      const identity_b = Identity.fromString(
+        '0000000000000000000000000000000000000000000000000000000000000067'
+      );
+
+      expect(deepEqual(identity_a, identity_a)).toEqual(true);
+      expect(identity_a.isEqual(identity_a)).toEqual(true);
+
+      expect(deepEqual(identity_a, identity_b)).toEqual(false);
+      expect(identity_a.isEqual(identity_b)).toEqual(false);
+
+      const time_a = Timestamp.fromDate(new Date(1722500000000));
+      const time_b = Timestamp.fromDate(new Date(1722600000000));
+
+      expect(deepEqual(time_a, time_a)).toEqual(true);
+      expect(time_a.isEqual(time_a)).toEqual(true);
+
+      expect(deepEqual(time_a, time_b)).toEqual(false);
+      expect(time_a.isEqual(time_b)).toEqual(false);
+
+      const dur_a = TimeDuration.fromMillis(0);
+      const dur_b = TimeDuration.fromMillis(1);
+
+      expect(deepEqual(dur_a, dur_a)).toEqual(true);
+      expect(dur_a.isEqual(dur_a)).toEqual(true);
+
+      expect(deepEqual(dur_a, dur_b)).toEqual(false);
+      expect(dur_a.isEqual(dur_b)).toEqual(false);
     });
   });
 });

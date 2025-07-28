@@ -1,10 +1,10 @@
 #![allow(clippy::disallowed_names)]
-use spacetimedb::log;
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
     duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
 };
+use spacetimedb::{log, TimeDuration};
 
 pub type TestAlias = TestA;
 
@@ -159,6 +159,17 @@ pub struct Player {
     player_id: u64,
     #[unique] // fields called "name" previously caused name collisions in generated table handles
     name: String,
+}
+
+/// Extra table for checking implementation of `FilterableValue` trait
+#[spacetimedb::table(name = filterable)]
+pub struct Filterable {
+    #[index(btree)]
+    timestamp: Timestamp,
+    #[index(btree)]
+    time_duration: TimeDuration,
+    #[index(btree)]
+    blob: Vec<u8>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -367,6 +378,25 @@ fn test_btree_index_args(ctx: &ReducerContext) {
     ctx.db.test_e().name().delete("str");
 
     // ctx.db.test_e().name().delete(string); // SHOULD FAIL
+
+    // Single-column indexes on `Filterable` table:
+    let _ = ctx
+        .db
+        .filterable()
+        .timestamp()
+        .filter(Timestamp::from_micros_since_unix_epoch(0));
+    let _ = ctx
+        .db
+        .filterable()
+        .timestamp()
+        .filter(&Timestamp::from_micros_since_unix_epoch(0));
+    let _ = ctx.db.filterable().time_duration().filter(TimeDuration::from_micros(0));
+    let _ = ctx
+        .db
+        .filterable()
+        .time_duration()
+        .filter(&TimeDuration::from_micros(0));
+    let _ = ctx.db.filterable().blob().filter(&[1u8, 2, 3][..]);
 
     // Multi-column i64 index on `points.x, points.y`:
     // Tests that we can pass various ranges

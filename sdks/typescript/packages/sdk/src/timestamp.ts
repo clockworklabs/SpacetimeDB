@@ -54,4 +54,11 @@ export class Timestamp {
     }
     return new Date(Number(millis));
   }
+
+  /**
+   * Compare two Timestamp for equality.
+   */
+  isEqual(other: Timestamp): boolean {
+    return this.microsSinceUnixEpoch === other.microsSinceUnixEpoch;
+  }
 }
