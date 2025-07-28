@@ -75,7 +75,7 @@ class Cluster:
         leader_node_id = get_int(leader_node_tb)
 
         # Query leader hostname
-        sql = f"select network_addr from node where id={leader_node_id}"
+        sql = f"select network_addr from node_v2 where id={leader_node_id}"
         leader_host_tb = str(self.read_controldb(sql))
         lines = leader_host_tb.splitlines()
 
@@ -102,10 +102,15 @@ class Cluster:
 
     def wait_for_leader_change(self, previous_leader_node, max_attempts=10, delay=2):
         """Wait for leader to change and return new leader node_id."""
+
         for _ in range(max_attempts):
-            current_leader = self.get_leader_info()['node_id']
-            if current_leader != previous_leader_node:
-                return current_leader
+            try:
+                 current_leader_node = self.get_leader_info()['node_id']
+                 if current_leader_node != previous_leader_node:
+                    return current_leader_node
+            except Exception:
+                 print("No current leader")
+
             time.sleep(delay)
         return None
 
