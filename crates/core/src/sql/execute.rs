@@ -1126,6 +1126,11 @@ pub(crate) mod tests {
         Ok(())
     }
 
+    /// Test we are protected against stack overflows when:
+    /// 1. The query is too large (too many characters)
+    /// 2. The AST is too deep
+    ///
+    /// Exercise the limit [`recursion::MAX_RECURSION_EXPR`]
     #[test]
     fn test_large_query_no_panic() -> ResultTest<()> {
         let db = TestDB::durable()?;
@@ -1138,16 +1143,43 @@ pub(crate) mod tests {
             )
             .unwrap();
 
-        let mut query = "select * from test where ".to_string();
-        for x in 0..1_000 {
-            for y in 0..1_000 {
-                let fragment = format!("((x = {x}) and y = {y}) or");
-                query.push_str(&fragment);
+        let build_query = |total| {
+            let mut sql = "select * from test where ".to_string();
+            for x in 1..total {
+                let fragment = format!("x = {x} or ");
+                sql.push_str(&fragment.repeat((total - 1) as usize));
             }
-        }
-        query.push_str("((x = 1000) and (y = 1000))");
+            sql.push_str("(y = 0)");
+            sql
+        };
+        let run = |db: &RelationalDB, sep: char, sql_text: &str| {
+            run_for_testing(db, sql_text).map_err(|e| e.to_string().split(sep).next().unwrap_or_default().to_string())
+        };
+        let sql = build_query(1_000);
+        assert_eq!(
+            run(&db, ':', &sql),
+            Err("SQL query exceeds maximum allowed length".to_string())
+        );
 
-        assert!(run_for_testing(&db, &query).is_err());
+        let sql = build_query(41); // This causes stack overflow without the limit
+        assert_eq!(run(&db, ',', &sql), Err("Recursion limit exceeded".to_string()));
+
+        let sql = build_query(40); // The max we can with the current limit
+        assert!(run(&db, ',', &sql).is_ok(), "Expected query to run without panic");
+
+        // Check no overflow with lot of joins
+        let mut sql = "SELECT test.* FROM test ".to_string();
+        // We could push up to 700 joins without overflow as long we don't have any conditions,
+        // but here execution become too slow.
+        // TODO: Move this test to the `Plan`
+        for i in 0..200 {
+            sql.push_str(&format!("JOIN test AS m{i} ON test.x = m{i}.y "));
+        }
+
+        assert!(
+            run(&db, ',', &sql).is_ok(),
+            "Query with many joins and conditions should not overflow"
+        );
         Ok(())
     }
 
