@@ -171,6 +171,18 @@ public partial struct Player
     public string name;
 }
 
+// Extra table for checking implementation of `FilterableValue` trait
+[Table(Name = "filterable")]
+public partial struct Filterable
+{
+    [Index.BTree]
+    public Timestamp timestamp;
+    [Index.BTree]
+    public TimeDuration time_duration;
+    [Index.BTree]
+    public byte[] blob;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SUPPORT TYPES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -415,6 +427,11 @@ static partial class Module
 
         ctx.Db.test_e.name.Delete(s);
         ctx.Db.test_e.name.Delete("str");
+
+        // Single-column indexes on `Filterable` table:
+        var _a1 = ctx.Db.filterable.timestamp.Filter(new Timestamp(0));
+        var _a2 = ctx.Db.filterable.time_duration.Filter(new TimeDuration(0));
+        var _a3 = ctx.Db.filterable.blob.Filter(new byte[] { 0x01, 0x02, 0x03 });
 
         // For the multi‑column index on points, assume the API offers overloads that accept ranges.
         var mci = ctx.Db.points.multi_column_index;
