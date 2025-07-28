@@ -50,6 +50,7 @@ public class GameManager : MonoBehaviour
         // and their circles will be able to eat each other.
         if (AuthToken.Token != "")
         {
+            Debug.Log("Using auth token!");
             builder = builder.WithToken(AuthToken.Token);
         }
 
@@ -98,11 +99,39 @@ public class GameManager : MonoBehaviour
     {
         Debug.Log("Subscription applied!");
         OnSubscriptionApplied?.Invoke();
-
+        
         // Once we have the initial subscription sync'd to the client cache
         // Get the world size from the config table and set up the arena
         var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
         SetupArena(worldSize);
+        
+        // Check to see if we already have a player, if we don't we'll need to create one
+        var player = ctx.Db.Player.Identity.Find(LocalIdentity);
+        if (string.IsNullOrEmpty(player.Name))
+        {
+            // The player has to choose a username
+            UIUsernameChooser.Instance.Show(true);
+            
+            // When our username is updated, hide the username chooser
+            Conn.Db.Player.OnUpdate += (_, _, newPlayer) =>
+            {
+                if (newPlayer.Identity == LocalIdentity)
+                {
+                    UIUsernameChooser.Instance.Show(false);
+                }
+            };
+        } else {
+            // We already have a player
+            if (ctx.Db.Circle.PlayerId.Filter(player.PlayerId).Any())
+            {
+                // We already have at least one circle, we should just be able to start
+                // playing immediately.
+                UIUsernameChooser.Instance.Show(false);
+            } else {
+                // Create a new circle for our player.
+                ctx.Reducers.EnterGame(player.Name);
+            }
+        }
     }
 
     private void SetupArena(float worldSize)
