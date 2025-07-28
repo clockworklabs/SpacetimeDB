@@ -83,7 +83,7 @@ impl KeyCache {
 
     /// Returns the `value` property name.
     pub(super) fn value<'s>(&mut self, scope: &mut HandleScope<'s>) -> Local<'s, v8::String> {
-        Self::get_or_create_key(scope, &mut self.tag, "value")
+        Self::get_or_create_key(scope, &mut self.value, "value")
     }
 
     /// Returns an interned string corresponding to `string`
@@ -256,6 +256,8 @@ impl<'de, 'a, 's: 'de> de::Deserializer<'de> for Deserializer<'a, 's> {
     }
 }
 
+/// Provides access to the field names and values in a JS object
+/// under the assumption that it's a product.
 struct ProductAccess<'a, 's> {
     common: DeserializerCommon<'a, 's>,
     /// The input object being deserialized.
@@ -265,10 +267,6 @@ struct ProductAccess<'a, 's> {
     /// The index in the product to
     index: usize,
 }
-
-/// Map from integer keys to their `str` representation,
-/// for small numbers up to 12.
-static INT_TO_STR: &[&str] = &["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
 
 impl<'de, 's: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 's> {
     type Error = Error<'s>;
@@ -284,16 +282,13 @@ impl<'de, 's: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 's> {
             // Normalize the field name.
             // Integer keys are converted to strings,
             // as that is supported on JS objects.
-            // TODO(centril, perf): consider replacing this with `itoa::Buffer`.
-            let mut string_mem = None;
             let field = match field {
-                Some(field) => field,
-                None if index <= 12 => INT_TO_STR[index],
-                None => string_mem.insert(format!("{index}")),
+                Some(field) => Cow::Borrowed(field),
+                None => Cow::Owned(format!("{index}")),
             };
 
             // Check that such a field/key exists.
-            let key = v8_interned_string(scope, field).into();
+            let key = v8_interned_string(scope, &field).into();
             if !self
                 .object
                 .has_own_property(scope, key)
@@ -328,6 +323,8 @@ impl<'de, 's: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 's> {
     }
 }
 
+/// Used in `Deserializer::deserialize_sum` to translate a `tag` property of a JS object
+/// to a variant and to provide a deserializer for its value/payload.
 struct SumAccess<'a, 's> {
     common: DeserializerCommon<'a, 's>,
     /// The tag of the sum value.
@@ -368,6 +365,8 @@ impl<'de, 'a, 's: 'de> de::VariantAccess<'de> for Deserializer<'a, 's> {
     }
 }
 
+/// Used by an `ArrayVisitor` to deserialize every element of a JS array
+/// to a SATS array.
 struct ArrayAccess<'a, 's, T> {
     common: DeserializerCommon<'a, 's>,
     arr: Local<'s, Array>,
