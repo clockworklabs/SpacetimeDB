@@ -1,8 +1,9 @@
-import { ConnectionId } from './connection_id';
-import type { UpdateStatus } from './client_api/index.ts';
-import { Identity } from './identity.ts';
+import type { ConnectionId } from './connection_id';
+import type { OneOffTable, UpdateStatus } from './client_api/index.ts';
+import type { Identity } from './identity.ts';
 import type { TableUpdate } from './table_cache.ts';
-import { Timestamp } from './timestamp.ts';
+import type { TimeDuration } from './time_duration.ts';
+import type { Timestamp } from './timestamp.ts';
 
 export type InitialSubscriptionMessage = {
   tag: 'InitialSubscription';
@@ -36,6 +37,20 @@ export type IdentityTokenMessage = {
   connectionId: ConnectionId;
 };
 
+export type QueryResolvedMessage = {
+  tag: 'QueryResolved';
+  messageId: Uint8Array;
+  error?: string;
+  tables: OneOffTable[];
+  totalHostExecutionDuration: TimeDuration;
+};
+
+export type QueryErrorMessage = {
+  tag: 'QueryError';
+  messageId?: Uint8Array;
+  error: string;
+};
+
 export type SubscribeAppliedMessage = {
   tag: 'SubscribeApplied';
   queryId: number;
@@ -59,6 +74,8 @@ export type Message =
   | TransactionUpdateMessage
   | TransactionUpdateLightMessage
   | IdentityTokenMessage
+  | QueryResolvedMessage
+  | QueryErrorMessage
   | SubscribeAppliedMessage
   | UnsubscribeAppliedMessage
   | SubscriptionError;
