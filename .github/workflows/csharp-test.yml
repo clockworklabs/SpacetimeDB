@@ -25,7 +25,7 @@ jobs:
               --workflow "${GITHUB_WORKFLOW}" \
               --status in_progress \
               --json name \
-              | jq '[.[] | select(.name=="build")] | length')
+              | jq '[.[] | select(.name=="unity-testsuite")] | length')
             # Use `-le` because this job itself counts as one.
             if [ "$running" -le 2 ]; then
               echo "Allowed to run"
