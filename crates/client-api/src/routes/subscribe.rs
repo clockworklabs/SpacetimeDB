@@ -163,7 +163,7 @@ where
         let ws = match ws_upgrade.upgrade(ws_config).await {
             Ok(ws) => ws,
             Err(err) => {
-                log::error!("WebSocket init error: {err}");
+                log::error!("websocket: WebSocket init error: {err}");
                 return;
             }
         };
@@ -176,28 +176,32 @@ where
             None => format!("unknown ip with Identity {identity} and ConnectionId {connection_id}"),
         };
 
-        log::debug!("New client connected from {client_log_string}");
+        log::debug!("websocket: New client connected from {client_log_string}");
 
-        match ClientConnection::call_client_connected_maybe_reject(&mut module_rx, client_id).await {
-            Ok(()) => log::info!("client_connected returned Ok for {client_log_string}"),
+        let connected = match ClientConnection::call_client_connected_maybe_reject(&mut module_rx, client_id).await {
+            Ok(connected) => {
+                log::debug!("websocket: client_connected returned Ok for {client_log_string}");
+                connected
+            }
             Err(e @ (ClientConnectedError::Rejected(_) | ClientConnectedError::OutOfEnergy)) => {
                 log::info!(
-                    "Rejecting connection for {client_log_string} due to error from client_connected reducer: {e}"
+                    "websocket: Rejecting connection for {client_log_string} due to error from client_connected reducer: {e}"
                 );
                 return;
             }
             Err(e @ (ClientConnectedError::DBError(_) | ClientConnectedError::ReducerCall(_))) => {
-                log::warn!("ModuleHost died while {client_log_string} was connecting: {e:#}");
+                log::warn!("websocket: ModuleHost died while {client_log_string} was connecting: {e:#}");
                 return;
             }
-        }
+        };
 
         log::debug!(
-            "Database accepted connection from {client_log_string}; spawning ws_client_actor and ClientConnection"
+            "websocket: Database accepted connection from {client_log_string}; spawning ws_client_actor and ClientConnection"
         );
 
         let actor = |client, sendrx| ws_client_actor(ws_opts, client, ws, sendrx);
-        let client = ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor).await;
+        let client =
+            ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor, connected).await;
 
         // Send the client their identity token message as the first message
         // NOTE: We're adding this to the protocol because some client libraries are
@@ -210,7 +214,7 @@ where
             connection_id,
         };
         if let Err(e) = client.send_message(message) {
-            log::warn!("Error sending IdentityToken message to {client_log_string}: {e}");
+            log::warn!("websocket: Error sending IdentityToken message to {client_log_string}: {e}");
         }
     });
 

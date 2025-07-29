@@ -392,31 +392,48 @@ impl<T> Drop for MeteredReceiver<T> {
 const CLIENT_CHANNEL_CAPACITY: usize = 16 * KB;
 const KB: usize = 1024;
 
+/// Value returned by [`ClientConnection::call_client_connected_maybe_reject`]
+/// and consumed by [`ClientConnection::spawn`] which acts as a proof that the client is authorized.
+///
+/// Because this struct does not capture the module or database info or the client connection info,
+/// a malicious caller could [`ClientConnected::call_client_connected_maybe_reject`] for one client
+/// and then use the resulting `Connected` token to [`ClientConnection::spawn`] for a different client.
+/// We're not particularly worried about that.
+/// This token exists as a sanity check that non-malicious callers don't accidentally [`ClientConnection::spawn`]
+/// for an unauthorized client.
+#[non_exhaustive]
+pub struct Connected {
+    _private: (),
+}
+
 impl ClientConnection {
     /// Call the database at `module_rx`'s `client_connection` reducer, if any,
     /// and return `Err` if it signals rejecting this client's connection.
     ///
-    /// Call this method before [`Self::spawn`],
-    /// and do not call [`Self::spawn`] if this method returns `Err`.
+    /// Call this method before [`Self::spawn`]
+    /// and pass the returned [`Connected`] to [`Self::spawn`] as proof that the client is authorized.
     pub async fn call_client_connected_maybe_reject(
         module_rx: &mut watch::Receiver<ModuleHost>,
         id: ClientActorId,
-    ) -> Result<(), ClientConnectedError> {
+    ) -> Result<Connected, ClientConnectedError> {
         let module = module_rx.borrow_and_update().clone();
-        module.call_identity_connected(id.identity, id.connection_id).await
+        module.call_identity_connected(id.identity, id.connection_id).await?;
+        Ok(Connected { _private: () })
     }
 
     /// Spawn a new [`ClientConnection`] for a WebSocket subscriber.
     ///
     /// Callers should first call [`Self::call_client_connected_maybe_reject`]
     /// to verify that the database at `module_rx` approves of this connection,
-    /// and should not invoke this method if that call returns an error.
+    /// and should not invoke this method if that call returns an error,
+    /// and pass the returned [`Connected`] as `_proof_of_client_connected_call`.
     pub async fn spawn<Fut>(
         id: ClientActorId,
         config: ClientConfig,
         replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
         actor: impl FnOnce(ClientConnection, MeteredReceiver<SerializableMessage>) -> Fut,
+        _proof_of_client_connected_call: Connected,
     ) -> ClientConnection
     where
         Fut: Future<Output = ()> + Send + 'static,
