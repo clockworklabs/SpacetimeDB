@@ -6,47 +6,18 @@ on:
       - master
   pull_request:
 
-jobs:
-  # The unity testsuite will fail if we try to run too many at once, due to the limited number of license seats.
-  # This job "gates" our testsuite runs by waiting until there's room to run.
-  gate:
-    # This prevents more than one gate check from running at once, to prevent potential race conditions.
-    concurrency:
-      group: unity-test-workflow-gate
-      cancel-in-progress: false
-    runs-on: ubuntu-latest
-    steps:
-      - name: Wait until <2 workflows running
-        run: |
-          while true; do
-            sleep 10
-            running=$(gh run list \
-              --repo "${GITHUB_REPOSITORY}" \
-              --workflow "${GITHUB_WORKFLOW}" \
-              --status in_progress \
-              --json name \
-              | jq '[.[] | select(.name=="unity-testsuite")] | length')
-            # Use `-le` because this job itself counts as one.
-            if [ "$running" -le 2 ]; then
-              echo "Allowed to run"
-              break
-            fi
-            echo "$running workflows running in build step. Waiting..."
-            gh run list \
-              --repo "${GITHUB_REPOSITORY}" \
-              --workflow "${GITHUB_WORKFLOW}" \
-              --status in_progress
-          done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+# Only allow one instance of this workflow to run at once, due to limited Unity license seats.
+concurrency:
+  group: ci-global
+  cancel-in-progress: false
 
+jobs:
   unity-testsuite:
-    needs: gate
     runs-on: ubuntu-latest
     # Cancel any previous testsuites running on the same PR and/or ref.
-#    concurrency:
-#      group: ci-${{ github.event.pull_request.number || github.ref }}
-#      cancel-in-progress: true
+    concurrency:
+      group: ci-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
