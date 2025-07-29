@@ -1,4 +1,4 @@
-name: Docs - Validate nav.ts Matches nav.js
+name: Docs - Validate nav.ts
 
 on:
   pull_request:
