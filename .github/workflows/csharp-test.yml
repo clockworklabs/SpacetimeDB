@@ -9,6 +9,10 @@ on:
 jobs:
   unity-testsuite:
     runs-on: ubuntu-latest
+    # Cancel any previous testsuites running on the same PR and/or ref.
+    concurrency:
+      group: unity-test-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
