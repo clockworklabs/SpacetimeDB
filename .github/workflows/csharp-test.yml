@@ -35,7 +35,7 @@ jobs:
             gh run list \
               --repo "${GITHUB_REPOSITORY}" \
               --workflow "${GITHUB_WORKFLOW}" \
-              --status in_progress \
+              --status in_progress
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
