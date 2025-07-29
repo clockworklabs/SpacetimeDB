@@ -19,7 +19,7 @@ jobs:
       - name: Wait until <2 workflows running
         run: |
           while true; do
-            sleep 10;
+            sleep 10
             running=$(gh run list \
               --repo "${GITHUB_REPOSITORY}" \
               --workflow "${GITHUB_WORKFLOW}" \
