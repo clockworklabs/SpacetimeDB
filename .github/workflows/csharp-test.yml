@@ -44,10 +44,9 @@ jobs:
     needs: gate
     runs-on: ubuntu-latest
     # Cancel any previous testsuites running on the same PR and/or ref.
-# TODO: Uncomment this before merging!
-#    concurrency:
-#      group: ci-${{ github.event.pull_request.number || github.ref }}
-#      cancel-in-progress: true
+    concurrency:
+      group: ci-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
