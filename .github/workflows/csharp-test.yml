@@ -19,6 +19,7 @@ jobs:
       - name: Wait until <2 workflows running
         run: |
           while true; do
+            sleep 10;
             running=$(gh run list \
               --repo "${GITHUB_REPOSITORY}" \
               --workflow "${GITHUB_WORKFLOW}" \
@@ -35,7 +36,6 @@ jobs:
               --repo "${GITHUB_REPOSITORY}" \
               --workflow "${GITHUB_WORKFLOW}" \
               --status in_progress \
-            sleep 30
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
