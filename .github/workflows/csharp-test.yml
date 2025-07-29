@@ -20,6 +20,7 @@ jobs:
         run: |
           while true; do
             running=$(gh run list \
+              --repo "${GITHUB_REPOSITORY}" \
               --workflow "${GITHUB_WORKFLOW}" \
               --status in_progress \
               --json status \
