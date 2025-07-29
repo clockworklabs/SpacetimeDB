@@ -145,7 +145,7 @@ where
 
     let identity_token = auth.creds.token().into();
 
-    let module_rx = leader.module_watcher().await.map_err(log_and_500)?;
+    let mut module_rx = leader.module_watcher().await.map_err(log_and_500)?;
 
     let client_id = ClientActorId {
         identity: auth.identity,
@@ -168,26 +168,36 @@ where
             }
         };
 
-        match forwarded_for {
+        let identity = client_id.identity;
+        let client_log_string = match forwarded_for {
             Some(TypedHeader(XForwardedFor(ip))) => {
-                log::debug!("New client connected from ip {ip}")
+                format!("ip {ip} with Identity {identity} and ConnectionId {connection_id}")
             }
-            None => log::debug!("New client connected from unknown ip"),
-        }
+            None => format!("unknown ip with Identity {identity} and ConnectionId {connection_id}"),
+        };
 
-        let actor = |client, sendrx| ws_client_actor(ws_opts, client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor).await
-        {
-            Ok(s) => s,
+        log::debug!("New client connected from {client_log_string}");
+
+        match ClientConnection::call_client_connected_maybe_reject(&mut module_rx, client_id).await {
+            Ok(()) => log::info!("client_connected returned Ok for {client_log_string}"),
             Err(e @ (ClientConnectedError::Rejected(_) | ClientConnectedError::OutOfEnergy)) => {
-                log::info!("{e}");
+                log::info!(
+                    "Rejecting connection for {client_log_string} due to error from client_connected reducer: {e}"
+                );
                 return;
             }
             Err(e @ (ClientConnectedError::DBError(_) | ClientConnectedError::ReducerCall(_))) => {
-                log::warn!("ModuleHost died while we were connecting: {e:#}");
+                log::warn!("ModuleHost died while {client_log_string} was connecting: {e:#}");
                 return;
             }
-        };
+        }
+
+        log::debug!(
+            "Database accepted connection from {client_log_string}; spawning ws_client_actor and ClientConnection"
+        );
+
+        let actor = |client, sendrx| ws_client_actor(ws_opts, client, ws, sendrx);
+        let client = ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor).await;
 
         // Send the client their identity token message as the first message
         // NOTE: We're adding this to the protocol because some client libraries are
@@ -200,7 +210,7 @@ where
             connection_id,
         };
         if let Err(e) = client.send_message(message) {
-            log::warn!("{e}, before identity token was sent")
+            log::warn!("Error sending IdentityToken message to {client_log_string}: {e}");
         }
     });
 

@@ -393,14 +393,31 @@ const CLIENT_CHANNEL_CAPACITY: usize = 16 * KB;
 const KB: usize = 1024;
 
 impl ClientConnection {
-    /// Returns an error if ModuleHost closed
+    /// Call the database at `module_rx`'s `client_connection` reducer, if any,
+    /// and return `Err` if it signals rejecting this client's connection.
+    ///
+    /// Call this method before [`Self::spawn`],
+    /// and do not call [`Self::spawn`] if this method returns `Err`.
+    pub async fn call_client_connected_maybe_reject(
+        module_rx: &mut watch::Receiver<ModuleHost>,
+        id: ClientActorId,
+    ) -> Result<(), ClientConnectedError> {
+        let module = module_rx.borrow_and_update().clone();
+        module.call_identity_connected(id.identity, id.connection_id).await
+    }
+
+    /// Spawn a new [`ClientConnection`] for a WebSocket subscriber.
+    ///
+    /// Callers should first call [`Self::call_client_connected_maybe_reject`]
+    /// to verify that the database at `module_rx` approves of this connection,
+    /// and should not invoke this method if that call returns an error.
     pub async fn spawn<Fut>(
         id: ClientActorId,
         config: ClientConfig,
         replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
         actor: impl FnOnce(ClientConnection, MeteredReceiver<SerializableMessage>) -> Fut,
-    ) -> Result<ClientConnection, ClientConnectedError>
+    ) -> ClientConnection
     where
         Fut: Future<Output = ()> + Send + 'static,
     {
@@ -409,7 +426,6 @@ impl ClientConnection {
         // logically subscribed to the database, not any particular replica. We should handle failover for
         // them and stuff. Not right now though.
         let module = module_rx.borrow_and_update().clone();
-        module.call_identity_connected(id.identity, id.connection_id).await?;
 
         let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
 
@@ -455,7 +471,7 @@ impl ClientConnection {
         // if this fails, the actor() function called .abort(), which like... okay, I guess?
         let _ = fut_tx.send(actor_fut);
 
-        Ok(this)
+        this
     }
 
     pub fn dummy(
