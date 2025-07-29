@@ -25,7 +25,8 @@ jobs:
               --status in_progress \
               --json status \
               | jq 'length')
-            if [ "$running" -lt 2 ]; then
+            # Use `-le` because this job itself counts as one.
+            if [ "$running" -le 2 ]; then
               echo "Allowed to run"
               break
             fi
