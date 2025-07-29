@@ -30,7 +30,11 @@ jobs:
               echo "Allowed to run"
               break
             fi
-            echo "2 workflows running. Waiting..."
+            echo "$running workflows running. Waiting..."
+            gh run list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --workflow "${GITHUB_WORKFLOW}" \
+              --status in_progress \
             sleep 30
           done
         env:
