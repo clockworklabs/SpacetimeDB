@@ -6,11 +6,6 @@ on:
       - master
   pull_request:
 
-# Only allow one instance of this workflow to run at once, due to limited Unity license seats.
-concurrency:
-  group: ci-global
-  cancel-in-progress: false
-
 jobs:
   unity-testsuite:
     runs-on: ubuntu-latest
