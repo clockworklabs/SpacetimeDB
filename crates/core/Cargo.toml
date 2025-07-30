@@ -112,6 +112,7 @@ tracing.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
+v8.workspace = true
 wasmtime.workspace = true
 jwks.workspace = true
 async_cache = "0.3.1"
@@ -153,5 +154,5 @@ jsonwebtoken.workspace = true
 axum.workspace = true
 reqwest.workspace = true
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
+[lints]
+workspace = true

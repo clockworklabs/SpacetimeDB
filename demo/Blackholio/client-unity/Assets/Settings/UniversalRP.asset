@@ -1,0 +1,114 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bf2edee5c58d82540a51f03df9d42094, type: 3}
+  m_Name: UniversalRP
+  m_EditorClassIdentifier: 
+  k_AssetVersion: 11
+  k_AssetPreviousVersion: 11
+  m_RendererType: 1
+  m_RendererData: {fileID: 0}
+  m_RendererDataList:
+  - {fileID: 11400000, guid: 424799608f7334c24bf367e4bbfa7f9a, type: 2}
+  m_DefaultRendererIndex: 0
+  m_RequireDepthTexture: 0
+  m_RequireOpaqueTexture: 0
+  m_OpaqueDownsampling: 1
+  m_SupportsTerrainHoles: 1
+  m_SupportsHDR: 1
+  m_HDRColorBufferPrecision: 0
+  m_MSAA: 1
+  m_RenderScale: 1
+  m_UpscalingFilter: 0
+  m_FsrOverrideSharpness: 0
+  m_FsrSharpness: 0.92
+  m_EnableLODCrossFade: 1
+  m_LODCrossFadeDitheringType: 1
+  m_ShEvalMode: 0
+  m_MainLightRenderingMode: 1
+  m_MainLightShadowsSupported: 1
+  m_MainLightShadowmapResolution: 2048
+  m_AdditionalLightsRenderingMode: 1
+  m_AdditionalLightsPerObjectLimit: 4
+  m_AdditionalLightShadowsSupported: 0
+  m_AdditionalLightsShadowmapResolution: 2048
+  m_AdditionalLightsShadowResolutionTierLow: 512
+  m_AdditionalLightsShadowResolutionTierMedium: 1024
+  m_AdditionalLightsShadowResolutionTierHigh: 2048
+  m_ReflectionProbeBlending: 0
+  m_ReflectionProbeBoxProjection: 0
+  m_ShadowDistance: 50
+  m_ShadowCascadeCount: 1
+  m_Cascade2Split: 0.25
+  m_Cascade3Split: {x: 0.1, y: 0.3}
+  m_Cascade4Split: {x: 0.067, y: 0.2, z: 0.467}
+  m_CascadeBorder: 0.1
+  m_ShadowDepthBias: 1
+  m_ShadowNormalBias: 1
+  m_AnyShadowsSupported: 1
+  m_SoftShadowsSupported: 0
+  m_ConservativeEnclosingSphere: 0
+  m_NumIterationsEnclosingSphere: 64
+  m_SoftShadowQuality: 2
+  m_AdditionalLightsCookieResolution: 2048
+  m_AdditionalLightsCookieFormat: 3
+  m_UseSRPBatcher: 1
+  m_SupportsDynamicBatching: 0
+  m_MixedLightingSupported: 1
+  m_SupportsLightCookies: 1
+  m_SupportsLightLayers: 0
+  m_DebugLevel: 0
+  m_StoreActionsOptimization: 0
+  m_EnableRenderGraph: 0
+  m_UseAdaptivePerformance: 1
+  m_ColorGradingMode: 0
+  m_ColorGradingLutSize: 32
+  m_UseFastSRGBLinearConversion: 0
+  m_SupportDataDrivenLensFlare: 1
+  m_ShadowType: 1
+  m_LocalShadowsSupported: 0
+  m_LocalShadowsAtlasResolution: 256
+  m_MaxPixelLights: 0
+  m_ShadowAtlasResolution: 256
+  m_VolumeFrameworkUpdateMode: 0
+  m_Textures:
+    blueNoise64LTex: {fileID: 2800000, guid: e3d24661c1e055f45a7560c033dbb837, type: 3}
+    bayerMatrixTex: {fileID: 2800000, guid: f9ee4ed84c1d10c49aabb9b210b0fc44, type: 3}
+  m_PrefilteringModeMainLightShadows: 4
+  m_PrefilteringModeAdditionalLight: 4
+  m_PrefilteringModeAdditionalLightShadows: 0
+  m_PrefilterXRKeywords: 1
+  m_PrefilteringModeForwardPlus: 0
+  m_PrefilteringModeDeferredRendering: 0
+  m_PrefilteringModeScreenSpaceOcclusion: 0
+  m_PrefilterDebugKeywords: 1
+  m_PrefilterWriteRenderingLayers: 1
+  m_PrefilterHDROutput: 1
+  m_PrefilterSSAODepthNormals: 1
+  m_PrefilterSSAOSourceDepthLow: 1
+  m_PrefilterSSAOSourceDepthMedium: 1
+  m_PrefilterSSAOSourceDepthHigh: 1
+  m_PrefilterSSAOInterleaved: 1
+  m_PrefilterSSAOBlueNoise: 1
+  m_PrefilterSSAOSampleCountLow: 1
+  m_PrefilterSSAOSampleCountMedium: 1
+  m_PrefilterSSAOSampleCountHigh: 1
+  m_PrefilterDBufferMRT1: 1
+  m_PrefilterDBufferMRT2: 1
+  m_PrefilterDBufferMRT3: 1
+  m_PrefilterSoftShadowsQualityLow: 1
+  m_PrefilterSoftShadowsQualityMedium: 1
+  m_PrefilterSoftShadowsQualityHigh: 1
+  m_PrefilterSoftShadows: 0
+  m_PrefilterScreenCoord: 1
+  m_PrefilterNativeRenderPass: 1
+  m_ShaderVariantLogLevel: 0
+  m_ShadowCascades: 0

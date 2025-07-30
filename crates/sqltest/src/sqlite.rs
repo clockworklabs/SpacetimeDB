@@ -93,8 +93,8 @@ impl AsyncDB for Sqlite {
                 let (value, kind) = match value {
                     Value::Null => ("null".into(), AlgebraicType::never()),
                     Value::Integer(x) => (x.to_string(), AlgebraicType::I64),
-                    Value::Real(x) => (format!("{:?}", x), AlgebraicType::F64),
-                    Value::Text(x) => (format!("'{}'", x), AlgebraicType::String),
+                    Value::Real(x) => (format!("{x:?}"), AlgebraicType::F64),
+                    Value::Text(x) => (format!("'{x}'"), AlgebraicType::String),
                     _ => unimplemented!("Sqlite from"),
                 };
                 if dectype == &mut meta {

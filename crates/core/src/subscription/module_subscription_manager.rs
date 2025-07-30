@@ -158,8 +158,7 @@ impl ClientInfo {
             for query_hash in query_hashes {
                 assert!(
                     self.subscription_ref_count.contains_key(query_hash),
-                    "Query hash not found: {:?}",
-                    query_hash
+                    "Query hash not found: {query_hash:?}"
                 );
                 expected_ref_count
                     .entry(*query_hash)
@@ -1892,7 +1891,7 @@ mod tests {
             .collect::<ResultTest<Vec<_>>>()?;
         let queries = table_names
             .iter()
-            .map(|name| format!("select * from {}", name))
+            .map(|name| format!("select * from {name}"))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
@@ -1937,7 +1936,7 @@ mod tests {
             .collect::<ResultTest<Vec<_>>>()?;
         let queries = table_names
             .iter()
-            .map(|name| format!("select * from {}", name))
+            .map(|name| format!("select * from {name}"))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
@@ -1994,7 +1993,7 @@ mod tests {
 
         // Subscribe to queries that have search arguments
         let queries = (0u8..5)
-            .map(|name| format!("select * from t where a = {}", name))
+            .map(|name| format!("select * from t where a = {name}"))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
@@ -2066,7 +2065,7 @@ mod tests {
         let mut subscriptions = SubscriptionManager::for_test_without_metrics();
 
         let queries = (0u8..5)
-            .map(|name| format!("select * from t where a = {}", name))
+            .map(|name| format!("select * from t where a = {name}"))
             .chain(std::iter::once(String::from("select * from t")))
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;

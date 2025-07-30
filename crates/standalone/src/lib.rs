@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
-use spacetimedb::db::{relational_db, Config};
+use spacetimedb::db::{self, relational_db};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::{
     DiskStorage, DurabilityProvider, ExternalDurability, HostController, StartSnapshotWatcher, UpdateDatabaseResult,
@@ -20,6 +20,7 @@ use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
+use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
 use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
@@ -32,6 +33,12 @@ use std::sync::Arc;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 
+#[derive(Clone, Copy)]
+pub struct StandaloneOptions {
+    pub db_config: db::Config,
+    pub websocket: WebSocketOptions,
+}
+
 pub struct StandaloneEnv {
     control_db: ControlDb,
     program_store: Arc<DiskStorage>,
@@ -40,11 +47,12 @@ pub struct StandaloneEnv {
     metrics_registry: prometheus::Registry,
     _pid_file: PidFile,
     auth_provider: auth::DefaultJwtAuthProvider,
+    websocket_options: WebSocketOptions,
 }
 
 impl StandaloneEnv {
     pub async fn init(
-        config: Config,
+        config: StandaloneOptions,
         certs: &CertificateAuthority,
         data_dir: Arc<ServerDataDir>,
         db_cores: JobCores,
@@ -66,7 +74,7 @@ impl StandaloneEnv {
         });
         let host_controller = HostController::new(
             data_dir,
-            config,
+            config.db_config,
             program_store.clone(),
             energy_monitor,
             durability_provider,
@@ -90,6 +98,7 @@ impl StandaloneEnv {
             metrics_registry,
             _pid_file,
             auth_provider: auth_env,
+            websocket_options: config.websocket,
         }))
     }
 
@@ -149,7 +158,7 @@ impl NodeDelegate for StandaloneEnv {
         let database = self
             .control_db
             .get_database_by_id(database_id)?
-            .with_context(|| format!("Database {} not found", database_id))?;
+            .with_context(|| format!("Database {database_id} not found"))?;
 
         self.host_controller
             .get_or_launch_module_host(database, leader.id)
@@ -292,7 +301,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
                     let desired_replicas = num_replicas as usize;
                     if desired_replicas == 0 {
-                        log::info!("Decommissioning all replicas of database {}", database_identity);
+                        log::info!("Decommissioning all replicas of database {database_identity}");
                         for instance in replicas {
                             self.delete_replica(instance.id).await?;
                         }
@@ -326,9 +335,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                         }
                     } else {
                         log::debug!(
-                            "Desired replica count {} for database {} already satisfied",
-                            desired_replicas,
-                            database_identity
+                            "Desired replica count {desired_replicas} for database {database_identity} already satisfied"
                         );
                     }
                 }
@@ -464,6 +471,12 @@ impl StandaloneEnv {
     }
 }
 
+impl HasWebSocketOptions for StandaloneEnv {
+    fn websocket_options(&self) -> WebSocketOptions {
+        self.websocket_options
+    }
+}
+
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches, db_cores: JobCores) -> Result<(), anyhow::Error> {
     match cmd {
         "start" => start::exec(args, db_cores).await,
@@ -514,9 +527,12 @@ mod tests {
 
         // Create the keys.
         ca.get_or_create_keys()?;
-        let config = Config {
-            storage: Storage::Memory,
-            page_pool_max_size: None,
+        let config = StandaloneOptions {
+            db_config: db::Config {
+                storage: Storage::Memory,
+                page_pool_max_size: None,
+            },
+            websocket: WebSocketOptions::default(),
         };
 
         let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default()).await?;

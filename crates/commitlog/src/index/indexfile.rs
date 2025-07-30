@@ -61,13 +61,13 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
             num_entries: 0,
             _marker: PhantomData,
         };
-        me.num_entries = me.num_entries().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        me.num_entries = me.num_entries().map_err(io::Error::other)?;
 
         Ok(me)
     }
 
     pub fn delete_index_file(path: &OffsetIndexFile) -> io::Result<()> {
-        fs::remove_file(path).map_err(Into::into)
+        fs::remove_file(path)
     }
 
     // Searches for first 0-key, to count number of entries
@@ -267,9 +267,7 @@ impl<Key: Into<u64> + From<u64>> IndexFile<Key> {
             num_entries: 0,
             _marker: PhantomData,
         };
-        inner.num_entries = inner
-            .num_entries()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        inner.num_entries = inner.num_entries().map_err(io::Error::other)?;
 
         Ok(Self { inner })
     }

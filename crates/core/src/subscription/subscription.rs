@@ -698,7 +698,7 @@ mod tests {
         let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?.remove(0);
 
         let CrudExpr::Query(mut expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
+            panic!("unexpected result from compilation: {exp:#?}");
         };
 
         assert_eq!(expr.source.table_name(), "lhs");
@@ -706,7 +706,7 @@ mod tests {
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         // Create an insert for an incremental update.
@@ -721,7 +721,7 @@ mod tests {
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         let IndexJoin {
@@ -739,7 +739,7 @@ mod tests {
             return_index_rows: false,
         } = join
         else {
-            panic!("unexpected index join {:#?}", join);
+            panic!("unexpected index join {join:#?}");
         };
 
         assert!(lhs.is_empty());
@@ -778,7 +778,7 @@ mod tests {
         let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?.remove(0);
 
         let CrudExpr::Query(mut expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
+            panic!("unexpected result from compilation: {exp:#?}");
         };
 
         assert_eq!(expr.source.table_name(), "lhs");
@@ -786,7 +786,7 @@ mod tests {
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         // Create an insert for an incremental update.
@@ -803,7 +803,7 @@ mod tests {
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         let IndexJoin {
@@ -821,7 +821,7 @@ mod tests {
             return_index_rows: true,
         } = join
         else {
-            panic!("unexpected index join {:#?}", join);
+            panic!("unexpected index join {join:#?}");
         };
 
         assert!(!rhs.is_empty());
@@ -865,7 +865,7 @@ mod tests {
             .remove(0);
 
         let CrudExpr::Query(expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
+            panic!("unexpected result from compilation: {exp:#?}");
         };
 
         assert_eq!(expr.source.table_name(), "lhs");
@@ -874,8 +874,7 @@ mod tests {
         let src_join = &expr.query[0];
         assert!(
             matches!(src_join, Query::IndexJoin(_)),
-            "expected an index join, but got {:#?}",
-            src_join
+            "expected an index join, but got {src_join:#?}"
         );
 
         let incr = IncrementalJoin::new(&expr).expect("Failed to construct IncrementalJoin");
@@ -888,7 +887,7 @@ mod tests {
         assert_eq!(virtual_plan.query.len(), 1);
         let incr_join = &virtual_plan.query[0];
         let Query::JoinInner(ref incr_join) = incr_join else {
-            panic!("expected an inner semijoin, but got {:#?}", incr_join);
+            panic!("expected an inner semijoin, but got {incr_join:#?}");
         };
         assert!(incr_join.rhs.source.is_mem_table());
         assert_ne!(incr_join.rhs.source.head(), expr.source.head());

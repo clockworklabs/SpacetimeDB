@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "An executable for running a single SpacetimeDB standalone instance"
+rust-version.workspace = true
 
 [[bin]]
 name = "spacetimedb-standalone"   # The name of the target.
@@ -41,6 +42,7 @@ openssl.workspace = true
 parse-size.workspace = true
 prometheus.workspace = true
 scopeguard.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sled.workspace = true
 socket2.workspace = true
@@ -57,3 +59,6 @@ tikv-jemalloc-ctl = {workspace = true}
 [dev-dependencies]
 once_cell.workspace = true
 tempfile.workspace = true
+
+[lints]
+workspace = true
