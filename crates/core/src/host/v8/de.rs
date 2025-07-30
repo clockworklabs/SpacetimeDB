@@ -114,13 +114,22 @@ fn v8_interned_string<'s>(scope: &mut HandleScope<'s>, field: &str) -> Local<'s,
 /// Extracts a reference `&'s T` from an owned V8 [`Local<'s, T>`].
 ///
 /// The lifetime `'s` is that of the [`HandleScope<'s>`].
-/// This ensures that the reference to `T` won't outlive the `HandleScope`.
+/// This ensures that the reference to `T` won't outlive the `HandleScope`,
+/// that owns the `x: T` and keeps it alive.
 fn deref_local<'s, T>(local: Local<'s, T>) -> &'s T {
     let reference = local.borrow();
     // SAFETY: Lifetime extend `'0` to `'s`.
     // This is safe as the returned reference `&'s T`
-    // will not outlive its `HandleScope<'s, _>`,
+    // will not outlive its `HandleScope<'s, _>`
     // as both are tied to the lifetime `'s`.
+    // The scope is what owns the `x: T`.
+    //
+    // See https://docs.rs/v8/latest/v8/struct.Local.html for more details.
+    // > It is safe to extract the object stored in the handle by
+    // > dereferencing the handle (for instance, to extract the `*Object` from
+    // > a `Local<Object>`); the value will still be governed by a handle
+    // > behind the scenes and the same rules apply to these values as to
+    // > their handles.
     unsafe { core::mem::transmute::<&T, &'s T>(reference) }
 }
 
@@ -264,7 +273,7 @@ struct ProductAccess<'a, 's> {
     object: Local<'s, Object>,
     /// A field's value, to deserialize next in [`NamedProductAccess::get_field_value_seed`].
     next_value: Option<Local<'s, Value>>,
-    /// The index in the product to
+    /// The field index to deserialize next in the product.
     index: usize,
 }
 
