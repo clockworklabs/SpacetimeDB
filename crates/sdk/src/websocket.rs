@@ -86,7 +86,6 @@ pub enum WsError {
 
 pub(crate) struct WsConnection {
     db_name: Box<str>,
-    // connection_id: ConnectionId,
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
 
@@ -231,7 +230,6 @@ impl WsConnection {
         })?;
         Ok(WsConnection {
             db_name: db_name.into(),
-            // connection_id,
             sock,
         })
     }
