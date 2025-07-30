@@ -274,7 +274,7 @@ pub(super) fn intern_field_name<'s>(scope: &mut HandleScope<'s>, field: Option<&
         Some(field) => Cow::Borrowed(field),
         None => Cow::Owned(format!("{index}")),
     };
-    v8_interned_string(scope, field).into()
+    v8_interned_string(scope, &field).into()
 }
 
 impl<'de, 's: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 's> {
