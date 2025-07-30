@@ -243,6 +243,9 @@ impl __sdk::DbContext for DbConnection {
     fn connection_id(&self) -> __sdk::ConnectionId {
         self.imp.connection_id()
     }
+    fn try_connection_id(&self) -> Option<__sdk::ConnectionId> {
+        self.imp.try_connection_id()
+    }
 }
 
 impl DbConnection {
@@ -461,6 +464,9 @@ impl __sdk::DbContext for EventContext {
     fn connection_id(&self) -> __sdk::ConnectionId {
         self.imp.connection_id()
     }
+    fn try_connection_id(&self) -> Option<__sdk::ConnectionId> {
+        self.imp.try_connection_id()
+    }
 }
 
 impl __sdk::EventContext for EventContext {}
@@ -537,6 +543,9 @@ impl __sdk::DbContext for ReducerEventContext {
     fn connection_id(&self) -> __sdk::ConnectionId {
         self.imp.connection_id()
     }
+    fn try_connection_id(&self) -> Option<__sdk::ConnectionId> {
+        self.imp.try_connection_id()
+    }
 }
 
 impl __sdk::ReducerEventContext for ReducerEventContext {}
@@ -608,6 +617,9 @@ impl __sdk::DbContext for SubscriptionEventContext {
     }
     fn connection_id(&self) -> __sdk::ConnectionId {
         self.imp.connection_id()
+    }
+    fn try_connection_id(&self) -> Option<__sdk::ConnectionId> {
+        self.imp.try_connection_id()
     }
 }
 
@@ -684,6 +696,9 @@ impl __sdk::DbContext for ErrorContext {
     }
     fn connection_id(&self) -> __sdk::ConnectionId {
         self.imp.connection_id()
+    }
+    fn try_connection_id(&self) -> Option<__sdk::ConnectionId> {
+        self.imp.try_connection_id()
     }
 }
 
