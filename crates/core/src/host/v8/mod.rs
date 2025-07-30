@@ -12,6 +12,7 @@ use anyhow::anyhow;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use std::sync::{Arc, LazyLock};
 
+mod de;
 mod error;
 mod from_value;
 mod to_value;
