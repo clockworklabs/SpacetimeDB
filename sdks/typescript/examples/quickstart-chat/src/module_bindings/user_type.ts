@@ -31,11 +31,11 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from '@clockworklabs/spacetimedb-sdk';
 export type User = {
-  identity: Identity,
-  name: string | undefined,
-  online: boolean,
+  identity: Identity;
+  name: string | undefined;
+  online: boolean;
 };
 
 /**
@@ -43,14 +43,17 @@ export type User = {
  */
 export namespace User {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("identity", AlgebraicType.createIdentityType()),
-      new ProductTypeElement("name", AlgebraicType.createOptionType(AlgebraicType.createStringType())),
-      new ProductTypeElement("online", AlgebraicType.createBoolType()),
+      new ProductTypeElement('identity', AlgebraicType.createIdentityType()),
+      new ProductTypeElement(
+        'name',
+        AlgebraicType.createOptionType(AlgebraicType.createStringType())
+      ),
+      new ProductTypeElement('online', AlgebraicType.createBoolType()),
     ]);
   }
 
@@ -61,7 +64,4 @@ export namespace User {
   export function deserialize(reader: BinaryReader): User {
     return User.getTypeScriptAlgebraicType().deserialize(reader);
   }
-
 }
-
-

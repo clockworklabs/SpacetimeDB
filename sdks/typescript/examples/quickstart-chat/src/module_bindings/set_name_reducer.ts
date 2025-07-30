@@ -31,10 +31,10 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from '@clockworklabs/spacetimedb-sdk';
 
 export type SetName = {
-  name: string,
+  name: string;
 };
 
 /**
@@ -42,12 +42,12 @@ export type SetName = {
  */
 export namespace SetName {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("name", AlgebraicType.createStringType()),
+      new ProductTypeElement('name', AlgebraicType.createStringType()),
     ]);
   }
 
@@ -58,6 +58,4 @@ export namespace SetName {
   export function deserialize(reader: BinaryReader): SetName {
     return SetName.getTypeScriptAlgebraicType().deserialize(reader);
   }
-
 }
-
