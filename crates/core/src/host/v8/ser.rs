@@ -13,20 +13,20 @@ use spacetimedb_sats::{
 use v8::{Array, ArrayBuffer, HandleScope, IntegrityLevel, Local, Object, Uint8Array, Value};
 
 /// Deserializes to V8 values.
-pub(super) struct Serializer<'a, 's> {
+pub(super) struct Serializer<'this, 'scope> {
     /// The scope to serialize values into.
-    scope: &'a mut HandleScope<'s>,
+    scope: &'this mut HandleScope<'scope>,
     /// A cache for frequently used strings.
-    key_cache: &'a mut KeyCache,
+    key_cache: &'this mut KeyCache,
 }
 
-impl<'a, 's> Serializer<'a, 's> {
+impl<'this, 'scope> Serializer<'this, 'scope> {
     /// Creates a new serializer into `scope`.
-    pub fn new(scope: &'a mut HandleScope<'s>, key_cache: &'a mut KeyCache) -> Self {
+    pub fn new(scope: &'this mut HandleScope<'scope>, key_cache: &'this mut KeyCache) -> Self {
         Self { scope, key_cache }
     }
 
-    fn reborrow(&mut self) -> Serializer<'_, 's> {
+    fn reborrow(&mut self) -> Serializer<'_, 'scope> {
         Serializer {
             scope: self.scope,
             key_cache: self.key_cache,
@@ -63,20 +63,20 @@ macro_rules! serialize_primitive {
 /// However, the values of existing properties may be modified,
 /// which can be useful if the module wants to modify a property
 /// and then send the object back.
-fn seal_object(scope: &mut HandleScope, object: &Object) -> Result<(), ExceptionThrown> {
+fn seal_object(scope: &mut HandleScope<'_>, object: &Object) -> Result<(), ExceptionThrown> {
     let _ = object
         .set_integrity_level(scope, IntegrityLevel::Sealed)
         .ok_or_else(exception_already_thrown)?;
     Ok(())
 }
 
-impl<'a, 's> ser::Serializer for Serializer<'a, 's> {
-    type Ok = Local<'s, Value>;
+impl<'this, 'scope> ser::Serializer for Serializer<'this, 'scope> {
+    type Ok = Local<'scope, Value>;
     type Error = Error;
 
-    type SerializeArray = SerializeArray<'a, 's>;
+    type SerializeArray = SerializeArray<'this, 'scope>;
     type SerializeSeqProduct = Self::SerializeNamedProduct;
-    type SerializeNamedProduct = SerializeNamedProduct<'a, 's>;
+    type SerializeNamedProduct = SerializeNamedProduct<'this, 'scope>;
 
     // Serialization of primitive types defers to `ToValue`.
     serialize_primitive!(serialize_bool, bool);
@@ -137,9 +137,9 @@ impl<'a, 's> ser::Serializer for Serializer<'a, 's> {
         value: &T,
     ) -> Result<Self::Ok, Self::Error> {
         // Serialize the payload.
-        let value_value: Local<'s, Value> = value.serialize(self.reborrow())?;
+        let value_value: Local<'scope, Value> = value.serialize(self.reborrow())?;
         // Figure out the tag.
-        let tag_value: Local<'s, Value> = intern_field_name(self.scope, var_name, tag as usize).into();
+        let tag_value: Local<'scope, Value> = intern_field_name(self.scope, var_name, tag as usize).into();
         let values = [tag_value, value_value];
 
         // The property keys are always `"tag"` an `"value"`.
@@ -157,14 +157,14 @@ impl<'a, 's> ser::Serializer for Serializer<'a, 's> {
 }
 
 /// Serializes array elements and finalizes the JS array.
-pub(super) struct SerializeArray<'a, 's> {
-    inner: Serializer<'a, 's>,
-    array: Local<'s, Array>,
+pub(super) struct SerializeArray<'this, 'scope> {
+    inner: Serializer<'this, 'scope>,
+    array: Local<'scope, Array>,
     next_index: u32,
 }
 
-impl<'s> ser::SerializeArray for SerializeArray<'_, 's> {
-    type Ok = Local<'s, Value>;
+impl<'scope> ser::SerializeArray for SerializeArray<'_, 'scope> {
+    type Ok = Local<'scope, Value>;
     type Error = Error;
 
     fn serialize_element<T: Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
@@ -187,14 +187,14 @@ impl<'s> ser::SerializeArray for SerializeArray<'_, 's> {
 }
 
 /// Serializes into JS objects where field names are turned into property names.
-pub(super) struct SerializeNamedProduct<'a, 's> {
-    inner: Serializer<'a, 's>,
-    object: Local<'s, Object>,
+pub(super) struct SerializeNamedProduct<'this, 'scope> {
+    inner: Serializer<'this, 'scope>,
+    object: Local<'scope, Object>,
     next_index: usize,
 }
 
-impl<'s> ser::SerializeSeqProduct for SerializeNamedProduct<'_, 's> {
-    type Ok = Local<'s, Value>;
+impl<'scope> ser::SerializeSeqProduct for SerializeNamedProduct<'_, 'scope> {
+    type Ok = Local<'scope, Value>;
     type Error = Error;
 
     fn serialize_element<T: Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
@@ -206,8 +206,8 @@ impl<'s> ser::SerializeSeqProduct for SerializeNamedProduct<'_, 's> {
     }
 }
 
-impl<'s> ser::SerializeNamedProduct for SerializeNamedProduct<'_, 's> {
-    type Ok = Local<'s, Value>;
+impl<'scope> ser::SerializeNamedProduct for SerializeNamedProduct<'_, 'scope> {
+    type Ok = Local<'scope, Value>;
     type Error = Error;
 
     fn serialize_element<T: Serialize + ?Sized>(

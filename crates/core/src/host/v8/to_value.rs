@@ -8,14 +8,14 @@ use v8::{BigInt, Boolean, HandleScope, Integer, Local, Number, Value};
 /// The conversion can be done without the possibility for error.
 pub(super) trait ToValue {
     /// Converts `self` within `scope` (a sort of stack management in V8) to a [`Value`].
-    fn to_value<'s>(&self, scope: &mut HandleScope<'s>) -> Local<'s, Value>;
+    fn to_value<'scope>(&self, scope: &mut HandleScope<'scope>) -> Local<'scope, Value>;
 }
 
 /// Provides a [`ToValue`] implementation.
 macro_rules! impl_to_value {
     ($ty:ty, ($val:ident, $scope:ident) => $logic:expr) => {
         impl ToValue for $ty {
-            fn to_value<'s>(&self, $scope: &mut HandleScope<'s>) -> Local<'s, Value> {
+            fn to_value<'scope>(&self, $scope: &mut HandleScope<'scope>) -> Local<'scope, Value> {
                 let $val = *self;
                 $logic.into()
             }
@@ -47,11 +47,11 @@ impl_to_value!(u64, (val, scope) => BigInt::new_from_u64(scope, val));
 /// Converts the little-endian bytes of a number to a V8 [`BigInt`].
 ///
 /// The `sign` is passed along to the `BigInt`.
-fn le_bytes_to_bigint<'s, const N: usize, const W: usize>(
-    scope: &mut HandleScope<'s>,
+fn le_bytes_to_bigint<'scope, const N: usize, const W: usize>(
+    scope: &mut HandleScope<'scope>,
     sign: bool,
     le_bytes: [u8; N],
-) -> Local<'s, BigInt>
+) -> Local<'scope, BigInt>
 where
     [u8; N]: NoUninit,
     [u64; W]: Pod,
@@ -73,7 +73,7 @@ pub(super) const WORD_MIN: u64 = i64::MIN as u64;
 /// `i64::MIN` becomes `-1 * WORD_MIN * (2^64)^0 = -1 * WORD_MIN`
 /// `i128::MIN` becomes `-1 * (0 * (2^64)^0 + WORD_MIN * (2^64)^1) = -1 * WORD_MIN * 2^64`
 /// `i256::MIN` becomes `-1 * (0 * (2^64)^0 + 0 * (2^64)^1 + WORD_MIN * (2^64)^2) = -1 * WORD_MIN * (2^128)`
-fn signed_min_bigint<'s, const WORDS: usize>(scope: &mut HandleScope<'s>) -> Local<'s, BigInt> {
+fn signed_min_bigint<'scope, const WORDS: usize>(scope: &mut HandleScope<'scope>) -> Local<'scope, BigInt> {
     let words = &mut [0u64; WORDS];
     if let [.., last] = words.as_mut_slice() {
         *last = WORD_MIN;
