@@ -691,6 +691,37 @@ impl ModuleHost {
         let me = self.clone();
         self.call("call_identity_connected", move |inst| {
             let reducer_lookup = me.info.module_def.lifecycle_reducer(Lifecycle::OnConnect);
+            let stdb = me.module.replica_ctx().relational_db.clone();
+            let workload = Workload::Reducer(ReducerContext {
+                    name: "call_identity_connected".to_owned(),
+                    caller_identity: caller_auth.claims.identity,
+                    caller_connection_id,
+                    timestamp: Timestamp::now(),
+                    arg_bsatn: Bytes::new(),
+                });
+            let mut mut_tx = stdb.begin_mut_tx(
+                IsolationLevel::Serializable,
+                workload
+            );
+            mut_tx
+                .insert_st_client(caller_auth.claims.identity, caller_connection_id)
+                .inspect_err(|e| {
+                    log::error!(
+                        "`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}"
+                    )
+                })
+                .map_err(DBError::from)?;
+            mut_tx
+                .insert_st_client_credentials(caller_connection_id, &caller_auth.jwt_payload)
+                .inspect_err(|e| {
+                    log::error!(
+                        "`call_identity_connected`: fallback transaction to insert into `st_client_credetials` failed: {e:#?}"
+                    )
+                })
+                .map_err(DBError::from)?;
+
+
+            // let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
             if let Some((reducer_id, reducer_def)) = reducer_lookup {
                 // The module defined a lifecycle reducer to handle new connections.
@@ -698,6 +729,7 @@ impl ModuleHost {
                 // If the call fails (as in, something unexpectedly goes wrong with WASM execution),
                 // abort the connection: we can't really recover.
                 let reducer_outcome = me.call_reducer_inner_with_inst(
+                    Some(mut_tx),
                     caller_auth.claims.identity,
                     Some(caller_connection_id),
                     None,
@@ -729,38 +761,16 @@ impl ModuleHost {
                 }
             } else {
                 // The module doesn't define a client_connected reducer.
-                // Commit a transaction to update `st_clients`
-                // and to ensure we always have those events paired in the commitlog.
+                // We need to commit the transaction to update st_clients and st_connection_credentials.
                 //
                 // This is necessary to be able to disconnect clients after a server crash.
-                let reducer_name = reducer_lookup
-                    .as_ref()
-                    .map(|(_, def)| &*def.name)
-                    .unwrap_or("__identity_connected__");
 
-                let workload = Workload::Reducer(ReducerContext {
-                    name: reducer_name.to_owned(),
-                    caller_identity: caller_auth.claims.identity,
-                    caller_connection_id,
-                    timestamp: Timestamp::now(),
-                    arg_bsatn: Bytes::new(),
-                });
-
-                let stdb = me.module.replica_ctx().relational_db.clone();
-                stdb.with_auto_commit(workload, |mut_tx| {
-                    mut_tx
-                        .insert_st_client(caller_auth.claims.identity, caller_connection_id)
-                        .map_err(DBError::from)?;
-                    mut_tx
-                        .insert_st_client_credentials(caller_connection_id, &caller_auth.jwt_payload)
-                        .map_err(DBError::from)
-                })
-                .inspect_err(|e| {
-                    log::error!(
-                        "`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}"
-                    )
-                })
-                .map_err(Into::into)
+                // TODO: report the metrics.
+                // TODO: Is this being broadcast? Does it need to be, or are st_client table subscriptions
+                // not allowed?
+                // I don't think it was being broadcast previously.
+                mut_tx.commit();
+                Ok(())
             }
         })
         .await
@@ -814,6 +824,7 @@ impl ModuleHost {
             // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
             // that `st_client` is updated appropriately.
             let result = me.call_reducer_inner_with_inst(
+                None,
                 caller_identity,
                 Some(caller_connection_id),
                 None,
@@ -918,6 +929,7 @@ impl ModuleHost {
     }
     fn call_reducer_inner_with_inst(
         &self,
+        tx: Option<MutTxId>,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
@@ -933,7 +945,7 @@ impl ModuleHost {
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(module_instance.call_reducer(
-            None,
+            tx,
             CallReducerParams {
                 timestamp: Timestamp::now(),
                 caller_identity,

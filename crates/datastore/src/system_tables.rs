@@ -869,6 +869,12 @@ impl From<ConnectionId> for ConnectionIdViaU128 {
     }
 }
 
+impl From<ConnectionIdViaU128> for AlgebraicValue {
+    fn from(val: ConnectionIdViaU128) -> Self {
+        AlgebraicValue::U128(val.0.to_u128().into())
+    }
+}
+
 /// A wrapper for [`Identity`] that acts like [`AlgebraicType::U256`] for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IdentityViaU256(pub Identity);

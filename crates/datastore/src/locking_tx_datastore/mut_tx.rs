@@ -10,7 +10,9 @@ use super::{
 };
 use crate::execution_context::ExecutionContext;
 use crate::execution_context::Workload;
-use crate::system_tables::{StConnectionCredentialsFields, StConnectionCredentialsRow, ST_CONNECTION_CREDENTIALS_ID};
+use crate::system_tables::{
+    ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow, ST_CONNECTION_CREDENTIALS_ID,
+};
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
     error::{IndexError, SequenceError, TableError},
@@ -1372,20 +1374,14 @@ impl MutTxId {
         database_identity: Identity,
         connection_id: ConnectionId,
     ) -> Result<()> {
-        if let Some(ptr) = self
-            .iter_by_col_eq(
-                ST_CONNECTION_CREDENTIALS_ID,
-                StConnectionCredentialsFields::ConnectionId,
-                &connection_id.into(),
-            )?
-            .next()
-            .map(|row| row.pointer())
-        {
-            self.delete(ST_CONNECTION_CREDENTIALS_ID, ptr).map(drop)
-        } else {
-            log::warn!("[{database_identity}]: delete_st_client_credentials: attempting to credentials for missing connection id ({connection_id})");
-            Ok(())
+        if let Err(e) = self.delete_col_eq(
+            ST_CONNECTION_CREDENTIALS_ID,
+            StConnectionCredentialsFields::ConnectionId.col_id(),
+            &ConnectionIdViaU128::from(connection_id).into(),
+        ) {
+            log::error!("[{database_identity}]: delete_st_client_credentials: attempting to delete credentials for missing connection id ({connection_id}), error: {e}");
         }
+        Ok(())
     }
 
     pub fn delete_st_client(
