@@ -57,11 +57,12 @@ class DockerContainer:
         """
         host_ports = set()
         info = docker.inspect_container(self)
-        for ports in info['NetworkSettings']['Ports'].values():
-            for ip_and_port in ports:
-                host_port = ip_and_port.get("HostPort")
-                if host_port:
-                    host_ports.add(host_port)
+        for ports in info.get('NetworkSettings', {}).get('Ports', {}).values():
+            if ports:
+                for ip_and_port in ports:
+                    host_port = ip_and_port.get("HostPort")
+                    if host_port:
+                        host_ports.add(host_port)
         return host_ports
 
     def is_running(self, docker, ping_url: Callable[[int], str]) -> bool:

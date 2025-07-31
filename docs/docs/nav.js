@@ -44,6 +44,7 @@ const nav = {
         page('Row Level Security', 'rls', 'rls/index.md'),
         section('How To'),
         page('Incremental Migrations', 'how-to/incremental-migrations', 'how-to/incremental-migrations.md'),
+        page('Reject Client Connections', 'how-to/reject-client-connections', 'how-to/reject-client-connections.md'),
         section('HTTP API'),
         page('Authorization', 'http/authorization', 'http/authorization.md'),
         page('`/identity`', 'http/identity', 'http/identity.md'),
