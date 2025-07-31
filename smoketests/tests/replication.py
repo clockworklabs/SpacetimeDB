@@ -120,9 +120,9 @@ where replication_state.database_id={database_id} \
         rows = self.sql(f"select id from counter where id={id}")
         if len(rows) < 1 or int(rows[0]['id']) != id:
             raise ValueError(f"Could not find {id} in counter table")
-        # Wait a tick to ensure buffers are flushed.
+        # Wait for at least one tick to ensure buffers are flushed.
         # TODO: Replace with confirmed read.
-        time.sleep(0.3)
+        time.sleep(0.6)
 
 
     def fail_leader(self, action='kill'):
