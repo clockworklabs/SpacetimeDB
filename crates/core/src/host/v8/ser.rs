@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
 use super::de::{intern_field_name, KeyCache};
-use super::error::{exception_already_thrown, ExceptionThrown};
+use super::error::{exception_already_thrown, ExceptionThrown, RangeError, TypeError};
 use super::to_value::ToValue;
-use core::num::TryFromIntError;
+use super::util::Throwable;
 use derive_more::From;
 use spacetimedb_sats::{
     i256,
@@ -39,8 +39,25 @@ impl<'this, 'scope> Serializer<'this, 'scope> {
 pub(super) enum Error {
     Custom(String),
     Exception(ExceptionThrown),
+    #[from(ignore)]
     StringTooLarge(usize),
-    ArrayLengthTooLarge(TryFromIntError),
+    #[from(ignore)]
+    ArrayLengthTooLarge(usize),
+}
+
+impl Throwable for Error {
+    fn throw(self, scope: &mut HandleScope<'_>) -> ExceptionThrown {
+        match self {
+            Self::StringTooLarge(len) => {
+                RangeError(format!("`{len}` bytes is too large to be a JS string")).throw(scope)
+            }
+            Self::ArrayLengthTooLarge(len) => {
+                RangeError(format!("`{len}` elements are too many for a JS array")).throw(scope)
+            }
+            Self::Exception(thrown) => thrown,
+            Self::Custom(msg) => TypeError(msg).throw(scope),
+        }
+    }
 }
 
 impl ser::Error for Error {
@@ -108,7 +125,7 @@ impl<'this, 'scope> ser::Serializer for Serializer<'this, 'scope> {
     }
 
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
-        let len = len.try_into()?;
+        let len = len.try_into().map_err(|_| Error::ArrayLengthTooLarge(len))?;
         Ok(SerializeArray {
             array: Array::new(self.scope, len),
             inner: self,

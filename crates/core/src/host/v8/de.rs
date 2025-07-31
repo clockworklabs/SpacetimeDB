@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
-use super::error::{exception_already_thrown, ExceptionThrown};
+use super::error::{exception_already_thrown, ExceptionThrown, TypeError};
 use super::from_value::{cast, FromValue};
+use super::util::Throwable;
 use core::fmt;
 use core::iter::{repeat_n, RepeatN};
 use core::mem::MaybeUninit;
@@ -55,6 +56,16 @@ pub(super) enum Error<'scope> {
     Custom(String),
 }
 
+impl Throwable for Error<'_> {
+    fn throw(self, scope: &mut HandleScope<'_>) -> ExceptionThrown {
+        match self {
+            Self::Value(exception) => exception.throw(scope),
+            Self::Exception(thrown) => thrown,
+            Self::Custom(msg) => TypeError(msg).throw(scope),
+        }
+    }
+}
+
 impl de::Error for Error<'_> {
     fn custom(msg: impl fmt::Display) -> Self {
         Self::Custom(msg.to_string())
@@ -62,7 +73,7 @@ impl de::Error for Error<'_> {
 }
 
 /// Returns a scratch buffer to fill when deserializing strings.
-fn scratch_buf<const N: usize>() -> [MaybeUninit<u8>; N] {
+pub(super) fn scratch_buf<const N: usize>() -> [MaybeUninit<u8>; N] {
     [const { MaybeUninit::uninit() }; N]
 }
 

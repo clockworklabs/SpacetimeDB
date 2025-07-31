@@ -34,6 +34,17 @@ impl<M: IntoJsString> IntoException for TypeError<M> {
     }
 }
 
+/// A type converting into a JS `RangeError` exception.
+#[derive(Copy, Clone)]
+pub struct RangeError<M>(pub M);
+
+impl<M: IntoJsString> IntoException for RangeError<M> {
+    fn into_exception<'scope>(self, scope: &mut HandleScope<'scope>) -> Local<'scope, Value> {
+        let msg = self.0.into_string(scope);
+        Exception::range_error(scope, msg)
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct ExceptionThrown {
     _priv: (),
