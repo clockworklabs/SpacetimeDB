@@ -10,10 +10,7 @@ use bytes::Bytes;
 use futures::{SinkExt, StreamExt as _, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{InvalidUri, Scheme, Uri};
-use spacetimedb_client_api_messages::websocket::{
-    brotli_decompress, gzip_decompress, BsatnFormat, Compression, BIN_PROTOCOL, SERVER_MSG_COMPRESSION_TAG_BROTLI,
-    SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
-};
+use spacetimedb_client_api_messages::websocket::{BsatnFormat, Compression, BIN_PROTOCOL};
 use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
 use spacetimedb_lib::{bsatn, ConnectionId};
 use thiserror::Error;
@@ -27,6 +24,7 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
+use crate::compression::decompress_server_message;
 use crate::metrics::CLIENT_METRICS;
 
 #[derive(Error, Debug, Clone)]
@@ -235,30 +233,8 @@ impl WsConnection {
     }
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>, WsError> {
-        let (compression, bytes) = bytes.split_first().ok_or(WsError::EmptyMessage)?;
-
-        Ok(match *compression {
-            SERVER_MSG_COMPRESSION_TAG_NONE => {
-                bsatn::from_slice(bytes).map_err(|source| WsError::DeserializeMessage { source })?
-            }
-            SERVER_MSG_COMPRESSION_TAG_BROTLI => {
-                bsatn::from_slice(&brotli_decompress(bytes).map_err(|source| WsError::Decompress {
-                    scheme: "brotli",
-                    source: Arc::new(source),
-                })?)
-                .map_err(|source| WsError::DeserializeMessage { source })?
-            }
-            SERVER_MSG_COMPRESSION_TAG_GZIP => {
-                bsatn::from_slice(&gzip_decompress(bytes).map_err(|source| WsError::Decompress {
-                    scheme: "gzip",
-                    source: Arc::new(source),
-                })?)
-                .map_err(|source| WsError::DeserializeMessage { source })?
-            }
-            c => {
-                return Err(WsError::UnknownCompressionScheme { scheme: c });
-            }
-        })
+        let bytes = &*decompress_server_message(bytes)?;
+        bsatn::from_slice(bytes).map_err(|source| WsError::DeserializeMessage { source })
     }
 
     pub(crate) fn encode_message(msg: ClientMessage<Bytes>) -> WebSocketMessage {
