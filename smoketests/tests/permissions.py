@@ -10,7 +10,7 @@ class Permissions(Smoketest):
     def test_call(self):
         """Ensure that anyone has the permission to call any standard reducer"""
 
-        self.new_identity()
+        # self.new_identity()
 
         self.publish_module()
 
@@ -21,28 +21,27 @@ class Permissions(Smoketest):
     def test_delete(self):
         """Ensure that you cannot delete a database that you do not own"""
 
-        self.new_identity()
+        # self.new_identity()
 
         self.publish_module()
 
-        self.reset_config()
+        self.new_identity()
         with self.assertRaises(Exception):
             self.spacetime("delete", self.database_identity)
 
     def test_describe(self):
         """Ensure that anyone can describe any database"""
 
-        self.new_identity()
+        # self.new_identity()
         self.publish_module()
 
         self.reset_config()
-        self.new_identity()
-        self.spacetime("describe", "--json", self.database_identity)
+        self.spacetime("describe", "--anonymous", "--json", self.database_identity)
 
     def test_logs(self):
         """Ensure that we are not able to view the logs of a module that we don't have permission to view"""
 
-        self.new_identity()
+        # self.new_identity()
         self.publish_module()
 
         self.reset_config()
@@ -57,10 +56,11 @@ class Permissions(Smoketest):
     def test_publish(self):
         """This test checks to make sure that you cannot publish to an identity that you do not own."""
 
-        self.new_identity()
+        # self.new_identity()
         self.publish_module()
 
-        self.reset_config()
+        # self.reset_config()
+        self.new_identity()
 
         with self.assertRaises(Exception):
             # TODO: This raises for the wrong reason - `--clear-database` doesn't exist anymore!
@@ -73,11 +73,12 @@ class Permissions(Smoketest):
     def test_replace_names(self):
         """Test that you can't replace names of a database you don't own"""
 
-        self.new_identity()
+        # self.new_identity()
         name = random_string()
         self.publish_module(name)
 
         self.reset_config()
+        self.new_identity()
 
         with self.assertRaises(Exception):
             self.api_call(
