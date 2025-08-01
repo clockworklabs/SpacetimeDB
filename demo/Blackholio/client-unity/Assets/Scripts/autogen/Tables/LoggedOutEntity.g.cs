@@ -15,27 +15,27 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteTables
     {
-        public sealed class FoodHandle : RemoteTableHandle<EventContext, Food>
+        public sealed class LoggedOutEntityHandle : RemoteTableHandle<EventContext, Entity>
         {
-            protected override string RemoteTableName => "food";
+            protected override string RemoteTableName => "logged_out_entity";
 
             public sealed class EntityIdUniqueIndex : UniqueIndexBase<uint>
             {
-                protected override uint GetKey(Food row) => row.EntityId;
+                protected override uint GetKey(Entity row) => row.EntityId;
 
-                public EntityIdUniqueIndex(FoodHandle table) : base(table) { }
+                public EntityIdUniqueIndex(LoggedOutEntityHandle table) : base(table) { }
             }
 
             public readonly EntityIdUniqueIndex EntityId;
 
-            internal FoodHandle(DbConnection conn) : base(conn)
+            internal LoggedOutEntityHandle(DbConnection conn) : base(conn)
             {
                 EntityId = new(this);
             }
 
-            protected override object GetPrimaryKey(Food row) => row.EntityId;
+            protected override object GetPrimaryKey(Entity row) => row.EntityId;
         }
 
-        public readonly FoodHandle Food;
+        public readonly LoggedOutEntityHandle LoggedOutEntity;
     }
 }

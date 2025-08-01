@@ -35,6 +35,7 @@ pub struct Config {
 }
 
 #[spacetimedb::table(name = entity, public)]
+#[spacetimedb::table(name = logged_out_entity)]
 #[derive(Debug, Clone)]
 pub struct Entity {
     #[auto_inc]
@@ -45,6 +46,8 @@ pub struct Entity {
 }
 
 #[spacetimedb::table(name = circle, public)]
+#[spacetimedb::table(name = logged_out_circle)]
+#[derive(Debug, Clone)]
 pub struct Circle {
     #[primary_key]
     pub entity_id: u32,
@@ -148,6 +151,15 @@ pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
             .logged_out_player()
             .identity()
             .delete(&player.identity);
+
+        // Restore any circles for this player
+        for circle in ctx.db.logged_out_circle().player_id().filter(&player.player_id) {
+            ctx.db.logged_out_circle().entity_id().delete(circle.entity_id);
+            ctx.db.circle().insert(circle.clone());
+            let logged_out_entity = ctx.db.logged_out_entity().entity_id().find(&circle.entity_id).unwrap();
+            ctx.db.logged_out_entity().entity_id().delete(circle.entity_id);
+            ctx.db.entity().insert(logged_out_entity);
+        }
     } else {
         ctx.db.player().try_insert(Player {
             identity: ctx.sender,
@@ -170,9 +182,12 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
     ctx.db.logged_out_player().insert(player);
     ctx.db.player().identity().delete(&ctx.sender);
 
-    // Remove any circles from the arena
+    // Move any circles from the arena into logged out tables
     for circle in ctx.db.circle().player_id().filter(&player_id) {
+        let entity = ctx.db.entity().entity_id().find(&circle.entity_id).unwrap();
+        ctx.db.logged_out_entity().insert(entity);
         ctx.db.entity().entity_id().delete(&circle.entity_id);
+        ctx.db.logged_out_circle().insert(circle.clone());
         ctx.db.circle().entity_id().delete(&circle.entity_id);
     }
 

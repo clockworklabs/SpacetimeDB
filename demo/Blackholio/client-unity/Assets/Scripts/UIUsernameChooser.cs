@@ -8,32 +8,33 @@ public class UIUsernameChooser : MonoBehaviour
 {
     public static UIUsernameChooser Instance { get; private set; }
 
+    // The elements that compose the username chooser UI
+    public GameObject[] elements;
     public TMPro.TMP_InputField UsernameInputField;
-    public Button PlayButton;
     
     private void Start()
     {
         Instance = this;
-        GameManager.Conn.Db.Player.OnInsert += (ctx, newPlayer) =>
-        {
-            if (newPlayer.Identity == GameManager.LocalIdentity)
-            {
-                // We have a player
-                UsernameInputField.text = newPlayer.Name;
-			}
-        };
     }
 
     public void PlayPressed()
     {
 		Debug.Log("Creating player");
 
-        string name = UsernameInputField.text.Trim();
+        var name = UsernameInputField.text.Trim();
         if (string.IsNullOrEmpty(name))
         {
             name = "<No Name>";
         }
 		GameManager.Conn.Reducers.EnterGame(name);
-		gameObject.SetActive(false);
+		Show(false);
 	}
+
+    public void Show(bool showing)
+    {
+        foreach (var element in elements)
+        {
+            element.SetActive(showing);
+        }
+    }
 }

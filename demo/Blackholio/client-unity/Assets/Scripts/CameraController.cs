@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using SpacetimeDB.Types;
 using UnityEngine;
 
 public class CameraController : MonoBehaviour
@@ -9,10 +10,10 @@ public class CameraController : MonoBehaviour
 	private void LateUpdate()
     {
         var arenaCenterTransform = new Vector3(WorldSize / 2, WorldSize / 2, -10.0f);
-        if (PlayerController.Local == null || !GameManager.IsConnected())
+        if (PlayerController.Local == null || !GameManager.IsConnected() || PlayerController.Local.NumberOfOwnedCircles == 0)
         {
             // Set the camera to be in middle of the arena if we are not connected or 
-            // there is no local player
+            // there are no circles to follow
             transform.position = arenaCenterTransform;
             return;
         }
