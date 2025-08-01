@@ -1,4 +1,4 @@
-name: Docs - Validate nav.ts Matches nav.js
+name: Docs - Validate nav.ts
 
 on:
   pull_request:
@@ -39,6 +39,15 @@ jobs:
         working-directory: docs
         run: |
           diff -q docs/nav.js docs/nav.js.original || (echo "Generated nav.js differs from committed version. Run 'npm run build' and commit the updated file." && exit 1)
+
+      # We do this after checking that nav.js matches nav.ts, to avoid confusing error messages if an author updates one but not the other.
+      # If the .ts and .js are in sync, it doesn't matter which one we check against here.
+      - name: Check that all files are listed in nav.js
+        working-directory: docs
+        run: |
+          cp docs/nav.js docs/nav.mjs
+          find docs -name '*.md' | sed 's!^docs/!!' > scripts/docs-files.txt
+          node scripts/checkNav.mjs docs-files.txt
 
       - name: Restore original nav.js
         working-directory: docs
