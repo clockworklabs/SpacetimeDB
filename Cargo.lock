@@ -5472,13 +5472,11 @@ dependencies = [
 name = "spacetimedb-client-api-messages"
 version = "1.3.0"
 dependencies = [
- "brotli",
  "bytes",
  "bytestring",
  "chrono",
  "derive_more",
  "enum-as-inner",
- "flate2",
  "hex",
  "itertools 0.12.1",
  "proptest",
@@ -5978,6 +5976,7 @@ dependencies = [
  "brotli",
  "bytes",
  "cursive",
+ "flate2",
  "futures",
  "futures-channel",
  "hex",
