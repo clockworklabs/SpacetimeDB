@@ -69,4 +69,8 @@ pub trait DbContext {
     // TODO: fix this.
     // TODO: add `Self::try_connection_id`, for the same reason as `Self::try_identity`.
     fn connection_id(&self) -> ConnectionId;
+
+    /// Get this connection's [`ConnectionId`].
+    /// This may return None if the connection has not been established.
+    fn try_connection_id(&self) -> Option<ConnectionId>;
 }
