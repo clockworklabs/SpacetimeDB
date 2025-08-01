@@ -84,7 +84,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
     /// and have not yet received the [`ws::IdentityToken`] message.
     identity: SharedCell<Option<Identity>>,
 
-    /// This connection's `Identity`.
+    /// This connection's `ConnectionId`.
     ///
     /// This may be none if we have not yet received the [`ws::IdentityToken`] message.
     connection_id: SharedCell<Option<ConnectionId>>,
@@ -147,7 +147,6 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     }
                     *conn_id_store = Some(conn_id);
                 }
-                // assert_eq!(get_connection_id(), conn_id);
                 let mut inner = self.inner.lock().unwrap();
                 if let Some(on_connect) = inner.on_connect.take() {
                     let ctx = <M::DbConnection as DbConnection>::new(self.clone());
