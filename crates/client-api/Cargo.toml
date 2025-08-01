@@ -15,6 +15,7 @@ spacetimedb-lib = { workspace = true, features = ["serde"] }
 spacetimedb-paths.workspace = true
 spacetimedb-schema.workspace = true
 
+base64.workspace = true
 tokio = { version = "1.2", features = ["full"] }
 lazy_static = "1.4.0"
 log = "0.4.4"

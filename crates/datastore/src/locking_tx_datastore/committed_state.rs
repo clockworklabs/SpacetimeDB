@@ -6,6 +6,7 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
+use crate::system_tables::{ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX};
 use crate::{
     db_metrics::DB_METRICS,
     error::{IndexError, TableError},
@@ -24,10 +25,7 @@ use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
 use itertools::Itertools;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
-use spacetimedb_lib::{
-    db::auth::{StAccess, StTableType},
-    Identity,
-};
+use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -183,7 +181,7 @@ impl CommittedState {
                 table_id,
                 table_name: schema.table_name.clone(),
                 table_type: StTableType::System,
-                table_access: StAccess::Public,
+                table_access: schema.table_access,
                 table_primary_key: schema.primary_key.map(Into::into),
             };
             let row = ProductValue::from(row);
@@ -272,6 +270,10 @@ impl CommittedState {
         self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
 
         self.create_table(ST_ROW_LEVEL_SECURITY_ID, schemas[ST_ROW_LEVEL_SECURITY_IDX].clone());
+        self.create_table(
+            ST_CONNECTION_CREDENTIALS_ID,
+            schemas[ST_CONNECTION_CREDENTIALS_IDX].clone(),
+        );
 
         // IMPORTANT: It is crucial that the `st_sequences` table is created last
 
