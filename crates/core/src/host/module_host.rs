@@ -768,7 +768,7 @@ impl ModuleHost {
                 // TODO: Is this being broadcast? Does it need to be, or are st_client table subscriptions
                 // not allowed?
                 // I don't think it was being broadcast previously.
-                mut_tx.commit();
+                let _ = mut_tx.commit();
                 Ok(())
             }
         })

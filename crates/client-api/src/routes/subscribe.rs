@@ -179,7 +179,13 @@ where
 
         log::debug!("websocket: New client connected from {client_log_string}");
 
-        let connected = match ClientConnection::call_client_connected_maybe_reject(&mut module_rx, client_id, auth.clone().into()).await {
+        let connected = match ClientConnection::call_client_connected_maybe_reject(
+            &mut module_rx,
+            client_id,
+            auth.clone().into(),
+        )
+        .await
+        {
             Ok(connected) => {
                 log::debug!("websocket: client_connected returned Ok for {client_log_string}");
                 connected
@@ -201,8 +207,16 @@ where
         );
 
         let actor = |client, sendrx| ws_client_actor(ws_opts, client, ws, sendrx);
-        let client =
-            ClientConnection::spawn(client_id, auth.into(), client_config, leader.replica_id, module_rx, actor, connected).await;
+        let client = ClientConnection::spawn(
+            client_id,
+            auth.into(),
+            client_config,
+            leader.replica_id,
+            module_rx,
+            actor,
+            connected,
+        )
+        .await;
 
         // Send the client their identity token message as the first message
         // NOTE: We're adding this to the protocol because some client libraries are

@@ -426,7 +426,7 @@ impl ClientConnection {
     pub async fn call_client_connected_maybe_reject(
         module_rx: &mut watch::Receiver<ModuleHost>,
         id: ClientActorId,
-        auth: ConnectionAuthCtx
+        auth: ConnectionAuthCtx,
     ) -> Result<Connected, ClientConnectedError> {
         let module = module_rx.borrow_and_update().clone();
         module.call_identity_connected(auth, id.connection_id).await?;
