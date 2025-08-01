@@ -7,7 +7,7 @@ use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use spacetimedb::host::{HostController, MigratePlanResult, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
@@ -221,6 +221,8 @@ pub trait ControlStateWriteAccess: Send + Sync {
         spec: DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
 
+    async fn migrate_plan(&self, spec: DatabaseDef) -> anyhow::Result<MigratePlanResult>;
+
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
 
     // Energy
@@ -311,6 +313,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         spec: DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         (**self).publish_database(identity, spec).await
+    }
+
+    async fn migrate_plan(&self, spec: DatabaseDef) -> anyhow::Result<MigratePlanResult> {
+        (**self).migrate_plan(spec).await
     }
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {

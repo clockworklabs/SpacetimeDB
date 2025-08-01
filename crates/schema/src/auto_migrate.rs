@@ -17,6 +17,22 @@ mod pretty_print;
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
+pub enum MigrationPolicy {
+    /// Allow updates that have no breaking effects on existing clients
+    AllowNonBreaking,
+    /// Allow updates even if they require disconnecting clients
+    AllowWithClientDisconnection,
+}
+
+impl MigrationPolicy {
+    pub fn permits_plan(&self, plan: &MigratePlan) -> bool {
+        match self {
+            MigrationPolicy::AllowNonBreaking => !plan.breaks_client(),
+            MigrationPolicy::AllowWithClientDisconnection => true,
+        }
+    }
+}
+
 /// A plan for a migration.
 #[derive(Debug)]
 pub enum MigratePlan<'def> {
@@ -38,6 +54,26 @@ impl<'def> MigratePlan<'def> {
         match self {
             MigratePlan::Manual(plan) => plan.new,
             MigratePlan::Auto(plan) => plan.new,
+        }
+    }
+    /// Check if this migration plan requires disconnecting all clients.
+    pub fn breaks_client(&self) -> bool {
+        match self {
+            //TODO: update this when we implment manual migrations.
+            MigratePlan::Manual(_) => false,
+            MigratePlan::Auto(plan) => plan
+                .steps
+                .iter()
+                .any(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers)),
+        }
+    }
+
+    pub fn pretty_print(&self) -> anyhow::Result<String> {
+        match self {
+            MigratePlan::Manual(_) => {
+                anyhow::bail!("Manual migration plans are not yet supported for pretty printing.")
+            }
+            MigratePlan::Auto(plan) => pretty_print::pretty_print(plan).map_err(anyhow::Error::from),
         }
     }
 }

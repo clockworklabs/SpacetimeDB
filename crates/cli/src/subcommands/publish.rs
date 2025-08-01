@@ -219,3 +219,155 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     Ok(())
 }
+
+pub mod pre_publish {
+    use clap::ArgAction::Set;
+    use clap::{Arg, ArgMatches};
+    use http::StatusCode;
+    use reqwest::Url;
+    use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PrePublishResult, PublishResult};
+    use std::fs;
+    use std::path::PathBuf;
+
+    use crate::util::{
+        add_auth_header_opt, decode_identity, get_auth_header, unauth_error_context, y_or_n, ResponseExt as _,
+    };
+    use crate::{build, common_args, Config};
+
+    pub fn cli() -> clap::Command {
+        clap::Command::new("pre-publish")
+        .about("Create and update a SpacetimeDB database")
+        .arg(
+            Arg::new("build_options")
+                .long("build-options")
+                .alias("build-opts")
+                .action(Set)
+                .default_value("")
+                .help("Options to pass to the build command, for example --build-options='--lint-dir='")
+        )
+        .arg(
+            Arg::new("project_path")
+                .value_parser(clap::value_parser!(PathBuf))
+                .default_value(".")
+                .long("project-path")
+                .short('p')
+                .help("The system path (absolute or relative) to the module project")
+        )
+        .arg(
+            Arg::new("wasm_file")
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("bin-path")
+                .short('b')
+                .conflicts_with("project_path")
+                .conflicts_with("build_options")
+                .help("The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project."),
+        )
+        .arg(
+            common_args::anonymous()
+        )
+        .arg(
+            Arg::new("name|identity")
+                .help("A valid domain or identity for this database")
+                .long_help(
+"A valid domain or identity for this database.
+
+Database names must match the regex `/^[a-z0-9]+(-[a-z0-9]+)*$/`,
+i.e. only lowercase ASCII letters and numbers, separated by dashes."),
+        )
+        .arg(common_args::server()
+                .help("The nickname, domain name or URL of the server to host the database."),
+        )
+        .arg(
+            common_args::yes()
+        )
+        .after_help("Run `spacetime help publish` for more detailed information.")
+    }
+
+    pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+        let server = args.get_one::<String>("server").map(|s| s.as_str());
+        let name_or_identity = args.get_one::<String>("name|identity");
+        let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
+        let force = args.get_flag("force");
+        let anon_identity = args.get_flag("anon_identity");
+        let wasm_file = args.get_one::<PathBuf>("wasm_file");
+        let database_host = config.get_host_url(server)?;
+        let build_options = args.get_one::<String>("build_options").unwrap();
+
+        // If the user didn't specify an identity and we didn't specify an anonymous identity, then
+        // we want to use the default identity
+        // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
+        //  easily create a new identity with an email
+        let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
+
+        let client = reqwest::Client::new();
+
+        // If a domain or identity was provided, we should locally make sure it looks correct and
+        let mut builder = if let Some(name_or_identity) = name_or_identity {
+            if !is_identity(name_or_identity) {
+                parse_database_name(name_or_identity)?;
+            }
+            let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
+            let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
+            client.post(format!("{database_host}/v1/database/pre-publish/{domain}"))
+        } else {
+            todo!("Pre-publish without a name or identity is not supported yet")
+        };
+
+        if !path_to_project.exists() {
+            return Err(anyhow::anyhow!(
+                "Project path does not exist: {}",
+                path_to_project.display()
+            ));
+        }
+
+        let path_to_wasm = if let Some(path) = wasm_file {
+            println!("Skipping build. Instead we are publishing {}", path.display());
+            path.clone()
+        } else {
+            build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
+        };
+        let program_bytes = fs::read(path_to_wasm)?;
+
+        let server_address = {
+            let url = Url::parse(&database_host)?;
+            url.host_str().unwrap_or("<default>").to_string()
+        };
+        if server_address != "localhost" && server_address != "127.0.0.1" {
+            println!("You are about to publish to a non-local server: {server_address}");
+            if !y_or_n(force, "Are you sure you want to proceed?")? {
+                println!("Aborting");
+                return Ok(());
+            }
+        }
+
+        println!(
+            "Uploading to {} => {}",
+            server.unwrap_or(config.default_server_name().unwrap_or("<default>")),
+            database_host
+        );
+
+        println!("Publishing module...");
+
+        builder = add_auth_header_opt(builder, &auth_header);
+
+        let res = builder.body(program_bytes).send().await?;
+
+        if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
+            // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
+            let token = config.spacetimedb_token().unwrap();
+            let identity = decode_identity(token)?;
+            let err = res.text().await?;
+            return unauth_error_context(
+                Err(anyhow::anyhow!(err)),
+                &identity,
+                config.server_nick_or_host(server)?,
+            );
+        }
+
+        let response: PrePublishResult = res.json_or_error().await?;
+
+        let migrate_plan = response.migrate_plan;
+        println!("{}", migrate_plan);
+        Ok(())
+    }
+}

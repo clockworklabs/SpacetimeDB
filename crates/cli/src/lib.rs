@@ -21,6 +21,7 @@ pub use tasks::build;
 pub fn get_subcommands() -> Vec<Command> {
     vec![
         publish::cli(),
+        publish::pre_publish::cli(),
         delete::cli(),
         logs::cli(),
         call::cli(),
@@ -53,6 +54,7 @@ pub async fn exec_subcommand(
         "describe" => describe::exec(config, args).await,
         "energy" => energy::exec(config, args).await,
         "publish" => publish::exec(config, args).await,
+        "pre-publish" => publish::pre_publish::exec(config, args).await,
         "delete" => delete::exec(config, args).await,
         "logs" => logs::exec(config, args).await,
         "sql" => sql::exec(config, args).await,

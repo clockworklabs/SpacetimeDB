@@ -1,4 +1,4 @@
-use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
+use super::module_host::{EventStatus, Module, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
@@ -21,6 +21,7 @@ use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
+use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
@@ -30,6 +31,9 @@ use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_sats::hash::Hash;
+use spacetimedb_schema::auto_migrate::{
+    ponder_auto_migrate, ponder_migrate, AutoMigrateError, MigratePlan, MigrationPolicy,
+};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
@@ -418,6 +422,31 @@ impl HostController {
         Ok(update_result)
     }
 
+    pub async fn migrate_plan(
+        &self,
+        database: Database,
+        host_type: HostType,
+        replica_id: u64,
+        program_bytes: Box<[u8]>,
+    ) -> anyhow::Result<MigratePlanResult> {
+        let program = Program {
+            hash: hash_bytes(&program_bytes),
+            bytes: program_bytes,
+        };
+        trace!(
+            "migrate plan {}/{}: genesis={} update-to={}",
+            database.database_identity,
+            replica_id,
+            database.initial_program,
+            program.hash
+        );
+
+        let guard = self.acquire_read_lock(replica_id).await;
+        let host = guard.as_ref().ok_or(NoSuchModule)?;
+
+        host.migrate_plan(host_type, program).await
+    }
+
     /// Start the host `replica_id` and conditionally update it.
     ///
     /// If the host was not initialized before, it is initialized with the
@@ -773,6 +802,7 @@ async fn update_module(
     module: &ModuleHost,
     program: Program,
     old_module_info: Arc<ModuleInfo>,
+    policy: MigrationPolicy,
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.database_identity();
     match stored_program_hash(db)? {
@@ -783,7 +813,7 @@ async fn update_module(
                 UpdateDatabaseResult::NoUpdateNeeded
             } else {
                 info!("updating `{}` from {} to {}", addr, stored, program.hash);
-                module.update_database(program, old_module_info).await?
+                module.update_database(program, old_module_info, policy).await?
             };
 
             Ok(res)
@@ -1042,8 +1072,10 @@ impl Host {
 
         // Get the old module info to diff against when building a migration plan.
         let old_module_info = self.module.borrow().info.clone();
+        let policy = MigrationPolicy::AllowNonBreaking;
 
-        let update_result = update_module(&replica_ctx.relational_db, &module, program, old_module_info).await?;
+        let update_result =
+            update_module(&replica_ctx.relational_db, &module, program, old_module_info, policy).await?;
         trace!("update result: {update_result:?}");
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
@@ -1057,6 +1089,25 @@ impl Host {
         Ok(update_result)
     }
 
+    /// Generate a migration plan for the given `program`.
+    async fn migrate_plan(&self, host_type: HostType, program: Program) -> anyhow::Result<MigratePlanResult> {
+        let old_module = self.module.borrow().info.clone();
+
+        let module_def = extract_schema(program.bytes, host_type).await?;
+
+        let res = match ponder_migrate(&old_module.module_def, &module_def) {
+            Ok(plan) => MigratePlanResult::Success {
+                old_module_hash: old_module.module_hash,
+                new_module_hash: program.hash,
+                breaks_client: plan.breaks_client(),
+                plan: plan.pretty_print()?.into(),
+            },
+            Err(e) => MigratePlanResult::AutoMigrationError(e),
+        };
+
+        Ok(res)
+    }
+
     fn db(&self) -> &RelationalDB {
         &self.replica_ctx.relational_db
     }
@@ -1067,6 +1118,16 @@ impl Drop for Host {
         self.disk_metrics_recorder_task.abort();
         self.tx_metrics_recorder_task.abort();
     }
+}
+
+pub enum MigratePlanResult {
+    Success {
+        old_module_hash: Hash,
+        new_module_hash: Hash,
+        plan: Box<str>,
+        breaks_client: bool,
+    },
+    AutoMigrationError(ErrorStream<AutoMigrateError>),
 }
 
 const STORAGE_METERING_INTERVAL: Duration = Duration::from_secs(15);

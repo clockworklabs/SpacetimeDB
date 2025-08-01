@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use prometheus::IntGauge;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
-use spacetimedb_schema::auto_migrate::ponder_migrate;
+use spacetimedb_schema::auto_migrate::{ponder_migrate, MigratePlan, MigrationPolicy};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -245,6 +245,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let plan = ponder_migrate(&old_module_info.module_def, &self.info.module_def);
         let plan = match plan {
@@ -253,6 +254,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 return Ok(UpdateDatabaseResult::AutoMigrateError(errs));
             }
         };
+
+        if !policy.permits_plan(&plan) {
+            return Ok(UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(
+                "Migration policy does not permit breaking clients"
+            )));
+        }
+
         let stdb = &*self.replica_context().relational_db;
 
         let program_hash = program.hash;

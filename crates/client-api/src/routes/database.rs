@@ -20,16 +20,18 @@ use http::StatusCode;
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
-use spacetimedb::host::ReducerArgs;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseResult;
+use spacetimedb::host::{MigratePlanResult, ReducerArgs};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
-use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PublishOp, PublishResult};
+use spacetimedb_client_api_messages::name::{
+    self, DatabaseName, DomainName, PrePublishResult, PublishOp, PublishResult,
+};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{sats, Timestamp};
+use spacetimedb_lib::{hash_bytes, sats, Timestamp};
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
@@ -503,48 +505,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
 
-    let (database_identity, db_name) = match &name_or_identity {
-        Some(noa) => match noa.try_resolve(&ctx).await? {
-            Ok(resolved) => (resolved, noa.name()),
-            Err(name) => {
-                // `name_or_identity` was a `NameOrIdentity::Name`, but no record
-                // exists yet. Create it now with a fresh identity.
-                allow_creation(&auth)?;
-                let database_auth = SpacetimeAuth::alloc(&ctx).await?;
-                let database_identity = database_auth.identity;
-                let tld: name::Tld = name.clone().into();
-                let tld = match ctx.register_tld(&auth.identity, tld).await.map_err(log_and_500)? {
-                    name::RegisterTldResult::Success { domain }
-                    | name::RegisterTldResult::AlreadyRegistered { domain } => domain,
-                    name::RegisterTldResult::Unauthorized { .. } => {
-                        return Err((
-                            StatusCode::UNAUTHORIZED,
-                            axum::Json(PublishResult::PermissionDenied { name: name.clone() }),
-                        )
-                            .into())
-                    }
-                };
-                let res = ctx
-                    .create_dns_record(&auth.identity, &tld.into(), &database_identity)
-                    .await
-                    .map_err(log_and_500)?;
-                match res {
-                    name::InsertDomainResult::Success { .. } => {}
-                    name::InsertDomainResult::TldNotRegistered { .. }
-                    | name::InsertDomainResult::PermissionDenied { .. } => {
-                        return Err(log_and_500("impossible: we just registered the tld"))
-                    }
-                    name::InsertDomainResult::OtherError(e) => return Err(log_and_500(e)),
-                }
-                (database_identity, Some(name))
-            }
-        },
-        None => {
-            let database_auth = SpacetimeAuth::alloc(&ctx).await?;
-            let database_identity = database_auth.identity;
-            (database_identity, None)
-        }
-    };
+    let (database_identity, db_name) = resolve_database_identity(&ctx, &name_or_identity, &auth).await?;
 
     log::trace!("Publishing to the identity: {}", database_identity.to_hex());
 
@@ -612,6 +573,134 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         database_identity,
         op,
     }))
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Hash)]
+struct PrePublishToken {
+    pub database_identity: Identity,
+    pub old_module_hash: spacetimedb_lib::Hash,
+    pub new_module_hash: spacetimedb_lib::Hash,
+}
+
+impl PrePublishToken {
+    fn hash(&self) -> spacetimedb_lib::Hash {
+        log::info!(
+            "Computing pre-publish token hash for database {}: old module hash: {}, new module hash: {}",
+            self.database_identity,
+            self.old_module_hash,
+            self.new_module_hash.to_hex(),
+        );
+        hash_bytes(
+            format!(
+                "{}{}{}",
+                self.database_identity.to_hex(),
+                self.old_module_hash.to_hex(),
+                self.new_module_hash.to_hex()
+            )
+            .as_str(),
+        )
+    }
+}
+
+pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
+    State(ctx): State<S>,
+    Path(PublishDatabaseParams { name_or_identity }): Path<PublishDatabaseParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    body: Bytes,
+) -> axum::response::Result<axum::Json<PrePublishResult>> {
+    let (database_identity, _) = resolve_database_identity(&ctx, &name_or_identity, &auth).await?;
+
+    let plan = ctx
+        .migrate_plan(DatabaseDef {
+            database_identity: database_identity.clone(),
+            program_bytes: body.into(),
+            num_replicas: None,
+            host_type: HostType::Wasm,
+        })
+        .await
+        .map_err(log_and_500)?;
+
+    let result = match plan {
+        MigratePlanResult::AutoMigrationError(e) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("Automatic migration is not possible: {e}"),
+            )
+                .into());
+        }
+        MigratePlanResult::Success {
+            old_module_hash,
+            new_module_hash,
+            breaks_client,
+            plan,
+        } => {
+            let token = PrePublishToken {
+                database_identity,
+                old_module_hash,
+                new_module_hash,
+            };
+            let hash = token.hash();
+
+            PrePublishResult {
+                token: hash,
+                migrate_plan: plan,
+                break_clients: breaks_client,
+            }
+        }
+    };
+
+    Ok(axum::Json(result))
+}
+
+/// Resolves the database identity from the provided `name_or_identity`.
+/// Or creates a new database identity if `name_or_identity` is `None`.
+async fn resolve_database_identity<'a, S: ControlStateDelegate + NodeDelegate>(
+    ctx: &S,
+    name_or_identity: &'a Option<NameOrIdentity>,
+    auth: &'a SpacetimeAuth,
+) -> axum::response::Result<(Identity, Option<&'a DatabaseName>)> {
+    match name_or_identity {
+        Some(noa) => match noa.try_resolve(ctx).await? {
+            Ok(resolved) => Ok((resolved, noa.name())),
+            Err(name) => {
+                // `name_or_identity` was a `NameOrIdentity::Name`, but no record
+                // exists yet. Create it now with a fresh identity.
+                allow_creation(&auth)?;
+                let database_auth = SpacetimeAuth::alloc(ctx).await?;
+                let database_identity = database_auth.identity;
+                let tld: name::Tld = name.clone().into();
+                let tld = match ctx.register_tld(&auth.identity, tld).await.map_err(log_and_500)? {
+                    name::RegisterTldResult::Success { domain }
+                    | name::RegisterTldResult::AlreadyRegistered { domain } => domain,
+                    name::RegisterTldResult::Unauthorized { .. } => {
+                        return Err((
+                            StatusCode::UNAUTHORIZED,
+                            axum::Json(PublishResult::PermissionDenied { name: name.clone() }),
+                        )
+                            .into())
+                    }
+                };
+                let res = ctx
+                    .create_dns_record(&auth.identity, &tld.into(), &database_identity)
+                    .await
+                    .map_err(log_and_500)?;
+                match res {
+                    name::InsertDomainResult::Success { .. } => {}
+                    name::InsertDomainResult::TldNotRegistered { .. }
+                    | name::InsertDomainResult::PermissionDenied { .. } => {
+                        return Err(log_and_500("impossible: we just registered the tld"))
+                    }
+                    name::InsertDomainResult::OtherError(e) => return Err(log_and_500(e)),
+                }
+                Ok((database_identity, Some(name)))
+            }
+        },
+        None => {
+            let database_auth = SpacetimeAuth::alloc(ctx).await?;
+            let database_identity = database_auth.identity;
+            Ok((database_identity, None))
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -784,6 +873,7 @@ pub struct DatabaseRoutes<S> {
     /// POST: /database/:name_or_identity/sql
     pub sql_post: MethodRouter<S>,
 
+    pub pre_publish: MethodRouter<S>,
     /// GET: /database/: name_or_identity/unstable/timestamp
     pub timestamp_get: MethodRouter<S>,
 }
@@ -808,6 +898,7 @@ where
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
+            pre_publish: post(pre_publish::<S>),
             timestamp_get: get(get_timestamp::<S>),
         }
     }
@@ -835,6 +926,7 @@ where
 
         axum::Router::new()
             .route("/", self.root_post)
+            .route("/pre-publish/:name_or_identity", self.pre_publish)
             .nest("/:name_or_identity", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
     }
