@@ -30,6 +30,7 @@ use spacetimedb::client::{
 };
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
+use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::util::spawn_rayon;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::Identity;
@@ -374,6 +375,8 @@ async fn ws_client_actor_inner(
     let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
     let idle_timer = ws_idle_timer(idle_rx);
 
+    let bsatn_rlb_pool = client.module.subscriptions().bsatn_rlb_pool.clone();
+
     // Spawn a task to send outgoing messages
     // obtained from `sendrx` and `unordered_rx`.
     let send_task = tokio::spawn(ws_send_loop(
@@ -382,6 +385,7 @@ async fn ws_client_actor_inner(
         ws_send,
         sendrx,
         unordered_rx,
+        bsatn_rlb_pool,
     ));
     // Spawn a task to handle incoming messages.
     let recv_task = tokio::spawn(ws_recv_task(
@@ -988,6 +992,7 @@ async fn ws_send_loop(
     mut ws: impl Sink<WsMessage, Error: Display> + Unpin,
     mut messages: MeteredReceiver<SerializableMessage>,
     mut unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
+    bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) {
     let mut messages_buf = Vec::with_capacity(32);
     let mut serialize_buf = SerializeBuffer::new(config);
@@ -1041,6 +1046,7 @@ async fn ws_send_loop(
                             serialize_buf,
                             None,
                             &mut ws,
+                            &bsatn_rlb_pool,
                             err
                         ).await;
                         serialize_buf = msg_alloc;
@@ -1065,6 +1071,7 @@ async fn ws_send_loop(
                         serialize_buf,
                         msg.workload().zip(msg.num_rows()),
                         &mut ws,
+                        &bsatn_rlb_pool,
                         msg
                     ).await;
                     serialize_buf = msg_alloc;
@@ -1091,15 +1098,17 @@ async fn send_message<S: Sink<WsMessage> + Unpin>(
     serialize_buf: SerializeBuffer,
     metrics_metadata: Option<(WorkloadType, usize)>,
     ws: &mut S,
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
     message: impl ToProtocol<Encoded = SwitchedServerMessage> + Send + 'static,
 ) -> (SerializeBuffer, Result<(), S::Error>) {
     let (workload, num_rows) = metrics_metadata.unzip();
     // Move large messages to a rayon thread,
     // as serialization and compression can take a long time.
     // The threshold of 1024 rows is arbitrary, and may need to be refined.
-    let serialize_and_compress = |serialize_buf, message, config| {
+    let bsatn_rlb_pool = bsatn_rlb_pool.clone();
+    let serialize_and_compress = move |serialize_buf, message, config| {
         let start = Instant::now();
-        let (msg_alloc, msg_data) = serialize(serialize_buf, message, config);
+        let (msg_alloc, msg_data) = serialize(&bsatn_rlb_pool, serialize_buf, message, config);
         (start.elapsed(), msg_alloc, msg_data)
     };
     let (timing, msg_alloc, msg_data) = if num_rows.is_some_and(|n| n > 1024) {
@@ -1388,7 +1397,14 @@ mod tests {
         let messages = MeteredReceiver::new(messages_rx);
         let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
 
-        let send_loop = ws_send_loop(state, ClientConfig::for_test(), sink::drain(), messages, unordered_rx);
+        let send_loop = ws_send_loop(
+            state,
+            ClientConfig::for_test(),
+            sink::drain(),
+            messages,
+            unordered_rx,
+            BsatnRowListBuilderPool::new(),
+        );
         pin_mut!(send_loop);
 
         assert!(is_pending(&mut send_loop).await);
@@ -1412,6 +1428,7 @@ mod tests {
             sink::drain(),
             messages,
             unordered_rx,
+            BsatnRowListBuilderPool::new(),
         );
         pin_mut!(send_loop);
 
@@ -1463,6 +1480,7 @@ mod tests {
                 UnfeedableSink,
                 messages,
                 unordered_rx,
+                BsatnRowListBuilderPool::new(),
             );
             pin_mut!(send_loop);
 
@@ -1510,6 +1528,7 @@ mod tests {
                 UnflushableSink,
                 messages,
                 unordered_rx,
+                BsatnRowListBuilderPool::new(),
             );
             pin_mut!(send_loop);
 

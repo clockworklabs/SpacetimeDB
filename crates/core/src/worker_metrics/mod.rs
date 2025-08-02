@@ -1,4 +1,5 @@
 use crate::hash::Hash;
+use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_datastore::execution_context::WorkloadType;
@@ -80,6 +81,31 @@ metrics_group!(
         #[help = "Total number of pages returned to the page pool"]
         #[labels(node_id: str)]
         pub page_pool_pages_returned: IntGaugeVec,
+
+        #[name = bsatn_rlb_pool_resident_bytes]
+        #[help = "Total memory used by the `BsatnRowListBuilderPool`"]
+        #[labels(node_id: str)]
+        pub bsatn_rlb_pool_resident_bytes: IntGaugeVec,
+
+        #[name = bsatn_rlb_pool_dropped]
+        #[help = "Total number of buffers dropped by the `BsatnRowListBuilderPool`"]
+        #[labels(node_id: str)]
+        pub bsatn_rlb_pool_dropped: IntGaugeVec,
+
+        #[name = bsatn_rlb_pool_new_allocated]
+        #[help = "Total number of fresh buffers allocated by the `BsatnRowListBuilderPool`"]
+        #[labels(node_id: str)]
+        pub bsatn_rlb_pool_new_allocated: IntGaugeVec,
+
+        #[name = bsatn_rlb_pool_reused]
+        #[help = "Total number of buffers reused by the `BsatnRowListBuilderPool`"]
+        #[labels(node_id: str)]
+        pub bsatn_rlb_pool_reused: IntGaugeVec,
+
+        #[name = bsatn_rlb_pool_returned]
+        #[help = "Total number of buffers returned to the `BsatnRowListBuilderPool`"]
+        #[labels(node_id: str)]
+        pub bsatn_rlb_pool_returned: IntGaugeVec,
 
         #[name = tokio_num_workers]
         #[help = "Number of core tokio workers"]
@@ -336,6 +362,29 @@ pub fn spawn_page_pool_stats(node_id: String, page_pool: PagePool) {
                 new_pages.set(page_pool.new_allocated_count() as i64);
                 reused_pages.set(page_pool.reused_count() as i64);
                 returned_pages.set(page_pool.reused_count() as i64);
+
+                sleep(Duration::from_secs(10)).await;
+            }
+        });
+    });
+}
+
+static SPAWN_BSATN_RLB_POOL_GUARD: Once = Once::new();
+pub fn spawn_bsatn_rlb_pool_stats(node_id: String, pool: BsatnRowListBuilderPool) {
+    SPAWN_BSATN_RLB_POOL_GUARD.call_once(|| {
+        spawn(async move {
+            let resident_bytes = WORKER_METRICS.bsatn_rlb_pool_resident_bytes.with_label_values(&node_id);
+            let dropped_pages = WORKER_METRICS.bsatn_rlb_pool_dropped.with_label_values(&node_id);
+            let new_pages = WORKER_METRICS.bsatn_rlb_pool_new_allocated.with_label_values(&node_id);
+            let reused_pages = WORKER_METRICS.bsatn_rlb_pool_reused.with_label_values(&node_id);
+            let returned_pages = WORKER_METRICS.bsatn_rlb_pool_returned.with_label_values(&node_id);
+
+            loop {
+                resident_bytes.set(pool.heap_usage() as i64);
+                dropped_pages.set(pool.dropped_count() as i64);
+                new_pages.set(pool.new_allocated_count() as i64);
+                reused_pages.set(pool.reused_count() as i64);
+                returned_pages.set(pool.reused_count() as i64);
 
                 sleep(Duration::from_secs(10)).await;
             }

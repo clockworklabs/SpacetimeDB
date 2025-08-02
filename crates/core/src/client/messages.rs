@@ -1,7 +1,9 @@
 use super::{ClientConfig, DataMessage, Protocol};
+use crate::client::consume_each_list::ConsumeEachBuffer;
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
+use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::subscription::websocket_building::{brotli_compress, decide_compression, gzip_compress};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
@@ -126,6 +128,7 @@ impl InUseSerializeBuffer {
 /// If `protocol` is [`Protocol::Binary`],
 /// the message will be conditionally compressed by this method according to `compression`.
 pub fn serialize(
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
     mut buffer: SerializeBuffer,
     msg: impl ToProtocol<Encoded = SwitchedServerMessage>,
     config: ClientConfig,
@@ -147,6 +150,10 @@ pub fn serialize(
             let srv_msg = buffer.write_with_tag(SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
                 bsatn::to_writer(w.into_inner(), &msg).unwrap()
             });
+
+            // At this point, we no longer have a use for `msg`,
+            // so try to reclaim its buffers.
+            msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
 
             // Conditionally compress the message.
             let (in_use, msg_bytes) = match decide_compression(srv_msg.len(), config.compression) {

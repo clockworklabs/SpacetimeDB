@@ -17,6 +17,7 @@ use spacetimedb::host::{
 };
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
+use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
@@ -108,6 +109,10 @@ impl StandaloneEnv {
 
     pub fn page_pool(&self) -> &PagePool {
         &self.host_controller.page_pool
+    }
+
+    pub fn bsatn_rlb_pool(&self) -> &BsatnRowListBuilderPool {
+        &self.host_controller.bsatn_rlb_pool
     }
 }
 
