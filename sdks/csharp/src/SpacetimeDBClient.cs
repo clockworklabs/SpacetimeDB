@@ -875,6 +875,15 @@ namespace SpacetimeDB
         void IDbConnection.AddOnDisconnect(WebSocket.CloseEventHandler cb) => webSocket.OnClose += cb;
     }
 
+    /// <summary>
+    /// Represents the result of parsing a database update message from SpacetimeDB.
+    /// Contains updates for all tables affected by the update, with each entry mapping a table handle
+    /// to its respective set of row changes (by primary key or row instance).
+    /// 
+    /// Note: Due to C#'s struct constructor limitations, you must use <see cref="ParsedDatabaseUpdate.New"/> 
+    /// to create new instances.
+    /// Do not use the default constructor, as it will not initialize the Updates dictionary.
+    /// </summary>
     internal struct ParsedDatabaseUpdate
     {
         // Map: table handles -> (primary key -> IStructuralReadWrite).
@@ -890,7 +899,11 @@ namespace SpacetimeDB
             return result;
         }
 
-        public IParsedTableUpdate DeltaForTable(IRemoteTableHandle table)
+        /// <summary>
+        /// Returns the <see cref="IParsedTableUpdate"/> for the specified table.
+        /// If no update exists for the table, a new one is allocated and added to the Updates dictionary.
+        /// </summary>
+        public IParsedTableUpdate UpdateForTable(IRemoteTableHandle table)
         {
             if (!Updates.TryGetValue(table, out var delta))
             {

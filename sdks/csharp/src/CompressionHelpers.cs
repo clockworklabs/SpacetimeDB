@@ -7,6 +7,12 @@ namespace SpacetimeDB
 {
     internal class CompressionHelpers
     {
+        /// <summary>
+        /// Compression algorithms supported for data processing.
+        /// Used to specify the compression method for serializing and deserializing messages
+        /// between the client and SpacetimeDB server. The selected algorithm determines
+        /// how data such as query updates and server messages are compressed or decompressed.
+        /// </summary>
         internal enum CompressionAlgos : byte
         {
             None = 0,

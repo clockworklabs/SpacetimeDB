@@ -30,6 +30,8 @@ namespace SpacetimeDB
 
         /// <summary>
         /// Creates and returns a parsed table update for the current table.
+        /// Note: The returned <see cref="IParsedTableUpdate"/> is type-erased because <see cref="IRemoteTableHandle"/> is also type-erased.
+        /// To use the parsed update, you must downcast it to its concrete type.
         /// </summary>
         /// <returns>An <see cref="IParsedTableUpdate"/> representing the parsed update.</returns>
         internal IParsedTableUpdate MakeParsedTableUpdate();
@@ -267,7 +269,7 @@ namespace SpacetimeDB
         /// <param name="dbOps">The parsed database update to apply changes to.</param>
         void IRemoteTableHandle.ParseInsertOnly(TableUpdate update, ParsedDatabaseUpdate dbOps)
         {
-            var delta = (ParsedTableUpdate)dbOps.DeltaForTable(this);
+            var delta = (ParsedTableUpdate)dbOps.UpdateForTable(this);
 
             foreach (var cqu in update.Updates)
             {
@@ -292,7 +294,7 @@ namespace SpacetimeDB
         /// <param name="dbOps">The parsed database update to apply changes to.</param>
         void IRemoteTableHandle.ParseDeleteOnly(TableUpdate update, ParsedDatabaseUpdate dbOps)
         {
-            var delta = (ParsedTableUpdate)dbOps.DeltaForTable(this);
+            var delta = (ParsedTableUpdate)dbOps.UpdateForTable(this);
             foreach (var cqu in update.Updates)
             {
                 var qu = CompressionHelpers.DecompressDecodeQueryUpdate(cqu);
@@ -317,7 +319,7 @@ namespace SpacetimeDB
         /// <param name="dbOps">The parsed database update to apply changes to.</param>
         void IRemoteTableHandle.Parse(TableUpdate update, ParsedDatabaseUpdate dbOps)
         {
-            var delta = (ParsedTableUpdate)dbOps.DeltaForTable(this);
+            var delta = (ParsedTableUpdate)dbOps.UpdateForTable(this);
             foreach (var cqu in update.Updates)
             {
                 var qu = CompressionHelpers.DecompressDecodeQueryUpdate(cqu);
@@ -429,6 +431,12 @@ namespace SpacetimeDB
         List<(object key, Row oldValue, Row newValue)> wasUpdated = new();
         List<KeyValuePair<object, Row>> wasRemoved = new();
 
+        /// <summary>
+        /// Invoked before applying the parsed table update (delta) to this table.
+        /// This is called for all tables before any updates are applied, allowing OnBeforeDelete callbacks to be triggered for rows that will be removed.
+        /// Calling the OnBeforeDelete callbacks allows the user to read the old values of the rows that will be removed, before they are actually removed.
+        /// Should be called before Apply and PostApply.
+        /// </summary>
         void IRemoteTableHandle.PreApply(IEventContext context, IParsedTableUpdate parsedTableUpdate)
         {
             Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
@@ -439,6 +447,11 @@ namespace SpacetimeDB
             }
         }
 
+        /// <summary>
+        /// Applies the parsed table update (delta) to this table.
+        /// This updates the internal data structures and indices, but does not invoke user callbacks.
+        /// Should be called before PostApply, after PreApply.
+        /// </summary>
         void IRemoteTableHandle.Apply(IEventContext context, IParsedTableUpdate parsedTableUpdate)
         {
             try
@@ -501,6 +514,13 @@ namespace SpacetimeDB
             }
         }
 
+        /// <summary>
+        /// Invoked after applying the parsed table update (delta) to this table.
+        /// This is when user callbacks (such as OnInsert, OnUpdate, and OnDelete) are actually triggered for the affected rows.
+        /// All <see cref="IRemoteTableHandle.Apply"/> operations should be complete before calling PostApply,
+        /// so that data structures across all tables are fully updated before invoking user callbacks.
+        /// Should be called after PreApply and Apply.
+        /// </summary>
         void IRemoteTableHandle.PostApply(IEventContext context)
         {
             foreach (var (_, value) in wasInserted)
