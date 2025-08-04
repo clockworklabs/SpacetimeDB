@@ -554,6 +554,8 @@ import {
   type SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Filterable } from "./filterable_type";
+import { NamespaceTestC as __NamespaceTestC } from "./namespace_test_c_type";
+
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 
 /**
@@ -633,7 +635,13 @@ import {
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+import { NamespaceTestC as __NamespaceTestC } from "./namespace_test_c_type";
+
 export type Filterable = {
+  str: string,
+  identity: Identity,
+  connectionId: ConnectionId,
+  testC: __NamespaceTestC,
   timestamp: Timestamp,
   timeDuration: TimeDuration,
   blob: Uint8Array,
@@ -649,6 +657,10 @@ export namespace Filterable {
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
+      new ProductTypeElement("str", AlgebraicType.createStringType()),
+      new ProductTypeElement("identity", AlgebraicType.createIdentityType()),
+      new ProductTypeElement("connectionId", AlgebraicType.createConnectionIdType()),
+      new ProductTypeElement("testC", __NamespaceTestC.getTypeScriptAlgebraicType()),
       new ProductTypeElement("timestamp", AlgebraicType.createTimestampType()),
       new ProductTypeElement("timeDuration", AlgebraicType.createTimeDurationType()),
       new ProductTypeElement("blob", AlgebraicType.createArrayType(AlgebraicType.createU8Type())),
@@ -4037,9 +4049,9 @@ import {
   type SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
+import { NamespaceTestC as __NamespaceTestC } from "./namespace_test_c_type";
 import { TestA as __TestA } from "./test_a_type";
 import { TestB as __TestB } from "./test_b_type";
-import { NamespaceTestC as __NamespaceTestC } from "./namespace_test_c_type";
 import { NamespaceTestF as __NamespaceTestF } from "./namespace_test_f_type";
 
 export type Test = {

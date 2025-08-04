@@ -161,9 +161,23 @@ pub struct Player {
     name: String,
 }
 
-/// Extra table for checking implementation of `FilterableValue` trait
+/// Extra table for checking implementation of `FilterableValue`.
+///
+/// See [`FilterableValue`](spacetimedb::spacetimedb_lib::FilterableValue) for more details.
 #[spacetimedb::table(name = filterable)]
 pub struct Filterable {
+    // Elided the trivial types as `int's, bool`...
+    #[index(btree)]
+    str: String,
+    #[index(btree)]
+    identity: Identity,
+    #[index(btree)]
+    connection_id: ConnectionId,
+    // Not available in C# yet, and we need to mirror the table definition.
+    // #[index(btree)]
+    // hash: Hash,
+    #[index(btree)]
+    test_c: TestC,
     #[index(btree)]
     timestamp: Timestamp,
     #[index(btree)]
@@ -380,6 +394,12 @@ fn test_btree_index_args(ctx: &ReducerContext) {
     // ctx.db.test_e().name().delete(string); // SHOULD FAIL
 
     // Single-column indexes on `Filterable` table:
+    let _ = ctx.db.filterable().str().filter("string");
+    let _ = ctx.db.filterable().identity().filter(Identity::ZERO);
+    let _ = ctx.db.filterable().identity().filter(&Identity::ZERO);
+    let _ = ctx.db.filterable().connection_id().filter(ConnectionId::ZERO);
+    let _ = ctx.db.filterable().connection_id().filter(&ConnectionId::ZERO);
+    let _ = ctx.db.filterable().test_c().filter(TestC::Foo);
     let _ = ctx
         .db
         .filterable()

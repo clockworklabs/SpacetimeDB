@@ -1570,6 +1570,42 @@ namespace SpacetimeDB
 
             public readonly BlobIndex Blob;
 
+            public sealed class ConnectionIdIndex : BTreeIndexBase<SpacetimeDB.ConnectionId>
+            {
+                protected override SpacetimeDB.ConnectionId GetKey(Filterable row) => row.ConnectionId;
+
+                public ConnectionIdIndex(FilterableHandle table) : base(table) { }
+            }
+
+            public readonly ConnectionIdIndex ConnectionId;
+
+            public sealed class IdentityIndex : BTreeIndexBase<SpacetimeDB.Identity>
+            {
+                protected override SpacetimeDB.Identity GetKey(Filterable row) => row.Identity;
+
+                public IdentityIndex(FilterableHandle table) : base(table) { }
+            }
+
+            public readonly IdentityIndex Identity;
+
+            public sealed class StrIndex : BTreeIndexBase<string>
+            {
+                protected override string GetKey(Filterable row) => row.Str;
+
+                public StrIndex(FilterableHandle table) : base(table) { }
+            }
+
+            public readonly StrIndex Str;
+
+            public sealed class TestCIndex : BTreeIndexBase<NamespaceTestC>
+            {
+                protected override NamespaceTestC GetKey(Filterable row) => row.TestC;
+
+                public TestCIndex(FilterableHandle table) : base(table) { }
+            }
+
+            public readonly TestCIndex TestC;
+
             public sealed class TimeDurationIndex : BTreeIndexBase<SpacetimeDB.TimeDuration>
             {
                 protected override SpacetimeDB.TimeDuration GetKey(Filterable row) => row.TimeDuration;
@@ -1591,6 +1627,10 @@ namespace SpacetimeDB
             internal FilterableHandle(DbConnection conn) : base(conn)
             {
                 Blob = new(this);
+                ConnectionId = new(this);
+                Identity = new(this);
+                Str = new(this);
+                TestC = new(this);
                 TimeDuration = new(this);
                 Timestamp = new(this);
             }
@@ -2185,6 +2225,14 @@ namespace SpacetimeDB
     [DataContract]
     public sealed partial class Filterable
     {
+        [DataMember(Name = "str")]
+        public string Str;
+        [DataMember(Name = "identity")]
+        public SpacetimeDB.Identity Identity;
+        [DataMember(Name = "connection_id")]
+        public SpacetimeDB.ConnectionId ConnectionId;
+        [DataMember(Name = "test_c")]
+        public NamespaceTestC TestC;
         [DataMember(Name = "timestamp")]
         public SpacetimeDB.Timestamp Timestamp;
         [DataMember(Name = "time_duration")]
@@ -2193,11 +2241,19 @@ namespace SpacetimeDB
         public System.Collections.Generic.List<byte> Blob;
 
         public Filterable(
+            string Str,
+            SpacetimeDB.Identity Identity,
+            SpacetimeDB.ConnectionId ConnectionId,
+            NamespaceTestC TestC,
             SpacetimeDB.Timestamp Timestamp,
             SpacetimeDB.TimeDuration TimeDuration,
             System.Collections.Generic.List<byte> Blob
         )
         {
+            this.Str = Str;
+            this.Identity = Identity;
+            this.ConnectionId = ConnectionId;
+            this.TestC = TestC;
             this.Timestamp = Timestamp;
             this.TimeDuration = TimeDuration;
             this.Blob = Blob;
@@ -2205,6 +2261,7 @@ namespace SpacetimeDB
 
         public Filterable()
         {
+            this.Str = "";
             this.Blob = new();
         }
     }

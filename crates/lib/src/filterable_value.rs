@@ -19,6 +19,8 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 /// - [`Identity`].
 /// - [`ConnectionId`].
 /// - [`Hash`](struct@Hash).
+/// - [`Timestamp`](struct@Timestamp).
+/// - [`TimeDuration`](struct@TimeDuration).
 /// - No-payload enums annotated with `#[derive(SpacetimeType)]`.
 ///   No-payload enums are sometimes called "plain," "simple" or "C-style."
 ///   They are enums where no variant has any payload data.

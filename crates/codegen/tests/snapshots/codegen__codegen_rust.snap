@@ -814,6 +814,7 @@ use spacetimedb_sdk::__codegen::{
 	__ws,
 };
 use super::filterable_type::Filterable;
+use super::namespace_test_c_type::NamespaceTestC;
 
 /// Table handle for the table `filterable`.
 ///
@@ -916,10 +917,15 @@ use spacetimedb_sdk::__codegen::{
 	__ws,
 };
 
+use super::namespace_test_c_type::NamespaceTestC;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Filterable {
+    pub str: String,
+    pub identity: __sdk::Identity,
+    pub connection_id: __sdk::ConnectionId,
+    pub test_c: NamespaceTestC,
     pub timestamp: __sdk::Timestamp,
     pub time_duration: __sdk::TimeDuration,
     pub blob: Vec::<u8>,
@@ -4615,9 +4621,9 @@ use spacetimedb_sdk::__codegen::{
 	__ws,
 };
 
+use super::namespace_test_c_type::NamespaceTestC;
 use super::test_a_type::TestA;
 use super::test_b_type::TestB;
-use super::namespace_test_c_type::NamespaceTestC;
 use super::namespace_test_f_type::NamespaceTestF;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]

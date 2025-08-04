@@ -175,6 +175,15 @@ public partial struct Player
 [Table(Name = "filterable")]
 public partial struct Filterable
 {
+    // Elided the trivial types as `int's, bool`...
+    [Index.BTree]
+    public String str;
+    [Index.BTree]
+    public Identity identity;
+    [Index.BTree]
+    public ConnectionId connection_id;
+    [Index.BTree]
+    public TestC test_c;
     [Index.BTree]
     public Timestamp timestamp;
     [Index.BTree]
@@ -429,10 +438,13 @@ static partial class Module
         ctx.Db.test_e.name.Delete("str");
 
         // Single-column indexes on `Filterable` table:
-        var _a1 = ctx.Db.filterable.timestamp.Filter(new Timestamp(0));
-        var _a2 = ctx.Db.filterable.time_duration.Filter(new TimeDuration(0));
-        var _a3 = ctx.Db.filterable.blob.Filter(new byte[] { 0x01, 0x02, 0x03 });
-
+        var _a1 = ctx.Db.filterable.str.Filter("string");
+        var _a2 = ctx.Db.filterable.identity.Filter(Identity.FromHexString("0x0"));
+        var _a3 = ctx.Db.filterable.test_c.Filter(TestC.Foo);
+        var _a4 = ctx.Db.filterable.connection_id.Filter(ConnectionId.Random());
+        var _a5 = ctx.Db.filterable.timestamp.Filter(new Timestamp(0));
+        var _a6 = ctx.Db.filterable.time_duration.Filter(new TimeDuration(0));
+        var _a7 = ctx.Db.filterable.blob.Filter([0x01, 0x02, 0x03]);
         // For the multi‑column index on points, assume the API offers overloads that accept ranges.
         var mci = ctx.Db.points.multi_column_index;
         var _a = mci.Filter(0L);
