@@ -764,11 +764,15 @@ impl ModuleHost {
                 //
                 // This is necessary to be able to disconnect clients after a server crash.
 
-                // TODO: report the metrics.
                 // TODO: Is this being broadcast? Does it need to be, or are st_client table subscriptions
                 // not allowed?
                 // I don't think it was being broadcast previously.
-                let _ = mut_tx.commit();
+                let stdb = me.module.replica_ctx().relational_db.clone();
+                stdb.finish_tx(mut_tx, Ok(()))
+                    .map_err(|e: DBError| {
+                        log::error!("`call_identity_connected`: finish transaction failed: {e:#?}");
+                        ClientConnectedError::DBError(e)
+                    })?;
                 Ok(())
             }
         })
