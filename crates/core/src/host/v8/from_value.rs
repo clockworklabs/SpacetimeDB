@@ -23,7 +23,7 @@ macro_rules! impl_from_value {
 }
 
 /// Tries to cast `Value` into `T` or raises a JS exception as a returned `Err` value.
-fn try_cast<'a, 'b, T>(
+pub(super) fn try_cast<'a, 'b, T>(
     scope: &mut HandleScope<'a>,
     val: Local<'b, Value>,
     on_err: impl FnOnce(&str) -> String,
@@ -38,7 +38,7 @@ where
 /// Tries to cast `Value` into `T` or raises a JS exception as a returned `Err` value.
 macro_rules! cast {
     ($scope:expr, $val:expr, $js_ty:ty, $expected:literal $(, $args:expr)* $(,)?) => {{
-        try_cast::<$js_ty>($scope, $val, |got| format!(concat!("Expected ", $expected, ", got {__got}"), $($args,)* __got = got))
+        $crate::host::v8::from_value::try_cast::<$js_ty>($scope, $val, |got| format!(concat!("Expected ", $expected, ", got {__got}"), $($args,)* __got = got))
     }};
 }
 pub(super) use cast;
