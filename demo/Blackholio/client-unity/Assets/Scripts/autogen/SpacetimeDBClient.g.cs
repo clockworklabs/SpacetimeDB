@@ -6,10 +6,6 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
-
 namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
