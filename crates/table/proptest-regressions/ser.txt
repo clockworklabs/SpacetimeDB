@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 224fbf0d3996aab96ec3dd62774790a26dc81d5526dab88c0841d71caf3a7589 # shrinks to (ty, val) = (Builtin(Map(MapType { key_ty: Builtin(Bool), ty: Builtin(Bool) })), Map({}))
+cc 974a8221dc45760d5e44e017adab162e3bd574f376a06168d91bd01471600ef1 # shrinks to (ty, val) = (Builtin(I32), I32(-2))
+cc c1927b3257b3ff27076d627096e825fe0c18d2d1a066908518c3286257878118 # shrinks to (ty, val) = (Product(ProductType { elements: [] }), Product(ProductValue { elements: [] }))
+cc 1ac110bc5cbbac678326767f5c6d77f9d0ff5c5dd6ae456191160289ced4b404 # shrinks to (ty, val) = (Builtin(Map(MapType { key_ty: Builtin(U8), ty: Builtin(Map(MapType { key_ty: Builtin(I8), ty: Builtin(I128) })) })), Map({U8(0): Map({I8(-4): I128(0), I8(-3): I128(0), I8(-2): I128(0), I8(-1): I128(0), I8(0): I128(0), I8(1): I128(0), I8(2): I128(0), I8(3): I128(0), I8(4): I128(0), I8(5): I128(0)}), U8(1): Map({I8(-8): I128(0), I8(-7): I128(0), I8(-5): I128(0), I8(-4): I128(0), I8(-3): I128(0), I8(-2): I128(0), I8(-1): I128(0), I8(0): I128(0), I8(1): I128(0), I8(2): I128(0), I8(3): I128(0)}), U8(2): Map({I8(-5): I128(0), I8(-4): I128(0), I8(-3): I128(0), I8(-2): I128(0), I8(-1): I128(0), I8(0): I128(0), I8(1): I128(0), I8(2): I128(0), I8(3): I128(0), I8(4): I128(0), I8(5): I128(0), I8(6): I128(0), I8(7): I128(0), I8(8): I128(0), I8(46): I128(0)}), U8(3): Map({I8(-5): I128(0), I8(-4): I128(0), I8(-3): I128(0), I8(-2): I128(0), I8(-1): I128(0), I8(0): I128(0), I8(1): I128(0), I8(2): I128(0), I8(3): I128(0), I8(4): I128(0)}), U8(4): Map({I8(-16): I128(0), I8(-4): I128(0), I8(-3): I128(0), I8(-2): I128(0), I8(-1): I128(0), I8(0): I128(0), I8(1): I128(0), I8(2): I128(0), I8(3): I128(0), I8(4): I128(0), I8(5): I128(0)})}))

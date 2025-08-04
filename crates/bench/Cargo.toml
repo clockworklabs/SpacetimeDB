@@ -1,0 +1,95 @@
+[package]
+name = "spacetimedb-bench"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Bench library/utility for SpacetimeDB"
+publish = false
+
+[[bench]]
+name = "special"
+harness = false
+
+[[bench]]
+name = "generic"
+harness = false
+
+[[bench]]
+name = "callgrind"
+harness = false
+
+[[bench]]
+name = "subscription"
+harness = false
+
+[[bench]]
+name = "delete_table"
+harness = false
+
+[[bench]]
+name = "index"
+harness = false
+
+[[bin]]
+name = "summarize"
+
+[lib]
+bench = false
+
+[dependencies]
+spacetimedb-client-api = { path = "../client-api" }
+spacetimedb-core = { path = "../core", features = ["test"] }
+spacetimedb-data-structures.workspace = true
+spacetimedb-datastore.workspace = true
+spacetimedb-execution = { path = "../execution" }
+spacetimedb-lib = { path = "../lib" }
+spacetimedb-paths.workspace = true
+spacetimedb-primitives = { path = "../primitives" }
+spacetimedb-query = { path = "../query" }
+spacetimedb-sats = { path = "../sats" }
+spacetimedb-schema = { workspace = true, features = ["test"] }
+spacetimedb-standalone = { path = "../standalone" }
+spacetimedb-table = { path = "../table" }
+spacetimedb-testing = { path = "../testing" }
+
+anyhow.workspace = true
+anymap.workspace = true
+byte-unit.workspace = true
+clap.workspace = true
+criterion.workspace = true
+futures.workspace = true
+foldhash.workspace = true
+lazy_static.workspace = true
+log.workspace = true
+mimalloc.workspace = true
+rand.workspace = true
+regex.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serial_test.workspace = true
+smallvec.workspace = true
+tempdir.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
+walkdir.workspace = true
+itertools.workspace = true
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# only try to build these on linux
+
+# also:
+# we've forked iai-callgrind to add custom entrypoint support.
+# FIXME(jgilles): revert to depending on the crates version if we ever get that upstreamed.
+
+# iai-callgrind = "0.7.2"
+iai-callgrind = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
+iai-callgrind-runner = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
+iai-callgrind-macros = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
+
+[lints]
+workspace = true

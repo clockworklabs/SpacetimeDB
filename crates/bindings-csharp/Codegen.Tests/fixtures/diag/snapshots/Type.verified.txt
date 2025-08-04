@@ -1,0 +1,157 @@
+﻿{
+  Diagnostics: [
+    {/*
+{
+    EnumVariant1 = 1,
+                 ^^^
+    EnumVariant2 = 2,
+*/
+      Message: TestEnumWithExplicitValues.EnumVariant1 has an explicit value 1 which is not allowed in SpacetimeDB enums.,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0002,
+        Title: [SpacetimeDB.Type] enums cannot have explicit values,
+        MessageFormat: {0}.{1} has an explicit value {2} which is not allowed in SpacetimeDB enums.,
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    EnumVariant1 = 1,
+    EnumVariant2 = 2,
+                 ^^^
+}
+*/
+      Message: TestEnumWithExplicitValues.EnumVariant2 has an explicit value 2 which is not allowed in SpacetimeDB enums.,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0002,
+        Title: [SpacetimeDB.Type] enums cannot have explicit values,
+        MessageFormat: {0}.{1} has an explicit value {2} which is not allowed in SpacetimeDB enums.,
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    EnumVariant256,
+    EnumVariant257,
+    ^^^^^^^^^^^^^^
+}
+*/
+      Message: TestEnumWithTooManyVariants has 257 variants which is more than the allowed 256 variants for SpacetimeDB enums.,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0003,
+        Title: [SpacetimeDB.Type] enums are limited to 256 variants,
+        MessageFormat: {0} has {1} variants which is more than the allowed 256 variants for SpacetimeDB enums.,
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+{
+    public DateTime UnsupportedSpecialType;
+                    ^^^^^^^^^^^^^^^^^^^^^^
+    public Exception UnsupportedSystemType;
+*/
+      Message: BSATN implementation for System.DateTime is not found: Unsupported special type System.DateTime (System_DateTime),
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0001,
+        Title: Unsupported type,
+        MessageFormat: BSATN implementation for {0} is not found: {1},
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    public DateTime UnsupportedSpecialType;
+    public Exception UnsupportedSystemType;
+                     ^^^^^^^^^^^^^^^^^^^^^
+    public UnresolvedType UnresolvedType;
+*/
+      Message: BSATN implementation for System.Exception is not found: Unsupported system type System.Exception,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0001,
+        Title: Unsupported type,
+        MessageFormat: BSATN implementation for {0} is not found: {1},
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    public UnresolvedType UnresolvedType;
+    public LocalEnum UnsupportedEnum;
+                     ^^^^^^^^^^^^^^^
+}
+*/
+      Message: BSATN implementation for LocalEnum is not found: Enum LocalEnum does not have a [SpacetimeDB.Type] attribute,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0001,
+        Title: Unsupported type,
+        MessageFormat: BSATN implementation for {0} is not found: {1},
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+{
+    public int ForbiddenTaggedEnumField;
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+      Message: ForbiddenTaggedEnumField is an instance field, which are not permitted inside SpacetimeDB tagged enums.,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0005,
+        Title: Tagged enums cannot have instance fields,
+        MessageFormat: {0} is an instance field, which are not permitted inside SpacetimeDB tagged enums.,
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+{
+    public int ForbiddenField;
+               ^^^^^^^^^^^^^^
+}
+*/
+      Message: ForbiddenField is an instance field, which are not permitted inside SpacetimeDB tagged enums.,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0005,
+        Title: Tagged enums cannot have instance fields,
+        MessageFormat: {0} is an instance field, which are not permitted inside SpacetimeDB tagged enums.,
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Type]
+public partial struct TestTypeParams<T>
+                                    ^^^
+{
+*/
+      Message: Type parameters <T> are not supported in SpacetimeDB types.,
+      Severity: Error,
+      Descriptor: {
+        Id: BSATN0006,
+        Title: Type parameters are not yet supported,
+        MessageFormat: Type parameters {0} are not supported in SpacetimeDB types.,
+        Category: SpacetimeDB.BSATN,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    }
+  ]
+}

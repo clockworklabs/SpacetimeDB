@@ -1,0 +1,3 @@
+feature: E161
+id: e161_01_01
+sql: SELECT 1 -- hello

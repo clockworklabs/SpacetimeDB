@@ -1,0 +1,9 @@
+# F051-01: DATE data type (including support of DATE literal)
+
+statement ok
+CREATE TABLE TABLE_F051_01_01_011 ( A DATE )
+
+query T
+SELECT DATE '2016-03-26'
+----
+2016-03-26

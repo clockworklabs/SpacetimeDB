@@ -1,0 +1,6 @@
+# E021-07: Character concatenation
+
+query T
+SELECT 'foo' || 'bar'
+----
+'foobar'
