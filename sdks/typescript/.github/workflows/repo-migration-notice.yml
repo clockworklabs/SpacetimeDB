@@ -16,6 +16,7 @@ jobs:
         env:
           migrated_repo: https://github.com/ClockworkLabs/SpacetimeDB
           migrated_path: sdks/typescript
+          default_branch: main
         with:
           script: |
             const isPR = context.eventName === 'pull_request';
@@ -26,7 +27,7 @@ jobs:
               message = `
               Thank you for submitting this!
 
-              We are in the process of migrating this repository (see [DEVELOP.md](../blob/main/DEVELOP.md)).
+              We are in the process of migrating this repository (see [DEVELOP.md](../blob/${process.env.default_branch}/DEVELOP.md)).
 
               To make sure we see your PR, please open it in the [SpacetimeDB](${process.env.migrated_repo}) repo, under [${process.env.migrated_path}](${process.env.migrated_repo}/tree/master/${process.env.migrated_path}).
 
@@ -36,7 +37,7 @@ jobs:
               message = `
               Thank you for submitting this!
 
-              We are in the process of migrating this repository (see [DEVELOP.md](../blob/main/DEVELOP.md)).
+              We are in the process of migrating this repository (see [DEVELOP.md](../blob/${process.env.default_branch}/DEVELOP.md)).
 
               To make sure we actually see your issue, please open it here: [SpacetimeDB/issues/new](${process.env.migrated_repo}/issues/new).
 
