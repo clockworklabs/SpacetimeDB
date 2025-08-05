@@ -85,15 +85,15 @@ impl SpacetimeCreds {
 pub struct SpacetimeAuth {
     pub creds: SpacetimeCreds,
     pub claims: SpacetimeIdentityClaims,
-    // The decoded JWT payload.
-    pub raw_payload: String,
+    /// The JWT payload as a json string (after base64 decoding).
+    pub jwt_payload: String,
 }
 
 impl From<SpacetimeAuth> for ConnectionAuthCtx {
     fn from(auth: SpacetimeAuth) -> Self {
         ConnectionAuthCtx {
             claims: auth.claims,
-            jwt_payload: auth.raw_payload.clone(),
+            jwt_payload: auth.jwt_payload.clone(),
         }
     }
 }
@@ -131,6 +131,9 @@ impl TokenClaims {
         Identity::from_claims(&self.issuer, &self.subject)
     }
 
+    /// Encode the claims into a JWT token and sign it with the provided signer.
+    /// This also adds claims for expiry and issued at time.
+    /// Returns an object representing the claims and the signed token.
     pub fn encode_and_sign_with_expiry(
         &self,
         signer: &impl TokenSigner,
@@ -150,6 +153,9 @@ impl TokenClaims {
         Ok((claims, token))
     }
 
+    /// Encode the claims into a JWT token and sign it with the provided signer.
+    /// This also adds a claim for issued at time.
+    /// Returns an object representing the claims and the signed token.
     pub fn encode_and_sign(&self, signer: &impl TokenSigner) -> Result<(SpacetimeIdentityClaims, String), JwtError> {
         self.encode_and_sign_with_expiry(signer, None)
     }
@@ -177,7 +183,7 @@ impl SpacetimeAuth {
         Ok(Self {
             creds,
             claims,
-            raw_payload: payload,
+            jwt_payload: payload,
         })
     }
 
@@ -351,7 +357,7 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
         let auth = SpacetimeAuth {
             creds,
             claims,
-            raw_payload: payload,
+            jwt_payload: payload,
         };
         Ok(Self { auth: Some(auth) })
     }

@@ -690,7 +690,7 @@ impl ModuleHost {
         let me = self.clone();
         self.call("call_identity_connected", move |inst| {
             let reducer_lookup = me.info.module_def.lifecycle_reducer(Lifecycle::OnConnect);
-            let stdb = me.module.replica_ctx().relational_db.clone();
+            let stdb = &me.module.replica_ctx().relational_db;
             let workload = Workload::Reducer(ReducerContext {
                     name: "call_identity_connected".to_owned(),
                     caller_identity: caller_auth.claims.identity,
@@ -718,9 +718,6 @@ impl ModuleHost {
                     )
                 })
                 .map_err(DBError::from)?;
-
-
-            // let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
             if let Some((reducer_id, reducer_def)) = reducer_lookup {
                 // The module defined a lifecycle reducer to handle new connections.
@@ -767,7 +764,6 @@ impl ModuleHost {
                 // TODO: Is this being broadcast? Does it need to be, or are st_client table subscriptions
                 // not allowed?
                 // I don't think it was being broadcast previously.
-                let stdb = me.module.replica_ctx().relational_db.clone();
                 stdb.finish_tx(mut_tx, Ok(()))
                     .map_err(|e: DBError| {
                         log::error!("`call_identity_connected`: finish transaction failed: {e:#?}");
