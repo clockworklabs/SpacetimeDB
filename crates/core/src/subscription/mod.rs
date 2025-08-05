@@ -1,4 +1,4 @@
-use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilder as _};
+use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilder as _, RowListBuilderSource};
 use crate::{error::DBError, worker_metrics::WORKER_METRICS};
 use anyhow::Result;
 use module_subscription_manager::Plan;
@@ -20,6 +20,7 @@ pub mod execution_unit;
 pub mod module_subscription_actor;
 pub mod module_subscription_manager;
 pub mod query;
+pub mod row_list_builder_pool;
 #[allow(clippy::module_inception)] // it's right this isn't ideal :/
 pub mod subscription;
 pub mod tx;
@@ -92,13 +93,17 @@ impl MetricsRecorder for ExecutionCounters {
 }
 
 /// Execute a subscription query
-pub fn execute_plan<Tx, F>(plan_fragments: &[PipelinedProject], tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
+pub fn execute_plan<Tx, F>(
+    plan_fragments: &[PipelinedProject],
+    tx: &Tx,
+    rlb_pool: &impl RowListBuilderSource<F>,
+) -> Result<(F::List, u64, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
     F: BuildableWebsocketFormat,
 {
     let mut count = 0;
-    let mut list = F::ListBuilder::default();
+    let mut list = rlb_pool.take_row_list_builder();
     let mut metrics = ExecutionMetrics::default();
 
     for fragment in plan_fragments {
@@ -130,12 +135,13 @@ pub fn collect_table_update<Tx, F>(
     table_name: Box<str>,
     tx: &Tx,
     update_type: TableUpdateType,
+    rlb_pool: &impl RowListBuilderSource<F>,
 ) -> Result<(TableUpdate<F>, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
     F: BuildableWebsocketFormat,
 {
-    execute_plan::<Tx, F>(plan_fragments, tx).map(|(rows, num_rows, metrics)| {
+    execute_plan::<Tx, F>(plan_fragments, tx, rlb_pool).map(|(rows, num_rows, metrics)| {
         let empty = F::List::default();
         let qu = match update_type {
             TableUpdateType::Subscribe => QueryUpdate {
@@ -163,6 +169,7 @@ pub fn execute_plans<Tx, F>(
     plans: &[Arc<Plan>],
     tx: &Tx,
     update_type: TableUpdateType,
+    rlb_pool: &(impl Sync + RowListBuilderSource<F>),
 ) -> Result<(DatabaseUpdate<F>, ExecutionMetrics), DBError>
 where
     Tx: Datastore + DeltaStore + Sync,
@@ -183,7 +190,9 @@ where
                 .clone()
                 .optimize()
                 .map(|plan| (sql, PipelinedProject::from(plan)))
-                .and_then(|(_, plan)| collect_table_update(&[plan], table_id, (&**table_name).into(), tx, update_type))
+                .and_then(|(_, plan)| {
+                    collect_table_update(&[plan], table_id, (&**table_name).into(), tx, update_type, rlb_pool)
+                })
                 .map_err(|err| DBError::WithSql {
                     sql: sql.into(),
                     error: Box::new(DBError::Other(err)),

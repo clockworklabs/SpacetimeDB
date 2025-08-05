@@ -5,14 +5,14 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use iter::PlanIter;
-use spacetimedb_lib::{
-    bsatn::{EncodeError, ToBsatn},
-    query::Delta,
-    sats::impl_serialize,
-    AlgebraicValue, ProductValue,
-};
+use spacetimedb_lib::query::Delta;
 use spacetimedb_physical_plan::plan::{ProjectField, ProjectPlan, TupleField};
 use spacetimedb_primitives::{IndexId, TableId};
+use spacetimedb_sats::{
+    bsatn::{BufReservedFill, EncodeError, ToBsatn},
+    buffer::BufWriter,
+    impl_serialize, AlgebraicValue, ProductValue,
+};
 use spacetimedb_table::{
     blob_store::BlobStore,
     static_assert_size,
@@ -165,7 +165,7 @@ impl ToBsatn for Row<'_> {
         }
     }
 
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> std::result::Result<(), EncodeError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> std::result::Result<(), EncodeError> {
         match self {
             Self::Ptr(ptr) => ptr.to_bsatn_extend(buf),
             Self::Ref(val) => val.to_bsatn_extend(buf),

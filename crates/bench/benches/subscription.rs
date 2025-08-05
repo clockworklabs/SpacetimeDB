@@ -1,10 +1,12 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use spacetimedb::client::consume_each_list::ConsumeEachBuffer;
 use spacetimedb::error::DBError;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::identity::AuthCtx;
 use spacetimedb::messages::websocket::BsatnFormat;
 use spacetimedb::sql::ast::SchemaViewer;
 use spacetimedb::subscription::query::compile_read_only_queryset;
+use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb::subscription::tx::DeltaTx;
 use spacetimedb::subscription::{collect_table_update, TableUpdateType};
@@ -119,6 +121,8 @@ fn eval(c: &mut Criterion) {
     let ins_rhs = insert_op(rhs, "location", new_rhs_row);
     let update = [&ins_lhs, &ins_rhs];
 
+    let bsatn_rlb_pool = black_box(BsatnRowListBuilderPool::new());
+
     // A benchmark runner for the new query engine
     let bench_query = |c: &mut Criterion, name, sql| {
         c.bench_function(name, |b| {
@@ -134,13 +138,17 @@ fn eval(c: &mut Criterion) {
             let tx = DeltaTx::from(&tx);
 
             b.iter(|| {
-                drop(black_box(collect_table_update::<_, BsatnFormat>(
+                let updates = black_box(collect_table_update::<_, BsatnFormat>(
                     &plans,
                     table_id,
                     table_name.clone(),
                     &tx,
                     TableUpdateType::Subscribe,
-                )))
+                    &bsatn_rlb_pool,
+                ));
+                if let Ok((updates, _)) = updates {
+                    updates.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
+                }
             })
         });
     };
@@ -152,12 +160,9 @@ fn eval(c: &mut Criterion) {
             let query: ExecutionSet = query.into();
 
             b.iter(|| {
-                drop(black_box(query.eval::<BsatnFormat>(
-                    &raw.db,
-                    &tx,
-                    None,
-                    Compression::None,
-                )))
+                let updates =
+                    black_box(query.eval::<BsatnFormat>(&raw.db, &tx, &bsatn_rlb_pool, None, Compression::None));
+                updates.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
             })
         });
     };
