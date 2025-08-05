@@ -40,7 +40,7 @@ impl TableAccess {
 
 struct ScheduledArg {
     span: Span,
-    reducer: Path,
+    reducer_or_procedure: Path,
     at: Option<Ident>,
 }
 
@@ -113,7 +113,7 @@ impl TableArgs {
 impl ScheduledArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
         let span = meta.path.span();
-        let mut reducer = None;
+        let mut reducer_or_procedure = None;
         let mut at = None;
 
         meta.parse_nested_meta(|meta| {
@@ -126,16 +126,26 @@ impl ScheduledArg {
                     }
                 })
             } else {
-                check_duplicate_msg(&reducer, &meta, "can only specify one scheduled reducer")?;
-                reducer = Some(meta.path);
+                check_duplicate_msg(
+                    &reducer_or_procedure,
+                    &meta,
+                    "can only specify one scheduled reducer or procedure",
+                )?;
+                reducer_or_procedure = Some(meta.path);
             }
             Ok(())
         })?;
 
-        let reducer = reducer.ok_or_else(|| {
-            meta.error("must specify scheduled reducer associated with the table: scheduled(reducer_name)")
+        let reducer_or_procedure = reducer_or_procedure.ok_or_else(|| {
+            meta.error(
+                "must specify scheduled reducer or procedure associated with the table: scheduled(function_name)",
+            )
         })?;
-        Ok(Self { span, reducer, at })
+        Ok(Self {
+            span,
+            reducer_or_procedure,
+            at,
+        })
     }
 }
 
@@ -684,17 +694,17 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 )
             })?;
 
-            let reducer = &sched.reducer;
+            let reducer_or_procedure = &sched.reducer_or_procedure;
             let scheduled_at_id = scheduled_at_column.index;
             let desc = quote!(spacetimedb::table::ScheduleDesc {
-                reducer_name: <#reducer as spacetimedb::rt::ReducerInfo>::NAME,
+                reducer_or_procedure_name: <#reducer_or_procedure as spacetimedb::rt::ExportFunctionInfo>::NAME,
                 scheduled_at_column: #scheduled_at_id,
             });
 
             let primary_key_ty = primary_key_column.ty;
             let scheduled_at_ty = scheduled_at_column.ty;
             let typecheck = quote! {
-                spacetimedb::rt::scheduled_reducer_typecheck::<#original_struct_ident>(#reducer);
+                spacetimedb::rt::scheduled_typecheck::<#original_struct_ident>(#reducer_or_procedure);
                 spacetimedb::rt::assert_scheduled_table_primary_key::<#primary_key_ty>();
                 let _ = |x: #scheduled_at_ty| { let _: spacetimedb::ScheduleAt = x; };
             };

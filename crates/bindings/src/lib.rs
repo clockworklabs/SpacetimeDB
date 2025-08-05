@@ -665,6 +665,10 @@ pub use spacetimedb_bindings_macro::table;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::reducer;
 
+// TODO: document
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::procedure;
+
 /// The context that any procedure is provided with.
 ///
 /// Each procedure must accept `&mut ProcedureContext` as its first argument.

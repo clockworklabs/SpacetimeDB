@@ -1,11 +1,10 @@
 use crate::reducer::{assert_only_lifetime_generics, extract_typed_args};
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
-use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
+use crate::util::{check_duplicate, ident_to_litstr, match_meta};
+use proc_macro2::TokenStream;
+use quote::quote;
 use syn::parse::Parser as _;
-use syn::spanned::Spanned;
-use syn::{FnArg, Ident, ItemFn, LitStr};
+use syn::{ItemFn, LitStr};
 
 #[derive(Default)]
 pub(crate) struct ProcedureArgs {
@@ -86,7 +85,7 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
             }
         };
         impl #func_name {
-            fn invoke(__ctx: spacetimedb::ProcedureContext, __args: &[u8]) -> spacetimedb::ReducerResult {
+            fn invoke(__ctx: spacetimedb::ProcedureContext, __args: &[u8]) -> spacetimedb::ProcedureResult {
                 spacetimedb::rt::invoke_procedure(#func_name, __ctx, __args)
             }
         }

@@ -42,6 +42,10 @@ pub fn invoke_procedure<'a, A: Args<'a>>(
     procedure.invoke(&mut ctx, args)
 }
 
+/// Marker supertrait for [`Reducer`] and [`Procedure`],
+/// used for typechecking by [`scheduled_typecheck`].
+pub trait ExportFunction<'de, A: Args<'de>> {}
+
 /// A trait for types representing the *execution logic* of a reducer.
 #[diagnostic::on_unimplemented(
     message = "invalid reducer signature",
@@ -52,7 +56,7 @@ pub fn invoke_procedure<'a, A: Args<'a>>(
     note = "where each `Ti` type implements `SpacetimeType`.",
     note = ""
 )]
-pub trait Reducer<'de, A: Args<'de>> {
+pub trait Reducer<'de, A: Args<'de>>: ExportFunction<'de, A> {
     fn invoke(&self, ctx: &ReducerContext, args: A) -> ReducerResult;
 }
 
@@ -77,7 +81,7 @@ pub trait ReducerInfo: ExportFunctionInfo {
     note = "where each `Ti` implements `SpacetimeType`.",
     note = ""
 )]
-pub trait Procedure<'de, A: Args<'de>> {
+pub trait Procedure<'de, A: Args<'de>>: ExportFunction<'de, A> {
     fn invoke(&self, ctx: &mut ProcedureContext, args: A) -> ProcedureResult;
 }
 
@@ -195,8 +199,8 @@ pub trait ProcedureArg {
 }
 impl<T: SpacetimeType> ProcedureArg for T {}
 
-/// Assert that a reducer type-checks with a given type.
-pub const fn scheduled_reducer_typecheck<'de, Row>(_x: impl ReducerForScheduledTable<'de, Row>)
+/// Assert that a reducer or procedure type-checks with a given argument type.
+pub const fn scheduled_typecheck<'de, Row>(_x: impl ExportFunctionForScheduledTable<'de, Row>)
 where
     Row: SpacetimeType + Serialize + Deserialize<'de>,
 {
@@ -204,13 +208,14 @@ where
 }
 
 #[diagnostic::on_unimplemented(
-    message = "invalid signature for scheduled table reducer",
-    note = "the scheduled reducer must take `{TableRow}` as its sole argument",
-    note = "e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: {TableRow})`"
+    message = "invalid signature for scheduled table reducer or procedure",
+    note = "the scheduled reducer or procedure must take `{TableRow}` as its sole argument",
+    note = "e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: {TableRow})`",
+    note = "or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: {TableRow})`"
 )]
-pub trait ReducerForScheduledTable<'de, TableRow> {}
-impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, R: Reducer<'de, (TableRow,)>>
-    ReducerForScheduledTable<'de, TableRow> for R
+pub trait ExportFunctionForScheduledTable<'de, TableRow> {}
+impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, R: ExportFunction<'de, (TableRow,)>>
+    ExportFunctionForScheduledTable<'de, TableRow> for R
 {
 }
 
@@ -327,6 +332,8 @@ macro_rules! impl_reducer_and_procedure {
             }
         }
 
+        impl<'de, Func, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> ExportFunction<'de, ($($T,)*)> for Func {}
+
         // Implement `Reducer<..., ContextArg>` for the tuple type `($($T,)*)`.
         impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*)> for Func
         where
@@ -428,7 +435,7 @@ pub fn register_table<T: Table>() {
             table = table.with_column_sequence(col);
         }
         if let Some(schedule) = T::SCHEDULE {
-            table = table.with_schedule(schedule.reducer_name, schedule.scheduled_at_column);
+            table = table.with_schedule(schedule.reducer_or_procedure_name, schedule.scheduled_at_column);
         }
 
         table.finish();
@@ -455,7 +462,7 @@ pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>)
     })
 }
 
-pub fn register_procedure<'a, A: Args<'a>, I: ProcedureInfo>(_: impl Reducer<'a, A>) {
+pub fn register_procedure<'a, A: Args<'a>, I: ProcedureInfo>(_: impl Procedure<'a, A>) {
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         module.inner.add_procedure(I::NAME, params);
