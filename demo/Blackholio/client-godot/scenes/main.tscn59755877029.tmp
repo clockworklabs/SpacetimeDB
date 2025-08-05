@@ -1,0 +1,23 @@
+[gd_scene load_steps=3 format=3 uid="uid://bxuk66njrs835"]
+
+[ext_resource type="Script" uid="uid://caf2ukha6d1l5" path="res://scenes/main.gd" id="1_o5qli"]
+[ext_resource type="Script" uid="uid://jvk6ou7i2d4s" path="res://addons/SpacetimeDB/GodotHelpers/RowReceiver.gd" id="2_0wfyh"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_o5qli")
+
+[node name="CircleRowReceiver" type="Node" parent="."]
+script = ExtResource("2_0wfyh")
+metadata/_custom_type_script = "uid://jvk6ou7i2d4s"
+
+[node name="EntityRowReceiver" type="Node" parent="."]
+script = ExtResource("2_0wfyh")
+metadata/_custom_type_script = "uid://jvk6ou7i2d4s"
+
+[node name="FoodRowReceiver" type="Node" parent="."]
+script = ExtResource("2_0wfyh")
+metadata/_custom_type_script = "uid://jvk6ou7i2d4s"
+
+[node name="PlayerRowReceiver" type="Node" parent="."]
+script = ExtResource("2_0wfyh")
+metadata/_custom_type_script = "uid://jvk6ou7i2d4s"

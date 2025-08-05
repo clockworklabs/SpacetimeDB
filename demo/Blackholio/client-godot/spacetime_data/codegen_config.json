@@ -1,0 +1,7 @@
+{
+	"config_version": 1,
+	"option_handling": 4,
+	"handling types": "ignore = 1, use_godot_option = 2, option_t_as_t = 3",
+	"hide_scheduled_reducers": true,
+	"hide_private_tables": true
+}

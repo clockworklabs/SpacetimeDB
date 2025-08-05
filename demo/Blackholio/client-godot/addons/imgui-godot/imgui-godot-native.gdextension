@@ -1,0 +1,13 @@
+[configuration]
+
+entry_symbol = "ign_init"
+compatibility_minimum = 4.2
+
+[libraries]
+
+macos.debug = "bin/libimgui-godot-native.macos.debug.framework"
+macos.release = "bin/libimgui-godot-native.macos.release.framework"
+windows.debug.x86_64 = "bin/libimgui-godot-native.windows.debug.x86_64.dll"
+windows.release.x86_64 = "bin/libimgui-godot-native.windows.release.x86_64.dll"
+linux.debug.x86_64 = "bin/libimgui-godot-native.linux.debug.x86_64.so"
+linux.release.x86_64 = "bin/libimgui-godot-native.linux.release.x86_64.so"

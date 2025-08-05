@@ -1,0 +1,24 @@
+[gd_scene load_steps=2 format=3 uid="uid://bemmdx8plr0c8"]
+
+[ext_resource type="Script" uid="uid://gx3va23uy542" path="res://scenes/circle_controller.gd" id="1_7ru76"]
+
+[node name="CircleController" type="Node2D"]
+script = ExtResource("1_7ru76")
+
+[node name="Label" type="Label" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -5.0
+offset_top = -14.0
+offset_right = -4.0
+offset_bottom = 9.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_colors/font_shadow_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 16
+horizontal_alignment = 1
+vertical_alignment = 1

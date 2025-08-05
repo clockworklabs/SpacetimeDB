@@ -1,0 +1,6 @@
+# Normalize EOL for all files that Git considers text files.
+* text=auto eol=lf
+
+.godot
+spacetime_data/schema
+spacetime_data/codegen_debug
