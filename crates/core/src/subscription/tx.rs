@@ -98,6 +98,11 @@ impl<'a> DeltaTx<'a> {
             indexes: DeltaTableIndexes::from_tx_data(tx, data, indexes),
         }
     }
+
+    pub fn tx_offset(&self) -> Option<u64> {
+        let data = self.data.as_ref()?;
+        data.tx_offset()
+    }
 }
 
 impl Deref for DeltaTx<'_> {

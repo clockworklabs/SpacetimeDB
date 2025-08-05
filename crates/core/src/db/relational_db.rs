@@ -32,7 +32,7 @@ use spacetimedb_datastore::{
     },
     traits::TxData,
 };
-use spacetimedb_durability::{self as durability, TxOffset};
+use spacetimedb_durability as durability;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::st_var::StVarValue;
@@ -62,6 +62,8 @@ use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch;
+
+pub use durability::{DurableOffset, TxOffset};
 
 // NOTE(cloutiertyler): We should be using the associated types, but there is
 // a bug in the Rust compiler that prevents us from doing so.
@@ -369,7 +371,7 @@ impl RelationalDB {
             .as_ref()
             .map(|pair| pair.0.clone())
             .as_deref()
-            .and_then(|durability| durability.durable_tx_offset());
+            .and_then(|durability| durability.durable_tx_offset().get());
         let (min_commitlog_offset, _) = history.tx_range_hint();
 
         log::info!("[{database_identity}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
@@ -896,6 +898,12 @@ impl RelationalDB {
                 reducer_context.map(|rcx| &rcx.name),
             );
         }
+    }
+
+    pub fn durable_tx_offset(&self) -> Option<DurableOffset> {
+        self.durability
+            .as_ref()
+            .map(|durability| durability.durable_tx_offset())
     }
 
     /// Decide based on the `committed_state.next_tx_offset`

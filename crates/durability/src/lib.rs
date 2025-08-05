@@ -1,5 +1,7 @@
 use std::{iter, marker::PhantomData, sync::Arc};
 
+use tokio::sync::watch;
+
 pub use spacetimedb_commitlog::{error, payload::Txdata, Decoder, Transaction};
 
 mod imp;
@@ -14,6 +16,30 @@ pub use imp::{local, Local};
 /// gaps, it must guarantee that a higher transaction offset implies durability
 /// of all offsets smaller than it.
 pub type TxOffset = u64;
+
+pub struct DurableOffset {
+    inner: watch::Receiver<Option<TxOffset>>,
+}
+
+impl DurableOffset {
+    pub fn get(&self) -> Option<TxOffset> {
+        self.inner.borrow().as_ref().copied()
+    }
+
+    pub async fn wait_for(&mut self, offset: TxOffset) -> Result<TxOffset, ()> {
+        self.inner
+            .wait_for(|durable| durable.is_some_and(|val| val >= offset))
+            .await
+            .map(|r| r.as_ref().copied().unwrap())
+            .map_err(drop)
+    }
+}
+
+impl From<watch::Receiver<Option<TxOffset>>> for DurableOffset {
+    fn from(inner: watch::Receiver<Option<TxOffset>>) -> Self {
+        Self { inner }
+    }
+}
 
 /// The durability API.
 ///
@@ -41,7 +67,7 @@ pub trait Durability: Send + Sync {
     /// A `None` return value indicates that the durable offset is not known,
     /// either because nothing has been persisted yet, or because the status
     /// cannot be retrieved.
-    fn durable_tx_offset(&self) -> Option<TxOffset>;
+    fn durable_tx_offset(&self) -> DurableOffset;
 }
 
 /// Access to the durable history.

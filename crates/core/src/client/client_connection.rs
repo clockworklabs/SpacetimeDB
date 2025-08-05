@@ -63,6 +63,8 @@ pub struct ClientConfig {
     /// rather than  [`TransactionUpdateLight`]s on a successful update.
     // TODO(centril): As more knobs are added, make this into a bitfield (when there's time).
     pub tx_update_full: bool,
+    /// Whether to send only confirmed (aka durable) transactions to the client.
+    pub confirmed_reads: bool,
 }
 
 impl ClientConfig {
@@ -71,6 +73,7 @@ impl ClientConfig {
             protocol: Protocol::Binary,
             compression: <_>::default(),
             tx_update_full: true,
+            confirmed_reads: false,
         }
     }
 }
