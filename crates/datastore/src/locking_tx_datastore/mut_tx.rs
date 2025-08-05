@@ -1173,7 +1173,7 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn commit(mut self) -> (TxData, TxMetrics, String) {
+    pub(super) fn commit(mut self) -> (TxData, TxMetrics, String) {
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
 
         // Compute and keep enough info that we can
@@ -1352,33 +1352,46 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
-    pub fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+    pub fn insert_st_client(
+        &mut self,
+        identity: Identity,
+        connection_id: ConnectionId,
+        jwt_payload: &str,
+    ) -> Result<()> {
         let row = &StClientRow {
             identity: identity.into(),
             connection_id: connection_id.into(),
         };
-        self.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
+        self.insert_via_serialize_bsatn(ST_CLIENT_ID, row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!(
+                    "[{identity}]: insert_st_client: failed to insert client ({identity}, {connection_id}), error: {e}"
+                );
+            })?;
+        self.insert_st_client_credentials(connection_id, jwt_payload)
     }
 
-    pub fn insert_st_client_credentials(&mut self, connection_id: ConnectionId, jwt_payload: &str) -> Result<()> {
+    fn insert_st_client_credentials(&mut self, connection_id: ConnectionId, jwt_payload: &str) -> Result<()> {
         let row = &StConnectionCredentialsRow {
             connection_id: connection_id.into(),
             jwt_payload: jwt_payload.to_owned(),
         };
         self.insert_via_serialize_bsatn(ST_CONNECTION_CREDENTIALS_ID, row)
             .map(|_| ())
+            .inspect_err(|e| {
+                log::error!("[{connection_id}]: insert_st_client_credentials: failed to insert client credentials for connection id ({connection_id}), error: {e}");
+            })
     }
 
-    pub fn delete_st_client_credentials(
-        &mut self,
-        database_identity: Identity,
-        connection_id: ConnectionId,
-    ) -> Result<()> {
+    fn delete_st_client_credentials(&mut self, database_identity: Identity, connection_id: ConnectionId) -> Result<()> {
         if let Err(e) = self.delete_col_eq(
             ST_CONNECTION_CREDENTIALS_ID,
             StConnectionCredentialsFields::ConnectionId.col_id(),
             &ConnectionIdViaU128::from(connection_id).into(),
         ) {
+            // This is possible on restart if the database was previously running a version
+            // before this system table was added.
             log::error!("[{database_identity}]: delete_st_client_credentials: attempting to delete credentials for missing connection id ({connection_id}), error: {e}");
         }
         Ok(())

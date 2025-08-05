@@ -26,6 +26,7 @@ use derive_more::From;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
+use scopeguard::ScopeGuard;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate};
 use spacetimedb_data_structures::error_stream::ErrorStream;
@@ -692,31 +693,27 @@ impl ModuleHost {
             let reducer_lookup = me.info.module_def.lifecycle_reducer(Lifecycle::OnConnect);
             let stdb = &me.module.replica_ctx().relational_db;
             let workload = Workload::Reducer(ReducerContext {
-                    name: "call_identity_connected".to_owned(),
-                    caller_identity: caller_auth.claims.identity,
+                name: "call_identity_connected".to_owned(),
+                caller_identity: caller_auth.claims.identity,
+                caller_connection_id,
+                timestamp: Timestamp::now(),
+                arg_bsatn: Bytes::new(),
+            });
+            let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload);
+            let mut mut_tx = scopeguard::guard(mut_tx, |mut_tx| {
+                // If we crash before committing, we need to ensure that the transaction is rolled back.
+                // This is necessary to avoid leaving the database in an inconsistent state.
+                log::debug!("call_identity_connected: rolling back transaction");
+                let (metrics, reducer_name) = mut_tx.rollback();
+                stdb.report_mut_tx_metrics(reducer_name, metrics, None);
+            });
+
+            mut_tx
+                .insert_st_client(
+                    caller_auth.claims.identity,
                     caller_connection_id,
-                    timestamp: Timestamp::now(),
-                    arg_bsatn: Bytes::new(),
-                });
-            let mut mut_tx = stdb.begin_mut_tx(
-                IsolationLevel::Serializable,
-                workload
-            );
-            mut_tx
-                .insert_st_client(caller_auth.claims.identity, caller_connection_id)
-                .inspect_err(|e| {
-                    log::error!(
-                        "`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}"
-                    )
-                })
-                .map_err(DBError::from)?;
-            mut_tx
-                .insert_st_client_credentials(caller_connection_id, &caller_auth.jwt_payload)
-                .inspect_err(|e| {
-                    log::error!(
-                        "`call_identity_connected`: fallback transaction to insert into `st_client_credetials` failed: {e:#?}"
-                    )
-                })
+                    &caller_auth.jwt_payload,
+                )
                 .map_err(DBError::from)?;
 
             if let Some((reducer_id, reducer_def)) = reducer_lookup {
@@ -725,7 +722,7 @@ impl ModuleHost {
                 // If the call fails (as in, something unexpectedly goes wrong with WASM execution),
                 // abort the connection: we can't really recover.
                 let reducer_outcome = me.call_reducer_inner_with_inst(
-                    Some(mut_tx),
+                    Some(ScopeGuard::into_inner(mut_tx)),
                     caller_auth.claims.identity,
                     Some(caller_connection_id),
                     None,
@@ -764,7 +761,7 @@ impl ModuleHost {
                 // TODO: Is this being broadcast? Does it need to be, or are st_client table subscriptions
                 // not allowed?
                 // I don't think it was being broadcast previously.
-                stdb.finish_tx(mut_tx, Ok(()))
+                stdb.finish_tx(ScopeGuard::into_inner(mut_tx), Ok(()))
                     .map_err(|e: DBError| {
                         log::error!("`call_identity_connected`: finish transaction failed: {e:#?}");
                         ClientConnectedError::DBError(e)
