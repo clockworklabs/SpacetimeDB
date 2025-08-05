@@ -45,6 +45,8 @@ pub use table::{AutoIncOverflow, RangedIndex, Table, TryInsertError, UniqueColum
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
 
+pub type ProcedureResult = ReducerResult;
+
 pub use spacetimedb_bindings_macro::duration;
 
 /// Generates code for registering a row-level security rule.
@@ -663,6 +665,46 @@ pub use spacetimedb_bindings_macro::table;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::reducer;
 
+/// The context that any procedure is provided with.
+///
+/// Each procedure must accept `&mut ProcedureContext` as its first argument.
+///
+/// Includes information about the client calling the procedure and the time of invocation,
+/// and exposes methods for running transactions and performing side-effecting operations.
+///
+/// If the crate was compiled with the `rand` feature,
+/// also includes faculties for random number generation.
+pub struct ProcedureContext {
+    /// The `Identity` of the client that invoked the procedure.
+    pub sender: Identity,
+
+    /// The time at which the procedure was started.
+    pub timestamp: Timestamp,
+
+    /// The `ConnectionId` of the client that invoked the procedure.
+    ///
+    /// Will be `None` for certain scheduled procedures.
+    pub connection_id: Option<ConnectionId>,
+
+    #[cfg(feature = "rand08")]
+    rng: std::cell::OnceCell<StdbRng>,
+}
+
+impl ProcedureContext {
+    /// Read the current module's [`Identity`].
+    pub fn identity(&self) -> Identity {
+        // Hypothetically, we *could* read the module identity out of the system tables.
+        // However, this would be:
+        // - Onerous, because we have no tooling to inspect the system tables from module code.
+        // - Slow (at least relatively),
+        //   because it would involve multiple host calls which hit the datastore,
+        //   as compared to a single host call which does not.
+        // As such, we've just defined a host call
+        // which reads the module identity out of the `InstanceEnv`.
+        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+    }
+}
+
 /// The context that any reducer is provided with.
 ///
 /// This must be the first argument of the reducer. Clients of the module will
@@ -687,11 +729,8 @@ pub struct ReducerContext {
 
     /// The `ConnectionId` of the client that invoked the reducer.
     ///
-    /// `None` if no `ConnectionId` was supplied to the `/database/call` HTTP endpoint,
-    /// or via the CLI's `spacetime call` subcommand.
-    ///
-    /// For automatic reducers, i.e. `init`, `client_connected`, `client_disconnected`, and scheduled reducers,
-    /// this will be the module's `ConnectionId`.
+    /// Will be `None` for certain reducers invoked automatically by the host,
+    /// including `init` and scheduled reducers.
     pub connection_id: Option<ConnectionId>,
 
     /// Allows accessing the local database attached to a module.
