@@ -5954,6 +5954,7 @@ dependencies = [
  "lazy_static",
  "petgraph",
  "proptest",
+ "regex",
  "serde_json",
  "serial_test",
  "smallvec",

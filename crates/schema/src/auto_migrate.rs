@@ -17,6 +17,7 @@ use spacetimedb_sats::{
 };
 mod ansi_formatter;
 mod formatter;
+mod plain_formatter;
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
@@ -44,16 +45,24 @@ impl<'def> MigratePlan<'def> {
         }
     }
 
-    pub fn pretty_print(&self) -> anyhow::Result<String> {
+    pub fn pretty_print(&self, no_color: bool) -> anyhow::Result<String> {
         match self {
             MigratePlan::Manual(_) => {
                 anyhow::bail!("Manual migration plans are not yet supported for pretty printing.")
             }
             MigratePlan::Auto(plan) => {
-                let mut fmt = AnsiFormatter::new(1024, ColorScheme::default());
-                format_plan(&mut fmt, plan)
-                    .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}"))
-                    .map(|_| fmt.to_string())
+                if no_color {
+                    let mut fmt = plain_formatter::PlainFormatter::new(1024);
+                    format_plan(&mut fmt, plan)
+                        .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}"))
+                        .map(|_| fmt.to_string())
+                } else {
+                    // Use the ANSI formatter with colors.
+                    let mut fmt = AnsiFormatter::new(1024, ColorScheme::default());
+                    format_plan(&mut fmt, plan)
+                        .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}"))
+                        .map(|_| fmt.to_string())
+                }
             }
         }
     }
