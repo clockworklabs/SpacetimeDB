@@ -1,9 +1,8 @@
+use spacetimedb_datastore::system_tables::ModuleKind;
 use spacetimedb_lib::Identity;
 use spacetimedb_sats::de::Deserialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::ser::Serialize;
-
-use crate::address::Address;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct IdentityEmail {
@@ -26,8 +25,8 @@ pub struct EnergyBalance {
 pub struct Database {
     /// Internal id of the database, assigned by the control database.
     pub id: u64,
-    /// Public identity (i.e. [`Address`]) of the database.
-    pub address: Address,
+    /// Public identity (i.e. [`Identity`]) of the database.
+    pub database_identity: Identity,
     /// [`Identity`] of the database's owner.
     pub owner_identity: Identity,
     /// [`HostType`] of the module associated with the database.
@@ -45,14 +44,14 @@ pub struct DatabaseStatus {
     pub state: String,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct DatabaseInstance {
+pub struct Replica {
     pub id: u64,
     pub database_id: u64,
     pub node_id: u64,
     pub leader: bool,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct DatabaseInstanceStatus {
+pub struct ReplicaStatus {
     pub state: String,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -72,11 +71,18 @@ pub struct NodeStatus {
     /// SEE: <https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/node-v1/#NodeStatus>
     pub state: String,
 }
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, strum::EnumString, strum::AsRefStr,
-)]
-#[strum(serialize_all = "lowercase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(i32)]
 pub enum HostType {
     Wasm = 0,
+    Js = 1,
+}
+
+impl From<crate::messages::control_db::HostType> for ModuleKind {
+    fn from(host_type: crate::messages::control_db::HostType) -> Self {
+        match host_type {
+            crate::messages::control_db::HostType::Wasm => Self::WASM,
+            crate::messages::control_db::HostType::Js => Self::JS,
+        }
+    }
 }

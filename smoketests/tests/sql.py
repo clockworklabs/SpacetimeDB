@@ -1,8 +1,10 @@
 from .. import Smoketest
 
+
 class SqlFormat(Smoketest):
     MODULE_CODE = """
 use spacetimedb::sats::{i256, u256};
+use spacetimedb::{table, ConnectionId, Identity, ReducerContext, Table, Timestamp, TimeDuration};
 
 #[derive(Copy, Clone)]
 #[spacetimedb::table(name = t_ints)]
@@ -44,6 +46,10 @@ pub struct TOthers {
     f64: f64,
     str: String,
     bytes: Vec<u8>,
+    identity: Identity,
+    connection_id: ConnectionId,
+    timestamp: Timestamp,
+    duration:  TimeDuration,
 }
 
 #[spacetimedb::table(name = t_others_tuple)]
@@ -52,7 +58,7 @@ pub struct TOthersTuple {
 }
 
 #[spacetimedb::reducer]
-pub fn test() {
+pub fn test(ctx: &ReducerContext) {
     let tuple = TInts {
         i8: -25,
         i16: -3224,
@@ -61,8 +67,8 @@ pub fn test() {
         i128: -234434897853,
         i256: (-234434897853i128).into(),
     };
-    TInts::insert(tuple);
-    TIntsTuple::insert(TIntsTuple { tuple });
+    ctx.db.t_ints().insert(tuple);
+    ctx.db.t_ints_tuple().insert(TIntsTuple { tuple });
 
     let tuple = TUints {
         u8: 105,
@@ -72,8 +78,8 @@ pub fn test() {
         u128: 4378528978889,
         u256: 4378528978889u128.into(),
     };
-    TUints::insert(tuple);
-    TUintsTuple::insert(TUintsTuple { tuple });
+    ctx.db.t_uints().insert(tuple);
+    ctx.db.t_uints_tuple().insert(TUintsTuple { tuple });
 
     let tuple = TOthers {
         bool: true,
@@ -81,15 +87,19 @@ pub fn test() {
         f64: -3454353.345389043278459,
         str: "This is spacetimedb".to_string(),
         bytes: vec!(1, 2, 3, 4, 5, 6, 7),
+        identity: Identity::ONE,
+        connection_id: ConnectionId::ZERO,      
+        timestamp: Timestamp::UNIX_EPOCH,
+        duration: TimeDuration::ZERO,
     };
-    TOthers::insert(tuple.clone());
-    TOthersTuple::insert(TOthersTuple { tuple });
+    ctx.db.t_others().insert(tuple.clone());
+    ctx.db.t_others_tuple().insert(TOthersTuple { tuple });
 }
 """
 
     def assertSql(self, sql, expected):
         self.maxDiff = None
-        sql_out = self.spacetime("sql", self.address, sql)
+        sql_out = self.spacetime("sql", self.database_identity, sql)
         sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
         expected = "\n".join([line.rstrip() for line in expected.splitlines()])
         self.assertMultiLineEqual(sql_out, expected)
@@ -120,12 +130,12 @@ pub fn test() {
  (u8 = 105, u16 = 1050, u32 = 83892, u64 = 48937498, u128 = 4378528978889, u256 = 4378528978889) 
 """)
         self.assertSql("SELECT * FROM t_others", """\
- bool | f32       | f64                | str                   | bytes            
-------+-----------+--------------------+-----------------------+------------------
- true | 594806.56 | -3454353.345389043 | "This is spacetimedb" | 0x01020304050607 
+ bool | f32       | f64                | str                   | bytes            | identity                                                           | connection_id                      | timestamp                 | duration
+------+-----------+--------------------+-----------------------+------------------+--------------------------------------------------------------------+------------------------------------+---------------------------+-----------
+ true | 594806.56 | -3454353.345389043 | "This is spacetimedb" | 0x01020304050607 | 0x0000000000000000000000000000000000000000000000000000000000000001 | 0x00000000000000000000000000000000 | 1970-01-01T00:00:00+00:00 | +0.000000
 """)
         self.assertSql("SELECT * FROM t_others_tuple", """\
- tuple                                                                                                           
------------------------------------------------------------------------------------------------------------------
- (bool = true, f32 = 594806.56, f64 = -3454353.345389043, str = "This is spacetimedb", bytes = 0x01020304050607) 
+ tuple                                                                                                                                                         
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ (bool = true, f32 = 594806.56, f64 = -3454353.345389043, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000001, connection_id = 0x00000000000000000000000000000000, timestamp = 1970-01-01T00:00:00+00:00, duration = +0.000000)
 """)

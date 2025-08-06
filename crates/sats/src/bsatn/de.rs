@@ -26,7 +26,9 @@ impl<'a, 'de, R: BufReader<'de>> Deserializer<'a, R> {
     }
 
     /// Reads a slice of `len` elements.
-    pub(crate) fn get_slice(&mut self, len: usize) -> Result<&'de [u8], DecodeError> {
+    #[inline]
+    #[doc(hidden)]
+    pub fn get_slice(&mut self, len: usize) -> Result<&'de [u8], DecodeError> {
         self.reader.get_slice(len)
     }
 
@@ -48,7 +50,7 @@ impl de::Error for DecodeError {
     }
 }
 
-impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
 
     fn deserialize_product<V: de::ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, DecodeError> {
@@ -60,7 +62,12 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     }
 
     fn deserialize_bool(self) -> Result<bool, Self::Error> {
-        self.reader.get_u8().map(|x| x != 0)
+        let byte = self.reader.get_u8()?;
+        match byte {
+            0 => Ok(false),
+            1 => Ok(true),
+            b => Err(DecodeError::InvalidBool(b)),
+        }
     }
     fn deserialize_u8(self) -> Result<u8, DecodeError> {
         self.reader.get_u8()
@@ -125,24 +132,9 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
         let seeds = itertools::repeat_n(seed, len);
         visitor.visit(ArrayAccess { de: self, seeds })
     }
-
-    fn deserialize_map_seed<
-        Vi: de::MapVisitor<'de, K::Output, V::Output>,
-        K: de::DeserializeSeed<'de> + Clone,
-        V: de::DeserializeSeed<'de> + Clone,
-    >(
-        mut self,
-        visitor: Vi,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Vi::Output, Self::Error> {
-        let len = self.reborrow().deserialize_len()?;
-        let seeds = itertools::repeat_n((kseed, vseed), len);
-        visitor.visit(MapAccess { de: self, seeds })
-    }
 }
 
-impl<'de, 'a, R: BufReader<'de>> SeqProductAccess<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> SeqProductAccess<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
 
     fn next_element_seed<T: de::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Output>, DecodeError> {
@@ -150,17 +142,17 @@ impl<'de, 'a, R: BufReader<'de>> SeqProductAccess<'de> for Deserializer<'a, R> {
     }
 }
 
-impl<'de, 'a, R: BufReader<'de>> SumAccess<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> SumAccess<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
     type Variant = Self;
 
-    fn variant<V: de::VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: de::VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         let tag = self.reader.get_u8()?;
         visitor.visit_tag(tag).map(|variant| (variant, self))
     }
 }
 
-impl<'de, 'a, R: BufReader<'de>> VariantAccess<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> VariantAccess<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
     fn deserialize_seed<T: de::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
         seed.deserialize(self)
@@ -173,7 +165,7 @@ pub struct ArrayAccess<'a, R, T> {
     seeds: itertools::RepeatN<T>,
 }
 
-impl<'de, 'a, R: BufReader<'de>, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAccess<'a, R, T> {
+impl<'de, R: BufReader<'de>, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAccess<'_, R, T> {
     type Element = T::Output;
     type Error = DecodeError;
 
@@ -181,36 +173,6 @@ impl<'de, 'a, R: BufReader<'de>, T: de::DeserializeSeed<'de> + Clone> de::ArrayA
         self.seeds
             .next()
             .map(|seed| seed.deserialize(self.de.reborrow()))
-            .transpose()
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        Some(self.seeds.len())
-    }
-}
-
-/// Deserializer for map elements.
-pub struct MapAccess<'a, R, K, V> {
-    de: Deserializer<'a, R>,
-    seeds: itertools::RepeatN<(K, V)>,
-}
-
-impl<'de, 'a, R: BufReader<'de>, K: de::DeserializeSeed<'de> + Clone, V: de::DeserializeSeed<'de> + Clone>
-    de::MapAccess<'de> for MapAccess<'a, R, K, V>
-{
-    type Key = K::Output;
-    type Value = V::Output;
-    type Error = DecodeError;
-
-    fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error> {
-        self.seeds
-            .next()
-            .map(|(kseed, vseed)| {
-                Ok((
-                    kseed.deserialize(self.de.reborrow())?,
-                    vseed.deserialize(self.de.reborrow())?,
-                ))
-            })
             .transpose()
     }
 

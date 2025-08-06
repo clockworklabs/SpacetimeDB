@@ -2,20 +2,21 @@ use std::{
     io,
     num::NonZeroU16,
     panic,
-    path::PathBuf,
     sync::{
         atomic::{
             AtomicI64, AtomicU64,
             Ordering::{Acquire, Relaxed, Release},
         },
-        Arc,
+        Arc, Weak,
     },
     time::Duration,
 };
 
 use anyhow::Context as _;
+use itertools::Itertools as _;
 use log::{info, trace, warn};
 use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
+use spacetimedb_paths::server::CommitLogDir;
 use tokio::{
     sync::mpsc,
     task::{spawn_blocking, AbortHandle, JoinHandle},
@@ -93,7 +94,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     /// The `root` directory must already exist.
     ///
     /// Background tasks are spawned onto the provided tokio runtime.
-    pub fn open(root: impl Into<PathBuf>, rt: tokio::runtime::Handle, opts: Options) -> io::Result<Self> {
+    pub fn open(root: CommitLogDir, rt: tokio::runtime::Handle, opts: Options) -> io::Result<Self> {
         info!("open local durability");
 
         let clog = Arc::new(Commitlog::open(root, opts.commitlog)?);
@@ -115,7 +116,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
         );
         rt.spawn(
             FlushAndSyncTask {
-                clog: clog.clone(),
+                clog: Arc::downgrade(&clog),
                 period: opts.sync_interval,
                 offset: offset.clone(),
                 abort: persister_task.abort_handle(),
@@ -140,7 +141,17 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
 
     /// Obtain an iterator over the [`Commit`]s in the underlying log.
     pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> {
-        self.clog.commits_from(offset)
+        self.clog.commits_from(offset).map_ok(Commit::from)
+    }
+
+    /// Get a list of segment offsets, sorted in ascending order.
+    pub fn existing_segment_offsets(&self) -> io::Result<Vec<TxOffset>> {
+        self.clog.existing_segment_offsets()
+    }
+
+    /// Compress the segments at the offsets provided, marking them as immutable.
+    pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<()> {
+        self.clog.compress_segments(offsets)
     }
 
     /// Apply all outstanding transactions to the [`Commitlog`] and flush it
@@ -243,7 +254,7 @@ fn flush_error(e: io::Error) {
 }
 
 struct FlushAndSyncTask<T> {
-    clog: Arc<Commitlog<Txdata<T>>>,
+    clog: Weak<Commitlog<Txdata<T>>>,
     period: Duration,
     offset: Arc<AtomicI64>,
     /// Handle to abort the [`PersisterTask`] if fsync panics.
@@ -261,15 +272,17 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
         loop {
             interval.tick().await;
 
+            let Some(clog) = self.clog.upgrade() else {
+                break;
+            };
             // Skip if nothing changed.
-            if let Some(committed) = self.clog.max_committed_offset() {
+            if let Some(committed) = clog.max_committed_offset() {
                 let durable = self.offset.load(Acquire);
                 if durable.is_positive() && committed == durable as _ {
                     continue;
                 }
             }
 
-            let clog = self.clog.clone();
             let task = spawn_blocking(move || clog.flush_and_sync()).await;
             match task {
                 Err(e) => {
@@ -334,7 +347,10 @@ impl<T: Encode + 'static> History for Local<T> {
         self.clog.transactions_from(offset, decoder)
     }
 
-    fn max_tx_offset(&self) -> Option<TxOffset> {
-        self.clog.max_committed_offset()
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        let min = self.clog.min_committed_offset().unwrap_or_default();
+        let max = self.clog.max_committed_offset();
+
+        (min, max)
     }
 }

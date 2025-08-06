@@ -20,26 +20,29 @@
 //! materialized views are necessary. We find, however, that a particular kind
 //! of join query _can_ be evaluated incrementally without materialized views.
 
-use super::execution_unit::ExecutionUnit;
+use super::execution_unit::{ExecutionUnit, QueryHash};
+use super::module_subscription_manager::Plan;
 use super::query;
-use crate::client::Protocol;
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, UpdatesRelValue};
 use crate::messages::websocket as ws;
+use crate::sql::ast::SchemaViewer;
+use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::Either;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use spacetimedb_client_api_messages::websocket::Compression;
 use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::error::AuthError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::DbTable;
-use spacetimedb_lib::{Identity, ProductValue};
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::ProductValue;
+use spacetimedb_schema::def::error::AuthError;
+use spacetimedb_schema::relation::DbTable;
+use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
@@ -126,13 +129,12 @@ impl AsRef<QueryExpr> for SupportedQuery {
 
 /// Evaluates `query` and returns all the updates.
 fn eval_updates<'a>(
-    ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     mut sources: impl SourceProvider<'a>,
 ) -> impl 'a + Iterator<Item = RelValue<'a>> {
-    let mut query = build_query(ctx, db, tx, query, &mut sources);
+    let mut query = build_query(db, tx, query, &mut sources);
     iter::from_fn(move || query.next())
 }
 
@@ -261,29 +263,26 @@ impl IncrementalJoin {
     /// Evaluate join plan for lhs updates.
     fn eval_lhs<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
     ) -> impl Iterator<Item = RelValue<'a>> {
-        eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), Some(lhs.map(RelValue::ProjRef)))
+        eval_updates(db, tx, self.plan_for_delta_lhs(), Some(lhs.map(RelValue::ProjRef)))
     }
 
     /// Evaluate join plan for rhs updates.
     fn eval_rhs<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
     ) -> impl Iterator<Item = RelValue<'a>> {
-        eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), Some(rhs.map(RelValue::ProjRef)))
+        eval_updates(db, tx, self.plan_for_delta_rhs(), Some(rhs.map(RelValue::ProjRef)))
     }
 
     /// Evaluate join plan for both lhs and rhs updates.
     fn eval_all<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
@@ -292,7 +291,7 @@ impl IncrementalJoin {
         let is = Either::Left(lhs.map(RelValue::ProjRef));
         let ps = Either::Right(rhs.map(RelValue::ProjRef));
         let sources: SourceSet<_, 2> = if self.return_index_rows { [is, ps] } else { [ps, is] }.into();
-        eval_updates(ctx, db, tx, &self.virtual_plan, sources)
+        eval_updates(db, tx, &self.virtual_plan, sources)
     }
 
     /// Evaluate this [`IncrementalJoin`] over the row updates of a transaction t.
@@ -301,7 +300,7 @@ impl IncrementalJoin {
     /// B(t) refers to the state of table B as of transaction t.
     /// In particular, B(t) includes all of the changes from t.
     /// B(s) refers to the state of table B as of transaction s,
-    /// where s is the transaction immediately preceeding t.
+    /// where s is the transaction immediately preceding t.
     ///
     /// Now we may ask,
     /// given a set of updates to tables A and/or B,
@@ -318,7 +317,7 @@ impl IncrementalJoin {
     /// Because they have no bearing on newly inserted rows of A.
     ///
     /// Now consider rows that were deleted from A.
-    /// Similary we want to know if they join with any deleted rows of B,
+    /// Similarly we want to know if they join with any deleted rows of B,
     /// or if they join with any previously existing rows of B.
     /// That is:
     ///
@@ -349,7 +348,6 @@ impl IncrementalJoin {
     /// (8) A+ x B-
     pub fn eval<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         updates: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
@@ -403,7 +401,7 @@ impl IncrementalJoin {
             if produce_if {
                 producer().collect()
             } else {
-                HashSet::new()
+                HashSet::default()
             }
         }
 
@@ -420,35 +418,35 @@ impl IncrementalJoin {
 
         // (1) A+ x B(t)
         let j1_lhs_ins = lhs_inserts.clone();
-        let join_1 = make_iter(has_lhs_inserts, || self.eval_lhs(ctx, db, tx, j1_lhs_ins));
+        let join_1 = make_iter(has_lhs_inserts, || self.eval_lhs(db, tx, j1_lhs_ins));
         // (2) A- x B(t)
         let j2_lhs_del = lhs_deletes.clone();
-        let mut join_2 = collect_set(has_lhs_deletes, || self.eval_lhs(ctx, db, tx, j2_lhs_del));
+        let mut join_2 = collect_set(has_lhs_deletes, || self.eval_lhs(db, tx, j2_lhs_del));
         // (3) A- x B+
         let j3_lhs_del = lhs_deletes.clone();
         let j3_rhs_ins = rhs_inserts.clone();
         let join_3 = make_iter(has_lhs_deletes && has_rhs_inserts, || {
-            self.eval_all(ctx, db, tx, j3_lhs_del, j3_rhs_ins)
+            self.eval_all(db, tx, j3_lhs_del, j3_rhs_ins)
         });
         // (4) A- x B-
         let j4_rhs_del = rhs_deletes.clone();
         let join_4 = make_iter(has_lhs_deletes && has_rhs_deletes, || {
-            self.eval_all(ctx, db, tx, lhs_deletes, j4_rhs_del)
+            self.eval_all(db, tx, lhs_deletes, j4_rhs_del)
         });
         // (5) A(t) x B+
         let j5_rhs_ins = rhs_inserts.clone();
-        let mut join_5 = collect_set(has_rhs_inserts, || self.eval_rhs(ctx, db, tx, j5_rhs_ins));
+        let mut join_5 = collect_set(has_rhs_inserts, || self.eval_rhs(db, tx, j5_rhs_ins));
         // (6) A(t) x B-
         let j6_rhs_del = rhs_deletes.clone();
-        let mut join_6 = collect_set(has_rhs_deletes, || self.eval_rhs(ctx, db, tx, j6_rhs_del));
+        let mut join_6 = collect_set(has_rhs_deletes, || self.eval_rhs(db, tx, j6_rhs_del));
         // (7) A+ x B+
         let j7_lhs_ins = lhs_inserts.clone();
         let join_7 = make_iter(has_lhs_inserts && has_rhs_inserts, || {
-            self.eval_all(ctx, db, tx, j7_lhs_ins, rhs_inserts)
+            self.eval_all(db, tx, j7_lhs_ins, rhs_inserts)
         });
         // (8) A+ x B-
         let join_8 = make_iter(has_lhs_inserts && has_rhs_deletes, || {
-            self.eval_all(ctx, db, tx, lhs_inserts, rhs_deletes)
+            self.eval_all(db, tx, lhs_inserts, rhs_deletes)
         });
 
         // A- x B(s) = A- x B(t) \ A- x B+
@@ -515,28 +513,27 @@ pub struct ExecutionSet {
 }
 
 impl ExecutionSet {
-    pub fn eval(
+    pub fn eval<F: BuildableWebsocketFormat>(
         &self,
-        ctx: &ExecutionContext,
-        protocol: Protocol,
         db: &RelationalDB,
         tx: &Tx,
         slow_query_threshold: Option<Duration>,
-    ) -> ws::DatabaseUpdate {
+        compression: Compression,
+    ) -> ws::DatabaseUpdate<F> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         let tables = self
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
-            .par_iter()
-            .filter_map(|unit| unit.eval(ctx, db, tx, &unit.sql, slow_query_threshold, protocol))
+            .iter()
+            .filter_map(|unit| unit.eval(db, tx, &unit.sql, slow_query_threshold, compression))
             .collect();
         ws::DatabaseUpdate { tables }
     }
 
-    #[tracing::instrument(skip_all)]
-    pub fn eval_incr<'a>(
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn eval_incr_for_test<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
+
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         database_update: &'a [&'a DatabaseTableUpdate],
@@ -544,17 +541,13 @@ impl ExecutionSet {
     ) -> DatabaseUpdateRelValue<'a> {
         let mut tables = Vec::new();
         for unit in &self.exec_units {
-            if let Some(table) = unit.eval_incr(
-                ctx,
-                db,
-                tx,
-                &unit.sql,
-                database_update.iter().copied(),
-                slow_query_threshold,
-            ) {
+            if let Some(table) =
+                unit.eval_incr(db, tx, &unit.sql, database_update.iter().copied(), slow_query_threshold)
+            {
                 tables.push(table);
             }
         }
+
         DatabaseUpdateRelValue { tables }
     }
 
@@ -564,6 +557,11 @@ impl ExecutionSet {
             .iter()
             .map(|unit| unit.row_estimate(tx))
             .fold(0, |acc, est| acc.saturating_add(est))
+    }
+
+    /// Return an iterator over the execution units
+    pub fn iter(&self) -> impl Iterator<Item = &ExecutionUnit> {
+        self.exec_units.iter().map(|arc| &**arc)
     }
 }
 
@@ -613,14 +611,48 @@ impl AuthAccess for ExecutionSet {
 /// Queries all the [`StTableType::User`] tables *right now*
 /// and turns them into [`QueryExpr`],
 /// the moral equivalent of `SELECT * FROM table`.
-pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Vec<SupportedQuery>, DBError> {
+pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Vec<Plan>, DBError> {
     Ok(relational_db
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
-        .filter(|t| {
-            t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
+        .filter(|t| t.table_type == StTableType::User && (auth.is_owner() || t.table_access == StAccess::Public))
+        .map(|schema| {
+            let sql = format!("SELECT * FROM {}", schema.table_name);
+            let tx = SchemaViewer::new(tx, auth);
+            SubscriptionPlan::compile(&sql, &tx, auth).map(|(plans, has_param)| {
+                Plan::new(
+                    plans,
+                    QueryHash::from_string(
+                        &sql,
+                        auth.caller,
+                        // Note that when generating hashes for queries from owners,
+                        // we always treat them as if they were parameterized by :sender.
+                        // This is because RLS is not applicable to owners.
+                        // Hence owner hashes must never overlap with client hashes.
+                        auth.is_owner() || has_param,
+                    ),
+                    sql,
+                )
+            })
         })
+        .collect::<Result<_, _>>()?)
+}
+
+/// Queries all the [`StTableType::User`] tables *right now*
+/// and turns them into [`QueryExpr`],
+/// the moral equivalent of `SELECT * FROM table`.
+#[cfg(test)]
+pub(crate) fn legacy_get_all(
+    relational_db: &RelationalDB,
+    tx: &Tx,
+    auth: &AuthCtx,
+) -> Result<Vec<SupportedQuery>, DBError> {
+    Ok(relational_db
+        .get_all_tables(tx)?
+        .iter()
+        .map(Deref::deref)
+        .filter(|t| t.table_type == StTableType::User && (auth.is_owner() || t.table_access == StAccess::Public))
         .map(|src| SupportedQuery {
             kind: query::Supported::Select,
             expr: QueryExpr::new(src),
@@ -632,11 +664,11 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{begin_tx, TestDB};
     use crate::sql::compiler::compile_sql;
-    use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::relation::DbTable;
+    use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
     use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_schema::relation::DbTable;
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
 
     #[test]
@@ -647,7 +679,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let _ = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -656,17 +688,17 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?.remove(0);
 
         let CrudExpr::Query(mut expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
+            panic!("unexpected result from compilation: {exp:#?}");
         };
 
         assert_eq!(expr.source.table_name(), "lhs");
@@ -674,7 +706,7 @@ mod tests {
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         // Create an insert for an incremental update.
@@ -689,7 +721,7 @@ mod tests {
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         let IndexJoin {
@@ -707,7 +739,7 @@ mod tests {
             return_index_rows: false,
         } = join
         else {
-            panic!("unexpected index join {:#?}", join);
+            panic!("unexpected index join {join:#?}");
         };
 
         assert!(lhs.is_empty());
@@ -727,7 +759,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -736,17 +768,17 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let _ = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?.remove(0);
 
         let CrudExpr::Query(mut expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
+            panic!("unexpected result from compilation: {exp:#?}");
         };
 
         assert_eq!(expr.source.table_name(), "lhs");
@@ -754,7 +786,7 @@ mod tests {
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         // Create an insert for an incremental update.
@@ -771,7 +803,7 @@ mod tests {
 
         let join = expr.query.pop().unwrap();
         let Query::IndexJoin(join) = join else {
-            panic!("expected an index join, but got {:#?}", join);
+            panic!("expected an index join, but got {join:#?}");
         };
 
         let IndexJoin {
@@ -789,7 +821,7 @@ mod tests {
             return_index_rows: true,
         } = join
         else {
-            panic!("unexpected index join {:#?}", join);
+            panic!("unexpected index join {join:#?}");
         };
 
         assert!(!rhs.is_empty());
@@ -807,7 +839,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let _lhs_id = db
             .create_table_for_test("lhs", schema, indexes)
             .expect("Failed to create_table_for_test lhs");
@@ -818,20 +850,22 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let _rhs_id = db
             .create_table_for_test("rhs", schema, indexes)
             .expect("Failed to create_table_for_test rhs");
 
-        let tx = db.begin_tx();
+        let tx = begin_tx(&db);
 
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &tx, sql).expect("Failed to compile_sql").remove(0);
+        let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)
+            .expect("Failed to compile_sql")
+            .remove(0);
 
         let CrudExpr::Query(expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
+            panic!("unexpected result from compilation: {exp:#?}");
         };
 
         assert_eq!(expr.source.table_name(), "lhs");
@@ -840,8 +874,7 @@ mod tests {
         let src_join = &expr.query[0];
         assert!(
             matches!(src_join, Query::IndexJoin(_)),
-            "expected an index join, but got {:#?}",
-            src_join
+            "expected an index join, but got {src_join:#?}"
         );
 
         let incr = IncrementalJoin::new(&expr).expect("Failed to construct IncrementalJoin");
@@ -854,7 +887,7 @@ mod tests {
         assert_eq!(virtual_plan.query.len(), 1);
         let incr_join = &virtual_plan.query[0];
         let Query::JoinInner(ref incr_join) = incr_join else {
-            panic!("expected an inner semijoin, but got {:#?}", incr_join);
+            panic!("expected an inner semijoin, but got {incr_join:#?}");
         };
         assert!(incr_join.rhs.source.is_mem_table());
         assert_ne!(incr_join.rhs.source.head(), expr.source.head());

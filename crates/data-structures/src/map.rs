@@ -1,8 +1,15 @@
-use core::hash::BuildHasher;
-pub use hashbrown::hash_map::{DefaultHashBuilder, Entry, RawEntryMut};
-pub use hashbrown::{HashMap, HashSet};
+use core::hash::{BuildHasher, BuildHasherDefault};
+pub use hashbrown::hash_map::Entry;
 use nohash_hasher::BuildNoHashHasher;
 pub use nohash_hasher::IsEnabled as ValidAsIdentityHash;
+
+pub type DefaultHashBuilder = BuildHasherDefault<ahash::AHasher>;
+// TODO(centril): expose two maps instead,
+// one `map::fast::HashMap` and one `map::ddos::HashMap`.
+// In the first case we won't care about DDoS protection at all and can use `foldhash::fast`.
+// In the lattr, we can use e.g., randomized AHash.
+pub type HashMap<K, V, S = DefaultHashBuilder> = hashbrown::HashMap<K, V, S>;
+pub type HashSet<T, S = DefaultHashBuilder> = hashbrown::HashSet<T, S>;
 
 /// A version of [`HashMap<K, V>`] using the identity hash function,
 /// which is valid for any key type that can be converted to a `u64` without truncation.

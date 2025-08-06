@@ -1,6 +1,6 @@
-﻿using System.Runtime.CompilerServices;
+﻿namespace SpacetimeDB;
 
-namespace SpacetimeDB;
+using System.Runtime.CompilerServices;
 
 [AttributeUsage(
     AttributeTargets.Struct | AttributeTargets.Class | AttributeTargets.Enum,

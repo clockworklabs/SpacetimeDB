@@ -1,1 +1,0 @@
-../../quickstart-chat/module_bindings/set_name_reducer.rs

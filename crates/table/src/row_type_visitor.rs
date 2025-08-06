@@ -29,13 +29,16 @@
 
 use super::{
     indexes::{Byte, Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout, SumTypeLayout},
     page::get_ref,
     var_len::{VarLenMembers, VarLenRef},
 };
 use core::fmt;
 use core::marker::PhantomData;
 use itertools::Itertools;
+use spacetimedb_sats::layout::{
+    align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout, SumTypeLayout,
+};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::sync::Arc;
 
 /// Construct an implementor of `VarLenMembers`,
@@ -44,6 +47,11 @@ use std::sync::Arc;
 /// This is a potentially expensive operation,
 /// so the resulting `VarLenVisitorProgram` should be stored and re-used.
 pub fn row_type_visitor(ty: &RowTypeLayout) -> VarLenVisitorProgram {
+    if ty.layout().fixed {
+        // Fast-path: The row type doesn't contain var-len members, so quit early.
+        return VarLenVisitorProgram { insns: [].into() };
+    }
+
     let rose_tree = product_type_to_rose_tree(ty.product(), &mut 0);
 
     rose_tree_to_visitor_program(&rose_tree)
@@ -52,7 +60,7 @@ pub fn row_type_visitor(ty: &RowTypeLayout) -> VarLenVisitorProgram {
 /// Construct a `VarLenRoseTree` from `ty`.
 ///
 /// See [`algebraic_type_to_rose_tree`] for more details.
-fn product_type_to_rose_tree(ty: &ProductTypeLayout, current_offset: &mut usize) -> VarLenRoseTree {
+fn product_type_to_rose_tree(ty: ProductTypeLayoutView<'_>, current_offset: &mut usize) -> VarLenRoseTree {
     // Loop over all the product elements,
     // which we store in-order,
     // and collect them into a subtree.
@@ -60,7 +68,7 @@ fn product_type_to_rose_tree(ty: &ProductTypeLayout, current_offset: &mut usize)
     // Better to over-allocate than under-allocate (maybe).
     let mut contents = Vec::with_capacity(ty.elements.len());
 
-    for elt in &*ty.elements {
+    for elt in ty.elements {
         match algebraic_type_to_rose_tree(&elt.ty, current_offset) {
             // No need to collect empty subtrees.
             VarLenRoseTree::Empty => {}
@@ -109,10 +117,8 @@ fn sum_type_to_rose_tree(ty: &SumTypeLayout, current_offset: &mut usize) -> VarL
 
             // All variants are stored overlapping at the offset of the sum.
             // Don't let them mutate `current_offset`.
-            // Note that we store sums with data first,
-            // followed by tag,
-            // so the variant data goes at `current_offset`,
-            // not `current_offset + tag + padding`.
+            // Note that we store sums with tag first,
+            // followed by data/payload.
             //
             // `offset_of_variant_data` is defined as 0,
             // but included for future-proofing.
@@ -170,7 +176,7 @@ fn algebraic_type_to_rose_tree(ty: &AlgebraicTypeLayout, current_offset: &mut us
             *current_offset += primitive_type.size();
             VarLenRoseTree::Empty
         }
-        AlgebraicTypeLayout::Product(ty) => product_type_to_rose_tree(ty, current_offset),
+        AlgebraicTypeLayout::Product(ty) => product_type_to_rose_tree(ty.view(), current_offset),
         AlgebraicTypeLayout::Sum(ty) => sum_type_to_rose_tree(ty, current_offset),
     }
 }
@@ -269,7 +275,7 @@ fn remove_trailing_gotos(program: &mut Vec<Insn>) -> bool {
 }
 
 /// The instruction set of a [`VarLenVisitorProgram`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Insn {
     // TODO(perf): consider boxing this variant (or making it a variable-width instruction)
     //             to minimize sizeof(insn),
@@ -315,6 +321,8 @@ impl Insn {
     const FIXUP: Self = Self::Goto(u16::MAX);
 }
 
+impl MemoryUsage for Insn {}
+
 #[allow(clippy::disallowed_macros)] // This is for test code.
 pub fn dump_visitor_program(program: &VarLenVisitorProgram) {
     for (idx, insn) in program.insns.iter().enumerate() {
@@ -348,14 +356,21 @@ impl fmt::Display for Insn {
 /// Forward progress, and thus termination,
 /// during interpretation is guaranteed when evaluating a program,
 /// as all jumps (`SwitchOnTag` and `Goto`) will set `new_instr_ptr > old_instr_ptr`.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VarLenVisitorProgram {
     /// The list of instructions that make up this program.
     insns: Arc<[Insn]>,
 }
 
-/// Evalutes the `program`,
-/// provided the `instr_ptr` as its program counter / intruction pointer,
+impl MemoryUsage for VarLenVisitorProgram {
+    fn heap_usage(&self) -> usize {
+        let Self { insns } = self;
+        insns.heap_usage()
+    }
+}
+
+/// Evaluates the `program`,
+/// provided the `instr_ptr` as its program counter / instruction pointer,
 /// and a callback `read_tag` to extract a tag at the given offset,
 /// until `Some(offset)` is reached,
 /// or the program halts.
@@ -495,7 +510,7 @@ impl<'row> Iterator for VarLenVisitorProgramIterMut<'_, 'row> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::indexes::Size;
+    use spacetimedb_sats::layout::Size;
     use spacetimedb_sats::{AlgebraicType, ProductType};
 
     fn row_type<T: Into<ProductType>>(row_ty: T) -> RowTypeLayout {

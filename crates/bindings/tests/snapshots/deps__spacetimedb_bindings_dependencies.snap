@@ -1,6 +1,6 @@
 ---
 source: crates/bindings/tests/deps.rs
-expression: "cargo tree -p spacetimedb -f {lib} -e no-dev"
+expression: "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown -f {lib}"
 ---
 total crates: 60
 spacetimedb
@@ -19,19 +19,17 @@ spacetimedb
 │   └── rustc_version
 │       └── semver
 ├── getrandom
-│   ├── cfg_if
-│   └── libc
+│   └── cfg_if
 ├── log
 ├── rand
-│   ├── libc
 │   ├── rand_chacha
 │   │   ├── ppv_lite86
+│   │   │   └── zerocopy
 │   │   └── rand_core
 │   │       └── getrandom (*)
 │   └── rand_core (*)
 ├── scoped_tls
 ├── spacetimedb_bindings_macro
-│   ├── bitflags
 │   ├── heck
 │   ├── humantime
 │   ├── proc_macro2 (*)
@@ -42,15 +40,29 @@ spacetimedb
 │   │   ├── itertools
 │   │   │   └── either
 │   │   └── nohash_hasher
-│   └── syn
-│       ├── proc_macro2 (*)
-│       ├── quote (*)
-│       └── unicode_ident
+│   └── syn (*)
 ├── spacetimedb_bindings_sys
-│   └── spacetimedb_primitives (*)
+│   └── spacetimedb_primitives
+│       ├── bitflags
+│       ├── either
+│       ├── itertools
+│       │   └── either
+│       └── nohash_hasher
 ├── spacetimedb_lib
 │   ├── anyhow
 │   ├── bitflags
+│   ├── blake3
+│   │   ├── arrayref
+│   │   ├── arrayvec
+│   │   ├── cfg_if
+│   │   └── constant_time_eq
+│   │   [build-dependencies]
+│   │   └── cc
+│   │       └── shlex
+│   ├── chrono
+│   │   └── num_traits
+│   │       [build-dependencies]
+│   │       └── autocfg
 │   ├── derive_more (*)
 │   ├── enum_as_inner
 │   │   ├── heck
@@ -60,33 +72,17 @@ spacetimedb
 │   ├── hex
 │   ├── itertools (*)
 │   ├── spacetimedb_bindings_macro (*)
-│   ├── spacetimedb_data_structures
-│   │   ├── hashbrown
-│   │   │   ├── ahash
-│   │   │   │   ├── cfg_if
-│   │   │   │   ├── once_cell
-│   │   │   │   └── zerocopy
-│   │   │   │   [build-dependencies]
-│   │   │   │   └── version_check
-│   │   │   └── allocator_api2
-│   │   ├── nohash_hasher
-│   │   ├── smallvec
-│   │   └── thiserror
-│   │       └── thiserror_impl
-│   │           ├── proc_macro2 (*)
-│   │           ├── quote (*)
-│   │           └── syn (*)
 │   ├── spacetimedb_primitives (*)
 │   ├── spacetimedb_sats
+│   │   ├── anyhow
 │   │   ├── arrayvec
 │   │   ├── bitflags
 │   │   ├── bytemuck
 │   │   ├── bytes
+│   │   ├── chrono (*)
 │   │   ├── decorum
 │   │   │   ├── approx
-│   │   │   │   └── num_traits
-│   │   │   │       [build-dependencies]
-│   │   │   │       └── autocfg
+│   │   │   │   └── num_traits (*)
 │   │   │   └── num_traits (*)
 │   │   ├── derive_more (*)
 │   │   ├── enum_as_inner (*)
@@ -109,6 +105,10 @@ spacetimedb
 │   │   ├── smallvec
 │   │   ├── spacetimedb_bindings_macro (*)
 │   │   ├── spacetimedb_primitives (*)
-│   │   └── thiserror (*)
+│   │   └── thiserror
+│   │       └── thiserror_impl
+│   │           ├── proc_macro2 (*)
+│   │           ├── quote (*)
+│   │           └── syn (*)
 │   └── thiserror (*)
 └── spacetimedb_primitives (*)

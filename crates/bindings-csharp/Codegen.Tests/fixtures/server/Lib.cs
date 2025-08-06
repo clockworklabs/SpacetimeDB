@@ -1,6 +1,9 @@
 ﻿using System.Runtime.InteropServices;
 using SpacetimeDB;
 
+#pragma warning disable CA1050 // Declare types in namespaces - this is a test fixture, no need for a namespace.
+#pragma warning disable STDB_UNSTABLE // Enable experimental SpacetimeDB features
+
 [SpacetimeDB.Type]
 public partial struct CustomStruct
 {
@@ -8,22 +11,72 @@ public partial struct CustomStruct
     public static readonly string IGNORE_ME_TOO = "";
     public int IntField;
     public string StringField;
+    public int? NullableIntField;
+    public string? NullableStringField;
 }
 
 [SpacetimeDB.Type]
-public partial struct CustomClass
+public partial class CustomClass
 {
     public const int IGNORE_ME = 0;
     public static readonly string IGNORE_ME_TOO = "";
-    public int IntField;
-    public string StringField;
+    public int IntField = 0;
+    public string StringField = "";
+    public int? NullableIntField;
+    public string? NullableStringField;
+}
+
+[SpacetimeDB.Type]
+public partial class CustomRecord
+{
+    public const int IGNORE_ME = 0;
+    public static readonly string IGNORE_ME_TOO = "";
+    public int IntField = 0;
+    public string StringField = "";
+    public int? NullableIntField;
+    public string? NullableStringField;
 }
 
 [StructLayout(LayoutKind.Auto)]
-public partial struct CustomClass
+public partial class CustomClass
 {
     public int IgnoreExtraFields;
 }
+
+[SpacetimeDB.Type]
+public partial class CustomNestedClass
+{
+    public CustomClass NestedClass = new();
+    public CustomClass? NestedNullableClass = null;
+    public CustomEnum NestedEnum = CustomEnum.EnumVariant1;
+    public CustomEnum? NestedNullableEnum = null;
+    public CustomTaggedEnum NestedTaggedEnum = new CustomTaggedEnum.NullableIntVariant(null);
+    public CustomTaggedEnum? NestedNullableTaggedEnum = null;
+    public CustomRecord NestedCustomRecord = new();
+    public CustomRecord? NestedNullableCustomRecord = null;
+}
+
+[SpacetimeDB.Type]
+public partial class ContainsNestedLists
+{
+    public List<int> IntList = [];
+    public List<string> StringList = [];
+    public int[] IntArray = [];
+    public string[] StringArray = [];
+    public List<int[][]> IntArrayArrayList = [];
+    public List<List<int>>[] IntListListArray = [];
+    public List<string[][]> StringArrayArrayList = [];
+    public List<List<string>>[] StringListListArray = [];
+}
+
+[SpacetimeDB.Type]
+public partial class EmptyClass { }
+
+[SpacetimeDB.Type]
+public partial struct EmptyStruct { }
+
+[SpacetimeDB.Type]
+public partial record EmptyRecord { }
 
 [SpacetimeDB.Type]
 public enum CustomEnum
@@ -34,7 +87,12 @@ public enum CustomEnum
 
 [SpacetimeDB.Type]
 public partial record CustomTaggedEnum
-    : SpacetimeDB.TaggedEnum<(int IntVariant, string StringVariant)>;
+    : SpacetimeDB.TaggedEnum<(
+        int IntVariant,
+        string StringVariant,
+        int? NullableIntVariant,
+        string? NullableStringVariant
+    )>;
 
 [SpacetimeDB.Table]
 public partial class PrivateTable { }
@@ -42,7 +100,8 @@ public partial class PrivateTable { }
 [SpacetimeDB.Table]
 public partial struct PublicTable
 {
-    [SpacetimeDB.Column(ColumnAttrs.PrimaryKeyAuto)]
+    [SpacetimeDB.AutoInc]
+    [SpacetimeDB.PrimaryKey]
     public int Id;
 
     public byte ByteField;
@@ -64,33 +123,31 @@ public partial struct PublicTable
     public double DoubleField;
     public string StringField;
     public Identity IdentityField;
-    public Address AddressField;
+    public ConnectionId ConnectionIdField;
     public CustomStruct CustomStructField;
     public CustomClass CustomClassField;
     public CustomEnum CustomEnumField;
     public CustomTaggedEnum CustomTaggedEnumField;
     public List<int> ListField;
-    public Dictionary<string, int> DictionaryField;
     public int? NullableValueField;
     public string? NullableReferenceField;
-    public Dictionary<CustomEnum, List<int?>?>? ComplexNestedField;
 }
 
 public static partial class Reducers
 {
     [SpacetimeDB.Reducer]
-    public static void InsertData(PublicTable data)
+    public static void InsertData(ReducerContext ctx, PublicTable data)
     {
-        data.Insert();
-        Runtime.Log("New list");
-        foreach (var item in PublicTable.Iter())
+        ctx.Db.PublicTable.Insert(data);
+        Log.Info("New list");
+        foreach (var item in ctx.Db.PublicTable.Iter())
         {
-            Runtime.Log($"Item: {item.StringField}");
+            Log.Info($"Item: {item.StringField}");
         }
     }
 
     [SpacetimeDB.Reducer]
-    public static void ScheduleImmediate(PublicTable data)
+    public static void ScheduleImmediate(ReducerContext ctx, PublicTable data)
     {
         VolatileNonatomicScheduleImmediateInsertData(data);
     }
@@ -102,10 +159,10 @@ namespace Test
     {
         public static partial class AndClasses
         {
-            [SpacetimeDB.Reducer("test_custom_name_and_reducer_ctx")]
+            [SpacetimeDB.Reducer]
             public static void InsertData2(ReducerContext ctx, PublicTable data)
             {
-                data.Insert();
+                ctx.Db.PublicTable.Insert(data);
             }
         }
     }
@@ -116,11 +173,15 @@ public static partial class Timers
     [SpacetimeDB.Table(Scheduled = nameof(SendScheduledMessage))]
     public partial struct SendMessageTimer
     {
+        [PrimaryKey]
+        [AutoInc]
+        public ulong ScheduledId;
+        public ScheduleAt ScheduledAt;
         public string Text;
     }
 
     [SpacetimeDB.Reducer]
-    public static void SendScheduledMessage(SendMessageTimer arg)
+    public static void SendScheduledMessage(ReducerContext ctx, SendMessageTimer arg)
     {
         // verify that fields were auto-added
         ulong id = arg.ScheduledId;
@@ -131,10 +192,74 @@ public static partial class Timers
     [SpacetimeDB.Reducer(ReducerKind.Init)]
     public static void Init(ReducerContext ctx)
     {
-        new SendMessageTimer
-        {
-            Text = "bot sending a message",
-            ScheduledAt = ctx.Time.AddSeconds(10),
-        }.Insert();
+        ctx.Db.SendMessageTimer.Insert(
+            new SendMessageTimer
+            {
+                Text = "bot sending a message",
+                ScheduledAt = ctx.Timestamp + new TimeDuration(10_000_000),
+            }
+        );
     }
+}
+
+[SpacetimeDB.Table(Name = "MultiTable1", Public = true)]
+[SpacetimeDB.Table(Name = "MultiTable2")]
+public partial struct MultiTableRow
+{
+    [SpacetimeDB.Index.BTree(Table = "MultiTable1")]
+    public string Name;
+
+    [SpacetimeDB.AutoInc]
+    [SpacetimeDB.PrimaryKey(Table = "MultiTable1")]
+    public uint Foo;
+
+    [SpacetimeDB.Unique(Table = "MultiTable2")]
+    public uint Bar;
+
+    [SpacetimeDB.Reducer]
+    public static void InsertMultiData(ReducerContext ctx, MultiTableRow data)
+    {
+        // Verify that we have both tables generated on the context.
+        ctx.Db.MultiTable1.Insert(data);
+        ctx.Db.MultiTable2.Insert(data);
+    }
+}
+
+[SpacetimeDB.Table]
+[SpacetimeDB.Index.BTree(Name = "Location", Columns = ["X", "Y", "Z"])]
+partial struct BTreeMultiColumn
+{
+    public uint X;
+    public uint Y;
+    public uint Z;
+}
+
+[SpacetimeDB.Table]
+[SpacetimeDB.Index.BTree(Name = "Location", Columns = ["X", "Y"])]
+partial struct BTreeViews
+{
+    [SpacetimeDB.PrimaryKey]
+    public Identity Id;
+
+    public uint X;
+    public uint Y;
+
+    [SpacetimeDB.Index.BTree]
+    public string Faction;
+}
+
+[SpacetimeDB.Table]
+partial struct RegressionMultipleUniqueIndexesHadSameName
+{
+    [SpacetimeDB.Unique]
+    public uint Unique1;
+
+    [SpacetimeDB.Unique]
+    public uint Unique2;
+}
+
+public class Module
+{
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter ALL_PUBLIC_TABLES = new Filter.Sql("SELECT * FROM PublicTable");
 }

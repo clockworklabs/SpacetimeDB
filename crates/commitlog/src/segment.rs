@@ -1,24 +1,32 @@
 use std::{
     fs::File,
-    io::{self, BufWriter, Write as _},
-    num::NonZeroU16,
+    io::{self, BufWriter, ErrorKind, SeekFrom, Write as _},
+    num::{NonZeroU16, NonZeroU64},
     ops::Range,
 };
 
-use log::debug;
+use log::{debug, warn};
 
 use crate::{
     commit::{self, Commit, StoredCommit},
     error,
+    index::{IndexError, IndexFileMut},
     payload::Encode,
+    repo::{TxOffset, TxOffsetIndex, TxOffsetIndexMut},
+    Options,
 };
 
 pub const MAGIC: [u8; 6] = [b'(', b'd', b's', b')', b'^', b'2'];
 
-pub const DEFAULT_LOG_FORMAT_VERSION: u8 = 0;
+pub const DEFAULT_LOG_FORMAT_VERSION: u8 = 1;
 pub const DEFAULT_CHECKSUM_ALGORITHM: u8 = CHECKSUM_ALGORITHM_CRC32C;
 
 pub const CHECKSUM_ALGORITHM_CRC32C: u8 = 0;
+pub const CHECKSUM_CRC32C_LEN: usize = 4;
+
+/// Lookup table for checksum length, index is [`Header::checksum_algorithm`].
+// Supported algorithms must be numbered consecutively!
+pub const CHECKSUM_LEN: [usize; 1] = [CHECKSUM_CRC32C_LEN];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Header {
@@ -74,6 +82,16 @@ impl Default for Header {
     }
 }
 
+/// Metadata about a [`Commit`] which was successfully written via [`Writer::commit`].
+#[derive(Debug, PartialEq)]
+pub struct Committed {
+    /// The range of transaction offsets included in the commit.
+    pub tx_range: Range<u64>,
+    /// The crc32 checksum of the commit's serialized form,
+    /// as written to the commitlog.
+    pub checksum: u32,
+}
+
 #[derive(Debug)]
 pub struct Writer<W: io::Write> {
     pub(crate) commit: Commit,
@@ -83,6 +101,8 @@ pub struct Writer<W: io::Write> {
     pub(crate) bytes_written: u64,
 
     pub(crate) max_records_in_commit: NonZeroU16,
+
+    pub(crate) offset_index_head: Option<OffsetIndexWriter>,
 }
 
 impl<W: io::Write> Writer<W> {
@@ -109,19 +129,57 @@ impl<W: io::Write> Writer<W> {
     /// Write the current [`Commit`] to the underlying [`io::Write`].
     ///
     /// Will do nothing if the current commit is empty (i.e. `Commit::n` is zero).
-    pub fn commit(&mut self) -> io::Result<()> {
+    /// In this case, `None` is returned.
+    ///
+    /// Otherwise `Some` [`Committed`] is returned, providing some metadata about
+    /// the commit.
+    pub fn commit(&mut self) -> io::Result<Option<Committed>> {
         if self.commit.n == 0 {
-            return Ok(());
+            return Ok(None);
         }
-        self.commit.write(&mut self.inner)?;
+        let checksum = self.commit.write(&mut self.inner)?;
         self.inner.flush()?;
 
-        self.bytes_written += self.commit.encoded_len() as u64;
+        let commit_len = self.commit.encoded_len() as u64;
+        self.offset_index_head.as_mut().map(|index| {
+            debug!(
+                "append_after commit min_tx_offset={} bytes_written={} commit_len={}",
+                self.commit.min_tx_offset, self.bytes_written, commit_len
+            );
+            index
+                .append_after_commit(self.commit.min_tx_offset, self.bytes_written, commit_len)
+                .map_err(|e| {
+                    debug!("failed to append to offset index: {e:?}");
+                })
+        });
+
+        let tx_range_start = self.commit.min_tx_offset;
+
+        self.bytes_written += commit_len;
         self.commit.min_tx_offset += self.commit.n as u64;
         self.commit.n = 0;
         self.commit.records.clear();
 
-        Ok(())
+        Ok(Some(Committed {
+            tx_range: tx_range_start..self.commit.min_tx_offset,
+            checksum,
+        }))
+    }
+
+    /// Get the current epoch.
+    pub fn epoch(&self) -> u64 {
+        self.commit.epoch
+    }
+
+    /// Update the epoch.
+    ///
+    /// The caller must ensure that:
+    ///
+    /// - The new epoch is greater than the current epoch.
+    /// - [`Self::commit`] has been called as appropriate.
+    ///
+    pub fn set_epoch(&mut self, epoch: u64) {
+        self.commit.epoch = epoch;
     }
 
     /// The smallest transaction offset in this segment.
@@ -149,37 +207,149 @@ impl<W: io::Write> Writer<W> {
 }
 
 pub trait FileLike {
-    fn fsync(&self) -> io::Result<()>;
-    fn ftruncate(&self, size: u64) -> io::Result<()>;
+    fn fsync(&mut self) -> io::Result<()>;
+    fn ftruncate(&mut self, tx_offset: u64, size: u64) -> io::Result<()>;
 }
 
 impl FileLike for File {
-    fn fsync(&self) -> io::Result<()> {
-        self.sync_all()
+    fn fsync(&mut self) -> io::Result<()> {
+        self.sync_data()
     }
 
-    fn ftruncate(&self, size: u64) -> io::Result<()> {
+    fn ftruncate(&mut self, _tx_offset: u64, size: u64) -> io::Result<()> {
         self.set_len(size)
     }
 }
 
 impl<W: io::Write + FileLike> FileLike for BufWriter<W> {
-    fn fsync(&self) -> io::Result<()> {
-        self.get_ref().fsync()
+    fn fsync(&mut self) -> io::Result<()> {
+        self.get_mut().fsync()
     }
 
-    fn ftruncate(&self, size: u64) -> io::Result<()> {
-        self.get_ref().ftruncate(size)
+    fn ftruncate(&mut self, tx_offset: u64, size: u64) -> io::Result<()> {
+        self.get_mut().ftruncate(tx_offset, size)
     }
 }
 
 impl<W: io::Write + FileLike> FileLike for Writer<W> {
-    fn fsync(&self) -> io::Result<()> {
-        self.inner.fsync()
+    fn fsync(&mut self) -> io::Result<()> {
+        self.inner.fsync()?;
+        self.offset_index_head.as_mut().map(|index| index.fsync());
+        Ok(())
     }
 
-    fn ftruncate(&self, size: u64) -> io::Result<()> {
-        self.inner.ftruncate(size)
+    fn ftruncate(&mut self, tx_offset: u64, size: u64) -> io::Result<()> {
+        self.inner.ftruncate(tx_offset, size)?;
+        self.offset_index_head
+            .as_mut()
+            .map(|index| index.ftruncate(tx_offset, size));
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct OffsetIndexWriter {
+    pub(crate) head: TxOffsetIndexMut,
+
+    require_segment_fsync: bool,
+    min_write_interval: NonZeroU64,
+
+    pub(crate) candidate_min_tx_offset: TxOffset,
+    pub(crate) candidate_byte_offset: u64,
+    pub(crate) bytes_since_last_index: u64,
+}
+
+impl OffsetIndexWriter {
+    pub fn new(head: TxOffsetIndexMut, opts: Options) -> Self {
+        OffsetIndexWriter {
+            head,
+            require_segment_fsync: opts.offset_index_require_segment_fsync,
+            min_write_interval: opts.offset_index_interval_bytes,
+            candidate_min_tx_offset: TxOffset::default(),
+            candidate_byte_offset: 0,
+            bytes_since_last_index: 0,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.candidate_byte_offset = 0;
+        self.candidate_min_tx_offset = TxOffset::default();
+        self.bytes_since_last_index = 0;
+    }
+
+    /// Either append to index or save offsets to append at future fsync
+    pub fn append_after_commit(
+        &mut self,
+        min_tx_offset: TxOffset,
+        byte_offset: u64,
+        commit_len: u64,
+    ) -> Result<(), IndexError> {
+        self.bytes_since_last_index += commit_len;
+
+        if self.candidate_min_tx_offset == 0 {
+            self.candidate_byte_offset = byte_offset;
+            self.candidate_min_tx_offset = min_tx_offset;
+        }
+
+        if !self.require_segment_fsync {
+            self.append_internal()?;
+        }
+
+        Ok(())
+    }
+
+    fn append_internal(&mut self) -> Result<(), IndexError> {
+        // If the candidate offset is zero, there has not been a commit since the last offset entry
+        if self.candidate_min_tx_offset == 0 {
+            return Ok(());
+        }
+
+        if self.bytes_since_last_index < self.min_write_interval.get() {
+            return Ok(());
+        }
+
+        self.head
+            .append(self.candidate_min_tx_offset, self.candidate_byte_offset)?;
+        self.head.async_flush()?;
+        self.reset();
+
+        Ok(())
+    }
+}
+
+impl FileLike for OffsetIndexWriter {
+    /// Must be called via SegmentWriter::fsync
+    fn fsync(&mut self) -> io::Result<()> {
+        let _ = self.append_internal().map_err(|e| {
+            warn!("failed to append to offset index: {e:?}");
+        });
+        let _ = self
+            .head
+            .async_flush()
+            .map_err(|e| warn!("failed to flush offset index: {e:?}"));
+        Ok(())
+    }
+
+    fn ftruncate(&mut self, tx_offset: u64, _size: u64) -> io::Result<()> {
+        self.reset();
+        self.head
+            .truncate(tx_offset)
+            .inspect_err(|e| {
+                warn!("failed to truncate offset index at {tx_offset}: {e:?}");
+            })
+            .ok();
+        Ok(())
+    }
+}
+
+impl FileLike for IndexFileMut<TxOffset> {
+    fn fsync(&mut self) -> io::Result<()> {
+        self.async_flush()
+    }
+
+    fn ftruncate(&mut self, tx_offset: u64, _size: u64) -> io::Result<()> {
+        self.truncate(tx_offset)
+            .map_err(|e| io::Error::other(format!("failed to truncate offset index at {tx_offset}: {e:?}")))
     }
 }
 
@@ -190,7 +360,7 @@ pub struct Reader<R> {
     inner: R,
 }
 
-impl<R: io::Read> Reader<R> {
+impl<R: io::Read + io::Seek> Reader<R> {
     pub fn new(max_log_format_version: u8, min_tx_offset: u64, mut inner: R) -> io::Result<Self> {
         let header = Header::decode(&mut inner)?;
         header
@@ -205,12 +375,16 @@ impl<R: io::Read> Reader<R> {
     }
 }
 
-impl<R: io::Read> Reader<R> {
+impl<R: io::BufRead + io::Seek> Reader<R> {
     pub fn commits(self) -> Commits<R> {
         Commits {
             header: self.header,
-            reader: io::BufReader::new(self.inner),
+            reader: self.inner,
         }
+    }
+
+    pub fn seek_to_offset(&mut self, index_file: &TxOffsetIndex, start_tx_offset: u64) -> Result<u64, IndexError> {
+        seek_to_offset(&mut self.inner, index_file, start_tx_offset)
     }
 
     #[cfg(test)]
@@ -225,15 +399,74 @@ impl<R: io::Read> Reader<R> {
         self.commits()
             .with_log_format_version()
             .map(|x| x.map_err(Into::into))
-            .map_ok(move |(version, commit)| commit.into_transactions(version, de))
+            .map_ok(move |(version, commit)| {
+                let start = commit.min_tx_offset;
+                commit.into_transactions(version, start, de)
+            })
             .flatten_ok()
-            .flatten_ok()
+            .map(|x| x.and_then(|y| y))
     }
 
     #[cfg(test)]
     pub(crate) fn metadata(self) -> Result<Metadata, error::SegmentMetadata> {
-        Metadata::with_header(self.min_tx_offset, self.header, io::BufReader::new(self.inner))
+        Metadata::with_header(self.min_tx_offset, self.header, self.inner, None)
     }
+}
+
+/// Advances the `segment` reader to the position corresponding to the `start_tx_offset`
+/// using the `index_file` for efficient seeking.
+///
+/// Input:
+/// - `segment` - segment reader
+/// - `min_tx_offset` - minimum transaction offset in the segment
+/// - `start_tx_offset` - transaction offset to advance to
+///
+/// Returns the byte position `segment` is at after seeking.
+pub fn seek_to_offset<R: io::Read + io::Seek>(
+    mut segment: &mut R,
+    index_file: &TxOffsetIndex,
+    start_tx_offset: u64,
+) -> Result<u64, IndexError> {
+    let (index_key, byte_offset) = index_file.key_lookup(start_tx_offset)?;
+
+    // If the index_key is 0, it means the index file is empty, return error without seeking
+    if index_key == 0 {
+        return Err(IndexError::KeyNotFound);
+    }
+    debug!("index lookup for key={start_tx_offset}: found key={index_key} at byte-offset={byte_offset}");
+    // returned `index_key` should never be greater than `start_tx_offset`
+    debug_assert!(index_key <= start_tx_offset);
+
+    // Check if the offset index is pointing to the right commit.
+    let hdr = validate_commit_header(&mut segment, byte_offset)?;
+    if hdr.min_tx_offset == index_key {
+        // Advance the segment Seek if expected commit is found.
+        segment.seek(SeekFrom::Start(byte_offset))
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "mismatched key in offset index file",
+        ))
+    }
+    .map_err(Into::into)
+}
+
+/// Try to extract the commit header from the asked position without advancing seek.
+/// `IndexFileMut` fsync asynchoronously, which makes it important for reader to verify its entry
+pub fn validate_commit_header<Reader: io::Read + io::Seek>(
+    mut reader: &mut Reader,
+    byte_offset: u64,
+) -> io::Result<commit::Header> {
+    let pos = reader.stream_position()?;
+    reader.seek(SeekFrom::Start(byte_offset))?;
+
+    let hdr = commit::Header::decode(&mut reader)
+        .and_then(|hdr| hdr.ok_or_else(|| io::Error::new(ErrorKind::UnexpectedEof, "unexpected EOF")));
+
+    // Restore the original position
+    reader.seek(SeekFrom::Start(pos))?;
+
+    hdr
 }
 
 /// Pair of transaction offset and payload.
@@ -250,19 +483,19 @@ pub struct Transaction<T> {
 
 pub struct Commits<R> {
     pub header: Header,
-    reader: io::BufReader<R>,
+    reader: R,
 }
 
-impl<R: io::Read> Iterator for Commits<R> {
+impl<R: io::BufRead> Iterator for Commits<R> {
     type Item = io::Result<StoredCommit>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        StoredCommit::decode(&mut self.reader).transpose()
+        StoredCommit::decode_internal(&mut self.reader, self.header.log_format_version).transpose()
     }
 }
 
 #[cfg(test)]
-impl<R: io::Read> Commits<R> {
+impl<R: io::BufRead> Commits<R> {
     pub fn with_log_format_version(self) -> impl Iterator<Item = io::Result<(u8, StoredCommit)>> {
         CommitsWithVersion { inner: self }
     }
@@ -274,7 +507,7 @@ struct CommitsWithVersion<R> {
 }
 
 #[cfg(test)]
-impl<R: io::Read> Iterator for CommitsWithVersion<R> {
+impl<R: io::BufRead> Iterator for CommitsWithVersion<R> {
     type Item = io::Result<(u8, StoredCommit)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -291,41 +524,63 @@ impl<R: io::Read> Iterator for CommitsWithVersion<R> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Metadata {
+    /// The segment header.
     pub header: Header,
+    /// The range of transactions contained in the segment.
     pub tx_range: Range<u64>,
+    /// The size of the segment.
     pub size_in_bytes: u64,
+    /// The largest epoch found in the segment.
+    pub max_epoch: u64,
+    /// The latest commit found in the segment.
+    ///
+    /// The value is the `min_tx_offset` of the commit, i.e.
+    /// `max_commit_offset..tx_range.end` is the range of
+    /// transactions contained in it.
+    pub max_commit_offset: u64,
 }
 
 impl Metadata {
-    /// Read and validate metadata from a segment.
+    /// Reads and validates metadata from a segment.
+    /// It will look for last commit index offset and then traverse the segment
     ///
-    /// This traverses the entire segment, consuming thre `reader.
-    /// Doing so is necessary to determine the `max_tx_offset` and `size_in_bytes`.
-    pub(crate) fn extract<R: io::Read>(min_tx_offset: u64, mut reader: R) -> Result<Self, error::SegmentMetadata> {
+    /// Determines `max_tx_offset`, `size_in_bytes`, and `max_epoch` from the segment.
+    pub(crate) fn extract<R: io::Read + io::Seek>(
+        min_tx_offset: TxOffset,
+        mut reader: R,
+        offset_index: Option<&TxOffsetIndex>,
+    ) -> Result<Self, error::SegmentMetadata> {
         let header = Header::decode(&mut reader)?;
-        Self::with_header(min_tx_offset, header, reader)
+        Self::with_header(min_tx_offset, header, reader, offset_index)
     }
 
-    fn with_header<R: io::Read>(
+    fn with_header<R: io::Read + io::Seek>(
         min_tx_offset: u64,
         header: Header,
         mut reader: R,
+        offset_index: Option<&TxOffsetIndex>,
     ) -> Result<Self, error::SegmentMetadata> {
-        let mut sofar = Self {
-            header,
-            tx_range: Range {
-                start: min_tx_offset,
-                end: min_tx_offset,
-            },
-            size_in_bytes: Header::LEN as u64,
-        };
+        let mut sofar = offset_index
+            .and_then(|index| Self::find_valid_indexed_commit(min_tx_offset, header, &mut reader, index).ok())
+            .unwrap_or_else(|| Self {
+                header,
+                tx_range: Range {
+                    start: min_tx_offset,
+                    end: min_tx_offset,
+                },
+                size_in_bytes: Header::LEN as u64,
+                max_epoch: u64::default(),
+                max_commit_offset: min_tx_offset,
+            });
+
+        reader.seek(SeekFrom::Start(sofar.size_in_bytes))?;
 
         fn commit_meta<R: io::Read>(
             reader: &mut R,
             sofar: &Metadata,
         ) -> Result<Option<commit::Metadata>, error::SegmentMetadata> {
             commit::Metadata::extract(reader).map_err(|e| {
-                if e.kind() == io::ErrorKind::InvalidData {
+                if matches!(e.kind(), io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof) {
                     error::SegmentMetadata::InvalidCommit {
                         sofar: sofar.clone(),
                         source: e,
@@ -349,9 +604,85 @@ impl Metadata {
             }
             sofar.tx_range.end = commit.tx_range.end;
             sofar.size_in_bytes += commit.size_in_bytes;
+            // TODO: Should it be an error to encounter an epoch going backwards?
+            sofar.max_epoch = commit.epoch.max(sofar.max_epoch);
+            sofar.max_commit_offset = commit.tx_range.start;
         }
 
         Ok(sofar)
+    }
+
+    /// Finds the last valid commit in the segment using the offset index.
+    /// It traverses the index in reverse order, starting from the last key.
+    ///
+    /// Returns
+    /// * `Ok((Metadata)` - If a valid commit is found containing the commit, It adds a default
+    ///   header, which should be replaced with the actual header.
+    /// * `Err` - If no valid commit is found or if the index is empty
+    fn find_valid_indexed_commit<R: io::Read + io::Seek>(
+        min_tx_offset: u64,
+        header: Header,
+        reader: &mut R,
+        offset_index: &TxOffsetIndex,
+    ) -> io::Result<Metadata> {
+        let mut candidate_last_key = TxOffset::MAX;
+
+        while let Ok((key, byte_offset)) = offset_index.key_lookup(candidate_last_key) {
+            match Self::validate_commit_at_offset(reader, key, byte_offset) {
+                Ok(commit) => {
+                    return Ok(Metadata {
+                        header,
+                        tx_range: Range {
+                            start: min_tx_offset,
+                            end: commit.tx_range.end,
+                        },
+                        size_in_bytes: byte_offset + commit.size_in_bytes,
+                        max_epoch: commit.epoch,
+                        max_commit_offset: commit.tx_range.start,
+                    });
+                }
+
+                // `TxOffset` at `byte_offset` is not valid, so try with previous entry
+                Err(_) => {
+                    candidate_last_key = key.saturating_sub(1);
+                    if candidate_last_key == 0 {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Err(io::Error::new(
+            ErrorKind::InvalidData,
+            format!("No valid commit found in index up to key: {candidate_last_key}"),
+        ))
+    }
+
+    /// Validates and decodes a commit at `byte_offset` in the segment.
+    ///
+    /// # Returns
+    /// * `Ok(commit::Metadata)` - If a valid commit is found with matching transaction offset
+    /// * `Err` - If commit can't be decoded or has mismatched transaction offset
+    fn validate_commit_at_offset<R: io::Read + io::Seek>(
+        reader: &mut R,
+        tx_offset: TxOffset,
+        byte_offset: u64,
+    ) -> io::Result<commit::Metadata> {
+        reader.seek(SeekFrom::Start(byte_offset))?;
+        let commit = commit::Metadata::extract(reader)?
+            .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "failed to decode commit"))?;
+
+        if commit.tx_range.start != tx_offset {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "mismatch key in index offset file: expected={} actual={}",
+                    tx_offset, commit.tx_range.start
+                ),
+            ));
+        }
+
+        Ok(commit)
     }
 }
 
@@ -362,7 +693,10 @@ mod tests {
     use super::*;
     use crate::{payload::ArrayDecoder, repo, Options};
     use itertools::Itertools;
+    use pretty_assertions::assert_matches;
     use proptest::prelude::*;
+    use spacetimedb_paths::server::CommitLogDir;
+    use tempfile::tempdir;
 
     #[test]
     fn header_roundtrip() {
@@ -382,7 +716,7 @@ mod tests {
     fn write_read_roundtrip() {
         let repo = repo::Memory::default();
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), 0).unwrap();
+        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
         writer.append([0; 32]).unwrap();
         writer.append([1; 32]).unwrap();
         writer.append([2; 32]).unwrap();
@@ -411,28 +745,32 @@ mod tests {
     fn metadata() {
         let repo = repo::Memory::default();
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), 0).unwrap();
+        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
+        // Commit 0..2
         writer.append([0; 32]).unwrap();
         writer.append([0; 32]).unwrap();
         writer.commit().unwrap();
+        // Commit 2..3
         writer.append([1; 32]).unwrap();
         writer.commit().unwrap();
+        // Commit 3..5
         writer.append([2; 32]).unwrap();
         writer.append([2; 32]).unwrap();
         writer.commit().unwrap();
 
         let reader = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, 0).unwrap();
-        let Metadata {
-            header: _,
-            tx_range,
-            size_in_bytes,
-        } = reader.metadata().unwrap();
+        let metadata = reader.metadata().unwrap();
 
-        assert_eq!(tx_range.start, 0);
-        assert_eq!(tx_range.end, 5);
         assert_eq!(
-            size_in_bytes,
-            (Header::LEN + (5 * 32) + (3 * Commit::FRAMING_LEN)) as u64
+            metadata,
+            Metadata {
+                header: Header::default(),
+                tx_range: Range { start: 0, end: 5 },
+                // header + 5 txs + 3 commits
+                size_in_bytes: (Header::LEN + (5 * 32) + (3 * Commit::FRAMING_LEN)) as u64,
+                max_epoch: Commit::DEFAULT_EPOCH,
+                max_commit_offset: 3
+            }
         );
     }
 
@@ -441,7 +779,7 @@ mod tests {
         let repo = repo::Memory::default();
         let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), 0).unwrap();
+        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
         for commit in &commits {
             for tx in commit {
                 writer.append(*tx).unwrap();
@@ -457,6 +795,7 @@ mod tests {
                 min_tx_offset,
                 n: txs.len() as u16,
                 records: txs.concat(),
+                epoch: 0,
             });
             min_tx_offset += txs.len() as u64;
         }
@@ -473,7 +812,7 @@ mod tests {
         let repo = repo::Memory::default();
         let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), 0).unwrap();
+        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
         for commit in &commits {
             for tx in commit {
                 writer.append(*tx).unwrap();
@@ -511,6 +850,8 @@ mod tests {
                 bytes_written: 0,
 
                 max_records_in_commit,
+
+                offset_index_head: None,
             };
 
             for i in 0..max_records_in_commit.get() {
@@ -539,6 +880,7 @@ mod tests {
             bytes_written: 0,
 
             max_records_in_commit: NonZeroU16::MAX,
+            offset_index_head: None,
         };
 
         assert_eq!(0, writer.next_tx_offset());
@@ -552,5 +894,57 @@ mod tests {
         writer.append([1; 16]).unwrap();
         writer.commit().unwrap();
         assert_eq!(3, writer.next_tx_offset());
+    }
+
+    #[test]
+    fn offset_index_writer_truncates_to_offset() {
+        use spacetimedb_paths::FromPathUnchecked as _;
+
+        let tmp = tempdir().unwrap();
+        let commitlog_dir = CommitLogDir::from_path_unchecked(tmp.path());
+        let index_path = commitlog_dir.index(0);
+        let mut writer = OffsetIndexWriter::new(
+            TxOffsetIndexMut::create_index_file(&index_path, 100).unwrap(),
+            Options {
+                // Ensure we're writing every index entry.
+                offset_index_interval_bytes: 127.try_into().unwrap(),
+                offset_index_require_segment_fsync: false,
+                ..Default::default()
+            },
+        );
+
+        for i in 1..=10 {
+            writer.append_after_commit(i, i * 128, 128).unwrap();
+        }
+        // Ensure all entries have been written.
+        for i in 1..=10 {
+            assert_eq!(writer.head.key_lookup(i).unwrap(), (i, i * 128));
+        }
+
+        // Truncating to any offset in the written range or larger
+        // retains that offset - 1, or the max offset written.
+        for truncate_to in (2..=10u64).rev() {
+            let retained_key = truncate_to.saturating_sub(1).min(10);
+            let retained_val = retained_key * 128;
+            let retained = (retained_key, retained_val);
+
+            writer.ftruncate(truncate_to, rand::random()).unwrap();
+            assert_matches!(
+                writer.head.key_lookup(truncate_to),
+                Ok(x) if x == retained,
+                "truncate to {truncate_to} should retain {retained:?}"
+            );
+            // Make sure this also holds after reopen.
+            let index = TxOffsetIndex::open_index_file(&index_path).unwrap();
+            assert_matches!(
+                index.key_lookup(truncate_to),
+                Ok(x) if x == retained,
+                "truncate to {truncate_to} should retain {retained:?} after reopen"
+            );
+        }
+
+        // Truncating to 1 leaves no entries in the index
+        writer.ftruncate(1, rand::random()).unwrap();
+        assert_matches!(writer.head.key_lookup(1), Err(IndexError::KeyNotFound));
     }
 }

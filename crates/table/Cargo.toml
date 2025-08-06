@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "A database Table implementation and friends"
+rust-version.workspace = true
 
 [[bench]]
 name = "pointer_map"
@@ -29,10 +30,11 @@ proptest = ["dep:proptest", "dep:proptest-derive", "spacetimedb-sats/proptest"]
 blake3_pure = ["blake3/pure"]
 
 [dependencies]
-spacetimedb-data-structures.workspace = true
+spacetimedb-data-structures = { workspace = true, features = ["memory-usage"] }
+spacetimedb-memory-usage = { workspace = true, features = ["hashbrown", "ethnum", "smallvec"] }
 spacetimedb-primitives.workspace = true
 spacetimedb-sats = { workspace = true, features = ["blake3"] }
-spacetimedb-lib.workspace = true
+spacetimedb-lib = { workspace = true, features = ["memory-usage"] }
 spacetimedb-schema.workspace = true
 
 ahash.workspace = true
@@ -44,14 +46,19 @@ enum-as-inner.workspace = true
 itertools.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
+crossbeam-queue.workspace = true
 
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
-spacetimedb-sats = { workspace = true, features = ["proptest"] }
+spacetimedb-schema = { path = "../schema", features = ["test"] }
+spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 criterion.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
+
+[lints]
+workspace = true

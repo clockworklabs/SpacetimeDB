@@ -5,12 +5,10 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::product_type::{ADDRESS_TAG, IDENTITY_TAG};
+use crate::product_type::{CONNECTION_ID_TAG, IDENTITY_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG};
 use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG};
 use crate::{i256, u256};
-use crate::{
-    AlgebraicTypeRef, AlgebraicValue, ArrayType, MapType, ProductType, SpacetimeType, SumType, SumTypeVariant,
-};
+use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SpacetimeType, SumType, SumTypeVariant};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 
@@ -41,16 +39,18 @@ pub enum AlgebraicType {
     /// Another name is [coproduct (category theory)](https://ncatlab.org/nlab/show/coproduct).
     ///
     /// These structures are known as sum types because the number of possible values a sum
-    /// ```ignore
+    /// ```text
     /// { N_0(T_0), N_1(T_1), ..., N_n(T_n) }
     /// ```
     /// is:
-    /// ```ignore
+    /// ```text
     /// Σ (i ∈ 0..n). values(T_i)
     /// ```
     /// so for example, `values({ A(U64), B(Bool) }) = values(U64) + values(Bool)`.
     ///
-    /// See also: https://ncatlab.org/nlab/show/sum+type.
+    /// See also:
+    /// - <https://en.wikipedia.org/wiki/Tagged_union>
+    /// - <https://ncatlab.org/nlab/show/sum+type>
     ///
     /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
     Sum(SumType),
@@ -64,14 +64,16 @@ pub enum AlgebraicType {
     /// e.g., the names of its fields and their types in the case of a record.
     /// The name "product" comes from category theory.
     ///
-    /// See also: https://ncatlab.org/nlab/show/product+type.
+    /// See also:
+    /// - <https://en.wikipedia.org/wiki/Record_(computer_science)>
+    /// - <https://ncatlab.org/nlab/show/product+type>
     ///
     /// These structures are known as product types because the number of possible values in product
-    /// ```ignore
+    /// ```text
     /// { N_0: T_0, N_1: T_1, ..., N_n: T_n }
     /// ```
     /// is:
-    /// ```ignore
+    /// ```text
     /// Π (i ∈ 0..n). values(T_i)
     /// ```
     /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
@@ -81,10 +83,6 @@ pub enum AlgebraicType {
     /// The type of array values where elements are of a base type `elem_ty`.
     /// Values [`AlgebraicValue::Array(array)`](crate::AlgebraicValue::Array) will have this type.
     Array(ArrayType),
-    /// The type of map values consisting of a key type `key_ty` and value `ty`.
-    /// Values [`AlgebraicValue::Map(map)`](crate::AlgebraicValue::Map) will have this type.
-    /// The order of entries in a map value is observable.
-    Map(Box<MapType>),
     /// The UTF-8 encoded `String` type.
     /// Values [`AlgebraicValue::String(s)`](crate::AlgebraicValue::String) will have this type.
     ///
@@ -135,7 +133,6 @@ impl MetaType for AlgebraicType {
             ("sum", SumType::meta_type()),
             ("product", ProductType::meta_type()),
             ("array", ArrayType::meta_type()),
-            ("map", MapType::meta_type()),
             ("string", AlgebraicType::unit()),
             ("bool", AlgebraicType::unit()),
             ("i8", AlgebraicType::unit()),
@@ -167,14 +164,26 @@ impl AlgebraicType {
     /// The first type in the typespace.
     pub const ZERO_REF: Self = Self::Ref(AlgebraicTypeRef(0));
 
-    /// Returns whether this type is the conventional address type.
-    pub fn is_address(&self) -> bool {
-        matches!(self, Self::Product(p) if p.is_address())
+    /// Returns whether this type is the `ConnectionId` type.
+    ///
+    /// Construct an instance of this type with [`Self::connection_id`]
+    pub fn is_connection_id(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_connection_id())
     }
 
     /// Returns whether this type is the conventional identity type.
     pub fn is_identity(&self) -> bool {
         matches!(self, Self::Product(p) if p.is_identity())
+    }
+
+    /// Returns whether this type is the conventional point-in-time `Timestamp` type.
+    pub fn is_timestamp(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_timestamp())
+    }
+
+    /// Returns whether this type is the conventional time-delta `TimeDuration` type.
+    pub fn is_time_duration(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_time_duration())
     }
 
     /// Returns whether this type is the conventional `ScheduleAt` type.
@@ -272,7 +281,6 @@ impl AlgebraicType {
                 variants.iter().any(|variant| variant.algebraic_type.contains_refs())
             }
             AlgebraicType::Array(array) => array.elem_ty.contains_refs(),
-            AlgebraicType::Map(map) => map.key_ty.contains_refs() || map.ty.contains_refs(),
             _ => false,
         }
     }
@@ -297,19 +305,24 @@ impl AlgebraicType {
         ArrayType { elem_ty: Box::new(ty) }.into()
     }
 
-    /// Returns a map type from the type `key` to the type `value`.
-    pub fn map(key: Self, value: Self) -> Self {
-        MapType::new(key, value).into()
-    }
-
     /// Construct a copy of the `Identity` type.
     pub fn identity() -> Self {
-        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())])
+        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::U256)])
     }
 
-    /// Construct a copy of the `Address` type.
-    pub fn address() -> Self {
-        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())])
+    /// Construct a copy of the `ConnectionId` type.
+    pub fn connection_id() -> Self {
+        AlgebraicType::product([(CONNECTION_ID_TAG, AlgebraicType::U128)])
+    }
+
+    /// Construct a copy of the point-in-time `Timestamp` type.
+    pub fn timestamp() -> Self {
+        AlgebraicType::product([(TIMESTAMP_TAG, AlgebraicType::I64)])
+    }
+
+    /// Construct a copy of the time-delta `TimeDuration` type.
+    pub fn time_duration() -> Self {
+        AlgebraicType::product([(TIME_DURATION_TAG, AlgebraicType::I64)])
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
@@ -384,7 +397,7 @@ impl AlgebraicType {
     /// in a `SpacetimeDB` client module.
     ///
     /// Such a type must be a non-special sum or product type.
-    /// All of the elements of the type must be [`valid_for_client_type_use`](AlgebraicType::valid_for_client_type_use).
+    /// All of the elements of the type must satisfy [`AlgebraicType::is_valid_for_client_type_use`].
     ///
     /// This method does not actually follow `Ref`s to check the types they point to,
     /// it only checks the structure of this type.
@@ -413,7 +426,7 @@ impl AlgebraicType {
     /// - a reference
     /// - a special, known type
     /// - a non-compound type like `U8`, `I32`, `F64`, etc.
-    /// - or a map, array, or option built from types that are [`valid_for_client_type_use`](AlgebraicType::valid_for_client_type_use).
+    /// - or a map, array, or option built from types that satisfy [`AlgebraicType::is_valid_for_client_type_use`]
     ///
     /// This method does not actually follow `Ref`s to check the types they point to,
     /// it only checks the structure of the type.
@@ -428,9 +441,6 @@ impl AlgebraicType {
             }
             AlgebraicType::Product(product) => product.is_special() || product.is_unit(),
             AlgebraicType::Array(array) => array.elem_ty.is_valid_for_client_type_use(),
-            AlgebraicType::Map(map) => {
-                map.key_ty.is_valid_for_client_type_use() && map.ty.is_valid_for_client_type_use()
-            }
             AlgebraicType::Ref(_) => true,
             _ => true,
         }
@@ -508,7 +518,6 @@ mod tests {
                     algebraic_type: &0\
                 )>) \
                 | array: &0 \
-                | map: (key_ty: &0, ty: &0) \
                 | string: () \
                 | bool: () \
                 | i8: () | u8: () \
@@ -553,7 +562,6 @@ mod tests {
                     } \
                 }, \
                 array: { ty_: Ref, 0: 0 }, \
-                map: { ty_: Product, key_ty: { ty_: Ref, 0: 0 }, ty: { ty_: Ref, 0: 0 } }, \
                 string: { ty_: Product }, \
                 bool: { ty_: Product }, \
                 i8: { ty_: Product }, u8: { ty_: Product }, \
@@ -641,13 +649,6 @@ mod tests {
                             ]))\
                         ), \
                         (name = (some = \"array\"), {ref0}), \
-                        (\
-                            name = (some = \"map\"), \
-                            algebraic_type = (product = (elements = [\
-                                (name = (some = \"key_ty\"), {ref0}), \
-                                (name = (some = \"ty\"), {ref0})\
-                            ]))\
-                        ), \
                         (name = (some = \"string\"), {unit}), \
                         (name = (some = \"bool\"), {unit}), \
                         (name = (some = \"i8\"), {unit}), \
@@ -688,5 +689,17 @@ mod tests {
     fn algebraic_type_from_value() {
         let algebraic_type = AlgebraicType::meta_type();
         AlgebraicType::from_value(&algebraic_type.as_value()).expect("No errors.");
+    }
+
+    #[test]
+    fn special_types_are_special() {
+        assert!(AlgebraicType::identity().is_identity());
+        assert!(AlgebraicType::identity().is_special());
+        assert!(AlgebraicType::connection_id().is_connection_id());
+        assert!(AlgebraicType::connection_id().is_special());
+        assert!(AlgebraicType::timestamp().is_timestamp());
+        assert!(AlgebraicType::timestamp().is_special());
+        assert!(AlgebraicType::time_duration().is_special());
+        assert!(AlgebraicType::time_duration().is_time_duration());
     }
 }

@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
@@ -16,18 +16,16 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The domain or address of the database to print logs from"),
+                .help("The name or identity of the database to print logs from"),
         )
         .arg(
             common_args::server()
                 .help("The nickname, host name or URL of the server hosting the database"),
         )
         .arg(
-            common_args::identity()
-                .help("The identity to use for printing logs from this database"),
-        )
-        .arg(
             Arg::new("num_lines")
+                .long("num-lines")
+                .short('n')
                 .value_parser(clap::value_parser!(u32))
                 .help("The number of lines to print from the start of the log of this database")
                 .long_help("The number of lines to print from the start of the log of this database. If no num lines is provided, all lines will be returned."),
@@ -42,12 +40,14 @@ pub fn cli() -> clap::Command {
                 .long_help("A flag that causes logs to not stop when end of the log file is reached, but rather to wait for additional data to be appended to the input."),
         )
         .arg(
-            Arg::new("json")
-                .long("json")
+            Arg::new("format")
+                .long("format")
+                .default_value("text")
                 .required(false)
-                .action(ArgAction::SetTrue)
-                .help("Output raw json log records"),
+                .value_parser(clap::value_parser!(Format))
+                .help("Output format for the logs")
         )
+        .arg(common_args::yes())
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 
@@ -92,29 +92,47 @@ struct LogsParams {
     follow: bool,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Format {
+    Text,
+    Json,
+}
+
+impl clap::ValueEnum for Format {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Text, Self::Json]
+    }
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            Self::Text => Some(clap::builder::PossibleValue::new("text").aliases(["default", "txt"])),
+            Self::Json => Some(clap::builder::PossibleValue::new("json")),
+        }
+    }
+}
+
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = args.get_one::<String>("identity");
+    let force = args.get_flag("force");
     let mut num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
-    let json = args.get_flag("json");
+    let format = *args.get_one::<Format>("format").unwrap();
 
-    let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
+    let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
-    let address = database_address(&config, database, server).await?;
+    let database_identity = database_identity(&config, database, server).await?;
 
     if follow && num_lines.is_none() {
         // We typically don't want logs from the very beginning if we're also following.
         num_lines = Some(10);
     }
-    let query_parms = LogsParams { num_lines, follow };
+    let query_params = LogsParams { num_lines, follow };
 
     let host_url = config.get_host_url(server)?;
 
-    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", host_url, address));
+    let builder = reqwest::Client::new().get(format!("{host_url}/v1/database/{database_identity}/logs"));
     let builder = add_auth_header_opt(builder, &auth_header);
-    let mut res = builder.query(&query_parms).send().await?;
+    let mut res = builder.query(&query_params).send().await?;
     let status = res.status();
 
     if status.is_client_error() || status.is_server_error() {
@@ -122,7 +140,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         anyhow::bail!(err)
     }
 
-    if json {
+    if format == Format::Json {
         let mut stdout = tokio::io::stdout();
         while let Some(chunk) = res.chunk().await? {
             stdout.write_all(&chunk).await?;
@@ -138,10 +156,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let out = termcolor::StandardStream::stdout(term_color);
     let mut out = out.lock();
 
-    let mut rdr = res
-        .bytes_stream()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-        .into_async_read();
+    let mut rdr = res.bytes_stream().map_err(io::Error::other).into_async_read();
     let mut line = String::new();
     while rdr.read_line(&mut line).await? != 0 {
         let record = serde_json::from_str::<Record<'_>>(&line)?;

@@ -6,17 +6,17 @@ public interface ITypeRegistrar
 }
 
 [SpacetimeDB.Type]
-public partial struct AggregateElement(string? name, AlgebraicType algebraicType)
+public partial struct AggregateElement
 {
-    public string? Name = name;
-    public AlgebraicType AlgebraicType = algebraicType;
-}
+    public string? Name;
 
-[SpacetimeDB.Type]
-public partial struct MapElement(AlgebraicType key, AlgebraicType value)
-{
-    public AlgebraicType Key = key;
-    public AlgebraicType Value = value;
+    public AlgebraicType AlgebraicType;
+
+    public AggregateElement(string name, AlgebraicType algebraicType)
+    {
+        Name = name;
+        AlgebraicType = algebraicType;
+    }
 }
 
 [SpacetimeDB.Type]
@@ -26,7 +26,6 @@ public partial record AlgebraicType
         AggregateElement[] Sum,
         AggregateElement[] Product,
         AlgebraicType Array,
-        MapElement Map,
         Unit String,
         Unit Bool,
         Unit I8,

@@ -1,0 +1,11 @@
+# Ignore most of NuGet package structure, except DLLs which are required by Unity.
+/*/*/*
+
+!/*/*/analyzers
+!/*/*/analyzers.meta
+
+!/*/*/lib
+!/*/*/lib.meta
+
+# Ignore XML documentation metadata from packages too.
+*.xml

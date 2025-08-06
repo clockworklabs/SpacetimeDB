@@ -1,20 +1,20 @@
 use super::query::{self, Supported};
 use super::subscription::{IncrementalJoin, SupportedQuery};
-use crate::client::messages::encode_row;
-use crate::client::Protocol;
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
-use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue, UpdatesRelValue};
 use crate::messages::websocket::TableUpdate;
+use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_lib::db::error::AuthError;
-use spacetimedb_lib::relation::DbTable;
-use spacetimedb_lib::{Identity, ProductValue};
+use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate};
+use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::{u256, ProductValue};
+use spacetimedb_schema::def::error::AuthError;
+use spacetimedb_schema::relation::DbTable;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -38,13 +38,26 @@ use std::time::Duration;
 /// as is the case for incremental joins.
 /// And we want to associate a hash with the entire unit of execution,
 /// rather than an individual plan.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct QueryHash {
     data: [u8; 32],
 }
 
+impl From<QueryHash> for u256 {
+    fn from(hash: QueryHash) -> Self {
+        u256::from_le_bytes(hash.data)
+    }
+}
+
 impl QueryHash {
+    /// The zero value of a QueryHash
     pub const NONE: Self = Self { data: [0; 32] };
+
+    /// The min value of a QueryHash
+    pub const MIN: Self = Self::NONE;
+
+    /// The max value of a QueryHash
+    pub const MAX: Self = Self { data: [0xFFu8; 32] };
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self {
@@ -52,8 +65,27 @@ impl QueryHash {
         }
     }
 
-    pub fn from_string(str: &str) -> Self {
+    /// Generate a hash from a query string
+    pub fn from_string(str: &str, identity: Identity, has_param: bool) -> Self {
+        if has_param {
+            return Self::from_string_and_identity(str, identity);
+        }
         Self::from_bytes(str.as_bytes())
+    }
+
+    /// If a query is parameterized with `:sender`, we must use the value of `:sender`,
+    /// i.e. the identity of the caller, when hashing the query text,
+    /// so that two identical queries from different clients aren't hashed to the same value.
+    ///
+    /// TODO: Once we have RLS, this hash must computed after name resolution.
+    /// It can no longer be computed from the source text.
+    pub fn from_string_and_identity(str: &str, identity: Identity) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(str.as_bytes());
+        hasher.update(&identity.to_byte_array());
+        Self {
+            data: hasher.finalize().into(),
+        }
     }
 }
 
@@ -99,7 +131,7 @@ impl PartialEq for ExecutionUnit {
 impl From<SupportedQuery> for ExecutionUnit {
     // Used in tests and benches.
     // TODO(bikeshedding): Remove this impl,
-    // in favor of more explcit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
+    // in favor of more explicit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
     fn from(plan: SupportedQuery) -> Self {
         Self::new(plan, QueryHash::NONE).unwrap()
     }
@@ -201,55 +233,49 @@ impl ExecutionUnit {
             .unwrap_or(return_table)
     }
 
-    /// Evaluate this execution unit against the database using the json format.
-    #[tracing::instrument(skip_all)]
-    pub fn eval(
+    /// Evaluate this execution unit against the database using the specified format.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn eval<F: BuildableWebsocketFormat>(
         &self,
-        ctx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
         sql: &str,
         slow_query_threshold: Option<Duration>,
-        protocol: Protocol,
-    ) -> Option<TableUpdate> {
-        let inserts = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, slow_query_threshold, |row| {
-            encode_row(&row, protocol)
-        });
-        (!inserts.is_empty()).then(|| TableUpdate {
-            table_id: self.return_table(),
-            table_name: self.return_name().to_string(),
-            deletes: vec![],
-            inserts,
-        })
-    }
+        compression: Compression,
+    ) -> Option<TableUpdate<F>> {
+        let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, tx.ctx.workload()).log_guard();
 
-    fn eval_query_expr<T>(
-        ctx: &ExecutionContext,
-        db: &RelationalDB,
-        tx: &Tx,
-        eval_plan: &QueryExpr,
-        sql: &str,
-        slow_query_threshold: Option<Duration>,
-        convert: impl FnMut(RelValue<'_>) -> T,
-    ) -> Vec<T> {
-        let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, ctx.workload()).log_guard();
-        build_query(ctx, db, &tx.into(), eval_plan, &mut NoInMemUsed).collect_vec(convert)
+        // Build & execute the query and then encode it to a row list.
+        let tx = &tx.into();
+        let mut inserts = build_query(db, tx, &self.eval_plan, &mut NoInMemUsed);
+        let inserts = inserts.iter();
+        let (inserts, num_rows) = F::encode_list(inserts);
+
+        (!inserts.is_empty()).then(|| {
+            let deletes = F::List::default();
+            let qu = QueryUpdate { deletes, inserts };
+            let update = F::into_query_update(qu, compression);
+            TableUpdate::new(
+                self.return_table(),
+                self.return_name(),
+                SingleQueryUpdate { update, num_rows },
+            )
+        })
     }
 
     /// Evaluate this execution unit against the given delta tables.
     pub fn eval_incr<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         sql: &'a str,
         tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
         slow_query_threshold: Option<Duration>,
     ) -> Option<DatabaseTableUpdateRelValue<'a>> {
-        let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, ctx.workload()).log_guard();
+        let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, tx.ctx().workload()).log_guard();
         let updates = match &self.eval_incr_plan {
-            EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table()),
-            EvalIncrPlan::Semijoin(plan) => plan.eval(ctx, db, tx, tables),
+            EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(db, tx, tables, plan, self.return_table()),
+            EvalIncrPlan::Semijoin(plan) => plan.eval(db, tx, tables),
         };
 
         updates.has_updates().then(|| DatabaseTableUpdateRelValue {
@@ -260,7 +286,6 @@ impl ExecutionUnit {
     }
 
     fn eval_query_expr_against_memtable<'a>(
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode,
         mem_table: &'a [ProductValue],
@@ -270,11 +295,10 @@ impl ExecutionUnit {
         let sources = &mut Some(mem_table.iter().map(RelValue::ProjRef));
         // Evaluate the saved plan against the new updates,
         // returning an iterator over the selected rows.
-        build_query(ctx, db, tx, eval_incr_plan, sources)
+        build_query(db, tx, eval_incr_plan, sources)
     }
 
     fn eval_incr_query_expr<'a>(
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
@@ -294,22 +318,14 @@ impl ExecutionUnit {
             // without forgetting which are inserts and which are deletes.
             // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
             if !table.inserts.is_empty() {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.inserts, eval_incr_plan);
-                Self::collect_rows(&mut inserts, query);
+                inserts.extend(Self::eval_query_expr_against_memtable(db, tx, &table.inserts, eval_incr_plan).iter());
             }
             if !table.deletes.is_empty() {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.deletes, eval_incr_plan);
-                Self::collect_rows(&mut deletes, query);
+                deletes.extend(Self::eval_query_expr_against_memtable(db, tx, &table.deletes, eval_incr_plan).iter());
             }
         }
-        UpdatesRelValue { deletes, inserts }
-    }
 
-    /// Collect the results of `query` into a vec `sink`.
-    fn collect_rows<'a>(sink: &mut Vec<RelValue<'a>>, mut query: Box<IterRows<'a>>) {
-        while let Some(row) = query.next() {
-            sink.push(row);
-        }
+        UpdatesRelValue { deletes, inserts }
     }
 
     /// The estimated number of rows returned by this execution unit.

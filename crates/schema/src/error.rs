@@ -1,7 +1,7 @@
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawIdentifier, RawScopedTypeNameV9};
 use spacetimedb_lib::{ProductType, SumType};
-use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_primitives::{ColId, ColList, ColSet};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef};
 use std::borrow::Cow;
@@ -22,7 +22,7 @@ pub type ValidationErrors = ErrorStream<ValidationError>;
 #[non_exhaustive]
 pub enum ValidationError {
     #[error("name `{name}` is used for multiple entities")]
-    DuplicateName { name: Identifier },
+    DuplicateName { name: Box<str> },
     #[error("name `{name}` is used for multiple types")]
     DuplicateTypeName { name: ScopedTypeName },
     #[error("Multiple reducers defined for lifecycle event {lifecycle:?}")]
@@ -57,8 +57,16 @@ pub enum ValidationError {
     RepeatedPrimaryKey { table: RawIdentifier },
     #[error("Attempt to define {column} with more than 1 auto_inc sequence")]
     OneAutoInc { column: RawColumnName },
-    #[error("Only Btree Indexes are supported: index `{index}` is not a btree")]
-    OnlyBtree { index: RawIdentifier },
+    #[error("Hash indexes are not supported: `{index}` is a hash index")]
+    HashIndexUnsupported { index: RawIdentifier },
+    #[error("No index found to support unique constraint `{constraint}` for columns `{columns:?}`")]
+    UniqueConstraintWithoutIndex { constraint: Box<str>, columns: ColSet },
+    #[error("Direct index does not support type `{ty}` in column `{column}` in index `{index}`")]
+    DirectIndexOnBadType {
+        index: RawIdentifier,
+        column: RawIdentifier,
+        ty: PrettyAlgebraicType,
+    },
     #[error("def `{def}` has duplicate columns: {columns:?}")]
     DuplicateColumns { def: RawIdentifier, columns: ColList },
     #[error("invalid sequence column type: {column} with type `{column_type:?}` in sequence `{sequence}`")]
@@ -101,13 +109,17 @@ pub enum ValidationError {
     #[error("Table {table} should have a type definition for its product_type_element, but does not")]
     TableTypeNameMismatch { table: Identifier },
     #[error("Schedule {schedule} refers to a scheduled reducer {reducer} that does not exist")]
-    MissingScheduledReducer { schedule: Identifier, reducer: Identifier },
+    MissingScheduledReducer { schedule: Box<str>, reducer: Identifier },
     #[error("Scheduled reducer {reducer} expected to have type {expected}, but has type {actual}")]
     IncorrectScheduledReducerParams {
         reducer: RawIdentifier,
         expected: PrettyAlgebraicType,
         actual: PrettyAlgebraicType,
     },
+    #[error("Table name is reserved for system use: {table}")]
+    TableNameReserved { table: Identifier },
+    #[error("Row-level security invalid: `{error}`, query: `{sql}")]
+    InvalidRowLevelQuery { sql: String, error: String },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.
@@ -185,14 +197,14 @@ impl fmt::Display for TypeLocation<'_> {
                 position,
                 arg_name,
             } => {
-                write!(f, "reducer `{}` argument {}", reducer_name, position)?;
+                write!(f, "reducer `{reducer_name}` argument {position}")?;
                 if let Some(arg_name) = arg_name {
-                    write!(f, " (`{}`)", arg_name)?;
+                    write!(f, " (`{arg_name}`)")?;
                 }
                 Ok(())
             }
             TypeLocation::InTypespace { ref_ } => {
-                write!(f, "typespace ref `{}`", ref_)
+                write!(f, "typespace ref `{ref_}`")
             }
         }
     }

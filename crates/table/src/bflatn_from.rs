@@ -5,9 +5,6 @@
 use super::{
     blob_store::BlobStore,
     indexes::{Bytes, PageOffset},
-    layout::{
-        align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayout, RowTypeLayout, SumTypeLayout, VarLenType,
-    },
     page::Page,
     row_hash,
     var_len::VarLenRef,
@@ -16,8 +13,11 @@ use core::cell::Cell;
 use core::str;
 use spacetimedb_sats::{
     i256, impl_serialize,
+    layout::{
+        align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayoutView, RowTypeLayout, SumTypeLayout, VarLenType,
+    },
     ser::{SerializeNamedProduct, Serializer},
-    u256, AlgebraicType,
+    u256, ArrayType,
 };
 
 /// Serializes the row in `page` where the fixed part starts at `fixed_offset`
@@ -28,7 +28,7 @@ use spacetimedb_sats::{
 /// 1. the `fixed_offset` must point at a row in `page` lasting `ty.size()` byte.
 /// 2. the row must be a valid `ty`.
 /// 3. for any `vlr: VarLenRef` stored in the row,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 pub unsafe fn serialize_row_from_page<S: Serializer>(
     ser: S,
     page: &Page,
@@ -61,14 +61,14 @@ fn update<R>(curr_offset: CurrOffset<'_>, with: impl FnOnce(&mut usize) -> R) ->
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 unsafe fn serialize_product<S: Serializer>(
     ser: S,
     bytes: &Bytes,
     page: &Page,
     blob_store: &dyn BlobStore,
     curr_offset: CurrOffset<'_>,
-    ty: &ProductTypeLayout,
+    ty: ProductTypeLayoutView<'_>,
 ) -> Result<S::Ok, S::Error> {
     let elems = &ty.elements;
     let mut ser = ser.serialize_named_product(elems.len())?;
@@ -100,7 +100,7 @@ unsafe fn serialize_product<S: Serializer>(
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 unsafe fn serialize_sum<S: Serializer>(
     ser: S,
     bytes: &Bytes,
@@ -165,7 +165,7 @@ impl_serialize!(['a] Value<'a>, (self, ser) => {
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 /// 3. `align_to(curr_offset.get(), ty.align())` must be the offset of a field typed at `ty`.
 pub(crate) unsafe fn serialize_value<S: Serializer>(
     ser: S,
@@ -188,7 +188,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { serialize_product(ser, bytes, page, blob_store, curr_offset, ty) }
+            unsafe { serialize_product(ser, bytes, page, blob_store, curr_offset, ty.view()) }
         }
         // The primitive types:
         //
@@ -241,9 +241,9 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
             // SAFETY: `value` was valid at `::String` and `VarLenRef`s won't be dangling.
             unsafe { serialize_string(ser, bytes, page, blob_store, curr_offset) }
         }
-        AlgebraicTypeLayout::VarLen(VarLenType::Array(ty) | VarLenType::Map(ty)) => {
+        AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { serialize_bsatn(ser, bytes, page, blob_store, curr_offset, ty) }
+            unsafe { serialize_array(ser, bytes, page, blob_store, curr_offset, ty) }
         }
     }
 }
@@ -255,7 +255,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
 /// SAFETY:
 /// 1. the `value` must be valid at type `::String` and properly aligned for `::String``.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 unsafe fn serialize_string<S: Serializer>(
     ser: S,
     bytes: &Bytes,
@@ -285,13 +285,13 @@ unsafe fn serialize_string<S: Serializer>(
     }
 }
 
-unsafe fn serialize_bsatn<S: Serializer>(
+unsafe fn serialize_array<S: Serializer>(
     ser: S,
     bytes: &Bytes,
     page: &Page,
     blob_store: &dyn BlobStore,
     curr_offset: CurrOffset<'_>,
-    ty: &AlgebraicType,
+    ty: &ArrayType,
 ) -> Result<S::Ok, S::Error> {
     // SAFETY: `value` was valid at and aligned for `ty`.
     // These `ty` store a `vlr: VarLenRef` as their fixed value.

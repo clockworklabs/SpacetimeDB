@@ -2,11 +2,10 @@ use crate::db::DBRunner;
 use async_trait::async_trait;
 use spacetimedb::db::relational_db::tests_utils::TestDB;
 use spacetimedb::error::DBError;
-use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb::subscription::module_subscription_actor::ModuleSubscriptions;
-use spacetimedb::Identity;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::algebraic_value::Packed;
 use spacetimedb_sats::meta_type::MetaType;
@@ -34,7 +33,7 @@ impl ColumnType for Kind {
 
     fn to_char(&self) -> char {
         match &self.0 {
-            AlgebraicType::Map(_) | AlgebraicType::Array(_) => '?',
+            AlgebraicType::Array(_) => '?',
             ty if ty.is_integer() => 'I',
             ty if ty.is_float() => 'R',
             AlgebraicType::String => 'T',
@@ -69,9 +68,9 @@ impl SpaceDb {
     }
 
     pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<Vec<MemTable>> {
-        self.conn.with_read_only(&ExecutionContext::default(), |tx| {
-            let ast = compile_sql(&self.conn, tx, sql)?;
-            let subs = ModuleSubscriptions::new(Arc::new(self.conn.db.clone()), Identity::ZERO);
+        self.conn.with_read_only(Workload::Sql, |tx| {
+            let ast = compile_sql(&self.conn, &AuthCtx::for_testing(), tx, sql)?;
+            let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(self.conn.db.clone()));
             let result = execute_sql(&self.conn, sql, ast, self.auth, Some(&subs))?;
             //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
             //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
@@ -124,7 +123,7 @@ impl AsyncDB for SpaceDb {
                         AlgebraicValue::U256(x) => x.to_string(),
                         AlgebraicValue::F32(x) => format!("{:?}", x.as_ref()),
                         AlgebraicValue::F64(x) => format!("{:?}", x.as_ref()),
-                        AlgebraicValue::String(x) => format!("'{}'", x),
+                        AlgebraicValue::String(x) => format!("'{x}'"),
                         x => x.to_satn(),
                     })
                     .collect()

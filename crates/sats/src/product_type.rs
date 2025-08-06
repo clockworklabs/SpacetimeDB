@@ -2,12 +2,19 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
+use crate::product_value::InvalidFieldError;
 use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SpacetimeType, ValueWithType, WithTypespace};
+use core::ops::Deref;
+use spacetimedb_primitives::{ColId, ColList};
 
 /// The tag used inside the special `Identity` product type.
-pub const IDENTITY_TAG: &str = "__identity_bytes";
-/// The tag used inside the special `Address` product type.
-pub const ADDRESS_TAG: &str = "__address_bytes";
+pub const IDENTITY_TAG: &str = "__identity__";
+/// The tag used inside the special `ConnectionId` product type.
+pub const CONNECTION_ID_TAG: &str = "__connection_id__";
+/// The tag used inside the special `Timestamp` product type.
+pub const TIMESTAMP_TAG: &str = "__timestamp_micros_since_unix_epoch__";
+/// The tag used inside the special `TimeDuration` product type.
+pub const TIME_DURATION_TAG: &str = "__time_duration_micros__";
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -19,20 +26,22 @@ pub const ADDRESS_TAG: &str = "__address_bytes";
 /// e.g., the names of its fields and their types in the case of a record.
 /// The name "product" comes from category theory.
 ///
-/// See also: https://ncatlab.org/nlab/show/product+type.
+/// See also:
+/// - <https://en.wikipedia.org/wiki/Record_(computer_science)>
+/// - <https://ncatlab.org/nlab/show/product+type>
 ///
 /// These structures are known as product types because the number of possible values in product
-/// ```ignore
+/// ```text
 /// { N_0: T_0, N_1: T_1, ..., N_n: T_n }
 /// ```
 /// is:
-/// ```ignore
+/// ```text
 /// Π (i ∈ 0..n). values(T_i)
 /// ```
 /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct ProductType {
     /// The factors of the product type.
@@ -40,6 +49,27 @@ pub struct ProductType {
     /// These factors can either be named or unnamed.
     /// When all the factors are unnamed, we can regard this as a plain tuple type.
     pub elements: Box<[ProductTypeElement]>,
+}
+
+impl Deref for ProductType {
+    type Target = [ProductTypeElement];
+
+    fn deref(&self) -> &Self::Target {
+        &self.elements
+    }
+}
+
+impl std::fmt::Debug for ProductType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ProductType ")?;
+        f.debug_map()
+            .entries(
+                self.elements
+                    .iter()
+                    .map(|elem| (crate::dbg_aggregate_name(&elem.name), &elem.algebraic_type)),
+            )
+            .finish()
+    }
 }
 
 impl ProductType {
@@ -50,17 +80,17 @@ impl ProductType {
 
     /// Returns the unit product type.
     pub fn unit() -> Self {
-        Self { elements: Box::new([]) }
+        Self::new([].into())
     }
 
-    /// Returns whether this is a "newtype" over bytes.
+    /// Returns whether this is a "newtype" with `label` and satisfying `inner`.
     /// Does not follow `Ref`s.
-    fn is_bytes_newtype(&self, check: &str) -> bool {
+    fn is_newtype(&self, check: &str, inner: impl FnOnce(&AlgebraicType) -> bool) -> bool {
         match &*self.elements {
             [ProductTypeElement {
                 name: Some(name),
                 algebraic_type,
-            }] => &**name == check && algebraic_type.is_bytes(),
+            }] => &**name == check && inner(algebraic_type),
             _ => false,
         }
     }
@@ -68,24 +98,67 @@ impl ProductType {
     /// Returns whether this is the special case of `spacetimedb_lib::Identity`.
     /// Does not follow `Ref`s.
     pub fn is_identity(&self) -> bool {
-        self.is_bytes_newtype(IDENTITY_TAG)
+        self.is_newtype(IDENTITY_TAG, |i| i.is_u256())
     }
 
-    /// Returns whether this is the special case of `spacetimedb_lib::Address`.
+    /// Returns whether this is the special case of `spacetimedb_lib::ConnectionId`.
     /// Does not follow `Ref`s.
-    pub fn is_address(&self) -> bool {
-        self.is_bytes_newtype(ADDRESS_TAG)
+    pub fn is_connection_id(&self) -> bool {
+        self.is_newtype(CONNECTION_ID_TAG, |i| i.is_u128())
     }
 
-    /// Returns whether this is a special known `tag`, currently `Address` or `Identity`.
+    fn is_i64_newtype(&self, expected_tag: &str) -> bool {
+        match &*self.elements {
+            [ProductTypeElement {
+                name: Some(name),
+                algebraic_type: AlgebraicType::I64,
+            }] => &**name == expected_tag,
+            _ => false,
+        }
+    }
+
+    /// Returns whether this is the special case of `spacetimedb_lib::Timestamp`.
+    /// Does not follow `Ref`s.
+    pub fn is_timestamp(&self) -> bool {
+        self.is_i64_newtype(TIMESTAMP_TAG)
+    }
+
+    /// Returns whether this is the special case of `spacetimedb_lib::TimeDuration`.
+    /// Does not follow `Ref`s.
+    pub fn is_time_duration(&self) -> bool {
+        self.is_i64_newtype(TIME_DURATION_TAG)
+    }
+
+    /// Returns whether this is the special tag of `Identity`.
+    pub fn is_identity_tag(tag_name: &str) -> bool {
+        tag_name == IDENTITY_TAG
+    }
+
+    /// Returns whether this is the special tag of `ConnectionId`.
+    pub fn is_connection_id_tag(tag_name: &str) -> bool {
+        tag_name == CONNECTION_ID_TAG
+    }
+
+    /// Returns whether this is the special tag of [`crate::timestamp::Timestamp`].
+    pub fn is_timestamp_tag(tag_name: &str) -> bool {
+        tag_name == TIMESTAMP_TAG
+    }
+
+    /// Returns whether this is the special tag of [`crate::time_duration::TimeDuration`].
+    pub fn is_time_duration_tag(tag_name: &str) -> bool {
+        tag_name == TIME_DURATION_TAG
+    }
+
+    /// Returns whether this is a special known `tag`,
+    /// currently `Address`, `Identity`, `Timestamp` or `TimeDuration`.
     pub fn is_special_tag(tag_name: &str) -> bool {
-        tag_name == IDENTITY_TAG || tag_name == ADDRESS_TAG
+        [IDENTITY_TAG, CONNECTION_ID_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG].contains(&tag_name)
     }
 
-    /// Returns whether this is a special known type, currently `Address` or `Identity`.
+    /// Returns whether this is a special known type, currently `ConnectionId` or `Identity`.
     /// Does not follow `Ref`s.
     pub fn is_special(&self) -> bool {
-        self.is_identity() || self.is_address()
+        self.is_identity() || self.is_connection_id() || self.is_timestamp() || self.is_time_duration()
     }
 
     /// Returns whether this is a unit type, that is, has no elements.
@@ -98,6 +171,32 @@ impl ProductType {
         self.elements
             .iter()
             .position(|field| field.name.as_deref() == Some(name))
+    }
+
+    /// This utility function is designed to project fields based on the supplied `indexes`.
+    ///
+    /// **Important:**
+    ///
+    /// The resulting [AlgebraicType] will wrap into a [ProductType] when projecting multiple
+    /// (including zero) fields, otherwise it will consist of a single [AlgebraicType].
+    ///
+    /// **Parameters:**
+    /// - `cols`: A [ColList] containing the indexes of fields to be projected.
+    pub fn project(&self, cols: &ColList) -> Result<AlgebraicType, InvalidFieldError> {
+        let get_field = |col_pos: ColId| {
+            self.elements
+                .get(col_pos.idx())
+                .ok_or(InvalidFieldError { col_pos, name: None })
+        };
+        if let Some(head) = cols.as_singleton() {
+            get_field(head).map(|f| f.algebraic_type.clone())
+        } else {
+            let mut fields = Vec::with_capacity(cols.len() as usize);
+            for col in cols.iter() {
+                fields.push(get_field(col)?.clone());
+            }
+            Ok(AlgebraicType::product(fields.into_boxed_slice()))
+        }
     }
 }
 

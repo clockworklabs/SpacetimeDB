@@ -36,7 +36,8 @@ impl Lockfile {
     /// Acquire an exclusive lock on the file `file_path`.
     ///
     /// `file_path` should be the full path of the file to which to acquire exclusive access.
-    pub fn for_file(file_path: &Path) -> Result<Self, LockfileError> {
+    pub fn for_file<P: AsRef<Path>>(file_path: P) -> Result<Self, LockfileError> {
+        let file_path = file_path.as_ref();
         // TODO: Someday, it would be nice to use OS locks to minimize edge cases (see
         // https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2151018992).
         //
@@ -50,20 +51,17 @@ impl Lockfile {
             file_path: file_path.to_path_buf(),
             cause,
         };
-
         // Ensure the directory exists before attempting to create the lockfile.
         create_parent_dir(file_path).map_err(fail)?;
-
         // Open with `create_new`, which fails if the file already exists.
         std::fs::File::create_new(&path).map_err(fail)?;
-
         Ok(Lockfile { path })
     }
 
     /// Returns the path of a lockfile for the file `file_path`,
     /// without actually acquiring the lock.
-    pub fn lock_path(file_path: &Path) -> PathBuf {
-        file_path.with_extension("lock")
+    pub fn lock_path<P: AsRef<Path>>(file_path: P) -> PathBuf {
+        file_path.as_ref().with_extension("lock")
     }
 
     fn release_internal(path: &Path) -> Result<(), LockfileError> {

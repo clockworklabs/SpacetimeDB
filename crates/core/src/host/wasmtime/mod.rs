@@ -1,13 +1,14 @@
 use std::borrow::Cow;
+use std::time::Duration;
 
 use anyhow::Context;
-use once_cell::sync::Lazy;
+use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
 use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
 
 use crate::energy::{EnergyQuanta, ReducerBudget};
 use crate::error::NodesError;
+use crate::host::module_host::ModuleRuntime;
 use crate::module_host_context::ModuleCreationContext;
-use crate::stdb_path;
 
 mod wasm_instance_env;
 mod wasmtime_module;
@@ -19,56 +20,89 @@ use self::wasm_instance_env::WasmInstanceEnv;
 use super::wasm_common::module_host_actor::InitializationError;
 use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
 
-static ENGINE: Lazy<Engine> = Lazy::new(|| {
-    let mut config = wasmtime::Config::new();
-    config
-        .cranelift_opt_level(wasmtime::OptLevel::Speed)
-        .consume_fuel(true)
-        .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
-
-    let cache_config = toml::toml! {
-        // see <https://docs.wasmtime.dev/cli-cache.html> for options here
-        [cache]
-        enabled = true
-        directory = (toml::Value::try_from(stdb_path("worker_node/wasmtime_cache")).unwrap())
-    };
-    // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
-    let _ = set_cache_config(&mut config, cache_config);
-
-    Engine::new(&config).unwrap()
-});
-
-fn set_cache_config(config: &mut wasmtime::Config, cache_config: toml::value::Table) -> anyhow::Result<()> {
-    use std::io::Write;
-    let tmpfile = tempfile::NamedTempFile::new()?;
-    write!(&tmpfile, "{cache_config}")?;
-    config.cache_config_load(tmpfile.path())?;
-    Ok(())
+pub struct WasmtimeRuntime {
+    engine: Engine,
+    linker: Box<Linker<WasmInstanceEnv>>,
 }
 
-static LINKER: Lazy<Linker<WasmInstanceEnv>> = Lazy::new(|| {
-    let mut linker = Linker::new(&ENGINE);
-    WasmtimeModule::link_imports(&mut linker).unwrap();
-    linker
-});
+const EPOCH_TICK_LENGTH: Duration = Duration::from_millis(10);
 
-pub fn make_actor(mcc: ModuleCreationContext) -> Result<impl super::module_host::Module, ModuleCreationError> {
-    let module = Module::new(&ENGINE, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
+const EPOCH_TICKS_PER_SECOND: u64 = Duration::from_secs(1).div_duration_f64(EPOCH_TICK_LENGTH) as u64;
 
-    let func_imports = module
-        .imports()
-        .filter(|imp| matches!(imp.ty(), wasmtime::ExternType::Func(_)));
-    let abi = abi::determine_spacetime_abi(func_imports, |imp| imp.module())?;
+impl WasmtimeRuntime {
+    pub fn new(data_dir: Option<&ServerDataDir>) -> Self {
+        let mut config = wasmtime::Config::new();
+        config
+            .cranelift_opt_level(wasmtime::OptLevel::Speed)
+            .consume_fuel(true)
+            .epoch_interruption(true)
+            .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
 
-    abi::verify_supported(WasmtimeModule::IMPLEMENTED_ABI, abi)?;
+        // Offer a compile-time flag for enabling perfmap generation,
+        // so `perf` can display JITted symbol names.
+        // Ideally we would be able to configure this at runtime via a flag to `spacetime start`,
+        // but this is good enough for now.
+        #[cfg(feature = "perfmap")]
+        config.profiler(wasmtime::ProfilingStrategy::PerfMap);
 
-    let module = LINKER
-        .instantiate_pre(&module)
-        .map_err(InitializationError::Instantiation)?;
+        // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
+        if let Some(data_dir) = data_dir {
+            let _ = Self::set_cache_config(&mut config, data_dir.wasmtime_cache());
+        }
 
-    let module = WasmtimeModule::new(module);
+        let engine = Engine::new(&config).unwrap();
 
-    WasmModuleHostActor::new(mcc, module).map_err(Into::into)
+        let weak_engine = engine.weak();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(EPOCH_TICK_LENGTH);
+            loop {
+                interval.tick().await;
+                let Some(engine) = weak_engine.upgrade() else { break };
+                engine.increment_epoch();
+            }
+        });
+
+        let mut linker = Box::new(Linker::new(&engine));
+        WasmtimeModule::link_imports(&mut linker).unwrap();
+
+        WasmtimeRuntime { engine, linker }
+    }
+
+    fn set_cache_config(config: &mut wasmtime::Config, cache_dir: WasmtimeCacheDir) -> anyhow::Result<()> {
+        use std::io::Write;
+        let cache_config = toml::toml! {
+            // see <https://docs.wasmtime.dev/cli-cache.html> for options here
+            [cache]
+            enabled = true
+            directory = (toml::Value::try_from(cache_dir.0)?)
+        };
+        let tmpfile = tempfile::NamedTempFile::new()?;
+        write!(&tmpfile, "{cache_config}")?;
+        config.cache_config_load(tmpfile.path())?;
+        Ok(())
+    }
+}
+
+impl ModuleRuntime for WasmtimeRuntime {
+    fn make_actor(&self, mcc: ModuleCreationContext) -> anyhow::Result<impl super::module_host::Module> {
+        let module = Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
+
+        let func_imports = module
+            .imports()
+            .filter(|imp| matches!(imp.ty(), wasmtime::ExternType::Func(_)));
+        let abi = abi::determine_spacetime_abi(func_imports, |imp| imp.module())?;
+
+        abi::verify_supported(WasmtimeModule::IMPLEMENTED_ABI, abi)?;
+
+        let module = self
+            .linker
+            .instantiate_pre(&module)
+            .map_err(InitializationError::Instantiation)?;
+
+        let module = WasmtimeModule::new(module);
+
+        WasmModuleHostActor::new(mcc, module).map_err(Into::into)
+    }
 }
 
 #[derive(Debug, derive_more::From)]
@@ -132,6 +166,19 @@ macro_rules! impl_pointee {
 }
 impl_pointee!(u8, u16, u32, u64);
 impl_pointee!(super::wasm_common::RowIterIdx);
+
+impl WasmPointee for spacetimedb_lib::Identity {
+    type Pointer = u32;
+    fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), MemError> {
+        let bytes = self.to_byte_array();
+        mem.deref_slice_mut(ptr, bytes.len() as u32)?.copy_from_slice(&bytes);
+        Ok(())
+    }
+    fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError> {
+        Ok(Self::from_byte_array(*mem.deref_array(ptr)?))
+    }
+}
+
 type WasmPtr<T> = <T as WasmPointee>::Pointer;
 
 /// Wraps access to WASM linear memory with some additional functionality.

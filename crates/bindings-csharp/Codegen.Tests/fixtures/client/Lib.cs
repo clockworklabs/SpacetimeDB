@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 using SpacetimeDB;
+
+#pragma warning disable CA1050 // Declare types in namespaces - this is a test fixture, no need for a namespace.
 
 [SpacetimeDB.Type]
 public partial struct CustomStruct
@@ -65,14 +65,12 @@ public partial struct PublicTable
     public double DoubleField;
     public string StringField;
     public Identity IdentityField;
-    public Address AddressField;
+    public ConnectionId ConnectionIdField;
     public CustomStruct CustomStructField;
     public CustomClass CustomClassField;
     public CustomEnum CustomEnumField;
     public CustomTaggedEnum CustomTaggedEnumField;
     public List<int> ListField;
-    public Dictionary<string, int> DictionaryField;
     public int? NullableValueField;
     public string? NullableReferenceField;
-    public Dictionary<CustomEnum, List<int?>?>? ComplexNestedField;
 }

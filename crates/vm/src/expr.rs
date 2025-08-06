@@ -8,13 +8,12 @@ use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::error::{AuthError, RelationError};
-use spacetimedb_lib::relation::{ColExpr, DbTable, FieldName, Header};
-use spacetimedb_lib::{AlgebraicType, Identity};
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
-use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::ProductValue;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_schema::def::error::{AuthError, RelationError};
+use spacetimedb_schema::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_schema::schema::TableSchema;
 use std::borrow::Cow;
 use std::cmp::Reverse;
@@ -132,10 +131,10 @@ impl fmt::Display for FieldOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Field(x) => {
-                write!(f, "{}", x)
+                write!(f, "{x}")
             }
             Self::Cmp { op, lhs, rhs } => {
-                write!(f, "{} {} {}", lhs, op, rhs)
+                write!(f, "{lhs} {op} {rhs}")
             }
         }
     }
@@ -1058,7 +1057,7 @@ fn select_best_index<'a>(
         .collect::<SmallVec<[_; 1]>>();
     indices.sort_unstable_by_key(|cl| Reverse(cl.len()));
 
-    let mut found: IndexColumnOpSink = IndexColumnOpSink::new();
+    let mut found: IndexColumnOpSink = IndexColumnOpSink::default();
 
     // Collect fields into a multi-map `(col_id, cmp) -> [col value]`.
     // This gives us `log(N)` seek + deletion.
@@ -1868,7 +1867,7 @@ impl QueryExpr {
     fn optimize_select(mut q: QueryExpr, op: ColumnOp, tables: &[SourceExpr]) -> QueryExpr {
         // Go through each table schema referenced in the query.
         // Find the first sargable condition and short-circuit.
-        let mut fields_found = HashSet::new();
+        let mut fields_found = HashSet::default();
         for schema in tables {
             for op in select_best_index(&mut fields_found, schema.head(), &op) {
                 if let IndexColumnOp::Scan(op) = &op {
@@ -1988,10 +1987,10 @@ impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Query::IndexScan(op) => {
-                write!(f, "index_scan {:?}", op)
+                write!(f, "index_scan {op:?}")
             }
             Query::IndexJoin(op) => {
-                write!(f, "index_join {:?}", op)
+                write!(f, "index_join {op:?}")
             }
             Query::Select(q) => {
                 write!(f, "select {q}")
@@ -2118,9 +2117,9 @@ impl From<Code> for CodeResult {
 mod tests {
     use super::*;
 
-    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, relation::Column};
+    use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
-    use spacetimedb_schema::def::ModuleDef;
+    use spacetimedb_schema::{def::ModuleDef, relation::Column, schema::Schema};
     use typed_arena::Arena;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
@@ -2147,7 +2146,7 @@ mod tests {
                     table_id: 42.into(),
                     table_name: "foo".into(),
                     fields: vec![],
-                    constraints: vec![(ColId(42).into(), Constraints::indexed())],
+                    constraints: [(ColId(42).into(), Constraints::indexed())].into_iter().collect(),
                 }),
                 table_id: 42.into(),
                 table_type: StTableType::User,
@@ -2227,8 +2226,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .filter(|(_, (_, _, indexed))| *indexed)
-                .map(|(i, _)| (ColId::from(i).into(), Constraints::indexed()))
-                .collect(),
+                .map(|(i, _)| (ColId::from(i).into(), Constraints::indexed())),
         );
         SourceExpr::InMemory {
             source_id: SourceId(0),
@@ -2593,8 +2591,8 @@ mod tests {
     /// Tests that [`QueryExpr::optimize`] can rewrite inner joins followed by projections into semijoins.
     fn optimize_inner_join_to_semijoin() {
         let def: ModuleDef = test_def();
-        let lhs = TableSchema::from_module_def(def.table("lhs").unwrap(), 0.into());
-        let rhs = TableSchema::from_module_def(def.table("rhs").unwrap(), 1.into());
+        let lhs = TableSchema::from_module_def(&def, def.table("lhs").unwrap(), (), 0.into());
+        let rhs = TableSchema::from_module_def(&def, def.table("rhs").unwrap(), (), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);
@@ -2605,7 +2603,7 @@ mod tests {
                 [0, 1]
                     .map(|c| FieldExpr::Name(FieldName::new(lhs.table_id, c.into())))
                     .into(),
-                Some(TableId(0)),
+                Some(TableId::SENTINEL),
             )
             .unwrap();
         let q = q.optimize(&|_, _| 0);
@@ -2634,8 +2632,8 @@ mod tests {
     /// Tests that [`QueryExpr::optimize`] will not rewrite inner joins which are not followed by projections to the LHS table.
     fn optimize_inner_join_no_project() {
         let def: ModuleDef = test_def();
-        let lhs = TableSchema::from_module_def(def.table("lhs").unwrap(), 0.into());
-        let rhs = TableSchema::from_module_def(def.table("rhs").unwrap(), 1.into());
+        let lhs = TableSchema::from_module_def(&def, def.table("lhs").unwrap(), (), 0.into());
+        let rhs = TableSchema::from_module_def(&def, def.table("rhs").unwrap(), (), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);
@@ -2649,8 +2647,8 @@ mod tests {
     /// Tests that [`QueryExpr::optimize`] will not rewrite inner joins followed by projections to the RHS rather than LHS table.
     fn optimize_inner_join_wrong_project() {
         let def: ModuleDef = test_def();
-        let lhs = TableSchema::from_module_def(def.table("lhs").unwrap(), 0.into());
-        let rhs = TableSchema::from_module_def(def.table("rhs").unwrap(), 1.into());
+        let lhs = TableSchema::from_module_def(&def, def.table("lhs").unwrap(), (), 0.into());
+        let rhs = TableSchema::from_module_def(&def, def.table("rhs").unwrap(), (), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);

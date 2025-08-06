@@ -12,9 +12,32 @@ spacetimedb-durability.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-sats = { workspace = true, features = ["blake3"] }
 spacetimedb-primitives.workspace = true
+spacetimedb-paths.workspace = true
 spacetimedb-fs-utils.workspace = true
 
 blake3.workspace = true
+bytes.workspace = true
+crossbeam-queue.workspace = true
+futures.workspace = true
 hex.workspace = true
 log.workspace = true
+scopeguard.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+tokio-stream.workspace = true
+tokio-util = { workspace = true, features = ["io"] }
+zstd-framed.workspace = true
+
+[dev-dependencies]
+spacetimedb-core = { path = "../core", features = ["test"] }
+spacetimedb-schema = { path = "../schema" }
+spacetimedb-datastore = { path = "../datastore", features = ["test"] }
+
+anyhow.workspace = true
+env_logger.workspace = true
+pretty_assertions = { workspace = true, features = ["unstable"] }
+rand.workspace = true
+
+[lints]
+workspace = true

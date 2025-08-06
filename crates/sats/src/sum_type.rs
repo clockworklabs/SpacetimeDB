@@ -25,25 +25,40 @@ pub const OPTION_NONE_TAG: &str = "none";
 /// Another name is [coproduct (category theory)](https://ncatlab.org/nlab/show/coproduct).
 ///
 /// These structures are known as sum types because the number of possible values a sum
-/// ```ignore
+/// ```text
 /// { N_0(T_0), N_1(T_1), ..., N_n(T_n) }
 /// ```
 /// is:
-/// ```ignore
+/// ```text
 /// Σ (i ∈ 0..n). values(T_i)
 /// ```
 /// so for example, `values({ A(U64), B(Bool) }) = values(U64) + values(Bool)`.
 ///
-/// See also: https://ncatlab.org/nlab/show/sum+type.
+/// See also:
+/// - <https://en.wikipedia.org/wiki/Tagged_union>
+/// - <https://ncatlab.org/nlab/show/sum+type>
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct SumType {
     /// The possible variants of the sum type.
     ///
     /// The order is relevant as it defines the tags of the variants at runtime.
     pub variants: Box<[SumTypeVariant]>,
+}
+
+impl std::fmt::Debug for SumType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SumType ")?;
+        f.debug_map()
+            .entries(
+                self.variants
+                    .iter()
+                    .map(|variant| (crate::dbg_aggregate_name(&variant.name), &variant.algebraic_type)),
+            )
+            .finish()
+    }
 }
 
 impl SumType {
@@ -68,15 +83,30 @@ impl SumType {
     /// If the type does look like a structural option type, returns the type `T`.
     pub fn as_option(&self) -> Option<&AlgebraicType> {
         match &*self.variants {
-            [first, second]
-                if second.is_unit() // Done first to avoid pointer indirection when it doesn't matter.
-                    && first.has_name(OPTION_SOME_TAG)
-                    && second.has_name(OPTION_NONE_TAG) =>
-            {
-                Some(&first.algebraic_type)
-            }
+            [first, second] if Self::are_variants_option(first, second) => Some(&first.algebraic_type),
             _ => None,
         }
+    }
+
+    /// Check whether this sum type is a structural option type.
+    ///
+    /// A structural option type has `some(T)` as its first variant and `none` as its second.
+    /// That is, `{ some(T), none }` or `some: T | none` depending on your notation.
+    /// Note that `some` and `none` are lowercase, unlike Rust's `Option`.
+    /// Order matters, and an option type with these variants in the opposite order will not be recognized.
+    ///
+    /// If the type does look like a structural option type, returns the type `T`.
+    pub fn as_option_mut(&mut self) -> Option<&mut AlgebraicType> {
+        match &mut *self.variants {
+            [first, second] if Self::are_variants_option(first, second) => Some(&mut first.algebraic_type),
+            _ => None,
+        }
+    }
+
+    fn are_variants_option(first: &SumTypeVariant, second: &SumTypeVariant) -> bool {
+        second.is_unit() // Done first to avoid pointer indirection when it doesn't matter.
+        && first.has_name(OPTION_SOME_TAG)
+        && second.has_name(OPTION_NONE_TAG)
     }
 
     /// Check whether this sum type is a structural option type.
@@ -101,9 +131,9 @@ impl SumType {
         match &*self.variants {
             [first, second] => {
                 first.has_name(SCHEDULE_AT_INTERVAL_TAG)
-                    && first.algebraic_type.is_u64()
+                    && first.algebraic_type.is_time_duration()
                     && second.has_name(SCHEDULE_AT_TIME_TAG)
-                    && second.algebraic_type.is_u64()
+                    && second.algebraic_type.is_timestamp()
             }
             _ => false,
         }

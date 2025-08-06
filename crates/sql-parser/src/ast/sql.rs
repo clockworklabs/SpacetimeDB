@@ -1,9 +1,14 @@
+use spacetimedb_lib::Identity;
+
+use crate::parser::{errors::SqlUnsupported, SqlParseResult};
+
 use super::{Project, SqlExpr, SqlFrom, SqlIdent, SqlLiteral};
 
 /// The AST for the SQL DML and query language
+#[derive(Debug)]
 pub enum SqlAst {
     /// SELECT ...
-    Query(QueryAst),
+    Select(SqlSelect),
     /// INSERT INTO ...
     Insert(SqlInsert),
     /// UPDATE ...
@@ -16,37 +21,92 @@ pub enum SqlAst {
     Show(SqlShow),
 }
 
-/// The AST for the SQL query language
-pub struct QueryAst {
-    pub query: SqlSetOp,
-    pub order: Vec<OrderByElem>,
-    pub limit: Option<SqlLiteral>,
-}
+impl SqlAst {
+    pub fn qualify_vars(self) -> Self {
+        match self {
+            Self::Select(select) => Self::Select(select.qualify_vars()),
+            Self::Update(SqlUpdate {
+                table: with,
+                assignments,
+                filter,
+            }) => Self::Update(SqlUpdate {
+                table: with.clone(),
+                filter: filter.map(|expr| expr.qualify_vars(with)),
+                assignments,
+            }),
+            Self::Delete(SqlDelete { table: with, filter }) => Self::Delete(SqlDelete {
+                table: with.clone(),
+                filter: filter.map(|expr| expr.qualify_vars(with)),
+            }),
+            _ => self,
+        }
+    }
 
-/// Set operations in the SQL query language
-pub enum SqlSetOp {
-    /// SELECT
-    Select(SqlSelect),
-    /// ORDER/LIMIT
-    Query(Box<QueryAst>),
-    /// UNION
-    Union(Box<SqlSetOp>, Box<SqlSetOp>, bool),
-    /// EXCEPT
-    Minus(Box<SqlSetOp>, Box<SqlSetOp>, bool),
+    pub fn find_unqualified_vars(self) -> SqlParseResult<Self> {
+        match self {
+            Self::Select(select) => select.find_unqualified_vars().map(Self::Select),
+            _ => Ok(self),
+        }
+    }
+
+    /// Replace the `:sender` parameter with the [Identity] it represents
+    pub fn resolve_sender(self, sender_identity: Identity) -> Self {
+        match self {
+            Self::Select(select) => Self::Select(select.resolve_sender(sender_identity)),
+            Self::Update(update) => Self::Update(update.resolve_sender(sender_identity)),
+            Self::Delete(delete) => Self::Delete(delete.resolve_sender(sender_identity)),
+            _ => self,
+        }
+    }
 }
 
 /// A SELECT statement in the SQL query language
+#[derive(Debug)]
 pub struct SqlSelect {
     pub project: Project,
-    pub distinct: bool,
-    pub from: SqlFrom<QueryAst>,
+    pub from: SqlFrom,
     pub filter: Option<SqlExpr>,
+    pub limit: Option<Box<str>>,
 }
 
-/// ORDER BY cols [ ASC | DESC ]
-pub struct OrderByElem(pub SqlExpr, pub bool);
+impl SqlSelect {
+    pub fn qualify_vars(self) -> Self {
+        match &self.from {
+            SqlFrom::Expr(_, alias) => Self {
+                project: self.project.qualify_vars(alias.clone()),
+                filter: self.filter.map(|expr| expr.qualify_vars(alias.clone())),
+                ..self
+            },
+            SqlFrom::Join(..) => self,
+        }
+    }
+
+    pub fn find_unqualified_vars(self) -> SqlParseResult<Self> {
+        if self.from.has_unqualified_vars() {
+            return Err(SqlUnsupported::UnqualifiedNames.into());
+        }
+        if self.project.has_unqualified_vars() {
+            return Err(SqlUnsupported::UnqualifiedNames.into());
+        }
+        if let Some(expr) = &self.filter {
+            if expr.has_unqualified_vars() {
+                return Err(SqlUnsupported::UnqualifiedNames.into());
+            }
+        }
+        Ok(self)
+    }
+
+    /// Replace the `:sender` parameter with the [Identity] it represents
+    pub fn resolve_sender(self, sender_identity: Identity) -> Self {
+        Self {
+            filter: self.filter.map(|expr| expr.resolve_sender(sender_identity)),
+            ..self
+        }
+    }
+}
 
 /// INSERT INTO table cols VALUES literals
+#[derive(Debug)]
 pub struct SqlInsert {
     pub table: SqlIdent,
     pub fields: Vec<SqlIdent>,
@@ -54,20 +114,48 @@ pub struct SqlInsert {
 }
 
 /// VALUES literals
+#[derive(Debug)]
 pub struct SqlValues(pub Vec<Vec<SqlLiteral>>);
 
 /// UPDATE table SET cols [ WHERE predicate ]
+#[derive(Debug)]
 pub struct SqlUpdate {
     pub table: SqlIdent,
     pub assignments: Vec<SqlSet>,
     pub filter: Option<SqlExpr>,
 }
 
+impl SqlUpdate {
+    /// Replace the `:sender` parameter with the [Identity] it represents
+    fn resolve_sender(self, sender_identity: Identity) -> Self {
+        Self {
+            filter: self.filter.map(|expr| expr.resolve_sender(sender_identity)),
+            ..self
+        }
+    }
+}
+
 /// DELETE FROM table [ WHERE predicate ]
-pub struct SqlDelete(pub SqlIdent, pub Option<SqlExpr>);
+#[derive(Debug)]
+pub struct SqlDelete {
+    pub table: SqlIdent,
+    pub filter: Option<SqlExpr>,
+}
+
+impl SqlDelete {
+    /// Replace the `:sender` parameter with the [Identity] it represents
+    fn resolve_sender(self, sender_identity: Identity) -> Self {
+        Self {
+            filter: self.filter.map(|expr| expr.resolve_sender(sender_identity)),
+            ..self
+        }
+    }
+}
 
 /// SET var '=' literal
+#[derive(Debug)]
 pub struct SqlSet(pub SqlIdent, pub SqlLiteral);
 
 /// SHOW var
+#[derive(Debug)]
 pub struct SqlShow(pub SqlIdent);

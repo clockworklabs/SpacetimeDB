@@ -36,6 +36,13 @@ impl EnergyQuanta {
         let energy = bytes_stored * sec + (bytes_stored * nsec) / 1_000_000_000;
         Self::new(energy)
     }
+
+    const ENERGY_PER_MEM_BYTE_SEC: u128 = 100;
+
+    pub fn from_memory_usage(bytes_stored: u64, storage_period: Duration) -> Self {
+        let byte_seconds = Self::from_disk_usage(bytes_stored, storage_period).get();
+        Self::new(byte_seconds * Self::ENERGY_PER_MEM_BYTE_SEC)
+    }
 }
 
 impl fmt::Display for EnergyQuanta {
@@ -123,7 +130,9 @@ impl fmt::Debug for EnergyBalance {
 pub struct ReducerBudget(u64);
 
 impl ReducerBudget {
-    pub const DEFAULT_BUDGET: Self = ReducerBudget(1_000_000_000_000_000_000);
+    // 1 second of wasm runtime is roughly 2 TeV, so this is
+    // roughly 1 minute of wasm runtime
+    pub const DEFAULT_BUDGET: Self = ReducerBudget(120_000_000_000_000);
 
     pub const ZERO: Self = ReducerBudget(0);
     pub const MAX: Self = ReducerBudget(u64::MAX);

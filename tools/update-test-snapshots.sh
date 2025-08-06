@@ -23,6 +23,6 @@ if ! cmd_exists cargo-insta; then
   esac
 fi
 
-cargo build -p rust-wasm-test-module --release --target wasm32-unknown-unknown
+cargo build -p module-test --release --target wasm32-unknown-unknown
 
 cargo insta test --review -p spacetimedb-cli

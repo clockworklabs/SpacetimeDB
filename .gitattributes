@@ -1,3 +1,1 @@
 **/module_bindings/** linguist-generated=true eol=lf
-*.verified.cs linguist-generated=true eol=lf
-/crates/bindings-csharp/Runtime/Internal/Autogen/*.cs linguist-generated=true

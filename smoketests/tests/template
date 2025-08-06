@@ -9,7 +9,7 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-run_test cargo run identity new --no-domain --no-email
+run_test cargo run identity new --no-domain
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 EMAIL="$(random_string)@clockworklabs.io"
 TOKEN=$(grep token "$HOME/.spacetime/config.toml" | awk '{print $3}' | tr -d \')
@@ -18,19 +18,11 @@ reset_config
 
 run_test cargo run identity add "$IDENT" "$TOKEN"
 run_test cargo run identity set-default "$IDENT"
-run_test cargo run identity set-email "$IDENT" "$EMAIL"
 [ "$IDENT" == "$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')" ]
-[ "$EMAIL" == "$(grep EMAIL "$TEST_OUT" | awk '{print $2}')" ]
 
 reset_config
 
-run_test cargo run identity find "$EMAIL"
-[ "$IDENT" == "$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')" ]
-[ "$EMAIL" == "$(grep EMAIL "$TEST_OUT" | awk '{print $2}')" ]
-
-run_test cargo run identity new --email "$EMAIL" --no-domain
-run_test cargo run identity find "$EMAIL"
-[ "2" == "$(grep EMAIL "$TEST_OUT" | wc -l | awk '{print $1}')" ]
+run_test cargo run identity new --no-domain
 
 run_test cargo run publish
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"

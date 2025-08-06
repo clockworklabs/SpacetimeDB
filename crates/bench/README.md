@@ -1,4 +1,9 @@
 # spacetimedb-bench
+
+> ⚠️ **Internal Crate** ⚠️
+>
+> This crate is intended for internal use only. It is **not** stable and may change without notice.
+
 Benchmarking suite for SpacetimeDB using [Criterion](https://github.com/bheisler/criterion.rs) and [Callgrind](https://valgrind.org/docs/manual/cl-manual.html) (via [iai-callgrind](https://github.com/clockworklabs/iai-callgrind)). Provides comparisons between the underlying spacetime datastore, spacetime modules, and sqlite.
 
 To run the criterion benchmarks:
@@ -23,7 +28,7 @@ Which will build the docker image and run the callgrind benchmarks inside of it.
 
 You can also comment "benchmarks please" or "callgrind please" on a pull request in the SpacetimeDB repository to run the criterion/callgrind benchmarks on that PR. The results will be posted in a comment on the PR.
 
-This is coordinated using the benchmarks Github Actions: see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml), and
+This is coordinated using the benchmarks GitHub Actions: see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml), and
 [`../../.github/workflows/callgrind_benchmarks.yml`](../../.github/workflows/callgrind_benchmarks.yml). 
 These also rely on the benchmarks-viewer application (https://github.com/clockworklabs/benchmarks-viewer).
 

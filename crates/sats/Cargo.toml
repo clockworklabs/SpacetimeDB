@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "Spacetime Algebraic Type Notation"
+rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -24,17 +25,25 @@ blake3 = ["dep:blake3"]
 # which we don't want in `spacetimedb_bindings`.
 bytestring = ["dep:bytestring"]
 metrics_impls = ["dep:spacetimedb-metrics"]
+# Gated to avoid including this in `spacetimedb_bindings`.
+memory-usage = ["dep:spacetimedb-memory-usage", "spacetimedb-primitives/memory-usage"]
 
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true
+spacetimedb-memory-usage = { workspace = true, optional = true, default-features = false, features = [
+    "ethnum",
+    "decorum",
+] }
 spacetimedb-metrics = { workspace = true, optional = true }
 
+anyhow.workspace = true
 arrayvec.workspace = true
 bitflags.workspace = true
 bytes.workspace = true
 bytemuck.workspace = true
 bytestring = { workspace = true, optional = true }
+chrono = { workspace = true, features = ["alloc"] }
 decorum.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true
@@ -60,3 +69,6 @@ rand.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
 proptest-derive.workspace = true
+
+[lints]
+workspace = true

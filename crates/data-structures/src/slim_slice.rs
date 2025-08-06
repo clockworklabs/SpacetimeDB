@@ -14,7 +14,7 @@
 //!
 //! Because hitting `u32::MAX` is substantially more likely than `u64::MAX`,
 //! the risk of overflow is greater.
-//! To mitigate this issue, rather than default to panicing,
+//! To mitigate this issue, rather than default to panicking,
 //! this module tries, for the most part,
 //! to force its user to handle any overflow
 //! when converting to the slimmer types.
@@ -25,18 +25,18 @@
 //! - [`SlimSmallSliceBox<T, N>`], a slimmer version of `SmallVec<[T; N]>`
 //!   but without the growing functionality.
 //! - [`SlimStrBox`], a slimmer version of `Box<str>`
-//! - [`SlimSlice<'a, T>`], a slimmer verion of `&'a [T]`
+//! - [`SlimSlice<'a, T>`], a slimmer version of `&'a [T]`
 //! - [`SlimSliceMut<'a, T>`], a slimmer version of `&'a mut [T]`
 //! - [`SlimStr<'a>`], a slimmer version of `&'a str`
 //! - [`SlimStrMut<'a>`], a slimmer version of `&'a mut str`
 //!
 //! The following convenience conversion functions are provided:
 //!
-//! - [`slice`] converts `&[T] -> SlimSlice<T>`, panicing on overflow
-//! - [`slice_mut`] converts `&mut [T] -> SlimSliceMut<T>`, panicing on overflow
-//! - [`str`] converts `&str -> SlimStr`, panicing on overflow
-//! - [`str_mut`] converts `&mut str -> SlimStrMut`, panicing on overflow
-//! - [`string`] converts `&str -> SlimStrBox`, panicing on overflow
+//! - [`from_slice`] converts `&[T] -> SlimSlice<T>`, panicking on overflow
+//! - [`from_slice_mut`] converts `&mut [T] -> SlimSliceMut<T>`, panicking on overflow
+//! - [`from_str`] converts `&str -> SlimStr`, panicking on overflow
+//! - [`from_str_mut`] converts `&mut str -> SlimStrMut`, panicking on overflow
+//! - [`from_string`] converts `&str -> SlimStrBox`, panicking on overflow
 //!
 //! These conversions should be reserved for cases where it is known
 //! that the length `<= u32::MAX` and should be used sparingly.
@@ -60,16 +60,16 @@
 use core::{
     borrow::Borrow,
     cmp::Ordering,
-    fmt::{Debug, Display},
+    fmt::{self, Debug, Display},
     hash::{Hash, Hasher},
     marker::PhantomData,
-    mem,
-    mem::ManuallyDrop,
+    mem::{self, ManuallyDrop},
     ops::{Deref, DerefMut},
     ptr::{slice_from_raw_parts_mut, NonNull},
     slice,
     str::{from_utf8_unchecked, from_utf8_unchecked_mut},
 };
+use smallvec::SmallVec;
 use thiserror::Error;
 
 // =============================================================================
@@ -160,7 +160,7 @@ pub unsafe trait SafelyExchangeable<T> {}
 /// Implementation detail of the other types.
 /// Provides some convenience but users of the type are responsible
 /// for safety, invariants and variance.
-#[repr(packed)]
+#[repr(Rust, packed)]
 struct SlimRawSlice<T> {
     /// A valid pointer to the slice data.
     ptr: NonNull<T>,
@@ -201,10 +201,10 @@ impl<T> SlimRawSlice<T> {
     /// must satisfy [`std::slice::from_raw_parts`]'s requirements.
     /// That is,
     /// * `self.ptr` must be valid for reads
-    ///    for `self.len * size_of::<T>` many bytes and must be aligned.
+    ///   for `self.len * size_of::<T>` many bytes and must be aligned.
     ///
     /// * `self.ptr` must point to `self.len`
-    ///    consecutive properly initialized values of type `T`.
+    ///   consecutive properly initialized values of type `T`.
     ///
     /// * The memory referenced by the returned slice
     ///   must not be mutated for the duration of lifetime `'a`,
@@ -228,7 +228,7 @@ impl<T> SlimRawSlice<T> {
     /// must satisfy [`std::slice::from_raw_parts_mut`]'s requirements.
     /// That is,
     /// * `self.ptr` must be [valid] for both reads and writes
-    ///    for `self.len * mem::size_of::<T>()` many bytes,
+    ///   for `self.len * mem::size_of::<T>()` many bytes,
     ///   and it must be properly aligned.
     ///
     /// * `self.ptr` must point to `self.len`
@@ -574,11 +574,13 @@ impl<A> FromIterator<A> for SlimSliceBoxCollected<A> {
 // Owned boxed slice with SSO
 // =============================================================================
 
+#[derive(Clone)]
 pub struct SlimSmallSliceBox<T, const N: usize>(SlimSmallSliceBoxData<T, N>);
 
 /// The representation of [`SlimSmallSliceBox<T>`].
 ///
 /// The parameter `N` is the number of elements that can be inline.
+#[derive(Clone)]
 enum SlimSmallSliceBoxData<T, const N: usize> {
     /// The data is inline, not using any indirections.
     Inline([T; N]),
@@ -625,6 +627,29 @@ impl<T, const N: usize> DerefMut for SlimSmallSliceBox<T, N> {
         match &mut self.0 {
             SlimSmallSliceBoxData::Inline(i) => i,
             SlimSmallSliceBoxData::Heap(h) => h,
+        }
+    }
+}
+
+impl<T: PartialEq, const N: usize> PartialEq for SlimSmallSliceBox<T, N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref().eq(other.deref())
+    }
+}
+
+impl<T: Eq, const N: usize> Eq for SlimSmallSliceBox<T, N> {}
+
+impl<T: Debug, const N: usize> fmt::Debug for SlimSmallSliceBox<T, N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Debug::fmt(self.deref(), f)
+    }
+}
+
+impl<T, const N: usize> From<SmallVec<[T; N]>> for SlimSmallSliceBox<T, N> {
+    fn from(value: SmallVec<[T; N]>) -> Self {
+        match value.into_inner() {
+            Ok(inline) => inline.into(),
+            Err(heap) => SlimSliceBox::from_boxed(heap.into_boxed_slice()).into(),
         }
     }
 }
@@ -1572,8 +1597,8 @@ mod tests {
     }
 
     fn debug_properties<T: Debug, U: ?Sized + Debug>(a: &T, b: &T, a_cmp: &U, b_cmp: &U) {
-        assert_eq!(format!("{:?}", a), format!("{:?}", a_cmp));
-        assert_eq!(format!("{:?}", b), format!("{:?}", b_cmp));
+        assert_eq!(format!("{a:?}"), format!("{:?}", a_cmp));
+        assert_eq!(format!("{b:?}"), format!("{:?}", b_cmp));
     }
 
     fn display_properties<T: Debug + Display, U: ?Sized + Display>(a: &T, b: &T, a_cmp: &U, b_cmp: &U) {

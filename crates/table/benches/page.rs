@@ -7,16 +7,17 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+use spacetimedb_sats::layout::{row_size_for_type, RowTypeLayout};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue};
 use spacetimedb_table::bflatn_from::serialize_row_from_page;
 use spacetimedb_table::bflatn_to::write_row_to_page;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::eq::eq_row_in_page;
 use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowHash};
-use spacetimedb_table::layout::{row_size_for_type, RowTypeLayout};
 use spacetimedb_table::page::Page;
 use spacetimedb_table::row_hash::hash_row_in_page;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
+use spacetimedb_table::static_layout::StaticLayout;
 use spacetimedb_table::var_len::{AlignedVarLenOffsets, NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 
 fn time<R>(acc: &mut Duration, body: impl FnOnce() -> R) -> R {
@@ -108,15 +109,9 @@ struct U32x8 {
     vals: [u32; 8],
 }
 
-// TODO: get rid of this once we change to >= Rust 1.79.
-// This necessary as Rust currently doesn't understand that `AlgebraicType::U32`
-// in `[AlgebraicType::U32; N]` is a const expression.
-// In Rust 1.79, we can use `[const { AlgebraicType::U32 }; N]` instead.
-const TY_U32: AlgebraicType = AlgebraicType::U32;
-
 unsafe impl Row for U32x8 {
     fn row_type() -> ProductType {
-        [TY_U32; 8].into()
+        [const { AlgebraicType::U32 }; 8].into()
     }
 }
 
@@ -133,7 +128,7 @@ struct U32x64 {
 
 unsafe impl Row for U32x64 {
     fn row_type() -> ProductType {
-        [TY_U32; 64].into()
+        [const { AlgebraicType::U32 }; 64].into()
     }
 }
 
@@ -239,7 +234,7 @@ const VL_SIZES: [usize; 6] = [
 ];
 
 fn insert_var_len_clean_page(c: &mut Criterion, visitor: &impl VarLenMembers, visitor_name: &str) {
-    let mut group = c.benchmark_group(format!("insert_var_len/{}/clean_page", visitor_name));
+    let mut group = c.benchmark_group(format!("insert_var_len/{visitor_name}/clean_page"));
 
     for len_in_bytes in VL_SIZES {
         group.throughput(Throughput::Bytes(
@@ -263,7 +258,7 @@ fn insert_var_len_clean_page(c: &mut Criterion, visitor: &impl VarLenMembers, vi
 }
 
 fn insert_var_len_dirty_page(c: &mut Criterion, visitor: &impl VarLenMembers, visitor_name: &str) {
-    let mut group = c.benchmark_group(format!("insert_var_len/{}/dirty_page", visitor_name));
+    let mut group = c.benchmark_group(format!("insert_var_len/{visitor_name}/dirty_page"));
 
     for len_in_bytes in VL_SIZES {
         group.throughput(Throughput::Bytes(
@@ -331,7 +326,7 @@ fn insert_opt_str(c: &mut Criterion) {
             clean_page_group.bench_with_input(
                 BenchmarkId::new(
                     "(some_ratio, length_in_bytes)",
-                    format!("({}, {})", some_ratio, data_length_in_bytes),
+                    format!("({some_ratio}, {data_length_in_bytes})"),
                 ),
                 &input,
                 |b, &(some_ratio, _)| {
@@ -340,7 +335,7 @@ fn insert_opt_str(c: &mut Criterion) {
                     unsafe { page.zero_data() };
 
                     let body = |_, _, page: &mut Page| loop {
-                        let insert_none = rng.gen_bool(some_ratio);
+                        let insert_none = rng.random_bool(some_ratio);
                         if !insert_none {
                             if !page.has_space_for_row(fixed_row_size, 0) {
                                 break;
@@ -379,7 +374,7 @@ fn delete_to_approx_fullness_ratio<Row: FixedLenRow>(page: &mut Page, fullness: 
     let row_offsets = page.iter_fixed_len(row_size_for_type::<Row>()).collect::<Vec<_>>();
     let visitor = Row::var_len_visitor();
     for row in row_offsets.into_iter() {
-        let should_keep = rng.gen_bool(fullness);
+        let should_keep = rng.random_bool(fullness);
         if !should_keep {
             unsafe { page.delete_row(row, row_size_for_type::<Row>(), &visitor, &mut NullBlobStore) };
         }
@@ -467,7 +462,7 @@ fn copy_filter_into_fixed_len_keep_ratio<Row: FixedLenRow>(b: &mut Bencher, keep
                 row_size_for_type::<Row>(),
                 &visitor,
                 &mut NullBlobStore,
-                |_page, _row| rng.gen_bool(*keep_ratio),
+                |_page, _row| rng.random_bool(*keep_ratio),
             )
         };
     });
@@ -501,11 +496,11 @@ criterion_group!(
 );
 
 fn u32x2_type() -> ProductType {
-    [TY_U32; 2].into()
+    [const { AlgebraicType::U32 }; 2].into()
 }
 
 fn u32x4_type() -> ProductType {
-    [TY_U32; 4].into()
+    [const { AlgebraicType::U32 }; 4].into()
 }
 
 fn string_row_type() -> ProductType {
@@ -580,7 +575,7 @@ fn product_value_test_cases() -> impl Iterator<
         ),
         (
             "U32x8",
-            [TY_U32; 8].into(),
+            [const { AlgebraicType::U32 }; 8].into(),
             product![0u32, 1u32, 2u32, 3u32, 4u32, 5u32, 6u32, 7u32],
             Some(NullVarLenVisitor),
             Some(AlignedVarLenOffsets::from_offsets(&[])),
@@ -713,7 +708,7 @@ fn ty_page_visitor(ty: ProductType) -> (RowTypeLayout, Box<Page>, VarLenVisitorP
 #[inline(never)]
 fn insert_product_value_into_page(c: &mut Criterion) {
     for (name, ty, value, null_visitor, aligned_offsets_visitor) in product_value_test_cases() {
-        let mut group = c.benchmark_group(format!("insert_product_value/{}", name));
+        let mut group = c.benchmark_group(format!("insert_product_value/{name}"));
         let (ty, mut page, program_visitor) = ty_page_visitor(ty);
 
         if let Some(null_visitor) = null_visitor {
@@ -758,6 +753,7 @@ fn eq_in_page_same(c: &mut Criterion) {
     let mut group = c.benchmark_group("eq_in_page");
     for (name, ty, value, _null_visitor, _aligned_offsets_visitor) in product_value_test_cases() {
         let (ty, mut page, visitor) = ty_page_visitor(ty);
+        let static_bsatn_layout = StaticLayout::for_row_type(&ty);
 
         let (offset_0, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
         let (offset_1, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
@@ -771,6 +767,7 @@ fn eq_in_page_same(c: &mut Criterion) {
                         black_box(offset_0),
                         black_box(offset_1),
                         black_box(&ty),
+                        black_box(static_bsatn_layout.as_ref()),
                     )
                 })
             });

@@ -1,15 +1,16 @@
 use std::{
     cmp,
     fmt::Debug,
-    io::{self, Seek as _, SeekFrom, Write},
+    io::{self, Seek as _, SeekFrom},
     iter::repeat,
+    sync::RwLockWriteGuard,
 };
 
 use log::debug;
 
 use crate::{
     commitlog, error, payload,
-    repo::{self, Repo},
+    repo::{self, Repo, SegmentLen},
     segment::FileLike,
     tests::helpers::enable_logging,
     Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
@@ -96,11 +97,13 @@ fn overwrite_reopen() {
         .unwrap()
         .into();
     debug!("last commit: {last_commit:?}");
-    let mut last_segment = repo.open_segment(last_segment_offset).unwrap();
-    last_segment
-        .seek(SeekFrom::End(-((last_commit.encoded_len() - 1) as i64)))
-        .unwrap();
-    last_segment.write_all(&[255; 1]).unwrap();
+
+    {
+        let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
+        let mut data = last_segment.buf_mut();
+        let pos = data.len() - last_commit.encoded_len() + 1;
+        data[pos] = 255;
+    }
 
     let mut log = open_log::<[u8; 32]>(repo.clone());
     for (i, commit) in log.commits_from(0).enumerate() {
@@ -113,9 +116,7 @@ fn overwrite_reopen() {
                     commit,
                     Err(error::Traversal::Checksum { offset, .. }) if offset == last_good_offset as u64,
                 ),
-                "expected checksum error with offset={}: {:?}",
-                last_good_offset,
-                commit
+                "expected checksum error with offset={last_good_offset}: {commit:?}"
             );
         }
     }
@@ -160,13 +161,25 @@ struct ShortSegment {
     max_len: u64,
 }
 
+impl ShortSegment {
+    fn buf_mut(&mut self) -> RwLockWriteGuard<'_, Vec<u8>> {
+        self.inner.buf_mut()
+    }
+}
+
+impl SegmentLen for ShortSegment {
+    fn segment_len(&mut self) -> io::Result<u64> {
+        self.inner.segment_len()
+    }
+}
+
 impl FileLike for ShortSegment {
-    fn fsync(&self) -> std::io::Result<()> {
+    fn fsync(&mut self) -> std::io::Result<()> {
         self.inner.fsync()
     }
 
-    fn ftruncate(&self, size: u64) -> std::io::Result<()> {
-        self.inner.ftruncate(size)
+    fn ftruncate(&mut self, tx_offset: u64, size: u64) -> std::io::Result<()> {
+        self.inner.ftruncate(tx_offset, size)
     }
 }
 
@@ -217,24 +230,33 @@ impl ShortMem {
 }
 
 impl Repo for ShortMem {
-    type Segment = ShortSegment;
+    type SegmentWriter = ShortSegment;
+    type SegmentReader = io::BufReader<repo::mem::Segment>;
 
-    fn create_segment(&self, offset: u64) -> io::Result<Self::Segment> {
+    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         self.inner.create_segment(offset).map(|inner| ShortSegment {
             inner,
             max_len: self.max_len,
         })
     }
 
-    fn open_segment(&self, offset: u64) -> io::Result<Self::Segment> {
-        self.inner.open_segment(offset).map(|inner| ShortSegment {
+    fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
+        self.inner.open_segment_writer(offset).map(|inner| ShortSegment {
             inner,
             max_len: self.max_len,
         })
     }
 
+    fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
+        self.inner.open_segment_reader(offset)
+    }
+
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
         self.inner.remove_segment(offset)
+    }
+
+    fn compress_segment(&self, offset: u64) -> io::Result<()> {
+        self.inner.compress_segment(offset)
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {

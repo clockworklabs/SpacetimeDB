@@ -4,8 +4,14 @@ use crate::program::{ProgramVm, Sources};
 use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
 use spacetimedb_sats::ProductValue;
+use spacetimedb_table::table::RowRef;
 
 pub type IterRows<'a> = dyn RelOps<'a> + 'a;
+
+/// Utility to simplify the creation of a boxed iterator.
+pub fn box_iter<'a, T: Iterator<Item = RowRef<'a>> + 'a>(iter: T) -> Box<dyn Iterator<Item = RowRef<'a>> + 'a> {
+    Box::new(iter)
+}
 
 pub fn build_select<'a>(base: impl RelOps<'a> + 'a, cmp: &'a ColumnOp) -> Box<IterRows<'a>> {
     Box::new(base.select(move |row| cmp.eval_bool(row)))
@@ -90,9 +96,9 @@ pub mod test_helpers {
     use crate::relation::MemTable;
     use core::hash::BuildHasher as _;
     use spacetimedb_data_structures::map::DefaultHashBuilder;
-    use spacetimedb_lib::relation::{Column, FieldName, Header};
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+    use spacetimedb_schema::relation::{Column, FieldName, Header};
     use std::sync::Arc;
 
     pub fn mem_table_without_table_name(mem: &MemTable) -> (&[Column], &[ProductValue]) {
@@ -101,7 +107,7 @@ pub mod test_helpers {
 
     pub fn header_for_mem_table(table_id: TableId, fields: ProductType) -> Header {
         let hash = DefaultHashBuilder::default().hash_one(&fields);
-        let table_name = format!("mem#{:x}", hash).into();
+        let table_name = format!("mem#{hash:x}").into();
 
         let cols = Vec::from(fields.elements)
             .into_iter()
@@ -179,11 +185,11 @@ pub mod tests {
     use crate::expr::{CrudExpr, Query, QueryExpr, SourceExpr, SourceSet};
     use crate::iterators::RelIter;
     use crate::relation::MemTable;
-    use spacetimedb_lib::db::error::RelationError;
     use spacetimedb_lib::operator::{OpCmp, OpLogic};
-    use spacetimedb_lib::relation::{FieldName, Header};
     use spacetimedb_primitives::ColId;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
+    use spacetimedb_schema::def::error::RelationError;
+    use spacetimedb_schema::relation::{FieldName, Header};
 
     /// From an original source of `result`s, applies `queries` and returns a final set of results.
     fn build_query<'a, const N: usize>(

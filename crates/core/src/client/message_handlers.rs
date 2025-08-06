@@ -1,21 +1,18 @@
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-use super::messages::{ToProtocol, TransactionUpdateMessage};
-use super::{ClientConnection, DataMessage};
+use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtocol, TransactionUpdateMessage};
+use super::{ClientConnection, DataMessage, Protocol};
 use crate::energy::EnergyQuanta;
-use crate::execution_context::WorkloadType;
-use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, ReducerId, Timestamp};
+use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::{ReducerArgs, ReducerId};
 use crate::identity::Identity;
-use crate::messages::websocket::{self as ws, CallReducer, ClientMessage, OneOffQuery};
+use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
-use bytes::Bytes;
-use bytestring::ByteString;
-use spacetimedb_client_api_messages::websocket::EncodedValue;
+use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
-use spacetimedb_lib::{bsatn, Address};
+use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
+use std::borrow::Cow;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 #[derive(thiserror::Error, Debug)]
 pub enum MessageHandleError {
@@ -31,67 +28,90 @@ pub enum MessageHandleError {
 }
 
 pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Instant) -> Result<(), MessageHandleError> {
-    let message_kind = match message {
-        DataMessage::Text(_) => "text",
-        DataMessage::Binary(_) => "binary",
-    };
-
-    WORKER_METRICS
-        .websocket_request_msg_size
-        .with_label_values(&client.database_instance_id, message_kind)
-        .observe(message.len() as f64);
-
-    WORKER_METRICS
-        .websocket_requests
-        .with_label_values(&client.database_instance_id, message_kind)
-        .inc();
-
-    let parse_args = |args: EncodedValue| -> ReducerArgs {
-        match args {
-            EncodedValue::Binary(args) => ReducerArgs::Bsatn(args),
-            EncodedValue::Text(args) => ReducerArgs::Json(args),
-        }
-    };
+    client.observe_websocket_request_message(&message);
 
     let message = match message {
-        DataMessage::Text(message) => {
-            let message = ByteString::from(message);
-            // TODO: update json clients and use the ws version
-            serde_json::from_str::<DeserializeWrapper<ClientMessage>>(&message)?
-                .0
-                .map_args(parse_args)
+        DataMessage::Text(text) => {
+            // TODO(breaking): this should ideally be &serde_json::RawValue, not json-nested-in-string
+            let DeserializeWrapper(message) =
+                serde_json::from_str::<DeserializeWrapper<ClientMessage<Cow<str>>>>(&text)?;
+            message.map_args(|s| {
+                ReducerArgs::Json(match s {
+                    Cow::Borrowed(s) => text.slice_ref(s),
+                    Cow::Owned(string) => string.into(),
+                })
+            })
         }
-        DataMessage::Binary(message_buf) => {
-            let message_buf = Bytes::from(message_buf);
-            bsatn::from_slice::<ClientMessage>(&message_buf)?.map_args(parse_args)
-        }
+        DataMessage::Binary(message_buf) => bsatn::from_slice::<ClientMessage<&[u8]>>(&message_buf)?
+            .map_args(|b| ReducerArgs::Bsatn(message_buf.slice_ref(b))),
     };
 
-    let address = client.module.info().address;
+    let mod_info = client.module.info();
+    let mod_metrics = &mod_info.metrics;
+    let database_identity = mod_info.database_identity;
+    let db = &client.module.replica_ctx().relational_db;
+    let record_metrics = |wl| {
+        move |metrics| {
+            if let Some(metrics) = metrics {
+                db.exec_counters_for(wl).record(&metrics);
+            }
+        }
+    };
+    let sub_metrics = record_metrics(WorkloadType::Subscribe);
+    let unsub_metrics = record_metrics(WorkloadType::Unsubscribe);
+
     let res = match message {
         ClientMessage::CallReducer(CallReducer {
             ref reducer,
             args,
             request_id,
+            flags,
         }) => {
-            let res = client.call_reducer(reducer, args, request_id, timer).await;
+            let res = client.call_reducer(reducer, args, request_id, timer, flags).await;
             WORKER_METRICS
                 .request_round_trip
-                .with_label_values(&WorkloadType::Reducer, &address, reducer)
+                .with_label_values(&WorkloadType::Reducer, &database_identity, reducer)
                 .observe(timer.elapsed().as_secs_f64());
             res.map(drop).map_err(|e| {
                 (
                     Some(reducer),
-                    client.module.info().reducers.lookup_id(reducer),
+                    mod_info.module_def.reducer_full(&**reducer).map(|(id, _)| id),
                     e.into(),
                 )
             })
         }
+        ClientMessage::SubscribeMulti(subscription) => {
+            let res = client.subscribe_multi(subscription, timer).await.map(sub_metrics);
+            mod_metrics
+                .request_round_trip_subscribe
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
+        ClientMessage::UnsubscribeMulti(request) => {
+            let res = client.unsubscribe_multi(request, timer).await.map(unsub_metrics);
+            mod_metrics
+                .request_round_trip_unsubscribe
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
+        ClientMessage::SubscribeSingle(subscription) => {
+            let res = client.subscribe_single(subscription, timer).await.map(sub_metrics);
+            mod_metrics
+                .request_round_trip_subscribe
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
+        ClientMessage::Unsubscribe(request) => {
+            let res = client.unsubscribe(request, timer).await.map(unsub_metrics);
+            mod_metrics
+                .request_round_trip_unsubscribe
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
         ClientMessage::Subscribe(subscription) => {
-            let res = client.subscribe(subscription, timer).await;
-            WORKER_METRICS
-                .request_round_trip
-                .with_label_values(&WorkloadType::Subscribe, &address, "")
+            let res = client.subscribe(subscription, timer).await.map(Some).map(sub_metrics);
+            mod_metrics
+                .request_round_trip_subscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
@@ -99,10 +119,12 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             query_string: query,
             message_id,
         }) => {
-            let res = client.one_off_query(&query, &message_id, timer);
-            WORKER_METRICS
-                .request_round_trip
-                .with_label_values(&WorkloadType::Sql, &address, "")
+            let res = match client.config.protocol {
+                Protocol::Binary => client.one_off_query_bsatn(&query, &message_id, timer).await,
+                Protocol::Text => client.one_off_query_json(&query, &message_id, timer).await,
+            };
+            mod_metrics
+                .request_round_trip_sql
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|err| (None, None, err))
         }
@@ -111,7 +133,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         reducer: reducer.cloned(),
         reducer_id,
         caller_identity: client.id.identity,
-        caller_address: Some(client.id.address),
+        caller_connection_id: Some(client.id.connection_id),
         err,
     })?;
 
@@ -119,12 +141,12 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
+#[error("error executing message (reducer: {reducer:?}) (err: {err:#})")]
 pub struct MessageExecutionError {
-    pub reducer: Option<String>,
+    pub reducer: Option<Box<str>>,
     pub reducer_id: Option<ReducerId>,
     pub caller_identity: Identity,
-    pub caller_address: Option<Address>,
+    pub caller_connection_id: Option<ConnectionId>,
     #[source]
     pub err: anyhow::Error,
 }
@@ -134,9 +156,9 @@ impl MessageExecutionError {
         ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: self.caller_identity,
-            caller_address: self.caller_address,
+            caller_connection_id: self.caller_connection_id,
             function_call: ModuleFunctionCall {
-                reducer: self.reducer.unwrap_or_else(|| "<none>".to_owned()),
+                reducer: self.reducer.unwrap_or_else(|| "<none>".into()).into(),
                 reducer_id: self.reducer_id.unwrap_or(u32::MAX.into()),
                 args: Default::default(),
             },
@@ -150,11 +172,11 @@ impl MessageExecutionError {
 }
 
 impl ToProtocol for MessageExecutionError {
-    type Encoded = ws::ServerMessage;
+    type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: super::Protocol) -> Self::Encoded {
-        TransactionUpdateMessage::<DatabaseUpdate> {
-            event: Arc::new(self.into_event()),
-            database_update: Default::default(),
+        TransactionUpdateMessage {
+            event: Some(Arc::new(self.into_event())),
+            database_update: SubscriptionUpdateMessage::default_for_protocol(protocol, None),
         }
         .to_protocol(protocol)
     }

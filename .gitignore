@@ -5,6 +5,9 @@
 flamegraphs/*.svg
 flamegraphs/flamegraph.folded
 
+### MacOS ###
+.DS_Store
+
 ### Node ###
 # Logs
 packages/logs
@@ -202,6 +205,7 @@ __pycache__/
 cs-src/
 crates/bench/spacetime.svg
 crates/bench/sqlite.svg
+.vs/
 
 # benchmark files
 out.json

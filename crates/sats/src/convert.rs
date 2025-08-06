@@ -1,6 +1,7 @@
+use crate::sum_value::SumTag;
 use crate::{i256, u256};
-use crate::{AlgebraicType, AlgebraicValue, MapType, MapValue, ProductType, ProductValue};
-use spacetimedb_primitives::{ColId, ConstraintId, IndexId, SequenceId, TableId};
+use crate::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_primitives::{ColId, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
 
 impl crate::Value for AlgebraicValue {
     type Type = AlgebraicType;
@@ -25,9 +26,9 @@ impl From<AlgebraicType> for ProductType {
     }
 }
 
-impl From<MapType> for AlgebraicType {
-    fn from(x: MapType) -> Self {
-        Box::new(x).into()
+impl From<()> for AlgebraicValue {
+    fn from((): ()) -> Self {
+        AlgebraicValue::unit()
     }
 }
 
@@ -41,7 +42,6 @@ macro_rules! built_in_into {
     };
 }
 
-built_in_into!(MapValue, Map);
 built_in_into!(u128, U128);
 built_in_into!(i128, I128);
 built_in_into!(u256, U256);
@@ -49,8 +49,10 @@ built_in_into!(i256, I256);
 built_in_into!(f32, F32);
 built_in_into!(f64, F64);
 built_in_into!(&str, String);
+built_in_into!(String, String);
 built_in_into!(&[u8], Bytes);
 built_in_into!(Box<[u8]>, Bytes);
+built_in_into!(SumTag, Sum);
 
 macro_rules! system_id {
     ($name:ident) => {
@@ -66,3 +68,4 @@ system_id!(ColId);
 system_id!(SequenceId);
 system_id!(IndexId);
 system_id!(ConstraintId);
+system_id!(ScheduleId);

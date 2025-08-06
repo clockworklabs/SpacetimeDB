@@ -4,8 +4,8 @@
 
 use crate::{i256, u256, ProductTypeElement, SumTypeVariant};
 use crate::{
-    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayValue, MapType, MapValue, ProductType, ProductValue, SumType,
-    SumValue, Typespace, F32, F64,
+    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumType, SumValue,
+    Typespace, F32, F64,
 };
 use proptest::{
     collection::{vec, SizeRange},
@@ -53,7 +53,6 @@ fn generate_algebraic_type_from_leaves(
     leaves.prop_recursive(depth, SIZE as u32, SIZE as u32, |gen_element| {
         prop_oneof![
             gen_element.clone().prop_map(AlgebraicType::array),
-            (gen_element.clone(), gen_element.clone()).prop_map(|(key, val)| AlgebraicType::map(key, val)),
             // No need to generate units here;
             // we already generate them in `generate_non_compound_algebraic_type`.
             vec(gen_element.clone().prop_map_into(), 1..=SIZE)
@@ -68,7 +67,7 @@ fn generate_algebraic_type_from_leaves(
                     .collect())
                 .prop_map(Vec::into_boxed_slice)
                 .prop_map(AlgebraicType::product),
-            // Do not generate nevers here; we can't store never in a page.
+            // Do not generate never here; we can't store never in a page.
             vec(gen_element.clone().prop_map_into(), 1..=SIZE)
                 .prop_map(|vec| vec
                     .into_iter()
@@ -104,11 +103,13 @@ fn generate_non_compound<Val: Arbitrary + Into<AlgebraicValue> + 'static>() -> B
     any::<Val>().prop_map(Into::into).boxed()
 }
 
-fn any_u256() -> impl Strategy<Value = u256> {
+/// Generates any `u256`.
+pub fn any_u256() -> impl Strategy<Value = u256> {
     any::<(u128, u128)>().prop_map(|(hi, lo)| u256::from_words(hi, lo))
 }
 
-fn any_i256() -> impl Strategy<Value = i256> {
+/// Generates any `i256`.
+pub fn any_i256() -> impl Strategy<Value = i256> {
     any::<(i128, i128)>().prop_map(|(hi, lo)| i256::from_words(hi, lo))
 }
 
@@ -133,8 +134,6 @@ pub fn generate_algebraic_value(ty: AlgebraicType) -> impl Strategy<Value = Alge
         AlgebraicType::String => generate_non_compound::<Box<str>>(),
 
         AlgebraicType::Array(ty) => generate_array_value(*ty.elem_ty).prop_map_into().boxed(),
-
-        AlgebraicType::Map(ty) => generate_map_value(*ty).prop_map_into().boxed(),
 
         AlgebraicType::Product(ty) => generate_product_value(ty).prop_map_into().boxed(),
 
@@ -165,15 +164,6 @@ fn generate_sum_value(ty: SumType) -> impl Strategy<Value = SumValue> {
             value: Box::new(value),
         })
     })
-}
-
-/// Generates a `MapValue` typed at `ty`.
-fn generate_map_value(ty: MapType) -> impl Strategy<Value = MapValue> {
-    vec(
-        (generate_algebraic_value(ty.key_ty), generate_algebraic_value(ty.ty)),
-        0..=SIZE,
-    )
-    .prop_map(|entries| entries.into_iter().collect())
 }
 
 /// Generates an array value given an element generator `gen_elem`.
@@ -210,7 +200,6 @@ fn generate_array_value(ty: AlgebraicType) -> BoxedStrategy<ArrayValue> {
         AlgebraicType::Product(ty) => generate_array_of(generate_product_value(ty)),
         AlgebraicType::Sum(ty) => generate_array_of(generate_sum_value(ty)),
         AlgebraicType::Array(ty) => generate_array_of(generate_array_value(*ty.elem_ty)),
-        AlgebraicType::Map(ty) => generate_array_of(generate_map_value(*ty)),
         AlgebraicType::Ref(_) => unreachable!(),
     }
 }
@@ -218,6 +207,18 @@ fn generate_array_value(ty: AlgebraicType) -> BoxedStrategy<ArrayValue> {
 /// Generates a row type `ty` and a row value typed at `ty`.
 pub fn generate_typed_row() -> impl Strategy<Value = (ProductType, ProductValue)> {
     generate_row_type(0..=SIZE).prop_flat_map(|ty| (Just(ty.clone()), generate_product_value(ty)))
+}
+
+pub fn generate_typed_row_vec(
+    num_rows_min: usize,
+    num_rows_max: usize,
+) -> impl Strategy<Value = (ProductType, Vec<ProductValue>)> {
+    generate_row_type(0..=SIZE).prop_flat_map(move |ty| {
+        (
+            Just(ty.clone()),
+            vec(generate_product_value(ty), num_rows_min..num_rows_max),
+        )
+    })
 }
 
 /// Generates a type `ty` and a value typed at `ty`.
@@ -236,7 +237,7 @@ fn generate_type_valid_for_client_use() -> impl Strategy<Value = AlgebraicType> 
     let leaf = prop_oneof![
         generate_non_compound_algebraic_type(),
         Just(AlgebraicType::identity()),
-        Just(AlgebraicType::address()),
+        Just(AlgebraicType::connection_id()),
     ];
 
     let size = 3;
@@ -244,7 +245,6 @@ fn generate_type_valid_for_client_use() -> impl Strategy<Value = AlgebraicType> 
     leaf.prop_recursive(size, size, size, |gen_element| {
         prop_oneof![
             gen_element.clone().prop_map(AlgebraicType::array),
-            (gen_element.clone(), gen_element.clone()).prop_map(|(key, val)| AlgebraicType::map(key, val)),
             gen_element.clone().prop_map(AlgebraicType::option),
         ]
     })

@@ -11,7 +11,10 @@ use hyper_util::rt::TokioIo;
 use super::flat_csv::FlatCsv;
 
 pub use tokio_tungstenite::tungstenite;
-pub use tungstenite::protocol::{frame::coding::CloseCode, CloseFrame, Message, WebSocketConfig};
+pub use tungstenite::{
+    error::Error as WsError,
+    protocol::{frame::coding::CloseCode, CloseFrame, Message, WebSocketConfig},
+};
 
 pub type WebSocketStream = tokio_tungstenite::WebSocketStream<TokioIo<Upgraded>>;
 
@@ -92,7 +95,7 @@ impl<S> FromRequestParts<S> for WebSocketUpgrade {
                 parts
                     .headers
                     .typed_get::<Connection>()
-                    .map_or(false, |conn| conn.contains("upgrade"))
+                    .is_some_and(|conn| conn.contains("upgrade"))
                     && parts.headers.typed_get::<Upgrade>() == Some(Upgrade::websocket())
             })
             .ok_or(BadUpgrade)?;

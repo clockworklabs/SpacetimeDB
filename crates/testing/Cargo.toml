@@ -2,6 +2,8 @@
 name = "spacetimedb-testing"
 version.workspace = true
 edition.workspace = true
+license-file = "LICENSE"
+publish = false
 
 [dependencies]
 spacetimedb-cli.workspace = true
@@ -10,6 +12,8 @@ spacetimedb-lib.workspace = true
 spacetimedb-core.workspace = true
 spacetimedb-standalone.workspace = true
 spacetimedb-client-api.workspace = true
+spacetimedb-paths.workspace = true
+spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
 env_logger.workspace = true
@@ -26,3 +30,6 @@ serde.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
+
+[lints]
+workspace = true

@@ -2,11 +2,12 @@ pub mod abi;
 pub mod instrumentation;
 pub mod module_host_actor;
 
+use std::fmt;
 use std::num::NonZeroU16;
 use std::time::Instant;
 
 use super::{scheduler::ScheduleError, AbiCall};
-use crate::error::{DBError, IndexError, NodesError};
+use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use spacetimedb_primitives::errno;
 use spacetimedb_sats::typespace::TypeRefError;
 use spacetimedb_table::table::UniqueConstraintViolation;
@@ -19,14 +20,8 @@ pub const DESCRIBE_MODULE_DUNDER: &str = "__describe_module__";
 pub const PREINIT_DUNDER: &str = "__preinit__";
 /// initializes the user code in the module. fallible
 pub const SETUP_DUNDER: &str = "__setup__";
-/// the reducer with this name initializes the database
-pub const INIT_DUNDER: &str = "__init__";
-/// The reducer with this name is invoked when a client connects.
-pub const CLIENT_CONNECTED_DUNDER: &str = "__identity_connected__";
-/// The reducer with this name is invoked when a client disconnects.
-pub const CLIENT_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 #[allow(unused)]
 pub enum WasmType {
     I32,
@@ -34,52 +29,78 @@ pub enum WasmType {
     F32,
     F64,
     V128,
-    FuncRef,
-    ExternRef,
+    #[allow(clippy::box_collection)]
+    Ref(Box<String>),
 }
 
-macro_rules! type_eq {
-    ($t:path) => {
-        impl PartialEq<WasmType> for $t {
-            fn eq(&self, other: &WasmType) -> bool {
-                matches!(
-                    (self, other),
-                    (Self::I32, WasmType::I32)
-                        | (Self::I64, WasmType::I64)
-                        | (Self::F32, WasmType::F32)
-                        | (Self::F64, WasmType::F64)
-                        | (Self::V128, WasmType::V128)
-                        | (Self::FuncRef, WasmType::FuncRef)
-                        | (Self::ExternRef, WasmType::ExternRef)
-                )
-            }
-        }
-        impl PartialEq<&WasmType> for $t {
-            fn eq(&self, other: &&WasmType) -> bool {
-                self.eq(*other)
-            }
-        }
-        impl From<$t> for WasmType {
-            fn from(ty: $t) -> WasmType {
-                match ty {
-                    <$t>::I32 => WasmType::I32,
-                    <$t>::I64 => WasmType::I64,
-                    <$t>::F32 => WasmType::F32,
-                    <$t>::F64 => WasmType::F64,
-                    <$t>::V128 => WasmType::V128,
-                    <$t>::FuncRef => WasmType::FuncRef,
-                    <$t>::ExternRef => WasmType::ExternRef,
-                }
-            }
-        }
-    };
+impl fmt::Display for WasmType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            WasmType::I32 => "i32",
+            WasmType::I64 => "i64",
+            WasmType::F32 => "f32",
+            WasmType::F64 => "f64",
+            WasmType::V128 => "v128",
+            WasmType::Ref(r) => r,
+        })
+    }
 }
-type_eq!(wasmtime::ValType);
+
+impl PartialEq<WasmType> for wasmtime::ValType {
+    fn eq(&self, other: &WasmType) -> bool {
+        matches!(
+            (self, other),
+            (Self::I32, WasmType::I32)
+                | (Self::I64, WasmType::I64)
+                | (Self::F32, WasmType::F32)
+                | (Self::F64, WasmType::F64)
+                | (Self::V128, WasmType::V128)
+        )
+    }
+}
+impl PartialEq<&WasmType> for wasmtime::ValType {
+    fn eq(&self, other: &&WasmType) -> bool {
+        self.eq(*other)
+    }
+}
+impl From<wasmtime::ValType> for WasmType {
+    fn from(ty: wasmtime::ValType) -> WasmType {
+        match ty {
+            wasmtime::ValType::I32 => WasmType::I32,
+            wasmtime::ValType::I64 => WasmType::I64,
+            wasmtime::ValType::F32 => WasmType::F32,
+            wasmtime::ValType::F64 => WasmType::F64,
+            wasmtime::ValType::V128 => WasmType::V128,
+            wasmtime::ValType::Ref(ty) => WasmType::Ref(Box::new(ty.to_string())),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct FuncSig<T: AsRef<[WasmType]>> {
     params: T,
     results: T,
+}
+impl<T: AsRef<[WasmType]>> fmt::Display for FuncSig<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(func")?;
+        let (params, results) = (self.params.as_ref(), self.results.as_ref());
+        if !params.is_empty() {
+            write!(f, " (param")?;
+            for p in params {
+                write!(f, " {p}")?;
+            }
+            write!(f, ")")?;
+        }
+        if !results.is_empty() {
+            write!(f, " (result")?;
+            for r in results {
+                write!(f, " {r}")?;
+            }
+            write!(f, ")")?;
+        }
+        write!(f, ")")
+    }
 }
 type StaticFuncSig = FuncSig<&'static [WasmType]>;
 type BoxFuncSig = FuncSig<Box<[WasmType]>>;
@@ -90,9 +111,8 @@ impl StaticFuncSig {
 }
 impl<T: AsRef<[WasmType]>> PartialEq<FuncSig<T>> for wasmtime::ExternType {
     fn eq(&self, other: &FuncSig<T>) -> bool {
-        self.func().map_or(false, |f| {
-            f.params().eq(other.params.as_ref()) && f.results().eq(other.results.as_ref())
-        })
+        self.func()
+            .is_some_and(|f| f.params().eq(other.params.as_ref()) && f.results().eq(other.results.as_ref()))
     }
 }
 impl FuncSigLike for wasmtime::ExternType {
@@ -125,10 +145,10 @@ const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
         WasmType::I64, // `sender_1` contains bytes `[16..24]`.
         WasmType::I64, // `sender_1` contains bytes `[24..32]`.
         // ----------------------------------------------------
-        // Caller's `Address` broken into 2 u64s.
+        // Caller's `ConnectionId` broken into 2 u64s.
         // ----------------------------------------------------
-        WasmType::I64, // `address_0` contains bytes `[0..8 ]`.
-        WasmType::I64, // `address_1` contains bytes `[8..16]`.
+        WasmType::I64, // `conn_id_0` contains bytes `[0..8 ]`.
+        WasmType::I64, // `conn_id_1` contains bytes `[8..16]`.
         // ----------------------------------------------------
         WasmType::I64, // Timestamp
         WasmType::I32, // Args source buffer
@@ -141,14 +161,14 @@ const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
 
 #[derive(thiserror::Error, Debug)]
 pub enum ValidationError {
-    #[error("bad {kind} signature for {name:?}; expected {expected:?} got {actual:?}")]
+    #[error("bad {kind} signature for {name:?}; expected {expected} got {actual}")]
     MismatchedSignature {
         kind: &'static str,
         name: Box<str>,
         expected: StaticFuncSig,
         actual: BoxFuncSig,
     },
-    #[error("expected {name:?} export to be a {kind} with signature {expected:?}, but it wasn't a function at all")]
+    #[error("expected {name:?} export to be a {kind} with signature {expected}, but it wasn't a function at all")]
     NotAFunction {
         kind: &'static str,
         name: Box<str>,
@@ -297,7 +317,7 @@ impl<I: ResourceIndex> ResourceSlab<I> {
     }
 }
 
-decl_index!(RowIterIdx => std::vec::IntoIter<Box<[u8]>>);
+decl_index!(RowIterIdx => std::vec::IntoIter<Vec<u8>>);
 pub(super) type RowIters = ResourceSlab<RowIterIdx>;
 
 pub(super) struct TimingSpan {
@@ -322,15 +342,20 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
         NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
         NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
+        NodesError::IndexNotFound => Some(errno::NO_SUCH_INDEX),
+        NodesError::IndexNotUnique => Some(errno::INDEX_NOT_UNIQUE),
+        NodesError::IndexRowNotFound => Some(errno::NO_SUCH_ROW),
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
-            DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
-                constraint_name: _,
-                table_name: _,
-                cols: _,
-                value: _,
-            })) => Some(errno::UNIQUE_ALREADY_EXISTS),
+            DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(
+                UniqueConstraintViolation {
+                    constraint_name: _,
+                    table_name: _,
+                    cols: _,
+                    value: _,
+                },
+            ))) => Some(errno::UNIQUE_ALREADY_EXISTS),
             _ => None,
         },
         _ => None,
@@ -354,16 +379,21 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::row_iter_bsatn_advance,
             "spacetime_10.0"::row_iter_bsatn_close,
             "spacetime_10.0"::datastore_insert_bsatn,
+            "spacetime_10.0"::datastore_update_bsatn,
             "spacetime_10.0"::datastore_delete_all_by_eq_bsatn,
             "spacetime_10.0"::bytes_source_read,
             "spacetime_10.0"::bytes_sink_write,
             "spacetime_10.0"::console_log,
             "spacetime_10.0"::console_timer_start,
             "spacetime_10.0"::console_timer_end,
+            "spacetime_10.0"::index_id_from_name,
+            "spacetime_10.0"::datastore_index_scan_range_bsatn,
+            "spacetime_10.0"::datastore_delete_by_index_scan_range_bsatn,
+            "spacetime_10.0"::datastore_btree_scan_bsatn,
+            "spacetime_10.0"::datastore_delete_by_btree_scan_bsatn,
+            "spacetime_10.0"::identity,
 
-            "spacetime_10.0"::delete_by_col_eq,
-            "spacetime_10.0"::iter_by_col_eq,
-            "spacetime_10.0"::iter_start_filtered,
+            // unstable:
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
         }
     };

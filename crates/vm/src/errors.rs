@@ -1,6 +1,6 @@
-use spacetimedb_lib::db::error::{AuthError, RelationError};
 use spacetimedb_lib::operator::OpLogic;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
+use spacetimedb_schema::def::error::{AuthError, RelationError};
 use std::fmt;
 use thiserror::Error;
 
@@ -117,7 +117,7 @@ impl fmt::Display for ErrorLang {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}Error", self.kind)?;
         if let Some(msg) = &self.msg {
-            writeln!(f, ": \"{}\"", msg)?;
+            writeln!(f, ": \"{msg}\"")?;
         }
         if let Some(err) = self.context.as_deref() {
             writeln!(f, " Context:")?;

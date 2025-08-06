@@ -11,7 +11,7 @@ extern "C" fn __preinit__00_panic_hook() {
 }
 
 /// Our own panic hook logging to the console.
-fn panic_hook(info: &panic::PanicInfo) {
+fn panic_hook(info: &panic::PanicHookInfo) {
     // Try to look into some string types we know (`&'static str` and `String`).
     let msg = match info.payload().downcast_ref::<&'static str>() {
         Some(s) => *s,

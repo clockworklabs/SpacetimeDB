@@ -1,6 +1,6 @@
 use crate::{
-    typespace::TypeRefError, AlgebraicType, AlgebraicTypeRef, ArrayType, MapType, ProductType, ProductTypeElement,
-    SumType, SumTypeVariant, WithTypespace,
+    typespace::TypeRefError, AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, ProductTypeElement, SumType,
+    SumTypeVariant, WithTypespace,
 };
 
 /// Resolver for [`AlgebraicTypeRef`]s within a structure.
@@ -70,7 +70,6 @@ impl ResolveRefs for AlgebraicType {
             Self::Sum(sum) => this.with(sum)._resolve_refs(state).map(Into::into),
             Self::Product(prod) => this.with(prod)._resolve_refs(state).map(Into::into),
             Self::Array(ty) => this.with(ty)._resolve_refs(state).map(Into::into),
-            Self::Map(m) => this.with(&**m)._resolve_refs(state).map(Into::into),
             // These types are plain and cannot have refs in them.
             x => Ok(x.clone()),
         }
@@ -82,16 +81,6 @@ impl ResolveRefs for ArrayType {
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Result<Self::Output, TypeRefError> {
         Ok(Self {
             elem_ty: Box::new(this.map(|m| &*m.elem_ty)._resolve_refs(state)?),
-        })
-    }
-}
-
-impl ResolveRefs for MapType {
-    type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Result<Self::Output, TypeRefError> {
-        Ok(Self {
-            key_ty: this.map(|m| &m.key_ty)._resolve_refs(state)?,
-            ty: this.map(|m| &m.ty)._resolve_refs(state)?,
         })
     }
 }

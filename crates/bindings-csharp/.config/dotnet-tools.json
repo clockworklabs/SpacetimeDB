@@ -8,6 +8,13 @@
         "dotnet-csharpier"
       ],
       "rollForward": false
+    },
+    "verify.tool": {
+      "version": "0.6.0",
+      "commands": [
+        "dotnet-verify"
+      ],
+      "rollForward": false
     }
   }
 }

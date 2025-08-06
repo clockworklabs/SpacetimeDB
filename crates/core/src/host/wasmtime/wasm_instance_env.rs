@@ -1,10 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::ops::DerefMut;
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
-use crate::execution_context::ExecutionContext;
+use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
@@ -13,12 +12,9 @@ use crate::host::wasm_common::{
 };
 use crate::host::AbiCall;
 use anyhow::Context as _;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{errno, ColId};
-use spacetimedb_sats::bsatn;
-use spacetimedb_sats::buffer::{CountWriter, TeeWriter};
 use wasmtime::{AsContext, Caller, StoreContextMut};
-
-use crate::host::instance_env::InstanceEnv;
 
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 
@@ -75,6 +71,9 @@ pub(super) struct WasmInstanceEnv {
 
     /// The last, including current, reducer to be executed by this environment.
     reducer_name: String,
+    /// A pool of unused allocated chunks that can be reused.
+    // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
+    chunk_pool: ChunkPool,
 }
 
 const CALL_REDUCER_ARGS_SOURCE: u32 = 1;
@@ -98,7 +97,8 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             reducer_start,
             call_times: CallTimes::new(),
-            reducer_name: String::from(""),
+            reducer_name: String::from("<initializing>"),
+            chunk_pool: <_>::default(),
         }
     }
 
@@ -140,7 +140,7 @@ impl WasmInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    pub fn start_reducer(&mut self, name: &str, args: bytes::Bytes) -> (u32, u32) {
+    pub fn start_reducer(&mut self, name: &str, args: bytes::Bytes, ts: Timestamp) -> (u32, u32) {
         let errors = self.setup_standard_bytes_sink();
 
         // Pass an invalid source when the reducer args were empty.
@@ -154,8 +154,19 @@ impl WasmInstanceEnv {
 
         self.reducer_start = Instant::now();
         name.clone_into(&mut self.reducer_name);
+        self.instance_env.start_reducer(ts);
 
         (args, errors)
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment.
+    pub fn reducer_name(&self) -> &str {
+        &self.reducer_name
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment.
+    pub fn reducer_start(&self) -> Instant {
+        self.reducer_start
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer call is over.
@@ -178,11 +189,6 @@ impl WasmInstanceEnv {
 
         self.call_reducer_args = None;
         (timings, self.take_standard_bytes_sink())
-    }
-
-    /// Returns an execution context for a reducer call.
-    fn reducer_context(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, WasmError> {
-        self.instance_env().get_ctx().map_err(|err| WasmError::Db(err.into()))
     }
 
     fn with_span<R>(mut caller: Caller<'_, Self>, func: AbiCall, run: impl FnOnce(&mut Caller<'_, Self>) -> R) -> R {
@@ -291,44 +297,6 @@ impl WasmInstanceEnv {
         Ok(col_id.into())
     }
 
-    /// Deletes all rows in the table identified by `table_id`
-    /// where the column identified by `cols` matches the byte string,
-    /// in WASM memory, pointed to at by `value`.
-    ///
-    /// Matching is defined by BSATN-decoding `value` to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
-    ///
-    /// The number of rows deleted is written to the WASM pointer `out`.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - no columns were deleted
-    /// - `col_id` does not identify a column of the table,
-    /// - `(value, value_len)` doesn't decode from BSATN to an `AlgebraicValue`
-    ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
-    /// - `value + value_len` overflows a 64-bit integer
-    /// - writing to `out` would overflow a 32-bit integer
-    pub fn delete_by_col_eq(
-        caller: Caller<'_, Self>,
-        table_id: u32,
-        col_id: u32,
-        value: WasmPtr<u8>,
-        value_len: u32,
-        out: WasmPtr<u32>,
-    ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::DeleteByColEq, out, |caller| {
-            let col_id = Self::convert_u32_to_col_id(col_id)?;
-
-            let (mem, env) = Self::mem_env(caller);
-            let ctx = env.reducer_context()?;
-            let value = mem.deref_slice(value, value_len)?;
-            let count = env
-                .instance_env
-                .delete_by_col_eq(&ctx, table_id.into(), col_id, value)?;
-            Ok(count)
-        })
-    }
-
     /// Queries the `table_id` associated with the given (table) `name`
     /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
     ///
@@ -347,7 +315,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn table_id_from_name(
         caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
@@ -364,6 +332,41 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Queries the `index_id` associated with the given (index) `name`
+    /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
+    ///
+    /// The index id is written into the `out` pointer.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+    /// - `name` is not valid UTF-8.
+    /// - `out` is NULL or `out[..size_of::<IndexId>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `name` is not the name of an index.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn index_id_from_name(
+        caller: Caller<'_, Self>,
+        name: WasmPtr<u8>,
+        name_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret::<u32>(caller, AbiCall::IndexIdFromName, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the index name from WASM memory.
+            let name = mem.deref_str(name, name_len)?;
+
+            // Query the index id.
+            Ok(env.instance_env.index_id_from_name(name)?.into())
+        })
+    }
+
     /// Writes the number of rows currently in table identified by `table_id` to `out`.
     ///
     /// # Traps
@@ -377,7 +380,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_row_count(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<u64>) -> RtResult<u32> {
         Self::cvt_ret::<u64>(caller, AbiCall::DatastoreTableRowCount, out, |caller| {
             let (_, env) = Self::mem_env(caller);
@@ -400,7 +403,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_scan_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -408,102 +411,145 @@ impl WasmInstanceEnv {
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::DatastoreTableScanBsatn, out, |caller| {
             let env = caller.data_mut();
-            // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context()?;
             // Collect the iterator chunks.
             let chunks = env
                 .instance_env
-                .datastore_table_scan_bsatn_chunks(&ctx, table_id.into())?;
-            drop(ctx);
+                .datastore_table_scan_bsatn_chunks(&mut env.chunk_pool, table_id.into())?;
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))
         })
     }
 
-    /// Finds all rows in the table identified by `table_id`,
-    /// where the row has a column, identified by `cols`,
-    /// with data matching the byte string, in WASM memory, pointed to at by `val`.
+    /// Finds all rows in the index identified by `index_id`,
+    /// according to the:
+    /// - `prefix = prefix_ptr[..prefix_len]`,
+    /// - `rstart = rstart_ptr[..rstart_len]`,
+    /// - `rend = rend_ptr[..rend_len]`,
     ///
-    /// Matching is defined BSATN-decoding `val` to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
+    /// in WASM memory.
     ///
-    /// The rows found are BSATN-encoded and then concatenated.
-    /// The resulting byte string from the concatenation is written
-    /// to a fresh buffer with the buffer's identifier written to the WASM pointer `out`.
+    /// The index itself has a schema/type.
+    /// The `prefix` is decoded to the initial `prefix_elems` `AlgebraicType`s
+    /// whereas `rstart` and `rend` are decoded to the `prefix_elems + 1` `AlgebraicType`
+    /// where the `AlgebraicValue`s are wrapped in `Bound`.
+    /// That is, `rstart, rend` are BSATN-encoded `Bound<AlgebraicValue>`s.
     ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - `col_id` does not identify a column of the table,
-    /// - `(val, val_len)` cannot be decoded to an `AlgebraicValue`
-    ///   typed at the `AlgebraicType` of the column,
-    /// - `val + val_len` overflows a 64-bit integer
-    pub fn iter_by_col_eq(
+    /// Matching is then defined by equating `prefix`
+    /// to the initial `prefix_elems` columns of the index
+    /// and then imposing `rstart` as the starting bound
+    /// and `rend` as the ending bound on the `prefix_elems + 1` column of the index.
+    /// Remaining columns of the index are then unbounded.
+    /// Note that the `prefix` in this case can be empty (`prefix_elems = 0`),
+    /// in which case this becomes a ranged index scan on a single-col index
+    /// or even a full table scan if `rstart` and `rend` are both unbounded.
+    ///
+    /// The relevant table for the index is found implicitly via the `index_id`,
+    /// which is unique for the module.
+    ///
+    /// On success, the iterator handle is written to the `out` pointer.
+    /// This handle can be advanced by [`row_iter_bsatn_advance`].
+    ///
+    /// # Non-obvious queries
+    ///
+    /// For an index on columns `[a, b, c]`:
+    ///
+    /// - `a = x, b = y` is encoded as a prefix `[x, y]`
+    ///   and a range `Range::Unbounded`,
+    ///   or as a  prefix `[x]` and a range `rstart = rend = Range::Inclusive(y)`.
+    /// - `a = x, b = y, c = z` is encoded as a prefix `[x, y]`
+    ///   and a  range `rstart = rend = Range::Inclusive(z)`.
+    /// - A sorted full scan is encoded as an empty prefix
+    ///   and a range `Range::Unbounded`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `prefix_elems > 0`
+    ///   and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+    /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
+    /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-scan compatible index.
+    /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
+    ///   a `prefix_elems` number of `AlgebraicValue`
+    ///   typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+    ///   Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+    ///   where the inner `AlgebraicValue`s are
+    ///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+    pub fn datastore_index_scan_range_bsatn(
         caller: Caller<'_, Self>,
-        table_id: u32,
-        col_id: u32,
-        val: WasmPtr<u8>,
-        val_len: u32,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
         out: WasmPtr<RowIterIdx>,
     ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::IterByColEq, out, |caller| {
-            let col_id = Self::convert_u32_to_col_id(col_id)?;
+        Self::cvt_ret(caller, AbiCall::DatastoreIndexScanRangeBsatn, out, |caller| {
+            let prefix_elems = Self::convert_u32_to_col_id(prefix_elems)?;
 
             let (mem, env) = Self::mem_env(caller);
-            // Read the test value from WASM memory.
-            let value = mem.deref_slice(val, val_len)?;
-
-            // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context()?;
+            // Read the prefix and range start & end from WASM memory.
+            let prefix = if prefix_elems.idx() == 0 {
+                &[]
+            } else {
+                mem.deref_slice(prefix_ptr, prefix_len)?
+            };
+            let rstart = mem.deref_slice(rstart_ptr, rstart_len)?;
+            let rend = mem.deref_slice(rend_ptr, rend_len)?;
 
             // Find the relevant rows.
-            let chunks = env
-                .instance_env
-                .iter_by_col_eq_chunks(&ctx, table_id.into(), col_id, value)?;
-
-            // Release the immutable borrow of `env.buffers` by dropping `ctx`.
-            drop(ctx);
+            let chunks = env.instance_env.datastore_index_scan_range_bsatn_chunks(
+                &mut env.chunk_pool,
+                index_id.into(),
+                prefix,
+                prefix_elems,
+                rstart,
+                rend,
+            )?;
 
             // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(env.iters.insert(chunks.into_iter()))
         })
     }
 
-    /// Like [`WasmInstanceEnv::datastore_table_scan_bsatn`], start iteration on each row,
-    /// as bytes, of a table identified by `table_id`.
-    ///
-    /// The rows are filtered through `filter`, which is read from WASM memory
-    /// and is encoded in the embedded language defined by `spacetimedb_lib::filter::Expr`.
-    ///
-    /// The iterator is registered in the host environment
-    /// under an assigned index which is written to the `out` pointer provided.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - `(filter, filter_len)` doesn't decode to a filter expression
-    /// - `filter + filter_len` overflows a 64-bit integer
-    pub fn iter_start_filtered(
+    /// Deprecated name for [`Self::datastore_index_scan_range_bsatn`].
+    #[deprecated = "use `datastore_index_scan_range_bsatn` instead"]
+    pub fn datastore_btree_scan_bsatn(
         caller: Caller<'_, Self>,
-        table_id: u32,
-        filter: WasmPtr<u8>,
-        filter_len: u32,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
         out: WasmPtr<RowIterIdx>,
     ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::IterStartFiltered, out, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context()?;
-
-            // Read the slice `(filter, filter_len)`.
-            let filter = mem.deref_slice(filter, filter_len)?;
-
-            // Construct the iterator.
-            let chunks = env.instance_env.iter_filtered_chunks(&ctx, table_id.into(), filter)?;
-            drop(ctx);
-            // Register the iterator and get back the index to write to `out`.
-            // Calls to the iterator are done through dynamic dispatch.
-            Ok(env.iters.insert(chunks.into_iter()))
-        })
+        Self::datastore_index_scan_range_bsatn(
+            caller,
+            index_id,
+            prefix_ptr,
+            prefix_len,
+            prefix_elems,
+            rstart_ptr,
+            rstart_len,
+            rend_ptr,
+            rend_len,
+            out,
+        )
     }
 
     /// Reads rows from the given iterator registered under `iter`.
@@ -536,7 +582,7 @@ impl WasmInstanceEnv {
     /// - `BUFFER_TOO_SMALL`, when there are rows left but they cannot fit in `buffer`.
     ///   When this occurs, `buffer_len` is set to the size of the next item in the iterator.
     ///   To make progress, the caller should reallocate the buffer to at least that size and try again.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn row_iter_bsatn_advance(
         caller: Caller<'_, Self>,
         iter: u32,
@@ -561,8 +607,7 @@ impl WasmInstanceEnv {
             let mut written = 0;
             // Fill the buffer as much as possible.
             while let Some(chunk) = iter.as_slice().first() {
-                // TODO(Centril): refactor using `split_at_mut_checked`.
-                let Some(buf_chunk) = buffer.get_mut(..chunk.len()) else {
+                let Some((buf_chunk, rest)) = buffer.split_at_mut_checked(chunk.len()) else {
                     // Cannot fit chunk into the buffer,
                     // either because we already filled it too much,
                     // or because it is too small.
@@ -570,14 +615,12 @@ impl WasmInstanceEnv {
                 };
                 buf_chunk.copy_from_slice(chunk);
                 written += chunk.len();
-                buffer = &mut buffer[chunk.len()..];
+                buffer = rest;
 
                 // Advance the iterator, as we used a chunk.
-                // TODO(Centril): consider putting these into a pool for reuse
-                // by the next `ChunkedWriter::collect_iter`, `span_start`, and `bytes_sink_write`.
-                // Although we need to shrink these chunks to fit due to `Box<[u8]>`,
-                // in practice, `realloc` will in practice not move the data to a new heap allocation.
-                iter.next();
+                // SAFETY: We peeked one `chunk`, so there must be one at least.
+                let chunk = unsafe { iter.next().unwrap_unchecked() };
+                env.chunk_pool.put(chunk);
             }
 
             let ret = match (written, iter.as_slice().first()) {
@@ -609,7 +652,7 @@ impl WasmInstanceEnv {
     /// Returns an error:
     ///
     /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn row_iter_bsatn_close(caller: Caller<'_, Self>, iter: u32) -> RtResult<u32> {
         let row_iter_idx = RowIterIdx(iter);
         Self::cvt_custom(caller, AbiCall::RowIterBsatnClose, |caller| {
@@ -657,7 +700,7 @@ impl WasmInstanceEnv {
     ///   typed at the `ProductType` the table's schema specifies.
     /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
     /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_insert_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -672,20 +715,176 @@ impl WasmInstanceEnv {
             // Get a mutable view to the `row`.
             let row = mem.deref_slice_mut(row_ptr, row_len)?;
 
-            // Insert the row into the DB.
-            // This will return back the generated column values.
-            let ctx = env.reducer_context()?;
-            let gen_cols = env.instance_env.insert(&ctx, table_id.into(), row)?;
-
-            // Write back the generated column values to `row`
-            // and the encoded length to `row_len`.
-            let counter = CountWriter::default();
-            let mut writer = TeeWriter::new(counter, row);
-            bsatn::to_writer(&mut writer, &gen_cols).unwrap();
-            let row_len = writer.w1.finish();
+            // Insert the row into the DB and write back the generated column values.
+            let row_len = env.instance_env.insert(table_id.into(), row)?;
             u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
             Ok(())
         })
+    }
+
+    /// Updates a row in the table identified by `table_id` to `row`
+    /// where the row is read from the byte string `row = row_ptr[..row_len]` in WASM memory
+    /// where `row_len = row_len_ptr[..size_of::<usize>()]` stores the capacity of `row`.
+    ///
+    /// The byte string `row` must be a BSATN-encoded `ProductValue`
+    /// typed at the table's `ProductType` row-schema.
+    ///
+    /// The row to update is found by projecting `row`
+    /// to the type of the *unique* index identified by `index_id`.
+    /// If no row is found, the error `NO_SUCH_ROW` is returned.
+    ///
+    /// To handle auto-incrementing columns,
+    /// when the call is successful,
+    /// the `row` is written back to with the generated sequence values.
+    /// These values are written as a BSATN-encoded `pv: ProductValue`.
+    /// Each `v: AlgebraicValue` in `pv` is typed at the sequence's column type.
+    /// The `v`s in `pv` are ordered by the order of the columns, in the schema of the table.
+    /// When the table has no sequences,
+    /// this implies that the `pv`, and thus `row`, will be empty.
+    /// The `row_len` is set to the length of `bsatn(pv)`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `row_len_ptr` is NULL or `row_len` is not in bounds of WASM memory.
+    /// - `row_ptr` is NULL or `row` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `INDEX_NOT_UNIQUE`, when the index was not unique.
+    /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`
+    ///    typed at the `ProductType` the table's schema specifies
+    ///    or when it cannot be projected to the index identified by `index_id`.
+    /// - `NO_SUCH_ROW`, when the row was not found in the unique index.
+    /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
+    /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_update_bsatn(
+        caller: Caller<'_, Self>,
+        table_id: u32,
+        index_id: u32,
+        row_ptr: WasmPtr<u8>,
+        row_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt(caller, AbiCall::DatastoreUpdateBsatn, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            // Read `row-len`, i.e., the capacity of `row` pointed to by `row_ptr`.
+            let row_len = u32::read_from(mem, row_len_ptr)?;
+            // Get a mutable view to the `row`.
+            let row = mem.deref_slice_mut(row_ptr, row_len)?;
+
+            // Update the row in the DB and write back the generated column values.
+            let row_len = env.instance_env.update(table_id.into(), index_id.into(), row)?;
+            u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
+            Ok(())
+        })
+    }
+
+    /// Deletes all rows found in the index identified by `index_id`,
+    /// according to the:
+    /// - `prefix = prefix_ptr[..prefix_len]`,
+    /// - `rstart = rstart_ptr[..rstart_len]`,
+    /// - `rend = rend_ptr[..rend_len]`,
+    ///
+    /// in WASM memory.
+    ///
+    /// This syscall will delete all the rows found by
+    /// [`datastore_index_scan_range_bsatn`] with the same arguments passed,
+    /// including `prefix_elems`.
+    /// See `datastore_index_scan_range_bsatn` for details.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `prefix_elems > 0`
+    ///   and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+    /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
+    /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
+    /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
+    ///   a `prefix_elems` number of `AlgebraicValue`
+    ///   typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+    ///   Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+    ///   where the inner `AlgebraicValue`s are
+    ///   typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+    pub fn datastore_delete_by_index_scan_range_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreDeleteByIndexScanRangeBsatn, out, |caller| {
+            let prefix_elems = Self::convert_u32_to_col_id(prefix_elems)?;
+
+            let (mem, env) = Self::mem_env(caller);
+            // Read the prefix and range start & end from WASM memory.
+            let prefix = if prefix_elems.idx() == 0 {
+                &[]
+            } else {
+                mem.deref_slice(prefix_ptr, prefix_len)?
+            };
+            let rstart = mem.deref_slice(rstart_ptr, rstart_len)?;
+            let rend = mem.deref_slice(rend_ptr, rend_len)?;
+
+            // Delete the relevant rows.
+            Ok(env.instance_env.datastore_delete_by_index_scan_range_bsatn(
+                index_id.into(),
+                prefix,
+                prefix_elems,
+                rstart,
+                rend,
+            )?)
+        })
+    }
+
+    /// Deprecated name for [`Self::datastore_delete_by_index_scan_range_bsatn`].
+    #[deprecated = "use `datastore_delete_by_index_scan_range_bsatn` instead"]
+    pub fn datastore_delete_by_btree_scan_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::datastore_delete_by_index_scan_range_bsatn(
+            caller,
+            index_id,
+            prefix_ptr,
+            prefix_len,
+            prefix_elems,
+            rstart_ptr,
+            rstart_len,
+            rend_ptr,
+            rend_len,
+            out,
+        )
     }
 
     /// Deletes those rows, in the table identified by `table_id`,
@@ -714,7 +913,7 @@ impl WasmInstanceEnv {
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
     /// - `BSATN_DECODE_ERROR`, when `rel` cannot be decoded to `Vec<ProductValue>`
     ///   where each `ProductValue` is typed at the `ProductType` the table's schema specifies.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_delete_all_by_eq_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -876,7 +1075,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NO_SUCH_BYTES`, when `sink` is not a valid bytes sink.
     /// - `NO_SPACE`, when there is no room for more bytes in `sink`.
-    ///    (Doesn't currently happen.)
+    ///   (Doesn't currently happen.)
     pub fn bytes_sink_write(
         caller: Caller<'_, Self>,
         sink: u32,
@@ -901,7 +1100,7 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Logs at `level` a `message` message occuring in `filename:line_number`
+    /// Logs at `level` a `message` message occurring in `filename:line_number`
     /// with [`target`](target) being the module path at the `log!` invocation site.
     ///
     /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
@@ -922,7 +1121,7 @@ impl WasmInstanceEnv {
     /// - `message` is not NULL and `message_ptr[..message_len]` is not in bounds of WASM memory.
     ///
     /// [target]: https://docs.rs/log/latest/log/struct.Record.html#method.target
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn console_log(
         caller: Caller<'_, Self>,
         level: u32,
@@ -955,7 +1154,7 @@ impl WasmInstanceEnv {
                 message: &message,
             };
 
-            // Write the log record to the `DatabaseLogger` in the database instance context (dbic).
+            // Write the log record to the `DatabaseLogger` in the database instance context (replica_ctx).
             env.instance_env
                 .console_log((level as u8).into(), &record, &caller.as_context());
             Ok(())
@@ -1006,6 +1205,28 @@ impl WasmInstanceEnv {
                 &caller.as_context(),
             );
             Ok(0)
+        })
+    }
+
+    /// Writes the identity of the module into `out = out_ptr[..32]`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
+    pub fn identity(caller: Caller<'_, Self>, out_ptr: WasmPtr<u8>) -> RtResult<()> {
+        // Use `with_span` rather than one of the `cvt_*` functions,
+        // as we want to possibly trap, but not to return an error code.
+        Self::with_span(caller, AbiCall::Identity, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let identity = env.instance_env.replica_ctx.database.database_identity;
+            // We're implicitly casting `out_ptr` to `WasmPtr<Identity>` here.
+            // (Both types are actually `u32`.)
+            // This works because `Identity::write_to` does not require an aligned pointer,
+            // as it gets a `&mut [u8]` from WASM memory and does `copy_from_slice` with it.
+            identity.write_to(mem, out_ptr)?;
+            Ok(())
         })
     }
 }

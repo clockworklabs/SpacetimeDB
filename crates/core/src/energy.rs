@@ -20,9 +20,11 @@ pub trait EnergyMonitor: Send + Sync + 'static {
         energy_used: EnergyQuanta,
         execution_duration: Duration,
     );
-    fn record_disk_usage(&self, database: &Database, instance_id: u64, disk_usage: u64, period: Duration);
+    fn record_disk_usage(&self, database: &Database, replica_id: u64, disk_usage: u64, period: Duration);
+    fn record_memory_usage(&self, database: &Database, replica_id: u64, mem_usage: u64, period: Duration);
 }
 
+// The null energy monitor records nothing and always returns the default budget.
 #[derive(Default)]
 pub struct NullEnergyMonitor;
 
@@ -39,5 +41,7 @@ impl EnergyMonitor for NullEnergyMonitor {
     ) {
     }
 
-    fn record_disk_usage(&self, _database: &Database, _instance_id: u64, _disk_usage: u64, _period: Duration) {}
+    fn record_disk_usage(&self, _database: &Database, _replica_id: u64, _disk_usage: u64, _period: Duration) {}
+
+    fn record_memory_usage(&self, _database: &Database, _replica_id: u64, _mem_usage: u64, _period: Duration) {}
 }

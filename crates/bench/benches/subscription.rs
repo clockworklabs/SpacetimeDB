@@ -1,15 +1,28 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use spacetimedb::client::Protocol;
-use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::error::DBError;
-use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
-use spacetimedb::subscription::query::compile_read_only_query;
+use spacetimedb::identity::AuthCtx;
+use spacetimedb::messages::websocket::BsatnFormat;
+use spacetimedb::sql::ast::SchemaViewer;
+use spacetimedb::subscription::query::compile_read_only_queryset;
 use spacetimedb::subscription::subscription::ExecutionSet;
+use spacetimedb::subscription::tx::DeltaTx;
+use spacetimedb::subscription::{collect_table_update, TableUpdateType};
+use spacetimedb::{db::relational_db::RelationalDB, messages::websocket::Compression};
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_primitives::{col_list, TableId};
-use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_query::compile_subscription;
+use spacetimedb_sats::{bsatn, product, AlgebraicType, AlgebraicValue, ProductValue};
+
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
     let schema = &[
@@ -19,7 +32,7 @@ fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
         ("z", AlgebraicType::I32),
         ("dimension", AlgebraicType::U32),
     ];
-    let indexes = &[(0.into(), "entity_id"), (1.into(), "chunk_index")];
+    let indexes = &[0.into(), 1.into()];
 
     // Is necessary to test for both single & multi-column indexes...
     db.create_table_for_test_mix_indexes("location", schema, indexes, col_list![2, 3, 4])
@@ -32,7 +45,7 @@ fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
         ("owner_entity_id", AlgebraicType::U64),
         ("type", footprint),
     ];
-    let indexes = &[(0.into(), "entity_id"), (1.into(), "owner_entity_id")];
+    let indexes = &[0.into(), 1.into()];
     db.create_table_for_test("footprint", schema, indexes)
 }
 
@@ -46,28 +59,34 @@ fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> Database
 }
 
 fn eval(c: &mut Criterion) {
-    let raw = SpacetimeRaw::build(false, false).unwrap();
+    let raw = SpacetimeRaw::build(false).unwrap();
 
     let lhs = create_table_footprint(&raw.db).unwrap();
     let rhs = create_table_location(&raw.db).unwrap();
 
+    //TODO: Change this to `Workload::ForTest` once `#[cfg(bench)]` is stabilized.
     let _ = raw
         .db
-        .with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+        .with_auto_commit(Workload::Internal, |tx| -> Result<(), DBError> {
             // 1M rows
+            let mut scratch = Vec::new();
             for entity_id in 0u64..1_000_000 {
                 let owner = entity_id % 1_000;
                 let footprint = AlgebraicValue::sum(entity_id as u8 % 4, AlgebraicValue::unit());
                 let row = product!(entity_id, owner, footprint);
-                let _ = raw.db.insert(tx, lhs, row)?;
+
+                scratch.clear();
+                bsatn::to_writer(&mut scratch, &row).unwrap();
+                let _ = raw.db.insert(tx, lhs, &scratch)?;
             }
             Ok(())
         });
 
     let _ = raw
         .db
-        .with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+        .with_auto_commit(Workload::Internal, |tx| -> Result<(), DBError> {
             // 1000 chunks, 1200 rows per chunk = 1.2M rows
+            let mut scratch = Vec::new();
             for chunk_index in 0u64..1_000 {
                 for i in 0u64..1200 {
                     let entity_id = chunk_index * 1200 + i;
@@ -75,7 +94,10 @@ fn eval(c: &mut Criterion) {
                     let z = entity_id as i32;
                     let dimension = 0u32;
                     let row = product!(entity_id, chunk_index, x, z, dimension);
-                    let _ = raw.db.insert(tx, rhs, row)?;
+
+                    scratch.clear();
+                    bsatn::to_writer(&mut scratch, &row).unwrap();
+                    let _ = raw.db.insert(tx, rhs, &scratch)?;
                 }
             }
             Ok(())
@@ -97,15 +119,64 @@ fn eval(c: &mut Criterion) {
     let ins_rhs = insert_op(rhs, "location", new_rhs_row);
     let update = [&ins_lhs, &ins_rhs];
 
-    let bench_eval = |c: &mut Criterion, name, sql| {
+    // A benchmark runner for the new query engine
+    let bench_query = |c: &mut Criterion, name, sql| {
         c.bench_function(name, |b| {
-            let tx = raw.db.begin_tx();
-            let query = compile_read_only_query(&raw.db, &tx, sql).unwrap();
-            let query: ExecutionSet = query.into();
-            let ctx = &ExecutionContext::subscribe(raw.db.address());
-            b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx, None))))
+            let tx = raw.db.begin_tx(Workload::Subscribe);
+            let auth = AuthCtx::for_testing();
+            let schema_viewer = &SchemaViewer::new(&tx, &auth);
+            let (plans, table_id, table_name, _) = compile_subscription(sql, schema_viewer, &auth).unwrap();
+            let plans = plans
+                .into_iter()
+                .map(|plan| plan.optimize().unwrap())
+                .map(PipelinedProject::from)
+                .collect::<Vec<_>>();
+            let tx = DeltaTx::from(&tx);
+
+            b.iter(|| {
+                drop(black_box(collect_table_update::<_, BsatnFormat>(
+                    &plans,
+                    table_id,
+                    table_name.clone(),
+                    &tx,
+                    TableUpdateType::Subscribe,
+                )))
+            })
         });
     };
+
+    let bench_eval = |c: &mut Criterion, name, sql| {
+        c.bench_function(name, |b| {
+            let tx = raw.db.begin_tx(Workload::Update);
+            let query = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), &tx, sql).unwrap();
+            let query: ExecutionSet = query.into();
+
+            b.iter(|| {
+                drop(black_box(query.eval::<BsatnFormat>(
+                    &raw.db,
+                    &tx,
+                    None,
+                    Compression::None,
+                )))
+            })
+        });
+    };
+
+    // Join 1M rows on the left with 12K rows on the right.
+    // Note, this should use an index join so as not to read the entire footprint table.
+    let semijoin = format!(
+        r#"
+        select f.*
+        from footprint f join location l on f.entity_id = l.entity_id
+        where l.chunk_index = {chunk_index}
+        "#
+    );
+
+    let index_scan_multi = "select * from location WHERE x = 0 AND z = 10000 AND dimension = 0";
+
+    bench_query(c, "footprint-scan", "select * from footprint");
+    bench_query(c, "footprint-semijoin", &semijoin);
+    bench_query(c, "index-scan-multi", index_scan_multi);
 
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-scan --exact --profile-time=30
@@ -115,7 +186,7 @@ fn eval(c: &mut Criterion) {
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-join --exact --profile-time=30
     // Join 1M rows on the left with 12K rows on the right.
-    // Note, this should use an index join so as not to read the entire lhs table.
+    // Note, this should use an index join so as not to read the entire footprint table.
     let name = format!(
         r#"
         select footprint.*
@@ -125,21 +196,19 @@ fn eval(c: &mut Criterion) {
     );
     bench_eval(c, "full-join", &name);
 
-    let ctx_incr = &ExecutionContext::incremental_update(raw.db.address());
-
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-select --exact --profile-time=30
     c.bench_function("incr-select", |b| {
         // A passthru executed independently of the database.
         let select_lhs = "select * from footprint";
         let select_rhs = "select * from location";
-        let tx = &raw.db.begin_tx();
-        let query_lhs = compile_read_only_query(&raw.db, tx, select_lhs).unwrap();
-        let query_rhs = compile_read_only_query(&raw.db, tx, select_rhs).unwrap();
+        let tx = &raw.db.begin_tx(Workload::Update);
+        let query_lhs = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, select_lhs).unwrap();
+        let query_rhs = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, select_rhs).unwrap();
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
         let tx = &tx.into();
 
-        b.iter(|| drop(black_box(query.eval_incr(ctx_incr, &raw.db, tx, &update, None))))
+        b.iter(|| drop(black_box(query.eval_incr_for_test(&raw.db, tx, &update, None))))
     });
 
     // To profile this benchmark for 30s
@@ -152,12 +221,12 @@ fn eval(c: &mut Criterion) {
             from footprint join location on footprint.entity_id = location.entity_id \
             where location.chunk_index = {chunk_index}"
         );
-        let tx = &raw.db.begin_tx();
-        let query = compile_read_only_query(&raw.db, tx, &join).unwrap();
+        let tx = &raw.db.begin_tx(Workload::Update);
+        let query = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, &join).unwrap();
         let query: ExecutionSet = query.into();
         let tx = &tx.into();
 
-        b.iter(|| drop(black_box(query.eval_incr(ctx_incr, &raw.db, tx, &update, None))));
+        b.iter(|| drop(black_box(query.eval_incr_for_test(&raw.db, tx, &update, None))));
     });
 
     // To profile this benchmark for 30s

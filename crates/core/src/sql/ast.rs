@@ -1,10 +1,17 @@
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
+use anyhow::Context;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
-use spacetimedb_lib::db::error::RelationError;
-use spacetimedb_lib::relation::{ColExpr, FieldName};
-use spacetimedb_primitives::ColId;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::system_tables::{StRowLevelSecurityFields, ST_ROW_LEVEL_SECURITY_ID};
+use spacetimedb_expr::check::SchemaView;
+use spacetimedb_expr::statement::compile_sql_stmt;
+use spacetimedb_lib::db::auth::StAccess;
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
+use spacetimedb_schema::def::error::RelationError;
+use spacetimedb_schema::relation::{ColExpr, FieldName};
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{Expr, FieldExpr, FieldOp};
@@ -16,6 +23,7 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
+use std::ops::Deref;
 use std::sync::Arc;
 
 /// Simplify to detect features of the syntax we don't support yet
@@ -469,6 +477,74 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
     }
 }
 
+pub struct SchemaViewer<'a, T> {
+    tx: &'a T,
+    auth: &'a AuthCtx,
+}
+
+impl<T> Deref for SchemaViewer<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.tx
+    }
+}
+
+impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
+    fn table_id(&self, name: &str) -> Option<TableId> {
+        let AuthCtx { owner, caller } = self.auth;
+        // Get the schema from the in-memory state instead of fetching from the database for speed
+        self.tx
+            .table_id_from_name(name)
+            .ok()
+            .flatten()
+            .and_then(|table_id| self.schema_for_table(table_id))
+            .filter(|schema| schema.table_access == StAccess::Public || caller == owner)
+            .map(|schema| schema.table_id)
+    }
+
+    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+        let AuthCtx { owner, caller } = self.auth;
+        self.tx
+            .get_schema(table_id)
+            .filter(|schema| schema.table_access == StAccess::Public || caller == owner)
+            .cloned()
+    }
+
+    fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>> {
+        self.tx
+            .iter_by_col_eq(
+                ST_ROW_LEVEL_SECURITY_ID,
+                StRowLevelSecurityFields::TableId,
+                &AlgebraicValue::from(table_id),
+            )?
+            .map(|row| {
+                row.read_col::<AlgebraicValue>(StRowLevelSecurityFields::Sql)
+                    .with_context(|| {
+                        format!(
+                            "Failed to read value from the `{}` column of `{}` for table_id `{}`",
+                            "sql", "st_row_level_security", table_id
+                        )
+                    })
+                    .and_then(|sql| {
+                        sql.into_string().map_err(|_| {
+                            anyhow::anyhow!(format!(
+                                "Failed to read value from the `{}` column of `{}` for table_id `{}`",
+                                "sql", "st_row_level_security", table_id
+                            ))
+                        })
+                    })
+            })
+            .collect::<anyhow::Result<_>>()
+    }
+}
+
+impl<'a, T> SchemaViewer<'a, T> {
+    pub fn new(tx: &'a T, auth: &'a AuthCtx) -> Self {
+        Self { tx, auth }
+    }
+}
+
 pub trait TableSchemaView {
     fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Arc<TableSchema>, PlanError>;
 }
@@ -500,7 +576,11 @@ impl TableSchemaView for MutTx {
 }
 
 /// Compiles the `FROM` clause
-fn compile_from<T: TableSchemaView>(db: &RelationalDB, tx: &T, from: &[TableWithJoins]) -> Result<From, PlanError> {
+fn compile_from<T: TableSchemaView + StateView>(
+    db: &RelationalDB,
+    tx: &T,
+    from: &[TableWithJoins],
+) -> Result<From, PlanError> {
     if from.len() > 1 {
         return Err(PlanError::Unsupported {
             feature: "Multiple tables in `FROM`.".into(),
@@ -621,7 +701,11 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
 }
 
 /// Compiles the `SELECT ...` clause
-fn compile_select<T: TableSchemaView>(db: &RelationalDB, tx: &T, select: Select) -> Result<SqlAst, PlanError> {
+fn compile_select<T: TableSchemaView + StateView>(
+    db: &RelationalDB,
+    tx: &T,
+    select: Select,
+) -> Result<SqlAst, PlanError> {
     let from = compile_from(db, tx, &select.from)?;
 
     // SELECT ...
@@ -641,7 +725,7 @@ fn compile_select<T: TableSchemaView>(db: &RelationalDB, tx: &T, select: Select)
 }
 
 /// Compiles any `query` clause (currently only `SELECT...`)
-fn compile_query<T: TableSchemaView>(db: &RelationalDB, tx: &T, query: Query) -> Result<SqlAst, PlanError> {
+fn compile_query<T: TableSchemaView + StateView>(db: &RelationalDB, tx: &T, query: Query) -> Result<SqlAst, PlanError> {
     unsupported!(
         "SELECT",
         query.order_by,
@@ -694,7 +778,7 @@ fn compile_query<T: TableSchemaView>(db: &RelationalDB, tx: &T, query: Query) ->
 }
 
 /// Compiles the `INSERT ...` clause
-fn compile_insert<T: TableSchemaView>(
+fn compile_insert<T: TableSchemaView + StateView>(
     db: &RelationalDB,
     tx: &T,
     table_name: ObjectName,
@@ -733,7 +817,7 @@ fn compile_insert<T: TableSchemaView>(
 }
 
 /// Compiles the `UPDATE ...` clause
-fn compile_update<T: TableSchemaView>(
+fn compile_update<T: TableSchemaView + StateView>(
     db: &RelationalDB,
     tx: &T,
     table: Table,
@@ -761,7 +845,7 @@ fn compile_update<T: TableSchemaView>(
 }
 
 /// Compiles the `DELETE ...` clause
-fn compile_delete<T: TableSchemaView>(
+fn compile_delete<T: TableSchemaView + StateView>(
     db: &RelationalDB,
     tx: &T,
     table: Table,
@@ -822,7 +906,11 @@ fn compile_read_config(name: Vec<Ident>) -> Result<SqlAst, PlanError> {
 }
 
 /// Compiles a `SQL` clause
-fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: Statement) -> Result<SqlAst, PlanError> {
+fn compile_statement<T: TableSchemaView + StateView>(
+    db: &RelationalDB,
+    tx: &T,
+    statement: Statement,
+) -> Result<SqlAst, PlanError> {
     match statement {
         Statement::Query(query) => Ok(compile_query(db, tx, *query)?),
         Statement::Insert {
@@ -910,11 +998,16 @@ fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: S
 }
 
 /// Compiles a `sql` string into a `Vec<SqlAst>` using a SQL parser with [PostgreSqlDialect]
-pub(crate) fn compile_to_ast<T: TableSchemaView>(
+pub(crate) fn compile_to_ast<T: TableSchemaView + StateView>(
     db: &RelationalDB,
+    auth: &AuthCtx,
     tx: &T,
     sql_text: &str,
 ) -> Result<Vec<SqlAst>, DBError> {
+    // NOTE: The following ensures compliance with the 1.0 sql api.
+    // Come 1.0, it will have replaced the current compilation stack.
+    compile_sql_stmt(sql_text, &SchemaViewer::new(tx, auth), auth)?;
+
     let dialect = PostgreSqlDialect {};
     let ast = Parser::parse_sql(&dialect, sql_text).map_err(|error| DBError::SqlParser {
         sql: sql_text.to_string(),

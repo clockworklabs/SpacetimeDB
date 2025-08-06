@@ -1,9 +1,11 @@
 use core::{
+    cmp, fmt,
     ops::{BitAnd, BitAndAssign, BitOr, Not, Shl},
     slice::Iter,
 };
 pub use internal_unsafe::FixedBitSet;
 use internal_unsafe::Len;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 
 /// A type used to represent blocks in a bit set.
 /// A smaller type, compared to usize,
@@ -119,10 +121,16 @@ mod internal_unsafe {
     }
 
     impl<B> FixedBitSet<B> {
+        /// Returns the capacity of the bitset.
+        #[inline]
+        pub(super) const fn blocks(&self) -> usize {
+            self.len as usize
+        }
+
         /// Returns the backing `[B]` slice for shared access.
         pub(crate) const fn storage(&self) -> &[B] {
             let ptr = self.ptr.as_ptr();
-            let len = self.len as usize;
+            let len = self.blocks();
             // SAFETY:
             // - `self.ptr` is a `NonNull` so `ptr` cannot be null.
             // - `self.ptr` is properly aligned for `BitBlock`s.
@@ -136,7 +144,7 @@ mod internal_unsafe {
         /// Returns the backing `[B]` slice for mutation.
         pub(super) fn storage_mut(&mut self) -> &mut [B] {
             let ptr = self.ptr.as_ptr();
-            let len = self.len as usize;
+            let len = self.blocks();
             // SAFETY:
             // - `self.ptr` is a `NonNull` so `ptr` cannot be null.
             // - `self.ptr` is properly aligned for `BitBlock`s.
@@ -149,7 +157,8 @@ mod internal_unsafe {
     }
 }
 
-impl<B: BitBlock> std::cmp::PartialEq for FixedBitSet<B> {
+impl<B: BitBlock> cmp::Eq for FixedBitSet<B> {}
+impl<B: BitBlock> cmp::PartialEq for FixedBitSet<B> {
     fn eq(&self, other: &Self) -> bool {
         self.storage() == other.storage()
     }
@@ -164,9 +173,12 @@ fn blocks_for_bits<B: BitBlock>(bits: usize) -> usize {
 impl<B: BitBlock> FixedBitSet<B> {
     /// Allocates a new bit set capable of holding `bits` number of bits.
     pub fn new(bits: usize) -> Self {
-        // Compute the number of blocks needed.
-        let nblocks = blocks_for_bits::<B>(bits);
+        Self::new_for_blocks(blocks_for_bits::<B>(bits))
+    }
 
+    /// Allocates a new bit set that will have a capacity of `nblocks` blocks.
+    #[inline]
+    fn new_for_blocks(nblocks: usize) -> Self {
         // Allocate the blocks and extract the pointer to the heap region.
         let blocks: Box<[B]> = vec![B::ZERO; nblocks].into_boxed_slice();
 
@@ -199,6 +211,27 @@ impl<B: BitBlock> FixedBitSet<B> {
     /// Clears every bit in the vec.
     pub fn clear(&mut self) {
         self.storage_mut().fill(B::ZERO);
+    }
+
+    /// Resets the bit set so that it's capable of holding `bits` number of bits.
+    ///
+    /// Every bit in the set will be zero after this.
+    pub fn reset_for(&mut self, bits: usize) {
+        // Compute the number of blocks needed.
+        let nblocks = blocks_for_bits::<B>(bits);
+
+        // Either clear the existing set, reusing it, or make a new one.
+        if nblocks == self.blocks() {
+            self.clear();
+        } else {
+            *self = Self::new_for_blocks(nblocks)
+        }
+    }
+
+    /// Returns the capacity of the bitset in bits.
+    #[inline]
+    pub(crate) const fn bits(&self) -> usize {
+        self.blocks() * B::BITS as usize
     }
 
     /// Returns all the set indices.
@@ -240,6 +273,18 @@ impl<B: BitBlock> FixedBitSet<B> {
             curr,
             block_idx: block_idx as Len,
         }
+    }
+}
+
+impl<B> MemoryUsage for FixedBitSet<B> {
+    fn heap_usage(&self) -> usize {
+        std::mem::size_of_val(self.storage())
+    }
+}
+
+impl<B: BitBlock> fmt::Debug for FixedBitSet<B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.iter_set()).finish()
     }
 }
 

@@ -1,7 +1,7 @@
 //! Allocation-free hex formatting.
 //!
 //! Given that most, if not all, of the types that we hex-format are of constant byte size (Hash,
-//! Address, Identity), this hex implementation lets you format to hex without needing to allocate
+//! ConnectionId, Identity), this hex implementation lets you format to hex without needing to allocate
 //! a `String` on the heap.
 
 use core::{fmt, ops, str};
@@ -33,6 +33,18 @@ impl<const N: usize> ops::Deref for HexString<N> {
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         HexByte::as_str(&self.s)
+    }
+}
+
+impl<const N: usize> From<&'_ HexString<N>> for String {
+    fn from(hex: &HexString<N>) -> Self {
+        hex.as_str().into()
+    }
+}
+
+impl<const N: usize> From<HexString<N>> for String {
+    fn from(hex: HexString<N>) -> Self {
+        hex.as_str().into()
     }
 }
 
@@ -115,9 +127,7 @@ impl HexByte {
     fn as_nybbles(this: &[Self]) -> &[HexNybble] {
         // SAFETY: HexByte is repr(transparent) over [HexNybble; 2]
         let arrays = unsafe { &*(this as *const [HexByte] as *const [[HexNybble; 2]]) };
-        // SAFETY: this is equivalent to the unstable [[T; N]].flatten() -> &[T] method
-        // TODO: switch to <[[T; N]]>::flatten() once stabilized
-        unsafe { arrays.align_to::<HexNybble>().1 }
+        arrays.as_flattened()
     }
     #[inline(always)]
     fn as_str(this: &[Self]) -> &str {

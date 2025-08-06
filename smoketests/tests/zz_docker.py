@@ -1,43 +1,7 @@
-import time
-from .. import Smoketest, run_cmd, requires_docker
+from .. import Smoketest, requires_docker
+from ..docker import restart_docker
 from urllib.request import urlopen
 from .add_remove_index import AddRemoveIndex
-
-
-def restart_docker():
-    # Behold!
-    #
-    # You thought stop/start restarts? How wrong. Restart restarts.
-    run_cmd("docker", "compose", "restart")
-    # The suspense!
-    #
-    # Wait until compose believes the health probe succeeds.
-    #
-    # The container may decide to recompile, or grab a coffee at crates.io, or
-    # whatever. In any case, restart doesn't mean the server is up yet.
-    run_cmd("docker", "compose", "up", "--no-recreate", "--detach", "--wait-timeout", "60")
-    # Belts and suspenders!
-    #
-    # The health probe runs inside the container, but that doesn't mean we can
-    # reach it from outside. Ping until we get through.
-    ping()
-
-def ping():
-    tries = 0
-    host = "127.0.0.1:3000"
-    while tries < 10:
-        tries += 1
-        try:
-            print(f"Ping Server at {host}")
-            urlopen(f"http://{host}/database/ping")
-            print("Server up")
-            break
-        except Exception:
-            print("Server down")
-            time.sleep(3)
-    else:
-        raise Exception(f"Server at {host} not responding")
-    print(f"Server up after {tries} tries")
 
 
 @requires_docker
@@ -45,7 +9,7 @@ class DockerRestartModule(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::println;
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
@@ -56,16 +20,16 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add(name: String) {
-Person::insert(Person { id: 0, name }).unwrap();
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
 }
 
 #[spacetimedb::reducer]
-pub fn say_hello() {
-    for person in Person::iter() {
-        println!("Hello, {}!", person.name);
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
 
@@ -91,7 +55,7 @@ class DockerRestartSql(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::println;
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
@@ -102,16 +66,16 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add(name: String) {
-Person::insert(Person { id: 0, name }).unwrap();
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
 }
 
 #[spacetimedb::reducer]
-pub fn say_hello() {
-    for person in Person::iter() {
-        println!("Hello, {}!", person.name);
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
 
@@ -130,44 +94,44 @@ pub fn say_hello() {
 
         restart_docker()
 
-        sql_out = self.spacetime("sql", self.address, "SELECT name FROM person WHERE id = 3")
+        sql_out = self.spacetime("sql", self.database_identity, "SELECT name FROM person WHERE id = 3")
         self.assertMultiLineEqual(sql_out, """ name       \n------------\n "Samantha" \n""")
 
 @requires_docker
 class DockerRestartAutoDisconnect(Smoketest):
     MODULE_CODE = """
 use log::info;
-use spacetimedb::{Address, Identity, ReducerContext, TableType};
+use spacetimedb::{ConnectionId, Identity, ReducerContext, Table};
 
 #[spacetimedb::table(name = connected_client)]
 pub struct ConnectedClient {
     identity: Identity,
-    address: Address,
+    connection_id: ConnectionId,
 }
 
 #[spacetimedb::reducer(client_connected)]
-fn on_connect(ctx: ReducerContext) {
-    ConnectedClient::insert(ConnectedClient {
+fn on_connect(ctx: &ReducerContext) {
+    ctx.db.connected_client().insert(ConnectedClient {
         identity: ctx.sender,
-        address: ctx.address.expect("sender address unset"),
+        connection_id: ctx.connection_id.expect("sender connection id unset"),
     });
 }
 
 #[spacetimedb::reducer(client_disconnected)]
-fn on_disconnect(ctx: ReducerContext) {
+fn on_disconnect(ctx: &ReducerContext) {
     let sender_identity = &ctx.sender;
-    let sender_address = ctx.address.as_ref().expect("sender address unset");
+    let sender_connection_id = ctx.connection_id.as_ref().expect("sender connection id unset");
     let match_client = |row: &ConnectedClient| {
-        &row.identity == sender_identity && &row.address == sender_address
+        &row.identity == sender_identity && &row.connection_id == sender_connection_id
     };
-    if let Some(client) = ConnectedClient::iter().find(match_client) {
-        ConnectedClient::delete(&client);
+    if let Some(client) = ctx.db.connected_client().iter().find(match_client) {
+        ctx.db.connected_client().delete(client);
     }
 }
 
 #[spacetimedb::reducer]
-fn print_num_connected() {
-    let n = ConnectedClient::iter().count();
+fn print_num_connected(ctx: &ReducerContext) {
+    let n = ctx.db.connected_client().count();
     info!("CONNECTED CLIENTS: {n}")
 }
 """

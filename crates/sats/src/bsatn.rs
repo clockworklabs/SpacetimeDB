@@ -1,7 +1,8 @@
 use crate::buffer::{BufReader, BufWriter, CountWriter};
 use crate::de::{BasicSmallVecVisitor, Deserialize, DeserializeSeed, Deserializer as _};
 use crate::ser::Serialize;
-use crate::Typespace;
+use crate::{ProductValue, Typespace, WithTypespace};
+use ser::BsatnError;
 use smallvec::SmallVec;
 
 pub mod de;
@@ -12,21 +13,23 @@ pub use de::Deserializer;
 pub use ser::Serializer;
 
 pub use crate::buffer::DecodeError;
+pub use ser::BsatnError as EncodeError;
 
 /// Serialize `value` into the buffered writer `w` in the BSATN format.
-pub fn to_writer<W: BufWriter, T: Serialize + ?Sized>(w: &mut W, value: &T) -> Result<(), ser::BsatnError> {
-    value.serialize(Serializer::new(w))
+#[inline]
+pub fn to_writer<W: BufWriter, T: Serialize + ?Sized>(w: &mut W, value: &T) -> Result<(), EncodeError> {
+    value.serialize_into_bsatn(Serializer::new(w))
 }
 
 /// Serialize `value` into a `Vec<u8>` in the BSATN format.
-pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, ser::BsatnError> {
+pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, EncodeError> {
     let mut v = Vec::new();
     to_writer(&mut v, value)?;
     Ok(v)
 }
 
 /// Computes the size of `val` when BSATN encoding without actually encoding.
-pub fn to_len<T: Serialize + ?Sized>(value: &T) -> Result<usize, ser::BsatnError> {
+pub fn to_len<T: Serialize + ?Sized>(value: &T) -> Result<usize, EncodeError> {
     let mut writer = CountWriter::default();
     to_writer(&mut writer, value)?;
     Ok(writer.finish())
@@ -40,6 +43,17 @@ pub fn from_reader<'de, T: Deserialize<'de>>(reader: &mut impl BufReader<'de>) -
 /// Deserialize a `T` from the BSATN format in `bytes`.
 pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, DecodeError> {
     from_reader(&mut &*bytes)
+}
+
+/// Decode `bytes` to the value type of `ty: S`.
+pub fn decode<'a, 'de, S: ?Sized>(
+    ty: &'a S,
+    bytes: &mut impl BufReader<'de>,
+) -> Result<<WithTypespace<'a, S> as DeserializeSeed<'de>>::Output, DecodeError>
+where
+    WithTypespace<'a, S>: DeserializeSeed<'de>,
+{
+    crate::WithTypespace::empty(ty).deserialize(Deserializer::new(bytes))
 }
 
 macro_rules! codec_funcs {
@@ -61,7 +75,7 @@ macro_rules! codec_funcs {
                 ty: &<Self as crate::Value>::Type,
                 bytes: &mut impl BufReader<'a>,
             ) -> Result<Self, DecodeError> {
-                crate::WithTypespace::new(&Typespace::new(Vec::new()), ty).deserialize(Deserializer::new(bytes))
+                decode(ty, bytes)
             }
 
             /// Decode a vector of values from `bytes` with each value typed at `ty`.
@@ -92,9 +106,80 @@ codec_funcs!(val: crate::AlgebraicValue);
 codec_funcs!(val: crate::ProductValue);
 codec_funcs!(val: crate::SumValue);
 
+/// Types that can be encoded to BSATN.
+///
+/// Implementations of this trait may be more efficient than directly calling [`to_vec`].
+/// In particular, for `spacetimedb_table::table::RowRef`, this method will use a `StaticLayout` if one is available,
+/// avoiding expensive runtime type dispatch.
+pub trait ToBsatn {
+    /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError>;
+
+    /// BSATN-encode the row referred to by `self` into `buf`,
+    /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError>;
+
+    /// Returns the static size of the type of this object.
+    ///
+    /// When this returns `Some(_)` there is also a `StaticLayout`.
+    fn static_bsatn_size(&self) -> Option<u16>;
+}
+
+impl<T: ToBsatn> ToBsatn for &T {
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
+        T::to_bsatn_vec(*self)
+    }
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        T::to_bsatn_extend(*self, buf)
+    }
+    fn static_bsatn_size(&self) -> Option<u16> {
+        T::static_bsatn_size(*self)
+    }
+}
+
+impl ToBsatn for ProductValue {
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
+        to_vec(self)
+    }
+
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        to_writer(buf, self)
+    }
+
+    fn static_bsatn_size(&self) -> Option<u16> {
+        None
+    }
+}
+
+mod private_is_primitive_type {
+    pub trait Sealed {}
+}
+/// A primitive type.
+/// This is purely intended for use in `crates/bindings-macro`.
+///
+/// # Safety
+///
+/// Implementing this guarantees that the type has no padding, recursively.
+#[doc(hidden)]
+pub unsafe trait IsPrimitiveType: private_is_primitive_type::Sealed {}
+macro_rules! is_primitive_type {
+    ($($prim:ty),*) => {
+        $(
+            impl private_is_primitive_type::Sealed for $prim {}
+            // SAFETY:  the type is primitive and has no padding.
+            unsafe impl IsPrimitiveType for $prim {}
+        )*
+    };
+}
+is_primitive_type!(u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, f32, f64);
+
+/// Enforces that a type is a primitive.
+/// This is purely intended for use in `crates/bindings-macro`.
+pub const fn assert_is_primitive_type<T: IsPrimitiveType>() {}
+
 #[cfg(test)]
 mod tests {
-    use super::to_vec;
+    use super::{to_vec, DecodeError};
     use crate::proptest::generate_typed_value;
     use crate::{meta_type::MetaType, AlgebraicType, AlgebraicValue};
     use proptest::prelude::*;
@@ -120,6 +205,15 @@ mod tests {
             let bytes = to_vec(&val).unwrap();
             let val_decoded = AlgebraicValue::decode(&ty, &mut &bytes[..]).unwrap();
             prop_assert_eq!(val, val_decoded);
+        }
+
+        #[test]
+        fn bsatn_non_zero_one_u8_aint_bool(val in 2u8..) {
+            let bytes = [val];
+            prop_assert_eq!(
+                AlgebraicValue::decode(&AlgebraicType::Bool, &mut &bytes[..]),
+                Err(DecodeError::InvalidBool(val))
+            );
         }
     }
 }

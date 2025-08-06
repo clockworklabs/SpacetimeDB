@@ -20,10 +20,13 @@ use spacetimedb_data_structures::map::{
     Entry,
     IntMap, // No need to hash a hash.
 };
+use spacetimedb_sats::memory_usage::MemoryUsage;
 
 /// An index to the outer layer of `colliders` in `PointerMap`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct ColliderSlotIndex(u32);
+
+impl MemoryUsage for ColliderSlotIndex {}
 
 impl ColliderSlotIndex {
     /// Returns a new slot index based on `idx`.
@@ -42,6 +45,8 @@ impl ColliderSlotIndex {
 /// the index in `colliders` to a list of `RowPointer`s.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 struct PtrOrCollider(RowPointer);
+
+impl MemoryUsage for PtrOrCollider {}
 
 /// An unpacked representation of [`&mut PtrOrCollider`](PtrOrCollider).
 enum MapSlotRef<'map> {
@@ -149,47 +154,18 @@ pub struct PointerMap {
     emptied_collider_slots: Vec<ColliderSlotIndex>,
 }
 
+impl MemoryUsage for PointerMap {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            map,
+            colliders,
+            emptied_collider_slots,
+        } = self;
+        map.heap_usage() + colliders.heap_usage() + emptied_collider_slots.heap_usage()
+    }
+}
+
 static_assert_size!(PointerMap, 80);
-
-// Provides some type invariant checks.
-// These are only used as sanity checks in the debug profile, and e.g., in tests.
-#[cfg(debug_assertions)]
-impl PointerMap {
-    #[allow(unused)]
-    fn maintains_invariants(&self) -> bool {
-        self.maintains_map_invariant() && self.maintains_colliders_invariant()
-    }
-
-    #[allow(unused)]
-    fn maintains_colliders_invariant(&self) -> bool {
-        self.colliders.iter().enumerate().all(|(idx, slot)| {
-            slot.len() >= 2 || slot.is_empty() && self.emptied_collider_slots.contains(&ColliderSlotIndex::new(idx))
-        })
-    }
-
-    #[allow(unused)]
-    fn maintains_map_invariant(&self) -> bool {
-        self.map.values().all(|poc| {
-            let collider = poc.as_collider();
-            poc.is_ptr()
-                || self.colliders[collider.idx()].len() >= 2 && !self.emptied_collider_slots.contains(&collider)
-        })
-    }
-}
-
-// `debug_assert!` conditions are always typechecked, even when debug assertions are disabled.
-// This means that we would see a build error in release mode
-// due to `PointerMap::maintains_invariants` being undefined.
-// Easily solved by including a stub definition.
-#[cfg(not(debug_assertions))]
-#[allow(dead_code)]
-impl PointerMap {
-    fn maintains_invariants(&self) -> bool {
-        unreachable!(
-            "`PointerMap::maintains_invariants` is only meaningfully defined when building with debug assertions."
-        )
-    }
-}
 
 // Provides the public API.
 impl PointerMap {

@@ -1,6 +1,9 @@
 //! Backwards-compatibility for the previous version of the schema definition format.
 //! This will be removed before 1.0.
 
+use crate::def::{validate::Result, ModuleDef};
+use crate::error::{RawColumnName, ValidationError, ValidationErrors};
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::raw_def::{v8::*, v9::*};
 use spacetimedb_lib::{
     // TODO: rename these types globally in a followup PR
@@ -11,11 +14,8 @@ use spacetimedb_lib::{
     TableDesc as RawTableDescV8,
     TypeAlias as RawTypeAliasV8,
 };
-use spacetimedb_primitives::ColId;
+use spacetimedb_primitives::{ColId, ColList, ConstraintKind, Constraints};
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace, WithTypespace};
-
-use crate::def::{validate::Result, ModuleDef};
-use crate::error::{RawColumnName, ValidationError, ValidationErrors};
 
 const INIT_NAME: &str = "__init__";
 const IDENTITY_CONNECTED_NAME: &str = "__identity_connected__";
@@ -50,11 +50,7 @@ fn upgrade_module(def: RawModuleDefV8, extra_errors: &mut Vec<ValidationError>) 
 
     let tables = convert_all(tables, |table| upgrade_table(table, &typespace, extra_errors));
     let reducers = convert_all(reducers, upgrade_reducer);
-    let types = misc_exports
-        .into_iter()
-        .map(upgrade_misc_export_to_type)
-        .chain(tables.iter().map(type_def_for_table))
-        .collect();
+    let types = misc_exports.into_iter().map(upgrade_misc_export_to_type).collect();
 
     RawModuleDefV9 {
         typespace,
@@ -62,7 +58,65 @@ fn upgrade_module(def: RawModuleDefV8, extra_errors: &mut Vec<ValidationError>) 
         reducers,
         types,
         misc_exports: Default::default(),
+        row_level_security: vec![], // v8 doesn't have row-level security
     }
+}
+
+/// Get an iterator deriving [RawIndexDefV8]s from the constraints that require them like `UNIQUE`.
+///
+/// It looks into [Self::constraints] for possible duplicates and remove them from the result
+pub fn generated_indexes(table: &RawTableDefV8) -> impl Iterator<Item = RawIndexDefV8> + '_ {
+    table
+        .constraints
+        .iter()
+        // We are only interested in constraints implying an index.
+        .filter(|x| x.constraints.has_indexed())
+        // Create the `IndexDef`.
+        .map(|x| {
+            let is_unique = x.constraints.has_unique();
+            RawIndexDefV8::for_column(&table.table_name, &x.constraint_name, x.columns.clone(), is_unique)
+        })
+        // Only keep those we don't yet have in the list of indices (checked by name).
+        .filter(|idx| table.indexes.iter().all(|x| x.index_name != idx.index_name))
+}
+
+/// Get an iterator deriving [RawSequenceDefV8] from the constraints that require them like `IDENTITY`.
+///
+/// It looks into [Self::constraints] for possible duplicates and remove them from the result
+pub fn generated_sequences(table: &RawTableDefV8) -> impl Iterator<Item = RawSequenceDefV8> + '_ {
+    let cols: HashSet<_> = table.sequences.iter().map(|seq| ColList::new(seq.col_pos)).collect();
+
+    table
+        .constraints
+        .iter()
+        // We are only interested in constraints implying a sequence.
+        .filter(move |x| !cols.contains(&x.columns) && x.constraints.has_autoinc())
+        // Create the `SequenceDef`.
+        .map(|x| RawSequenceDefV8::for_column(&table.table_name, &x.constraint_name, x.columns.head().unwrap()))
+        // Only keep those we don't yet have in the list of sequences (checked by name).
+        .filter(|seq| table.sequences.iter().all(|x| x.sequence_name != seq.sequence_name))
+}
+
+/// Get an iterator deriving [RawConstraintDefV8] from the indexes that require them like `UNIQUE`.
+///
+/// It looks into Self::constraints for possible duplicates and remove them from the result
+pub fn generated_constraints(table: &RawTableDefV8) -> impl Iterator<Item = RawConstraintDefV8> + '_ {
+    // Collect the set of all col-lists with a constraint.
+    let cols: HashSet<_> = table
+        .constraints
+        .iter()
+        .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
+        .map(|x| &x.columns)
+        .collect();
+
+    // Those indices that are not present in the constraints above
+    // have constraints generated for them.
+    // When `idx.is_unique`, a unique constraint is generated rather than an indexed one.
+    table
+        .indexes
+        .iter()
+        .filter(move |idx: &&RawIndexDefV8| !cols.contains(&idx.columns))
+        .map(|idx| table.gen_constraint_def(Constraints::from_is_unique(idx.is_unique), idx.columns.clone()))
 }
 
 /// Upgrade a table, returning a v9 table definition and a stream of v8-only validation errors.
@@ -73,8 +127,9 @@ fn upgrade_table(
 ) -> RawTableDefV9 {
     // First, generate all the various things that are needed.
     // This is the hairiest part of v8.
-    let generated_constraints = table.schema.generated_constraints().collect::<Vec<_>>();
-    let generated_sequences = table.schema.generated_sequences().collect::<Vec<_>>();
+    let generated_constraints = generated_constraints(&table.schema).collect::<Vec<_>>();
+    let generated_sequences = generated_sequences(&table.schema).collect::<Vec<_>>();
+    let generated_indexes = generated_indexes(&table.schema).collect::<Vec<_>>();
 
     let RawTableDescV8 {
         schema:
@@ -92,12 +147,16 @@ fn upgrade_table(
     } = table;
 
     // Check all column defs, then discard them.
+    let scheduled_at_col = columns
+        .iter()
+        .position(|x| &*x.col_name == "scheduled_at")
+        .map(|i| i as u16);
     check_all_column_defs(product_type_ref, columns, &table_name, typespace, extra_errors);
 
     // Now we're ready to go through the various definitions and upgrade them.
-    let indexes = convert_all(indexes, upgrade_index);
+    let indexes = convert_all(indexes.into_iter().chain(generated_indexes), upgrade_index);
     let sequences = convert_all(sequences.into_iter().chain(generated_sequences), upgrade_sequence);
-    let schedule = upgrade_schedule(scheduled, &table_name);
+    let schedule = upgrade_schedule(scheduled, scheduled_at_col);
 
     // Constraints are pretty hairy, which is why we're getting rid of v8.
     let mut primary_key = None;
@@ -113,7 +172,7 @@ fn upgrade_table(
     RawTableDefV9 {
         name: table_name,
         product_type_ref,
-        primary_key,
+        primary_key: ColList::from_iter(primary_key),
         indexes,
         constraints: unique_constraints,
         sequences,
@@ -161,19 +220,6 @@ fn check_all_column_defs(
                 ref_: product_type_ref,
             });
         }
-    }
-}
-
-/// In `v8`, tables did NOT get a `MiscModuleExport` for their product type.
-/// So, we generate these.
-fn type_def_for_table(def: &RawTableDefV9) -> RawTypeDefV9 {
-    RawTypeDefV9 {
-        name: RawScopedTypeNameV9 {
-            scope: [].into(),
-            name: def.name.clone(),
-        },
-        ty: def.product_type_ref,
-        custom_ordering: true,
     }
 }
 
@@ -232,7 +278,7 @@ fn upgrade_index(index: RawIndexDefV8) -> RawIndexDefV9 {
     // ABI stability proposal. The old macros don't make this distinction, so we just reuse the name for them.
     let accessor_name = Some(index_name.clone());
     RawIndexDefV9 {
-        name: index_name.clone(),
+        name: Some(index_name),
         // Set the accessor name to be the same as the index name.
         accessor_name,
         algorithm,
@@ -250,7 +296,7 @@ fn upgrade_constraint(
     extra_errors: &mut Vec<ValidationError>,
 ) -> Option<RawConstraintDefV9> {
     let RawConstraintDefV8 {
-        constraint_name,
+        constraint_name, // not used in v9.
         constraints,
         columns,
     } = constraint;
@@ -274,7 +320,7 @@ fn upgrade_constraint(
 
     if constraints.has_unique() {
         Some(RawConstraintDefV9 {
-            name: constraint_name,
+            name: Some(constraint_name),
             data: RawConstraintDataV9::Unique(RawUniqueConstraintDataV9 { columns }),
         })
     } else {
@@ -285,10 +331,12 @@ fn upgrade_constraint(
     }
 }
 
-fn upgrade_schedule(schedule: Option<RawIdentifier>, table_name: &RawIdentifier) -> Option<RawScheduleDefV9> {
+fn upgrade_schedule(schedule: Option<RawIdentifier>, scheduled_at_col: Option<u16>) -> Option<RawScheduleDefV9> {
+    let scheduled_at_col = scheduled_at_col?;
     schedule.map(|reducer_name| RawScheduleDefV9 {
-        name: format!("{table_name}_schedule").into(),
+        name: None,
         reducer_name,
+        scheduled_at_column: scheduled_at_col.into(),
     })
 }
 
@@ -304,7 +352,7 @@ fn upgrade_sequence(sequence: RawSequenceDefV8) -> RawSequenceDefV9 {
     } = sequence;
 
     RawSequenceDefV9 {
-        name: sequence_name,
+        name: Some(sequence_name),
         column: col_pos,
         start,
         increment,
@@ -400,7 +448,7 @@ mod tests {
                 ]),
             )
             .with_column_constraint(Constraints::primary_key_auto(), 0)
-            .with_column_index(ColList::from_iter([0, 1, 2]), false),
+            .with_column_index([0, 1, 2], false),
         );
 
         let deliveries_product_type = builder.add_table_for_tests(
@@ -412,6 +460,7 @@ mod tests {
                     ("scheduled_id", AlgebraicType::U64),
                 ]),
             )
+            .with_column_constraint(Constraints::primary_key_auto(), 2)
             .with_scheduled(Some("check_deliveries".into())),
         );
 
@@ -480,7 +529,7 @@ mod tests {
             &delivery_def.schedule.as_ref().unwrap().reducer_name[..],
             "check_deliveries"
         );
-        assert_eq!(delivery_def.primary_key, None);
+        assert_eq!(delivery_def.primary_key, Some(ColId(2)));
 
         assert_eq!(def.typespace.get(product_type_ref), Some(&product_type));
         assert_eq!(def.typespace.get(sum_type_ref), Some(&sum_type));
@@ -752,7 +801,7 @@ mod tests {
         );
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::OnlyBtree { index } => {
+        expect_error_matching!(result, ValidationError::HashIndexUnsupported { index } => {
             &index[..] == "Bananas_index"
         });
     }

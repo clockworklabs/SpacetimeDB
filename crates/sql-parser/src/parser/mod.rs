@@ -1,12 +1,16 @@
 use errors::{SqlParseError, SqlRequired, SqlUnsupported};
 use sqlparser::ast::{
-    BinaryOperator, Expr, Ident, Join, JoinConstraint, JoinOperator, ObjectName, Query, SelectItem, TableAlias,
-    TableFactor, TableWithJoins, Value, WildcardAdditionalOptions,
+    BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, Ident, Join, JoinConstraint, JoinOperator,
+    ObjectName, Query, SelectItem, TableAlias, TableFactor, TableWithJoins, UnaryOperator, Value,
+    WildcardAdditionalOptions,
 };
 
-use crate::ast::{BinOp, Project, ProjectElem, RelExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral};
+use crate::ast::{
+    BinOp, LogOp, Parameter, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral,
+};
 
 pub mod errors;
+pub mod recursion;
 pub mod sql;
 pub mod sub;
 
@@ -22,7 +26,7 @@ trait RelParser {
     fn parse_query(query: Query) -> SqlParseResult<Self::Ast>;
 
     /// Parse a FROM clause
-    fn parse_from(mut tables: Vec<TableWithJoins>) -> SqlParseResult<SqlFrom<Self::Ast>> {
+    fn parse_from(mut tables: Vec<TableWithJoins>) -> SqlParseResult<SqlFrom> {
         if tables.is_empty() {
             return Err(SqlRequired::From.into());
         }
@@ -30,45 +34,50 @@ trait RelParser {
             return Err(SqlUnsupported::ImplicitJoins.into());
         }
         let TableWithJoins { relation, joins } = tables.swap_remove(0);
-        let (expr, alias) = Self::parse_rel(relation)?;
+        let (name, alias) = Self::parse_relvar(relation)?;
         if joins.is_empty() {
-            return Ok(SqlFrom::Expr(expr, alias));
+            return Ok(SqlFrom::Expr(name, alias));
         }
-        let (expr, alias) = Self::parse_alias((expr, alias))?;
-        Ok(SqlFrom::Join(expr, alias, Self::parse_joins(joins)?))
+        Ok(SqlFrom::Join(name, alias, Self::parse_joins(joins)?))
     }
 
     /// Parse a sequence of JOIN clauses
-    fn parse_joins(joins: Vec<Join>) -> SqlParseResult<Vec<SqlJoin<Self::Ast>>> {
+    fn parse_joins(joins: Vec<Join>) -> SqlParseResult<Vec<SqlJoin>> {
         joins.into_iter().map(Self::parse_join).collect()
     }
 
     /// Parse a single JOIN clause
-    fn parse_join(join: Join) -> SqlParseResult<SqlJoin<Self::Ast>> {
-        let (expr, alias) = Self::parse_alias(Self::parse_rel(join.relation)?)?;
+    fn parse_join(join: Join) -> SqlParseResult<SqlJoin> {
+        let (var, alias) = Self::parse_relvar(join.relation)?;
         match join.join_operator {
-            JoinOperator::CrossJoin => Ok(SqlJoin { expr, alias, on: None }),
-            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { expr, alias, on: None }),
-            JoinOperator::Inner(JoinConstraint::On(on)) => Ok(SqlJoin {
-                expr,
-                alias,
-                on: Some(parse_expr(on)?),
-            }),
+            JoinOperator::CrossJoin => Ok(SqlJoin { var, alias, on: None }),
+            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { var, alias, on: None }),
+            JoinOperator::Inner(JoinConstraint::On(Expr::BinaryOp {
+                left,
+                op: BinaryOperator::Eq,
+                right,
+            })) if matches!(*left, Expr::Identifier(..) | Expr::CompoundIdentifier(..))
+                && matches!(*right, Expr::Identifier(..) | Expr::CompoundIdentifier(..)) =>
+            {
+                Ok(SqlJoin {
+                    var,
+                    alias,
+                    on: Some(parse_expr(
+                        Expr::BinaryOp {
+                            left,
+                            op: BinaryOperator::Eq,
+                            right,
+                        },
+                        0,
+                    )?),
+                })
+            }
             _ => Err(SqlUnsupported::JoinType.into()),
         }
     }
 
-    /// Check optional and required table aliases in a JOIN clause
-    fn parse_alias(item: (RelExpr<Self::Ast>, Option<SqlIdent>)) -> SqlParseResult<(RelExpr<Self::Ast>, SqlIdent)> {
-        match item {
-            (RelExpr::Var(alias), None) => Ok((RelExpr::Var(alias.clone()), alias)),
-            (expr, Some(alias)) => Ok((expr, alias)),
-            _ => Err(SqlRequired::JoinAlias.into()),
-        }
-    }
-
-    /// Parse a relation expression in a FROM clause
-    fn parse_rel(expr: TableFactor) -> SqlParseResult<(RelExpr<Self::Ast>, Option<SqlIdent>)> {
+    /// Parse a table reference in a FROM clause
+    fn parse_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, SqlIdent)> {
         match expr {
             // Relvar no alias
             TableFactor::Table {
@@ -78,7 +87,11 @@ trait RelParser {
                 with_hints,
                 version: None,
                 partitions,
-            } if with_hints.is_empty() && partitions.is_empty() => Ok((RelExpr::Var(parse_ident(name)?), None)),
+            } if with_hints.is_empty() && partitions.is_empty() => {
+                let name = parse_ident(name)?;
+                let alias = name.clone();
+                Ok((name, alias))
+            }
             // Relvar with alias
             TableFactor::Table {
                 name,
@@ -88,20 +101,8 @@ trait RelParser {
                 version: None,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() && columns.is_empty() => {
-                Ok((RelExpr::Var(parse_ident(name)?), Some(alias.into())))
+                Ok((parse_ident(name)?, alias.into()))
             }
-            // RelExpr no alias
-            TableFactor::Derived {
-                lateral: false,
-                subquery,
-                alias: None,
-            } => Ok((RelExpr::Ast(Box::new(Self::parse_query(*subquery)?)), None)),
-            // RelExpr with alias
-            TableFactor::Derived {
-                lateral: false,
-                subquery,
-                alias: Some(TableAlias { name, columns }),
-            } if columns.is_empty() => Ok((RelExpr::Ast(Box::new(Self::parse_query(*subquery)?)), Some(name.into()))),
             _ => Err(SqlUnsupported::From(expr).into()),
         }
     }
@@ -110,7 +111,7 @@ trait RelParser {
 /// Parse the items of a SELECT clause
 pub(crate) fn parse_projection(mut items: Vec<SelectItem>) -> SqlParseResult<Project> {
     if items.len() == 1 {
-        return parse_project(items.swap_remove(0));
+        return parse_project_or_agg(items.swap_remove(0));
     }
     Ok(Project::Exprs(
         items
@@ -121,7 +122,7 @@ pub(crate) fn parse_projection(mut items: Vec<SelectItem>) -> SqlParseResult<Pro
 }
 
 /// Parse a SELECT clause with only a single item
-pub(crate) fn parse_project(item: SelectItem) -> SqlParseResult<Project> {
+pub(crate) fn parse_project_or_agg(item: SelectItem) -> SqlParseResult<Project> {
     match item {
         SelectItem::Wildcard(WildcardAdditionalOptions {
             opt_exclude: None,
@@ -138,10 +139,45 @@ pub(crate) fn parse_project(item: SelectItem) -> SqlParseResult<Project> {
                 opt_replace: None,
             },
         ) => Ok(Project::Star(Some(parse_ident(table_name)?))),
+        SelectItem::UnnamedExpr(Expr::Function(_)) => Err(SqlUnsupported::AggregateWithoutAlias.into()),
+        SelectItem::ExprWithAlias {
+            expr: Expr::Function(agg_fn),
+            alias,
+        } => parse_agg_fn(agg_fn, alias.into()),
         SelectItem::UnnamedExpr(_) | SelectItem::ExprWithAlias { .. } => {
             Ok(Project::Exprs(vec![parse_project_elem(item)?]))
         }
         item => Err(SqlUnsupported::Projection(item).into()),
+    }
+}
+
+/// Parse an aggregate function in a select list
+fn parse_agg_fn(agg_fn: Function, alias: SqlIdent) -> SqlParseResult<Project> {
+    fn is_count(name: &ObjectName) -> bool {
+        name.0.len() == 1
+            && name
+                .0
+                .first()
+                .is_some_and(|Ident { value, .. }| value.to_lowercase() == "count")
+    }
+    match agg_fn {
+        Function {
+            name,
+            args,
+            over: None,
+            distinct: false,
+            special: false,
+            order_by,
+        } if is_count(&name)
+            && order_by.is_empty()
+            && args.len() == 1
+            && args
+                .first()
+                .is_some_and(|arg| matches!(arg, FunctionArg::Unnamed(FunctionArgExpr::Wildcard))) =>
+        {
+            Ok(Project::Count(alias))
+        }
+        agg_fn => Err(SqlUnsupported::Aggregate(agg_fn).into()),
     }
 }
 
@@ -150,24 +186,84 @@ pub(crate) fn parse_project_elem(item: SelectItem) -> SqlParseResult<ProjectElem
     match item {
         SelectItem::Wildcard(_) => Err(SqlUnsupported::MixedWildcardProject.into()),
         SelectItem::QualifiedWildcard(..) => Err(SqlUnsupported::MixedWildcardProject.into()),
-        SelectItem::UnnamedExpr(expr) => Ok(ProjectElem(parse_expr(expr)?, None)),
-        SelectItem::ExprWithAlias { expr, alias } => Ok(ProjectElem(parse_expr(expr)?, Some(alias.into()))),
+        SelectItem::UnnamedExpr(expr) => match parse_proj(expr)? {
+            ProjectExpr::Var(name) => Ok(ProjectElem(ProjectExpr::Var(name.clone()), name)),
+            ProjectExpr::Field(name, field) => Ok(ProjectElem(ProjectExpr::Field(name, field.clone()), field)),
+        },
+        SelectItem::ExprWithAlias { expr, alias } => Ok(ProjectElem(parse_proj(expr)?, alias.into())),
     }
 }
 
-/// Parse a scalar expression
-pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
+/// Parse a column projection
+pub(crate) fn parse_proj(expr: Expr) -> SqlParseResult<ProjectExpr> {
     match expr {
+        Expr::Identifier(ident) => Ok(ProjectExpr::Var(ident.into())),
+        Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
+            let table = idents.swap_remove(0).into();
+            let field = idents.swap_remove(0).into();
+            Ok(ProjectExpr::Field(table, field))
+        }
+        _ => Err(SqlUnsupported::ProjectionExpr(expr).into()),
+    }
+}
+
+// These types determine the size of [`parse_expr`]'s stack frame.
+// Changing their sizes will require updating the recursion limit to avoid stack overflows.
+const _: () = assert!(size_of::<Expr>() == 168);
+const _: () = assert!(size_of::<SqlParseResult<SqlExpr>>() == 40);
+
+/// Parse a scalar expression
+fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
+    fn signed_num(sign: impl Into<String>, expr: Expr) -> Result<SqlExpr, Box<SqlUnsupported>> {
+        match expr {
+            Expr::Value(Value::Number(n, _)) => Ok(SqlExpr::Lit(SqlLiteral::Num((sign.into() + &n).into_boxed_str()))),
+            expr => Err(SqlUnsupported::Expr(expr).into()),
+        }
+    }
+    recursion::guard(depth, recursion::MAX_RECURSION_EXPR, "sql-parser::parse_expr")?;
+    match expr {
+        Expr::Nested(expr) => parse_expr(*expr, depth + 1),
+        Expr::Value(Value::Placeholder(param)) if &param == ":sender" => Ok(SqlExpr::Param(Parameter::Sender)),
         Expr::Value(v) => Ok(SqlExpr::Lit(parse_literal(v)?)),
+        Expr::UnaryOp {
+            op: UnaryOperator::Plus,
+            expr,
+        } if matches!(&*expr, Expr::Value(Value::Number(..))) => {
+            signed_num("+", *expr).map_err(SqlParseError::SqlUnsupported)
+        }
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } if matches!(&*expr, Expr::Value(Value::Number(..))) => {
+            signed_num("-", *expr).map_err(SqlParseError::SqlUnsupported)
+        }
         Expr::Identifier(ident) => Ok(SqlExpr::Var(ident.into())),
         Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
             let table = idents.swap_remove(0).into();
             let field = idents.swap_remove(0).into();
             Ok(SqlExpr::Field(table, field))
         }
+        Expr::BinaryOp {
+            left,
+            op: BinaryOperator::And,
+            right,
+        } => {
+            let l = parse_expr(*left, depth + 1)?;
+            let r = parse_expr(*right, depth + 1)?;
+            Ok(SqlExpr::Log(Box::new(l), Box::new(r), LogOp::And))
+        }
+        Expr::BinaryOp {
+            left,
+            op: BinaryOperator::Or,
+            right,
+        } => {
+            let l = parse_expr(*left, depth + 1)?;
+            let r = parse_expr(*right, depth + 1)?;
+            Ok(SqlExpr::Log(Box::new(l), Box::new(r), LogOp::Or))
+        }
         Expr::BinaryOp { left, op, right } => {
-            let l = parse_expr(*left)?;
-            let r = parse_expr(*right)?;
+            let l = parse_expr(*left, depth + 1)?;
+            let r = parse_expr(*right, depth + 1)?;
             Ok(SqlExpr::Bin(Box::new(l), Box::new(r), parse_binop(op)?))
         }
         _ => Err(SqlUnsupported::Expr(expr).into()),
@@ -176,7 +272,7 @@ pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
 
 /// Parse an optional scalar expression
 pub(crate) fn parse_expr_opt(opt: Option<Expr>) -> SqlParseResult<Option<SqlExpr>> {
-    opt.map(parse_expr).transpose()
+    opt.map(|expr| parse_expr(expr, 0)).transpose()
 }
 
 /// Parse a scalar binary operator
@@ -188,8 +284,6 @@ pub(crate) fn parse_binop(op: BinaryOperator) -> SqlParseResult<BinOp> {
         BinaryOperator::LtEq => Ok(BinOp::Lte),
         BinaryOperator::Gt => Ok(BinOp::Gt),
         BinaryOperator::GtEq => Ok(BinOp::Gte),
-        BinaryOperator::And => Ok(BinOp::And),
-        BinaryOperator::Or => Ok(BinOp::Or),
         _ => Err(SqlUnsupported::BinOp(op).into()),
     }
 }
@@ -198,9 +292,9 @@ pub(crate) fn parse_binop(op: BinaryOperator) -> SqlParseResult<BinOp> {
 pub(crate) fn parse_literal(value: Value) -> SqlParseResult<SqlLiteral> {
     match value {
         Value::Boolean(v) => Ok(SqlLiteral::Bool(v)),
-        Value::Number(v, _) => Ok(SqlLiteral::Num(v)),
-        Value::SingleQuotedString(s) => Ok(SqlLiteral::Str(s)),
-        Value::HexStringLiteral(s) => Ok(SqlLiteral::Hex(s)),
+        Value::Number(v, _) => Ok(SqlLiteral::Num(v.into_boxed_str())),
+        Value::SingleQuotedString(s) => Ok(SqlLiteral::Str(s.into_boxed_str())),
+        Value::HexStringLiteral(s) => Ok(SqlLiteral::Hex(s.into_boxed_str())),
         _ => Err(SqlUnsupported::Literal(value).into()),
     }
 }

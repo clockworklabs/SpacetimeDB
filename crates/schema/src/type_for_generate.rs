@@ -1,19 +1,24 @@
 //! `AlgebraicType` extensions for generating client code.
 
+use crate::{
+    error::{IdentifierError, PrettyAlgebraicType},
+    identifier::Identifier,
+};
 use enum_as_inner::EnumAsInner;
+use petgraph::{
+    algo::tarjan_scc,
+    visit::{GraphBase, IntoNeighbors, IntoNodeIdentifiers, NodeIndexable},
+};
 use smallvec::SmallVec;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
     map::{HashMap, HashSet},
 };
 use spacetimedb_lib::{AlgebraicType, ProductTypeElement};
-use spacetimedb_sats::{typespace::TypeRefError, AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace};
-use std::{ops::Index, sync::Arc};
-
-use crate::{
-    error::{IdentifierError, PrettyAlgebraicType},
-    identifier::Identifier,
+use spacetimedb_sats::{
+    layout::PrimitiveType, typespace::TypeRefError, AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace,
 };
+use std::{cell::RefCell, ops::Index, sync::Arc};
 
 /// Errors that can occur when rearranging types for client codegen.
 #[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
@@ -88,8 +93,6 @@ type Result<T> = std::result::Result<T, ErrorStream<ClientCodegenError>>;
 /// ]
 /// ```
 /// are forbidden. (Because most languages do not support anonymous recursive types.)
-///
-/// The input must satisfy `AlgebraicType::is_valid_for_client_type_use`.
 #[derive(Debug, Clone)]
 pub struct TypespaceForGenerate {
     defs: HashMap<AlgebraicTypeRef, AlgebraicTypeDef>,
@@ -106,11 +109,13 @@ impl TypespaceForGenerate {
     ) -> TypespaceForGenerateBuilder<'_> {
         TypespaceForGenerateBuilder {
             typespace,
-            result: TypespaceForGenerate { defs: HashMap::new() },
+            result: TypespaceForGenerate {
+                defs: HashMap::default(),
+            },
             is_def: is_def.into_iter().collect(),
-            uses: HashSet::new(),
-            known_uses: HashMap::new(),
-            currently_touching: HashSet::new(),
+            uses: HashSet::default(),
+            known_uses: HashMap::default(),
+            currently_touching: HashSet::default(),
         }
     }
 
@@ -151,6 +156,11 @@ pub enum AlgebraicTypeDef {
     PlainEnum(PlainEnumTypeDef),
 }
 
+thread_local! {
+    /// Used to efficiently extract refs from a def.
+    static EXTRACT_REFS_BUF: RefCell<HashSet<AlgebraicTypeRef>> = RefCell::new(HashSet::default());
+}
+
 impl AlgebraicTypeDef {
     /// Check if a def is recursive.
     pub fn is_recursive(&self) -> bool {
@@ -161,21 +171,26 @@ impl AlgebraicTypeDef {
         }
     }
 
-    /// Extract all `AlgebraicTypeRef`s that are used in this type into the buffer.
-    fn extract_refs(&self, buf: &mut HashSet<AlgebraicTypeRef>) {
-        match self {
-            AlgebraicTypeDef::Product(ProductTypeDef { elements, .. }) => {
-                for (_, ty) in elements.iter() {
-                    ty.extract_refs(buf);
+    /// Extract all `AlgebraicTypeRef`s that are used in this type into a buffer.
+    /// The buffer may be in arbitrary order, but will not contain duplicates.
+    fn extract_refs(&self) -> SmallVec<[AlgebraicTypeRef; 16]> {
+        EXTRACT_REFS_BUF.with_borrow_mut(|buf| {
+            buf.clear();
+            match self {
+                AlgebraicTypeDef::Product(ProductTypeDef { elements, .. }) => {
+                    for (_, use_) in elements.iter() {
+                        use_.extract_refs(buf);
+                    }
                 }
-            }
-            AlgebraicTypeDef::Sum(SumTypeDef { variants, .. }) => {
-                for (_, ty) in variants.iter() {
-                    ty.extract_refs(buf);
+                AlgebraicTypeDef::Sum(SumTypeDef { variants, .. }) => {
+                    for (_, use_) in variants.iter() {
+                        use_.extract_refs(buf);
+                    }
                 }
+                AlgebraicTypeDef::PlainEnum(_) => {}
             }
-            AlgebraicTypeDef::PlainEnum(_) => {}
-        }
+            buf.drain().collect()
+        })
     }
 
     /// Mark a def recursive.
@@ -227,49 +242,6 @@ pub struct PlainEnumTypeDef {
     pub variants: Box<[Identifier]>,
 }
 
-/// Scalar types, i.e. bools, integers and floats.
-/// These types do not require a `VarLenRef` indirection when stored in a `spacetimedb_table::table::Table`.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub enum PrimitiveType {
-    Bool,
-    I8,
-    U8,
-    I16,
-    U16,
-    I32,
-    U32,
-    I64,
-    U64,
-    I128,
-    U128,
-    I256,
-    U256,
-    F32,
-    F64,
-}
-
-impl PrimitiveType {
-    pub fn algebraic_type(&self) -> AlgebraicType {
-        match self {
-            PrimitiveType::Bool => AlgebraicType::Bool,
-            PrimitiveType::I8 => AlgebraicType::I8,
-            PrimitiveType::U8 => AlgebraicType::U8,
-            PrimitiveType::I16 => AlgebraicType::I16,
-            PrimitiveType::U16 => AlgebraicType::U16,
-            PrimitiveType::I32 => AlgebraicType::I32,
-            PrimitiveType::U32 => AlgebraicType::U32,
-            PrimitiveType::I64 => AlgebraicType::I64,
-            PrimitiveType::U64 => AlgebraicType::U64,
-            PrimitiveType::I128 => AlgebraicType::I128,
-            PrimitiveType::U128 => AlgebraicType::U128,
-            PrimitiveType::I256 => AlgebraicType::I256,
-            PrimitiveType::U256 => AlgebraicType::U256,
-            PrimitiveType::F32 => AlgebraicType::F32,
-            PrimitiveType::F64 => AlgebraicType::F64,
-        }
-    }
-}
-
 impl<'a> IntoIterator for &'a SumTypeDef {
     type Item = &'a (Identifier, AlgebraicTypeUse);
     type IntoIter = std::slice::Iter<'a, (Identifier, AlgebraicTypeUse)>;
@@ -294,14 +266,6 @@ pub enum AlgebraicTypeUse {
     /// Values [`AlgebraicValue::Array(array)`](crate::AlgebraicValue::Array) will have this type.
     Array(Arc<AlgebraicTypeUse>),
 
-    /// The type of map values consisting of a key type `key_ty` and value `ty`.
-    /// Values [`AlgebraicValue::Map(map)`](crate::AlgebraicValue::Map) will have this type.
-    /// The order of entries in a map value is observable.
-    Map {
-        key: Arc<AlgebraicTypeUse>,
-        value: Arc<AlgebraicTypeUse>,
-    },
-
     /// A standard structural option type.
     Option(Arc<AlgebraicTypeUse>),
 
@@ -311,8 +275,14 @@ pub enum AlgebraicTypeUse {
     /// The special `Identity` type.
     Identity,
 
-    /// The special `Address` type.
-    Address,
+    /// The special `ConnectionId` type.
+    ConnectionId,
+
+    /// The special `Timestamp` type.
+    Timestamp,
+
+    /// The special `TimeDuration` type.
+    TimeDuration,
 
     /// The unit type (empty product).
     /// This is *distinct* from a use of a definition of a product type with no elements.
@@ -332,16 +302,21 @@ pub enum AlgebraicTypeUse {
 impl AlgebraicTypeUse {
     /// Extract all `AlgebraicTypeRef`s that are used in this type and add them to `buf`.`
     fn extract_refs(&self, buf: &mut HashSet<AlgebraicTypeRef>) {
+        self.for_each_ref(|r| {
+            buf.insert(r);
+        })
+    }
+
+    /// Recurse through this `AlgebraicTypeUse`, calling `f` on every type ref encountered.
+    pub fn for_each_ref(&self, mut f: impl FnMut(AlgebraicTypeRef)) {
+        self._for_each_ref(&mut f)
+    }
+
+    fn _for_each_ref(&self, f: &mut impl FnMut(AlgebraicTypeRef)) {
         match self {
-            AlgebraicTypeUse::Ref(ref_) => {
-                buf.insert(*ref_);
-            }
-            AlgebraicTypeUse::Array(elem_ty) => elem_ty.extract_refs(buf),
-            AlgebraicTypeUse::Map { key, value } => {
-                key.extract_refs(buf);
-                value.extract_refs(buf);
-            }
-            AlgebraicTypeUse::Option(elem_ty) => elem_ty.extract_refs(buf),
+            AlgebraicTypeUse::Ref(ref_) => f(*ref_),
+            AlgebraicTypeUse::Array(elem_ty) => elem_ty._for_each_ref(f),
+            AlgebraicTypeUse::Option(elem_ty) => elem_ty._for_each_ref(f),
             _ => {}
         }
     }
@@ -395,10 +370,14 @@ impl TypespaceForGenerateBuilder<'_> {
     /// Use the `TypespaceForGenerateBuilder` to validate an `AlgebraicTypeUse`.
     /// Does not actually add anything to the `TypespaceForGenerate`.
     pub fn parse_use(&mut self, ty: &AlgebraicType) -> Result<AlgebraicTypeUse> {
-        if ty.is_address() {
-            Ok(AlgebraicTypeUse::Address)
+        if ty.is_connection_id() {
+            Ok(AlgebraicTypeUse::ConnectionId)
         } else if ty.is_identity() {
             Ok(AlgebraicTypeUse::Identity)
+        } else if ty.is_timestamp() {
+            Ok(AlgebraicTypeUse::Timestamp)
+        } else if ty.is_time_duration() {
+            Ok(AlgebraicTypeUse::TimeDuration)
         } else if ty.is_unit() {
             Ok(AlgebraicTypeUse::Unit)
         } else if ty.is_never() {
@@ -420,18 +399,6 @@ impl TypespaceForGenerateBuilder<'_> {
                     let interned = self.intern_use(elem_ty);
                     Ok(AlgebraicTypeUse::Array(interned))
                 }
-                AlgebraicType::Map(map) => {
-                    let key_ty = self.parse_use(&map.key_ty);
-                    let value_ty = self.parse_use(&map.ty);
-                    let (key_ty, value_ty) = (key_ty, value_ty).combine_errors()?;
-                    let interned_key = self.intern_use(key_ty);
-                    let interned_value = self.intern_use(value_ty);
-                    Ok(AlgebraicTypeUse::Map {
-                        key: interned_key,
-                        value: interned_value,
-                    })
-                }
-
                 AlgebraicType::String => Ok(AlgebraicTypeUse::String),
                 AlgebraicType::Bool => Ok(AlgebraicTypeUse::Primitive(PrimitiveType::Bool)),
                 AlgebraicType::I8 => Ok(AlgebraicTypeUse::Primitive(PrimitiveType::I8)),
@@ -608,114 +575,79 @@ impl TypespaceForGenerateBuilder<'_> {
     /// Cycles passing through definitions are allowed.
     /// This function is called after all definitions have been processed.
     fn mark_allowed_cycles(&mut self) {
-        let mut to_process = self.is_def.clone();
-        let mut scratch = HashSet::new();
-        // We reuse this here as well.
-        self.currently_touching.clear();
-
-        while let Some(ref_) = to_process.iter().next().cloned() {
-            self.mark_allowed_cycles_rec(None, ref_, &mut to_process, &mut scratch);
-        }
-    }
-
-    /// Recursively mark allowed cycles.
-    fn mark_allowed_cycles_rec(
-        &mut self,
-        parent: Option<&ParentChain>,
-        def: AlgebraicTypeRef,
-        to_process: &mut HashSet<AlgebraicTypeRef>,
-        scratch: &mut HashSet<AlgebraicTypeRef>,
-    ) {
-        // Mark who we're touching right now.
-        let not_already_present = self.currently_touching.insert(def);
-        assert!(
-            not_already_present,
-            "mark_allowed_cycles_rec should never be called on a ref that is already being touched"
-        );
-
-        // Figure out who to look at.
-        // Note: this skips over refs in the original typespace that
-        // didn't point to definitions; those have already been removed.
-        scratch.clear();
-        let to_examine = scratch;
-        self.result.defs[&def].extract_refs(to_examine);
-
-        // Update the parent chain with the current def, for passing to children.
-        let chain = ParentChain { parent, ref_: def };
-
-        // First, check for finished cycles.
-        for element in to_examine.iter() {
-            if self.currently_touching.contains(element) {
-                // We have a cycle.
-                for parent_ref in chain.iter() {
-                    // For each def participating in the cycle, mark it as recursive.
-                    self.result
-                        .defs
-                        .get_mut(&parent_ref)
-                        .expect("all defs should have been processed by now")
-                        .mark_recursive();
-                    // It's tempting to also remove `parent_ref` from `to_process` here,
-                    // but that's wrong, because it might participate in other cycles.
-
-                    // We want to mark the start of the cycle as recursive too.
-                    // If we've just done that, break.
-                    if parent_ref == *element {
-                        break;
-                    }
-                }
+        let strongly_connected_components: Vec<Vec<AlgebraicTypeRef>> = tarjan_scc(&*self);
+        for component in strongly_connected_components {
+            if component.len() == 1 {
+                // petgraph's implementation returns a vector for all nodes, not distinguishing between
+                // self referential and non-self-referential nodes. ignore this for now.
+                continue;
+            }
+            for ref_ in component {
+                self.result
+                    .defs
+                    .get_mut(&ref_)
+                    .expect("all defs should be processed by now")
+                    .mark_recursive();
             }
         }
 
-        // Now that we've marked everything possible, we need to recurse.
-        // Need a buffer to iterate from because we reuse `to_examine` in children.
-        // This will usually not allocate. Most defs have less than 16 refs.
-        let to_recurse = to_examine
-            .iter()
-            .cloned()
-            .filter(|element| to_process.contains(element) && !self.currently_touching.contains(element))
-            .collect::<SmallVec<[AlgebraicTypeRef; 16]>>();
-
-        // Recurse.
-        let scratch = to_examine;
-        for element in to_recurse {
-            self.mark_allowed_cycles_rec(Some(&chain), element, to_process, scratch);
+        // Now, fix up directly self-referential nodes.
+        for (ref_, def_) in &mut self.result.defs {
+            let ref_ = *ref_;
+            if def_.is_recursive() {
+                continue;
+            }
+            let refs = def_.extract_refs();
+            if refs.contains(&ref_) {
+                def_.mark_recursive();
+            }
         }
-
-        // We're done with this def.
-        // Clean up our state.
-        let was_present = self.currently_touching.remove(&def);
-        assert!(
-            was_present,
-            "mark_allowed_cycles_rec is finishing, we should be touching that ref."
-        );
-        // Only remove a def from `to_process` once we've explored all the paths leaving it.
-        to_process.remove(&def);
     }
 }
 
-/// A chain of parent type definitions.
-/// If type T uses type U, then T is a parent of U.
-struct ParentChain<'a> {
-    parent: Option<&'a ParentChain<'a>>,
-    ref_: AlgebraicTypeRef,
+// We implement some `petgraph` traits for `TypespaceForGenerate` to allow using
+// petgraph's implementation of Tarjan's strongly-connected-components algorithm.
+// This is used in `mark_allowed_cycles`.
+// We don't implement all the traits, only the ones we need.
+// The traits are intended to be used *after* all defs have been processed.
+
+impl GraphBase for TypespaceForGenerateBuilder<'_> {
+    /// Specifically, definition IDs.
+    type NodeId = AlgebraicTypeRef;
+
+    /// Definition `.0` uses definition `.1`.
+    type EdgeId = (AlgebraicTypeRef, AlgebraicTypeRef);
 }
-impl<'a> ParentChain<'a> {
-    fn iter(&'a self) -> ParentChainIter<'a> {
-        ParentChainIter { current: Some(self) }
+impl NodeIndexable for TypespaceForGenerateBuilder<'_> {
+    fn node_bound(&self) -> usize {
+        self.typespace.types.len()
+    }
+
+    fn to_index(&self, a: Self::NodeId) -> usize {
+        a.idx()
+    }
+
+    fn from_index(&self, i: usize) -> Self::NodeId {
+        AlgebraicTypeRef(i as _)
     }
 }
+impl<'a> IntoNodeIdentifiers for &'a TypespaceForGenerateBuilder<'a> {
+    type NodeIdentifiers = std::iter::Cloned<hashbrown::hash_set::Iter<'a, spacetimedb_sats::AlgebraicTypeRef>>;
 
-/// An iterator over a chain of parent type definitions.
-struct ParentChainIter<'a> {
-    current: Option<&'a ParentChain<'a>>,
+    fn node_identifiers(self) -> Self::NodeIdentifiers {
+        self.is_def.iter().cloned()
+    }
 }
-impl Iterator for ParentChainIter<'_> {
-    type Item = AlgebraicTypeRef;
+impl<'a> IntoNeighbors for &'a TypespaceForGenerateBuilder<'a> {
+    type Neighbors = <SmallVec<[AlgebraicTypeRef; 16]> as IntoIterator>::IntoIter;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let current = self.current?;
-        self.current = current.parent;
-        Some(current.ref_)
+    fn neighbors(self, a: Self::NodeId) -> Self::Neighbors {
+        self.result
+            .defs
+            .get(&a)
+            .expect("all defs should have been processed by now")
+            .extract_refs()
+            .into_iter()
     }
 }
 
@@ -763,17 +695,12 @@ mod tests {
         let ref0 = t.add(AlgebraicType::Ref(def));
         let ref1 = t.add(AlgebraicType::array(AlgebraicType::Ref(def)));
         let ref2 = t.add(AlgebraicType::option(AlgebraicType::Ref(ref1)));
-        let ref3 = t.add(AlgebraicType::map(AlgebraicType::U64, AlgebraicType::Ref(ref2)));
-        let ref4 = t.add(AlgebraicType::Ref(ref3));
+        let ref3 = t.add(AlgebraicType::Ref(ref2));
 
         let expected_0 = AlgebraicTypeUse::Ref(def);
         let expected_1 = AlgebraicTypeUse::Array(Arc::new(expected_0.clone()));
         let expected_2 = AlgebraicTypeUse::Option(Arc::new(expected_1.clone()));
-        let expected_3 = AlgebraicTypeUse::Map {
-            key: Arc::new(AlgebraicTypeUse::Primitive(PrimitiveType::U64)),
-            value: Arc::new(expected_2.clone()),
-        };
-        let expected_4 = expected_3.clone();
+        let expected_3 = expected_2.clone();
 
         let mut for_generate_forward = TypespaceForGenerate::builder(&t, [def]);
         for_generate_forward.add_definition(def).unwrap();
@@ -781,16 +708,13 @@ mod tests {
         let use1 = for_generate_forward.parse_use(&ref1.into()).unwrap();
         let use2 = for_generate_forward.parse_use(&ref2.into()).unwrap();
         let use3 = for_generate_forward.parse_use(&ref3.into()).unwrap();
-        let use4 = for_generate_forward.parse_use(&ref4.into()).unwrap();
 
         assert_eq!(use0, expected_0);
         assert_eq!(use1, expected_1);
         assert_eq!(use2, expected_2);
         assert_eq!(use3, expected_3);
-        assert_eq!(use4, expected_4);
 
         let mut for_generate_backward = TypespaceForGenerate::builder(&t, [def]);
-        let use4 = for_generate_backward.parse_use(&ref4.into()).unwrap();
         let use3 = for_generate_forward.parse_use(&ref3.into()).unwrap();
         let use2 = for_generate_forward.parse_use(&ref2.into()).unwrap();
         let use1 = for_generate_forward.parse_use(&ref1.into()).unwrap();
@@ -801,11 +725,10 @@ mod tests {
         assert_eq!(use1, expected_1);
         assert_eq!(use2, expected_2);
         assert_eq!(use3, expected_3);
-        assert_eq!(use4, expected_4);
     }
 
     #[test]
-    fn test_detects_cycles() {
+    fn test_detects_cycles_1() {
         let cyclic_1 = Typespace::new(vec![AlgebraicType::Ref(AlgebraicTypeRef(0))]);
         let mut for_generate = TypespaceForGenerate::builder(&cyclic_1, []);
         let err1 = for_generate.parse_use(&AlgebraicType::Ref(AlgebraicTypeRef(0)));
@@ -814,7 +737,10 @@ mod tests {
             err1,
             ClientCodegenError::TypeRefError(TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0)))
         );
+    }
 
+    #[test]
+    fn test_detects_cycles_2() {
         let cyclic_2 = Typespace::new(vec![
             AlgebraicType::Ref(AlgebraicTypeRef(1)),
             AlgebraicType::Ref(AlgebraicTypeRef(0)),
@@ -826,7 +752,10 @@ mod tests {
             err2,
             ClientCodegenError::TypeRefError(TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0)))
         );
+    }
 
+    #[test]
+    fn test_detects_cycles_3() {
         let cyclic_3 = Typespace::new(vec![
             AlgebraicType::Ref(AlgebraicTypeRef(1)),
             AlgebraicType::product([("field", AlgebraicType::Ref(AlgebraicTypeRef(0)))]),
@@ -842,7 +771,10 @@ mod tests {
         let table = result.defs().get(&AlgebraicTypeRef(1)).expect("should be defined");
 
         assert!(table.is_recursive(), "recursion not detected? table: {table:?}");
+    }
 
+    #[test]
+    fn test_detects_cycles_4() {
         let cyclic_4 = Typespace::new(vec![
             AlgebraicType::product([("field", AlgebraicTypeRef(1).into())]),
             AlgebraicType::product([("field", AlgebraicTypeRef(2).into())]),
@@ -878,7 +810,10 @@ mod tests {
             !result[AlgebraicTypeRef(4)].is_recursive(),
             "recursion detected incorrectly"
         );
+    }
 
+    #[test]
+    fn test_detects_cycles_5() {
         // Branching cycles.
         let cyclic_5 = Typespace::new(vec![
             // cyclic component.
