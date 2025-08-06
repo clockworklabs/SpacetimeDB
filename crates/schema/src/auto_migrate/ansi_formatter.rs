@@ -1,6 +1,6 @@
 use std::fmt;
 
-use colored::{Color, ColoredString, Colorize as _};
+use colored::{Color, Colorize as _};
 use spacetimedb_lib::{db::raw_def::v9::TableAccess, AlgebraicType};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 
@@ -19,24 +19,22 @@ pub struct ColorScheme {
     pub table_name: Color,
     pub column_type: Color,
     pub section_header: Color,
-    pub private_access: Color,
-    pub public_access: Color,
+    pub access: Color,
     pub warning: Color,
 }
 
 impl Default for ColorScheme {
     fn default() -> Self {
         Self {
-            created: Color::Green,              // Green = success/new (calmer than bright)
-            removed: Color::Red,                // Red = deletion/removal
-            changed: Color::Yellow,             // Yellow = caution/change
-            header: Color::BrightBlue,          // Bright Blue = strong visual separation
-            table_name: Color::Cyan,            // Cyan = neutral identifier
-            column_type: Color::Magenta,        // Magenta = type hints (visually distinct)
-            section_header: Color::Blue,        // Blue = soft structural sections
-            private_access: Color::BrightBlack, // Grey = restricted/internal
-            public_access: Color::BrightGreen,  // Bright Green = accessible, open
-            warning: Color::BrightYellow,       // Bright Yellow = strong caution
+            created: Color::Green,
+            removed: Color::BrightRed,
+            changed: Color::Yellow,
+            header: Color::BrightBlue,
+            table_name: Color::Cyan,
+            column_type: Color::Magenta,
+            section_header: Color::Blue,
+            access: Color::BrightGreen,
+            warning: Color::Red,
         }
     }
 }
@@ -67,6 +65,7 @@ impl AnsiFormatter {
     /// Add a line with proper indentation
     fn add_line(&mut self, text: impl AsRef<str>) {
         let indent = "    ".repeat(self.indent_level);
+
         self.buffer.push_str(&format!("{}{}\n", indent, text.as_ref()));
     }
 
@@ -83,21 +82,26 @@ impl AnsiFormatter {
     }
 
     /// Format a type name with consistent coloring
-    fn format_type_name(&self, type_name: &AlgebraicType) -> ColoredString {
-        fmt_algebraic_type(type_name).to_string().color(self.colors.column_type)
+    fn format_type_name(&self, type_name: &AlgebraicType) -> String {
+        fmt_algebraic_type(type_name)
+            .to_string()
+            .color(self.colors.column_type)
+            .to_string()
     }
 
     /// Format table access with consistent coloring
-    fn format_access(&self, access: TableAccess) -> ColoredString {
+    fn format_access(&self, access: TableAccess) -> String {
         match access {
-            TableAccess::Private => "private".color(self.colors.private_access),
-            TableAccess::Public => "public".color(self.colors.public_access),
+            TableAccess::Private => "private",
+            TableAccess::Public => "public",
         }
+        .color(self.colors.access)
+        .to_string()
     }
 
     /// Format a section header
-    fn format_section_header(&self, text: &str) -> ColoredString {
-        text.color(self.colors.section_header).bold()
+    fn format_section_header(&self, text: &str) -> String {
+        text.color(self.colors.section_header).bold().to_string()
     }
 
     /// Format an item bullet point
@@ -121,9 +125,8 @@ impl MigrationFormatter for AnsiFormatter {
     fn format_header(&mut self) {
         let header_line = "━".repeat(60);
         let title = "Database Migration Plan".color(self.colors.header).bold();
-
         self.add_line(&header_line);
-        self.add_line(&*title);
+        self.add_line(title.to_string());
         self.add_line(&header_line);
         self.add_line("");
     }
@@ -267,7 +270,7 @@ impl MigrationFormatter for AnsiFormatter {
             "▸ {} access for table {} ({})",
             Action::Changed.format_with_color(&self.colors),
             access_info.table_name.color(self.colors.table_name).bold(),
-            direction.dimmed()
+            direction.color(self.colors.access)
         );
         self.add_line(&text);
     }
@@ -350,10 +353,11 @@ impl MigrationFormatter for AnsiFormatter {
     }
 
     fn format_disconnect_warning(&mut self) {
-        self.add_line(format!(
-            "▸ {} All clients will be {} due to breaking schema changes",
-            "Warning".color(self.colors.warning).bold(),
-            "disconnected".color(self.colors.removed).bold()
-        ));
+        self.add_line(
+            "!!! Warning: All clients will be disconnected due to breaking schema changes"
+                .bold()
+                .on_color(self.colors.warning)
+                .to_string(),
+        );
     }
 }

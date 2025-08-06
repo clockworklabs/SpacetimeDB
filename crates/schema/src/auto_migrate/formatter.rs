@@ -1,7 +1,11 @@
 //! This module provides enhanced functionality for rendering automatic migration plans to strings.
 
 use super::{ansi_formatter::ColorScheme, AutoMigratePlan, IndexAlgorithm, ModuleDefLookup, TableDef};
-use crate::{auto_migrate::AutoMigrateStep, def::ConstraintData, identifier::Identifier};
+use crate::{
+    auto_migrate::AutoMigrateStep,
+    def::{ConstraintData, ModuleDef, ScheduleDef},
+    identifier::Identifier,
+};
 use colored::{self, ColoredString, Colorize};
 use spacetimedb_lib::{
     db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType},
@@ -31,23 +35,23 @@ fn format_step<F: MigrationFormatter>(
             f.format_add_table(&table_info)
         }
         AutoMigrateStep::AddIndex(index) => {
-            let index_info = extract_index_info(*index, plan, true)?;
+            let index_info = extract_index_info(*index, plan.new)?;
             f.format_index(&index_info, Action::Created)
         }
         AutoMigrateStep::RemoveIndex(index) => {
-            let index_info = extract_index_info(*index, plan, false)?;
+            let index_info = extract_index_info(*index, plan.old)?;
             f.format_index(&index_info, Action::Removed)
         }
         AutoMigrateStep::RemoveConstraint(constraint) => {
-            let constraint_info = extract_constraint_info(*constraint, plan)?;
+            let constraint_info = extract_constraint_info(*constraint, plan.old)?;
             f.format_constraint(&constraint_info, Action::Removed)
         }
         AutoMigrateStep::AddSequence(sequence) => {
-            let sequence_info = extract_sequence_info(*sequence, plan, true)?;
+            let sequence_info = extract_sequence_info(*sequence, plan.new)?;
             f.format_sequence(&sequence_info, Action::Created)
         }
         AutoMigrateStep::RemoveSequence(sequence) => {
-            let sequence_info = extract_sequence_info(*sequence, plan, false)?;
+            let sequence_info = extract_sequence_info(*sequence, plan.old)?;
             f.format_sequence(&sequence_info, Action::Removed)
         }
         AutoMigrateStep::ChangeAccess(table) => {
@@ -55,20 +59,20 @@ fn format_step<F: MigrationFormatter>(
             f.format_change_access(&access_info)
         }
         AutoMigrateStep::AddSchedule(schedule) => {
-            let schedule_info = extract_schedule_info(*schedule, plan, true)?;
+            let schedule_info = extract_schedule_info(*schedule, plan.new)?;
             f.format_schedule(&schedule_info, Action::Created)
         }
         AutoMigrateStep::RemoveSchedule(schedule) => {
-            let schedule_info = extract_schedule_info(*schedule, plan, false)?;
+            let schedule_info = extract_schedule_info(*schedule, plan.old)?;
             f.format_schedule(&schedule_info, Action::Removed)
         }
         AutoMigrateStep::AddRowLevelSecurity(rls) => {
-            if let Some(rls_info) = extract_rls_info(*rls, plan, true)? {
+            if let Some(rls_info) = extract_rls_info(*rls, plan)? {
                 f.format_rls(&rls_info, Action::Created)
             }
         }
         AutoMigrateStep::RemoveRowLevelSecurity(rls) => {
-            if let Some(rls_info) = extract_rls_info(*rls, plan, false)? {
+            if let Some(rls_info) = extract_rls_info(*rls, plan)? {
                 f.format_rls(&rls_info, Action::Removed)
             }
         }
@@ -88,8 +92,8 @@ fn format_step<F: MigrationFormatter>(
 
 #[derive(Error, Debug, PartialEq)]
 pub enum FormattingErrors {
-    #[error("Table not found")]
-    TableNotFound,
+    #[error("Table not found: {table}")]
+    TableNotFound { table: Box<str> },
     #[error("Index not found")]
     IndexNotFound,
     #[error("Constraint not found")]
@@ -187,7 +191,7 @@ pub struct AccessChangeInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScheduleInfo {
-    pub table_name: Identifier,
+    pub table_name: String,
     pub reducer_name: Identifier,
 }
 
@@ -226,7 +230,9 @@ fn extract_table_info(
     table: <TableDef as crate::def::ModuleDefLookup>::Key<'_>,
     plan: &super::AutoMigratePlan,
 ) -> Result<TableInfo, FormattingErrors> {
-    let table_def = plan.new.table(table).ok_or(FormattingErrors::TableNotFound)?;
+    let table_def = plan.new.table(table).ok_or_else(|| FormattingErrors::TableNotFound {
+        table: table.to_string().into(),
+    })?;
 
     let columns = table_def
         .columns
@@ -308,7 +314,7 @@ fn extract_table_info(
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
     let schedule = table_def.schedule.as_ref().map(|schedule| ScheduleInfo {
-        table_name: table_def.name.clone(),
+        table_name: table_def.name.to_string().clone(),
         reducer_name: schedule.reducer_name.clone(),
     });
 
@@ -326,10 +332,8 @@ fn extract_table_info(
 
 fn extract_index_info(
     index: <crate::def::IndexDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
-    from_new: bool,
+    module_def: &ModuleDef,
 ) -> Result<IndexInfo, FormattingErrors> {
-    let module_def = if from_new { &plan.new } else { &plan.old };
     let table_def = module_def
         .stored_in_table_def(index)
         .ok_or(FormattingErrors::IndexNotFound)?;
@@ -361,10 +365,9 @@ fn extract_index_info(
 
 fn extract_constraint_info(
     constraint: <crate::def::ConstraintDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
+    module_def: &ModuleDef,
 ) -> Result<ConstraintInfo, FormattingErrors> {
-    let table_def = plan
-        .old
+    let table_def = module_def
         .stored_in_table_def(constraint)
         .ok_or(FormattingErrors::ConstraintNotFound)?;
     let constraint_def = table_def
@@ -391,10 +394,8 @@ fn extract_constraint_info(
 
 fn extract_sequence_info(
     sequence: <crate::def::SequenceDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
-    from_new: bool,
+    module_def: &ModuleDef,
 ) -> Result<SequenceInfo, FormattingErrors> {
-    let module_def = if from_new { &plan.new } else { &plan.old };
     let table_def = module_def
         .stored_in_table_def(sequence)
         .ok_or(FormattingErrors::SequenceNotFound)?;
@@ -418,7 +419,9 @@ fn extract_access_change_info(
     table: <TableDef as ModuleDefLookup>::Key<'_>,
     plan: &super::AutoMigratePlan,
 ) -> Result<AccessChangeInfo, FormattingErrors> {
-    let table_def = plan.new.table(table).ok_or(FormattingErrors::TableNotFound)?;
+    let table_def = plan.new.table(table).ok_or_else(|| FormattingErrors::TableNotFound {
+        table: table.to_string().into(),
+    })?;
 
     Ok(AccessChangeInfo {
         table_name: table_def.name.clone(),
@@ -427,18 +430,15 @@ fn extract_access_change_info(
 }
 
 fn extract_schedule_info(
-    schedule_table: <crate::def::ScheduleDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
-    from_new: bool,
+    schedule_table: <ScheduleDef as ModuleDefLookup>::Key<'_>,
+    module_def: &ModuleDef,
 ) -> Result<ScheduleInfo, FormattingErrors> {
-    let module_def = if from_new { &plan.new } else { &plan.old };
-    let table_def = module_def
-        .table(schedule_table)
-        .ok_or(FormattingErrors::TableNotFound)?;
-    let schedule_def = table_def.schedule.as_ref().ok_or(FormattingErrors::ScheduleNotFound)?;
+    let schedule_def: &ScheduleDef = module_def
+        .lookup(schedule_table)
+        .ok_or(FormattingErrors::ScheduleNotFound)?;
 
     Ok(ScheduleInfo {
-        table_name: table_def.name.clone(),
+        table_name: schedule_def.name.to_string().clone(),
         reducer_name: schedule_def.reducer_name.clone(),
     })
 }
@@ -446,7 +446,6 @@ fn extract_schedule_info(
 fn extract_rls_info(
     rls: <RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'_>,
     plan: &super::AutoMigratePlan,
-    _from_new: bool,
 ) -> Result<Option<RlsInfo>, FormattingErrors> {
     // Skip if policy unchanged (implementation detail workaround)
     if plan.old.lookup::<RawRowLevelSecurityDefV9>(rls) == plan.new.lookup::<RawRowLevelSecurityDefV9>(rls) {
@@ -462,8 +461,12 @@ fn extract_column_changes(
     table: <TableDef as ModuleDefLookup>::Key<'_>,
     plan: &super::AutoMigratePlan,
 ) -> Result<ColumnChanges, FormattingErrors> {
-    let old_table = plan.old.table(table).ok_or(FormattingErrors::TableNotFound)?;
-    let new_table = plan.new.table(table).ok_or(FormattingErrors::TableNotFound)?;
+    let old_table = plan.old.table(table).ok_or_else(|| FormattingErrors::TableNotFound {
+        table: table.to_string().into(),
+    })?;
+    let new_table = plan.new.table(table).ok_or_else(|| FormattingErrors::TableNotFound {
+        table: table.to_string().into(),
+    })?;
 
     let mut changes = Vec::new();
 
@@ -502,8 +505,12 @@ fn extract_new_columns(
     table: <TableDef as ModuleDefLookup>::Key<'_>,
     plan: &super::AutoMigratePlan,
 ) -> Result<NewColumns, FormattingErrors> {
-    let table_def = plan.new.table(table).ok_or(FormattingErrors::TableNotFound)?;
-    let old_table_def = plan.old.table(table).ok_or(FormattingErrors::TableNotFound)?;
+    let table_def = plan.new.table(table).ok_or_else(|| FormattingErrors::TableNotFound {
+        table: table.to_string().into(),
+    })?;
+    let old_table_def = plan.old.table(table).ok_or_else(|| FormattingErrors::TableNotFound {
+        table: table.to_string().into(),
+    })?;
 
     let mut new_columns = Vec::new();
     for column in &table_def.columns {

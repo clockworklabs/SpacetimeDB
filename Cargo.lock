@@ -5950,6 +5950,7 @@ dependencies = [
  "enum-map",
  "hashbrown 0.15.3",
  "indexmap 2.9.0",
+ "insta",
  "itertools 0.12.1",
  "lazy_static",
  "petgraph",

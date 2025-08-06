@@ -789,20 +789,19 @@ mod tests {
     use v9::{RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
 
-    #[test]
-    fn successful_auto_migration() {
-        let mut old_builder = RawModuleDefV9Builder::new();
-        let old_schedule_at = old_builder.add_type::<ScheduleAt>();
-        let old_sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64)]);
-        let old_sum_refty = old_builder.add_algebraic_type([], "sum", old_sum_ty, true);
-        old_builder
+    fn initial_module_def() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        let schedule_at = builder.add_type::<ScheduleAt>();
+        let sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64)]);
+        let sum_refty = builder.add_algebraic_type([], "sum", sum_ty, true);
+        builder
             .build_table_with_new_type(
                 "Apples",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
                     ("count", AlgebraicType::U16),
-                    ("sum", old_sum_refty.into()),
+                    ("sum", sum_refty.into()),
                 ]),
                 true,
             )
@@ -812,7 +811,7 @@ mod tests {
             .with_index(btree([0, 1]), "id_name_index")
             .finish();
 
-        old_builder
+        builder
             .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([
@@ -825,13 +824,13 @@ mod tests {
             .with_access(TableAccess::Public)
             .finish();
 
-        let old_deliveries_type = old_builder
+        let deliveries_type = builder
             .build_table_with_new_type(
                 "Deliveries",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
-                    ("scheduled_at", old_schedule_at.clone()),
-                    ("sum", AlgebraicType::array(old_sum_refty.into())),
+                    ("scheduled_at", schedule_at.clone()),
+                    ("sum", AlgebraicType::array(sum_refty.into())),
                 ]),
                 true,
             )
@@ -839,18 +838,18 @@ mod tests {
             .with_index_no_accessor_name(btree(0))
             .with_schedule("check_deliveries", 1)
             .finish();
-        old_builder.add_reducer(
+        builder.add_reducer(
             "check_deliveries",
-            ProductType::from([("a", AlgebraicType::Ref(old_deliveries_type))]),
+            ProductType::from([("a", AlgebraicType::Ref(deliveries_type))]),
             None,
         );
 
-        old_builder
+        builder
             .build_table_with_new_type(
                 "Inspections",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
-                    ("scheduled_at", old_schedule_at.clone()),
+                    ("scheduled_at", schedule_at.clone()),
                 ]),
                 true,
             )
@@ -858,26 +857,28 @@ mod tests {
             .with_index_no_accessor_name(btree(0))
             .finish();
 
-        old_builder.add_row_level_security("SELECT * FROM Apples");
+        builder.add_row_level_security("SELECT * FROM Apples");
 
-        let old_def: ModuleDef = old_builder
+        builder
             .finish()
             .try_into()
-            .expect("old_def should be a valid database definition");
+            .expect("old_def should be a valid database definition")
+    }
 
-        let mut new_builder = RawModuleDefV9Builder::new();
-        let _ = new_builder.add_type::<u32>(); // reposition ScheduleAt in the typespace, should have no effect.
-        let new_schedule_at = new_builder.add_type::<ScheduleAt>();
-        let new_sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64), ("v2", AlgebraicType::Bool)]);
-        let new_sum_refty = new_builder.add_algebraic_type([], "sum", new_sum_ty, true);
-        new_builder
+    fn updated_module_def() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        let _ = builder.add_type::<u32>(); // reposition ScheduleAt in the typespace, should have no effect.
+        let schedule_at = builder.add_type::<ScheduleAt>();
+        let sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64), ("v2", AlgebraicType::Bool)]);
+        let sum_refty = builder.add_algebraic_type([], "sum", sum_ty, true);
+        builder
             .build_table_with_new_type(
                 "Apples",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
                     ("count", AlgebraicType::U16),
-                    ("sum", new_sum_refty.into()),
+                    ("sum", sum_refty.into()),
                 ]),
                 true,
             )
@@ -889,7 +890,7 @@ mod tests {
             .with_index(btree([0, 2]), "id_count_index")
             .finish();
 
-        new_builder
+        builder
             .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([
@@ -907,13 +908,13 @@ mod tests {
             .with_access(TableAccess::Private)
             .finish();
 
-        let new_deliveries_type = new_builder
+        let deliveries_type = builder
             .build_table_with_new_type(
                 "Deliveries",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
-                    ("scheduled_at", new_schedule_at.clone()),
-                    ("sum", AlgebraicType::array(new_sum_refty.into())),
+                    ("scheduled_at", schedule_at.clone()),
+                    ("sum", AlgebraicType::array(sum_refty.into())),
                 ]),
                 true,
             )
@@ -922,18 +923,18 @@ mod tests {
             // remove schedule def
             .finish();
 
-        new_builder.add_reducer(
+        builder.add_reducer(
             "check_deliveries",
-            ProductType::from([("a", AlgebraicType::Ref(new_deliveries_type))]),
+            ProductType::from([("a", AlgebraicType::Ref(deliveries_type))]),
             None,
         );
 
-        let new_inspections_type = new_builder
+        let new_inspections_type = builder
             .build_table_with_new_type(
                 "Inspections",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
-                    ("scheduled_at", new_schedule_at.clone()),
+                    ("scheduled_at", schedule_at.clone()),
                 ]),
                 true,
             )
@@ -944,14 +945,14 @@ mod tests {
             .finish();
 
         // add reducer.
-        new_builder.add_reducer(
+        builder.add_reducer(
             "perform_inspection",
             ProductType::from([("a", AlgebraicType::Ref(new_inspections_type))]),
             None,
         );
 
         // Add new table
-        new_builder
+        builder
             .build_table_with_new_type("Oranges", ProductType::from([("id", AlgebraicType::U32)]), true)
             .with_index(btree(0), "id_index")
             .with_column_sequence(0)
@@ -959,13 +960,18 @@ mod tests {
             .with_primary_key(0)
             .finish();
 
-        new_builder.add_row_level_security("SELECT * FROM Bananas");
+        builder.add_row_level_security("SELECT * FROM Bananas");
 
-        let new_def: ModuleDef = new_builder
+        builder
             .finish()
             .try_into()
-            .expect("new_def should be a valid database definition");
+            .expect("new_def should be a valid database definition")
+    }
 
+    #[test]
+    fn successful_auto_migration() {
+        let old_def = initial_module_def();
+        let new_def = updated_module_def();
         let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
 
         let apples = expect_identifier("Apples");
@@ -1412,5 +1418,46 @@ mod tests {
         // and are determined by their columns and table name. So it's impossible to create a unique constraint with the same name
         // but different columns from an old one.
         // We've left the check in, just in case this changes in the future.
+    }
+    #[test]
+    fn print_empty_to_populated_schema_migration() {
+        // Start with completely empty schema
+        let old_builder = RawModuleDefV9Builder::new();
+        let old_def: ModuleDef = old_builder
+            .finish()
+            .try_into()
+            .expect("old_def should be a valid database definition");
+
+        let new_def = initial_module_def();
+        let plan = ponder_migrate(&old_def, &new_def).expect("auto migration should succeed");
+
+        insta::assert_snapshot!(
+            "empty_to_populated_migration",
+            plan.pretty_print(false).expect("should pretty print")
+        );
+    }
+
+    #[test]
+    fn print_supervised_migration() {
+        let old_def = initial_module_def();
+        let new_def = updated_module_def();
+        let plan = ponder_migrate(&old_def, &new_def).expect("auto migration should succeed");
+
+        insta::assert_snapshot!(
+            "updated pretty print",
+            plan.pretty_print(false).expect("should pretty print")
+        );
+    }
+
+    #[test]
+    fn no_color_print_supervised_migration() {
+        let old_def = initial_module_def();
+        let new_def = updated_module_def();
+        let plan = ponder_migrate(&old_def, &new_def).expect("auto migration should succeed");
+
+        insta::assert_snapshot!(
+            "updated pretty print no color",
+            plan.pretty_print(true).expect("should pretty print")
+        );
     }
 }

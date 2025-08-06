@@ -32,6 +32,7 @@ enum-as-inner.workspace = true
 enum-map.workspace = true
 colored.workspace = true
 regex.workspace = true
+insta.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["test"] }

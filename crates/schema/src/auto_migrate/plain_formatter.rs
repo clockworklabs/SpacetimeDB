@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use super::{
     ansi_formatter::{AnsiFormatter, ColorScheme},
     formatter::MigrationFormatter,
@@ -32,7 +30,7 @@ impl std::fmt::Display for PlainFormatter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let formatted = self.0.to_string();
         let cleaned = ANSI_ESCAPE_SEQUENCE.replace_all(&formatted, "");
-        write!(f, "{}", cleaned)
+        write!(f, "{cleaned}")
     }
 }
 
