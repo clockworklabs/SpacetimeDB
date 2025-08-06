@@ -28,6 +28,12 @@ pub enum MigratePlan<'def> {
     Auto(AutoMigratePlan<'def>),
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum PrettyPrintStyle {
+    AnsiColor,
+    NoColor,
+}
+
 impl<'def> MigratePlan<'def> {
     /// Get the old `ModuleDef` for this migration plan.
     pub fn old_def(&self) -> &'def ModuleDef {
@@ -45,25 +51,25 @@ impl<'def> MigratePlan<'def> {
         }
     }
 
-    pub fn pretty_print(&self, no_color: bool) -> anyhow::Result<String> {
+    pub fn pretty_print(&self, style: PrettyPrintStyle) -> anyhow::Result<String> {
+        use PrettyPrintStyle::*;
+
         match self {
             MigratePlan::Manual(_) => {
                 anyhow::bail!("Manual migration plans are not yet supported for pretty printing.")
             }
-            MigratePlan::Auto(plan) => {
-                if no_color {
+
+            MigratePlan::Auto(plan) => match style {
+                NoColor => {
                     let mut fmt = plain_formatter::PlainFormatter::new(1024);
-                    format_plan(&mut fmt, plan)
-                        .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}"))
-                        .map(|_| fmt.to_string())
-                } else {
-                    // Use the ANSI formatter with colors.
+                    format_plan(&mut fmt, plan).map(|_| fmt.to_string())
+                }
+                AnsiColor => {
                     let mut fmt = AnsiFormatter::new(1024, ColorScheme::default());
-                    format_plan(&mut fmt, plan)
-                        .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}"))
-                        .map(|_| fmt.to_string())
+                    format_plan(&mut fmt, plan).map(|_| fmt.to_string())
                 }
             }
+            .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}")),
         }
     }
 }
@@ -1433,7 +1439,8 @@ mod tests {
 
         insta::assert_snapshot!(
             "empty_to_populated_migration",
-            plan.pretty_print(false).expect("should pretty print")
+            plan.pretty_print(PrettyPrintStyle::AnsiColor)
+                .expect("should pretty print")
         );
     }
 
@@ -1445,7 +1452,8 @@ mod tests {
 
         insta::assert_snapshot!(
             "updated pretty print",
-            plan.pretty_print(false).expect("should pretty print")
+            plan.pretty_print(PrettyPrintStyle::AnsiColor)
+                .expect("should pretty print")
         );
     }
 
@@ -1457,7 +1465,8 @@ mod tests {
 
         insta::assert_snapshot!(
             "updated pretty print no color",
-            plan.pretty_print(true).expect("should pretty print")
+            plan.pretty_print(PrettyPrintStyle::NoColor)
+                .expect("should pretty print")
         );
     }
 }

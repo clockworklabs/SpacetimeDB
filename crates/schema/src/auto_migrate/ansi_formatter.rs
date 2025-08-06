@@ -1,6 +1,6 @@
 use std::fmt;
 
-use colored::{Color, Colorize as _};
+use colored::{control::set_override, Color, Colorize as _};
 use spacetimedb_lib::{db::raw_def::v9::TableAccess, AlgebraicType};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 
@@ -55,6 +55,8 @@ impl fmt::Display for AnsiFormatter {
 impl AnsiFormatter {
     /// Create a new formatter with custom colors
     pub fn new(cap: usize, colors: ColorScheme) -> Self {
+        // This overrides `NO_COLOR` as `ANSIFormatter` should always be colored.
+        set_override(true);
         Self {
             buffer: String::with_capacity(cap),
             colors,
