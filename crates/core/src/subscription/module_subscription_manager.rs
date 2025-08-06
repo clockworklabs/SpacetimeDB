@@ -21,6 +21,7 @@ use spacetimedb_client_api_messages::websocket::{
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
@@ -553,7 +554,10 @@ impl<T> SenderWithGauge<T> {
 enum SendWorkerMessage {
     /// A transaction has completed and the [`SubscriptionManager`] has evaluated the incremental queries,
     /// so the [`SendWorker`] should broadcast them to clients.
-    Broadcast(ComputedQueries),
+    Broadcast {
+        tx_offset: Option<TxOffset>,
+        queries: ComputedQueries,
+    },
 
     /// A new client has been registered in the [`SubscriptionManager`],
     /// so the [`SendWorker`] should also record its existence.
@@ -569,6 +573,7 @@ enum SendWorkerMessage {
     // Send a message to a client.
     SendMessage {
         recipient: Arc<ClientConnectionSender>,
+        tx_offset: Option<TxOffset>,
         message: SerializableMessage,
     },
 
@@ -1266,12 +1271,15 @@ impl SubscriptionManager {
         // then return ASAP in order to unlock the datastore and start running the next transaction.
         // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
         self.send_worker_queue
-            .send(SendWorkerMessage::Broadcast(ComputedQueries {
-                updates,
-                errs,
-                event,
-                caller,
-            }))
+            .send(SendWorkerMessage::Broadcast {
+                tx_offset: tx.tx_offset(),
+                queries: ComputedQueries {
+                    updates,
+                    errs,
+                    event,
+                    caller,
+                },
+            })
             .expect("send worker has panicked, or otherwise dropped its recv queue!");
 
         drop(span);
@@ -1370,10 +1378,12 @@ impl BroadcastQueue {
     pub fn send_client_message(
         &self,
         recipient: Arc<ClientConnectionSender>,
+        tx_offset: Option<TxOffset>,
         message: impl Into<SerializableMessage>,
     ) -> Result<(), BroadcastError> {
         self.0.send(SendWorkerMessage::SendMessage {
             recipient,
+            tx_offset,
             message: message.into(),
         })?;
         Ok(())
@@ -1427,14 +1437,18 @@ impl SendWorker {
                     self.clients
                         .insert(client_id, SendWorkerClient { dropped, outbound_ref });
                 }
-                SendWorkerMessage::SendMessage { recipient, message } => {
-                    let _ = recipient.send_message(message);
+                SendWorkerMessage::SendMessage {
+                    recipient,
+                    tx_offset,
+                    message,
+                } => {
+                    let _ = recipient.send_message(tx_offset, message);
                 }
                 SendWorkerMessage::RemoveClient(client_id) => {
                     self.clients.remove(&client_id);
                 }
-                SendWorkerMessage::Broadcast(queries) => {
-                    self.send_one_computed_queries(queries);
+                SendWorkerMessage::Broadcast { tx_offset, queries } => {
+                    self.send_one_computed_queries(tx_offset, queries);
                 }
             }
         }
@@ -1442,6 +1456,7 @@ impl SendWorker {
 
     fn send_one_computed_queries(
         &mut self,
+        tx_offset: Option<TxOffset>,
         ComputedQueries {
             updates,
             errs,
@@ -1527,7 +1542,7 @@ impl SendWorker {
                 event: Some(event.clone()),
                 database_update,
             };
-            send_to_client(&caller, message);
+            send_to_client(&caller, tx_offset, message);
         }
 
         // Send all the other updates.
@@ -1537,7 +1552,7 @@ impl SendWorker {
             // Conditionally send out a full update or a light one otherwise.
             let event = client.config.tx_update_full.then(|| event.clone());
             let message = TransactionUpdateMessage { event, database_update };
-            send_to_client(&client, message);
+            send_to_client(&client, tx_offset, message);
         }
 
         // Put back the aggregation maps into the worker.
@@ -1550,6 +1565,7 @@ impl SendWorker {
                 client.dropped.store(true, Ordering::Release);
                 send_to_client(
                     &client.outbound_ref,
+                    None,
                     SubscriptionMessage {
                         request_id: None,
                         query_id: None,
@@ -1565,8 +1581,12 @@ impl SendWorker {
     }
 }
 
-fn send_to_client(client: &ClientConnectionSender, message: impl Into<SerializableMessage>) {
-    if let Err(e) = client.send_message(message) {
+fn send_to_client(
+    client: &ClientConnectionSender,
+    tx_offset: Option<TxOffset>,
+    message: impl Into<SerializableMessage>,
+) {
+    if let Err(e) = client.send_message(tx_offset, message) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }
 }

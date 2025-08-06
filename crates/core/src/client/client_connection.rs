@@ -25,6 +25,7 @@ use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, Unsubscribe,
     UnsubscribeMulti,
 };
+use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
@@ -79,10 +80,58 @@ impl ClientConfig {
 }
 
 #[derive(Debug)]
+pub struct ClientUpdate {
+    pub tx_offset: Option<TxOffset>,
+    pub message: SerializableMessage,
+}
+
+pub struct ClientConnectionReceiver {
+    confirmed_reads: bool,
+    channel: MeteredReceiver<ClientUpdate>,
+    module: ModuleHost,
+    module_rx: watch::Receiver<ModuleHost>,
+}
+
+impl ClientConnectionReceiver {
+    pub async fn recv(&mut self) -> Option<SerializableMessage> {
+        let ClientUpdate { tx_offset, message } = self.channel.recv().await?;
+        if !self.confirmed_reads || tx_offset.is_none() {
+            return Some(message);
+        }
+
+        if let Some(tx_offset) = tx_offset {
+            if self.module_rx.has_changed().ok()? {
+                let Some(mut durable) = self.durable_tx_offset().await else {
+                    return Some(message);
+                };
+                let durable_offset = durable.get();
+                if durable_offset.is_none() || durable_offset.is_some_and(|offset| offset < tx_offset) {
+                    durable.wait_for(tx_offset).await.ok()?;
+                }
+            }
+        }
+
+        Some(message)
+    }
+
+    pub fn close(&mut self) {
+        self.channel.close();
+    }
+
+    async fn durable_tx_offset(&mut self) -> Option<DurableOffset> {
+        if self.module_rx.has_changed().ok()? {
+            self.module = self.module_rx.borrow_and_update().clone();
+        }
+
+        self.module.replica_ctx().relational_db.durable_tx_offset()
+    }
+}
+
+#[derive(Debug)]
 pub struct ClientConnectionSender {
     pub id: ClientActorId,
     pub config: ClientConfig,
-    sendtx: mpsc::Sender<SerializableMessage>,
+    sendtx: mpsc::Sender<ClientUpdate>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
 
@@ -139,7 +188,7 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
-    pub fn dummy_with_channel(id: ClientActorId, config: ClientConfig) -> (Self, MeteredReceiver<SerializableMessage>) {
+    pub fn dummy_with_channel(id: ClientActorId, config: ClientConfig) -> (Self, MeteredReceiver<ClientUpdate>) {
         let (sendtx, rx) = mpsc::channel(1);
         // just make something up, it doesn't need to be attached to a real task
         let abort_handle = match tokio::runtime::Handle::try_current() {
@@ -170,11 +219,18 @@ impl ClientConnectionSender {
 
     /// Send a message to the client. For data-related messages, you should probably use
     /// `BroadcastQueue::send` to ensure that the client sees data messages in a consistent order.
-    pub fn send_message(&self, message: impl Into<SerializableMessage>) -> Result<(), ClientSendError> {
-        self.send(message.into())
+    pub fn send_message(
+        &self,
+        tx_offset: Option<TxOffset>,
+        message: impl Into<SerializableMessage>,
+    ) -> Result<(), ClientSendError> {
+        self.send(ClientUpdate {
+            tx_offset,
+            message: message.into(),
+        })
     }
 
-    fn send(&self, message: SerializableMessage) -> Result<(), ClientSendError> {
+    fn send(&self, message: ClientUpdate) -> Result<(), ClientSendError> {
         if self.cancelled.load(Relaxed) {
             return Err(ClientSendError::Cancelled);
         }
@@ -435,7 +491,7 @@ impl ClientConnection {
         config: ClientConfig,
         replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
-        actor: impl FnOnce(ClientConnection, MeteredReceiver<SerializableMessage>) -> Fut,
+        actor: impl FnOnce(ClientConnection, ClientConnectionReceiver) -> Fut,
         _proof_of_client_connected_call: Connected,
     ) -> ClientConnection
     where
@@ -447,7 +503,7 @@ impl ClientConnection {
         // them and stuff. Not right now though.
         let module = module_rx.borrow_and_update().clone();
 
-        let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
+        let (sendtx, sendrx) = mpsc::channel::<ClientUpdate>(CLIENT_CHANNEL_CAPACITY);
 
         let (fut_tx, fut_rx) = oneshot::channel::<Fut>();
         // weird dance so that we can get an abort_handle into ClientConnection
@@ -470,7 +526,12 @@ impl ClientConnection {
         .abort_handle();
 
         let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
-        let sendrx = MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone());
+        let receiver = ClientConnectionReceiver {
+            confirmed_reads: config.confirmed_reads,
+            channel: MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone()),
+            module: module.clone(),
+            module_rx: module_rx.clone(),
+        };
 
         let sender = Arc::new(ClientConnectionSender {
             id,
@@ -487,7 +548,7 @@ impl ClientConnection {
             module_rx,
         };
 
-        let actor_fut = actor(this.clone(), sendrx);
+        let actor_fut = actor(this.clone(), receiver);
         // if this fails, the actor() function called .abort(), which like... okay, I guess?
         let _ = fut_tx.send(actor_fut);
 
@@ -530,6 +591,21 @@ impl ClientConnection {
             }
             Err(_) => Err(NoSuchModule),
         }
+    }
+
+    pub fn durable_tx_offset(&self) -> Option<TxOffset> {
+        self.module
+            .replica_ctx()
+            .relational_db
+            .durable_tx_offset()
+            .and_then(|durable_offset| durable_offset.get())
+    }
+
+    pub async fn wait_durable(&self, offset: TxOffset) -> Result<TxOffset, ()> {
+        let Some(mut durable_offset) = self.module.replica_ctx().relational_db.durable_tx_offset() else {
+            return Ok(offset);
+        };
+        durable_offset.wait_for(offset).await
     }
 
     pub async fn call_reducer(
