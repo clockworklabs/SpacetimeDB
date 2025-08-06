@@ -200,6 +200,9 @@ fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) 
     }
 }
 
+/// If `res` evaluates to `Err(e)`, log a warning in the form `"{}: {:?}", $cause, e`.
+///
+/// Could be trivially written as a function, but macro-ifying it preserves the source location of the log.
 macro_rules! maybe_log_error {
     ($cause:expr, $res:expr) => {
         if let Err(e) = $res {
