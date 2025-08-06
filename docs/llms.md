@@ -1608,7 +1608,7 @@ This section details how to build native C# client applications (including Unity
     cd my_csharp_client
     dotnet add package SpacetimeDB.ClientSDK
     ```
-*   **For Unity:** Download the latest `.unitypackage` from the [SpacetimeDB Unity SDK releases](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/releases/latest). In Unity, go to `Assets > Import Package > Custom Package` and import the downloaded file.
+*   **For Unity:** Add the SDK to the Unity package manager by the URL: https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.
 
 #### 2. Generate Module Bindings
 

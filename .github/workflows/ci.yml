@@ -113,62 +113,6 @@ jobs:
         working-directory: crates/bindings-csharp
         run: dotnet test -warnaserror
 
-  sdk_test:
-    name: SDK Tests
-    runs-on: spacetimedb-runner
-    steps:
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
-
-      - uses: dsherret/rust-toolchain-file@v1
-
-      - uses: actions/setup-dotnet@v3
-        with:
-          global-json-file: modules/global.json
-
-      - name: Create /stdb dir
-        run: |
-          sudo mkdir /stdb
-          sudo chmod 777 /stdb
-
-      - name: Checkout C# SDK
-        uses: actions/checkout@v4
-        with:
-          repository: clockworklabs/spacetimedb-csharp-sdk
-          ref: master
-          path: spacetimedb-csharp-sdk
-
-      - name: Setup NuGet override for C# SDK
-        working-directory: spacetimedb-csharp-sdk
-        run: |
-          dotnet pack ../crates/bindings-csharp/BSATN.Runtime
-          # The SDK package overrides the following crate for use in their tests.
-          # Even though it doesn't actually depend on it, we still need to pack it
-          # so dotnet doesn't complain.
-          dotnet pack ../crates/bindings-csharp/Runtime
-          ./tools~/write-nuget-config.sh ..
-
-          # clear package caches, so we get fresh ones even if version numbers haven't changed
-          dotnet nuget locals all --clear
-
-      - name: Run C# SDK tests
-        working-directory: spacetimedb-csharp-sdk
-        run: dotnet test
-
   lints:
     name: Lints
     runs-on: spacetimedb-runner
@@ -292,3 +236,41 @@ jobs:
           # happens very frequently on the `macos-runner`, but we haven't seen it on any others).
           cargo run --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
           "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
+
+  cli_docs:
+    name: Check CLI docs
+    permissions: read-all
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Check for docs change
+        run: |
+          cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md
+          cd docs
+          # This is needed because our website doesn't render markdown quite properly.
+          # See the README in docs for more details.
+          sed -i'' -E 's!^(##) `(.*)`$!\1 \2!' docs/cli-reference.md
+          sed -i'' -E 's!^(######) \*\*(.*)\*\*$!\1 <b>\2</b>!' docs/cli-reference.md
+          git status
+          if git diff --exit-code HEAD; then
+            echo "No docs changes detected"
+          else
+            echo "It looks like the CLI docs have changed:"
+            exit 1
+          fi
