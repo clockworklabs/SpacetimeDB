@@ -1167,7 +1167,8 @@ impl MutTxId {
         })
     }
 
-    /// Commits this transaction, applying its changes to the committed state.
+    /// Commits this transaction in memory, applying its changes to the committed state.
+    /// This doesn't handle the persistence layer at all.
     ///
     /// Returns:
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
