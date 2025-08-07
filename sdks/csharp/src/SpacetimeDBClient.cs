@@ -2,17 +2,12 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using SpacetimeDB.BSATN;
-using SpacetimeDB.Internal;
 using SpacetimeDB.ClientApi;
 using Thread = System.Threading.Thread;
-using System.Diagnostics;
-
 
 namespace SpacetimeDB
 {
@@ -221,33 +216,6 @@ namespace SpacetimeDB
             public uint parseQueueTrackerId;
         }
 
-        internal struct ParsedDatabaseUpdate
-        {
-            // Map: table handles -> (primary key -> IStructuralReadWrite).
-            // If a particular table has no primary key, the "primary key" is just the row itself.
-            // This is valid because any [SpacetimeDB.Type] automatically has a correct Equals and HashSet implementation.
-            public Dictionary<IRemoteTableHandle, MultiDictionaryDelta<object, IStructuralReadWrite>> Updates;
-
-            // Can't override the default constructor. Make sure you use this one!
-            public static ParsedDatabaseUpdate New()
-            {
-                ParsedDatabaseUpdate result;
-                result.Updates = new();
-                return result;
-            }
-
-            public MultiDictionaryDelta<object, IStructuralReadWrite> DeltaForTable(IRemoteTableHandle table)
-            {
-                if (!Updates.TryGetValue(table, out var delta))
-                {
-                    delta = new MultiDictionaryDelta<object, IStructuralReadWrite>(EqualityComparer<object>.Default, EqualityComparer<object>.Default);
-                    Updates[table] = delta;
-                }
-
-                return delta;
-            }
-        }
-
         internal struct ParsedMessage
         {
             public ServerMessage message;
@@ -269,135 +237,8 @@ namespace SpacetimeDB
         private readonly CancellationTokenSource _parseCancellationTokenSource = new();
         private CancellationToken _parseCancellationToken => _parseCancellationTokenSource.Token;
 
-        /// <summary>
-        /// Decode a row for a table, producing a primary key.
-        /// If the table has a specific column marked `#[primary_key]`, use that.
-        /// If not, the BSATN for the entire row is used instead.
-        /// </summary>
-        /// <param name="table"></param>
-        /// <param name="reader"></param>
-        /// <param name="primaryKey"></param>
-        /// <returns></returns>
-        internal static IStructuralReadWrite Decode(IRemoteTableHandle table, BinaryReader reader, out object primaryKey)
-        {
-            var obj = table.DecodeValue(reader);
-
-            // TODO(1.1): we should exhaustively check that GenericEqualityComparer works
-            // for all types that are allowed to be primary keys.
-            var primaryKey_ = table.GetPrimaryKey(obj);
-            primaryKey_ ??= obj;
-            primaryKey = primaryKey_;
-
-            return obj;
-        }
-
         private static readonly Status Committed = new Status.Committed(default);
         private static readonly Status OutOfEnergy = new Status.OutOfEnergy(default);
-
-        internal enum CompressionAlgos : byte
-        {
-            None = 0,
-            Brotli = 1,
-            Gzip = 2,
-        }
-
-        private static BrotliStream BrotliReader(Stream stream)
-        {
-            return new BrotliStream(stream, CompressionMode.Decompress);
-        }
-
-        private static GZipStream GzipReader(Stream stream)
-        {
-            return new GZipStream(stream, CompressionMode.Decompress);
-        }
-
-        private static ServerMessage DecompressDecodeMessage(byte[] bytes)
-        {
-            using var stream = new MemoryStream(bytes);
-
-            // The stream will never be empty. It will at least contain the compression algo.
-            var compression = (CompressionAlgos)stream.ReadByte();
-            // Conditionally decompress and decode.
-            Stream decompressedStream = compression switch
-            {
-                CompressionAlgos.None => stream,
-                CompressionAlgos.Brotli => BrotliReader(stream),
-                CompressionAlgos.Gzip => GzipReader(stream),
-                _ => throw new InvalidOperationException("Unknown compression type"),
-            };
-
-            // TODO: consider pooling these.
-            // DO NOT TRY TO TAKE THIS OUT. The BrotliStream ReadByte() implementation allocates an array
-            // PER BYTE READ. You have to do it all at once to avoid that problem.
-            MemoryStream memoryStream = new MemoryStream();
-            decompressedStream.CopyTo(memoryStream);
-            memoryStream.Seek(0, SeekOrigin.Begin);
-            return new ServerMessage.BSATN().Read(new BinaryReader(memoryStream));
-        }
-
-        private static QueryUpdate DecompressDecodeQueryUpdate(CompressableQueryUpdate update)
-        {
-            Stream decompressedStream;
-
-            switch (update)
-            {
-                case CompressableQueryUpdate.Uncompressed(var qu):
-                    return qu;
-
-                case CompressableQueryUpdate.Brotli(var bytes):
-                    decompressedStream = BrotliReader(new MemoryStream(bytes.ToArray()));
-                    break;
-
-                case CompressableQueryUpdate.Gzip(var bytes):
-                    decompressedStream = GzipReader(new MemoryStream(bytes.ToArray()));
-                    break;
-
-                default:
-                    throw new InvalidOperationException();
-            }
-
-            // TODO: consider pooling these.
-            // DO NOT TRY TO TAKE THIS OUT. The BrotliStream ReadByte() implementation allocates an array
-            // PER BYTE READ. You have to do it all at once to avoid that problem.
-            MemoryStream memoryStream = new MemoryStream();
-            decompressedStream.CopyTo(memoryStream);
-            memoryStream.Seek(0, SeekOrigin.Begin);
-            return new QueryUpdate.BSATN().Read(new BinaryReader(memoryStream));
-        }
-
-
-        /// <summary>
-        /// Prepare to read a BsatnRowList.
-        ///
-        /// This could return an IEnumerable, but we return the reader and row count directly to avoid an allocation.
-        /// It is legitimate to repeatedly call <c>IStructuralReadWrite.Read<T></c> <c>rowCount</c> times on the resulting
-        /// BinaryReader:
-        /// Our decoding infrastructure guarantees that reading a value consumes the correct number of bytes
-        /// from the BinaryReader. (This is easy because BSATN doesn't have padding.)
-        ///
-        /// Previously here we were using LINQ to do what we're now doing with a custsom reader.
-        ///
-        /// Why are we no longer using LINQ?
-        ///
-        /// The calls in question, namely `Skip().Take()`, were fast under the Mono runtime,
-        /// but *much* slower when compiled AOT with IL2CPP.
-        /// Apparently Mono's JIT is smart enough to optimize away these LINQ ops,
-        /// resulting in a linear scan of the `BsatnRowList`.
-        /// Unfortunately IL2CPP could not, resulting in a quadratic scan.
-        /// See: https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/pull/306
-        /// </summary>
-        /// <param name="list"></param>
-        /// <returns>A reader for the rows of the list and a count of rows.</returns>
-        private static (BinaryReader reader, int rowCount) ParseRowList(BsatnRowList list) =>
-            (
-                new BinaryReader(new ListStream(list.RowsData)),
-                list.SizeHint switch
-                {
-                    RowSizeHint.FixedSize(var size) => list.RowsData.Count / size,
-                    RowSizeHint.RowOffsets(var offsets) => offsets.Count,
-                    _ => throw new NotImplementedException()
-                }
-            );
 
         /// <summary>
         /// Get a description of a message suitable for storing in the tracker metadata.
@@ -463,7 +304,7 @@ namespace SpacetimeDB
                 // First apply all of the state
                 foreach (var (table, update) in GetTables(initSub.DatabaseUpdate))
                 {
-                    ParseInsertOnlyTable(table, update, dbOps);
+                    table.ParseInsertOnly(update, dbOps);
                 }
                 return dbOps;
             }
@@ -477,76 +318,9 @@ namespace SpacetimeDB
                 var dbOps = ParsedDatabaseUpdate.New();
                 foreach (var (table, update) in GetTables(subscribeMultiApplied.Update))
                 {
-                    ParseInsertOnlyTable(table, update, dbOps);
+                    table.ParseInsertOnly(update, dbOps);
                 }
                 return dbOps;
-            }
-
-            void ParseInsertOnlyTable(IRemoteTableHandle table, TableUpdate update, ParsedDatabaseUpdate dbOps)
-            {
-                var delta = dbOps.DeltaForTable(table);
-
-                foreach (var cqu in update.Updates)
-                {
-                    var qu = DecompressDecodeQueryUpdate(cqu);
-                    if (qu.Deletes.RowsData.Count > 0)
-                    {
-                        Log.Warn("Non-insert during an insert-only server message!");
-                    }
-                    var (insertReader, insertRowCount) = ParseRowList(qu.Inserts);
-                    for (var i = 0; i < insertRowCount; i++)
-                    {
-                        var obj = Decode(table, insertReader, out var pk);
-                        delta.Add(pk, obj);
-                    }
-                }
-            }
-
-            void ParseDeleteOnlyTable(IRemoteTableHandle table, TableUpdate update, ParsedDatabaseUpdate dbOps)
-            {
-                var delta = dbOps.DeltaForTable(table);
-                foreach (var cqu in update.Updates)
-                {
-                    var qu = DecompressDecodeQueryUpdate(cqu);
-                    if (qu.Inserts.RowsData.Count > 0)
-                    {
-                        Log.Warn("Non-delete during a delete-only operation!");
-                    }
-
-                    var (deleteReader, deleteRowCount) = ParseRowList(qu.Deletes);
-                    for (var i = 0; i < deleteRowCount; i++)
-                    {
-                        var obj = Decode(table, deleteReader, out var pk);
-                        delta.Remove(pk, obj);
-                    }
-                }
-            }
-
-            void ParseTable(IRemoteTableHandle table, TableUpdate update, ParsedDatabaseUpdate dbOps)
-            {
-                var delta = dbOps.DeltaForTable(table);
-                foreach (var cqu in update.Updates)
-                {
-                    var qu = DecompressDecodeQueryUpdate(cqu);
-
-                    // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
-                    // to the table, it doesn't matter that we call Add before Remove here.
-
-                    var (insertReader, insertRowCount) = ParseRowList(qu.Inserts);
-                    for (var i = 0; i < insertRowCount; i++)
-                    {
-                        var obj = Decode(table, insertReader, out var pk);
-                        delta.Add(pk, obj);
-                    }
-
-                    var (deleteReader, deleteRowCount) = ParseRowList(qu.Deletes);
-                    for (var i = 0; i < deleteRowCount; i++)
-                    {
-                        var obj = Decode(table, deleteReader, out var pk);
-                        delta.Remove(pk, obj);
-                    }
-                }
-
             }
 
             ParsedDatabaseUpdate ParseUnsubscribeMultiApplied(UnsubscribeMultiApplied unsubMultiApplied)
@@ -555,7 +329,7 @@ namespace SpacetimeDB
 
                 foreach (var (table, update) in GetTables(unsubMultiApplied.Update))
                 {
-                    ParseDeleteOnlyTable(table, update, dbOps);
+                    table.ParseDeleteOnly(update, dbOps);
                 }
 
                 return dbOps;
@@ -567,7 +341,7 @@ namespace SpacetimeDB
 
                 foreach (var (table, update) in GetTables(updates))
                 {
-                    ParseTable(table, update, dbOps);
+                    table.Parse(update, dbOps);
                 }
                 return dbOps;
             }
@@ -589,7 +363,7 @@ namespace SpacetimeDB
             ParsedMessage ParseMessage(UnparsedMessage unparsed)
             {
                 var dbOps = ParsedDatabaseUpdate.New();
-                var message = DecompressDecodeMessage(unparsed.bytes);
+                var message = CompressionHelpers.DecompressDecodeMessage(unparsed.bytes);
                 var trackerMetadata = TrackerMetadataForMessage(message);
 
                 stats.ParseMessageQueueTracker.FinishTrackingRequest(unparsed.parseQueueTrackerId, trackerMetadata);
@@ -1057,7 +831,7 @@ namespace SpacetimeDB
                 return LogAndThrow($"Mismatched result type, expected {typeof(T)} but got {resultTable.TableName}");
             }
 
-            var (resultReader, resultCount) = ParseRowList(resultTable.Rows);
+            var (resultReader, resultCount) = CompressionHelpers.ParseRowList(resultTable.Rows);
             var output = new T[resultCount];
             for (int i = 0; i < resultCount; i++)
             {
@@ -1099,6 +873,46 @@ namespace SpacetimeDB
         void IDbConnection.AddOnConnectError(WebSocket.ConnectErrorEventHandler cb) => webSocket.OnConnectError += cb;
 
         void IDbConnection.AddOnDisconnect(WebSocket.CloseEventHandler cb) => webSocket.OnClose += cb;
+    }
+
+    /// <summary>
+    /// Represents the result of parsing a database update message from SpacetimeDB.
+    /// Contains updates for all tables affected by the update, with each entry mapping a table handle
+    /// to its respective set of row changes (by primary key or row instance).
+    /// 
+    /// Note: Due to C#'s struct constructor limitations, you must use <see cref="ParsedDatabaseUpdate.New"/> 
+    /// to create new instances.
+    /// Do not use the default constructor, as it will not initialize the Updates dictionary.
+    /// </summary>
+    internal struct ParsedDatabaseUpdate
+    {
+        // Map: table handles -> (primary key -> IStructuralReadWrite).
+        // If a particular table has no primary key, the "primary key" is just the row itself.
+        // This is valid because any [SpacetimeDB.Type] automatically has a correct Equals and HashSet implementation.
+        public Dictionary<IRemoteTableHandle, IParsedTableUpdate> Updates;
+
+        // Can't override the default constructor. Make sure you use this one!
+        public static ParsedDatabaseUpdate New()
+        {
+            ParsedDatabaseUpdate result;
+            result.Updates = new();
+            return result;
+        }
+
+        /// <summary>
+        /// Returns the <see cref="IParsedTableUpdate"/> for the specified table.
+        /// If no update exists for the table, a new one is allocated and added to the Updates dictionary.
+        /// </summary>
+        public IParsedTableUpdate UpdateForTable(IRemoteTableHandle table)
+        {
+            if (!Updates.TryGetValue(table, out var delta))
+            {
+                delta = table.MakeParsedTableUpdate();
+                Updates[table] = delta;
+            }
+
+            return delta;
+        }
     }
 
     internal struct UintAllocator

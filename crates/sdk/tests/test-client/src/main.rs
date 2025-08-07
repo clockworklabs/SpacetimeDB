@@ -113,7 +113,7 @@ fn main() {
 
         "should-fail" => exec_should_fail(),
 
-        "reconnect-same-connection-id" => exec_reconnect_same_connection_id(),
+        "reconnect-different-connection-id" => exec_reconnect_different_connection_id(),
         "caller-always-notified" => exec_caller_always_notified(),
 
         "subscribe-all-select-star" => exec_subscribe_all_select_star(),
@@ -1710,7 +1710,8 @@ fn exec_reauth_part_2() {
     test_counter.wait_for_all();
 }
 
-fn exec_reconnect_same_connection_id() {
+// Ensure a new connection gets a different connection id.
+fn exec_reconnect_different_connection_id() {
     let initial_test_counter = TestCounter::new();
     let initial_connect_result = initial_test_counter.add_test("connect");
 
@@ -1752,7 +1753,8 @@ fn exec_reconnect_same_connection_id() {
         .on_connect(move |ctx, _, _| {
             reconnect_result(Ok(()));
             let run_checks = || {
-                anyhow::ensure!(ctx.connection_id() == my_connection_id);
+                // A new connection should have a different connection id.
+                anyhow::ensure!(ctx.connection_id() != my_connection_id);
                 Ok(())
             };
             addr_after_reconnect_result(run_checks());
