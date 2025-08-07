@@ -14,6 +14,13 @@ use spacetimedb_lib::{
 use spacetimedb_sats::WithTypespace;
 use thiserror::Error;
 
+#[derive(Default, Copy, Clone, PartialEq, Eq)]
+pub enum PrettyPrintStyle {
+    #[default]
+    AnsiColor,
+    NoColor,
+}
+
 pub fn format_plan<F: MigrationFormatter>(f: &mut F, plan: &AutoMigratePlan) -> Result<(), FormattingErrors> {
     f.format_header();
 
