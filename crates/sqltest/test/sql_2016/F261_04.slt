@@ -1,0 +1,6 @@
+# F261-04: COALESCE
+
+query I
+SELECT COALESCE ( 1 , 1 )
+----
+1

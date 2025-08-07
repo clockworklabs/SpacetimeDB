@@ -1,0 +1,23 @@
+[package]
+name = "spacetimedb-primitives"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Primitives such as TableId and ColumnIndexAttribute"
+rust-version.workspace = true
+
+[features]
+memory-usage = ["dep:spacetimedb-memory-usage"]
+
+[dependencies]
+bitflags.workspace = true
+either.workspace = true
+nohash-hasher.workspace = true
+itertools.workspace = true
+spacetimedb-memory-usage = { workspace = true, optional = true, default-features = false }
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

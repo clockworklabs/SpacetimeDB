@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>SpacetimeDB.ClientSDK</PackageId>
+    <Title>SpacetimeDB SDK</Title>
+    <Authors>jdetter</Authors>
+    <Company>Clockwork Labs</Company>
+    <Product>SpacetimeDB</Product>
+    <Description>The SpacetimeDB SDK is a software development kit (SDK) designed to simplify the interaction with SpacetimeDB server modules.</Description>
+    <Copyright>2024</Copyright>
+    <PackageProjectUrl>https://spacetimedb.com</PackageProjectUrl>
+    <PackageIcon>logo.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk</RepositoryUrl>
+    <AssemblyVersion>1.3.0</AssemblyVersion>
+    <Version>1.3.0</Version>
+    <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
+    <!-- We want to save DLLs for Unity which doesn't support NuGet. -->
+    <RestorePackagesPath>packages</RestorePackagesPath>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="1.3.*" />
+
+    <InternalsVisibleTo Include="SpacetimeDB.Tests" />
+  </ItemGroup>
+
+
+
+  <ItemGroup>
+    <None Update="logo.png" Pack="true" PackagePath="" />
+    <None Update="README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+</Project>
