@@ -1,0 +1,3 @@
+feature: F261-03
+id: f261_03_01_01
+sql: SELECT NULLIF ( 1 , 1 )

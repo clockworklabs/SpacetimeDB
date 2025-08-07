@@ -88,6 +88,8 @@ This creates a `dotnet` project in `my-project-directory` with the following `St
 </Project>
 ```
 
+> NOTE: It is important to not change the `StdbModule.csproj` name because SpacetimeDB assumes that this will be the name of the file.
+
 This is a standard `csproj`, with the exception of the line `<RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>`.
 This line is important: it allows the project to be compiled to a WebAssembly module. 
 
@@ -223,9 +225,9 @@ However:
 
 # Tables
 
-Tables are declared using the [`[SpacetimeDB.Table]` attribute](#table-attribute).
+Tables are declared using the `[SpacetimeDB.Table]` attribute.
 
-This macro is applied to a C# `partial class` or `partial struct` with named fields. (The `partial` modifier is required to allow code generation to add methods.) All of the fields of the table must be marked with [`[SpacetimeDB.Type]`](#type-attribute).
+This macro is applied to a C# `partial class` or `partial struct` with named fields. (The `partial` modifier is required to allow code generation to add methods.) All of the fields of the table must be marked with [`[SpacetimeDB.Type]`]( #attribute-spacetimedbtype).
 
 The resulting type is used to store rows of the table. It's a normal class (or struct). Row values are not special -- operations on row types do not, by themselves, modify the table. Instead, a [`ReducerContext`](#class-reducercontext) is needed to get a handle to the table.
 
@@ -480,12 +482,12 @@ public static partial class Module {
     [Reducer]
     void Demo(ReducerContext ctx) {
         var idIndex = ctx.Db.user.Id;
-        var exampleUser = idIndex.find(357).unwrap();
-        exampleUser.dog_count += 5;
-        idIndex.update(exampleUser);
+        var exampleUser = idIndex.Find(357).Value;
+        exampleUser.DogCount += 5;
+        idIndex.Update(exampleUser);
 
         var usernameIndex = ctx.Db.user.Username;
-        usernameIndex.delete("Evil Bob");
+        usernameIndex.Delete("Evil Bob");
     }
 }
 ```

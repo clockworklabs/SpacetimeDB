@@ -23,16 +23,18 @@ The SpacetimeDB client for C# contains all the tools you need to build native cl
 If you would like to create a console application using .NET, you can create a new project using `dotnet new console` and add the SpacetimeDB SDK to your dependencies:
 
 ```bash
-dotnet add package spacetimedbsdk
+dotnet add package SpacetimeDB.ClientSDK
 ```
 
 (See also the [CSharp Quickstart](/docs/modules/c-sharp/quickstart) for an in-depth example of such a console application.)
 
 ### Using Unity
 
-To install the SpacetimeDB SDK into a Unity project, [download the SpacetimeDB SDK](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/releases/latest), packaged as a `.unitypackage`.
+Add the SpacetimeDB Unity Package using the Package Manager. Open the Package Manager window by clicking on Window -> Package Manager. Click on the + button in the top left corner of the window and select "Add package from git URL". Enter the following URL and click Add.
 
-In Unity navigate to the `Assets > Import Package > Custom Package` menu in the menu bar. Select your `SpacetimeDB.Unity.Comprehensive.Tutorial.unitypackage` file and leave all folders checked.
+```bash
+https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git
+```
 
 (See also the [Unity Tutorial](/docs/unity/part-1))
 

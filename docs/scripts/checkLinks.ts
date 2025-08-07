@@ -2,6 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import nav from '../nav'; // Import the nav object directly
 import GitHubSlugger from 'github-slugger';
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import { visit } from 'unist-util-visit';
 
 // Function to map slugs to file paths from nav.ts
 function extractSlugToPathMap(nav: { items: any[] }): Map<string, string> {
@@ -33,34 +36,22 @@ function validatePathsExist(slugToPath: Map<string, string>): void {
 
 // Function to extract links and images from markdown files with line numbers
 function extractLinksAndImagesFromMarkdown(filePath: string): { link: string; type: 'image' | 'link'; line: number }[] {
-  const fileContent = fs.readFileSync(filePath, 'utf-8');
-  const lines = fileContent.split('\n');
-  const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g; // Matches standard Markdown links
-  const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g; // Matches image links in Markdown
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const tree = unified().use(remarkParse).parse(content);
 
-  const linksAndImages: { link: string; type: 'image' | 'link'; line: number }[] = [];
-  const imageSet = new Set<string>(); // To store links that are classified as images
+  const results: { link: string; type: 'image' | 'link'; line: number }[] = [];
 
-  lines.forEach((lineContent, index) => {
-    let match: RegExpExecArray | null;
-
-    // Extract image links and add them to the imageSet
-    while ((match = imageRegex.exec(lineContent)) !== null) {
-      const link = match[2];
-      linksAndImages.push({ link, type: 'image', line: index + 1 });
-      imageSet.add(link);
-    }
-
-    // Extract standard links
-    while ((match = linkRegex.exec(lineContent)) !== null) {
-      const link = match[2];
-      linksAndImages.push({ link, type: 'link', line: index + 1 });
+  visit(tree, ['link', 'image', 'definition'], (node: any) => {
+    const link = node.url;
+    const line = node.position?.start?.line ?? 0;
+    if (link) {
+      results.push({ link, type: node.type === 'image' ? 'image' : 'link', line });
     }
   });
 
-  // Filter out links that exist as images
-  return linksAndImages.filter(item => !(item.type === 'link' && imageSet.has(item.link)));
+  return results;
 }
+
 // Function to resolve relative links using slugs
 function resolveLink(link: string, currentSlug: string): string {
   if (link.startsWith('#')) {
@@ -101,6 +92,9 @@ function checkLinks(): void {
   // Extract valid slugs
   const validSlugs = Array.from(slugToPath.keys());
 
+  // Hacky workaround because the slug for the root is /docs/index. No other slugs have a /index at the end.
+  validSlugs.push('/docs');
+
   // Reverse map from file path to slug for current file resolution
   const pathToSlug = new Map<string, string>();
   slugToPath.forEach((filePath, slug) => {
@@ -124,11 +118,8 @@ function checkLinks(): void {
         return; // Skip external links
       }
 
-      const siteLinks = ['/install', '/images', '/profile'];
-      for (const siteLink of siteLinks) {
-        if (link.startsWith(siteLink)) {
-          return; // Skip site links
-        }
+      if (!link.startsWith('/docs')) {
+        return; // Skip site links
       }
 
       // Resolve the link
@@ -149,7 +140,10 @@ function checkLinks(): void {
       }
 
       // Split the resolved link into base and fragment
-      const [baseLink, fragmentRaw] = resolvedLink.split('#');
+      let [baseLink, fragmentRaw] = resolvedLink.split('#');
+      if (baseLink.endsWith('/')) {
+        baseLink = baseLink.slice(0, -1);
+      }
       const fragment: string | null = fragmentRaw || null;
 
       if (fragment) {

@@ -6,7 +6,7 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 
 > A completed version of the game we'll create in this tutorial is available at:
 >
-> https://github.com/ClockworkLabs/Blackholio
+> https://github.com/ClockworkLabs/tree/master/demo/Blackholio
 
 ## Prepare Project Structure
 
@@ -30,7 +30,7 @@ In this section, we will guide you through the process of setting up a Unity Pro
 
 ### Step 1: Create a Blank Unity Project
 
-The SpacetimeDB Unity SDK minimum supported Unity version is `2021.2` as the SDK requires C# 9. See [the overview](.) for more information on specific supported versions.
+SpacetimeDB supports Unity version `2022.3.32f1` or later. See [the overview](.) for more information on specific supported versions.
 
 Open Unity and create a new project by selecting "New" from the Unity Hub or going to **File -> New Project**.
 
@@ -87,4 +87,4 @@ Our Unity project is all set up! If you press play, it will show a blank screen,
 
 ### Create the Server Module
 
-We've now got the very basics set up. In [part 2](part-2) you'll learn the basics of how how to create a SpacetimeDB server module and how to connect to it from your client.
+We've now got the very basics set up. In [part 2](part-2) you'll learn the basics of how to create a SpacetimeDB server module and how to connect to it from your client.

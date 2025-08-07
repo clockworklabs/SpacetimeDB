@@ -33,7 +33,7 @@ use spacetimedb::{client_visibility_filter, Filter};
 /// A client can only see their account
 #[client_visibility_filter]
 const ACCOUNT_FILTER: Filter = Filter::Sql(
-    "SELECT * FROM account WHERE identity = :sender"
+    "SELECT * FROM account WHERE account.identity = :sender"
 );
 ```
 :::
@@ -52,7 +52,7 @@ public partial class Module
     /// </summary>
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT * FROM account WHERE identity = :sender"
+        "SELECT * FROM account WHERE account.identity = :sender"
     );
 }
 ```
@@ -68,7 +68,7 @@ This parameter is automatically bound to the requesting client's [Identity].
 Note that module owners have unrestricted access to all tables regardless of RLS.
 
 
-[Identity]: /docs/index.md#identity
+[Identity]: /docs/#identity
 
 ### Semantic Constraints
 
@@ -90,7 +90,7 @@ use spacetimedb::{client_visibility_filter, Filter};
 /// A client can only see their account
 #[client_visibility_filter]
 const ACCOUNT_FILTER: Filter = Filter::Sql(
-    "SELECT * FROM account WHERE identity = :sender"
+    "SELECT * FROM account WHERE account.identity = :sender"
 );
 
 /// An admin can see all accounts
@@ -113,7 +113,7 @@ public partial class Module
     /// </summary>
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT * FROM account WHERE identity = :sender"
+        "SELECT * FROM account WHERE account.identity = :sender"
     );
 
     /// <summary>
@@ -141,7 +141,7 @@ use spacetimedb::{client_visibility_filter, Filter};
 /// A client can only see their account
 #[client_visibility_filter]
 const ACCOUNT_FILTER: Filter = Filter::Sql(
-    "SELECT * FROM account WHERE identity = :sender"
+    "SELECT * FROM account WHERE account.identity = :sender"
 );
 
 /// An admin can see all accounts
@@ -170,7 +170,7 @@ public partial class Module
     /// </summary>
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
-        "SELECT * FROM account WHERE identity = :sender"
+        "SELECT * FROM account WHERE account.identity = :sender"
     );
 
     /// <summary>
@@ -208,7 +208,7 @@ use spacetimedb::{client_visibility_filter, Filter};
 const PLAYER_FILTER: Filter = Filter::Sql("
     SELECT q.*
     FROM account a
-    JOIN player p ON u.id = p.id
+    JOIN player p ON a.id = p.id
     JOIN player q on p.level = q.level
     WHERE a.identity = :sender
 ");
@@ -227,7 +227,7 @@ public partial class Module
     public static readonly Filter PLAYER_FILTER = new Filter.Sql(@"
         SELECT q.*
         FROM account a
-        JOIN player p ON u.id = p.id
+        JOIN player p ON a.id = p.id
         JOIN player q on p.level = q.level
         WHERE a.identity = :sender
     ");
@@ -292,7 +292,7 @@ For example, it is valid for an RLS rule to have more joins than are supported b
 However a client will not be able to subscribe to the table for which that rule is defined.
 
 
-[reference docs]: /docs/sql/index.md#subscriptions
+[reference docs]: /docs/sql#subscriptions
 
 ## Best Practices
 
@@ -300,4 +300,4 @@ However a client will not be able to subscribe to the table for which that rule 
 2. Follow the [SQL best practices] for optimizing your RLS rules.
 
 
-[SQL best practices]: /docs/sql/index.md#best-practices-for-performance-and-scalability
+[SQL best practices]: /docs/sql#best-practices-for-performance-and-scalability

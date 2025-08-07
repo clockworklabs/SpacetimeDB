@@ -22,7 +22,7 @@ Open the project in your IDE of choice.
 
 ## Add the NuGet package for the C# SpacetimeDB SDK
 
-Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/spacetimedbsdk) using Visual Studio or Rider _NuGet Package Manager_ or via the .NET CLI:
+Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/SpacetimeDB.ClientSDK/) using Visual Studio or Rider _NuGet Package Manager_ or via the .NET CLI:
 
 ```bash
 dotnet add package SpacetimeDB.ClientSDK
@@ -141,7 +141,7 @@ To `Program.cs`, add:
 const string HOST = "http://localhost:3000";
 
 /// The database name we chose when we published our module.
-const string DBNAME = "quickstart-chat";
+const string DB_NAME = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
 DbConnection ConnectToDB()
@@ -149,7 +149,7 @@ DbConnection ConnectToDB()
     DbConnection? conn = null;
     conn = DbConnection.Builder()
         .WithUri(HOST)
-        .WithModuleName(DBNAME)
+        .WithModuleName(DB_NAME)
         .WithToken(AuthToken.Token)
         .OnConnect(OnConnected)
         .OnConnectError(OnConnectError)
@@ -556,8 +556,8 @@ dotnet run --project client
 
 Congratulations! You've built a simple chat app using SpacetimeDB.
 
-You can find the full code for this client [in the C# client SDK's examples](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/tree/master/examples~/quickstart-chat/client).
+You can find the full code for this client [in the C# client SDK's examples](https://github.com/clockworklabs/SpacetimeDB/tree/master/sdks/csharp/examples~/quickstart-chat/client).
 
 Check out the [C# client SDK Reference](/docs/sdks/c-sharp) for a more comprehensive view of the SpacetimeDB C# client SDK.
 
-If you are interested in developing in the Unity game engine, check out our [Unity Comprehensive Tutorial](/docs/unity) and [Blackholio](https://github.com/ClockworkLabs/Blackholio) game example.
+If you are interested in developing in the Unity game engine, check out our [Unity Comprehensive Tutorial](/docs/unity) and [Blackholio](https://github.com/ClockworkLabs/tree/master/demo/Blackholio) game example.

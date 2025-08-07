@@ -1988,7 +1988,7 @@ This section details how to build native C# client applications (including Unity
     cd my_csharp_client
     dotnet add package SpacetimeDB.ClientSDK
     ```
-*   **For Unity:** Download the latest `.unitypackage` from the [SpacetimeDB Unity SDK releases](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/releases/latest). In Unity, go to `Assets > Import Package > Custom Package` and import the downloaded file.
+*   **For Unity:** Add the SDK to the Unity package manager by the URL: https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.
 
 #### 2. Generate Module Bindings
 
@@ -2548,23 +2548,28 @@ private registerReducerCallbacks() {
 
     this.conn.reducers.onSendMessage(this.handleSendMessageResult);
     // Register other reducer callbacks if needed
-    // this.conn.reducers.onSetName(this.handleSetNameResult);
+    // this.conn.reducers.onSetName(handleSetNameResult);
     
     // Note: Consider returning a cleanup function to unregister
 }
 
 private handleSendMessageResult(ctx: ReducerEventContext, messageText: string) {
     // Check if this callback corresponds to a call made by this client instance
-    const wasOurCall = ctx.event.reducer.callerIdentity.isEqual(this.identity);
+    const wasOurCall = ctx.event.callerIdentity.isEqual(this.identity);
     if (!wasOurCall) return; // Optional: Only react to your own calls
 
-    // Check the status tag
-    if (ctx.event.status.tag === "Committed") {
+    switch(ctx.event.status.tag) {
+    case "Committed":
         console.log(`Our message "${messageText}" sent successfully.`);
-    } else if (ctx.event.status.tag === "Failed") {
+        break;
+    case "Failed":
         // Access the error message via status.value or event.message
         const errorMessage = ctx.event.status.value || ctx.event.message || "Unknown error";
         console.error(`Failed to send "${messageText}": ${errorMessage}`);
+        break;
+    case "OutOfEnergy":
+        console.error(`Failed to send "${messageText}": Out of Energy!`);
+        break;
     }
 }
 

@@ -1,0 +1,3 @@
+# Overwrite the root's disallowed-macros,
+# as the CLI is allowed to use println and friends.
+disallowed-macros = []
