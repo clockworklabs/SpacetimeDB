@@ -122,14 +122,7 @@ impl TxId {
     }
 
     /// The transaction offset this read-only transaction is executing at.
-    ///
-    // NOTE: this implies at least snapshot isolation.
-    pub fn tx_offset(&self) -> Option<u64> {
-        let offset = self.committed_state_shared_lock.next_tx_offset;
-        if offset == 0 {
-            None
-        } else {
-            Some(offset.saturating_sub(1))
-        }
+    pub fn next_tx_offset(&self) -> u64 {
+        self.committed_state_shared_lock.next_tx_offset
     }
 }

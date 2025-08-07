@@ -1111,6 +1111,7 @@ impl SubscriptionManager {
     ) -> ExecutionMetrics {
         use FormatSwitch::{Bsatn, Json};
 
+        let tx_offset = tx.next_tx_offset();
         let tables = &event.status.database_update().unwrap().tables;
 
         let span = tracing::info_span!("eval_incr").entered();
@@ -1272,7 +1273,7 @@ impl SubscriptionManager {
         // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
         self.send_worker_queue
             .send(SendWorkerMessage::Broadcast {
-                tx_offset: tx.tx_offset(),
+                tx_offset: Some(tx_offset),
                 queries: ComputedQueries {
                     updates,
                     errs,

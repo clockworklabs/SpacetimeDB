@@ -366,7 +366,7 @@ impl ModuleSubscriptions {
         // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
-            tx.tx_offset(),
+            Some(tx.next_tx_offset()),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -441,7 +441,7 @@ impl ModuleSubscriptions {
         // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
-            tx.tx_offset(),
+            Some(tx.next_tx_offset()),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -532,7 +532,7 @@ impl ModuleSubscriptions {
         // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender,
-            tx.tx_offset(),
+            Some(tx.next_tx_offset()),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -640,7 +640,7 @@ impl ModuleSubscriptions {
         tx: &TxId,
     ) -> Result<(), BroadcastError> {
         self.broadcast_queue
-            .send_client_message(recipient, tx.tx_offset(), message)
+            .send_client_message(recipient, Some(tx.next_tx_offset()), message)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -746,7 +746,7 @@ impl ModuleSubscriptions {
 
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
-            tx.tx_offset(),
+            Some(tx.next_tx_offset()),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -785,6 +785,7 @@ impl ModuleSubscriptions {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
             self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
         });
+        let tx_offset = tx.next_tx_offset();
 
         check_row_limit(
             &queries,
@@ -839,7 +840,7 @@ impl ModuleSubscriptions {
         // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender,
-            tx.tx_offset(),
+            Some(tx_offset),
             SubscriptionUpdateMessage {
                 database_update,
                 request_id: Some(subscription.request_id),
