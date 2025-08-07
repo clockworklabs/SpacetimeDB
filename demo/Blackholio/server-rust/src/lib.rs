@@ -2,7 +2,7 @@ pub mod math;
 
 use math::DbVector2;
 use rand::Rng;
-use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, Table, TimeDuration, Timestamp};
+use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, Table, Timestamp, TimeDuration};
 use std::{collections::HashMap, time::Duration};
 
 // TODO:
@@ -131,10 +131,12 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).into()),
     })?;
-    ctx.db.move_all_players_timer().try_insert(MoveAllPlayersTimer {
-        scheduled_id: 0,
-        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
-    })?;
+    ctx.db
+        .move_all_players_timer()
+        .try_insert(MoveAllPlayersTimer {
+            scheduled_id: 0,
+            scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
+        })?;
     Ok(())
 }
 
@@ -142,7 +144,10 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
     if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
         ctx.db.player().insert(player.clone());
-        ctx.db.logged_out_player().identity().delete(&player.identity);
+        ctx.db
+            .logged_out_player()
+            .identity()
+            .delete(&player.identity);
     } else {
         ctx.db.player().try_insert(Player {
             identity: ctx.sender,
@@ -155,7 +160,12 @@ pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Player not found")?;
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender)
+        .ok_or("Player not found")?;
     let player_id = player.player_id;
     ctx.db.logged_out_player().insert(player);
     ctx.db.player().identity().delete(&ctx.sender);
@@ -183,11 +193,23 @@ pub fn enter_game(ctx: &ReducerContext, name: String) -> Result<(), String> {
 
 fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<Entity, String> {
     let mut rng = ctx.rng();
-    let world_size = ctx.db.config().id().find(&0).ok_or("Config not found")?.world_size;
+    let world_size = ctx
+        .db
+        .config()
+        .id()
+        .find(&0)
+        .ok_or("Config not found")?
+        .world_size;
     let player_start_radius = mass_to_radius(START_PLAYER_MASS);
     let x = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
     let y = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
-    spawn_circle_at(ctx, player_id, START_PLAYER_MASS, DbVector2 { x, y }, ctx.timestamp)
+    spawn_circle_at(
+        ctx,
+        player_id,
+        START_PLAYER_MASS,
+        DbVector2 { x, y },
+        ctx.timestamp,
+    )
 }
 
 fn spawn_circle_at(
@@ -245,7 +267,12 @@ pub fn suicide(ctx: &ReducerContext) -> Result<(), String> {
 
 #[spacetimedb::reducer]
 pub fn update_player_input(ctx: &ReducerContext, direction: DbVector2) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Player not found")?;
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender)
+        .ok_or("Player not found")?;
     for mut circle in ctx.db.circle().player_id().filter(&player.player_id) {
         circle.direction = direction.normalized();
         circle.speed = direction.magnitude().clamp(0.0, 1.0);
@@ -282,7 +309,13 @@ fn mass_to_max_move_speed(mass: u32) -> f32 {
 pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
     // TODO identity check
     // let span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
-    let world_size = ctx.db.config().id().find(0).ok_or("Config not found")?.world_size;
+    let world_size = ctx
+        .db
+        .config()
+        .id()
+        .find(0)
+        .ok_or("Config not found")?
+        .world_size;
 
     let mut circle_directions: HashMap<u32, DbVector2> = ctx
         .db
@@ -293,7 +326,12 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
 
     // Split circle movement
     for player in ctx.db.player().iter() {
-        let circles: Vec<Circle> = ctx.db.circle().player_id().filter(&player.player_id).collect();
+        let circles: Vec<Circle> = ctx
+            .db
+            .circle()
+            .player_id()
+            .filter(&player.player_id)
+            .collect();
         let mut player_entities: Vec<Entity> = circles
             .iter()
             .map(|c| ctx.db.entity().entity_id().find(&c.entity_id).unwrap())
@@ -328,8 +366,12 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                 }
                 let radius_sum = mass_to_radius(entity_i.mass) + mass_to_radius(entity_j.mass);
                 if distance_sqr > radius_sum * radius_sum {
-                    let gravity_multiplier = 1.0 - time_before_recombining / SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC;
-                    let vec = diff.normalized() * (radius_sum - distance_sqr.sqrt()) * gravity_multiplier * 0.05
+                    let gravity_multiplier =
+                        1.0 - time_before_recombining / SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC;
+                    let vec = diff.normalized()
+                        * (radius_sum - distance_sqr.sqrt())
+                        * gravity_multiplier
+                        * 0.05
                         / count as f32;
                     *circle_directions.get_mut(&entity_i.entity_id).unwrap() += vec / 2.0;
                     *circle_directions.get_mut(&entity_j.entity_id).unwrap() -= vec / 2.0;
@@ -352,7 +394,9 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                 let radius_sum = mass_to_radius(entity_i.mass) + mass_to_radius(entity_j.mass);
                 let radius_sum_multiplied = radius_sum * ALLOWED_SPLIT_CIRCLE_OVERLAP_PCT;
                 if distance_sqr < radius_sum_multiplied * radius_sum_multiplied {
-                    let vec = diff.normalized() * (radius_sum - distance_sqr.sqrt()) * SELF_COLLISION_SPEED;
+                    let vec = diff.normalized()
+                        * (radius_sum - distance_sqr.sqrt())
+                        * SELF_COLLISION_SPEED;
                     *circle_directions.get_mut(&entity_i.entity_id).unwrap() += vec / 2.0;
                     *circle_directions.get_mut(&entity_j.entity_id).unwrap() -= vec / 2.0;
                 }
@@ -370,7 +414,8 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         let mut circle_entity = circle_entity.unwrap();
         let circle_radius = mass_to_radius(circle_entity.mass);
         let direction = *circle_directions.get(&circle.entity_id).unwrap();
-        let new_pos = circle_entity.position + direction * mass_to_max_move_speed(circle_entity.mass);
+        let new_pos =
+            circle_entity.position + direction * mass_to_max_move_speed(circle_entity.mass);
         let min = circle_radius;
         let max = world_size as f32 - circle_radius;
         circle_entity.position.x = new_pos.x.clamp(min, max);
@@ -394,7 +439,11 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                     if other_circle.player_id != circle.player_id {
                         let mass_ratio = other_entity.mass as f32 / circle_entity.mass as f32;
                         if mass_ratio < MINIMUM_SAFE_MASS_RATIO {
-                            schedule_consume_entity(ctx, circle_entity.entity_id, other_entity.entity_id);
+                            schedule_consume_entity(
+                                ctx,
+                                circle_entity.entity_id,
+                                other_entity.entity_id,
+                            );
                         }
                     }
                 } else {
@@ -420,8 +469,16 @@ fn schedule_consume_entity(ctx: &ReducerContext, consumer_id: u32, consumed_id: 
 
 #[spacetimedb::reducer]
 pub fn consume_entity(ctx: &ReducerContext, request: ConsumeEntityTimer) -> Result<(), String> {
-    let consumed_entity = ctx.db.entity().entity_id().find(&request.consumed_entity_id);
-    let consumer_entity = ctx.db.entity().entity_id().find(&request.consumer_entity_id);
+    let consumed_entity = ctx
+        .db
+        .entity()
+        .entity_id()
+        .find(&request.consumed_entity_id);
+    let consumer_entity = ctx
+        .db
+        .entity()
+        .entity_id()
+        .find(&request.consumer_entity_id);
     if consumed_entity.is_none() {
         return Err("Consumed entity doesn't exist".into());
     }
@@ -454,7 +511,12 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
         .identity()
         .find(&ctx.sender)
         .ok_or("Sender has no player")?;
-    let circles: Vec<Circle> = ctx.db.circle().player_id().filter(&player.player_id).collect();
+    let circles: Vec<Circle> = ctx
+        .db
+        .circle()
+        .player_id()
+        .filter(&player.player_id)
+        .collect();
     let mut circle_count = circles.len() as u32;
     if circle_count >= MAX_CIRCLES_PER_PLAYER {
         return Ok(());
@@ -487,13 +549,15 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
         }
     }
 
-    ctx.db.circle_recombine_timer().insert(CircleRecombineTimer {
-        scheduled_id: 0,
-        scheduled_at: ScheduleAt::Time(
-            ctx.timestamp + TimeDuration::from(Duration::from_secs_f32(SPLIT_RECOMBINE_DELAY_SEC)),
-        ),
-        player_id: player.player_id,
-    });
+    ctx.db
+        .circle_recombine_timer()
+        .insert(CircleRecombineTimer {
+            scheduled_id: 0,
+            scheduled_at: ScheduleAt::Time(
+                ctx.timestamp + TimeDuration::from(Duration::from_secs_f32(SPLIT_RECOMBINE_DELAY_SEC))
+            ),
+            player_id: player.player_id,
+        });
 
     log::warn!("Player split!");
 
@@ -507,7 +571,13 @@ pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), St
         return Ok(());
     }
 
-    let world_size = ctx.db.config().id().find(0).ok_or("Config not found")?.world_size;
+    let world_size = ctx
+        .db
+        .config()
+        .id()
+        .find(0)
+        .ok_or("Config not found")?
+        .world_size;
 
     let mut rng = ctx.rng();
     let mut food_count = ctx.db.food().count();
@@ -558,10 +628,21 @@ pub fn calculate_center_of_mass(entities: &[Entity]) -> DbVector2 {
 
 #[spacetimedb::reducer]
 pub fn circle_recombine(ctx: &ReducerContext, timer: CircleRecombineTimer) -> Result<(), String> {
-    let circles: Vec<Circle> = ctx.db.circle().player_id().filter(&timer.player_id).collect();
+    let circles: Vec<Circle> = ctx
+        .db
+        .circle()
+        .player_id()
+        .filter(&timer.player_id)
+        .collect();
     let recombining_entities: Vec<Entity> = circles
         .iter()
-        .filter(|c| ctx.timestamp.duration_since(c.last_split_time).unwrap().as_secs_f32() >= SPLIT_RECOMBINE_DELAY_SEC)
+        .filter(|c| {
+            ctx.timestamp
+                .duration_since(c.last_split_time)
+                .unwrap()
+                .as_secs_f32()
+                >= SPLIT_RECOMBINE_DELAY_SEC
+        })
         .map(|c| ctx.db.entity().entity_id().find(&c.entity_id).unwrap())
         .collect();
     if recombining_entities.len() <= 1 {
