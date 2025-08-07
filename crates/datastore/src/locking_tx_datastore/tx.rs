@@ -120,4 +120,9 @@ impl TxId {
         let (_, index) = table.get_index_by_cols(cols)?;
         NonZeroU64::new(index.num_keys() as u64)
     }
+
+    /// The transaction offset this read-only transaction is executing at.
+    pub fn next_tx_offset(&self) -> u64 {
+        self.committed_state_shared_lock.next_tx_offset
+    }
 }

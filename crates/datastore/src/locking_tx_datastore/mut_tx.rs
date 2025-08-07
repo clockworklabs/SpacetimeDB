@@ -420,6 +420,10 @@ impl MutTxId {
 
         Ok((tx, commit))
     }
+
+    pub fn next_tx_offset(&self) -> u64 {
+        self.committed_state_write_lock.next_tx_offset
+    }
 }
 
 impl MutTxId {

@@ -177,13 +177,13 @@ pub struct TxData {
     deletes: BTreeMap<TableId, Arc<[ProductValue]>>,
     /// Map of all `TableId`s in both `inserts` and `deletes` to their
     /// corresponding table name.
+    // TODO: Store table name as ref counted string.
     tables: IntMap<TableId, String>,
     /// Tx offset of the transaction which performed these operations.
     ///
     /// `None` implies that `inserts` and `deletes` are both empty,
     /// but `Some` does not necessarily imply that either is non-empty.
     tx_offset: Option<u64>,
-    // TODO: Store an `Arc<String>` or equivalent instead.
 }
 
 impl TxData {

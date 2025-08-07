@@ -16,6 +16,7 @@ use anyhow::anyhow;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -172,6 +173,7 @@ pub fn execute_sql_tx<'a>(
 }
 
 pub struct SqlResult {
+    pub tx_offset: TxOffset,
     pub rows: Vec<ProductValue>,
     /// These metrics will be reported via `report_tx_metrics`.
     /// They should not be reported separately to avoid double counting.
@@ -191,6 +193,7 @@ pub fn run(
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
         compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth)
     })?;
+    let tx_offset = tx.next_tx_offset();
 
     let mut metrics = ExecutionMetrics::default();
 
@@ -232,6 +235,7 @@ pub fn run(
             tx.metrics.merge(metrics);
 
             Ok(SqlResult {
+                tx_offset,
                 rows,
                 metrics: tx.metrics,
             })
@@ -255,7 +259,11 @@ pub fn run(
                     if let Some((tx_data, tx_metrics, reducer)) = tx_opt {
                         db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                     }
-                    SqlResult { rows: vec![], metrics }
+                    SqlResult {
+                        tx_offset,
+                        rows: vec![],
+                        metrics,
+                    }
                 });
             }
 
@@ -289,7 +297,11 @@ pub fn run(
                 Err(WriteConflict) => {
                     todo!("See module_host_actor::call_reducer_with_tx")
                 }
-                Ok(_) => Ok(SqlResult { rows: vec![], metrics }),
+                Ok(_) => Ok(SqlResult {
+                    tx_offset,
+                    rows: vec![],
+                    metrics,
+                }),
             }
         }
     }

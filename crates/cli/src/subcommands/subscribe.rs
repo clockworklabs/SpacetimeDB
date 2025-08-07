@@ -2,7 +2,7 @@ use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches};
 use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
-use http::uri::Scheme;
+use http::uri::{PathAndQuery, Scheme};
 use serde_json::Value;
 use spacetimedb_client_api_messages::websocket::{self as ws, JsonFormat};
 use spacetimedb_data_structures::map::HashMap;
@@ -64,6 +64,13 @@ pub fn cli() -> clap::Command {
                 .long("print-initial-update")
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
+        )
+        .arg(
+            Arg::new("confirmed")
+                .required(false)
+                .long("confirmed")
+                .action(ArgAction::SetTrue)
+                .help("Instruct the server to deliver only updates of confirmed transactions"),
         )
         .arg(common_args::anonymous())
         .arg(common_args::yes())
@@ -130,6 +137,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
+    let confirmed = args.get_flag("confirmed");
 
     let conn = parse_req(config, args).await?;
     let api = ClientApi::new(conn);
@@ -146,6 +154,21 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             s
         }
     });
+    if confirmed {
+        // why is http::Uri such a f'ing good uri type?
+        uri.path_and_query = uri
+            .path_and_query
+            .map(|pq| {
+                let path = pq.path();
+                let query = pq
+                    .query()
+                    .map(|query| format!("{query}&confirmed=true"))
+                    .unwrap_or_else(|| "?confirmed=true".to_owned());
+
+                PathAndQuery::from_maybe_shared(format!("{path}{query}")).unwrap()
+            })
+            .or_else(|| Some(PathAndQuery::from_static("?confirmed=true")));
+    }
 
     // Create the websocket request.
     let mut req = http::Uri::from_parts(uri)?.into_client_request()?;

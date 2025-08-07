@@ -67,6 +67,7 @@ impl Host {
         &self,
         auth: AuthCtx,
         database: Database,
+        confirmed_read: bool,
         body: String,
     ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>> {
         let module_host = self
@@ -74,7 +75,7 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        let json = self
+        let (tx_offset, durable_offset, json) = self
             .host_controller
             .using_database(
                 database,
@@ -115,16 +116,28 @@ impl Host {
                         .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
                         .collect();
 
-                    Ok(vec![SqlStmtResult {
-                        schema,
-                        rows: result.rows,
-                        total_duration_micros: total_duration.as_micros() as u64,
-                        stats: SqlStmtStats::from_metrics(&result.metrics),
-                    }])
+                    Ok((
+                        result.tx_offset,
+                        db.durable_tx_offset(),
+                        vec![SqlStmtResult {
+                            schema,
+                            rows: result.rows,
+                            total_duration_micros: total_duration.as_micros() as u64,
+                            stats: SqlStmtStats::from_metrics(&result.metrics),
+                        }],
+                    ))
                 },
             )
             .await
             .map_err(log_and_500)??;
+
+        if confirmed_read {
+            if let Some(mut durable_offset) = durable_offset {
+                if durable_offset.get().is_some_and(|durable| durable < tx_offset) {
+                    durable_offset.wait_for(tx_offset).await?;
+                }
+            }
+        }
 
         Ok(json)
     }
