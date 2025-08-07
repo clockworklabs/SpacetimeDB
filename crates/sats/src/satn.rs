@@ -837,7 +837,10 @@ impl TypedWriter for SqlFormatter<'_, '_> {
     }
 
     fn write_duration(&mut self, value: TimeDuration) -> Result<(), Self::Error> {
-        write!(self.fmt, "{}", value.to_iso8601())
+        match self.ty.client {
+            PsqlClient::SpacetimeDB => write!(self.fmt, "{value}"),
+            PsqlClient::Postgres => write!(self.fmt, "{}", value.to_iso8601()),
+        }
     }
 
     fn write_record(
