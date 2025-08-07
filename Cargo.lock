@@ -6071,6 +6071,7 @@ dependencies = [
  "spacetimedb-datastore",
  "spacetimedb-lib",
  "spacetimedb-paths",
+ "spacetimedb-schema",
  "spacetimedb-table",
  "tempfile",
  "thiserror 1.0.69",

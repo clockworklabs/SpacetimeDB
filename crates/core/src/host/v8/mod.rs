@@ -10,6 +10,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 
 mod error;
@@ -120,6 +121,7 @@ impl ModuleInstance for JsInstance {
         &mut self,
         _program: spacetimedb_datastore::traits::Program,
         _old_module_info: Arc<ModuleInfo>,
+        _policy: MigrationPolicy,
     ) -> anyhow::Result<super::UpdateDatabaseResult> {
         todo!()
     }

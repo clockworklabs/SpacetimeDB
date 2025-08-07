@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use prometheus::IntGauge;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
-use spacetimedb_schema::auto_migrate::ponder_migrate;
+use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -245,16 +245,24 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        let plan = ponder_migrate(&old_module_info.module_def, &self.info.module_def);
-        let plan = match plan {
+        let stdb = &*self.replica_context().relational_db;
+        let plan: MigratePlan = match policy.try_migrate(
+            self.info.database_identity,
+            old_module_info.module_hash,
+            &old_module_info.module_def,
+            self.info.module_hash,
+            &self.info.module_def,
+        ) {
             Ok(plan) => plan,
-            Err(errs) => {
-                return Ok(UpdateDatabaseResult::AutoMigrateError(errs));
+            Err(e) => {
+                return match e {
+                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e)),
+                    _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
+                }
             }
         };
-        let stdb = &*self.replica_context().relational_db;
-
         let program_hash = program.hash;
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| stdb.update_program(tx, HostType::Wasm, program))?;

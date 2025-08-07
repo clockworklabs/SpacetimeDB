@@ -20,16 +20,21 @@ use http::StatusCode;
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
-use spacetimedb::host::ReducerArgs;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseResult;
+use spacetimedb::host::{MigratePlanResult, ReducerArgs};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
-use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PublishOp, PublishResult};
+use spacetimedb_client_api_messages::name::{
+    self, DatabaseName, DomainName, MigrationPolicy, PrettyPrintStyle, PrintPlanResult, PublishOp, PublishResult,
+};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{sats, Timestamp};
+use spacetimedb_schema::auto_migrate::{
+    MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
+};
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
@@ -469,6 +474,9 @@ pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
     num_replicas: Option<usize>,
+    // `Hash` of `MigrationToken` to be checked if `MigrationPolicy::BreakClients` is set.
+    token: Option<spacetimedb_lib::Hash>,
+    policy: Option<MigrationPolicy>,
 }
 
 use std::env;
@@ -496,7 +504,12 @@ fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PublishDatabaseParams { name_or_identity }): Path<PublishDatabaseParams>,
-    Query(PublishDatabaseQueryParams { clear, num_replicas }): Query<PublishDatabaseQueryParams>,
+    Query(PublishDatabaseQueryParams {
+        clear,
+        num_replicas,
+        token,
+        policy,
+    }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
@@ -546,6 +559,21 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         }
     };
 
+    let policy: SchemaMigrationPolicy = match policy.unwrap_or(MigrationPolicy::Compatible) {
+        MigrationPolicy::BreakClients => {
+            if let Some(token) = token {
+                Ok(SchemaMigrationPolicy::BreakClients(token))
+            } else {
+                Err((
+                    StatusCode::BAD_REQUEST,
+                    "Migration policy is set to `BreakClients`, but no migration token was provided.",
+                ))
+            }
+        }
+
+        MigrationPolicy::Compatible => Ok(SchemaMigrationPolicy::Compatible),
+    }?;
+
     log::trace!("Publishing to the identity: {}", database_identity.to_hex());
 
     let op = {
@@ -587,6 +615,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                 num_replicas,
                 host_type: HostType::Wasm,
             },
+            policy,
         )
         .await
         .map_err(log_and_500)?;
@@ -612,6 +641,102 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         database_identity,
         op,
     }))
+}
+
+#[derive(serde::Deserialize)]
+pub struct PrintPlanParams {
+    name_or_identity: NameOrIdentity,
+}
+
+#[derive(serde::Deserialize)]
+pub struct PrintPlanQueryParams {
+    style: Option<PrettyPrintStyle>,
+}
+
+pub async fn print_migration_plan<S: NodeDelegate + ControlStateDelegate>(
+    State(ctx): State<S>,
+    Path(PrintPlanParams { name_or_identity }): Path<PrintPlanParams>,
+    Query(PrintPlanQueryParams { style }): Query<PrintPlanQueryParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    body: Bytes,
+) -> axum::response::Result<axum::Json<PrintPlanResult>> {
+    // User should not be able to print migration plans for a database that they do not own
+    let database_identity = resolve_and_authenticate(&ctx, &name_or_identity, &auth).await?;
+    let style = style
+        .map(|s| match s {
+            PrettyPrintStyle::NoColor => AutoMigratePrettyPrintStyle::NoColor,
+            PrettyPrintStyle::AnsiColor => AutoMigratePrettyPrintStyle::AnsiColor,
+        })
+        .unwrap_or_default();
+
+    let migrate_plan = ctx
+        .migrate_plan(
+            DatabaseDef {
+                database_identity,
+                program_bytes: body.into(),
+                num_replicas: None,
+                host_type: HostType::Wasm,
+            },
+            style,
+        )
+        .await
+        .map_err(log_and_500)?;
+
+    match migrate_plan {
+        MigratePlanResult::Success {
+            old_module_hash,
+            new_module_hash,
+            breaks_client,
+            plan,
+        } => {
+            let token = MigrationToken {
+                database_identity,
+                old_module_hash,
+                new_module_hash,
+            }
+            .hash();
+
+            Ok(PrintPlanResult {
+                token,
+                migrate_plan: plan,
+                break_clients: breaks_client,
+            })
+        }
+        MigratePlanResult::AutoMigrationError(e) => Err((
+            StatusCode::BAD_REQUEST,
+            format!("Automatic migration is not possible: {e}"),
+        )
+            .into()),
+    }
+    .map(axum::Json)
+}
+
+/// Resolves the `NameOrIdentity` to a database identity and checks if the
+/// `auth` identity owns the database.
+async fn resolve_and_authenticate<S: ControlStateDelegate>(
+    ctx: &S,
+    name_or_identity: &NameOrIdentity,
+    auth: &SpacetimeAuth,
+) -> axum::response::Result<Identity> {
+    let database_identity = name_or_identity.resolve(ctx).await?;
+
+    let database = worker_ctx_find_database(ctx, &database_identity)
+        .await?
+        .ok_or(NO_SUCH_DATABASE)?;
+
+    if database.owner_identity != auth.identity {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Identity does not own database, expected: {} got: {}",
+                database.owner_identity.to_hex(),
+                auth.identity.to_hex()
+            ),
+        )
+            .into());
+    }
+
+    Ok(database_identity)
 }
 
 #[derive(Deserialize)]
@@ -783,7 +908,8 @@ pub struct DatabaseRoutes<S> {
     pub logs_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
     pub sql_post: MethodRouter<S>,
-
+    /// POST: /database/print-plan/:name_or_identity/sql
+    pub print_migration_plan: MethodRouter<S>,
     /// GET: /database/: name_or_identity/unstable/timestamp
     pub timestamp_get: MethodRouter<S>,
 }
@@ -808,6 +934,7 @@ where
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
+            print_migration_plan: post(print_migration_plan::<S>),
             timestamp_get: get(get_timestamp::<S>),
         }
     }
@@ -835,6 +962,7 @@ where
 
         axum::Router::new()
             .route("/", self.root_post)
+            .route("/print-plan/:name_or_identity", self.print_migration_plan)
             .nest("/:name_or_identity", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
     }
