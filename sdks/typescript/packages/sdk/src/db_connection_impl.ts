@@ -56,7 +56,6 @@ import { deepEqual, toPascalCase } from './utils.ts';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
 import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
 import {
-  QueryBuilderImpl,
   QueryHandleImpl,
   QueryManager,
   type QueryEvent,
@@ -269,10 +268,6 @@ export class DbConnectionImpl<
     const queryId = this.#queryId;
     this.#queryId += 1;
     return queryId;
-  };
-
-  queryBuilder = (): QueryBuilderImpl => {
-    return new QueryBuilderImpl(this);
   };
 
   registerQuery(
