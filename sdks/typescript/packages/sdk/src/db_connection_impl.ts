@@ -801,9 +801,6 @@ export class DbConnectionImpl<
               map.set(table.name(), table), new Map()),
             message.totalHostExecutionDuration
           );
-          for (const callbacks of tables.values())
-            for (const callback of callbacks)
-              callback.cb();
         }
         this.#queryManager.queries.delete(message.messageId[0]);
         break;
