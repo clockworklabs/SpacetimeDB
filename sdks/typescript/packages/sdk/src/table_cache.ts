@@ -5,9 +5,11 @@ import {
   BinaryWriter,
   type EventContextInterface,
 } from './db_connection_impl.ts';
+import type { DbConnectionImpl } from './db_connection_impl.ts';
 import type { DbContext } from './db_context.ts';
 import { stdbLogger } from './logger.ts';
 import type { ComparablePrimitive } from 'spacetimedb';
+import { QueryBuilderImpl } from './query_builder_impl.ts';
 
 export type Operation = {
   type: 'insert' | 'delete';
@@ -75,7 +77,7 @@ export class TableCache<RowType = any> {
     return new Promise((resolve, reject) => {
       const name = this.name();
 
-      this.ctx.queryBuilder()
+      new QueryBuilderImpl(this.ctx as DbConnectionImpl)
         .onResolved((ctx, tables) => resolve(tables.get(name)?.iter()))
         .onError((ctx, error) => reject(error))
         .query(`SELECT ${name}.* FROM ${name} ${filters}`);
