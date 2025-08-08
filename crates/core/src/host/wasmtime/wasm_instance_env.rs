@@ -367,6 +367,7 @@ impl WasmInstanceEnv {
         })
     }
 
+
     /// Writes the number of rows currently in table identified by `table_id` to `out`.
     ///
     /// # Traps
@@ -1208,6 +1209,20 @@ impl WasmInstanceEnv {
         })
     }
 
+    pub fn has_jwt(caller: Caller<'_, Self>, out_ptr: WasmPtr<u8>) -> RtResult<()> {
+        log::info!("Calling has_jwt");
+        Self::with_span(caller, AbiCall::HasJwt, |caller| {
+            caller.data().instance_env.tx.get().unwrap().
+            // caller.data().reducer_name
+            let (mem, _env) = Self::mem_env(caller);
+            // We're implicitly casting `out_ptr` to `WasmPtr<Identity>` here.
+            // (Both types are actually `u32`.)
+            // This works because `Identity::write_to` does not require an aligned pointer,
+            // as it gets a `&mut [u8]` from WASM memory and does `copy_from_slice` with it.
+            0u8.write_to(mem, out_ptr)?;
+            Ok(())
+        })
+    }
     /// Writes the identity of the module into `out = out_ptr[..32]`.
     ///
     /// # Traps

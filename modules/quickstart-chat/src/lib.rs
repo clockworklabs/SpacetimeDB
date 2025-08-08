@@ -65,6 +65,11 @@ pub fn init(_ctx: &ReducerContext) {}
 
 #[spacetimedb::reducer(client_connected)]
 pub fn identity_connected(ctx: &ReducerContext) {
+    if ctx.jwt() {
+        log::info!("has jwt!");
+    } else {
+        log::info!("no jwt");
+    }
     if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
         // If this is a returning user, i.e. we already have a `User` with this `Identity`,
         // set `online: true`, but leave `name` and `identity` unchanged.

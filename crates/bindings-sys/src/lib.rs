@@ -588,6 +588,9 @@ pub mod raw {
         ///
         /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
         pub fn identity(out_ptr: *mut u8);
+
+        /// Check if the caller has a jwt.
+        pub fn has_jwt(out_ptr: *mut u8);
     }
 
     /// What strategy does the database index use?
@@ -1087,6 +1090,15 @@ pub fn identity() -> [u8; 32] {
         raw::identity(buf.as_mut_ptr());
     }
     buf
+}
+
+#[inline]
+pub fn has_jwt() -> bool {
+    let mut v: u8 = 0;
+    unsafe {
+        raw::has_jwt(&mut v)
+    }
+    v != 0
 }
 
 pub struct RowIter {

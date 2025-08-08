@@ -426,6 +426,14 @@ fn init_database(
     Ok(rcr)
 }
 
+/*
+enum ReducerAuthCtx {
+    /// The reducer is scheduled. In the future this would include calls triggered by procedures.
+    Internal,
+    Jwt()
+}
+
+ */
 pub struct CallReducerParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,

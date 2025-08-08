@@ -760,6 +760,10 @@ impl ReducerContext {
         // which reads the module identity out of the `InstanceEnv`.
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
     }
+
+    pub fn jwt(&self) -> bool {
+        spacetimedb_bindings_sys::has_jwt()
+    }
 }
 
 /// A handle on a database with a particular table schema.
