@@ -260,7 +260,7 @@ export class DbConnectionImpl<
     this.#sendMessage(
       ClientMessage.OneOffQuery({
         queryString: querySql,
-        messageId: new Uint8Array([queryId]),
+        messageId: new Uint8Array(new Uint32Array([queryId]).buffer),
       })
     );
     return queryId;
@@ -740,11 +740,19 @@ export class DbConnectionImpl<
         break;
       }
       case 'QueryResolved': {
-        const query = this.#queryManager.queries.get(message.messageId[0]);
+        if (message.messageId?.length != 4) {
+          stdbLogger(
+            'error',
+            `Received QueryResolved with invalid messageId ${message.messageId}.`
+          );
+          break;
+        }
+        const queryId = new DataView(message.messageId.buffer, message.messageId.byteOffset, 4).getUint32(0, true);
+        const query = this.#queryManager.queries.get(queryId);
         if (query === undefined) {
           stdbLogger(
             'error',
-            `Received QueryResolved for unknown messageId ${message.messageId}.`
+            `Received QueryResolved for unknown queryId ${queryId}.`
           );
           break;
         }
@@ -759,12 +767,8 @@ export class DbConnectionImpl<
             ...eventContext,
             event: error,
           };
-          if (message.messageId === undefined) {
-            console.error('Received an error message without a messageId: ', error);
-            break;
-          }
           this.#queryManager.queries
-            .get(message.messageId[0])
+            .get(queryId)
             ?.emitter.emit(
               'error',
               errorContext,
@@ -787,7 +791,7 @@ export class DbConnectionImpl<
             message.totalHostExecutionDuration
           );
         }
-        this.#queryManager.queries.delete(message.messageId[0]);
+        this.#queryManager.queries.delete(queryId);
         break;
       }
       case 'SubscribeApplied': {
