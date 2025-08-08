@@ -807,46 +807,215 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
 Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender` will be the module's own identity, and `ctx.connection_id` will be `None`.
 :::
 
-#### Row-Level Security (Client Visibility Filters)
+#### Row-Level Security (RLS)
 
-(Unstable Feature)
+Row Level Security (RLS) allows module authors to restrict client access to specific rows
+of tables that are marked as `public`. By default, tables *without* the `public`
+attribute are private and completely inaccessible to clients. Tables *with* the `public`
+attribute are, by default, fully visible to any client that subscribes to them. RLS provides
+a mechanism to selectively restrict access to certain rows of these `public` tables based
+on rules evaluated for each client.
 
-SpacetimeDB allows defining row-level security rules using the `#[spacetimedb::client_visibility_filter]` attribute. This attribute is applied to a `const` binding of type `Filter` and defines an SQL-like query that determines which rows of a table are visible to clients making subscription requests.
+Private tables (those *without* the `public` attribute) are always completely inaccessible
+to clients, and RLS rules do not apply to them. RLS rules are defined for `public` tables
+to filter which rows are visible.
 
-*   The query uses `:sender` to refer to the identity of the subscribing client.
-*   Multiple filters on the same table are combined with `OR` logic.
-*   Query errors (syntax, type errors, unknown tables) are reported during `spacetime publish`.
+These access-granting rules are expressed in SQL and evaluated automatically for queries
+and subscriptions made by clients against private tables with associated RLS rules.
+
+:::info Version-Specific Status
+Row-Level Security (RLS) was introduced as an **unstable** feature in **SpacetimeDB v1.1.0**.
+It requires explicit opt-in via feature flags or pragmas.
+:::
+
+**Enabling RLS**
+
+RLS is currently **unstable** and must be explicitly enabled in your module.
+
+To enable RLS, activate the `unstable` feature in your project's `Cargo.toml`:
+
+```toml
+spacetimedb = { version = "1.1.0", features = ["unstable"] } # at least version 1.1.0
+```
+
+**How It Works**
+
+RLS rules are attached to `public` tables (tables with `#[table(..., public)]`)
+and are expressed in SQL using constants of type `Filter`.
 
 ```rust
 use spacetimedb::{client_visibility_filter, Filter, table, Identity};
 
-#[table(name = "location_state")]
-struct LocationState { #[primary_key] entity_id: u64, chunk_index: u32 }
-#[table(name = "user_state")]
-struct UserState { #[primary_key] identity: Identity, entity_id: u64 }
+// Define a public table for RLS
+#[table(name = account, public)] // Now a public table
+struct Account {
+    #[primary_key]
+    identity: Identity,
+    email: String,
+    balance: u32,
+}
 
-/// Players can only see entities located in the same chunk as their own entity.
+/// RLS Rule: Allow a client to see *only* their own account record.
 #[client_visibility_filter]
-const PLAYERS_SEE_ENTITIES_IN_SAME_CHUNK: Filter = Filter::Sql("
-    SELECT * FROM LocationState WHERE chunk_index IN (
-        SELECT chunk_index FROM LocationState WHERE entity_id IN (
-            SELECT entity_id FROM UserState WHERE identity = :sender
-        )
-    )
+const ACCOUNT_VISIBILITY: Filter = Filter::Sql(
+    // This query is evaluated per client request.
+    // :sender is automatically bound to the requesting client's identity.
+    // Only rows matching this filter are returned to the client from the public 'account' table,
+    // overriding its default full visibility for matching clients.
+    "SELECT * FROM account WHERE identity = :sender"
+);
+```
+
+A module will fail to publish if any of its RLS rules are invalid or malformed.
+
+**`:sender`**
+
+You can use the special `:sender` parameter in your rules for user-specific access control.
+This parameter is automatically bound to the requesting client's [Identity](#identity).
+
+Note that module owners have unrestricted access to all tables, including all rows of
+`public` tables (bypassing RLS rules) and `private` tables.
+
+**Semantic Constraints**
+
+RLS rules act as filters defining which rows of a `public` table are visible to a client.
+Like subscriptions, arbitrary column projections are **not** allowed.
+Joins **are** allowed (e.g., to check permissions in another table), but each rule must
+ultimately return rows from the single public table it applies to.
+
+**Multiple Rules Per Table**
+
+Multiple RLS rules may be declared for the same `public` table. They are evaluated as a
+logical `OR`, meaning clients can see any row that matches at least one rule.
+
+**Example (Building on previous Account table)**
+
+```rust
+# use spacetimedb::{client_visibility_filter, Filter, table, Identity};
+# #[table(name = account)] struct Account { #[primary_key] identity: Identity, email: String, balance: u32 }
+// Assume an 'admin' table exists to track administrator identities
+#[table(name = admin)] struct Admin { #[primary_key] identity: Identity }
+
+/// RLS Rule 1: A client can see their own account.
+#[client_visibility_filter]
+const ACCOUNT_OWNER_VISIBILITY: Filter = Filter::Sql(
+    "SELECT * FROM account WHERE identity = :sender"
+);
+
+/// RLS Rule 2: An admin client can see *all* accounts.
+#[client_visibility_filter]
+const ACCOUNT_ADMIN_VISIBILITY: Filter = Filter::Sql(
+    // This join checks if the requesting client (:sender) exists in the admin table.
+    // If they do, the join succeeds, and all rows from 'account' are potentially visible.
+    "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
+);
+
+// Result: A non-admin client sees only their own account row.
+// An admin client sees all account rows because they match the second rule.
+```
+
+**Recursive Application**
+
+RLS rules can reference other tables that might *also* have RLS rules. These rules are applied recursively.
+For instance, if Rule A depends on Table B, and Table B has its own RLS rules, a client only gets results
+from Rule A if they also have permission to see the relevant rows in Table B according to Table B's rules.
+This ensures that the intended row visibility on `public` tables is maintained even through indirect access patterns.
+
+**Example (Building on previous Account/Admin tables)**
+
+```rust
+# use spacetimedb::{client_visibility_filter, Filter, table, Identity};
+# #[table(name = account)] struct Account { #[primary_key] identity: Identity, email: String, balance: u32 }
+# #[table(name = admin)] struct Admin { #[primary_key] identity: Identity }
+// Define a private player table linked to account
+#[table(name = player)] // Private table
+struct Player { #[primary_key] id: Identity, level: u32 }
+
+# /// RLS Rule 1: A client can see their own account.
+# #[client_visibility_filter] const ACCOUNT_OWNER_VISIBILITY: Filter = Filter::Sql( "SELECT * FROM account WHERE identity = :sender" );
+# /// RLS Rule 2: An admin client can see *all* accounts.
+# #[client_visibility_filter] const ACCOUNT_ADMIN_VISIBILITY: Filter = Filter::Sql( "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender" );
+
+/// RLS Rule for Player table: Players are visible if the associated account is visible.
+#[client_visibility_filter]
+const PLAYER_VISIBILITY: Filter = Filter::Sql(
+    // This rule joins Player with Account.
+    // Crucially, the client running this query must *also* satisfy the RLS rules
+    // defined for the `account` table for the specific account row being joined.
+    // Therefore, non-admins see only their own player, admins see all players.
+    "SELECT p.* FROM account a JOIN player p ON a.identity = p.id"
+);
+```
+
+Self-joins are allowed within RLS rules. However, RLS rules cannot be mutually recursive
+(e.g., Rule A depends on Table B, and Rule B depends on Table A), as this would cause
+infinite recursion during evaluation.
+
+**Example: Self-Join (Valid)**
+
+```rust
+# use spacetimedb::{client_visibility_filter, Filter, table, Identity};
+# #[table(name = player)] struct Player { #[primary_key] id: Identity, level: u32 }
+# // Dummy account table for join context
+# #[table(name = account)] struct Account { #[primary_key] identity: Identity }
+
+/// RLS Rule: A client can see other players at the same level as their own player.
+#[client_visibility_filter]
+const PLAYER_SAME_LEVEL_VISIBILITY: Filter = Filter::Sql("
+    SELECT q.*
+    FROM account a -- Find the requester's account
+    JOIN player p ON a.identity = p.id -- Find the requester's player
+    JOIN player q on p.level = q.level -- Find other players (q) at the same level
+    WHERE a.identity = :sender -- Ensure we start with the requester
 ");
 ```
 
-:::info Version-Specific Status and Usage
+**Example: Mutually Recursive Rules (Invalid)**
 
-*   **SpacetimeDB 1.0:** The Row-Level Security feature was not fully implemented or enforced in version 1.0. Modules developed for SpacetimeDB 1.0 should **not** use this feature.
-*   **SpacetimeDB 1.1:** The feature is available but considered **unstable** in version 1.1. To use it, you must explicitly opt-in by enabling the `unstable` feature flag for the `spacetimedb` crate in your module's `Cargo.toml`:
-    ```toml
-    [dependencies]
-    spacetimedb = { version = "1.1", features = ["unstable"] }
-    # ... other dependencies
-    ```
-    Modules developed for 1.1 can use row-level security only if this feature flag is enabled.
-:::
+This module would fail to publish because the `ACCOUNT_NEEDS_PLAYER` rule depends on the
+`player` table, while the `PLAYER_NEEDS_ACCOUNT` rule depends on the `account` table.
+
+```rust
+use spacetimedb::{client_visibility_filter, Filter, table, Identity};
+
+#[table(name = account)] struct Account { #[primary_key] id: u64, identity: Identity }
+#[table(name = player)] struct Player { #[primary_key] id: u64 }
+
+/// RLS: An account is visible only if a corresponding player exists.
+#[client_visibility_filter]
+const ACCOUNT_NEEDS_PLAYER: Filter = Filter::Sql(
+    "SELECT a.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
+);
+
+/// RLS: A player is visible only if a corresponding account exists.
+#[client_visibility_filter]
+const PLAYER_NEEDS_ACCOUNT: Filter = Filter::Sql(
+    // This rule requires access to 'account', which itself requires access to 'player' -> recursion!
+    "SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
+);
+```
+
+**Usage in Subscriptions**
+
+When a client subscribes to a `public` table that has RLS rules defined,
+the server automatically applies those rules. The subscription results (both initial
+and subsequent updates) will only contain rows that the specific client is allowed to
+see based on the RLS rules evaluating successfully for that client.
+
+While the SQL constraints and limitations outlined in the [SQL reference docs](/docs/sql/index.md#subscriptions)
+(like limitations on complex joins or aggregations) do not apply directly to the definition
+of RLS rules themselves, these constraints *do* apply to client subscriptions that *use* those rules.
+For example, an RLS rule might use a complex join not normally supported in subscriptions.
+If a client tries to subscribe directly to the table governed by that complex RLS rule,
+the subscription itself might fail, even if the RLS rule is valid for direct queries.
+
+**Best Practices**
+
+1.  Define RLS rules for `public` tables where you need to restrict row visibility for different clients.
+2.  Use `:sender` for client-specific filtering within your rules.
+3.  Keep RLS rules as simple as possible while enforcing desired access.
+4.  Be mindful of potential performance implications of complex joins in RLS rules, especially when combined with subscriptions.
+5.  Follow the general [SQL best practices](/docs/sql/index.md#best-practices-for-performance-and-scalability) for optimizing your RLS rules.
 
 ### Client SDK (Rust)
 
@@ -1519,7 +1688,7 @@ public static partial class Module
     [Reducer]
     public static void SendMessage(ReducerContext ctx, SendMessageSchedule scheduleArgs)
     {
-        // Security check!
+        // Security check is important!
         if (!ctx.Sender.Equals(ctx.Identity))
         {
             throw new Exception("Reducer SendMessage may not be invoked by clients, only via scheduling.");
@@ -1595,6 +1764,217 @@ Throwing an unhandled exception within a C# reducer will cause the transaction t
 *   **Unexpected Errors:** Unhandled runtime exceptions (e.g., `NullReferenceException`) also cause rollbacks but might provide less informative feedback to the client, potentially just indicating a general failure.
 
 It's generally good practice to validate input and state early in the reducer and `throw` specific exceptions for handled error conditions.
+
+#### Row-Level Security (RLS)
+
+Row Level Security (RLS) allows module authors to restrict which rows of a public table each client can access.
+These access rules are expressed in SQL and evaluated automatically for queries and subscriptions.
+
+:::info Version-Specific Status
+Row-Level Security (RLS) was introduced as an **unstable** feature in **SpacetimeDB v1.1.0**.
+It requires explicit opt-in via feature flags or pragmas.
+:::
+
+**Enabling RLS**
+
+RLS is currently **unstable** and must be explicitly enabled in your module.
+
+To enable RLS, include the following preprocessor directive at the top of your module files:
+
+```cs
+#pragma warning disable STDB_UNSTABLE
+```
+
+**How It Works**
+
+RLS rules are attached to `public` tables (tables with `#[table(..., public)]`)
+and are expressed in SQL using public static readonly fields of type `Filter` annotated with
+`[SpacetimeDB.ClientVisibilityFilter]`.
+
+```cs
+using SpacetimeDB;
+
+#pragma warning disable STDB_UNSTABLE
+
+// Define a public table for RLS
+[Table(Name = "account", Public = true)] // Ensures correct C# syntax for public table
+public partial class Account
+{
+    [PrimaryKey] public Identity Identity;
+    public string Email = "";
+    public uint Balance;
+}
+
+public partial class Module
+{
+    /// <summary>
+    /// RLS Rule: Allow a client to see *only* their own account record.
+    /// This rule applies to the public 'account' table.
+    /// </summary>
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter ACCOUNT_VISIBILITY = new Filter.Sql(
+        // This query is evaluated per client request.
+        // :sender is automatically bound to the requesting client's identity.
+        // Only rows matching this filter are returned to the client from the public 'account' table,
+        // overriding its default full visibility for matching clients.
+        "SELECT * FROM account WHERE identity = :sender"
+    );
+}
+```
+
+A module will fail to publish if any of its RLS rules are invalid or malformed.
+
+**`:sender`**
+
+You can use the special `:sender` parameter in your rules for user specific access control.
+This parameter is automatically bound to the requesting client's [Identity](#identity).
+
+Note that module owners have unrestricted access to all tables, including all rows of
+`public` tables (bypassing RLS rules) and `private` tables.
+
+**Semantic Constraints**
+
+RLS rules are similar to subscriptions in that logically they act as filters on a particular table.
+Also like subscriptions, arbitrary column projections are **not** allowed.
+Joins **are** allowed, but each rule must return rows from one and only one table.
+
+**Multiple Rules Per Table**
+
+Multiple rules may be declared for the same `public` table. They are evaluated as a logical `OR`.
+This means clients will be able to see to any row that matches at least one rule.
+
+**Example**
+
+```cs
+using SpacetimeDB;
+
+#pragma warning disable STDB_UNSTABLE
+
+public partial class Module
+{
+    /// <summary>
+    /// A client can only see their account.
+    /// </summary>
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
+        "SELECT * FROM account WHERE identity = :sender"
+    );
+
+    /// <summary>
+    /// An admin can see all accounts.
+    /// </summary>
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter ACCOUNT_FILTER_FOR_ADMINS = new Filter.Sql(
+        "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
+    );
+}
+```
+
+**Recursive Application**
+
+RLS rules can reference other tables with RLS rules, and they will be applied recursively.
+This ensures that data is never leaked through indirect access patterns.
+
+**Example**
+
+```cs
+using SpacetimeDB;
+
+public partial class Module
+{
+    /// <summary>
+    /// A client can only see their account.
+    /// </summary>
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
+        "SELECT * FROM account WHERE identity = :sender"
+    );
+
+    /// <summary>
+    /// An admin can see all accounts.
+    /// </summary>
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter ACCOUNT_FILTER_FOR_ADMINS = new Filter.Sql(
+        "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
+    );
+
+    /// <summary>
+    /// Explicitly filtering by client identity in this rule is not necessary,
+    /// since the above RLS rules on `account` will be applied automatically.
+    /// Hence a client can only see their player, but an admin can see all players.
+    /// </summary>
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter PLAYER_FILTER = new Filter.Sql(
+        "SELECT p.* FROM account a JOIN player p ON a.id = p.id"
+    );
+}
+```
+
+And while self-joins are allowed, in general RLS rules cannot be self-referential,
+as this would result in infinite recursion.
+
+**Example: Self-Join**
+
+```cs
+using SpacetimeDB;
+
+public partial class Module
+{
+    /// <summary>
+    /// A client can only see players on their same level.
+    /// </summary>
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter PLAYER_FILTER = new Filter.Sql(@"
+        SELECT q.*
+        FROM account a
+        JOIN player p ON u.id = p.id
+        JOIN player q on p.level = q.level
+        WHERE a.identity = :sender
+    ");
+}
+```
+
+**Example: Recursive Rules**
+
+This module will fail to publish because each rule depends on the other one.
+
+```cs
+using SpacetimeDB;
+
+public partial class Module
+{
+    /// <summary>
+    /// An account must have a corresponding player.
+    /// </summary>
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
+        "SELECT a.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
+    );
+
+    /// <summary>
+    /// A player must have a corresponding account.
+    /// </summary>
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
+        "SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
+    );
+}
+```
+
+**Usage in Subscriptions**
+
+RLS rules automatically apply to subscriptions so that if a client subscribes to a table with RLS filters,
+the subscription will only return rows that the client is allowed to see.
+
+While the constraints and limitations outlined in the [SQL reference docs](/docs/sql/index.md#subscriptions) do not apply to RLS rules,
+they do apply to the subscriptions that use them.
+For example, it is valid for an RLS rule to have more joins than are supported by subscriptions.
+However a client will not be able to subscribe to the table for which that rule is defined.
+
+**Best Practices**
+
+1. Use `:sender` for client specific filtering.
+2. Follow the [SQL best practices](/docs/sql/index.md#best-practices-for-performance-and-scalability) for optimizing your RLS rules.
 
 ### Client SDK (C#)
 
@@ -1747,11 +2127,11 @@ private void SubscribeToTables(DbConnection conn)
 {
     Console.WriteLine("Subscribing to tables...");
     conn.SubscriptionBuilder()
-        .OnApplied(OnSubscriptionApplied)
+        .OnApplied(on_subscription_applied)
         .OnError((errCtx, err) => {
             Console.WriteLine($"Subscription failed: {err.Message}");
         })
-        // Example: Subscribe to all rows from 'Player' and 'Message' tables
+        // Example: Subscribe to all rows from 'player' and 'message' tables
         .Subscribe(new string[] { "SELECT * FROM Player", "SELECT * FROM Message" });
 }
 
@@ -2152,6 +2532,15 @@ In TypeScript, the first argument (`ctx: EventContext | undefined`) to row callb
 
 Call reducers via `conn.reducers`. Register callbacks via `conn.reducers.onReducerName(...)` to observe outcomes.
 
+*   **Invoking:** Access generated reducer functions via `conn.reducers.reducerName(arg1, arg2, ...)`. Calling these functions sends the request to the server.
+*   **Reducer Callbacks:** Register callbacks using `conn.reducers.onReducerName((ctx: ReducerEventContext, arg1, ...) => { ... })` to react to the *outcome* of reducer calls initiated by *any* client (including your own).
+*   **ReducerEventContext (`ctx`)**: Contains information about the completed reducer call:
+    *   `ctx.event.reducer`: The specific reducer variant record and its arguments.
+    *   `ctx.event.status`: An object indicating the outcome. Check `ctx.event.status.tag` which will be a string like `"Committed"` or `"Failed"`. If failed, the reason is typically in `ctx.event.status.value`.
+    *   `ctx.event.callerIdentity`: The `Identity` of the client that originally invoked the reducer.
+    *   `ctx.event.message`: Contains the failure message if `ctx.event.status.tag === "Failed"`.
+    *   `ctx.event.timestamp`, etc.
+
 ```typescript
 // Part of the ChatClient class
 private registerReducerCallbacks() {
@@ -2165,15 +2554,18 @@ private registerReducerCallbacks() {
 }
 
 private handleSendMessageResult(ctx: ReducerEventContext, messageText: string) {
+    // Check if this callback corresponds to a call made by this client instance
     const wasOurCall = ctx.event.callerIdentity.isEqual(this.identity);
-    if (!wasOurCall) return; // Only care about our own calls here
+    if (!wasOurCall) return; // Optional: Only react to your own calls
 
     switch(ctx.event.status.tag) {
     case "Committed":
         console.log(`Our message "${messageText}" sent successfully.`);
         break;
     case "Failed":
-        console.error(`Failed to send "${messageText}": ${ctx.event.status.value}`);
+        // Access the error message via status.value or event.message
+        const errorMessage = ctx.event.status.value || ctx.event.message || "Unknown error";
+        console.error(`Failed to send "${messageText}": ${errorMessage}`);
         break;
     case "OutOfEnergy":
         console.error(`Failed to send "${messageText}": Out of Energy!`);
