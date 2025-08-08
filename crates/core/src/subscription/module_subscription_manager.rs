@@ -555,7 +555,7 @@ enum SendWorkerMessage {
     /// A transaction has completed and the [`SubscriptionManager`] has evaluated the incremental queries,
     /// so the [`SendWorker`] should broadcast them to clients.
     Broadcast {
-        tx_offset: Option<TxOffset>,
+        tx_offset: TxOffset,
         queries: ComputedQueries,
     },
 
@@ -1273,7 +1273,7 @@ impl SubscriptionManager {
         // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
         self.send_worker_queue
             .send(SendWorkerMessage::Broadcast {
-                tx_offset: Some(tx_offset),
+                tx_offset,
                 queries: ComputedQueries {
                     updates,
                     errs,
@@ -1457,7 +1457,7 @@ impl SendWorker {
 
     fn send_one_computed_queries(
         &mut self,
-        tx_offset: Option<TxOffset>,
+        tx_offset: TxOffset,
         ComputedQueries {
             updates,
             errs,
@@ -1543,7 +1543,7 @@ impl SendWorker {
                 event: Some(event.clone()),
                 database_update,
             };
-            send_to_client(&caller, tx_offset, message);
+            send_to_client(&caller, Some(tx_offset), message);
         }
 
         // Send all the other updates.
@@ -1553,7 +1553,7 @@ impl SendWorker {
             // Conditionally send out a full update or a light one otherwise.
             let event = client.config.tx_update_full.then(|| event.clone());
             let message = TransactionUpdateMessage { event, database_update };
-            send_to_client(&client, tx_offset, message);
+            send_to_client(&client, Some(tx_offset), message);
         }
 
         // Put back the aggregation maps into the worker.

@@ -22,6 +22,7 @@ use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
+use scopeguard::ScopeGuard;
 use spacetimedb_client_api_messages::websocket::{
     self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
     UnsubscribeMulti,
@@ -29,6 +30,7 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -317,10 +319,7 @@ impl ModuleSubscriptions {
         let hash = QueryHash::from_string(&sql, auth.caller, false);
         let hash_with_param = QueryHash::from_string(&sql, auth.caller, true);
 
-        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
-            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
-        });
+        let (tx, tx_offset) = self.begin_tx(Workload::Subscribe);
 
         let existing_query = {
             let guard = self.subscriptions.read();
@@ -366,7 +365,7 @@ impl ModuleSubscriptions {
         // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
-            Some(tx.next_tx_offset()),
+            Some(tx_offset),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -421,10 +420,7 @@ impl ModuleSubscriptions {
             return Ok(None);
         };
 
-        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
-            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
-        });
+        let (tx, tx_offset) = self.begin_tx(Workload::Unsubscribe);
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let (table_rows, metrics) = return_on_err_with_sql!(
             self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Unsubscribe),
@@ -441,7 +437,7 @@ impl ModuleSubscriptions {
         // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
-            Some(tx.next_tx_offset()),
+            Some(tx_offset),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -485,10 +481,7 @@ impl ModuleSubscriptions {
         let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Unsubscribe);
 
         // Always lock the db before the subscription lock to avoid deadlocks.
-        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
-            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
-        });
+        let (tx, tx_offset) = self.begin_tx(Workload::Unsubscribe);
 
         let removed_queries = {
             let _compile_timer = subscription_metrics.compilation_time.start_timer();
@@ -532,7 +525,7 @@ impl ModuleSubscriptions {
         // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender,
-            Some(tx.next_tx_offset()),
+            Some(tx_offset),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -582,10 +575,7 @@ impl ModuleSubscriptions {
         let auth = AuthCtx::new(self.owner_identity, sender);
 
         // We always get the db lock before the subscription lock to avoid deadlocks.
-        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
-            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
-        });
+        let (tx, _tx_offset) = self.begin_tx(Workload::Subscribe);
 
         let compile_timer = metrics.compilation_time.start_timer();
 
@@ -690,6 +680,7 @@ impl ModuleSubscriptions {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
             self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
         });
+        let tx_offset = tx.next_tx_offset();
 
         // We minimize locking so that other clients can add subscriptions concurrently.
         // We are protected from race conditions with broadcasts, because we have the db lock,
@@ -746,7 +737,7 @@ impl ModuleSubscriptions {
 
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
-            Some(tx.next_tx_offset()),
+            Some(tx_offset),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -940,6 +931,16 @@ impl ModuleSubscriptions {
         read_tx.metrics.merge(update_metrics);
 
         Ok(Ok((event, update_metrics)))
+    }
+
+    fn begin_tx(&self, workload: Workload) -> (ScopeGuard<TxId, impl FnOnce(TxId) + '_>, TxOffset) {
+        let tx = scopeguard::guard(self.relational_db.begin_tx(workload), |tx| {
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
+        });
+        let tx_offset = tx.next_tx_offset();
+
+        (tx, tx_offset)
     }
 }
 
