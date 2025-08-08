@@ -1,6 +1,7 @@
 use std::{
     io,
     num::{NonZeroU16, NonZeroU64},
+    ops::RangeBounds,
     sync::RwLock,
 };
 
@@ -608,4 +609,12 @@ where
     D::Error: From<error::Traversal> + From<io::Error>,
 {
     commitlog::fold_transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
+}
+
+pub fn fold_transaction_range<D>(root: CommitLogDir, range: impl RangeBounds<u64>, de: D) -> Result<(), D::Error>
+where
+    D: Decoder,
+    D::Error: From<error::Traversal> + From<io::Error>,
+{
+    commitlog::fold_transaction_range(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, range, de)
 }
