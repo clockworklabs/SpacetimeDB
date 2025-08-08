@@ -1,5 +1,4 @@
 import type { ClientDbView } from './db_view';
-import type { QueryBuilderImpl } from './query_builder_impl';
 import type { ReducersView, SetReducerFlags } from './reducers';
 import type { UntypedRemoteModule } from './spacetime_module';
 import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
@@ -23,13 +22,6 @@ export interface DbContext<RemoteModule extends UntypedRemoteModule> {
    * @returns The subscription builder.
    */
   subscriptionBuilder(): SubscriptionBuilderImpl<RemoteModule>;
-
-  /**
-   * Creates a new one-off query builder.
-   *
-   * @returns The one-off query builder.
-   */
-  queryBuilder(): QueryBuilderImpl<RemoteModule>;
 
   /**
    * Disconnects from the database.
