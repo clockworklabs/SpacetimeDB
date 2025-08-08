@@ -22,7 +22,7 @@ exe_suffix = ".exe" if sys.platform == "win32" else ""
 SPACETIME_BIN = STDB_DIR / ("target/debug/spacetime" + exe_suffix)
 TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
 STDB_CONFIG = TEST_DIR / "config.toml"
-
+MODULES_DIR = STDB_DIR / "modules"
 # the contents of files for the base smoketest project template
 TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/lib._rs").read()
 TEMPLATE_CARGO_TOML = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/Cargo._toml").read()
