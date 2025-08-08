@@ -262,7 +262,7 @@ class Smoketest(unittest.TestCase):
             config = tomllib.load(f)
             host = config['default_server']
             token = config['spacetimedb_token']
-            conn = http.client.HTTPConnection(host)
+            conn = http.client.HTTPSConnection(host)
             auth = {"Authorization": f'Bearer {token}'}
             headers.update(auth)
             log_cmd([method, path])
