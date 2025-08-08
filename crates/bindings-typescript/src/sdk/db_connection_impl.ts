@@ -46,7 +46,6 @@ import {
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
 import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
 import {
-  QueryBuilderImpl,
   QueryHandleImpl,
   QueryManager,
   type QueryEvent,
@@ -379,16 +378,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       reducers: this.reducers,
       setReducerFlags: this.setReducerFlags,
       isActive: this.isActive,
-      queryBuilder: this.queryBuilder.bind(this),
       subscriptionBuilder: this.subscriptionBuilder.bind(this),
       disconnect: this.disconnect.bind(this),
       event,
     };
   }
-
-  queryBuilder = (): QueryBuilderImpl<RemoteModule> => {
-    return new QueryBuilderImpl(this);
-  };
 
   registerQuery(
     handle: QueryHandleImpl<RemoteModule>,
