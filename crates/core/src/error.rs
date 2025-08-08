@@ -26,7 +26,7 @@ use spacetimedb_vm::expr::Crud;
 
 pub use spacetimedb_datastore::error::{DatastoreError, IndexError, SequenceError, TableError};
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum ClientError {
     #[error("Client not found: {0}")]
     NotFound(ClientActorId),
