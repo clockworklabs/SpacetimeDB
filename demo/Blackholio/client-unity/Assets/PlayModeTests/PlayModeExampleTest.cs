@@ -84,7 +84,7 @@ public class PlayModeExampleTest
 
         // Standing still should decay a bit
         PlayerController.Local.EnableTestInput();
-        while (foodEaten < 200)
+        while (foodEaten < 50)
         {
             Debug.Assert(circle != null, nameof(circle) + " != null");
             var ourEntity = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
@@ -116,6 +116,11 @@ public class PlayModeExampleTest
                 Debug.Assert(foodEntity != null, nameof(foodEntity) + " != null");
                 Debug.Assert(ourNewEntity != null, nameof(ourNewEntity) + " != null");
                 var toThisFood = (Vector2)foodEntity.Position - (Vector2)ourNewEntity.Position;
+                // We have to go slow for the first few pieces of food otherwise we can "hop" over it
+                if (foodEaten < 10)
+                {
+                    toThisFood = toThisFood.normalized * 0.5f;
+                }
                 PlayerController.Local.SetTestInput(toThisFood);
             }
 
