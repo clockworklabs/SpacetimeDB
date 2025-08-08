@@ -29,6 +29,9 @@ public class GameManager : MonoBehaviour
 
     private void Start()
     {
+        // Clear game state in case we've disconnected and reconnected
+        Entities.Clear();
+        Players.Clear();
         Instance = this;
         Application.targetFrameRate = 60;
 
