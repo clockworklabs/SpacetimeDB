@@ -165,8 +165,8 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn reconnect_same_connection_id() {
-                make_test("reconnect-same-connection-id").run();
+            fn reconnect_different_connection_id() {
+                make_test("reconnect-different-connection-id").run();
             }
 
             #[test]

@@ -159,7 +159,7 @@ mod tests {
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
-    use spacetimedb_client_api_messages::websocket::{BsatnFormat, Compression};
+    use spacetimedb_client_api_messages::websocket::{BsatnFormat, CompressableQueryUpdate, Compression};
     use spacetimedb_datastore::execution_context::Workload;
     use spacetimedb_lib::bsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -353,7 +353,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval::<BsatnFormat>(db, tx, None, Compression::Brotli).tables;
+        let result = s.eval::<BsatnFormat>(db, tx, None, Compression::None).tables;
         assert_eq!(
             result.len(),
             total_tables,
@@ -363,7 +363,10 @@ mod tests {
         let result = result
             .into_iter()
             .flat_map(|x| x.updates)
-            .map(|x| x.maybe_decompress())
+            .map(|x| match x {
+                CompressableQueryUpdate::Uncompressed(x) => x,
+                _ => unreachable!(),
+            })
             .flat_map(|x| {
                 (&x.deletes)
                     .into_iter()
