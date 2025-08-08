@@ -1,0 +1,276 @@
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  merge_group:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull Request Number'
+        required: false
+        default: ''
+
+name: CI
+
+jobs:
+  docker_smoketests:
+    name: Smoketests
+    strategy:
+      matrix:
+        include:
+          - { runner: spacetimedb-runner, smoketest_args: --docker }
+          - { runner: windows-latest, smoketest_args: --no-build-cli }
+        runner: [spacetimedb-runner, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+      - uses: dsherret/rust-toolchain-file@v1
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: modules/global.json
+      - name: Build and start database (Linux)
+        if: runner.os == 'Linux'
+        run: docker compose up -d
+      - name: Build and start database (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+          Start-Process target/debug/spacetimedb-cli.exe start
+          cd modules
+          # the sdk-manifests on windows-latest are messed up, so we need to update them
+          dotnet workload config --update-mode workload-set
+          dotnet workload update
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+        if: runner.os == 'Windows'
+      - name: Run smoketests
+        # Note: clear_database and replication only work in private
+        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication
+      - name: Stop containers (Linux)
+        if: always() && runner.os == 'Linux'
+        run: docker compose down
+
+  test:
+    name: Test Suite
+    runs-on: spacetimedb-runner
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: modules/global.json
+
+      - name: Create /stdb dir
+        run: |
+          sudo mkdir /stdb
+          sudo chmod 777 /stdb
+
+      - name: Run cargo test
+        run: cargo test --all
+
+      - name: Check that the test outputs are up-to-date
+        run: bash tools/check-diff.sh
+
+      - name: Ensure C# autogen bindings are up-to-date
+        run: |
+          cargo run -p spacetimedb-codegen --example regen-csharp-moduledef
+          bash tools/check-diff.sh crates/bindings-csharp
+
+      - name: C# bindings tests
+        working-directory: crates/bindings-csharp
+        run: dotnet test -warnaserror
+
+  lints:
+    name: Lints
+    runs-on: spacetimedb-runner
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Run cargo clippy
+        run: cargo clippy --all --tests --benches -- -D warnings
+
+      - name: Run C# formatting check
+        working-directory: crates/bindings-csharp
+        run: |
+          dotnet tool restore
+          dotnet csharpier --check .
+
+      - name: Run `cargo doc` for bindings crate
+        # `bindings` is the only crate we care strongly about documenting,
+        # since we link to its docs.rs from our website.
+        # We won't pass `--no-deps`, though,
+        # since we want everything reachable through it to also work.
+        # This includes `sats` and `lib`.
+        working-directory: crates/bindings
+        env:
+          # Make `cargo doc` exit with error on warnings, most notably broken links
+          RUSTDOCFLAGS: '--deny warnings'
+        run: |
+          cargo doc
+
+  wasm_bindings:
+    name: Build and test wasm bindings
+    runs-on: spacetimedb-runner
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      # Make sure the `Cargo.lock` file reflects the latest available versions.
+      # This is what users would end up with on a fresh module, so we want to
+      # catch any compile errors arising from a different transitive closure
+      # of dependencies than what is in the workspace lock file.
+      #
+      # For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
+      - name: Update dependencies
+        run: cargo update
+
+      - name: Build module-test
+        run: cargo run -p spacetimedb-cli -- build --project-path modules/module-test
+
+      - name: Run bindgen tests
+        run: cargo test -p spacetimedb-codegen
+
+  publish_checks:
+    name: Check that packages are publishable
+    runs-on: ubuntu-latest
+    permissions: read-all
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python env
+        run: |
+          test -d venv || python3 -m venv venv
+          venv/bin/pip3 install argparse toml
+      - name: Run checks
+        run: |
+          FAILED=0
+          # This definition of ROOTS and invocation of find-publish-list.py is copied from publish-crates.sh
+          ROOTS=(bindings sdk cli standalone)
+          for crate in $(venv/bin/python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"); do
+            if ! venv/bin/python3 tools/crate-publish-checks.py "crates/$crate"; then
+              FAILED=$(( $FAILED + 1 ))
+            fi
+          done
+          if [ $FAILED -gt 0 ]; then
+            exit 1
+          fi
+
+  update:
+    name: Test spacetimedb-update flow
+    permissions: read-all
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-runner }
+          - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
+          - { target: aarch64-apple-darwin, runner: macos-latest }
+          - { target: x86_64-pc-windows-msvc, runner: windows-latest }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: dsherret/rust-toolchain-file@v1
+
+      - name: Install rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install packages
+        if: ${{ matrix.runner == 'arm-runner' }}
+        shell: bash
+        run: sudo apt install libssl-dev
+
+      - name: Build spacetimedb-update
+        run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
+
+      - name: Run self-install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          ROOT_DIR="$(mktemp -d)"
+          # NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
+          # My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
+          # happens very frequently on the `macos-runner`, but we haven't seen it on any others).
+          cargo run --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
+          "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
+
+  cli_docs:
+    name: Check CLI docs
+    permissions: read-all
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Check for docs change
+        run: |
+          cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md
+          cd docs
+          # This is needed because our website doesn't render markdown quite properly.
+          # See the README in docs for more details.
+          sed -i'' -E 's!^(##) `(.*)`$!\1 \2!' docs/cli-reference.md
+          sed -i'' -E 's!^(######) \*\*(.*)\*\*$!\1 <b>\2</b>!' docs/cli-reference.md
+          git status
+          if git diff --exit-code HEAD; then
+            echo "No docs changes detected"
+          else
+            echo "It looks like the CLI docs have changed:"
+            exit 1
+          fi

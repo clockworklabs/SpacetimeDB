@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>SpacetimeDB.Runtime</AssemblyName>
+    <Version>1.3.0</Version>
+    <Title>SpacetimeDB Module Runtime</Title>
+    <Description>The SpacetimeDB Runtime implements the database runtime bindings for writing SpacetimeDB modules in C#.</Description>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>SpacetimeDB</RootNamespace>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Note: BSATN.Codegen is included in the BSATN.Runtime NuGet package. -->
+    <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" />
+    <!-- ...But we also need BSATN.Codegen to transform `[SpacetimeDB.Type]` usages in source of Runtime itself. -->
+    <!-- For that, it has to be included as an explicit private dependency. -->
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <!-- Codegen package must be built before this one so that it's included in NuGet Runtime package, but we don't depend on it. -->
+    <!-- (*not* with OutputItemType=analyzer because we don't want to use that source generator on source of Runtime itself) -->
+    <ProjectReference Include="../Codegen/Codegen.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="" />
+    <None Include="build/*" Pack="true" PackagePath="build" />
+    <None Include="bindings.c" Pack="true" PackagePath="" />
+    <None Include="driver.h" Pack="true" PackagePath="" />
+    <!-- We want all users who depends on Runtime to automatically get the Roslyn codegen component as well. -->
+    <None Include="../Codegen/bin/$(Configuration)/netstandard2.0/SpacetimeDB.Codegen.dll" Pack="true" PackagePath="analyzers/dotnet/cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <UpToDateCheckInput Include="bindings.c" />
+    <UpToDateCheckInput Include="driver.h" />
+  </ItemGroup>
+
+</Project>

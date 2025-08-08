@@ -1,0 +1,24 @@
+[package]
+name = "spacetimedb-data-structures"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Assorted data structures used in spacetimedb"
+rust-version.workspace = true
+
+[features]
+memory-usage = ["dep:spacetimedb-memory-usage"]
+serde = ["dep:serde", "hashbrown/serde"]
+
+[dependencies]
+spacetimedb-memory-usage = { workspace = true, optional = true, default-features = false }
+ahash.workspace = true
+crossbeam-queue.workspace = true
+hashbrown.workspace = true
+nohash-hasher.workspace = true
+serde = { workspace = true, optional = true }
+smallvec.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

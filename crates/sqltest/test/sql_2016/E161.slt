@@ -1,0 +1,6 @@
+# E161: SQL comments using leading double minus
+
+query I
+SELECT 1 -- hello
+----
+1

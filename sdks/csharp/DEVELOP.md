@@ -1,3 +1,7 @@
+# Migration note
+
+We are in the process of moving from the `com.clockworklabs.spacetimedbsdk` repo to the `sdks/csharp` subdirectory of [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB). **Any new changes should be made there**. The `com.clockworklabs.spacetimedbsdk` repo will only be updated on release. Apologies in advance for any sharp edges while the migration is in progress.
+
 # Notes for maintainers
 
 First, see the [user-facing docs](https://spacetimedb.com/docs/sdks/c-sharp).

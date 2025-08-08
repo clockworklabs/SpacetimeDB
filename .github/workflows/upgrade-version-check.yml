@@ -1,0 +1,19 @@
+name: Upgrade Version Check
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  merge_group:
+permissions: read-all
+
+jobs:
+  version_upgrade_check:
+    runs-on: spacetimedb-runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Verify that upgrade-version still works
+        run: cd tools/upgrade-version && cargo run -- 123.456.789
+      - name: Show diff
+        run: git diff HEAD
+

@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc fb91a359dd5b9190b8b08914ac20beed16c9e16fa63c878de36503bb955fe28d # shrinks to enc = Builtin(Array { val: [Builtin(Array { val: [Builtin(U16(0)), Builtin(Bool(false))] })] })
+cc d6f0b97690c595b145bd074d9f23c5b19dc5075b5e6b9197f80945e2888501cb # shrinks to enc = Builtin(Array { val: [Builtin(Array { val: [Builtin(U8(0))] })] })
+cc d46a7105059c3fbce79ddd41e3e7d5386ced1f7fb16e7a7a3e1e07eb8744dbd8 # shrinks to enc = Builtin(Map { val: {Builtin(Bool(false)): Product(ProductValue { elements: [Builtin(Array { val: [] })] })} })

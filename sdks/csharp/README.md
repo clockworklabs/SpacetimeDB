@@ -10,7 +10,7 @@ The Unity SDK uses the same code as the C# SDK. You can find the documentation f
 
 There is also a comprehensive Unity tutorial/demo available:
 - [Unity Tutorial](https://spacetimedb.com/docs/unity/part-1) Doc
-- [Unity Demo](https://github.com/clockworklabs/Blackholio) Repo
+- [Unity Demo](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio) Repo
 
 ## Internal developer documentation
 See [`DEVELOP.md`](./DEVELOP.md).
