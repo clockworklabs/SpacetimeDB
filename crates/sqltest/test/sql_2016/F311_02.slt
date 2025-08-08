@@ -1,0 +1,5 @@
+# F311-02: CREATE TABLE for persistent base tables
+
+onlyif Postgres
+statement ok
+CREATE SCHEMA TABLE_F311_02_01_01 CREATE TABLE TABLE_F311_02_01_012 ( A INT )

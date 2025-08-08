@@ -1,0 +1,21 @@
+# E011-04: Arithmetic operators
+
+query I
+SELECT 5 +3
+----
+8
+
+query I
+SELECT 5 -3
+----
+2
+
+query R
+SELECT 3.4 + 1.2
+----
+4.6
+
+query R
+SELECT 3.4 - 1.2
+----
+2.2

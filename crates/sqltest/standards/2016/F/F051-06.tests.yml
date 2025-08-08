@@ -1,0 +1,3 @@
+feature: F051-06
+id: f051_06_01_01
+sql: SELECT CURRENT_DATE

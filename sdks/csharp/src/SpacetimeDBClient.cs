@@ -1,16 +1,13 @@
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using SpacetimeDB.BSATN;
-using SpacetimeDB.Internal;
 using SpacetimeDB.ClientApi;
 using Thread = System.Threading.Thread;
-
 
 namespace SpacetimeDB
 {
@@ -109,7 +106,7 @@ namespace SpacetimeDB
         internal void AddOnDisconnect(WebSocket.CloseEventHandler cb);
 
         internal void LegacySubscribe(ISubscriptionHandle handle, string[] querySqls);
-        internal void Subscribe(ISubscriptionHandle handle, string[] querySqls);
+        internal QueryId? Subscribe(ISubscriptionHandle handle, string[] querySqls);
         internal void Unsubscribe(QueryId queryId);
         void FrameTick();
         void Disconnect();
@@ -124,7 +121,6 @@ namespace SpacetimeDB
         where Tables : RemoteTablesBase
     {
         public static DbConnectionBuilder<DbConnection> Builder() => new();
-
 
         internal event Action<Identity, string>? onConnect;
 
@@ -166,7 +162,7 @@ namespace SpacetimeDB
         private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
 
         private bool isClosing;
-        private readonly Thread networkMessageProcessThread;
+        private readonly Thread networkMessageParseThread;
         public readonly Stats stats = new();
 
         protected DbConnectionBase()
@@ -188,182 +184,99 @@ namespace SpacetimeDB
                     SpacetimeDBNetworkManager._instance.RemoveConnection(this);
                 }
             };
+            
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (SpacetimeDBNetworkManager._instance != null)
+                SpacetimeDBNetworkManager._instance.StartCoroutine(ParseMessages());
+#endif
 #endif
 
-            networkMessageProcessThread = new Thread(PreProcessMessages);
-            networkMessageProcessThread.Start();
+#if !(UNITY_WEBGL && !UNITY_EDITOR)
+            // For targets other than webgl we start a thread to parse messages
+            networkMessageParseThread = new Thread(ParseMessages);
+            networkMessageParseThread.Start();
+#endif
         }
 
-        struct UnprocessedMessage
+        internal struct UnparsedMessage
         {
+            /// <summary>
+            /// The bytes of the message.
+            /// </summary>
             public byte[] bytes;
+
+            /// <summary>
+            /// The timestamp the message came off the wire.
+            /// </summary>
             public DateTime timestamp;
+
+            /// <summary>
+            /// The ID assigned by the message parsing queue tracker.
+            /// </summary>
+            public uint parseQueueTrackerId;
         }
 
-        struct ProcessedDatabaseUpdate
-        {
-            // Map: table handles -> (primary key -> DbValue).
-            // If a particular table has no primary key, the "primary key" is just a byte[]
-            // storing the BSATN encoding of the row.
-            // See Decode(...).
-            public Dictionary<IRemoteTableHandle, MultiDictionaryDelta<object, DbValue>> Updates;
-
-            // Can't override the default constructor. Make sure you use this one!
-            public static ProcessedDatabaseUpdate New()
-            {
-                ProcessedDatabaseUpdate result;
-                result.Updates = new();
-                return result;
-            }
-
-            public MultiDictionaryDelta<object, DbValue> DeltaForTable(IRemoteTableHandle table)
-            {
-                if (!Updates.TryGetValue(table, out var delta))
-                {
-                    // Make sure we use GenericEqualityComparer here, since it handles byte[]s and arbitrary primary key types
-                    // correctly.
-                    delta = new MultiDictionaryDelta<object, DbValue>(GenericEqualityComparer.Instance, DbValueComparer.Instance);
-                    Updates[table] = delta;
-                }
-
-                return delta;
-            }
-        }
-
-        struct ProcessedMessage
+        internal struct ParsedMessage
         {
             public ServerMessage message;
-            public ProcessedDatabaseUpdate dbOps;
-            public DateTime timestamp;
+            public ParsedDatabaseUpdate dbOps;
+            public DateTime receiveTimestamp;
+            public uint applyQueueTrackerId;
             public ReducerEvent<Reducer>? reducerEvent;
         }
 
-        private readonly BlockingCollection<UnprocessedMessage> _messageQueue =
-            new(new ConcurrentQueue<UnprocessedMessage>());
+        private readonly BlockingCollection<UnparsedMessage> _parseQueue =
+            new(new ConcurrentQueue<UnparsedMessage>());
 
-        private readonly BlockingCollection<ProcessedMessage> _preProcessedNetworkMessages =
-            new(new ConcurrentQueue<ProcessedMessage>());
+        private readonly BlockingCollection<ParsedMessage> _applyQueue =
+            new(new ConcurrentQueue<ParsedMessage>());
 
         internal static bool IsTesting;
-        internal bool HasPreProcessedMessage => _preProcessedNetworkMessages.Count > 0;
+        internal bool HasMessageToApply => _applyQueue.Count > 0;
 
-        private readonly CancellationTokenSource _preProcessCancellationTokenSource = new();
-        private CancellationToken _preProcessCancellationToken => _preProcessCancellationTokenSource.Token;
-
-        /// <summary>
-        /// Decode a row for a table, producing a primary key.
-        /// If the table has a specific column marked `#[primary_key]`, use that.
-        /// If not, the BSATN for the entire row is used instead.
-        /// </summary>
-        /// <param name="table"></param>
-        /// <param name="bin"></param>
-        /// <param name="primaryKey"></param>
-        /// <returns></returns>
-        static DbValue Decode(IRemoteTableHandle table, byte[] bin, out object primaryKey)
-        {
-            var obj = table.DecodeValue(bin);
-            // TODO(1.1): we should exhaustively check that GenericEqualityComparer works
-            // for all types that are allowed to be primary keys.
-            var primaryKey_ = table.GetPrimaryKey(obj);
-            primaryKey_ ??= bin;
-            primaryKey = primaryKey_;
-            return new(obj, bin);
-        }
+        private readonly CancellationTokenSource _parseCancellationTokenSource = new();
+        private CancellationToken _parseCancellationToken => _parseCancellationTokenSource.Token;
 
         private static readonly Status Committed = new Status.Committed(default);
         private static readonly Status OutOfEnergy = new Status.OutOfEnergy(default);
 
-        enum CompressionAlgos : byte
+        /// <summary>
+        /// Get a description of a message suitable for storing in the tracker metadata.
+        /// </summary>
+        /// <param name="message"></param>
+        /// <returns></returns>
+        internal string TrackerMetadataForMessage(ServerMessage message) => message switch
         {
-            None = 0,
-            Brotli = 1,
-            Gzip = 2,
-        }
+            ServerMessage.TransactionUpdate(var transactionUpdate) => $"type={nameof(ServerMessage.TransactionUpdate)},reducer={transactionUpdate.ReducerCall.ReducerName}",
+            _ => $"type={message.GetType().Name}"
+        };
 
-        private static BrotliStream BrotliReader(Stream stream)
-        {
-            return new BrotliStream(stream, CompressionMode.Decompress);
-        }
-
-        private static GZipStream GzipReader(Stream stream)
-        {
-            return new GZipStream(stream, CompressionMode.Decompress);
-        }
-
-        private static ServerMessage DecompressDecodeMessage(byte[] bytes)
-        {
-            using var stream = new MemoryStream(bytes);
-
-            // The stream will never be empty. It will at least contain the compression algo.
-            var compression = (CompressionAlgos)stream.ReadByte();
-            // Conditionally decompress and decode.
-            Stream decompressedStream = compression switch
-            {
-                CompressionAlgos.None => stream,
-                CompressionAlgos.Brotli => BrotliReader(stream),
-                CompressionAlgos.Gzip => GzipReader(stream),
-                _ => throw new InvalidOperationException("Unknown compression type"),
-            };
-
-            return new ServerMessage.BSATN().Read(new BinaryReader(decompressedStream));
-        }
-
-        private static QueryUpdate DecompressDecodeQueryUpdate(CompressableQueryUpdate update)
-        {
-            Stream decompressedStream;
-
-            switch (update)
-            {
-                case CompressableQueryUpdate.Uncompressed(var qu):
-                    return qu;
-
-                case CompressableQueryUpdate.Brotli(var bytes):
-                    decompressedStream = BrotliReader(new MemoryStream(bytes.ToArray()));
-                    break;
-
-                case CompressableQueryUpdate.Gzip(var bytes):
-                    decompressedStream = GzipReader(new MemoryStream(bytes.ToArray()));
-                    break;
-
-                default:
-                    throw new InvalidOperationException();
-            }
-
-            return new QueryUpdate.BSATN().Read(new BinaryReader(decompressedStream));
-        }
-
-        private static IEnumerable<byte[]> BsatnRowListIter(BsatnRowList list)
-        {
-            var rowsData = list.RowsData;
-
-            return list.SizeHint switch
-            {
-                RowSizeHint.FixedSize(var size) => Enumerable
-                    .Range(0, rowsData.Count / size)
-                    .Select(index => rowsData.Skip(index * size).Take(size).ToArray()),
-
-                RowSizeHint.RowOffsets(var offsets) => offsets.Zip(
-                    offsets.Skip(1).Append((ulong)rowsData.Count),
-                    (start, end) => rowsData.Take((int)end).Skip((int)start).ToArray()
-                ),
-
-                _ => throw new InvalidOperationException("Unknown RowSizeHint variant"),
-            };
-        }
-
-        void PreProcessMessages()
+#if UNITY_WEBGL && !UNITY_EDITOR
+        internal IEnumerator ParseMessages()
+#else
+        internal void ParseMessages()
+#endif
         {
             while (!isClosing)
             {
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+                yield return null;
+                while (_parseQueue.Count > 0)
+#endif
                 try
                 {
-                    var message = _messageQueue.Take(_preProcessCancellationToken);
-                    var preprocessedMessage = PreProcessMessage(message);
-                    _preProcessedNetworkMessages.Add(preprocessedMessage, _preProcessCancellationToken);
+                    var message = _parseQueue.Take(_parseCancellationToken);
+                    var parsedMessage = ParseMessage(message);
+                    _applyQueue.Add(parsedMessage, _parseCancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    break;
+#else
                     return; // Normal shutdown
+#endif
                 }
             }
 
@@ -382,16 +295,16 @@ namespace SpacetimeDB
                 }
             }
 
-            ProcessedDatabaseUpdate PreProcessLegacySubscription(InitialSubscription initSub)
+            ParsedDatabaseUpdate ParseLegacySubscription(InitialSubscription initSub)
             {
-                var dbOps = ProcessedDatabaseUpdate.New();
+                var dbOps = ParsedDatabaseUpdate.New();
                 // This is all of the inserts
                 int cap = initSub.DatabaseUpdate.Tables.Sum(a => (int)a.NumRows);
 
                 // First apply all of the state
                 foreach (var (table, update) in GetTables(initSub.DatabaseUpdate))
                 {
-                    PreProcessInsertOnlyTable(table, update, dbOps);
+                    table.ParseInsertOnly(update, dbOps);
                 }
                 return dbOps;
             }
@@ -400,101 +313,40 @@ namespace SpacetimeDB
             /// TODO: the dictionary is here for backwards compatibility and can be removed
             /// once we get rid of legacy subscriptions.
             /// </summary>
-            ProcessedDatabaseUpdate PreProcessSubscribeMultiApplied(SubscribeMultiApplied subscribeMultiApplied)
+            ParsedDatabaseUpdate ParseSubscribeMultiApplied(SubscribeMultiApplied subscribeMultiApplied)
             {
-                var dbOps = ProcessedDatabaseUpdate.New();
+                var dbOps = ParsedDatabaseUpdate.New();
                 foreach (var (table, update) in GetTables(subscribeMultiApplied.Update))
                 {
-                    PreProcessInsertOnlyTable(table, update, dbOps);
+                    table.ParseInsertOnly(update, dbOps);
                 }
                 return dbOps;
             }
 
-            void PreProcessInsertOnlyTable(IRemoteTableHandle table, TableUpdate update, ProcessedDatabaseUpdate dbOps)
+            ParsedDatabaseUpdate ParseUnsubscribeMultiApplied(UnsubscribeMultiApplied unsubMultiApplied)
             {
-                var delta = dbOps.DeltaForTable(table);
-
-                foreach (var cqu in update.Updates)
-                {
-                    var qu = DecompressDecodeQueryUpdate(cqu);
-                    if (qu.Deletes.RowsData.Count > 0)
-                    {
-                        Log.Warn("Non-insert during an insert-only server message!");
-                    }
-                    foreach (var bin in BsatnRowListIter(qu.Inserts))
-                    {
-                        var obj = Decode(table, bin, out var pk);
-                        delta.Add(pk, obj);
-                    }
-                }
-            }
-
-            void PreProcessDeleteOnlyTable(IRemoteTableHandle table, TableUpdate update, ProcessedDatabaseUpdate dbOps)
-            {
-                var delta = dbOps.DeltaForTable(table);
-                foreach (var cqu in update.Updates)
-                {
-                    var qu = DecompressDecodeQueryUpdate(cqu);
-                    if (qu.Inserts.RowsData.Count > 0)
-                    {
-                        Log.Warn("Non-delete during a delete-only operation!");
-                    }
-                    foreach (var bin in BsatnRowListIter(qu.Deletes))
-                    {
-                        var obj = Decode(table, bin, out var pk);
-                        delta.Remove(pk, obj);
-                    }
-                }
-            }
-
-            void PreProcessTable(IRemoteTableHandle table, TableUpdate update, ProcessedDatabaseUpdate dbOps)
-            {
-                var delta = dbOps.DeltaForTable(table);
-                foreach (var cqu in update.Updates)
-                {
-                    var qu = DecompressDecodeQueryUpdate(cqu);
-
-                    // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
-                    // to the table, it doesn't matter that we call Add before Remove here.
-
-                    foreach (var bin in BsatnRowListIter(qu.Inserts))
-                    {
-                        var obj = Decode(table, bin, out var pk);
-                        delta.Add(pk, obj);
-                    }
-                    foreach (var bin in BsatnRowListIter(qu.Deletes))
-                    {
-                        var obj = Decode(table, bin, out var pk);
-                        delta.Remove(pk, obj);
-                    }
-                }
-
-            }
-
-            ProcessedDatabaseUpdate PreProcessUnsubscribeMultiApplied(UnsubscribeMultiApplied unsubMultiApplied)
-            {
-                var dbOps = ProcessedDatabaseUpdate.New();
+                var dbOps = ParsedDatabaseUpdate.New();
 
                 foreach (var (table, update) in GetTables(unsubMultiApplied.Update))
                 {
-                    PreProcessDeleteOnlyTable(table, update, dbOps);
+                    table.ParseDeleteOnly(update, dbOps);
                 }
 
                 return dbOps;
             }
 
-            ProcessedDatabaseUpdate PreProcessDatabaseUpdate(DatabaseUpdate updates)
+            ParsedDatabaseUpdate ParseDatabaseUpdate(DatabaseUpdate updates)
             {
-                var dbOps = ProcessedDatabaseUpdate.New();
+                var dbOps = ParsedDatabaseUpdate.New();
 
                 foreach (var (table, update) in GetTables(updates))
                 {
-                    PreProcessTable(table, update, dbOps);
+                    table.Parse(update, dbOps);
                 }
                 return dbOps;
             }
 
-            void PreProcessOneOffQuery(OneOffQueryResponse resp)
+            void ParseOneOffQuery(OneOffQueryResponse resp)
             {
                 /// This case does NOT produce a list of DBOps, because it should not modify the client cache state!
                 var messageId = new Guid(resp.MessageId.ToArray());
@@ -508,35 +360,48 @@ namespace SpacetimeDB
                 resultSource.SetResult(resp);
             }
 
-            ProcessedMessage PreProcessMessage(UnprocessedMessage unprocessed)
+            ParsedMessage ParseMessage(UnparsedMessage unparsed)
             {
-                var dbOps = ProcessedDatabaseUpdate.New();
+                var dbOps = ParsedDatabaseUpdate.New();
+                var message = CompressionHelpers.DecompressDecodeMessage(unparsed.bytes);
+                var trackerMetadata = TrackerMetadataForMessage(message);
 
-                var message = DecompressDecodeMessage(unprocessed.bytes);
+                stats.ParseMessageQueueTracker.FinishTrackingRequest(unparsed.parseQueueTrackerId, trackerMetadata);
+                var parseStart = DateTime.UtcNow;
 
                 ReducerEvent<Reducer>? reducerEvent = default;
 
                 switch (message)
                 {
                     case ServerMessage.InitialSubscription(var initSub):
-                        dbOps = PreProcessLegacySubscription(initSub);
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(initSub.RequestId, unparsed.timestamp);
+                        dbOps = ParseLegacySubscription(initSub);
                         break;
                     case ServerMessage.SubscribeApplied(var subscribeApplied):
                         break;
                     case ServerMessage.SubscribeMultiApplied(var subscribeMultiApplied):
-                        dbOps = PreProcessSubscribeMultiApplied(subscribeMultiApplied);
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(subscribeMultiApplied.RequestId, unparsed.timestamp);
+                        dbOps = ParseSubscribeMultiApplied(subscribeMultiApplied);
                         break;
                     case ServerMessage.SubscriptionError(var subscriptionError):
                         // do nothing; main thread will warn.
+                        if (subscriptionError.RequestId.HasValue)
+                        {
+                            stats.SubscriptionRequestTracker.FinishTrackingRequest(subscriptionError.RequestId.Value, unparsed.timestamp);
+                        }
                         break;
                     case ServerMessage.UnsubscribeApplied(var unsubscribeApplied):
                         // do nothing; main thread will warn.
                         break;
                     case ServerMessage.UnsubscribeMultiApplied(var unsubscribeMultiApplied):
-                        dbOps = PreProcessUnsubscribeMultiApplied(unsubscribeMultiApplied);
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(unsubscribeMultiApplied.RequestId, unparsed.timestamp);
+                        dbOps = ParseUnsubscribeMultiApplied(unsubscribeMultiApplied);
                         break;
                     case ServerMessage.TransactionUpdate(var transactionUpdate):
                         // Convert the generic event arguments in to a domain specific event object
+                        var hostDuration = (TimeSpan)transactionUpdate.TotalHostExecutionDuration;
+                        stats.AllReducersTracker.InsertRequest(hostDuration, $"reducer={transactionUpdate.ReducerCall.ReducerName}");
+
                         try
                         {
                             reducerEvent = new(
@@ -557,28 +422,46 @@ namespace SpacetimeDB
                         {
                             // Failing to parse the ReducerEvent is fine, it just means we should
                             // call downstream stuff with an UnknownTransaction.
-                            // See OnProcessMessageComplete.
+                            // See ApplyMessage
+                        }
+
+                        var callerIdentity = transactionUpdate.CallerIdentity;
+                        if (callerIdentity == Identity && transactionUpdate.CallerConnectionId == ConnectionId)
+                        {
+                            // This was a request that we initiated
+                            var requestId = transactionUpdate.ReducerCall.RequestId;
+                            // Make sure we mark the request as having finished when it came off the wire.
+                            // That's why we use unparsed.timestamp, rather than DateTime.UtcNow.
+                            // See ReducerRequestTracker's comment.
+                            if (!stats.ReducerRequestTracker.FinishTrackingRequest(requestId, unparsed.timestamp))
+                            {
+                                Log.Warn($"Failed to finish tracking reducer request: {requestId}");
+                            }
                         }
 
                         if (transactionUpdate.Status is UpdateStatus.Committed(var committed))
                         {
-                            dbOps = PreProcessDatabaseUpdate(committed);
+                            dbOps = ParseDatabaseUpdate(committed);
                         }
+
                         break;
                     case ServerMessage.TransactionUpdateLight(var update):
-                        dbOps = PreProcessDatabaseUpdate(update.Update);
+                        dbOps = ParseDatabaseUpdate(update.Update);
                         break;
                     case ServerMessage.IdentityToken(var identityToken):
                         break;
                     case ServerMessage.OneOffQueryResponse(var resp):
-                        PreProcessOneOffQuery(resp);
+                        ParseOneOffQuery(resp);
                         break;
 
                     default:
                         throw new InvalidOperationException();
                 }
 
-                return new ProcessedMessage { message = message, dbOps = dbOps, timestamp = unprocessed.timestamp, reducerEvent = reducerEvent };
+                stats.ParseMessageTracker.InsertRequest(parseStart, trackerMetadata);
+                var applyTracker = stats.ApplyMessageQueueTracker.StartTrackingRequest(trackerMetadata);
+
+                return new ParsedMessage { message = message, dbOps = dbOps, receiveTimestamp = unparsed.timestamp, applyQueueTrackerId = applyTracker, reducerEvent = reducerEvent };
             }
         }
 
@@ -586,8 +469,14 @@ namespace SpacetimeDB
         {
             isClosing = true;
             connectionClosed = true;
-            webSocket.Close();
-            _preProcessCancellationTokenSource.Cancel();
+
+            // Only try to close if the connection is active
+            if (webSocket.IsConnected)
+            {
+                webSocket.Close();
+            }
+
+            _parseCancellationTokenSource.Cancel();
         }
 
         /// <summary>
@@ -612,7 +501,11 @@ namespace SpacetimeDB
             Log.Info($"SpacetimeDBClient: Connecting to {uri} {addressOrName}");
             if (!IsTesting)
             {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                async Task Function()
+#else
                 Task.Run(async () =>
+#endif
                 {
                     try
                     {
@@ -628,12 +521,17 @@ namespace SpacetimeDB
 
                         Log.Exception(e);
                     }
+#if UNITY_WEBGL && !UNITY_EDITOR
+                }
+                _ = Function();
+#else
                 });
+#endif
             }
         }
 
 
-        private void OnMessageProcessCompleteUpdate(IEventContext eventContext, ProcessedDatabaseUpdate dbOps)
+        private void ApplyUpdate(IEventContext eventContext, ParsedDatabaseUpdate dbOps)
         {
             // First trigger OnBeforeDelete
             foreach (var (table, update) in dbOps.Updates)
@@ -654,21 +552,22 @@ namespace SpacetimeDB
 
         protected abstract bool Dispatch(IReducerEventContext context, Reducer reducer);
 
-        private void OnMessageProcessComplete(ProcessedMessage processed)
+        private void ApplyMessage(ParsedMessage parsed)
         {
-            var message = processed.message;
-            var dbOps = processed.dbOps;
-            var timestamp = processed.timestamp;
+            var message = parsed.message;
+            var dbOps = parsed.dbOps;
+            var timestamp = parsed.receiveTimestamp;
+
+            stats.ApplyMessageQueueTracker.FinishTrackingRequest(parsed.applyQueueTrackerId);
+            var applyStart = DateTime.UtcNow;
 
             switch (message)
             {
                 case ServerMessage.InitialSubscription(var initialSubscription):
                     {
-                        stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.InitialSubscription)}");
-                        stats.SubscriptionRequestTracker.FinishTrackingRequest(initialSubscription.RequestId);
                         var eventContext = MakeSubscriptionEventContext();
                         var legacyEventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
-                        OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
+                        ApplyUpdate(legacyEventContext, dbOps);
 
                         if (legacySubscriptions.TryGetValue(initialSubscription.RequestId, out var subscription))
                         {
@@ -690,11 +589,9 @@ namespace SpacetimeDB
 
                 case ServerMessage.SubscribeMultiApplied(var subscribeMultiApplied):
                     {
-                        stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.SubscribeApplied)}");
-                        stats.SubscriptionRequestTracker.FinishTrackingRequest(subscribeMultiApplied.RequestId);
                         var eventContext = MakeSubscriptionEventContext();
                         var legacyEventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
-                        OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
+                        ApplyUpdate(legacyEventContext, dbOps);
                         if (subscriptions.TryGetValue(subscribeMultiApplied.QueryId.Id, out var subscription))
                         {
                             try
@@ -713,16 +610,12 @@ namespace SpacetimeDB
                 case ServerMessage.SubscriptionError(var subscriptionError):
                     {
                         Log.Warn($"Subscription Error: ${subscriptionError.Error}");
-                        stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.SubscriptionError)}");
-                        if (subscriptionError.RequestId.HasValue)
-                        {
-                            stats.SubscriptionRequestTracker.FinishTrackingRequest(subscriptionError.RequestId.Value);
-                        }
+
                         // TODO: should I use a more specific exception type here?
                         var exception = new Exception(subscriptionError.Error);
                         var eventContext = ToErrorContext(exception);
                         var legacyEventContext = ToEventContext(new Event<Reducer>.SubscribeError(exception));
-                        OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
+                        ApplyUpdate(legacyEventContext, dbOps);
                         if (subscriptionError.QueryId.HasValue)
                         {
                             if (subscriptions.TryGetValue(subscriptionError.QueryId.Value, out var subscription))
@@ -752,11 +645,9 @@ namespace SpacetimeDB
 
                 case ServerMessage.UnsubscribeMultiApplied(var unsubscribeMultiApplied):
                     {
-                        stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.UnsubscribeApplied)}");
-                        stats.SubscriptionRequestTracker.FinishTrackingRequest(unsubscribeMultiApplied.RequestId);
                         var eventContext = MakeSubscriptionEventContext();
                         var legacyEventContext = ToEventContext(new Event<Reducer>.UnsubscribeApplied());
-                        OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
+                        ApplyUpdate(legacyEventContext, dbOps);
                         if (subscriptions.TryGetValue(unsubscribeMultiApplied.QueryId.Id, out var subscription))
                         {
                             try
@@ -773,35 +664,18 @@ namespace SpacetimeDB
 
                 case ServerMessage.TransactionUpdateLight(var update):
                     {
-                        stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.TransactionUpdateLight)}");
-
                         var eventContext = ToEventContext(new Event<Reducer>.UnknownTransaction());
-                        OnMessageProcessCompleteUpdate(eventContext, dbOps);
+                        ApplyUpdate(eventContext, dbOps);
 
                         break;
                     }
 
                 case ServerMessage.TransactionUpdate(var transactionUpdate):
                     {
-                        var reducer = transactionUpdate.ReducerCall.ReducerName;
-                        stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.TransactionUpdate)},reducer={reducer}");
-                        var hostDuration = (TimeSpan)transactionUpdate.TotalHostExecutionDuration;
-                        stats.AllReducersTracker.InsertRequest(hostDuration, $"reducer={reducer}");
-                        var callerIdentity = transactionUpdate.CallerIdentity;
-                        if (callerIdentity == Identity)
-                        {
-                            // This was a request that we initiated
-                            var requestId = transactionUpdate.ReducerCall.RequestId;
-                            if (!stats.ReducerRequestTracker.FinishTrackingRequest(requestId))
-                            {
-                                Log.Warn($"Failed to finish tracking reducer request: {requestId}");
-                            }
-                        }
-
-                        if (processed.reducerEvent is { } reducerEvent)
+                        if (parsed.reducerEvent is { } reducerEvent)
                         {
                             var legacyEventContext = ToEventContext(new Event<Reducer>.Reducer(reducerEvent));
-                            OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
+                            ApplyUpdate(legacyEventContext, dbOps);
                             var eventContext = ToReducerEventContext(reducerEvent);
                             Dispatch(eventContext, reducerEvent.Reducer);
                             // don't invoke OnUnhandledReducerError, that's [Obsolete].
@@ -809,7 +683,7 @@ namespace SpacetimeDB
                         else
                         {
                             var legacyEventContext = ToEventContext(new Event<Reducer>.UnknownTransaction());
-                            OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
+                            ApplyUpdate(legacyEventContext, dbOps);
                         }
                         break;
                     }
@@ -832,11 +706,15 @@ namespace SpacetimeDB
                 default:
                     throw new InvalidOperationException();
             }
+
+            stats.ApplyMessageTracker.InsertRequest(applyStart, TrackerMetadataForMessage(message));
         }
 
         // Note: this method is called from unit tests.
-        internal void OnMessageReceived(byte[] bytes, DateTime timestamp) =>
-            _messageQueue.Add(new UnprocessedMessage { bytes = bytes, timestamp = timestamp });
+        internal void OnMessageReceived(byte[] bytes, DateTime timestamp)
+        {
+            _parseQueue.Add(new UnparsedMessage { bytes = bytes, timestamp = timestamp, parseQueueTrackerId = stats.ParseMessageQueueTracker.StartTrackingRequest() });
+        }
 
         // TODO: this should become [Obsolete] but for now is used by autogenerated code.
         void IDbConnection.InternalCallReducer<T>(T args, CallReducerFlags flags)
@@ -874,12 +752,12 @@ namespace SpacetimeDB
             ));
         }
 
-        void IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)
+        QueryId? IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)
         {
             if (!webSocket.IsConnected)
             {
                 Log.Error("Cannot subscribe, not connected to server!");
-                return;
+                return null;
             }
 
             var id = stats.SubscriptionRequestTracker.StartTrackingRequest();
@@ -895,6 +773,7 @@ namespace SpacetimeDB
                     QueryId = new QueryId(queryId),
                 }
             ));
+            return new QueryId(queryId);
         }
 
         /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("SELECT * FROM table WHERE sender = \"bob\"");
@@ -952,9 +831,13 @@ namespace SpacetimeDB
                 return LogAndThrow($"Mismatched result type, expected {typeof(T)} but got {resultTable.TableName}");
             }
 
-            return BsatnRowListIter(resultTable.Rows)
-                .Select(BSATNHelpers.Decode<T>)
-                .ToArray();
+            var (resultReader, resultCount) = CompressionHelpers.ParseRowList(resultTable.Rows);
+            var output = new T[resultCount];
+            for (int i = 0; i < resultCount; i++)
+            {
+                output[i] = IStructuralReadWrite.Read<T>(resultReader);
+            }
+            return output;
         }
 
         public bool IsActive => webSocket.IsConnected;
@@ -962,9 +845,9 @@ namespace SpacetimeDB
         public void FrameTick()
         {
             webSocket.Update();
-            while (_preProcessedNetworkMessages.TryTake(out var preProcessedMessage))
+            while (_applyQueue.TryTake(out var parsedMessage))
             {
-                OnMessageProcessComplete(preProcessedMessage);
+                ApplyMessage(parsedMessage);
             }
         }
 
@@ -992,6 +875,46 @@ namespace SpacetimeDB
         void IDbConnection.AddOnDisconnect(WebSocket.CloseEventHandler cb) => webSocket.OnClose += cb;
     }
 
+    /// <summary>
+    /// Represents the result of parsing a database update message from SpacetimeDB.
+    /// Contains updates for all tables affected by the update, with each entry mapping a table handle
+    /// to its respective set of row changes (by primary key or row instance).
+    /// 
+    /// Note: Due to C#'s struct constructor limitations, you must use <see cref="ParsedDatabaseUpdate.New"/> 
+    /// to create new instances.
+    /// Do not use the default constructor, as it will not initialize the Updates dictionary.
+    /// </summary>
+    internal struct ParsedDatabaseUpdate
+    {
+        // Map: table handles -> (primary key -> IStructuralReadWrite).
+        // If a particular table has no primary key, the "primary key" is just the row itself.
+        // This is valid because any [SpacetimeDB.Type] automatically has a correct Equals and HashSet implementation.
+        public Dictionary<IRemoteTableHandle, IParsedTableUpdate> Updates;
+
+        // Can't override the default constructor. Make sure you use this one!
+        public static ParsedDatabaseUpdate New()
+        {
+            ParsedDatabaseUpdate result;
+            result.Updates = new();
+            return result;
+        }
+
+        /// <summary>
+        /// Returns the <see cref="IParsedTableUpdate"/> for the specified table.
+        /// If no update exists for the table, a new one is allocated and added to the Updates dictionary.
+        /// </summary>
+        public IParsedTableUpdate UpdateForTable(IRemoteTableHandle table)
+        {
+            if (!Updates.TryGetValue(table, out var delta))
+            {
+                delta = table.MakeParsedTableUpdate();
+                Updates[table] = delta;
+            }
+
+            return delta;
+        }
+    }
+
     internal struct UintAllocator
     {
         private uint lastAllocated;
@@ -1005,33 +928,5 @@ namespace SpacetimeDB
             lastAllocated++;
             return lastAllocated;
         }
-    }
-    internal readonly struct DbValue
-    {
-        public readonly IStructuralReadWrite value;
-        public readonly byte[] bytes;
-
-        public DbValue(IStructuralReadWrite value, byte[] bytes)
-        {
-            this.value = value;
-            this.bytes = bytes;
-        }
-
-        // TODO: having a nice ToString here would give better way better errors when applying table deltas,
-        // but it's tricky to do that generically.
-    }
-
-    /// <summary>
-    /// DbValue comparer that uses BSATN-encoded records to compare DbValues for equality.
-    /// </summary>
-    internal readonly struct DbValueComparer : IEqualityComparer<DbValue>
-    {
-        public static DbValueComparer Instance = new();
-
-        public bool Equals(DbValue x, DbValue y) =>
-            ByteArrayComparer.Instance.Equals(x.bytes, y.bytes);
-
-        public int GetHashCode(DbValue obj) =>
-            ByteArrayComparer.Instance.GetHashCode(obj.bytes);
     }
 }

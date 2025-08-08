@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6d64f4cbc7b9419bb398ea63a792a77e265650c592e74729d247b16de2f7f17b # shrinks to ((cols, pv), ptr) = (([ColId(0)], ProductValue { elements: [Array([]), Array([]), I128(0), Bool(false), Sum(SumValue { tag: 0, value: F64(Total(0.0)) }), Product(ProductValue { elements: [Bool(false), U8(0), I128(0), U32(0), Sum(SumValue { tag: 0, value: U8(0) }), U8(0), U32(215254127), Product(ProductValue { elements: [] })] }), I128(39831157966956966676235972844869827525), String("$ኽ'{cCᠸ🛵`=𑍌:.1¥N𑌜Iﹳ\"9.zලC'נּ`"), Array([7152110280299272705, 11681398356968567052, 1089317074085656246]), I16(-26517), Map({}), Map({I8(-125): U64(8656771766735343889), I8(-123): U64(11354150614744344657), I8(-109): U64(6824489582432753730), I8(-76): U64(13794281125277408796), I8(-73): U64(15475706408731022087), I8(-64): U64(14535941231843587119), I8(-63): U64(14230060952189702592), I8(-44): U64(7088265520780061145), I8(-1): U64(7685767798006742171), I8(24): U64(15400215746525807156), I8(28): U64(1665061385205215140), I8(59): U64(1530056886806704170), I8(67): U64(11242987644565198574), I8(92): U64(5588764734416174352)})] }), RowPointer(r: 0, pi: 338095043233, po: 58264, so: 0))

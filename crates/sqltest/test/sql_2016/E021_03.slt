@@ -1,0 +1,16 @@
+# E021-03: Character literals
+
+query T
+SELECT ''
+----
+''
+
+query T
+SELECT 'a'
+----
+'a'
+
+query T
+SELECT 'abc'
+----
+'abc'

@@ -1,0 +1,177 @@
+%YAML 1.2
+---
+name: SQL (SpacetimeDB)
+file_extensions:
+  - sql
+  - stsql
+scope: source.sql
+
+variables:
+  ws: '[ \t]*'
+  wsnl: '([ \t\n])*'
+
+  int_literal: '[0-9](?:[0-9_])*'
+  # 00-23
+  time_hour: '[0-2][0-9]'
+  # 00-59
+  time_minute: '[0-5][0-9]'
+  # 00-58, 00-59, 00-60 (leap second rules)
+  time_second: '[0-6][0-9]'
+  # ( "+" / "-" ) time-hour ":" time-minute
+  time_numoffset: '[+-] {{time_hour}} : {{time_minute}}'
+
+  # time-hour ":" time-minute ":" time-second
+  partial_time: '{{time_hour}} : {{time_minute}} : {{time_second}}'
+
+  # partial-time time-offset
+  full_time: '{{partial_time}} {{time_numoffset}}'
+
+  # 2000
+  date_fullyear: '[0-9]{4}'
+  # 01-12
+  date_month: '[0-1][0-9]'
+  # 01-28, 01-29, 01-30, 01-31 based on month/year
+  date_mday: '[0-3][0-9]'
+
+  # date-fullyear "-" date-month "-" date-mday
+  full_date: '{{date_fullyear}} - {{date_month}} - {{date_mday}}'
+
+  # full-date T|%20 full-time
+  offset_date_time: '{{full_date}} [T ] {{full_time}}'
+  # full-date T|%20 partial-time
+  local_date_time: '{{full_date}} [T ] {{partial_time}}'
+
+  date_time: '{{offset_date_time}} | {{local_date_time}} | {{full_date}} | {{partial_time}}'
+
+contexts:
+  # The prototype context is prepended to all contexts but those setting
+  # meta_include_prototype: false.
+  prototype:
+    - include: comments
+
+  main:
+    # The main context is the initial starting point of our syntax.
+    # Include other contexts from here (or specify them directly).
+    - include: keywords
+    - include: parens
+    - include: booleans
+    - include: numbers
+    - include: date-time
+    - include: strings
+    - include: ident
+    - match: '{{ws}}$'
+      # Don't show an incomplete line as invalid to avoid frequent red
+      # highlighting while typing.
+      pop: true
+    - match: '\w+|.'
+      scope: invalid.illegal.value.sql
+      pop: true
+
+  ident:
+    - name: variable.parameter.sql
+      match: \b([a-zA-Z0-9_]+)\b
+
+  keywords:
+    - name: keyword.operator.point.pgsql
+      match: \.
+    - name: keyword.operator.comma.pgsql
+      match: \,
+    - name: keyword.operator.semicolon.pgsql
+      match: \;
+    - name: keyword.operator.star.pgsql
+      match: \*
+    - match: '(?i)\b(select|from|insert|into|join|values|update|delete|create|where|order by)\b'
+      scope: keyword.control.sql
+
+    - match: '[!<>]?=|<>|<|>'
+      scope: keyword.operator.comparison.sql
+
+    - match: \+|\-|\*|/|\^
+      scope: keyword.operator.arithmetic.sql
+
+    - match: \b(and|in|not|or)\b
+      comment: keyword operators that evaluate to true or false
+      scope: keyword.operator.logical.sql
+
+  booleans:
+    - match: (?i)\b(true|false|null)\b
+      scope: constant.language.source.sql
+
+  numbers:
+    # Binary Float
+    - match: '\b({{int_literal}}(?:\.{{int_literal}})?)f\b'
+      scope: constant.numeric.source.sql
+    - match: '\b({{int_literal}}(?:\.{{int_literal}})?)\b'
+      scope: constant.numeric.source.sql
+
+  strings:
+    # Strings begin and end with quotes, and use backslashes as an escape
+    # character
+    - match: '"'
+      scope: punctuation.definition.string.begin.source.sql
+      push: double_quoted_string
+
+    - match: "'"
+      scope: punctuation.definition.string.begin.source.sql
+      push: single_quoted_string
+
+  double_quoted_string:
+    - meta_scope: string.quoted.double.source.sql
+    - match: '\\.'
+      scope: constant.character.escape.source.sql
+    - match: '"'
+      scope: punctuation.definition.string.end.source.sql
+      pop: true
+
+  single_quoted_string:
+    - meta_scope: string.quoted.double.source.sql
+    - match: '\\.'
+      scope: constant.character.escape.source.sql
+    - match: "'"
+      scope: punctuation.definition.string.end.source.sql
+      pop: true
+
+  date-time:
+    - match: "(d|t|dt)'"
+      scope: constant.other.datetime.begin.source.sql
+      push: single_quoted_date
+    - match: '(d|t|dt)"'
+      scope: constant.other.datetime.begin.source.sql
+      push: double_quoted_date
+
+  double_quoted_date:
+    - meta_scope: string.quoted.double.source.sql
+    - match: '(?x) {{date_time}}'
+      scope: constant.character.escape.source.sql
+    - match: '"'
+      scope: constant.other.datetime.end.source.sql
+      pop: true
+
+  single_quoted_date:
+    - meta_scope: string.quoted.double.source.sql
+    - match: '(?x) {{date_time}}'
+      scope: constant.character.escape.source.sql
+    - match: "'"
+      scope: constant.other.datetime.end.source.sql
+      pop: true
+
+  parens:
+    - match: \(
+      push: brackets
+    - match: \)
+      scope: invalid.illegal.stray-bracket-end
+
+  brackets:
+    - match: \)
+      pop: true
+    - include: parens
+
+  comments:
+    # Comments begin with a '--' and finish at the end of the line.
+    - match: '--'
+      scope: punctuation.definition.comment.source.sql
+      push:
+        # This is an anonymous context push for brevity.
+        - meta_scope: comment.line.double-slash.source.sql
+        - match: $\n?
+          pop: true

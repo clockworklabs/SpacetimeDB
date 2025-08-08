@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -41,18 +42,136 @@ namespace SpacetimeDB
         public WebSocket(ConnectOptions options)
         {
             _options = options;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            InitializeWebGL();
+#endif
         }
 
         public event OpenEventHandler? OnConnect;
         public event ConnectErrorEventHandler? OnConnectError;
         public event SendErrorEventHandler? OnSendError;
+
+        /// <summary>
+        ///  Called directly by background task (not on main thread!)
+        /// </summary>
         public event MessageEventHandler? OnMessage;
         public event CloseEventHandler? OnClose;
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+        private bool _isConnected = false;
+        private bool _isConnecting = false;
+        public bool IsConnected => _isConnected;
+#else 
         public bool IsConnected { get { return Ws != null && Ws.State == WebSocketState.Open; } }
+#endif
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+[DllImport("__Internal")]
+    private static extern void WebSocket_Init(
+        IntPtr openCallback,
+        IntPtr messageCallback,
+        IntPtr closeCallback,
+        IntPtr errorCallback
+    );
+
+    [DllImport("__Internal")]
+    private static extern int WebSocket_Connect(string host, string uri, string protocol, string authToken, IntPtr callbackPtr);
+
+    [DllImport("__Internal")]
+    private static extern int WebSocket_Send(int socketId, byte[] data, int length);
+
+    [DllImport("__Internal")]
+    private static extern void WebSocket_Close(int socketId, int code, string reason);
+
+    [AOT.MonoPInvokeCallback(typeof(Action<int>))]
+    private static void WebGLOnOpen(int socketId)
+    {
+        Instance?.HandleWebGLOpen(socketId);
+    }
+
+    [AOT.MonoPInvokeCallback(typeof(Action<int, IntPtr, int>))]
+    private static void WebGLOnMessage(int socketId, IntPtr dataPtr, int length)
+    {
+        try {
+            byte[] data = new byte[length];
+            Marshal.Copy(dataPtr, data, 0, length);
+            Instance?.HandleWebGLMessage(socketId, data);
+        } catch (Exception e) {
+            UnityEngine.Debug.LogError($"Error handling message: {e}");
+        }
+    }
+
+    [AOT.MonoPInvokeCallback(typeof(Action<int, int, IntPtr>))]
+    private static void WebGLOnClose(int socketId, int code, IntPtr reasonPtr)
+    {
+        try {
+            string reason = Marshal.PtrToStringUTF8(reasonPtr);
+            Instance?.HandleWebGLClose(socketId, code, reason);
+        } catch (Exception e) {
+            UnityEngine.Debug.LogError($"Error handling close: {e}");
+        }
+    }
+
+    [AOT.MonoPInvokeCallback(typeof(Action<int>))]
+    private static void WebGLOnError(int socketId)
+    {
+        Instance?.HandleWebGLError(socketId);
+    }
+
+    [AOT.MonoPInvokeCallback(typeof(Action<int>))]
+    private static void OnSocketIdReceived(int socketId)
+    {
+        Instance?._socketId.TrySetResult(socketId);
+    }
+
+    private static WebSocket Instance;
+    private int _webglSocketId = -1;
+    private TaskCompletionSource<int> _socketId;
+
+    private void InitializeWebGL()
+    {
+        Instance = this;
+        // Convert callbacks to function pointers
+        var openPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)WebGLOnOpen);
+        var messagePtr = Marshal.GetFunctionPointerForDelegate((Action<int, IntPtr, int>)WebGLOnMessage);
+        var closePtr = Marshal.GetFunctionPointerForDelegate((Action<int, int, IntPtr>)WebGLOnClose);
+        var errorPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)WebGLOnError);
+        
+        WebSocket_Init(openPtr, messagePtr, closePtr, errorPtr);
+    }
+#endif
 
         public async Task Connect(string? auth, string host, string nameOrAddress, ConnectionId connectionId, Compression compression, bool light)
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (_isConnecting || _isConnected) return;
+    
+            _isConnecting = true;
+            try
+            {
+                var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
+                if (light) uri += "&light=true";
+        
+                _socketId = new TaskCompletionSource<int>();
+                var callbackPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)OnSocketIdReceived);
+                WebSocket_Connect(host, uri, _options.Protocol, auth, callbackPtr);
+                _webglSocketId = await _socketId.Task;
+                if (_webglSocketId == -1)
+                {
+                    dispatchQueue.Enqueue(() => OnConnectError?.Invoke(
+                        new Exception("Failed to connect WebSocket")));
+                }
+            }
+            catch (Exception e)
+            {
+                dispatchQueue.Enqueue(() => OnConnectError?.Invoke(e));
+            }
+            finally
+            {
+                _isConnecting = false;
+            }
+        // Events will be handled via UnitySendMessage callbacks
+#else
             var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
             if (light)
             {
@@ -232,7 +351,8 @@ namespace SpacetimeDB
                     if (OnMessage != null)
                     {
                         var message = _receiveBuffer.Take(count).ToArray();
-                        dispatchQueue.Enqueue(() => OnMessage(message, startReceive));
+                        // directly invoke message handling
+                        OnMessage(message, startReceive);
                     }
                 }
                 catch (WebSocketException ex)
@@ -241,12 +361,23 @@ namespace SpacetimeDB
                     return;
                 }
             }
+#endif
         }
 
         public Task Close(WebSocketCloseStatus code = WebSocketCloseStatus.NormalClosure)
         {
-            Ws?.CloseAsync(code, "Disconnecting normally.", CancellationToken.None);
-
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (_isConnected && _webglSocketId >= 0)
+            {
+                WebSocket_Close(_webglSocketId, (int)code, "Disconnecting normally.");
+                _isConnected = false;
+            }
+#else
+            if (Ws?.State == WebSocketState.Open)
+            {
+                return Ws.CloseAsync(code, "Disconnecting normally.", CancellationToken.None);
+            }
+#endif
             return Task.CompletedTask;
         }
 
@@ -261,13 +392,26 @@ namespace SpacetimeDB
         /// <param name="message">The message to send</param>
         public void Send(ClientMessage message)
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                var messageBSATN = new ClientMessage.BSATN();
+                var encodedMessage = IStructuralReadWrite.ToBytes(messageBSATN, message);
+                WebSocket_Send(_webglSocketId, encodedMessage, encodedMessage.Length);
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogError($"WebSocket send error: {e}");
+                dispatchQueue.Enqueue(() => OnSendError?.Invoke(e));
+            }
+#else
             lock (messageSendQueue)
             {
                 messageSendQueue.Enqueue(message);
                 senderTask ??= Task.Run(ProcessSendQueue);
             }
+#endif
         }
-
 
         private async Task ProcessSendQueue()
         {
@@ -303,6 +447,45 @@ namespace SpacetimeDB
         {
             return Ws!.State;
         }
+#if UNITY_WEBGL && !UNITY_EDITOR
+        public void HandleWebGLOpen(int socketId)
+        {
+            if (socketId == _webglSocketId)
+            {
+                _isConnected = true;
+                if (OnConnect != null)
+                    dispatchQueue.Enqueue(() => OnConnect());
+            }
+        }
+        
+        public void HandleWebGLMessage(int socketId, byte[] message)
+        {
+            if (socketId == _webglSocketId && OnMessage != null)
+            {
+                dispatchQueue.Enqueue(() => OnMessage(message, DateTime.UtcNow));
+            }
+        }
+        
+        public void HandleWebGLClose(int socketId, int code, string reason)
+        {
+            UnityEngine.Debug.Log($"HandleWebGLClose: {code} {reason}");
+            if (socketId == _webglSocketId && OnClose != null)
+            {
+                _isConnected = false;
+                var ex = code != (int)WebSocketCloseStatus.NormalClosure ? new Exception($"WebSocket closed with code {code}: {reason}") : null;
+                dispatchQueue.Enqueue(() => OnClose?.Invoke(ex));
+            }
+        }
+        
+        public void HandleWebGLError(int socketId)
+        {
+            UnityEngine.Debug.Log($"HandleWebGLError: {socketId}");
+            if (socketId == _webglSocketId && OnConnectError != null)
+            {
+                dispatchQueue.Enqueue(() => OnConnectError(new Exception($"Socket {socketId} error.")));
+            }
+        }
+#endif
 
         public void Update()
         {

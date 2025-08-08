@@ -16,12 +16,17 @@ cat >nuget.config <<EOF
   <packageSources>
     <!-- Local NuGet repositories -->
     <add key="Local SpacetimeDB.BSATN.Runtime" value="${SPACETIMEDB_REPO_PATH}/crates/bindings-csharp/BSATN.Runtime/bin/Release" />
+    <!-- We need to override the module runtime as well because the examples use it -->
+    <add key="Local SpacetimeDB.Runtime" value="${SPACETIMEDB_REPO_PATH}/crates/bindings-csharp/Runtime/bin/Release" />
   </packageSources>
   <packageSourceMapping>
     <!-- Ensure that SpacetimeDB.BSATN.Runtime is used from the local folder. -->
     <!-- Otherwise we risk an outdated version being quietly pulled from NuGet for testing. -->
     <packageSource key="Local SpacetimeDB.BSATN.Runtime">
       <package pattern="SpacetimeDB.BSATN.Runtime" />
+    </packageSource>
+    <packageSource key="Local SpacetimeDB.Runtime">
+      <package pattern="SpacetimeDB.Runtime" />
     </packageSource>
     <!-- Fallback for other packages (e.g. test deps). -->
     <packageSource key="nuget.org">
