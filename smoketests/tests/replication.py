@@ -114,6 +114,18 @@ where replication_state.database_id={database_id} \
         # TODO: Replace with confirmed read.
         time.sleep(0.6)
 
+    def wait_counter_value(self, id, value, max_attempts=10, delay=1):
+        """Wait for the value for `id` in the counter table to reach `value`"""
+
+        for _ in range(max_attempts):
+            rows = self.sql(f"select * from counter where id={id}")
+            if len(rows) >= 1 and int(rows[0]['value']) >= value:
+                return
+            else:
+                time.sleep(delay)
+
+        raise ValueError(f"Counter {id} below {value}")
+
 
     def fail_leader(self, action='kill'):
         """Force leader failure through either killing or network disconnect."""
@@ -410,16 +422,18 @@ class EnableReplication(ReplicationTest):
         self.publish_module(name, num_replicas = 1)
         leader = self.cluster.wait_for_leader_change(None)
 
-        n1 = 100
+        n1 = 1_000
         n2 = 100
         self.start(1, n1)
+
+        self.cluster.wait_counter_value(1, n1, max_attempts=10, delay=10)
 
         self.call_control("enable_replication", {"Name": name}, 3)
 
         self.cluster.wait_for_leader_change(leader)
         self.start(2, n2)
 
-        time.sleep(3)
+        self.cluster.wait_counter_value(2, n2)
 
         rows = self.collect_counter_rows()
         self.assertEqual([{"id": 1, "value": n1}, {"id": 2, "value": n2}], rows)
