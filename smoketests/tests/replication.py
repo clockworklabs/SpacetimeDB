@@ -1,9 +1,11 @@
-from .. import COMPOSE_FILE, Smoketest, requires_docker, spacetime
+import time
+import unittest
+from typing import Callable
+import json
+
+from .. import COMPOSE_FILE, Smoketest, random_string, requires_docker, spacetime
 from ..docker import DockerManager
 
-import time
-from typing import Callable
-import unittest
 
 def retry(func: Callable, max_retries: int = 3, retry_delay: int = 2):
     """Retry a function on failure with delay."""
@@ -123,6 +125,18 @@ where replication_state.database_id={database_id} \
         # Wait for at least one tick to ensure buffers are flushed.
         # TODO: Replace with confirmed read.
         time.sleep(0.6)
+
+    def wait_counter_value(self, id, value, max_attempts=10, delay=1):
+        """Wait for the value for `id` in the counter table to reach `value`"""
+
+        for _ in range(max_attempts):
+            rows = self.sql(f"select * from counter where id={id}")
+            if len(rows) >= 1 and int(rows[0]['value']) >= value:
+                return
+            else:
+                time.sleep(delay)
+
+        raise ValueError(f"Counter {id} below {value}")
 
 
     def fail_leader(self, action='kill'):
@@ -249,6 +263,9 @@ fn send_message(ctx: &ReducerContext, text: String) {
 
     def collect_counter_rows(self):
         return int_vals(self.cluster.sql("select * from counter"))
+
+    def call_control(self, reducer, *args):
+        self.spacetime("call", "spacetime-control", reducer, *map(json.dumps, args))
 
 
 class LeaderElection(ReplicationTest):
@@ -403,3 +420,31 @@ class QuorumLoss(ReplicationTest):
         with self.assertRaises(Exception):
             for i in range(1001):
                 self.call("send_message", "terminal")
+
+
+class EnableReplication(ReplicationTest):
+    AUTOPUBLISH = False
+
+    def test_enable_replication(self):
+        """Tests enabling replication on an un-replicated database"""
+
+        name = random_string()
+
+        self.publish_module(name, num_replicas = 1)
+        leader = self.cluster.wait_for_leader_change(None)
+
+        n1 = 1_000
+        n2 = 100
+        self.start(1, n1)
+
+        self.cluster.wait_counter_value(1, n1, max_attempts=10, delay=10)
+
+        self.call_control("enable_replication", {"Name": name}, 3)
+
+        self.cluster.wait_for_leader_change(leader)
+        self.start(2, n2)
+
+        self.cluster.wait_counter_value(2, n2)
+
+        rows = self.collect_counter_rows()
+        self.assertEqual([{"id": 1, "value": n1}, {"id": 2, "value": n2}], rows)
