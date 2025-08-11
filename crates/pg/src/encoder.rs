@@ -145,7 +145,6 @@ impl TypedWriter for PsqlFormatter<'_> {
     }
 }
 
-// Tests
 #[cfg(test)]
 mod tests {
     use super::*;

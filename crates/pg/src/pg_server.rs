@@ -16,17 +16,13 @@ use pgwire::api::copy::NoopCopyHandler;
 use pgwire::api::portal::Format;
 use pgwire::api::query::{PlaceholderExtendedQueryHandler, SimpleQueryHandler};
 use pgwire::api::results::{DataRowEncoder, FieldInfo, QueryResponse, Response, Tag};
-use pgwire::api::ClientInfo;
-use pgwire::api::{NoopErrorHandler, METADATA_DATABASE, METADATA_USER};
+use pgwire::api::{ClientInfo, NoopErrorHandler, METADATA_DATABASE, METADATA_USER};
 use pgwire::api::{PgWireConnectionState, PgWireServerHandlers};
 use pgwire::error::{ErrorInfo, PgWireError, PgWireResult};
 use pgwire::messages::data::DataRow;
 use pgwire::messages::startup::Authentication;
 use pgwire::messages::{PgWireBackendMessage, PgWireFrontendMessage};
 use pgwire::tokio::process_socket;
-use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair};
-use rustls_pki_types::pem::PemObject;
-use rustls_pki_types::PrivateKeyDer;
 use spacetimedb_client_api::auth::{validate_token, SpacetimeAuth};
 use spacetimedb_client_api::routes::database;
 use spacetimedb_client_api::routes::database::{SqlParams, SqlQueryParams};
@@ -40,8 +36,6 @@ use spacetimedb_lib::ProductValue;
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Mutex};
-use tokio_rustls::rustls::ServerConfig;
-use tokio_rustls::TlsAcceptor;
 
 #[derive(Error, Debug)]
 pub(crate) enum PgError {
@@ -53,12 +47,6 @@ pub(crate) enum PgError {
     DatabaseNameRequired,
     #[error(transparent)]
     Pg(#[from] PgWireError),
-    #[error(transparent)]
-    RcGen(#[from] rcgen::Error),
-    #[error(transparent)]
-    Pem(#[from] rustls_pki_types::pem::Error),
-    #[error(transparent)]
-    RustTls(#[from] rustls::Error),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -366,38 +354,11 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
     }
 }
 
-fn setup_tls<T>(_ctx: &T, private_key: &[u8]) -> Result<TlsAcceptor, PgError> {
-    let private: PrivateKeyDer = PrivateKeyDer::from_pem_slice(private_key)?;
-
-    let keypair = KeyPair::from_der_and_sign_algo(&private, &rcgen::PKCS_ECDSA_P256_SHA256)?;
-
-    let mut params = CertificateParams::new(vec![
-        "localhost".to_string(),
-        "127.0.0.1".to_string(),
-        "::1".to_string(),
-    ])?;
-    params.distinguished_name = DistinguishedName::new();
-    params.distinguished_name.push(DnType::CommonName, "localhost");
-    let cert = params.self_signed(&keypair)?;
-    let cert_der = cert.der().clone();
-
-    let mut config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(vec![cert_der], private)?;
-
-    config.alpn_protocols = vec![b"postgresql".to_vec(), b"spacetime".to_vec()];
-
-    Ok(TlsAcceptor::from(Arc::new(config)))
-}
-
 pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + 'static>(
     mut shutdown: watch::Receiver<()>,
     ctx: Arc<T>,
     listen_address: &str,
-    private_key: &[u8],
 ) {
-    let tls_acceptor = Arc::new(setup_tls(&ctx, private_key).unwrap());
-
     let auth = SpacetimeAuth::alloc(&ctx).await.unwrap();
     let factory = Arc::new(PgSpacetimeDBFactory::new(ctx, auth));
 
@@ -413,10 +374,9 @@ pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + Node
             accept_result = tcp.accept() => {
                 match accept_result {
                     Ok((stream, _addr)) => {
-                        let tls_acceptor_ref = tls_acceptor.clone();
                         let factory_ref = factory.clone();
                         tokio::spawn(async move {
-                            process_socket(stream, Some(tls_acceptor_ref),  factory_ref).await.inspect_err(|err|{
+                            process_socket(stream, None,  factory_ref).await.inspect_err(|err|{
                                 log::error!("PG: Error processing socket: {err:?}");
                             })
                         });
