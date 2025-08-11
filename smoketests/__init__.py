@@ -40,6 +40,9 @@ HAVE_DOTNET = False
 # When we pass --spacetime-login, we are running against a server that requires "real" spacetime logins (rather than `--server-issued-login`).
 # This is used to skip tests that don't work with that.
 USE_SPACETIME_LOGIN = False
+
+# If we pass `--remote-server`, the server address will be something other than the default. This is used to skip tests that rely on use
+# having the default localhost server.
 REMOTE_SERVER = False
 
 # default value can be overridden by `--compose-file` flag
