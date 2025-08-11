@@ -122,6 +122,7 @@ def extract_field(cmd_output, field_name):
 def log_cmd(args):
     logging.debug(f"$ {' '.join(str(arg) for arg in args)}")
 
+
 def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=None, log=True, **kwargs):
     if log:
         log_cmd(args if cmd_name is None else [cmd_name, *args[1:]])
@@ -186,6 +187,7 @@ class Smoketest(unittest.TestCase):
         self._check_published()
         anon = ["--anonymous"] if anon else []
         self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args))
+
 
     def sql(self, sql):
         self._check_published()
