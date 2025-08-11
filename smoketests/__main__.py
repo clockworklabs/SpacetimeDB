@@ -113,7 +113,7 @@ def main():
         smoketests.HAVE_DOCKER = True
 
     if args.remote_server is not None:
-        smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "server", "edit", "localhost", "--url", args.remote_server)
+        smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "server", "edit", "localhost", "--url", args.remote_server, "--yes")
         smoketests.REMOTE_SERVER = True
 
     if args.spacetime_login:
