@@ -1272,6 +1272,9 @@ impl __sdk::DbContext for DbConnection {{
     fn connection_id(&self) -> __sdk::ConnectionId {{
         self.imp.connection_id()
     }}
+    fn try_connection_id(&self) -> Option<__sdk::ConnectionId> {{
+        self.imp.try_connection_id()
+    }}
 }}
 
 impl DbConnection {{
@@ -1587,6 +1590,9 @@ impl __sdk::DbContext for {struct_and_trait_name} {{
     }}
     fn connection_id(&self) -> __sdk::ConnectionId {{
         self.imp.connection_id()
+    }}
+    fn try_connection_id(&self) -> Option<__sdk::ConnectionId> {{
+        self.imp.try_connection_id()
     }}
 }}
 
