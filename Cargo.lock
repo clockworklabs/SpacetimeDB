@@ -5739,6 +5739,7 @@ dependencies = [
  "spacetimedb-commitlog",
  "spacetimedb-paths",
  "spacetimedb-sats",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
 ]

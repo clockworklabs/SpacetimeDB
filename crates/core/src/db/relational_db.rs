@@ -371,7 +371,9 @@ impl RelationalDB {
             .as_ref()
             .map(|pair| pair.0.clone())
             .as_deref()
-            .and_then(|durability| durability.durable_tx_offset().get());
+            .map(|durability| durability.durable_tx_offset().get())
+            .transpose()?
+            .flatten();
         let (min_commitlog_offset, _) = history.tx_range_hint();
 
         log::info!("[{database_identity}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");

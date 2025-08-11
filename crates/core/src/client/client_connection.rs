@@ -146,9 +146,7 @@ impl ClientConnectionReceiver {
         if let Some(tx_offset) = tx_offset {
             match self.durable_tx_offset().await {
                 Ok(Some(mut durable)) => {
-                    if durable.is_behind(tx_offset) {
-                        durable.wait_for(tx_offset).await.ok()?;
-                    }
+                    durable.wait_for(tx_offset).await.ok()?;
                 }
                 // Database shut down or crashed.
                 Err(NoSuchModule) => return None,

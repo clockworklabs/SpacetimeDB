@@ -1,5 +1,6 @@
 use std::{iter, marker::PhantomData, sync::Arc};
 
+use thiserror::Error;
 use tokio::sync::watch;
 
 pub use spacetimedb_commitlog::{error, payload::Txdata, Decoder, Transaction};
@@ -17,25 +18,60 @@ pub use imp::{local, Local};
 /// of all offsets smaller than it.
 pub type TxOffset = u64;
 
+#[derive(Debug, Error)]
+#[error("the database's durability layer went away")]
+pub struct DurabilityExited;
+
+/// Handle to the durable offset, obtained via [`Durability::durable_tx_offset`].
+///
+/// The handle can be used to read the current durable offset, or wait for a
+/// provided offset to be reached.
+///
+/// The handle is valid for as long as the [`Durability`] instance it was
+/// obtained from is live, i.e. able to persist transactions. When the instance
+/// shuts down or crashes, methods will return errors of type [`DurabilityExited`].
 pub struct DurableOffset {
+    // TODO: `watch::Receiver::wait_for` will hold a shared lock until all
+    // subscribers have seen the current value. Although it may skip entries,
+    // this may cause unacceptable contention. We may consider a custom watch
+    // channel that operates on an `AtomicU64` instead of an `RwLock`.
     inner: watch::Receiver<Option<TxOffset>>,
 }
 
 impl DurableOffset {
-    pub fn get(&self) -> Option<TxOffset> {
+    /// Get the current durable offset, or `None` if no transaction has been
+    /// made durable yet.
+    ///
+    /// Returns `Err` if the associated durablity is no longer live.
+    pub fn get(&self) -> Result<Option<TxOffset>, DurabilityExited> {
+        self.guard_closed().map(|()| self.inner.borrow().as_ref().copied())
+    }
+
+    /// Get the current durable offset, even if the associated durability is
+    /// no longer live.
+    pub fn last_seen(&self) -> Option<TxOffset> {
         self.inner.borrow().as_ref().copied()
     }
 
-    pub async fn wait_for(&mut self, offset: TxOffset) -> Result<TxOffset, ()> {
+    /// Wait for `offset` to become durable, i.e.
+    ///
+    ///     self.get().unwrap().is_some_and(|durable| durable >= offset)
+    ///
+    /// Returns the actual durable offset at which above condition evaluated to
+    /// `true`, or an `Err` if the durability is no longer live.
+    ///
+    /// Returns immediately if the condition evaluates to `true` for the current
+    /// durable offset.
+    pub async fn wait_for(&mut self, offset: TxOffset) -> Result<TxOffset, DurabilityExited> {
         self.inner
             .wait_for(|durable| durable.is_some_and(|val| val >= offset))
             .await
             .map(|r| r.as_ref().copied().unwrap())
-            .map_err(drop)
+            .map_err(|_| DurabilityExited)
     }
 
-    pub fn is_behind(&self, other: TxOffset) -> bool {
-        self.inner.borrow().is_none_or(|offset| offset < other)
+    fn guard_closed(&self) -> Result<(), DurabilityExited> {
+        self.inner.has_changed().map(drop).map_err(|_| DurabilityExited)
     }
 }
 
