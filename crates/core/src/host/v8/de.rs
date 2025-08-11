@@ -6,9 +6,7 @@ use core::fmt;
 use core::iter::{repeat_n, RepeatN};
 use core::mem::MaybeUninit;
 use derive_more::From;
-use spacetimedb_sats::de::{
-    self, ArrayVisitor, DeserializeSeed, NoneAccess, ProductVisitor, SliceVisitor, SomeAccess, SumVisitor,
-};
+use spacetimedb_sats::de::{self, ArrayVisitor, DeserializeSeed, ProductVisitor, SliceVisitor, SumVisitor};
 use spacetimedb_sats::{i256, u256};
 use std::borrow::{Borrow, Cow};
 use v8::{Array, Global, HandleScope, Local, Name, Object, Uint8Array, Value};
@@ -175,40 +173,9 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
         let sum_name = visitor.sum_name().unwrap_or("<unknown>");
 
         // We expect a canonical representation of a sum value in JS to be
-        // `{ tag: "foo", value: a_value_for_foo }`
-        // with special convenience for optionals
-        // where we also accept `null`, `undefined` and an object without `tag`.
-        let (object, tag_field) = 'treat_as_regular_sum: {
-            // Optionals receive some special handling for added convenience in JS.
-            if visitor.is_option() {
-                // If we don't have an object at all,
-                // it's either `null | undefined` which means `none`
-                // or it is `some(the_value)`.
-                if let Some(object) = self.input.to_object(scope) {
-                    // If there is `tag` field, treat this as a normal sum.
-                    // Otherwise, we have `some(the_value)`.
-                    let tag_field = self.common.key_cache.tag(scope);
-                    if object
-                        .has_own_property(scope, tag_field.into())
-                        .ok_or_else(exception_already_thrown)?
-                    {
-                        break 'treat_as_regular_sum (object, tag_field);
-                    }
-                } else if self.input.is_null_or_undefined() {
-                    // JS has support for `undefined` and `null` values.
-                    // It's reasonable to interpret these as `None`
-                    // when we're deserializing to an optional value
-                    // rust-side, such as `Option<T>`.
-                    return visitor.visit_sum(NoneAccess::new());
-                }
-
-                return visitor.visit_sum(SomeAccess::new(self));
-            } else {
-                let tag_field = self.common.key_cache.tag(scope);
-                let val = cast!(scope, self.input, Object, "object for sum type `{}`", sum_name)?;
-                (val, tag_field)
-            }
-        };
+        // `{ tag: "foo", value: a_value_for_foo }`.
+        let tag_field = self.common.key_cache.tag(scope);
+        let object = cast!(scope, self.input, Object, "object for sum type `{}`", sum_name)?;
 
         // Extract the `tag` field. It needs to contain a string.
         let tag = object
