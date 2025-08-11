@@ -17,6 +17,7 @@ mod error;
 mod from_value;
 mod ser;
 mod to_value;
+mod key_cache;
 
 /// The V8 runtime, for modules written in e.g., JS or TypeScript.
 #[derive(Default)]

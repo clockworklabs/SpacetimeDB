@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
-use super::de::{get_or_create_key_cache, intern_field_name, KeyCache};
+use super::de::intern_field_name;
 use super::error::{exception_already_thrown, ExcResult, ExceptionThrown, RangeError, Throwable, TypeError};
+use super::key_cache::{get_or_create_key_cache, KeyCache};
 use super::to_value::ToValue;
 use derive_more::From;
 use spacetimedb_sats::{

@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
+use super::key_cache::{get_or_create_key_cache, KeyCache};
 use super::error::{exception_already_thrown, ExcResult, ExceptionThrown, ExceptionValue, Throwable, TypeError};
 use super::from_value::{cast, FromValue};
-use core::cell::RefCell;
 use core::fmt;
 use core::iter::{repeat_n, RepeatN};
 use core::marker::PhantomData;
@@ -11,20 +11,7 @@ use derive_more::From;
 use spacetimedb_sats::de::{self, ArrayVisitor, DeserializeSeed, ProductVisitor, SliceVisitor, SumVisitor};
 use spacetimedb_sats::{i256, u256};
 use std::borrow::{Borrow, Cow};
-use std::rc::Rc;
-use v8::{Array, Global, HandleScope, Local, Name, Object, Uint8Array, Value};
-
-/// Returns a `KeyCache` for the current `scope`.
-///
-/// Creates the cache in the scope if it doesn't exist yet.
-pub(super) fn get_or_create_key_cache(scope: &mut HandleScope<'_>) -> Rc<RefCell<KeyCache>> {
-    let context = scope.get_current_context();
-    context.get_slot::<RefCell<KeyCache>>().unwrap_or_else(|| {
-        let cache = Rc::default();
-        context.set_slot(Rc::clone(&cache));
-        cache
-    })
-}
+use v8::{Array, HandleScope, Local, Name, Object, Uint8Array, Value};
 
 /// Deserializes a `T` from `val` in `scope`, using `seed` for any context needed.
 pub(super) fn deserialize_js_seed<'de, T: DeserializeSeed<'de>>(
@@ -107,51 +94,6 @@ impl de::Error for Error<'_> {
 /// Returns a scratch buffer to fill when deserializing strings.
 fn scratch_buf<const N: usize>() -> [MaybeUninit<u8>; N] {
     [const { MaybeUninit::uninit() }; N]
-}
-
-/// A cache for frequently used strings to avoid re-interning them.
-#[derive(Default)]
-pub(super) struct KeyCache {
-    /// The `tag` property for sum values in JS.
-    tag: Option<Global<v8::String>>,
-    /// The `value` property for sum values in JS.
-    value: Option<Global<v8::String>>,
-}
-
-impl KeyCache {
-    /// Returns the `tag` property name.
-    pub(super) fn tag<'scope>(&mut self, scope: &mut HandleScope<'scope>) -> Local<'scope, v8::String> {
-        Self::get_or_create_key(scope, &mut self.tag, "tag")
-    }
-
-    /// Returns the `value` property name.
-    pub(super) fn value<'scope>(&mut self, scope: &mut HandleScope<'scope>) -> Local<'scope, v8::String> {
-        Self::get_or_create_key(scope, &mut self.value, "value")
-    }
-
-    /// Returns an interned string corresponding to `string`
-    /// and memoizes the creation on the v8 side.
-    fn get_or_create_key<'scope>(
-        scope: &mut HandleScope<'scope>,
-        slot: &mut Option<Global<v8::String>>,
-        string: &str,
-    ) -> Local<'scope, v8::String> {
-        if let Some(s) = &*slot {
-            v8::Local::new(scope, s)
-        } else {
-            let s = v8_interned_string(scope, string);
-            *slot = Some(v8::Global::new(scope, s));
-            s
-        }
-    }
-}
-
-// Creates an interned [`v8::String`].
-fn v8_interned_string<'scope>(scope: &mut HandleScope<'scope>, field: &str) -> Local<'scope, v8::String> {
-    // Internalized v8 strings are significantly faster than "normal" v8 strings
-    // since v8 deduplicates re-used strings minimizing new allocations
-    // see: https://github.com/v8/v8/blob/14ac92e02cc3db38131a57e75e2392529f405f2f/include/v8.h#L3165-L3171
-    v8::String::new_from_utf8(scope, field.as_ref(), v8::NewStringType::Internalized).unwrap()
 }
 
 /// Extracts a reference `&'scope T` from an owned V8 [`Local<'scope, T>`].
@@ -278,6 +220,14 @@ struct ProductAccess<'this, 'scope> {
     next_value: Option<Local<'scope, Value>>,
     /// The index in the product to
     index: usize,
+}
+
+// Creates an interned [`v8::String`].
+pub(super) fn v8_interned_string<'scope>(scope: &mut HandleScope<'scope>, field: &str) -> Local<'scope, v8::String> {
+    // Internalized v8 strings are significantly faster than "normal" v8 strings
+    // since v8 deduplicates re-used strings minimizing new allocations
+    // see: https://github.com/v8/v8/blob/14ac92e02cc3db38131a57e75e2392529f405f2f/include/v8.h#L3165-L3171
+    v8::String::new_from_utf8(scope, field.as_ref(), v8::NewStringType::Internalized).unwrap()
 }
 
 /// Normalizes `field` into an interned `v8::String`.
