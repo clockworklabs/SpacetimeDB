@@ -27,13 +27,14 @@ use core::{mem, ops::RangeBounds};
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
-use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
 use spacetimedb_sats::layout::{AlgebraicTypeLayout, PrimitiveType, RowTypeLayout, Size};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
-    bsatn::{self, ser::BsatnError, ToBsatn},
+    bsatn::{self, ser::BsatnError, BufReservedFill, DecodeError, ToBsatn},
+    buffer::BufWriter,
+    de::DeserializeOwned,
     i256,
     product_value::InvalidFieldError,
     satn::Satn,
@@ -1741,7 +1742,7 @@ impl ToBsatn for RowRef<'_> {
     ///
     /// This method will use a [`StaticLayout`] if one is available,
     /// and may therefore be faster than calling [`bsatn::to_writer`].
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> Result<(), BsatnError> {
         if let Some(static_layout) = self.static_layout() {
             // Use fast path, by first fetching the row data and then using the static layout.
             let row = self.get_row_data();

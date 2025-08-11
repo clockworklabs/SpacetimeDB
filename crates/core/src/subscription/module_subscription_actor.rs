@@ -17,6 +17,7 @@ use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
 use crate::subscription::execute_plans;
 use crate::subscription::query::is_subscribe_to_all_tables;
+use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -46,6 +47,7 @@ pub struct ModuleSubscriptions {
     broadcast_queue: BroadcastQueue,
     owner_identity: Identity,
     stats: Arc<SubscriptionGauges>,
+    pub bsatn_rlb_pool: BsatnRowListBuilderPool,
 }
 
 #[derive(Debug, Clone)]
@@ -164,6 +166,7 @@ impl ModuleSubscriptions {
         subscriptions: Subscriptions,
         broadcast_queue: BroadcastQueue,
         owner_identity: Identity,
+        bsatn_rlb_pool: BsatnRowListBuilderPool,
     ) -> Self {
         let db = &relational_db.database_identity();
         let stats = Arc::new(SubscriptionGauges::new(db));
@@ -174,6 +177,7 @@ impl ModuleSubscriptions {
             broadcast_queue,
             owner_identity,
             stats,
+            bsatn_rlb_pool,
         }
     }
 
@@ -194,6 +198,7 @@ impl ModuleSubscriptions {
             SubscriptionManager::for_test_without_metrics_arc_rwlock(),
             send_worker_queue,
             Identity::ZERO,
+            BsatnRowListBuilderPool::new(),
         )
     }
 
@@ -246,10 +251,24 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
 
         Ok(match sender.config.protocol {
-            Protocol::Binary => collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics)),
-            Protocol::Text => collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics)),
+            Protocol::Binary => collect_table_update(
+                &plans,
+                table_id,
+                table_name.into(),
+                &tx,
+                update_type,
+                &self.bsatn_rlb_pool,
+            )
+            .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics)),
+            Protocol::Text => collect_table_update(
+                &plans,
+                table_id,
+                table_name.into(),
+                &tx,
+                update_type,
+                &JsonRowListBuilderFakePool,
+            )
+            .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics)),
         }?)
     }
 
@@ -276,11 +295,11 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
         match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics) = execute_plans(queries, &tx, update_type)?;
+                let (update, metrics) = execute_plans(queries, &tx, update_type, &self.bsatn_rlb_pool)?;
                 Ok((FormatSwitch::Bsatn(update), metrics))
             }
             Protocol::Text => {
-                let (update, metrics) = execute_plans(queries, &tx, update_type)?;
+                let (update, metrics) = execute_plans(queries, &tx, update_type, &JsonRowListBuilderFakePool)?;
                 Ok((FormatSwitch::Json(update), metrics))
             }
         }
@@ -794,9 +813,9 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&queries, &tx, TableUpdateType::Subscribe)
+            Protocol::Binary => execute_plans(&queries, &tx, TableUpdateType::Subscribe, &self.bsatn_rlb_pool)
                 .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(&queries, &tx, TableUpdateType::Subscribe)
+            Protocol::Text => execute_plans(&queries, &tx, TableUpdateType::Subscribe, &JsonRowListBuilderFakePool)
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 
@@ -904,7 +923,8 @@ impl ModuleSubscriptions {
 
         match &event.status {
             EventStatus::Committed(_) => {
-                update_metrics = subscriptions.eval_updates_sequential(&delta_read_tx, event.clone(), caller);
+                update_metrics =
+                    subscriptions.eval_updates_sequential(&delta_read_tx, &self.bsatn_rlb_pool, event.clone(), caller);
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = caller {
@@ -948,6 +968,7 @@ mod tests {
     use crate::sql::execute::run;
     use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
     use crate::subscription::query::compile_read_only_query;
+    use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::TableUpdateType;
     use hashbrown::HashMap;
     use itertools::Itertools;
@@ -985,6 +1006,7 @@ mod tests {
             SubscriptionManager::for_test_without_metrics_arc_rwlock(),
             send_worker_queue,
             owner,
+            BsatnRowListBuilderPool::new(),
         );
 
         let subscribe = Subscribe {

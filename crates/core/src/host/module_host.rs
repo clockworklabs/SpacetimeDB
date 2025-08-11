@@ -16,7 +16,7 @@ use crate::sql::parser::RowLevelExpr;
 use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
-use crate::subscription::websocket_building::BuildableWebsocketFormat;
+use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::util::jobs::{JobCore, JobThread, JobThreadClosed, WeakJobThread};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -135,9 +135,12 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    pub fn encode<F: BuildableWebsocketFormat>(&self) -> (F::QueryUpdate, u64, usize) {
-        let (deletes, nr_del) = F::encode_list(self.deletes.iter());
-        let (inserts, nr_ins) = F::encode_list(self.inserts.iter());
+    pub fn encode<F: BuildableWebsocketFormat>(
+        &self,
+        rlb_pool: &impl RowListBuilderSource<F>,
+    ) -> (F::QueryUpdate, u64, usize) {
+        let (deletes, nr_del) = F::encode_list(rlb_pool.take_row_list_builder(), self.deletes.iter());
+        let (inserts, nr_ins) = F::encode_list(rlb_pool.take_row_list_builder(), self.inserts.iter());
         let num_rows = nr_del + nr_ins;
         let num_bytes = deletes.num_bytes() + inserts.num_bytes();
         let qu = QueryUpdate { deletes, inserts };
@@ -1099,6 +1102,7 @@ impl ModuleHost {
         client: Arc<ClientConnectionSender>,
         message_id: Vec<u8>,
         timer: Instant,
+        rlb_pool: impl 'static + Send + RowListBuilderSource<F>,
         // We take this because we only have a way to convert with the concrete types (Bsatn and Json)
         into_message: impl FnOnce(OneOffQueryResponseMessage<F>) -> SerializableMessage + Send + 'static,
     ) -> Result<(), anyhow::Error> {
@@ -1147,7 +1151,7 @@ impl ModuleHost {
                             .collect::<Vec<_>>();
 
                         // Execute the union and return the results
-                        execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
+                        execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
                             .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
                             .context("One-off queries are not allowed to modify the database")
                     })();

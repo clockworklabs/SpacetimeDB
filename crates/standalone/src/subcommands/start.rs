@@ -172,6 +172,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
     worker_metrics::spawn_tokio_stats(listen_addr.clone());
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
+    worker_metrics::spawn_bsatn_rlb_pool_stats(listen_addr.clone(), ctx.bsatn_rlb_pool().clone());
     let mut db_routes = DatabaseRoutes::default();
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());

@@ -13,6 +13,7 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
+use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::util::asyncify;
 use crate::util::jobs::{JobCore, JobCores};
 use crate::worker_metrics::WORKER_METRICS;
@@ -104,6 +105,8 @@ pub struct HostController {
     runtimes: Arc<HostRuntimes>,
     /// The CPU cores that are reserved for ModuleHost operations to run on.
     db_cores: JobCores,
+    /// The pool of buffers used to build `BsatnRowList`s in subscriptions.
+    pub bsatn_rlb_pool: BsatnRowListBuilderPool,
 }
 
 struct HostRuntimes {
@@ -191,6 +194,7 @@ impl HostController {
             runtimes: HostRuntimes::new(Some(&data_dir)),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
+            bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
         }
     }
@@ -312,6 +316,7 @@ impl HostController {
             // core - there's not a concern that we'll only end up using 1/2
             // of the actual cores.
             self.db_cores.take(),
+            self.bsatn_rlb_pool.clone(),
         )
         .await
     }
@@ -619,6 +624,7 @@ async fn make_replica_ctx(
     database: Database,
     replica_id: u64,
     relational_db: Arc<RelationalDB>,
+    bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
     let send_worker_queue = spawn_send_worker(Some(database.database_identity));
@@ -631,6 +637,7 @@ async fn make_replica_ctx(
         subscriptions,
         send_worker_queue,
         database.owner_identity,
+        bsatn_rlb_pool,
     );
 
     // If an error occurs when evaluating a subscription,
@@ -726,11 +733,12 @@ async fn launch_module(
     replica_dir: ReplicaDir,
     runtimes: Arc<HostRuntimes>,
     core: JobCore,
+    bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
     let db_identity = database.database_identity;
     let host_type = database.host_type;
 
-    let replica_ctx = make_replica_ctx(replica_dir, database, replica_id, relational_db)
+    let replica_ctx = make_replica_ctx(replica_dir, database, replica_id, relational_db, bsatn_rlb_pool)
         .await
         .map(Arc::new)?;
     let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db.clone());
@@ -832,6 +840,7 @@ impl Host {
             runtimes,
             durability,
             page_pool,
+            bsatn_rlb_pool,
             ..
         } = host_controller;
         let on_panic = host_controller.unregister_fn(replica_id);
@@ -900,6 +909,7 @@ impl Host {
             replica_dir,
             runtimes.clone(),
             host_controller.db_cores.take(),
+            bsatn_rlb_pool.clone(),
         )
         .await?;
 
@@ -960,6 +970,7 @@ impl Host {
         database: Database,
         program: Program,
         core: JobCore,
+        bsatn_rlb_pool: BsatnRowListBuilderPool,
     ) -> anyhow::Result<Arc<ModuleInfo>> {
         // Even in-memory databases acquire a lockfile.
         // Grab a tempdir to put that lockfile in.
@@ -993,6 +1004,7 @@ impl Host {
             phony_replica_dir,
             runtimes.clone(),
             core,
+            bsatn_rlb_pool,
         )
         .await?;
 
@@ -1119,7 +1131,9 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     let runtimes = HostRuntimes::new(None);
     let page_pool = PagePool::new(None);
     let core = JobCore::default();
-    let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program, core).await?;
+    let bsatn_rlb_pool = BsatnRowListBuilderPool::new();
+    let module_info =
+        Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program, core, bsatn_rlb_pool).await?;
     // this should always succeed, but sometimes it doesn't
     let module_def = match Arc::try_unwrap(module_info) {
         Ok(info) => info.module_def,

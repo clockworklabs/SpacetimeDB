@@ -850,6 +850,11 @@ impl BsatnRowList {
         let data_range = self.size_hint.index_to_range(index, data_end)?;
         Some(self.rows_data.slice(data_range))
     }
+
+    /// Consumes the list and returns the parts.
+    pub fn into_inner(self) -> (RowSizeHint, Bytes) {
+        (self.size_hint, self.rows_data)
+    }
 }
 
 /// An iterator over all the elements in a [`BsatnRowList`].
