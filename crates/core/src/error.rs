@@ -82,8 +82,6 @@ pub enum DatabaseError {
     DatabasedOpened(PathBuf, anyhow::Error),
 }
 
-// FIXME: reduce type size
-#[expect(clippy::large_enum_variant)]
 #[derive(Error, Debug, EnumAsInner)]
 pub enum DBError {
     #[error("LibError: {0}")]

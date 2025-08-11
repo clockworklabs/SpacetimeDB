@@ -122,8 +122,6 @@ pub struct DuplicateName(pub String);
 #[error("`filter!` does not support column projections; Must return table rows")]
 pub struct FilterReturnType;
 
-// FIXME: reduce type size
-#[expect(clippy::large_enum_variant)]
 #[derive(Error, Debug)]
 pub enum TypingError {
     #[error(transparent)]

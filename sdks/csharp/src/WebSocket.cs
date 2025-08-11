@@ -75,7 +75,7 @@ namespace SpacetimeDB
     );
 
     [DllImport("__Internal")]
-    private static extern int WebSocket_Connect(string uri, string protocol, string authToken);
+    private static extern int WebSocket_Connect(string host, string uri, string protocol, string authToken, IntPtr callbackPtr);
 
     [DllImport("__Internal")]
     private static extern int WebSocket_Send(int socketId, byte[] data, int length);
@@ -118,8 +118,15 @@ namespace SpacetimeDB
         Instance?.HandleWebGLError(socketId);
     }
 
+    [AOT.MonoPInvokeCallback(typeof(Action<int>))]
+    private static void OnSocketIdReceived(int socketId)
+    {
+        Instance?._socketId.TrySetResult(socketId);
+    }
+
     private static WebSocket Instance;
     private int _webglSocketId = -1;
+    private TaskCompletionSource<int> _socketId;
 
     private void InitializeWebGL()
     {
@@ -145,7 +152,10 @@ namespace SpacetimeDB
                 var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
                 if (light) uri += "&light=true";
         
-                _webglSocketId = WebSocket_Connect(uri, _options.Protocol, auth);
+                _socketId = new TaskCompletionSource<int>();
+                var callbackPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)OnSocketIdReceived);
+                WebSocket_Connect(host, uri, _options.Protocol, auth, callbackPtr);
+                _webglSocketId = await _socketId.Task;
                 if (_webglSocketId == -1)
                 {
                     dispatchQueue.Enqueue(() => OnConnectError?.Invoke(
