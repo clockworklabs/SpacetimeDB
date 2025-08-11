@@ -1,9 +1,8 @@
 #![allow(dead_code)]
 
-use super::de::{intern_field_name, KeyCache};
-use super::error::{exception_already_thrown, ExceptionThrown};
+use super::de::{get_or_create_key_cache, intern_field_name, KeyCache};
+use super::error::{exception_already_thrown, ExcResult, ExceptionThrown, RangeError, Throwable, TypeError};
 use super::to_value::ToValue;
-use core::num::TryFromIntError;
 use derive_more::From;
 use spacetimedb_sats::{
     i256,
@@ -12,8 +11,20 @@ use spacetimedb_sats::{
 };
 use v8::{Array, ArrayBuffer, HandleScope, IntegrityLevel, Local, Object, Uint8Array, Value};
 
+/// Serializes `value` into a V8 into `scope`.
+pub(super) fn serialize_to_js<'scope>(
+    scope: &mut HandleScope<'scope>,
+    value: &impl Serialize,
+) -> ExcResult<Local<'scope, Value>> {
+    let key_cache = get_or_create_key_cache(scope);
+    let key_cache = &mut *key_cache.borrow_mut();
+    value
+        .serialize(Serializer::new(scope, key_cache))
+        .map_err(|e| e.throw(scope))
+}
+
 /// Deserializes to V8 values.
-pub(super) struct Serializer<'this, 'scope> {
+struct Serializer<'this, 'scope> {
     /// The scope to serialize values into.
     scope: &'this mut HandleScope<'scope>,
     /// A cache for frequently used strings.
@@ -36,11 +47,28 @@ impl<'this, 'scope> Serializer<'this, 'scope> {
 
 /// The possible errors that [`Serializer`] can produce.
 #[derive(Debug, From)]
-pub(super) enum Error {
+enum Error {
     Custom(String),
-    Exception(ExceptionThrown),
+    Thrown(ExceptionThrown),
+    #[from(ignore)]
     StringTooLarge(usize),
-    ArrayLengthTooLarge(TryFromIntError),
+    #[from(ignore)]
+    ArrayLengthTooLarge(usize),
+}
+
+impl<'scope> Throwable<'scope> for Error {
+    fn throw(self, scope: &mut HandleScope<'scope>) -> ExceptionThrown {
+        match self {
+            Self::StringTooLarge(len) => {
+                RangeError(format!("`{len}` bytes is too large to be a JS string")).throw(scope)
+            }
+            Self::ArrayLengthTooLarge(len) => {
+                RangeError(format!("`{len}` elements are too many for a JS array")).throw(scope)
+            }
+            Self::Thrown(thrown) => thrown,
+            Self::Custom(msg) => TypeError(msg).throw(scope),
+        }
+    }
 }
 
 impl ser::Error for Error {
@@ -108,7 +136,7 @@ impl<'this, 'scope> ser::Serializer for Serializer<'this, 'scope> {
     }
 
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
-        let len = len.try_into()?;
+        let len = len.try_into().map_err(|_| Error::ArrayLengthTooLarge(len))?;
         Ok(SerializeArray {
             array: Array::new(self.scope, len),
             inner: self,
@@ -157,7 +185,7 @@ impl<'this, 'scope> ser::Serializer for Serializer<'this, 'scope> {
 }
 
 /// Serializes array elements and finalizes the JS array.
-pub(super) struct SerializeArray<'this, 'scope> {
+struct SerializeArray<'this, 'scope> {
     inner: Serializer<'this, 'scope>,
     array: Local<'scope, Array>,
     next_index: u32,
@@ -187,7 +215,7 @@ impl<'scope> ser::SerializeArray for SerializeArray<'_, 'scope> {
 }
 
 /// Serializes into JS objects where field names are turned into property names.
-pub(super) struct SerializeNamedProduct<'this, 'scope> {
+struct SerializeNamedProduct<'this, 'scope> {
     inner: Serializer<'this, 'scope>,
     object: Local<'scope, Object>,
     next_index: usize,
@@ -240,7 +268,8 @@ impl<'scope> ser::SerializeNamedProduct for SerializeNamedProduct<'_, 'scope> {
 
 #[cfg(test)]
 mod test {
-    use super::super::de::Deserializer;
+    use crate::host::v8::de::deserialize_js_seed;
+
     use super::super::to_value::test::with_scope;
     use super::*;
     use core::fmt::Debug;
@@ -259,15 +288,11 @@ mod test {
         seed: impl for<'de> DeserializeSeed<'de, Output = B>,
     ) {
         with_scope(|scope| {
-            let key_cache = &mut KeyCache::default();
-
             // Convert to JS...
-            let ser = Serializer::new(scope, key_cache);
-            let js_val = rust_val.serialize(ser).unwrap();
+            let js_val = serialize_to_js(scope, &rust_val).unwrap();
 
             // ...and then back to Rust.
-            let de = Deserializer::new(scope, js_val, key_cache);
-            let rust_val_prime = seed.deserialize(de).unwrap();
+            let rust_val_prime = deserialize_js_seed(scope, js_val, seed).unwrap();
 
             // We should end up where we started.
             assert_eq!(rust_val, rust_val_prime);

@@ -1,25 +1,60 @@
 #![allow(dead_code)]
 
-use super::error::{exception_already_thrown, ExceptionThrown};
+use super::error::{exception_already_thrown, ExcResult, ExceptionThrown, ExceptionValue, Throwable, TypeError};
 use super::from_value::{cast, FromValue};
+use core::cell::RefCell;
 use core::fmt;
 use core::iter::{repeat_n, RepeatN};
+use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use derive_more::From;
 use spacetimedb_sats::de::{self, ArrayVisitor, DeserializeSeed, ProductVisitor, SliceVisitor, SumVisitor};
 use spacetimedb_sats::{i256, u256};
 use std::borrow::{Borrow, Cow};
+use std::rc::Rc;
 use v8::{Array, Global, HandleScope, Local, Name, Object, Uint8Array, Value};
 
+/// Returns a `KeyCache` for the current `scope`.
+///
+/// Creates the cache in the scope if it doesn't exist yet.
+pub(super) fn get_or_create_key_cache(scope: &mut HandleScope<'_>) -> Rc<RefCell<KeyCache>> {
+    let context = scope.get_current_context();
+    context.get_slot::<RefCell<KeyCache>>().unwrap_or_else(|| {
+        let cache = Rc::default();
+        context.set_slot(Rc::clone(&cache));
+        cache
+    })
+}
+
+/// Deserializes a `T` from `val` in `scope`, using `seed` for any context needed.
+pub(super) fn deserialize_js_seed<'de, T: DeserializeSeed<'de>>(
+    scope: &mut HandleScope<'de>,
+    val: Local<'_, Value>,
+    seed: T,
+) -> ExcResult<T::Output> {
+    let key_cache = get_or_create_key_cache(scope);
+    let key_cache = &mut *key_cache.borrow_mut();
+    let de = Deserializer::new(scope, val, key_cache);
+    seed.deserialize(de).map_err(|e| e.throw(scope))
+}
+
+/// Deserializes a `T` from `val` in `scope`.
+pub(super) fn deserialize_js<'de, T: de::Deserialize<'de>>(
+    scope: &mut HandleScope<'de>,
+    val: Local<'_, Value>,
+) -> ExcResult<T> {
+    deserialize_js_seed(scope, val, PhantomData)
+}
+
 /// Deserializes from V8 values.
-pub(super) struct Deserializer<'this, 'scope> {
+struct Deserializer<'this, 'scope> {
     common: DeserializerCommon<'this, 'scope>,
     input: Local<'scope, Value>,
 }
 
 impl<'this, 'scope> Deserializer<'this, 'scope> {
     /// Creates a new deserializer from `input` in `scope`.
-    pub fn new(scope: &'this mut HandleScope<'scope>, input: Local<'_, Value>, key_cache: &'this mut KeyCache) -> Self {
+    fn new(scope: &'this mut HandleScope<'scope>, input: Local<'_, Value>, key_cache: &'this mut KeyCache) -> Self {
         let input = Local::new(scope, input);
         let common = DeserializerCommon { scope, key_cache };
         Deserializer { input, common }
@@ -47,10 +82,20 @@ impl<'scope> DeserializerCommon<'_, 'scope> {
 
 /// The possible errors that [`Deserializer`] can produce.
 #[derive(Debug, From)]
-pub(super) enum Error<'scope> {
-    Value(Local<'scope, Value>),
-    Exception(ExceptionThrown),
+enum Error<'scope> {
+    Unthrown(ExceptionValue<'scope>),
+    Thrown(ExceptionThrown),
     Custom(String),
+}
+
+impl<'scope> Throwable<'scope> for Error<'scope> {
+    fn throw(self, scope: &mut HandleScope<'scope>) -> ExceptionThrown {
+        match self {
+            Self::Unthrown(exception) => exception.throw(scope),
+            Self::Thrown(thrown) => thrown,
+            Self::Custom(msg) => TypeError(msg).throw(scope),
+        }
+    }
 }
 
 impl de::Error for Error<'_> {
@@ -102,7 +147,7 @@ impl KeyCache {
 }
 
 // Creates an interned [`v8::String`].
-pub(super) fn v8_interned_string<'scope>(scope: &mut HandleScope<'scope>, field: &str) -> Local<'scope, v8::String> {
+fn v8_interned_string<'scope>(scope: &mut HandleScope<'scope>, field: &str) -> Local<'scope, v8::String> {
     // Internalized v8 strings are significantly faster than "normal" v8 strings
     // since v8 deduplicates re-used strings minimizing new allocations
     // see: https://github.com/v8/v8/blob/14ac92e02cc3db38131a57e75e2392529f405f2f/include/v8.h#L3165-L3171
@@ -126,7 +171,7 @@ fn deref_local<'scope, T>(local: Local<'scope, T>) -> &'scope T {
 macro_rules! deserialize_primitive {
     ($dmethod:ident, $t:ty) => {
         fn $dmethod(self) -> Result<$t, Self::Error> {
-            FromValue::from_value(self.input, self.common.scope).map_err(Error::Value)
+            FromValue::from_value(self.input, self.common.scope).map_err(Error::Unthrown)
         }
     };
 }
@@ -287,7 +332,7 @@ impl<'de, 'scope: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 'scope>
         Ok(None)
     }
 
-    fn get_field_value_seed<T: de::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<T::Output, Self::Error> {
+    fn get_field_value_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<T::Output, Self::Error> {
         let common = self.common.reborrow();
         // Extract the field's value.
         let input = self
@@ -336,7 +381,7 @@ impl<'de, 'this, 'scope: 'de> de::SumAccess<'de> for SumAccess<'this, 'scope> {
 impl<'de, 'this, 'scope: 'de> de::VariantAccess<'de> for Deserializer<'this, 'scope> {
     type Error = Error<'scope>;
 
-    fn deserialize_seed<T: de::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
+    fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
         seed.deserialize(self)
     }
 }

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use crate::host::v8::error::ExceptionValue;
+
 use super::error::{IntoException as _, TypeError, ValueResult};
 use bytemuck::{AnyBitPattern, NoUninit};
 use spacetimedb_sats::{i256, u256};
@@ -48,13 +50,13 @@ pub(super) use cast;
 
 /// Returns a JS exception value indicating that a value overflowed
 /// when converting to the type `rust_ty`.
-fn value_overflowed<'scope>(rust_ty: &str, scope: &mut HandleScope<'scope>) -> Local<'scope, Value> {
+fn value_overflowed<'scope>(rust_ty: &str, scope: &mut HandleScope<'scope>) -> ExceptionValue<'scope> {
     TypeError(format!("Value overflowed `{rust_ty}`")).into_exception(scope)
 }
 
 /// Returns a JS exception value indicating that a value underflowed
 /// when converting to the type `rust_ty`.
-fn value_underflowed<'scope>(rust_ty: &str, scope: &mut HandleScope<'scope>) -> Local<'scope, Value> {
+fn value_underflowed<'scope>(rust_ty: &str, scope: &mut HandleScope<'scope>) -> ExceptionValue<'scope> {
     TypeError(format!("Value underflowed `{rust_ty}`")).into_exception(scope)
 }
 
