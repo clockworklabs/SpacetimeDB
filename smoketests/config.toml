@@ -3,5 +3,5 @@ spacetimedb_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOi
 
 [[server_configs]]
 nickname = "localhost"
-host = "maincloud.staging.spacetimedb.com"
-protocol = "https"
+host = "127.0.0.1:3000"
+protocol = "http"
