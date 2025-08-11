@@ -155,19 +155,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         }
     });
     if confirmed {
-        // why is http::Uri such a f'ing good uri type?
-        uri.path_and_query = uri
-            .path_and_query
-            .map(|pq| {
-                let path = pq.path();
-                let query = pq
-                    .query()
-                    .map(|query| format!("{query}&confirmed=true"))
-                    .unwrap_or_else(|| "?confirmed=true".to_owned());
-
-                PathAndQuery::from_maybe_shared(format!("{path}{query}")).unwrap()
-            })
-            .or_else(|| Some(PathAndQuery::from_static("?confirmed=true")));
+        append_query_param(&mut uri, ("confirmed", "true"));
     }
 
     // Create the websocket request.
@@ -356,4 +344,22 @@ fn format_output_json(msg: &ws::DatabaseUpdate<JsonFormat>, schema: &RawModuleDe
     let output = serde_json::to_string(&formatted)? + "\n";
 
     Ok(output)
+}
+
+fn append_query_param(uri: &mut http::uri::Parts, (k, v): (&str, &str)) {
+    let (mut path, query) = uri
+        .path_and_query
+        .as_ref()
+        .map(|pq| (pq.path().to_owned(), pq.query()))
+        .unwrap_or_default();
+    path.push('?');
+    if let Some(query) = query {
+        path.push_str(query);
+        path.push('&');
+    }
+    path.push_str(k);
+    path.push('=');
+    path.push_str(v);
+
+    uri.path_and_query = Some(PathAndQuery::from_maybe_shared(path).unwrap());
 }

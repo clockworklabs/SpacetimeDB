@@ -25,6 +25,7 @@ use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
 use spacetimedb_lib::{
@@ -54,6 +55,7 @@ use spacetimedb_table::{
     table_index::TableIndex,
 };
 use std::{
+    future,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -419,10 +421,6 @@ impl MutTxId {
         let commit = (commit_table, commit_bs, idx_map);
 
         Ok((tx, commit))
-    }
-
-    pub fn next_tx_offset(&self) -> u64 {
-        self.committed_state_write_lock.next_tx_offset
     }
 }
 
@@ -1294,6 +1292,10 @@ impl MutTxId {
         };
 
         (tx_metrics, tx)
+    }
+
+    pub fn tx_offset(&self) -> future::Ready<TxOffset> {
+        future::ready(self.committed_state_write_lock.next_tx_offset)
     }
 }
 

@@ -900,6 +900,8 @@ impl RelationalDB {
         }
     }
 
+    /// Get the [`DurableOffset`] of this database, or `None` if this is an
+    /// in-memory instance.
     pub fn durable_tx_offset(&self) -> Option<DurableOffset> {
         self.durability
             .as_ref()
@@ -2100,7 +2102,7 @@ mod tests {
     fn table(
         name: &str,
         columns: ProductType,
-        f: impl FnOnce(RawTableDefBuilder) -> RawTableDefBuilder,
+        f: impl FnOnce(RawTableDefBuilder<'_>) -> RawTableDefBuilder,
     ) -> TableSchema {
         let mut builder = RawModuleDefV9Builder::new();
         f(builder.build_table_with_new_type(name, columns, true));

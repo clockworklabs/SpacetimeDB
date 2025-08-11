@@ -64,7 +64,9 @@ pub struct ClientConfig {
     /// rather than  [`TransactionUpdateLight`]s on a successful update.
     // TODO(centril): As more knobs are added, make this into a bitfield (when there's time).
     pub tx_update_full: bool,
-    /// Whether to send only confirmed (aka durable) transactions to the client.
+    /// If `true`, the client requests to receive updates for transactions
+    /// confirmed to be durable. If `false`, updates will be delivered
+    /// immediately.
     pub confirmed_reads: bool,
 }
 
@@ -79,12 +81,31 @@ impl ClientConfig {
     }
 }
 
+/// A message to be sent to the client, along with the transaction offset it
+/// was computed at, if available.
+///
+// TODO: Consider a different name, "ClientUpdate" is used elsewhere already.
 #[derive(Debug)]
 pub struct ClientUpdate {
+    /// Transaction offset at which `message` was computed.
+    ///
+    /// This is only `Some` if `message` is a query result.
+    ///
+    /// If `Some` and [`ClientConfig::confirmed_reads`] is `true`,
+    /// [`ClientConnectionReceiver`] will delay delivery until the durable
+    /// offset of the database is equal to or greater than `tx_offset`.
     pub tx_offset: Option<TxOffset>,
+    /// Type-erased outgoing message.
     pub message: SerializableMessage,
 }
 
+/// Receiving end of [`ClientConnectionSender`].
+///
+/// The [`ClientConnection`] actor reads messages from this channel and sends
+/// them to the client over its websocket connection.
+///
+/// The [`ClientConnectionReceiver`] takes care of confirmed reads semantics,
+/// if requested by the client.
 pub struct ClientConnectionReceiver {
     confirmed_reads: bool,
     channel: MeteredReceiver<ClientUpdate>,
@@ -93,37 +114,76 @@ pub struct ClientConnectionReceiver {
 }
 
 impl ClientConnectionReceiver {
+    /// Receive the next message from this channel.
+    ///
+    /// If this method returns `None`, the channel is closed and no more messages
+    /// are in the internal buffers. No more messages can ever be received from
+    /// the channel.
+    ///
+    /// Messages are returned immediately if:
+    ///
+    ///   - The (internal) [`ClientUpdate`] does not have a `tx_offset`
+    ///     (such as for error messages).
+    ///   - The client hasn't requested confirmed reads (i.e.
+    ///     [`ClientConfig::confirmed_reads`] is `false`).
+    ///   - The database is configured to not persist transactions.
+    ///
+    /// Otherwise, the update's `tx_offset` is compared against the module's
+    /// durable offset. If the durable offset is behind the `tx_offset`, the
+    /// method waits until it catches up before returning the message.
+    ///
+    /// If the database is shut down while waiting for the durable offset,
+    /// `None` is returned. In this case, no more messages can ever be received
+    /// from the channel.
+    //
+    // TODO: Can we make a cancel-safe `recv_many` with confirmed reads semantics?
     pub async fn recv(&mut self) -> Option<SerializableMessage> {
         let ClientUpdate { tx_offset, message } = self.channel.recv().await?;
-        if !self.confirmed_reads || tx_offset.is_none() {
+        if !self.confirmed_reads {
             return Some(message);
         }
 
         if let Some(tx_offset) = tx_offset {
-            if self.module_rx.has_changed().ok()? {
-                let Some(mut durable) = self.durable_tx_offset().await else {
-                    return Some(message);
-                };
-                let durable_offset = durable.get();
-                if durable_offset.is_none() || durable_offset.is_some_and(|offset| offset < tx_offset) {
-                    durable.wait_for(tx_offset).await.ok()?;
+            match self.durable_tx_offset().await {
+                Ok(Some(mut durable)) => {
+                    if durable.is_behind(tx_offset) {
+                        durable.wait_for(tx_offset).await.ok()?;
+                    }
                 }
+                // Database shut down or crashed.
+                Err(NoSuchModule) => return None,
+                // In-memory database.
+                Ok(None) => return Some(message),
             }
         }
 
         Some(message)
     }
 
+    /// Close the receiver without dropping it.
+    ///
+    /// This is used to notify the [`ClientConnectionSender`] that the receiver
+    /// will not consume any more messages from the channel, usually because the
+    /// connection has been closed or is about to be closed.
+    ///
+    /// After calling this method, the sender will not be able to send more
+    /// messages, preventing the internal buffer from filling up.
     pub fn close(&mut self) {
         self.channel.close();
     }
 
-    async fn durable_tx_offset(&mut self) -> Option<DurableOffset> {
-        if self.module_rx.has_changed().ok()? {
+    /// Check whether the module has been updated or shut down, and return
+    /// its [`DurableOffset`].
+    ///
+    /// Returns `Err(NoSuchModule)` if the module has exited.
+    /// Returns `Some(None)` if the module is live but configured without durability.
+    /// Otherwise, returns `Some(DurableOffset)`.
+    async fn durable_tx_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
+        if self.module_rx.has_changed().map_err(|_| NoSuchModule)? {
             self.module = self.module_rx.borrow_and_update().clone();
         }
 
-        self.module.replica_ctx().relational_db.durable_tx_offset()
+        Ok(self.module.replica_ctx().relational_db.durable_tx_offset())
     }
 }
 
@@ -591,21 +651,6 @@ impl ClientConnection {
             }
             Err(_) => Err(NoSuchModule),
         }
-    }
-
-    pub fn durable_tx_offset(&self) -> Option<TxOffset> {
-        self.module
-            .replica_ctx()
-            .relational_db
-            .durable_tx_offset()
-            .and_then(|durable_offset| durable_offset.get())
-    }
-
-    pub async fn wait_durable(&self, offset: TxOffset) -> Result<TxOffset, ()> {
-        let Some(mut durable_offset) = self.module.replica_ctx().relational_db.durable_tx_offset() else {
-            return Ok(offset);
-        };
-        durable_offset.wait_for(offset).await
     }
 
     pub async fn call_reducer(

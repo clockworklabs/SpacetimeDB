@@ -80,9 +80,10 @@ pub struct SubscribeQueryParams {
     /// This knob works by setting other, more specific, knobs to the value.
     #[serde(default)]
     pub light: bool,
-    /// When `true`, subscription updates will be sent after the transaction
-    /// became durable. When `false`, they are sent immediately after the
-    /// transaction was committed in memory.
+    /// If `true`, send the subscription updates only after the transaction
+    /// offset they're computed from is confirmed to be durable.
+    ///
+    /// If `false`, send them immediately.
     #[serde(default)]
     pub confirmed: bool,
 }
@@ -968,6 +969,8 @@ enum UnorderedWsMessage {
     Error(MessageExecutionError),
 }
 
+/// Abstraction over [`ClientConnectionReceiver`], so tests can use a plain
+/// [`mpsc::Receiver`].
 trait Receiver {
     fn recv(&mut self) -> impl Future<Output = Option<SerializableMessage>> + Send;
     fn close(&mut self);

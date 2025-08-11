@@ -11,7 +11,7 @@ use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
 use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::worker_metrics::WORKER_METRICS;
-use core::mem;
+use core::{fmt, mem};
 use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
@@ -28,6 +28,8 @@ use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::future::{self, Future};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -549,13 +551,71 @@ impl<T> SenderWithGauge<T> {
     }
 }
 
+/// The offset of a transaction.
+///
+/// Depending on the datastore implementation and the isolation level of the
+/// transaction, the offset may be available immediately or in the future, when
+/// the transaction commits.
+pub enum TransactionOffset {
+    Now(TxOffset),
+    Later(Later),
+}
+
+type Later = Pin<Box<dyn Future<Output = TxOffset> + Send + Sync + 'static>>;
+
+impl TransactionOffset {
+    /// Resolve the offset, waiting if it is not readily available.
+    pub async fn now(self) -> TxOffset {
+        match self {
+            Self::Now(x) => x,
+            Self::Later(x) => x.await,
+        }
+    }
+
+    /// Convenience variant of [`Self::now`] if only a [`Option<Self>`] is
+    /// available. Returns `None` if `this` is `None`, otherwise waits for
+    /// the offset to resolve and returns it in a `Some`.
+    pub async fn maybe_now(this: Option<Self>) -> Option<TxOffset> {
+        match this {
+            Some(this) => Some(this.now().await),
+            None => None,
+        }
+    }
+}
+
+impl fmt::Debug for TransactionOffset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug = f.debug_tuple("TransactionOffset");
+        match self {
+            Self::Now(x) => debug.field(&x),
+            Self::Later(_) => debug.field(&"<<future>>"),
+        }
+        .finish()
+    }
+}
+
+impl From<TxOffset> for TransactionOffset {
+    fn from(value: TxOffset) -> Self {
+        Self::Now(value)
+    }
+}
+
+impl From<future::Ready<TxOffset>> for TransactionOffset {
+    fn from(ready: future::Ready<TxOffset>) -> Self {
+        Self::from(ready.into_inner())
+    }
+}
+
 /// Message sent by the [`SubscriptionManager`] to the [`SendWorker`].
 #[derive(Debug)]
 enum SendWorkerMessage {
     /// A transaction has completed and the [`SubscriptionManager`] has evaluated the incremental queries,
     /// so the [`SendWorker`] should broadcast them to clients.
+    ///
+    /// The `tx_offset` of the transaction is used to control visibility of
+    /// the results if the client has requested confirmed reads.
     Broadcast {
-        tx_offset: TxOffset,
+        tx_offset: TransactionOffset,
         queries: ComputedQueries,
     },
 
@@ -570,10 +630,14 @@ enum SendWorkerMessage {
         outbound_ref: Client,
     },
 
-    // Send a message to a client.
+    /// Send a message to a client.
+    ///
+    /// In some cases, `message` may contain query results. In this case,
+    /// `tx_offset` is `Some`, and later used to control visibility of the
+    /// message if the the client has requested confirmed reads.
     SendMessage {
         recipient: Arc<ClientConnectionSender>,
-        tx_offset: Option<TxOffset>,
+        tx_offset: Option<TransactionOffset>,
         message: SerializableMessage,
     },
 
@@ -1105,13 +1169,12 @@ impl SubscriptionManager {
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn eval_updates_sequential(
         &self,
-        tx: &DeltaTx,
+        (tx, tx_offset): (&DeltaTx, impl Into<TransactionOffset>),
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
     ) -> ExecutionMetrics {
         use FormatSwitch::{Bsatn, Json};
 
-        let tx_offset = tx.next_tx_offset();
         let tables = &event.status.database_update().unwrap().tables;
 
         let span = tracing::info_span!("eval_incr").entered();
@@ -1273,7 +1336,7 @@ impl SubscriptionManager {
         // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
         self.send_worker_queue
             .send(SendWorkerMessage::Broadcast {
-                tx_offset,
+                tx_offset: tx_offset.into(),
                 queries: ComputedQueries {
                     updates,
                     errs,
@@ -1379,12 +1442,12 @@ impl BroadcastQueue {
     pub fn send_client_message(
         &self,
         recipient: Arc<ClientConnectionSender>,
-        tx_offset: Option<TxOffset>,
+        tx_offset: Option<impl Into<TransactionOffset>>,
         message: impl Into<SerializableMessage>,
     ) -> Result<(), BroadcastError> {
         self.0.send(SendWorkerMessage::SendMessage {
             recipient,
-            tx_offset,
+            tx_offset: tx_offset.map(Into::into),
             message: message.into(),
         })?;
         Ok(())
@@ -1443,12 +1506,14 @@ impl SendWorker {
                     tx_offset,
                     message,
                 } => {
+                    let tx_offset = TransactionOffset::maybe_now(tx_offset).await;
                     let _ = recipient.send_message(tx_offset, message);
                 }
                 SendWorkerMessage::RemoveClient(client_id) => {
                     self.clients.remove(&client_id);
                 }
                 SendWorkerMessage::Broadcast { tx_offset, queries } => {
+                    let tx_offset = tx_offset.now().await;
                     self.send_one_computed_queries(tx_offset, queries);
                 }
             }
@@ -1608,6 +1673,7 @@ mod tests {
     use crate::host::module_host::DatabaseTableUpdate;
     use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
+    use crate::subscription::tx::DeltaTx;
     use crate::{
         client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
@@ -2464,7 +2530,9 @@ mod tests {
         });
 
         db.with_read_only(Workload::Update, |tx| {
-            subscriptions.eval_updates_sequential(&(&*tx).into(), event, Some(Arc::new(client0)))
+            let tx_offset = tx.tx_offset();
+            let delta_tx = DeltaTx::from(&*tx);
+            subscriptions.eval_updates_sequential((&delta_tx, tx_offset), event, Some(Arc::new(client0)))
         });
 
         runtime.block_on(async move {

@@ -9,6 +9,7 @@ use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::ArgsTuple;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{check_row_limit, DbProgram, TxMode};
@@ -16,7 +17,6 @@ use anyhow::anyhow;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::traits::IsolationLevel;
-use spacetimedb_durability::TxOffset;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -173,7 +173,11 @@ pub fn execute_sql_tx<'a>(
 }
 
 pub struct SqlResult {
-    pub tx_offset: TxOffset,
+    /// The offset of the SQL operation's transaction.
+    ///
+    /// Used to determine visibility of the transaction wrt the durability
+    /// requirements requestest by the caller.
+    pub tx_offset: TransactionOffset,
     pub rows: Vec<ProductValue>,
     /// These metrics will be reported via `report_tx_metrics`.
     /// They should not be reported separately to avoid double counting.
@@ -193,7 +197,6 @@ pub fn run(
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
         compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth)
     })?;
-    let tx_offset = tx.next_tx_offset();
 
     let mut metrics = ExecutionMetrics::default();
 
@@ -202,6 +205,7 @@ pub fn run(
             // Up to this point, the tx has been read-only,
             // and hence there are no deltas to process.
             let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
+            let tx_offset = tx.tx_offset().into();
 
             // Release the tx on drop, so that we record metrics.
             let mut tx = scopeguard::guard(tx, |tx| {
@@ -246,6 +250,7 @@ pub fn run(
                 return Err(anyhow!("Only owners are authorized to run SQL DML statements").into());
             }
 
+            let tx_offset = tx.tx_offset().into();
             // Evaluate the mutation
             let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(stmt, tx, &mut metrics))?;
 
@@ -256,9 +261,8 @@ pub fn run(
             if subs.is_none() {
                 let metrics = tx.metrics;
                 return db.commit_tx(tx).map(|tx_opt| {
-                    if let Some((tx_data, tx_metrics, reducer)) = tx_opt {
-                        db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
-                    }
+                    let (tx_data, tx_metrics, reducer) = tx_opt.unwrap();
+                    db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                     SqlResult {
                         tx_offset,
                         rows: vec![],

@@ -1,6 +1,7 @@
 use super::execution_unit::QueryHash;
 use super::module_subscription_manager::{
     spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats, SubscriptionManager,
+    TransactionOffset,
 };
 use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
@@ -301,7 +302,7 @@ impl ModuleSubscriptions {
         let send_err_msg = |message| {
             self.broadcast_queue.send_client_message(
                 sender.clone(),
-                None,
+                None::<TxOffset>,
                 SubscriptionMessage {
                     request_id: Some(request.request_id),
                     query_id: Some(request.query_id),
@@ -319,7 +320,7 @@ impl ModuleSubscriptions {
         let hash = QueryHash::from_string(&sql, auth.caller, false);
         let hash_with_param = QueryHash::from_string(&sql, auth.caller, true);
 
-        let (tx, tx_offset) = self.begin_tx(Workload::Subscribe);
+        let tx = self.begin_tx(Workload::Subscribe);
 
         let existing_query = {
             let guard = self.subscriptions.read();
@@ -365,7 +366,7 @@ impl ModuleSubscriptions {
         // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
-            Some(tx_offset),
+            Some(tx.tx_offset()),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -391,7 +392,7 @@ impl ModuleSubscriptions {
         let send_err_msg = |message| {
             self.broadcast_queue.send_client_message(
                 sender.clone(),
-                None,
+                None::<TxOffset>,
                 SubscriptionMessage {
                     request_id: Some(request.request_id),
                     query_id: Some(request.query_id),
@@ -420,7 +421,7 @@ impl ModuleSubscriptions {
             return Ok(None);
         };
 
-        let (tx, tx_offset) = self.begin_tx(Workload::Unsubscribe);
+        let tx = self.begin_tx(Workload::Unsubscribe);
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let (table_rows, metrics) = return_on_err_with_sql!(
             self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Unsubscribe),
@@ -437,7 +438,7 @@ impl ModuleSubscriptions {
         // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
-            Some(tx_offset),
+            Some(tx.tx_offset()),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -464,7 +465,7 @@ impl ModuleSubscriptions {
         let send_err_msg = |message| {
             self.broadcast_queue.send_client_message(
                 sender.clone(),
-                None,
+                None::<TxOffset>,
                 SubscriptionMessage {
                     request_id: Some(request.request_id),
                     query_id: Some(request.query_id),
@@ -481,7 +482,7 @@ impl ModuleSubscriptions {
         let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Unsubscribe);
 
         // Always lock the db before the subscription lock to avoid deadlocks.
-        let (tx, tx_offset) = self.begin_tx(Workload::Unsubscribe);
+        let tx = self.begin_tx(Workload::Unsubscribe);
 
         let removed_queries = {
             let _compile_timer = subscription_metrics.compilation_time.start_timer();
@@ -525,7 +526,7 @@ impl ModuleSubscriptions {
         // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender,
-            Some(tx_offset),
+            Some(tx.tx_offset()),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -575,7 +576,7 @@ impl ModuleSubscriptions {
         let auth = AuthCtx::new(self.owner_identity, sender);
 
         // We always get the db lock before the subscription lock to avoid deadlocks.
-        let (tx, _tx_offset) = self.begin_tx(Workload::Subscribe);
+        let tx = self.begin_tx(Workload::Subscribe);
 
         let compile_timer = metrics.compilation_time.start_timer();
 
@@ -627,10 +628,10 @@ impl ModuleSubscriptions {
         &self,
         recipient: Arc<ClientConnectionSender>,
         message: impl Into<SerializableMessage>,
-        tx: &TxId,
+        (_tx, tx_offset): (&TxId, impl Into<TransactionOffset>),
     ) -> Result<(), BroadcastError> {
         self.broadcast_queue
-            .send_client_message(recipient, Some(tx.next_tx_offset()), message)
+            .send_client_message(recipient, Some(tx_offset.into()), message)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -645,7 +646,7 @@ impl ModuleSubscriptions {
         let send_err_msg = |message| {
             let _ = self.broadcast_queue.send_client_message(
                 sender.clone(),
-                None,
+                None::<TxOffset>,
                 SubscriptionMessage {
                     request_id: Some(request.request_id),
                     query_id: Some(request.query_id),
@@ -680,7 +681,6 @@ impl ModuleSubscriptions {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
             self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
         });
-        let tx_offset = tx.next_tx_offset();
 
         // We minimize locking so that other clients can add subscriptions concurrently.
         // We are protected from race conditions with broadcasts, because we have the db lock,
@@ -737,7 +737,7 @@ impl ModuleSubscriptions {
 
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
-            Some(tx_offset),
+            Some(tx.tx_offset()),
             SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
@@ -776,7 +776,6 @@ impl ModuleSubscriptions {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
             self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
         });
-        let tx_offset = tx.next_tx_offset();
 
         check_row_limit(
             &queries,
@@ -831,7 +830,7 @@ impl ModuleSubscriptions {
         // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender,
-            Some(tx_offset),
+            Some(tx.tx_offset()),
             SubscriptionUpdateMessage {
                 database_update,
                 request_id: Some(subscription.request_id),
@@ -906,7 +905,8 @@ impl ModuleSubscriptions {
 
         match &event.status {
             EventStatus::Committed(_) => {
-                update_metrics = subscriptions.eval_updates_sequential(&delta_read_tx, event.clone(), caller);
+                update_metrics =
+                    subscriptions.eval_updates_sequential((&delta_read_tx, read_tx.tx_offset()), event.clone(), caller);
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = caller {
@@ -915,11 +915,9 @@ impl ModuleSubscriptions {
                         database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
                     };
 
-                    let _ = self.broadcast_queue.send_client_message(
-                        client,
-                        tx_data.as_ref().and_then(|tx_data| tx_data.tx_offset()),
-                        message,
-                    );
+                    let _ = self
+                        .broadcast_queue
+                        .send_client_message(client, Some(read_tx.tx_offset()), message);
                 } else {
                     log::trace!("Reducer failed but there is no client to send the failure to!")
                 }
@@ -933,14 +931,11 @@ impl ModuleSubscriptions {
         Ok(Ok((event, update_metrics)))
     }
 
-    fn begin_tx(&self, workload: Workload) -> (ScopeGuard<TxId, impl FnOnce(TxId) + '_>, TxOffset) {
-        let tx = scopeguard::guard(self.relational_db.begin_tx(workload), |tx| {
+    fn begin_tx(&self, workload: Workload) -> ScopeGuard<TxId, impl FnOnce(TxId) + '_> {
+        scopeguard::guard(self.relational_db.begin_tx(workload), |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
             self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
-        });
-        let tx_offset = tx.next_tx_offset();
-
-        (tx, tx_offset)
+        })
     }
 }
 

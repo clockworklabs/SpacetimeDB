@@ -1110,6 +1110,7 @@ impl ModuleHost {
         let metrics = self
             .on_module_thread("one_off_query", move || {
                 db.with_read_only(Workload::Sql, |tx| {
+                    let tx_offset = tx.tx_offset();
                     // We wrap the actual query in a closure so we can use ? to handle errors without making
                     // the entire transaction abort with an error.
                     let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
@@ -1174,7 +1175,7 @@ impl ModuleHost {
                         ),
                     };
 
-                    subscriptions.send_client_message(client, message, tx)?;
+                    subscriptions.send_client_message(client, message, (tx, tx_offset))?;
                     Ok::<Option<ExecutionMetrics>, anyhow::Error>(metrics)
                 })
             })

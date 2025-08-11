@@ -6,6 +6,7 @@ use super::{
 };
 use crate::execution_context::ExecutionContext;
 use crate::locking_tx_datastore::state_view::IterTx;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_primitives::{ColList, TableId};
@@ -13,8 +14,8 @@ use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::blob_store::BlobStore;
 use spacetimedb_table::table::Table;
-use std::num::NonZeroU64;
 use std::sync::Arc;
+use std::{future, num::NonZeroU64};
 use std::{
     ops::RangeBounds,
     time::{Duration, Instant},
@@ -121,8 +122,7 @@ impl TxId {
         NonZeroU64::new(index.num_keys() as u64)
     }
 
-    /// The transaction offset this read-only transaction is executing at.
-    pub fn next_tx_offset(&self) -> u64 {
-        self.committed_state_shared_lock.next_tx_offset
+    pub fn tx_offset(&self) -> future::Ready<TxOffset> {
+        future::ready(self.committed_state_shared_lock.next_tx_offset)
     }
 }

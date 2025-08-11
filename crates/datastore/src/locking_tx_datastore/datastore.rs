@@ -38,9 +38,9 @@ use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef};
-use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::{borrow::Cow, future};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DatastoreError>;
@@ -326,6 +326,7 @@ impl DataRow for Locking {
 
 impl Tx for Locking {
     type Tx = TxId;
+    type TxOffset = future::Ready<TxOffset>;
 
     /// Begins a read-only transaction under the given `workload`.
     ///
@@ -359,6 +360,10 @@ impl Tx for Locking {
     /// - `String`, the name of the reducer which ran within this transaction.
     fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String) {
         tx.release()
+    }
+
+    fn tx_offset(&self, tx: &Self::Tx) -> Self::TxOffset {
+        tx.tx_offset()
     }
 }
 
@@ -840,6 +845,7 @@ impl TxMetrics {
 
 impl MutTx for Locking {
     type MutTx = MutTxId;
+    type TxOffset = future::Ready<TxOffset>;
 
     /// Begins a mutable transaction under the given `isolation_level` and `workload`.
     ///
@@ -876,6 +882,10 @@ impl MutTx for Locking {
 
     fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, TxMetrics, String)>> {
         Ok(Some(tx.commit()))
+    }
+
+    fn tx_offset(&self, tx: &Self::MutTx) -> Self::TxOffset {
+        tx.tx_offset()
     }
 }
 
@@ -914,7 +924,7 @@ pub struct Replay<F> {
 }
 
 impl<F> Replay<F> {
-    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<F>) -> T) -> T {
+    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<'_, F>) -> T) -> T {
         let mut committed_state = self.committed_state.write_arc();
         let mut visitor = ReplayVisitor {
             database_identity: &self.database_identity,

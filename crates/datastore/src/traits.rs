@@ -1,6 +1,7 @@
 use core::ops::Deref;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::future::{Future, IntoFuture};
 use std::{ops::RangeBounds, sync::Arc};
 
 use super::locking_tx_datastore::datastore::TxMetrics;
@@ -9,6 +10,7 @@ use super::Result;
 use crate::execution_context::{ReducerContext, Workload};
 use crate::system_tables::ST_TABLE_ID;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
@@ -320,6 +322,7 @@ pub trait DataRow: Send + Sync {
 
 pub trait Tx {
     type Tx;
+    type TxOffset: Future<Output = TxOffset> + Send + Sync;
 
     /// Begins a read-only transaction under the given `workload`.
     fn begin_tx(&self, workload: Workload) -> Self::Tx;
@@ -330,10 +333,13 @@ pub trait Tx {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
     fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String);
+
+    fn tx_offset(&self, tx: &Self::Tx) -> Self::TxOffset;
 }
 
 pub trait MutTx {
     type MutTx;
+    type TxOffset: IntoFuture<Output = TxOffset> + Send + Sync;
 
     /// Begins a mutable transaction under the given `isolation_level` and `workload`.
     fn begin_mut_tx(&self, isolation_level: IsolationLevel, workload: Workload) -> Self::MutTx;
@@ -352,6 +358,8 @@ pub trait MutTx {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
     fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String);
+
+    fn tx_offset(&self, tx: &Self::MutTx) -> Self::TxOffset;
 }
 
 /// Standard metadata associated with a database.

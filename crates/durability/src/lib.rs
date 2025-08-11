@@ -33,6 +33,10 @@ impl DurableOffset {
             .map(|r| r.as_ref().copied().unwrap())
             .map_err(drop)
     }
+
+    pub fn is_behind(&self, other: TxOffset) -> bool {
+        self.inner.borrow().is_none_or(|offset| offset < other)
+    }
 }
 
 impl From<watch::Receiver<Option<TxOffset>>> for DurableOffset {
