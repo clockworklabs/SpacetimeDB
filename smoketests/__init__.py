@@ -267,9 +267,10 @@ class Smoketest(unittest.TestCase):
         with open(self.config_path, "rb") as f:
             config = tomllib.load(f)
             token = config['spacetimedb_token']
-            server = config['default_server']
-            host = config['server_configs'][server]['host']
-            protocol = config['server_configs'][server]['protocol']
+            server_nickname = config['default_server']
+            server_config = next(config for config in config['server_configs'] if config['nickname'] == server_nickname)
+            host = server_config['host']
+            protocol = server_config['protocol']
             conn = None
             if protocol == "http":
                 conn = http.client.HTTPConnection(host)
