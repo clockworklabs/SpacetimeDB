@@ -119,9 +119,9 @@ def main():
     if args.spacetime_login:
         smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "logout")
         smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "login")
+        smoketests.USE_SPACETIME_LOGIN = True
     else:
         smoketests.new_identity(TEST_DIR / 'config.toml')
-    smoketests.USE_SPACETIME_LOGIN = args.spacetime_login
 
     if not args.skip_dotnet:
         smoketests.HAVE_DOTNET = check_dotnet()
