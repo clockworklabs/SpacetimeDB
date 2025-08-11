@@ -260,9 +260,17 @@ class Smoketest(unittest.TestCase):
     def api_call(self, method, path, body = None, headers = {}):
         with open(self.config_path, "rb") as f:
             config = tomllib.load(f)
-            host = config['default_server']
             token = config['spacetimedb_token']
-            conn = http.client.HTTPSConnection(host)
+            server = config['default_server']
+            host = config['server_configs'][server]['host']
+            protocol = config['server_configs'][server]['protocol']
+            conn = None
+            if protocol == "http":
+                conn = http.client.HTTPConnection(host)
+            elif protocol == "https":
+                conn = http.client.HTTPSConnection(host)
+            else:
+                raise Exception(f"Unknown protocol: {protocol}")
             auth = {"Authorization": f'Bearer {token}'}
             headers.update(auth)
             log_cmd([method, path])
