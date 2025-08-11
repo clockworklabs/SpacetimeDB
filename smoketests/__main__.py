@@ -72,6 +72,7 @@ def main():
     parser.add_argument("-x", dest="exclude", nargs="*", default=[])
     parser.add_argument("--no-build-cli", action="store_true", help="don't cargo build the cli")
     parser.add_argument("--list", action="store_true", help="list the tests that would be run, but don't run them")
+    parser.add_argument("--remote-server", action="store", help="Run against a remote server")
     parser.add_argument("--spacetime-login", action="store_true", help="Use `spacetime login` for these tests (and disable tests that don't work with that)")
     args = parser.parse_args()
 
@@ -110,6 +111,10 @@ def main():
                 docker_container = check_docker()
                 subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
+
+    if args.remote_server is not None:
+        smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "server", "edit", "localhost", "--url", args.remote_server)
+        smoketests.REMOTE_SERVER = True
 
     if args.spacetime_login:
         smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "logout")

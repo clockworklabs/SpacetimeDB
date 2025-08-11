@@ -1,10 +1,13 @@
-from .. import Smoketest, extract_field, spacetime_login_incompatible
+from .. import Smoketest, extract_field, requires_local_server
 import re
 
 class Servers(Smoketest):
     AUTOPUBLISH = False
 
+    @requires_local_server
     def test_servers(self):
+        # TODO: skip these tests when running with non-default servers
+
         """Verify that we can add and list server configurations"""
 
         out = self.spacetime("server", "add", "--url", "https://testnet.spacetimedb.com", "testnet", "--no-fingerprint")
@@ -24,6 +27,7 @@ class Servers(Smoketest):
         out = self.spacetime("server", "fingerprint", "localhost")
         self.assertIn("Fingerprint is unchanged for server localhost", out)
 
+    @requires_local_server
     def test_edit_server(self):
         """Verify that we can edit server configurations"""
 

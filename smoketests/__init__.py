@@ -40,6 +40,7 @@ HAVE_DOTNET = False
 # When we pass --spacetime-login, we are running against a server that requires "real" spacetime logins (rather than `--server-issued-login`).
 # This is used to skip tests that don't work with that.
 USE_SPACETIME_LOGIN = False
+REMOTE_SERVER = False
 
 # default value can be overridden by `--compose-file` flag
 COMPOSE_FILE = "./docker-compose.yml"
@@ -68,6 +69,12 @@ def requires_dotnet(item):
 def requires_anonymous_login(item):
     if USE_SPACETIME_LOGIN:
         return unittest.skip("using `spacetime login`")(item)
+    return item
+
+# TODO: Use this to auto-skip `replication` and `docker` and `servers` tests
+def requires_local_server(item):
+    if REMOTE_SERVER:
+        return unittest.skip("running against a remote server")(item)
     return item
 
 def build_template_target():
