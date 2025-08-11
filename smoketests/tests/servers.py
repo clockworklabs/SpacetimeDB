@@ -1,10 +1,11 @@
 from .. import Smoketest, extract_field, requires_local_server
 import re
 
+# We require a local server because these tests have hardcoded server addresses.
+@requires_local_server
 class Servers(Smoketest):
     AUTOPUBLISH = False
 
-    @requires_local_server
     def test_servers(self):
         """Verify that we can add and list server configurations"""
 
@@ -25,7 +26,6 @@ class Servers(Smoketest):
         out = self.spacetime("server", "fingerprint", "localhost")
         self.assertIn("Fingerprint is unchanged for server localhost", out)
 
-    @requires_local_server
     def test_edit_server(self):
         """Verify that we can edit server configurations"""
 
