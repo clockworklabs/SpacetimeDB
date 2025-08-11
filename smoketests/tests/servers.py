@@ -6,8 +6,6 @@ class Servers(Smoketest):
 
     @requires_local_server
     def test_servers(self):
-        # TODO: skip these tests when running with non-default servers
-
         """Verify that we can add and list server configurations"""
 
         out = self.spacetime("server", "add", "--url", "https://testnet.spacetimedb.com", "testnet", "--no-fingerprint")
