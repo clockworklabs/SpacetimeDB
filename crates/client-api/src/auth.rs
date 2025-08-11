@@ -210,8 +210,6 @@ pub trait JwtAuthProvider: Sync + Send + TokenSigner {
     ///
     /// The `/identity/public-key` route calls this method to return the public key to callers.
     fn public_key_bytes(&self) -> &[u8];
-    /// Return the private key used to verify JWTs, as the bytes of a PEM private key file.
-    fn private_key_bytes(&self) -> &[u8];
 }
 
 pub struct JwtKeyAuthProvider<TV: TokenValidator + Send + Sync> {
@@ -258,10 +256,6 @@ impl<TV: TokenValidator + Send + Sync> JwtAuthProvider for JwtKeyAuthProvider<TV
 
     fn public_key_bytes(&self) -> &[u8] {
         &self.keys.public_pem
-    }
-
-    fn private_key_bytes(&self) -> &[u8] {
-        &self.keys.private_pem
     }
 }
 

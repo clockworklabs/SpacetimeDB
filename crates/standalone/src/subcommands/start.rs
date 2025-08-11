@@ -11,11 +11,9 @@ use spacetimedb::db::{self, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics;
-use spacetimedb_client_api::auth::JwtAuthProvider;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
-use spacetimedb_client_api::NodeDelegate;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
@@ -185,9 +183,8 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
     log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(());
-    let private_key = ctx.jwt_auth_provider().private_key_bytes().to_vec();
     tokio::select! {
-        _ = pg_server::start_pg(shutdown_rx.clone(), ctx, listen_addr, &private_key) => {},
+        _ = pg_server::start_pg(shutdown_rx.clone(), ctx, listen_addr) => {},
         _ = axum::serve(tcp, service).with_graceful_shutdown(async move {
             shutdown_rx.changed().await.ok();
         }) => {},
