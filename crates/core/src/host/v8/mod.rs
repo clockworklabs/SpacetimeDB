@@ -12,8 +12,10 @@ use anyhow::anyhow;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use std::sync::{Arc, LazyLock};
 
+mod de;
 mod error;
 mod from_value;
+mod ser;
 mod to_value;
 
 /// The V8 runtime, for modules written in e.g., JS or TypeScript.
