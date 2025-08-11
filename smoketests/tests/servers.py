@@ -1,4 +1,4 @@
-from .. import Smoketest, extract_field
+from .. import Smoketest, extract_field, spacetime_login_incompatible
 import re
 
 class Servers(Smoketest):
@@ -7,7 +7,6 @@ class Servers(Smoketest):
     def test_servers(self):
         """Verify that we can add and list server configurations"""
 
-        # TODO: This needs fixing or skipping when this is running against a remote server
         out = self.spacetime("server", "add", "--url", "https://testnet.spacetimedb.com", "testnet", "--no-fingerprint")
         self.assertEqual(extract_field(out, "Host:"), "testnet.spacetimedb.com")
         self.assertEqual(extract_field(out, "Protocol:"), "https")

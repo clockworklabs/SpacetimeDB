@@ -37,6 +37,10 @@ HAVE_DOCKER = False
 # and a dotnet installation is detected
 HAVE_DOTNET = False
 
+# When we pass --spacetime-login, we are running against a server that requires "real" spacetime logins (rather than `--server-issued-login`).
+# This is used to skip tests that don't work with that.
+USE_SPACETIME_LOGIN = False
+
 # default value can be overridden by `--compose-file` flag
 COMPOSE_FILE = "./docker-compose.yml"
 
@@ -61,6 +65,10 @@ def requires_dotnet(item):
         return item
     return unittest.skip("dotnet 8.0 not available")(item)
 
+def requires_anonymous_login(item):
+    if USE_SPACETIME_LOGIN:
+        return unittest.skip("using `spacetime login`")(item)
+    return item
 
 def build_template_target():
     if not TEMPLATE_TARGET_DIR.exists():
@@ -107,7 +115,6 @@ def extract_field(cmd_output, field_name):
 
 def log_cmd(args):
     logging.debug(f"$ {' '.join(str(arg) for arg in args)}")
-
 
 def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=None, log=True, **kwargs):
     if log:
@@ -173,7 +180,6 @@ class Smoketest(unittest.TestCase):
         self._check_published()
         anon = ["--anonymous"] if anon else []
         self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args))
-
 
     def sql(self, sql):
         self._check_published()
