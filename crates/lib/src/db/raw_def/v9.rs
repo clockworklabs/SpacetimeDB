@@ -366,19 +366,18 @@ pub enum RawMiscModuleExportV9 {
     ColumnDefaultValue(RawColumnDefaultValueV9),
 }
 
-/// Marks a field as having a particularly default
+/// Marks a field as having a particular default.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawColumnDefaultValueV9 {
-    /// Must point to a `ProductType` or an error will be thrown during validation.
     pub table: RawIdentifier,
 
     /// Must be the index of a valid column within `ty`.
     pub col_id: ColId,
 
-    /// A BSATN-encoded AlgebraicValue valid at `ty`.
-    /// (We can't use AlgebraicValue directly because it isn't serializable!)
+    /// A BSATN-encoded [`AlgebraicValue`] valid at `ty`.
+    /// (We can't use `AlgebraicValue` directly because it isn't serializable!)
     pub value: Box<[u8]>,
 }
 
@@ -813,10 +812,9 @@ impl RawTableDefBuilder<'_> {
         self
     }
 
-    /// Adds a default value for the field.
-    /// Note: this sets the value for all other tables defined on the same
+    /// Adds a default value for the `column`.
     pub fn with_default_column_value(self, column: impl Into<ColId>, value: AlgebraicValue) -> Self {
-        // Added to misc_exports for backwards-compatibility reasons
+        // Added to `misc_exports` for backwards-compatibility reasons.
         self.module_def
             .misc_exports
             .push(RawMiscModuleExportV9::ColumnDefaultValue(RawColumnDefaultValueV9 {

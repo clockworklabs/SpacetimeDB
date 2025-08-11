@@ -1059,8 +1059,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::{def::validate::tests::expect_identifier, error::ValidationError};
+
     use super::*;
     use proptest::prelude::*;
+    use spacetimedb_data_structures::expect_error_matching;
+    use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 
     proptest! {
         #[test]
@@ -1075,5 +1079,52 @@ mod tests {
             let raw2: Vec<RawTypeDefV9> = to_raw(map);
             prop_assert_eq!(raw, raw2);
         }
+    }
+
+    #[test]
+    fn validate_new_column_with_multiple_values() {
+        let mut old_builder = RawModuleDefV9Builder::new();
+        old_builder
+            .build_table_with_new_type(
+                "Apples",
+                ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
+                true,
+            )
+            .with_default_column_value(1, AlgebraicValue::U16(12))
+            .with_default_column_value(1, AlgebraicValue::U16(10))
+            .finish();
+
+        let result: Result<ModuleDef, ValidationErrors> = old_builder.finish().try_into();
+        let apples = expect_identifier("Apples");
+
+        expect_error_matching!(
+            result,
+            ValidationError::MultipleColumnDefaultValues {
+                table,
+                ..
+            } => *table == apples.clone().into()
+        );
+    }
+
+    #[test]
+    fn validate_new_column_with_malformed_value() {
+        let mut old_builder = RawModuleDefV9Builder::new();
+        old_builder
+            .build_table_with_new_type(
+                "Apples",
+                ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
+                true,
+            )
+            .with_default_column_value(1, AlgebraicValue::Bool(false))
+            .with_default_column_value(1, AlgebraicValue::U16(10))
+            .finish();
+
+        let result: Result<ModuleDef, ValidationErrors> = old_builder.finish().try_into();
+        let apples = expect_identifier("Apples");
+
+        expect_error_matching!(
+            result,
+            ValidationError::ColumnDefaultValueMalformed { table, col_id, .. } => *table == apples.clone().into() && *col_id == ColId(1)
+        );
     }
 }

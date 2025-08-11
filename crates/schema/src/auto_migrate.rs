@@ -113,10 +113,12 @@ pub enum AutoMigrateStep<'def> {
     ///
     /// This is a destructive operation that requires first running a `DisconnectAllUsers`.
     ///
-    /// The added columns are guaranteed to be contiguous and at the end of the table. They are also
-    /// guaranteed to have default values set.
+    /// The added columns are guaranteed to be contiguous
+    /// and at the end of the table.
+    /// They are also guaranteed to have default values set.
     ///
-    /// This suppresses any `ChangeColumns` steps for the same table.
+    /// When this step is present,
+    /// no `ChangeColumns` steps will be, for the same table.
     AddColumns(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Add a table, including all indexes, constraints, and sequences.
@@ -400,7 +402,7 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
         match col_diff {
             Diff::Add { new } => {
                 if new.default_value.is_some() {
-                    // row_type_changed, columns_added
+                    // `row_type_changed`, `columns_added`
                     Ok(ProductMonoid(Any(false), Any(true)))
                 } else {
                     Err(AutoMigrateError::AddColumn {
@@ -451,6 +453,8 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 
     let ((), ProductMonoid(Any(row_type_changed), Any(columns_added))) = (type_ok, columns_ok).combine_errors()?;
 
+    // If we're adding a column, we'll rewrite the whole table.
+    // That makes any `ChangeColumns` moot, so we can skip it.
     if columns_added {
         if !plan
             .steps
@@ -875,7 +879,7 @@ mod tests {
             )
             // add column sequence
             .with_column_sequence(0)
-            .with_default_column_value(3, AlgebraicValue::U32(5)) // we need a new
+            .with_default_column_value(3, AlgebraicValue::U32(5))
             // change access
             .with_access(TableAccess::Private)
             .finish();
@@ -1024,6 +1028,8 @@ mod tests {
 
         assert!(steps.contains(&AutoMigrateStep::DisconnectAllUsers), "{steps:?}");
         assert!(steps.contains(&AutoMigrateStep::AddColumns(&bananas)), "{steps:?}");
+        // Column is changed but it will not reflect in steps due to `AutoMigrateStep::AddColumns`
+        assert!(!steps.contains(&AutoMigrateStep::ChangeColumns(&bananas)), "{steps:?}");
     }
 
     #[test]
