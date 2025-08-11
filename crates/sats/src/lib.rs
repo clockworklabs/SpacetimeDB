@@ -162,6 +162,23 @@ impl<'a, T: Value> ValueWithType<'a, Box<[T]>> {
     }
 }
 
+impl<T: Value + PartialEq> PartialEq<T> for ValueWithType<'_, T> {
+    fn eq(&self, other: &T) -> bool {
+        self.val == other
+    }
+}
+
+use core::fmt;
+
+impl<T: fmt::Debug + Value<Type: fmt::Debug>> fmt::Debug for ValueWithType<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ValueWithType")
+            .field("type", self.ty())
+            .field("value", self.value())
+            .finish()
+    }
+}
+
 /// Adds a `Typespace` context atop of a borrowed type.
 #[derive(Debug)]
 pub struct WithTypespace<'a, T: ?Sized> {

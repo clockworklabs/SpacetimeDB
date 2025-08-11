@@ -15,15 +15,15 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteTables
     {
-        public sealed class CircleHandle : RemoteTableHandle<EventContext, Circle>
+        public sealed class LoggedOutCircleHandle : RemoteTableHandle<EventContext, Circle>
         {
-            protected override string RemoteTableName => "circle";
+            protected override string RemoteTableName => "logged_out_circle";
 
             public sealed class EntityIdUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(Circle row) => row.EntityId;
 
-                public EntityIdUniqueIndex(CircleHandle table) : base(table) { }
+                public EntityIdUniqueIndex(LoggedOutCircleHandle table) : base(table) { }
             }
 
             public readonly EntityIdUniqueIndex EntityId;
@@ -32,12 +32,12 @@ namespace SpacetimeDB.Types
             {
                 protected override uint GetKey(Circle row) => row.PlayerId;
 
-                public PlayerIdIndex(CircleHandle table) : base(table) { }
+                public PlayerIdIndex(LoggedOutCircleHandle table) : base(table) { }
             }
 
             public readonly PlayerIdIndex PlayerId;
 
-            internal CircleHandle(DbConnection conn) : base(conn)
+            internal LoggedOutCircleHandle(DbConnection conn) : base(conn)
             {
                 EntityId = new(this);
                 PlayerId = new(this);
@@ -46,6 +46,6 @@ namespace SpacetimeDB.Types
             protected override object GetPrimaryKey(Circle row) => row.EntityId;
         }
 
-        public readonly CircleHandle Circle;
+        public readonly LoggedOutCircleHandle LoggedOutCircle;
     }
 }

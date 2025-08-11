@@ -15,7 +15,7 @@ using Random = UnityEngine.Random;
 
 public class PlayModeExampleTest
 {
-    // [UnityTest] - This won't work until we have reconnections
+    [UnityTest]
     public IEnumerator SimpleConnectionTest()
     {
         PlayerPrefs.DeleteAll();
@@ -84,7 +84,7 @@ public class PlayModeExampleTest
 
         // Standing still should decay a bit
         PlayerController.Local.EnableTestInput();
-        while (foodEaten < 200)
+        while (foodEaten < 50)
         {
             Debug.Assert(circle != null, nameof(circle) + " != null");
             var ourEntity = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
@@ -116,6 +116,11 @@ public class PlayModeExampleTest
                 Debug.Assert(foodEntity != null, nameof(foodEntity) + " != null");
                 Debug.Assert(ourNewEntity != null, nameof(ourNewEntity) + " != null");
                 var toThisFood = (Vector2)foodEntity.Position - (Vector2)ourNewEntity.Position;
+                // We have to go slow for the first few pieces of food otherwise we can "hop" over it
+                if (foodEaten < 10)
+                {
+                    toThisFood = toThisFood.normalized * 0.5f;
+                }
                 PlayerController.Local.SetTestInput(toThisFood);
             }
 
@@ -131,7 +136,7 @@ public class PlayModeExampleTest
         Debug.Assert(massEnd < massStart, "Mass should have decayed");
     }
 
-    // [UnityTest] - This won't work until we have reconnections
+    [UnityTest]
     public IEnumerator OneOffTest1()
     {
         var connected = false;
@@ -176,7 +181,7 @@ public class PlayModeExampleTest
         Debug.Log($"id: {players[0].PlayerId} Username: {players[0].Name}");
     }
 
-    // [UnityTest] - This won't work until we have reconnections
+    [UnityTest]
     public IEnumerator OneOffTest2()
     {
         var connected = false;
@@ -220,7 +225,7 @@ public class PlayModeExampleTest
         Debug.Log($"id: {players[0].PlayerId} Username: {players[0].Name}");
     }
 
-    //[UnityTest]
+    [UnityTest]
     public IEnumerator ReconnectionViaReloadingScene()
     {
         var connected = false;
