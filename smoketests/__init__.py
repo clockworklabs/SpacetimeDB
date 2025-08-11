@@ -71,7 +71,6 @@ def requires_anonymous_login(item):
         return unittest.skip("using `spacetime login`")(item)
     return item
 
-# TODO: Use this to auto-skip `replication` and `docker` and `servers` tests
 def requires_local_server(item):
     if REMOTE_SERVER:
         return unittest.skip("running against a remote server")(item)
