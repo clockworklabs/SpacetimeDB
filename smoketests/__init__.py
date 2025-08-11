@@ -281,7 +281,7 @@ class Smoketest(unittest.TestCase):
             server_name = config['default_server']
             server_config = next(c for c in c['server_configs'] if c['nickname'] == server_name, None)
             if server_config is None:
-                raise ('Unable to find server in config with nickname %s' % server_name)
+                raise Exception(f"Unable to find server in config with nickname {server_name}")
             host = server_config['host']
             protocol = server_config['protocol']
             conn = None
