@@ -20,6 +20,7 @@ use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, SingleQueryUpdate,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
+use spacetimedb_datastore::locking_tx_datastore::datastore::MutTxOffset;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -28,7 +29,7 @@ use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::future::{self, Future};
+use std::future::{self, Future, IntoFuture};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -561,24 +562,16 @@ pub enum TransactionOffset {
     Later(Later),
 }
 
-type Later = Pin<Box<dyn Future<Output = TxOffset> + Send + Sync + 'static>>;
+type Later = Pin<Box<dyn Future<Output = Option<TxOffset>> + Send + Sync + 'static>>;
 
 impl TransactionOffset {
     /// Resolve the offset, waiting if it is not readily available.
-    pub async fn now(self) -> TxOffset {
+    ///
+    /// Returns `None` if the transaction aborted.
+    pub async fn get(self) -> Option<TxOffset> {
         match self {
-            Self::Now(x) => x,
+            Self::Now(x) => Some(x),
             Self::Later(x) => x.await,
-        }
-    }
-
-    /// Convenience variant of [`Self::now`] if only a [`Option<Self>`] is
-    /// available. Returns `None` if `this` is `None`, otherwise waits for
-    /// the offset to resolve and returns it in a `Some`.
-    pub async fn maybe_now(this: Option<Self>) -> Option<TxOffset> {
-        match this {
-            Some(this) => Some(this.now().await),
-            None => None,
         }
     }
 }
@@ -606,7 +599,21 @@ impl From<future::Ready<TxOffset>> for TransactionOffset {
     }
 }
 
+impl From<MutTxOffset> for TransactionOffset {
+    fn from(fut: MutTxOffset) -> Self {
+        Self::Later(fut.into_future())
+    }
+}
+
 /// Message sent by the [`SubscriptionManager`] to the [`SendWorker`].
+//
+// NOTE: Variants that store an unresolved [`TransactionOffset`] do so as an
+// artifact of the locking strategy, by which messages are sent while the
+// transaction is still uncommitted. This is fine as the locking datastore
+// will not abort transactions, i.e. all transactions are guaranteed to commit
+// unless manually rolled back.
+// In the future, we'll want to store the resolved [`TxOffset`], and not even
+// submit results of aborted transactions to the queue.
 #[derive(Debug)]
 enum SendWorkerMessage {
     /// A transaction has completed and the [`SubscriptionManager`] has evaluated the incremental queries,
@@ -1505,16 +1512,27 @@ impl SendWorker {
                     recipient,
                     tx_offset,
                     message,
-                } => {
-                    let tx_offset = TransactionOffset::maybe_now(tx_offset).await;
-                    let _ = recipient.send_message(tx_offset, message);
-                }
+                } => match tx_offset {
+                    None => {
+                        let _ = recipient.send_message(None, message);
+                    }
+                    Some(tx_offset) => {
+                        if let Some(tx_offset) = tx_offset.get().await {
+                            let _ = recipient.send_message(Some(tx_offset), message);
+                        }
+                        // Results of an aborted transaction should not appear
+                        // on the channel, see commentary on [`SendWorkerMessage`].
+                    }
+                },
                 SendWorkerMessage::RemoveClient(client_id) => {
                     self.clients.remove(&client_id);
                 }
                 SendWorkerMessage::Broadcast { tx_offset, queries } => {
-                    let tx_offset = tx_offset.now().await;
-                    self.send_one_computed_queries(tx_offset, queries);
+                    if let Some(tx_offset) = tx_offset.get().await {
+                        self.send_one_computed_queries(tx_offset, queries);
+                    }
+                    // Results of an aborted transaction should not appear
+                    // on the channel, see commentary on [`SendWorkerMessage`].
                 }
             }
         }

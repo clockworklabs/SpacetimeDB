@@ -1,6 +1,6 @@
 use super::{
     committed_state::{CommitTableForInsertion, CommittedState},
-    datastore::{Result, TxMetrics},
+    datastore::{MutTxOffset, Result, TxMetrics, TxStatus},
     delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
     state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, ScanIterByColRangeMutTx, StateView},
@@ -55,10 +55,10 @@ use spacetimedb_table::{
     table_index::TableIndex,
 };
 use std::{
-    future,
     sync::Arc,
     time::{Duration, Instant},
 };
+use tokio::sync::watch;
 
 type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
@@ -72,6 +72,7 @@ pub struct MutTxId {
     pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
+    pub(super) tx_status: watch::Sender<TxStatus>,
     // TODO(cloutiertyler): The below were made `pub` for the datastore split. We should
     // make these private again.
     pub timer: Instant,
@@ -1172,8 +1173,10 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn commit(mut self) -> (TxData, TxMetrics, String) {
+    pub fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
+        let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+        self.tx_status.send_replace(TxStatus::Committed(tx_offset));
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -1190,7 +1193,7 @@ impl MutTxId {
         );
         let reducer = self.ctx.into_reducer_name();
 
-        (tx_data, tx_metrics, reducer)
+        (tx_offset, tx_data, tx_metrics, reducer)
     }
 
     /// Commits this transaction, applying its changes to the committed state.
@@ -1202,7 +1205,9 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
     pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
+        let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+        self.tx_status.send_replace(TxStatus::Committed(tx_offset));
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -1238,6 +1243,7 @@ impl MutTxId {
     pub fn rollback(mut self) -> (TxMetrics, String) {
         self.committed_state_write_lock
             .rollback(&mut self.sequence_state_lock, self.tx_state);
+        self.tx_status.send_replace(TxStatus::Aborted);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -1266,6 +1272,7 @@ impl MutTxId {
     pub fn rollback_downgrade(mut self, workload: Workload) -> (TxMetrics, TxId) {
         self.committed_state_write_lock
             .rollback(&mut self.sequence_state_lock, self.tx_state);
+        self.tx_status.send_replace(TxStatus::Aborted);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -1294,8 +1301,8 @@ impl MutTxId {
         (tx_metrics, tx)
     }
 
-    pub fn tx_offset(&self) -> future::Ready<TxOffset> {
-        future::ready(self.committed_state_write_lock.next_tx_offset)
+    pub fn tx_offset(&self) -> MutTxOffset {
+        self.tx_status.subscribe().into()
     }
 }
 

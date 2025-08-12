@@ -30,7 +30,9 @@ use spacetimedb_client_api_messages::websocket::{
 };
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
+use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_datastore::traits::TxData;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::identity::AuthCtx;
@@ -677,10 +679,7 @@ impl ModuleSubscriptions {
             send_err_msg,
             None
         );
-        let tx = scopeguard::guard(tx, |tx| {
-            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
-        });
+        let tx = self.guard_tx(tx, None, None);
 
         // We minimize locking so that other clients can add subscriptions concurrently.
         // We are protected from race conditions with broadcasts, because we have the db lock,
@@ -772,10 +771,7 @@ impl ModuleSubscriptions {
             num_queries,
             &subscription_metrics,
         )?;
-        let tx = scopeguard::guard(tx, |tx| {
-            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
-        });
+        let tx = self.guard_tx(tx, None, None);
 
         check_row_limit(
             &queries,
@@ -855,7 +851,7 @@ impl ModuleSubscriptions {
         caller: Option<Arc<ClientConnectionSender>>,
         mut event: ModuleEvent,
         tx: MutTx,
-    ) -> Result<Result<(Arc<ModuleEvent>, ExecutionMetrics), WriteConflict>, DBError> {
+    ) -> Result<Result<(TxOffset, Arc<ModuleEvent>, ExecutionMetrics), WriteConflict>, DBError> {
         let database_identity = self.relational_db.database_identity();
         let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Update);
 
@@ -888,11 +884,7 @@ impl ModuleSubscriptions {
         let tx_data = tx_data.map(Arc::new);
 
         // When we're done with this method, release the tx and report metrics.
-        let mut read_tx = scopeguard::guard(read_tx, |tx| {
-            let (tx_metrics_read, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db
-                .report_tx_metrics(reducer, tx_data.clone(), Some(tx_metrics_mut), Some(tx_metrics_read));
-        });
+        let mut read_tx = self.guard_tx(read_tx, tx_data.clone(), Some(tx_metrics_mut));
         // Create the delta transaction we'll use to eval updates against.
         let delta_read_tx = tx_data
             .as_ref()
@@ -928,14 +920,32 @@ impl ModuleSubscriptions {
         // Merge in the subscription evaluation metrics.
         read_tx.metrics.merge(update_metrics);
 
-        Ok(Ok((event, update_metrics)))
+        let tx_offset = self.release_tx(ScopeGuard::into_inner(read_tx), None, None);
+        Ok(Ok((tx_offset, event, update_metrics)))
     }
 
+    // NOTE: Do not `mem::forget` the `ScopeGuard`.
     fn begin_tx(&self, workload: Workload) -> ScopeGuard<TxId, impl FnOnce(TxId) + '_> {
-        scopeguard::guard(self.relational_db.begin_tx(workload), |tx| {
-            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
+        self.guard_tx(self.relational_db.begin_tx(workload), None, None)
+    }
+
+    // NOTE: Do not `mem::forget` the `ScopeGuard`.
+    fn guard_tx(
+        &self,
+        tx: TxId,
+        tx_data: Option<Arc<TxData>>,
+        tx_metrics_mut: Option<TxMetrics>,
+    ) -> ScopeGuard<TxId, impl FnOnce(TxId) + '_> {
+        scopeguard::guard(tx, |tx| {
+            self.release_tx(tx, tx_data, tx_metrics_mut);
         })
+    }
+
+    fn release_tx(&self, tx: TxId, tx_data: Option<Arc<TxData>>, tx_metrics_mut: Option<TxMetrics>) -> TxOffset {
+        let (tx_offset, tx_metrics, reducer) = self.relational_db.release_tx(tx);
+        self.relational_db
+            .report_tx_metrics(reducer, tx_data, tx_metrics_mut, Some(tx_metrics));
+        tx_offset
     }
 }
 
@@ -1273,7 +1283,7 @@ mod tests {
             db.insert(&mut tx, table_id, &bsatn::to_vec(&row)?)?;
         }
 
-        let Ok(Ok((_, metrics))) = subs.commit_and_broadcast_event(None, module_event(), tx) else {
+        let Ok(Ok((_, _, metrics))) = subs.commit_and_broadcast_event(None, module_event(), tx) else {
             panic!("Encountered an error in `commit_and_broadcast_event`");
         };
         Ok(metrics)

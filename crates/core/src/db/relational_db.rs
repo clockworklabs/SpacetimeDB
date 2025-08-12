@@ -805,18 +805,18 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn release_tx(&self, tx: Tx) -> (TxMetrics, String) {
+    pub fn release_tx(&self, tx: Tx) -> (TxOffset, TxMetrics, String) {
         log::trace!("RELEASE TX");
         self.inner.release_tx(tx)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn commit_tx(&self, tx: MutTx) -> Result<Option<(TxData, TxMetrics, String)>, DBError> {
+    pub fn commit_tx(&self, tx: MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>, DBError> {
         log::trace!("COMMIT MUT TX");
 
         // TODO: Never returns `None` -- should it?
         let reducer_context = tx.ctx.reducer_context().cloned();
-        let Some((tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
+        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
             return Ok(None);
         };
 
@@ -826,7 +826,7 @@ impl RelationalDB {
             Self::do_durability(&**durability, reducer_context.as_ref(), &tx_data)
         }
 
-        Ok(Some((tx_data, tx_metrics, reducer)))
+        Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -1012,7 +1012,7 @@ impl RelationalDB {
     {
         let mut tx = self.begin_tx(workload);
         let res = f(&mut tx);
-        let (tx_metrics, reducer) = self.release_tx(tx);
+        let (_tx_offset, tx_metrics, reducer) = self.release_tx(tx);
         self.report_read_tx_metrics(reducer, tx_metrics);
         res
     }
@@ -1027,7 +1027,7 @@ impl RelationalDB {
             self.report_mut_tx_metrics(reducer, tx_metrics, None);
         } else {
             match self.commit_tx(tx).map_err(E::from)? {
-                Some((tx_data, tx_metrics, reducer)) => {
+                Some((_tx_offset, tx_data, tx_metrics, reducer)) => {
                     self.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                 }
                 None => panic!("TODO: retry?"),

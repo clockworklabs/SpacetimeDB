@@ -395,7 +395,7 @@ fn init_database(
 
     let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
         None => {
-            if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+            if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
                 stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
             }
             None

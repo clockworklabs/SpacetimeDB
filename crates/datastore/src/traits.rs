@@ -1,7 +1,7 @@
 use core::ops::Deref;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::future::{Future, IntoFuture};
+use std::future::IntoFuture;
 use std::{ops::RangeBounds, sync::Arc};
 
 use super::locking_tx_datastore::datastore::TxMetrics;
@@ -322,7 +322,7 @@ pub trait DataRow: Send + Sync {
 
 pub trait Tx {
     type Tx;
-    type TxOffset: Future<Output = TxOffset> + Send + Sync;
+    type TxOffset: IntoFuture<Output = TxOffset>;
 
     /// Begins a read-only transaction under the given `workload`.
     fn begin_tx(&self, workload: Workload) -> Self::Tx;
@@ -330,16 +330,27 @@ pub trait Tx {
     /// Release this read-only transaction.
     ///
     /// Returns:
+    /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
+    ///   See also the commentary on [`Self::tx_offset`].
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String);
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String);
 
+    /// Obtain a promise to retrieve the smallest transactions offset visible to
+    /// this transaction, without requiring ownership of the transaction.
+    ///
+    /// Implementations must uphold that the offset includes all transactions
+    /// that were visible to this transaction until it was released.
+    ///
+    /// This is relevant to transactions executing under an isolation level
+    /// weaker than [`IsolationLevel::Snapshot`], where transactions that commit
+    /// after this transaction started can be visible.
     fn tx_offset(&self, tx: &Self::Tx) -> Self::TxOffset;
 }
 
 pub trait MutTx {
     type MutTx;
-    type TxOffset: IntoFuture<Output = TxOffset> + Send + Sync;
+    type TxOffset: IntoFuture<Output = Option<TxOffset>>;
 
     /// Begins a mutable transaction under the given `isolation_level` and `workload`.
     fn begin_mut_tx(&self, isolation_level: IsolationLevel, workload: Workload) -> Self::MutTx;
@@ -347,10 +358,12 @@ pub trait MutTx {
     /// Commits `tx`, applying its changes to the committed state.
     ///
     /// Returns:
+    /// - [`TxOffset`], the offset this transaction was committed at.
+    ///   See also the commentary on [`Self::tx_offset`].
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, TxMetrics, String)>>;
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>>;
 
     /// Rolls back this transaction, discarding its changes.
     ///
@@ -359,6 +372,18 @@ pub trait MutTx {
     /// - `String`, the name of the reducer which ran within this transaction.
     fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String);
 
+    /// Obtain a promise to retrieve the transaction's offset, without requiring
+    /// ownership of the transaction.
+    ///
+    /// The returned future resolves to `Some` if and when the transaction
+    /// committed, and to `None` if it aborted.
+    ///
+    /// Implementations must uphold that the offset of a committed transaction
+    /// includes all transactions that were visible to this transaction.
+    ///
+    /// This is relevant to transactions executing under an isolation level
+    /// weaker than [`IsolationLevel::Snapshot`], where transactions that commit
+    /// after this transaction started can be visible.
     fn tx_offset(&self, tx: &Self::MutTx) -> Self::TxOffset;
 }
 
