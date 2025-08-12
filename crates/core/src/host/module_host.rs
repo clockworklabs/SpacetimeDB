@@ -395,7 +395,7 @@ fn init_database(
 
     let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
         None => {
-            if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+            if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
                 stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
             }
             None
@@ -1110,6 +1110,7 @@ impl ModuleHost {
         let metrics = self
             .on_module_thread("one_off_query", move || {
                 db.with_read_only(Workload::Sql, |tx| {
+                    let tx_offset = tx.tx_offset();
                     // We wrap the actual query in a closure so we can use ? to handle errors without making
                     // the entire transaction abort with an error.
                     let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
@@ -1174,7 +1175,7 @@ impl ModuleHost {
                         ),
                     };
 
-                    subscriptions.send_client_message(client, message, tx)?;
+                    subscriptions.send_client_message(client, message, (tx, tx_offset))?;
                     Ok::<Option<ExecutionMetrics>, anyhow::Error>(metrics)
                 })
             })

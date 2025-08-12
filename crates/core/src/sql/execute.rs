@@ -13,9 +13,13 @@ use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{check_row_limit, DbProgram, TxMode};
 use anyhow::anyhow;
+use scopeguard::ScopeGuard;
 use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_datastore::traits::{IsolationLevel, TxData};
+use spacetimedb_durability::TxOffset;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -172,6 +176,11 @@ pub fn execute_sql_tx<'a>(
 }
 
 pub struct SqlResult {
+    /// The offset of the SQL operation's transaction.
+    ///
+    /// Used to determine visibility of the transaction wrt the durability
+    /// requirements requestest by the caller.
+    pub tx_offset: TxOffset,
     pub rows: Vec<ProductValue>,
     /// These metrics will be reported via `report_tx_metrics`.
     /// They should not be reported separately to avoid double counting.
@@ -199,16 +208,20 @@ pub fn run(
             // Up to this point, the tx has been read-only,
             // and hence there are no deltas to process.
             let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
+            let tx_data = Arc::new(tx_data);
+            let mut tx_metrics_mut = Some(tx_metrics_mut);
 
+            let release_tx =
+                |tx: TxId, tx_data: Arc<TxData>, tx_metrics_mut: Option<TxMetrics>| -> (TxOffset, ExecutionMetrics) {
+                    let execution_metrics = tx.metrics;
+                    let (offset, tx_metrics_downgrade, reducer) = db.release_tx(tx);
+                    db.report_tx_metrics(reducer, Some(tx_data), tx_metrics_mut, Some(tx_metrics_downgrade));
+
+                    (offset, execution_metrics)
+                };
             // Release the tx on drop, so that we record metrics.
             let mut tx = scopeguard::guard(tx, |tx| {
-                let (tx_metrics_downgrade, reducer) = db.release_tx(tx);
-                db.report_tx_metrics(
-                    reducer,
-                    Some(Arc::new(tx_data)),
-                    Some(tx_metrics_mut),
-                    Some(tx_metrics_downgrade),
-                );
+                release_tx(tx, tx_data.clone(), tx_metrics_mut.take());
             });
 
             // Compute the header for the result set
@@ -231,9 +244,13 @@ pub fn run(
             // Update transaction metrics
             tx.metrics.merge(metrics);
 
+            // Release the tx and get the tx offset.
+            let (tx_offset, metrics) = release_tx(ScopeGuard::into_inner(tx), tx_data, tx_metrics_mut.take());
+
             Ok(SqlResult {
+                tx_offset,
                 rows,
-                metrics: tx.metrics,
+                metrics,
             })
         }
         Statement::DML(stmt) => {
@@ -252,10 +269,13 @@ pub fn run(
             if subs.is_none() {
                 let metrics = tx.metrics;
                 return db.commit_tx(tx).map(|tx_opt| {
-                    if let Some((tx_data, tx_metrics, reducer)) = tx_opt {
-                        db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+                    let (tx_offset, tx_data, tx_metrics, reducer) = tx_opt.unwrap();
+                    db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+                    SqlResult {
+                        tx_offset,
+                        rows: vec![],
+                        metrics,
                     }
-                    SqlResult { rows: vec![], metrics }
                 });
             }
 
@@ -289,7 +309,11 @@ pub fn run(
                 Err(WriteConflict) => {
                     todo!("See module_host_actor::call_reducer_with_tx")
                 }
-                Ok(_) => Ok(SqlResult { rows: vec![], metrics }),
+                Ok((tx_offset, _, _)) => Ok(SqlResult {
+                    tx_offset,
+                    rows: vec![],
+                    metrics,
+                }),
             }
         }
     }
