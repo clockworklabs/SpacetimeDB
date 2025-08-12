@@ -279,7 +279,7 @@ class Smoketest(unittest.TestCase):
             config = tomllib.load(f)
             token = config['spacetimedb_token']
             server_name = config['default_server']
-            server_config = next((c for c in c['server_configs'] if c['nickname'] == server_name), None)
+            server_config = next((c for c in config['server_configs'] if c['nickname'] == server_name), None)
             if server_config is None:
                 raise Exception(f"Unable to find server in config with nickname {server_name}")
             host = server_config['host']
