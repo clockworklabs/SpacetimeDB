@@ -30,7 +30,6 @@ class Permissions(Smoketest):
 
         self.publish_module()
 
-        self.reset_config()
         self.spacetime("describe", "--anonymous", "--json", self.database_identity)
 
     def test_logs(self):
@@ -52,7 +51,6 @@ class Permissions(Smoketest):
 
         self.publish_module()
 
-        self.reset_config()
         self.new_identity()
 
         with self.assertRaises(Exception):
@@ -69,7 +67,6 @@ class Permissions(Smoketest):
         name = random_string()
         self.publish_module(name)
 
-        self.reset_config()
         self.new_identity()
 
         with self.assertRaises(Exception):
