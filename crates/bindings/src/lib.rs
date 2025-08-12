@@ -761,8 +761,16 @@ impl ReducerContext {
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
     }
 
-    pub fn jwt(&self) -> bool {
-        spacetimedb_bindings_sys::has_jwt()
+    pub fn has_jwt(&self) -> bool {
+        match self.connection_id {
+            Some(ref id) => spacetimedb_bindings_sys::has_jwt(id.as_le_byte_array()),
+            None => false,
+        }
+    }
+
+    pub fn jwt(&self) -> String {
+        let cid = self.connection_id.unwrap();
+        spacetimedb_bindings_sys::get_jwt(cid.as_le_byte_array())
     }
 }
 

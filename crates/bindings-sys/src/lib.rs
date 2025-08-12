@@ -590,7 +590,10 @@ pub mod raw {
         pub fn identity(out_ptr: *mut u8);
 
         /// Check if the caller has a jwt.
-        pub fn has_jwt(out_ptr: *mut u8);
+        pub fn has_jwt(connection_id_ptr: *const u8, out_ptr: *mut u8);
+
+        /// Write the jwt payload for the given connection id to the out_ptr.
+        pub fn get_jwt(connection_id_ptr: *const u8, target_ptr: *mut u8, target_ptr_len: *mut u32);
     }
 
     /// What strategy does the database index use?
@@ -1093,12 +1096,25 @@ pub fn identity() -> [u8; 32] {
 }
 
 #[inline]
-pub fn has_jwt() -> bool {
+pub fn has_jwt(connection_id: [u8; 16]) -> bool {
     let mut v: u8 = 0;
     unsafe {
-        raw::has_jwt(&mut v)
+        raw::has_jwt(connection_id.as_ptr(), &mut v)
     }
     v != 0
+}
+
+#[inline]
+pub fn get_jwt(connection_id: [u8; 16]) -> String {
+    // let mut buf = Vec::with_capacity(1024*1024);
+    let mut buf = vec![0u8; 1024 * 1024];
+
+    let mut v: u32 = buf.len() as u32;
+    // v = buf.capacity() as u32;
+    unsafe {
+        raw::get_jwt(connection_id.as_ptr(), buf.as_mut_ptr(), &mut v);
+    }
+     std::str::from_utf8(&buf[..v as usize]).unwrap().to_string()
 }
 
 pub struct RowIter {

@@ -179,6 +179,18 @@ impl WasmPointee for spacetimedb_lib::Identity {
     }
 }
 
+impl WasmPointee for spacetimedb_lib::ConnectionId {
+    type Pointer = u32;
+    fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), MemError> {
+        let bytes = self.as_le_byte_array();
+        mem.deref_slice_mut(ptr, bytes.len() as u32)?.copy_from_slice(&bytes);
+        Ok(())
+    }
+    fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError> {
+        Ok(Self::from_le_byte_array(*mem.deref_array(ptr)?))
+    }
+}
+
 type WasmPtr<T> = <T as WasmPointee>::Pointer;
 
 /// Wraps access to WASM linear memory with some additional functionality.

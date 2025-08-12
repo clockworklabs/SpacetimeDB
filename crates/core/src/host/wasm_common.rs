@@ -393,6 +393,7 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::datastore_delete_by_btree_scan_bsatn,
             "spacetime_10.0"::identity,
             "spacetime_10.0"::has_jwt,
+            "spacetime_10.0"::get_jwt,
 
             // unstable:
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,

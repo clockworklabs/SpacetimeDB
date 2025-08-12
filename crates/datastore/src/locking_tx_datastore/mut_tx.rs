@@ -60,6 +60,8 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use anyhow::anyhow;
+use crate::error::DatastoreError;
 
 type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
@@ -1353,6 +1355,33 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
+
+    pub fn get_jwt_payload(
+        &self,
+        connection_id: ConnectionId,
+    ) -> Result<Option<String>> {
+        log::info!("Getting JWT payload for connection id: {}", connection_id.to_hex());
+        let mut buf: Vec<u8> = Vec::new();
+        self.iter_by_col_eq(
+            ST_CONNECTION_CREDENTIALS_ID,
+            StConnectionCredentialsFields::ConnectionId,
+            &ConnectionIdViaU128::from(connection_id).into(),
+        )?
+        .next()
+            .map(|row| row.read_via_bsatn::<StConnectionCredentialsRow>(&mut buf).map(|r| r.jwt_payload))
+        .transpose()
+            .map_err(|e| {
+                log::error!(
+                    "[{connection_id}]: get_jwt_payload: failed to get JWT payload for connection id ({connection_id}), error: {e}"
+                );
+                DatastoreError::Other(
+                    anyhow!(
+                        "Failed to get JWT payload for connection id ({connection_id}): {e}"
+                    )
+                )
+            })
+    }
+
     pub fn insert_st_client(
         &mut self,
         identity: Identity,
