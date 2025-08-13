@@ -1116,7 +1116,7 @@ mod tests {
                 true,
             )
             .with_default_column_value(1, AlgebraicValue::Bool(false))
-            .with_default_column_value(1, AlgebraicValue::U16(10))
+            .with_default_column_value(1, AlgebraicValue::unit())
             .finish();
 
         let result: Result<ModuleDef, ValidationErrors> = old_builder.finish().try_into();
@@ -1126,5 +1126,10 @@ mod tests {
             result,
             ValidationError::ColumnDefaultValueMalformed { table, col_id, .. } => *table == apples.clone().into() && *col_id == ColId(1)
         );
+        assert!(result.is_err_and(|e| e
+            .into_iter()
+            .filter(|e| matches!(e, ValidationError::ColumnDefaultValueMalformed { .. }))
+            .count()
+            == 2))
     }
 }
