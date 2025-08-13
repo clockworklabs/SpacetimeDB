@@ -32,13 +32,11 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
         AlgebraicType::Bool => Type::BOOL,
         AlgebraicType::U8 | AlgebraicType::I8 | AlgebraicType::I16 => Type::INT2,
         AlgebraicType::U16 | AlgebraicType::I32 => Type::INT4,
-        AlgebraicType::I64 => Type::INT8,
-        AlgebraicType::U32
-        | AlgebraicType::U64
-        | AlgebraicType::I128
-        | AlgebraicType::U128
-        | AlgebraicType::I256
-        | AlgebraicType::U256 => Type::NUMERIC,
+        AlgebraicType::U32 | AlgebraicType::I64 => Type::INT8,
+
+        AlgebraicType::U64 | AlgebraicType::I128 | AlgebraicType::U128 | AlgebraicType::I256 | AlgebraicType::U256 => {
+            Type::NUMERIC
+        }
         AlgebraicType::F32 => Type::FLOAT4,
         AlgebraicType::F64 => Type::FLOAT8,
         AlgebraicType::Array(ty) => match *ty.elem_ty {
@@ -47,9 +45,8 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
             AlgebraicType::U8 => Type::BYTEA,
             AlgebraicType::I8 | AlgebraicType::I16 => Type::INT2_ARRAY,
             AlgebraicType::U16 | AlgebraicType::I32 => Type::INT4_ARRAY,
-            AlgebraicType::I64 => Type::INT8_ARRAY,
-            AlgebraicType::U32
-            | AlgebraicType::U64
+            AlgebraicType::U32 | AlgebraicType::I64 => Type::INT8_ARRAY,
+            AlgebraicType::U64
             | AlgebraicType::I128
             | AlgebraicType::U128
             | AlgebraicType::I256
@@ -136,9 +133,18 @@ impl TypedWriter for PsqlFormatter<'_> {
         &mut self,
         _tag: u8,
         ty: PsqlType,
-        _name: Option<&str>,
+        name: Option<&str>,
         value: ValueWithType<AlgebraicValue>,
     ) -> Result<(), Self::Error> {
+        // Is a simple enum?
+        if let AlgebraicType::Sum(sum) = &ty.field.algebraic_type {
+            if sum.is_simple_enum() {
+                if let Some(variant_name) = name {
+                    self.encoder.encode_field(&variant_name)?;
+                    return Ok(());
+                }
+            }
+        }
         let json = satn::PsqlWrapper { ty, value }.to_string();
         self.encoder.encode_field(&json)?;
         Ok(())
@@ -224,6 +230,12 @@ mod tests {
 
         let row = run(schema, value).await;
         assert_eq!(row, "\0\0\0\u{1}1");
+
+        // Now a simple enum
+        let schema = ProductType::from(AlgebraicType::simple_enum(["A", "B", "C"].into_iter()));
+        let value = product![AlgebraicValue::enum_simple(0)]; // A
+        let row = run(schema, value).await;
+        assert_eq!(row, "\0\0\0\u{1}A");
     }
 
     #[tokio::test]

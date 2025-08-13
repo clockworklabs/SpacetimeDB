@@ -1,6 +1,6 @@
 use crate::time_duration::TimeDuration;
 use crate::timestamp::Timestamp;
-use crate::{i256, u256, AlgebraicValue, ProductValue, Serialize, SumValue, ValueWithType};
+use crate::{i256, u256, AlgebraicType, AlgebraicValue, ProductValue, Serialize, SumValue, ValueWithType};
 use crate::{ser, ProductType, ProductTypeElement};
 use core::fmt;
 use core::fmt::Write as _;
@@ -788,7 +788,7 @@ impl<'a, 'f, F: TypedWriter> ser::Serializer for TypedSerializer<'a, 'f, F> {
         let sv = sum.value();
         let (tag, val) = (sv.tag, &*sv.value);
         let var_ty = &sum.ty().variants[tag as usize]; // Extract the variant type by tag.
-        let product = ProductType::from([var_ty.algebraic_type.clone()]);
+        let product = ProductType::from([AlgebraicType::sum(sum.ty().clone())]);
         let ty = PsqlType {
             client: self.ty.client,
             tuple: &product,
