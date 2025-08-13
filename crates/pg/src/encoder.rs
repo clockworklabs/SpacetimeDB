@@ -2,7 +2,7 @@ use crate::pg_server::PgError;
 use pgwire::api::portal::Format;
 use pgwire::api::results::{DataRowEncoder, FieldInfo};
 use pgwire::api::Type;
-use spacetimedb_lib::sats::satn::{PsqlPrintFmt, PsqlType, TypedWriter};
+use spacetimedb_lib::sats::satn::{PsqlChars, PsqlPrintFmt, PsqlType, TypedWriter};
 use spacetimedb_lib::sats::{satn, ValueWithType};
 use spacetimedb_lib::{
     ser, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, TimeDuration, Timestamp,
@@ -32,13 +32,10 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
         AlgebraicType::Bool => Type::BOOL,
         AlgebraicType::U8 | AlgebraicType::I8 | AlgebraicType::I16 => Type::INT2,
         AlgebraicType::U16 | AlgebraicType::I32 => Type::INT4,
-        AlgebraicType::I64 => Type::INT8,
-        AlgebraicType::U32
-        | AlgebraicType::U64
-        | AlgebraicType::I128
-        | AlgebraicType::U128
-        | AlgebraicType::I256
-        | AlgebraicType::U256 => Type::NUMERIC,
+        AlgebraicType::U32 | AlgebraicType::I64 => Type::INT8,
+        AlgebraicType::U64 | AlgebraicType::I128 | AlgebraicType::U128 | AlgebraicType::I256 | AlgebraicType::U256 => {
+            Type::NUMERIC
+        }
         AlgebraicType::F32 => Type::FLOAT4,
         AlgebraicType::F64 => Type::FLOAT8,
         AlgebraicType::Array(ty) => match *ty.elem_ty {
@@ -47,9 +44,8 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
             AlgebraicType::U8 => Type::BYTEA,
             AlgebraicType::I8 | AlgebraicType::I16 => Type::INT2_ARRAY,
             AlgebraicType::U16 | AlgebraicType::I32 => Type::INT4_ARRAY,
-            AlgebraicType::I64 => Type::INT8_ARRAY,
-            AlgebraicType::U32
-            | AlgebraicType::U64
+            AlgebraicType::U32 | AlgebraicType::I64 => Type::INT8_ARRAY,
+            AlgebraicType::U64
             | AlgebraicType::I128
             | AlgebraicType::U128
             | AlgebraicType::I256
@@ -63,6 +59,7 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
             _ => Type::JSON,
         },
         AlgebraicType::Sum(sum) if sum.is_simple_enum() => Type::ANYENUM,
+        AlgebraicType::Sum(_) => Type::JSON,
         _ => Type::UNKNOWN,
     }
 }
@@ -134,12 +131,27 @@ impl TypedWriter for PsqlFormatter<'_> {
 
     fn write_variant(
         &mut self,
-        _tag: u8,
+        tag: u8,
         ty: PsqlType,
-        _name: Option<&str>,
+        name: Option<&str>,
         value: ValueWithType<AlgebraicValue>,
     ) -> Result<(), Self::Error> {
-        let json = satn::PsqlWrapper { ty, value }.to_string();
+        // Is a simple enum?
+        if let AlgebraicType::Sum(sum) = &ty.field.algebraic_type {
+            if sum.is_simple_enum() {
+                if let Some(variant_name) = name {
+                    self.encoder.encode_field(&variant_name)?;
+                    return Ok(());
+                }
+            }
+        }
+
+        let PsqlChars { start, sep, end, quote } = ty.client.format_chars();
+        let name = name.map(Cow::from).unwrap_or_else(|| Cow::from(tag.to_string()));
+        let json = format!(
+            "{start}{quote}{name}{quote}{sep} {}{end}",
+            satn::PsqlWrapper { ty, value }
+        );
         self.encoder.encode_field(&json)?;
         Ok(())
     }
@@ -152,7 +164,7 @@ mod tests {
     use futures::StreamExt;
     use spacetimedb_client_api_messages::http::SqlStmtResult;
     use spacetimedb_lib::sats::algebraic_value::Packed;
-    use spacetimedb_lib::sats::{i256, product, u256, AlgebraicType, ProductType};
+    use spacetimedb_lib::sats::{i256, product, u256, AlgebraicType, ProductType, SumTypeVariant};
     use spacetimedb_lib::{ConnectionId, Identity};
 
     async fn run(schema: ProductType, row: ProductValue) -> String {
@@ -217,13 +229,54 @@ mod tests {
 
     #[tokio::test]
     async fn test_enum() {
-        let schema = ProductType::from([AlgebraicType::option(AlgebraicType::I64)]);
+        let some = AlgebraicType::option(AlgebraicType::I64);
+        let schema = ProductType::from([some.clone(), some]);
         let value = product![
             AlgebraicValue::sum(0, AlgebraicValue::I64(1)), // Some(1)
+            AlgebraicValue::sum(1, AlgebraicValue::unit()), // None
         ];
 
         let row = run(schema, value).await;
-        assert_eq!(row, "\0\0\0\u{1}1");
+        assert_eq!(row, "\0\0\0\u{b}{\"some\": 1}\0\0\0\u{c}{\"none\": {}}");
+
+        let color = AlgebraicType::Sum([SumTypeVariant::new_named(AlgebraicType::I64, "Gray")].into());
+        let nested = AlgebraicType::option(color.clone());
+        let schema = ProductType::from([color, nested]);
+        // {"Gray": 1}, {"some": {"Gray": 2}}
+        let value = product![
+            AlgebraicValue::sum(0, AlgebraicValue::I64(1)), // Gray(1)
+            AlgebraicValue::sum(0, AlgebraicValue::sum(0, AlgebraicValue::I64(2))), // Some(Gray(2))
+        ];
+        let row = run(schema.clone(), value.clone()).await;
+        assert_eq!(row, "\0\0\0\u{b}{\"Gray\": 1}\0\0\0\u{15}{\"some\": {\"Gray\": 2}}");
+
+        // Now a product with a nested option
+        // {x: {"Gray": 1}, y: "a"}, {some: {x: {"Gray": 2}, y: "b"}}
+        let product = AlgebraicType::product([
+            ProductTypeElement::new(AlgebraicType::Product(schema), Some("x".into())),
+            ProductTypeElement::new(AlgebraicType::String, Some("y".into())),
+        ]);
+        let schema = ProductType::from([product.clone()]);
+        let value = product![AlgebraicValue::product(vec![
+            value.into(),
+            AlgebraicValue::String("a".into()),
+        ])];
+        let row = run(schema, value).await;
+        assert_eq!(
+            row,
+            "\0\0\0G{\"x\": {\"col_0\": {\"Gray\": 1}, \"col_1\": {\"some\": {\"Gray\": 2}}}, \"y\": \"a\"}"
+        );
+
+        // Now a simple enum
+        let names = AlgebraicType::simple_enum(["A", "B", "C"].into_iter());
+        let schema = ProductType::from([names.clone(), names.clone(), names]);
+        let value = product![
+            AlgebraicValue::enum_simple(0), // A
+            AlgebraicValue::enum_simple(1), // B
+            AlgebraicValue::enum_simple(2), // C
+        ];
+        let row = run(schema, value).await;
+        assert_eq!(row, "\0\0\0\u{1}A\0\0\0\u{1}B\0\0\0\u{1}C");
     }
 
     #[tokio::test]

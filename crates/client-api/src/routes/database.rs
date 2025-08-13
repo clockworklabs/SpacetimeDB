@@ -389,7 +389,7 @@ pub async fn sql_direct<S>(
     worker_ctx: S,
     SqlParams { name_or_identity }: SqlParams,
     _params: SqlQueryParams,
-    auth: SpacetimeAuth,
+    caller_identity: Identity,
     sql: String,
 ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
@@ -403,7 +403,7 @@ where
         .await?
         .ok_or(NO_SUCH_DATABASE)?;
 
-    let auth = AuthCtx::new(database.owner_identity, auth.identity);
+    let auth = AuthCtx::new(database.owner_identity, caller_identity);
     log::debug!("auth: {auth:?}");
 
     let host = worker_ctx
@@ -424,7 +424,7 @@ pub async fn sql<S>(
 where
     S: NodeDelegate + ControlStateDelegate,
 {
-    let json = sql_direct(worker_ctx, name_or_identity, params, auth, body).await?;
+    let json = sql_direct(worker_ctx, name_or_identity, params, auth.identity, body).await?;
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
 
