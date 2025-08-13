@@ -16,14 +16,14 @@ use pgwire::api::copy::NoopCopyHandler;
 use pgwire::api::portal::Format;
 use pgwire::api::query::{PlaceholderExtendedQueryHandler, SimpleQueryHandler};
 use pgwire::api::results::{DataRowEncoder, FieldInfo, QueryResponse, Response, Tag};
-use pgwire::api::{ClientInfo, NoopErrorHandler, METADATA_DATABASE, METADATA_USER};
+use pgwire::api::{ClientInfo, NoopErrorHandler, METADATA_DATABASE};
 use pgwire::api::{PgWireConnectionState, PgWireServerHandlers};
 use pgwire::error::{ErrorInfo, PgWireError, PgWireResult};
 use pgwire::messages::data::DataRow;
 use pgwire::messages::startup::Authentication;
 use pgwire::messages::{PgWireBackendMessage, PgWireFrontendMessage};
 use pgwire::tokio::process_socket;
-use spacetimedb_client_api::auth::{validate_token, SpacetimeAuth};
+use spacetimedb_client_api::auth::validate_token;
 use spacetimedb_client_api::routes::database;
 use spacetimedb_client_api::routes::database::{SqlParams, SqlQueryParams};
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
@@ -32,7 +32,7 @@ use spacetimedb_client_api_messages::name::DatabaseName;
 use spacetimedb_lib::sats::satn::{PsqlClient, TypedSerializer};
 use spacetimedb_lib::sats::{satn, Serialize, Typespace};
 use spacetimedb_lib::version::spacetimedb_lib_version;
-use spacetimedb_lib::ProductValue;
+use spacetimedb_lib::{Identity, ProductValue};
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Mutex};
@@ -47,6 +47,8 @@ pub(crate) enum PgError {
     DatabaseNameRequired,
     #[error(transparent)]
     Pg(#[from] PgWireError),
+    #[error("SSL is not supported by SpacetimeDB")]
+    SSLNotSupported,
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -64,7 +66,7 @@ impl From<PgError> for PgWireError {
 #[derive(Clone)]
 struct Metadata {
     database: String,
-    auth: SpacetimeAuth,
+    caller_identity: Identity,
 }
 
 pub(crate) fn to_rows(
@@ -144,13 +146,13 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
 
 struct PgSpacetimeDB<T> {
     ctx: Arc<T>,
-    cached: Mutex<Metadata>,
+    cached: Mutex<Option<Metadata>>,
     parameter_provider: DefaultServerParameterProvider,
 }
 
 impl<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate> PgSpacetimeDB<T> {
     async fn exe_sql<'a>(&self, query: String) -> PgWireResult<Vec<Response<'a>>> {
-        let params = self.cached.lock().await;
+        let params = self.cached.lock().await.clone().unwrap();
         let db = SqlParams {
             name_or_identity: database::NameOrIdentity::Name(DatabaseName(params.database.clone())),
         };
@@ -160,7 +162,7 @@ impl<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate> PgSpace
                 self.ctx.clone(),
                 db,
                 SqlQueryParams { confirmed: true },
-                params.auth.identity,
+                params.caller_identity,
                 query.to_string(),
             )
             .await,
@@ -180,16 +182,14 @@ impl<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate> PgSpace
         let mut result = Vec::with_capacity(sql.len());
         for sql_result in sql {
             let header = row_desc(&sql_result.schema, &Format::UnifiedText);
-
-            let tag = Tag::new(&stats(&sql_result));
-
-            if sql_result.rows.is_empty() {
-                result.push(Response::EmptyQuery);
+            if sql_result.rows.is_empty() && !query.to_uppercase().contains("SELECT") {
+                let tag = Tag::new(&stats(&sql_result));
+                result.push(Response::Execution(tag));
             } else {
                 let rows = to_rows(sql_result, header.clone())?;
-                result.push(Response::Query(QueryResponse::new(header, rows)));
+                let q = QueryResponse::new(header, rows);
+                result.push(Response::Query(q));
             }
-            result.push(Response::Execution(tag));
         }
         Ok(result)
     }
@@ -225,8 +225,6 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 
                 let login_info = LoginInfo::from_client_info(client);
 
-                log::debug!("PG: Login info: {login_info:?}");
-
                 if login_info.database().is_none() {
                     return Err(PgError::DatabaseNameRequired.into());
                 }
@@ -244,13 +242,13 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                         .ok_or_else(|| PgError::MetadataError(anyhow::anyhow!("Missing parameter: {}", param)))
                 };
 
-                let user = param(METADATA_USER)?;
+                // We don't support `METADATA_USER` because we don't have a user management system.
                 let database = param(METADATA_DATABASE)?;
                 let pwd = pwd.into_password()?;
                 if let Ok(application_name) = param("application_name") {
-                    log::info!("PG: Connecting to database: {user}@{database}, by {application_name}",);
+                    log::info!("PG: Connecting to database: {database}, by {application_name}",);
                 } else {
-                    log::info!("PG: Connecting to database: {user}@{database}");
+                    log::info!("PG: Connecting to database: {database}");
                 }
 
                 let name = database::NameOrIdentity::Name(DatabaseName(database.clone()));
@@ -264,25 +262,39 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                     }
                 };
 
-                let auth = match validate_token(&self.ctx, &pwd.password).await {
-                    Ok(claims) => response(SpacetimeAuth::from_claims(&self.ctx, claims), &database).await?,
+                let caller_identity = match validate_token(&self.ctx, &pwd.password).await {
+                    Ok(claims) => claims.identity,
                     Err(err) => {
-                        log::error!("PG: Authentication failed for user {user} on database {database}: {err}");
+                        log::error!(
+                            "PG: Authentication failed for identity `{}` on database {database}: {err}",
+                            pwd.password
+                        );
                         let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), err.to_string());
                         return close_client(client, err).await;
                     }
                 };
 
-                log::info!(
-                    "PG: Connected to database: {user}@{database} using identity `{}`",
-                    auth.identity
-                );
+                log::info!("PG: Connected to database: {database} using identity `{caller_identity}`");
 
-                let metadata = Metadata { database, auth };
-                self.cached.lock().await.clone_from(&metadata);
+                let metadata = Metadata {
+                    database,
+                    caller_identity,
+                };
+                self.cached.lock().await.clone_from(&Some(metadata));
                 finish_authentication(client, &self.parameter_provider).await?;
             }
-            _ => {}
+            PgWireFrontendMessage::SslRequest(ssl) => {
+                if ssl.is_some() {
+                    let err = PgError::SSLNotSupported;
+                    log::error!("{err}");
+                    let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), err.to_string());
+                    return close_client(client, err).await;
+                }
+            }
+            // The other messages are for features not supported by SpacetimeDB, that are rejected by the parser.
+            _ => {
+                unreachable!("Unsupported startup message: {message:?}");
+            }
         }
         Ok(())
     }
@@ -306,18 +318,15 @@ struct PgSpacetimeDBFactory<T> {
 }
 
 impl<T> PgSpacetimeDBFactory<T> {
-    pub fn new(ctx: Arc<T>, auth: SpacetimeAuth) -> Self {
+    pub fn new(ctx: Arc<T>) -> Self {
         let mut parameter_provider = DefaultServerParameterProvider::default();
         parameter_provider.server_version = format!("spacetime {}", spacetimedb_lib_version());
 
         Self {
             handler: Arc::new(PgSpacetimeDB {
                 ctx,
-                cached: Mutex::new(Metadata {
-                    // This is a placeholder, it will be set in the startup handler
-                    database: "".to_string(),
-                    auth,
-                }),
+                // This is a placeholder, it will be set in the startup handler
+                cached: None.into(),
                 parameter_provider,
             }),
         }
@@ -357,13 +366,9 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + 'static>(
     mut shutdown: watch::Receiver<()>,
     ctx: Arc<T>,
-    listen_address: &str,
+    tcp: TcpListener,
 ) {
-    let auth = SpacetimeAuth::alloc(&ctx).await.unwrap();
-    let factory = Arc::new(PgSpacetimeDBFactory::new(ctx, auth));
-
-    let server_addr = format!("{}:5432", listen_address.split(':').next().unwrap());
-    let tcp = TcpListener::bind(server_addr).await.unwrap();
+    let factory = Arc::new(PgSpacetimeDBFactory::new(ctx));
 
     log::debug!(
         "PG: Starting SpacetimeDB Protocol listening on {}",
@@ -376,7 +381,7 @@ pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + Node
                     Ok((stream, _addr)) => {
                         let factory_ref = factory.clone();
                         tokio::spawn(async move {
-                            process_socket(stream, None,  factory_ref).await.inspect_err(|err|{
+                            process_socket(stream, None, factory_ref).await.inspect_err(|err|{
                                 log::error!("PG: Error processing socket: {err:?}");
                             })
                         });

@@ -132,30 +132,6 @@ impl TokenClaims {
 }
 
 impl SpacetimeAuth {
-    pub fn from_claims(
-        ctx: &(impl NodeDelegate + ControlStateDelegate + ?Sized),
-        claims: SpacetimeIdentityClaims,
-    ) -> axum::response::Result<Self> {
-        let claims = TokenClaims {
-            issuer: claims.issuer,
-            subject: claims.subject,
-            audience: claims.audience,
-        };
-
-        let creds = {
-            let token = claims.encode_and_sign(ctx.jwt_auth_provider()).map_err(log_and_500)?;
-            SpacetimeCreds::from_signed_token(token)
-        };
-        let identity = claims.id();
-
-        Ok(Self {
-            creds,
-            identity,
-            subject: claims.subject,
-            issuer: claims.issuer,
-        })
-    }
-
     /// Allocate a new identity, and mint a new token for it.
     pub async fn alloc(ctx: &(impl NodeDelegate + ControlStateDelegate + ?Sized)) -> axum::response::Result<Self> {
         // Generate claims with a random subject.

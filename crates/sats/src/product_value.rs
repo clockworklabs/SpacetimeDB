@@ -114,14 +114,6 @@ impl ProductValue {
         })
     }
 
-    /// Assumes that we are dealing with a [`ProductType::is_special`] value if it has a single element.
-    pub fn as_special_value_raw(&self) -> Option<&AlgebraicValue> {
-        match &*self.elements {
-            [val] => Some(val),
-            _ => None,
-        }
-    }
-
     /// Interprets the value at field of `self` identified by `index` as a `bool`.
     pub fn field_as_bool(&self, index: usize, named: Option<&'static str>) -> Result<bool, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_bool().copied())

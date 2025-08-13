@@ -182,9 +182,12 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let tcp = TcpListener::bind(listen_addr).await?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
     log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
+    let pg_server_addr = format!("{}:5432", listen_addr.split(':').next().unwrap());
+    let tcp_pg = TcpListener::bind(pg_server_addr).await?;
+
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(());
     tokio::select! {
-        _ = pg_server::start_pg(shutdown_rx.clone(), ctx, listen_addr) => {},
+        _ = pg_server::start_pg(shutdown_rx.clone(), ctx, tcp_pg) => {},
         _ = axum::serve(tcp, service).with_graceful_shutdown(async move {
             shutdown_rx.changed().await.ok();
         }) => {},

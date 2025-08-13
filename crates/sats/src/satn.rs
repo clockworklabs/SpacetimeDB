@@ -1,6 +1,6 @@
 use crate::time_duration::TimeDuration;
 use crate::timestamp::Timestamp;
-use crate::{i256, u256, AlgebraicValue, ProductValue, Serialize, SumValue, ValueWithType};
+use crate::{i256, u256, AlgebraicType, AlgebraicValue, ProductValue, Serialize, SumValue, ValueWithType};
 use crate::{ser, ProductType, ProductTypeElement};
 use core::fmt;
 use core::fmt::Write as _;
@@ -450,6 +450,32 @@ pub enum PsqlClient {
     Postgres,
 }
 
+pub struct PsqlChars {
+    pub start: char,
+    pub sep: &'static str,
+    pub end: char,
+    pub quote: &'static str,
+}
+
+impl PsqlClient {
+    pub fn format_chars(&self) -> PsqlChars {
+        match self {
+            PsqlClient::SpacetimeDB => PsqlChars {
+                start: '(',
+                sep: " =",
+                end: ')',
+                quote: "",
+            },
+            PsqlClient::Postgres => PsqlChars {
+                start: '{',
+                sep: ":",
+                end: '}',
+                quote: "\"",
+            },
+        }
+    }
+}
+
 /// How format of the `SQL` output?
 #[derive(Debug, Copy, Clone, PartialEq, Display)]
 pub enum PsqlPrintFmt {
@@ -522,7 +548,7 @@ impl PsqlType<'_> {
 }
 
 /// An implementation of [`Serializer`](ser::Serializer) for `SQL` output.
-struct SqlFormatter<'a, 'f> {
+pub struct SqlFormatter<'a, 'f> {
     fmt: SatnFormatter<'a, 'f>,
     ty: &'a PsqlType<'a>,
 }
@@ -788,7 +814,7 @@ impl<'a, 'f, F: TypedWriter> ser::Serializer for TypedSerializer<'a, 'f, F> {
         let sv = sum.value();
         let (tag, val) = (sv.tag, &*sv.value);
         let var_ty = &sum.ty().variants[tag as usize]; // Extract the variant type by tag.
-        let product = ProductType::from([var_ty.algebraic_type.clone()]);
+        let product = ProductType::from([AlgebraicType::sum(sum.ty().clone())]);
         let ty = PsqlType {
             client: self.ty.client,
             tuple: &product,
@@ -847,10 +873,7 @@ impl TypedWriter for SqlFormatter<'_, '_> {
         &mut self,
         fields: Vec<(Cow<str>, PsqlType<'_>, ValueWithType<AlgebraicValue>)>,
     ) -> Result<(), Self::Error> {
-        let (start, sep, end, quote) = match self.ty.client {
-            PsqlClient::SpacetimeDB => ("(", " =", ")", ""),
-            PsqlClient::Postgres => ("{", ":", "}", "\""),
-        };
+        let PsqlChars { start, sep, end, quote } = self.ty.client.format_chars();
         write!(self.fmt, "{start}")?;
         for (idx, (name, ty, value)) in fields.into_iter().enumerate() {
             if idx > 0 {
