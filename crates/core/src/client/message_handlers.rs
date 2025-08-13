@@ -46,10 +46,11 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             .map_args(|b| ReducerArgs::Bsatn(message_buf.slice_ref(b))),
     };
 
-    let mod_info = client.module.info();
+    let module = client.module();
+    let mod_info = module.info();
     let mod_metrics = &mod_info.metrics;
     let database_identity = mod_info.database_identity;
-    let db = &client.module.replica_ctx().relational_db;
+    let db = &module.replica_ctx().relational_db;
     let record_metrics = |wl| {
         move |metrics| {
             if let Some(metrics) = metrics {

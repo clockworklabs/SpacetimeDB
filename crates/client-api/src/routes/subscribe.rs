@@ -359,7 +359,7 @@ async fn ws_client_actor_inner(
     ws: WebSocketStream,
     sendrx: MeteredReceiver<SerializableMessage>,
 ) {
-    let database = client.module.info().database_identity;
+    let database = client.module().info().database_identity;
     let client_id = client.id;
     let client_closed_metric = WORKER_METRICS.ws_clients_closed_connection.with_label_values(&database);
     let state = Arc::new(ActorState::new(database, client_id, config));
