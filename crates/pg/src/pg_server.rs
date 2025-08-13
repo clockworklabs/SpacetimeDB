@@ -47,6 +47,8 @@ pub(crate) enum PgError {
     DatabaseNameRequired,
     #[error(transparent)]
     Pg(#[from] PgWireError),
+    #[error("SSL is not supported by SpacetimeDB")]
+    SSLNotSupported,
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -282,6 +284,14 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 self.cached.lock().await.clone_from(&metadata);
                 finish_authentication(client, &self.parameter_provider).await?;
             }
+            PgWireFrontendMessage::SslRequest(ssl) => {
+                if ssl.is_some() {
+                    let err = PgError::SSLNotSupported;
+                    log::warn!("{err}");
+                    let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), format!("PG: {err}"));
+                    return close_client(client, err).await;
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -376,7 +386,7 @@ pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + Node
                     Ok((stream, _addr)) => {
                         let factory_ref = factory.clone();
                         tokio::spawn(async move {
-                            process_socket(stream, None,  factory_ref).await.inspect_err(|err|{
+                            process_socket(stream, None, factory_ref).await.inspect_err(|err|{
                                 log::error!("PG: Error processing socket: {err:?}");
                             })
                         });
