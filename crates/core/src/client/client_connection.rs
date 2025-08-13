@@ -506,6 +506,16 @@ impl ClientConnection {
         self.sender.clone()
     }
 
+    /// Get the [`ModuleHost`] for this connection.
+    ///
+    /// Note that modules can be hotswapped, in which case the returned handle
+    /// becomes invalid (i.e. all calls on it will result in an error).
+    /// Callers should thus drop the value as soon as they are done, and obtain
+    /// a fresh one when needed.
+    ///
+    /// While this [`ClientConnection`] is active, [`Self::watch_module_host`]
+    /// should be polled in the background, and the connection closed if and
+    /// when it returns an error.
     pub fn module(&self) -> ModuleHost {
         self.module_rx.borrow().clone()
     }
