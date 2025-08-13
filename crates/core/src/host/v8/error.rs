@@ -1,6 +1,6 @@
 //! Utilities for error handling when dealing with V8.
 
-use v8::{Exception, HandleScope, Local, Value};
+use v8::{Exception, HandleScope, Local, TryCatch, Value};
 
 /// The result of trying to convert a [`Value`] in scope `'scope` to some type `T`.
 pub(super) type ValueResult<'scope, T> = Result<T, ExceptionValue<'scope>>;
@@ -85,4 +85,62 @@ impl<'scope, T: IntoException<'scope>> Throwable<'scope> for T {
         scope.throw_exception(exception);
         exception_already_thrown()
     }
+}
+
+/// Either an error outside V8 JS execution, or an exception inside.
+#[derive(Debug)]
+pub(super) enum ErrorOrException<Exc> {
+    Err(anyhow::Error),
+    Exception(Exc),
+}
+
+impl<E> From<anyhow::Error> for ErrorOrException<E> {
+    fn from(e: anyhow::Error) -> Self {
+        Self::Err(e)
+    }
+}
+
+impl From<ExceptionThrown> for ErrorOrException<ExceptionThrown> {
+    fn from(e: ExceptionThrown) -> Self {
+        Self::Exception(e)
+    }
+}
+
+impl From<ErrorOrException<JsError>> for anyhow::Error {
+    fn from(err: ErrorOrException<JsError>) -> Self {
+        match err {
+            ErrorOrException::Err(e) => e,
+            ErrorOrException::Exception(e) => e.into(),
+        }
+    }
+}
+
+/// A JS exception turned into an error.
+#[derive(thiserror::Error, Debug)]
+#[error("js error: {msg:?}")]
+pub(super) struct JsError {
+    msg: String,
+}
+
+impl JsError {
+    /// Turns a caught JS exception in `scope` into a [`JSError`].
+    fn from_caught(scope: &mut TryCatch<'_, HandleScope<'_>>) -> Self {
+        let msg = match scope.message() {
+            Some(msg) => msg.get(scope).to_rust_string_lossy(scope),
+            None => "unknown error".to_owned(),
+        };
+        Self { msg }
+    }
+}
+
+/// Run `body` within a try-catch context and capture any JS exception thrown as a [`JsError`].
+pub(super) fn catch_exception<'scope, T>(
+    scope: &mut HandleScope<'scope>,
+    body: impl FnOnce(&mut HandleScope<'scope>) -> Result<T, ErrorOrException<ExceptionThrown>>,
+) -> Result<T, ErrorOrException<JsError>> {
+    let scope = &mut TryCatch::new(scope);
+    body(scope).map_err(|e| match e {
+        ErrorOrException::Err(e) => ErrorOrException::Err(e),
+        ErrorOrException::Exception(_) => ErrorOrException::Exception(JsError::from_caught(scope)),
+    })
 }

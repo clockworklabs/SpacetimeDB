@@ -22,6 +22,8 @@ pub(super) struct KeyCache {
     tag: Option<Global<v8::String>>,
     /// The `value` property for sum values in JS.
     value: Option<Global<v8::String>>,
+    /// The `describe_module` property on the global proxy object.
+    describe_module: Option<Global<v8::String>>,
 }
 
 impl KeyCache {
@@ -33,6 +35,11 @@ impl KeyCache {
     /// Returns the `value` property name.
     pub(super) fn value<'scope>(&mut self, scope: &mut HandleScope<'scope>) -> Local<'scope, v8::String> {
         Self::get_or_create_key(scope, &mut self.value, "value")
+    }
+
+    /// Returns the `describe_module` property name.
+    pub(super) fn describe_module<'scope>(&mut self, scope: &mut HandleScope<'scope>) -> Local<'scope, v8::String> {
+        Self::get_or_create_key(scope, &mut self.describe_module, "describe_module")
     }
 
     /// Returns an interned string corresponding to `string`

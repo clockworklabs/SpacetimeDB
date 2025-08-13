@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use super::key_cache::{get_or_create_key_cache, KeyCache};
 use super::error::{exception_already_thrown, ExcResult, ExceptionThrown, ExceptionValue, Throwable, TypeError};
 use super::from_value::{cast, FromValue};
+use super::key_cache::{get_or_create_key_cache, KeyCache};
 use core::fmt;
 use core::iter::{repeat_n, RepeatN};
 use core::marker::PhantomData;
