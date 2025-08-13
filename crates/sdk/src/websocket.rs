@@ -84,7 +84,6 @@ pub enum WsError {
 
 pub(crate) struct WsConnection {
     db_name: Box<str>,
-    connection_id: ConnectionId,
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
 
@@ -112,7 +111,7 @@ pub(crate) struct WsParams {
     pub confirmed: bool,
 }
 
-fn make_uri(host: Uri, db_name: &str, connection_id: ConnectionId, params: WsParams) -> Result<Uri, UriError> {
+fn make_uri(host: Uri, db_name: &str, connection_id: Option<ConnectionId>, params: WsParams) -> Result<Uri, UriError> {
     let mut parts = host.into_parts();
     let scheme = parse_scheme(parts.scheme.take())?;
     parts.scheme = Some(scheme);
@@ -134,18 +133,21 @@ fn make_uri(host: Uri, db_name: &str, connection_id: ConnectionId, params: WsPar
     path.push_str(db_name);
     path.push_str("/subscribe");
 
-    // Provide the connection ID.
-    path.push_str("?connection_id=");
-    path.push_str(&connection_id.to_hex());
-
     // Specify the desired compression for host->client replies.
     match params.compression {
-        Compression::None => path.push_str("&compression=None"),
-        Compression::Gzip => path.push_str("&compression=Gzip"),
+        Compression::None => path.push_str("?compression=None"),
+        Compression::Gzip => path.push_str("?compression=Gzip"),
         // The host uses the same default as the sdk,
         // but in case this changes, we prefer to be explicit now.
-        Compression::Brotli => path.push_str("&compression=Brotli"),
+        Compression::Brotli => path.push_str("?compression=Brotli"),
     };
+
+    // Provide the connection ID if the client provided one.
+    if let Some(cid) = connection_id {
+        // If a connection ID is provided, append it to the path.
+        path.push_str("&connection_id=");
+        path.push_str(&cid.to_hex());
+    }
 
     // Specify the `light` mode if requested.
     if params.light {
@@ -178,7 +180,7 @@ fn make_request(
     host: Uri,
     db_name: &str,
     token: Option<&str>,
-    connection_id: ConnectionId,
+    connection_id: Option<ConnectionId>,
     params: WsParams,
 ) -> Result<http::Request<()>, WsError> {
     let uri = make_uri(host, db_name, connection_id, params)?;
@@ -205,12 +207,23 @@ fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) 
     }
 }
 
+/// If `res` evaluates to `Err(e)`, log a warning in the form `"{}: {:?}", $cause, e`.
+///
+/// Could be trivially written as a function, but macro-ifying it preserves the source location of the log.
+macro_rules! maybe_log_error {
+    ($cause:expr, $res:expr) => {
+        if let Err(e) = $res {
+            log::warn!("{}: {:?}", $cause, e);
+        }
+    };
+}
+
 impl WsConnection {
     pub(crate) async fn connect(
         host: Uri,
         db_name: &str,
         token: Option<&str>,
-        connection_id: ConnectionId,
+        connection_id: Option<ConnectionId>,
         params: WsParams,
     ) -> Result<Self, WsError> {
         let req = make_request(host, db_name, token, connection_id, params)?;
@@ -233,7 +246,6 @@ impl WsConnection {
         })?;
         Ok(WsConnection {
             db_name: db_name.into(),
-            connection_id,
             sock,
         })
     }
@@ -247,23 +259,15 @@ impl WsConnection {
         WebSocketMessage::Binary(bsatn::to_vec(&msg).unwrap().into())
     }
 
-    fn maybe_log_error<T, U: std::fmt::Debug>(cause: &str, res: std::result::Result<T, U>) {
-        if let Err(e) = res {
-            log::warn!("{cause}: {e:?}");
-        }
-    }
-
     async fn message_loop(
         mut self,
         incoming_messages: mpsc::UnboundedSender<ServerMessage<BsatnFormat>>,
         outgoing_messages: mpsc::UnboundedReceiver<ClientMessage<Bytes>>,
     ) {
-        let websocket_received = CLIENT_METRICS
-            .websocket_received
-            .with_label_values(&self.db_name, &self.connection_id);
+        let websocket_received = CLIENT_METRICS.websocket_received.with_label_values(&self.db_name);
         let websocket_received_msg_size = CLIENT_METRICS
             .websocket_received_msg_size
-            .with_label_values(&self.db_name, &self.connection_id);
+            .with_label_values(&self.db_name);
         let record_metrics = |msg_size: usize| {
             websocket_received.inc();
             websocket_received_msg_size.observe(msg_size as f64);
@@ -311,9 +315,9 @@ impl WsConnection {
                     },
 
                     Err(e) => {
-                        Self::maybe_log_error::<(), _>(
+                        maybe_log_error!(
                             "Error reading message from read WebSocket stream",
-                            Err(e),
+                            Result::<(), _>::Err(e)
                         );
                         break;
                     },
@@ -322,13 +326,13 @@ impl WsConnection {
                         idle = false;
                         record_metrics(bytes.len());
                         match Self::parse_response(&bytes) {
-                            Err(e) => Self::maybe_log_error::<(), _>(
+                            Err(e) => maybe_log_error!(
                                 "Error decoding WebSocketMessage::Binary payload",
-                                Err(e),
+                                Result::<(), _>::Err(e)
                             ),
-                            Ok(msg) => Self::maybe_log_error(
+                            Ok(msg) => maybe_log_error!(
                                 "Error sending decoded message to incoming_messages queue",
-                                incoming_messages.unbounded_send(msg),
+                                incoming_messages.unbounded_send(msg)
                             ),
                         }
                     }
@@ -384,7 +388,7 @@ impl WsConnection {
                         }
                     }
                     None => {
-                        Self::maybe_log_error("Error sending close frame", SinkExt::close(&mut self.sock).await);
+                        maybe_log_error!("Error sending close frame", SinkExt::close(&mut self.sock).await);
                         outgoing_messages = None;
                     }
                 },

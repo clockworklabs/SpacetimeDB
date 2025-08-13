@@ -6,7 +6,7 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 
 > A completed version of the game we'll create in this tutorial is available at:
 >
-> https://github.com/ClockworkLabs/tree/master/demo/Blackholio
+> https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio
 
 ## Prepare Project Structure
 
