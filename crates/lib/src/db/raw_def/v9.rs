@@ -366,18 +366,18 @@ pub enum RawMiscModuleExportV9 {
     ColumnDefaultValue(RawColumnDefaultValueV9),
 }
 
-/// Marks a field as having a particular default.
+/// Marks a particular table's column as having a particular default.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawColumnDefaultValueV9 {
+    /// Identifies which table that has the default value.
+    /// This corresponds to `name` in `RawTableDefV9`.
     pub table: RawIdentifier,
-
-    /// Must be the index of a valid column within `ty`.
+    /// Identifies which column of `table` that has the default value.
     pub col_id: ColId,
-
-    /// A BSATN-encoded [`AlgebraicValue`] valid at `ty`.
-    /// (We can't use `AlgebraicValue` directly because it isn't serializable!)
+    /// A BSATN-encoded [`AlgebraicValue`] valid at the table column's type.
+    /// (We cannot use `AlgebraicValue` directly as it isn't `Spacetimetype`.)
     pub value: Box<[u8]>,
 }
 
