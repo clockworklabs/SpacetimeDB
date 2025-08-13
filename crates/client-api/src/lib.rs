@@ -133,6 +133,7 @@ impl Host {
 
         if confirmed_read {
             if let Some(mut durable_offset) = durable_offset {
+                let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
                 durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
             }
         }

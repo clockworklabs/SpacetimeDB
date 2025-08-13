@@ -9,17 +9,14 @@ use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::ArgsTuple;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{check_row_limit, DbProgram, TxMode};
 use anyhow::anyhow;
-use scopeguard::ScopeGuard;
 use spacetimedb_datastore::execution_context::Workload;
-use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::locking_tx_datastore::TxId;
-use spacetimedb_datastore::traits::{IsolationLevel, TxData};
-use spacetimedb_durability::TxOffset;
+use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -30,6 +27,7 @@ use spacetimedb_schema::relation::FieldName;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
+use tokio::sync::oneshot;
 
 pub struct StmtResult {
     pub schema: ProductType,
@@ -180,7 +178,7 @@ pub struct SqlResult {
     ///
     /// Used to determine visibility of the transaction wrt the durability
     /// requirements requestest by the caller.
-    pub tx_offset: TxOffset,
+    pub tx_offset: TransactionOffset,
     pub rows: Vec<ProductValue>,
     /// These metrics will be reported via `report_tx_metrics`.
     /// They should not be reported separately to avoid double counting.
@@ -208,20 +206,19 @@ pub fn run(
             // Up to this point, the tx has been read-only,
             // and hence there are no deltas to process.
             let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
-            let tx_data = Arc::new(tx_data);
-            let mut tx_metrics_mut = Some(tx_metrics_mut);
 
-            let release_tx =
-                |tx: TxId, tx_data: Arc<TxData>, tx_metrics_mut: Option<TxMetrics>| -> (TxOffset, ExecutionMetrics) {
-                    let execution_metrics = tx.metrics;
-                    let (offset, tx_metrics_downgrade, reducer) = db.release_tx(tx);
-                    db.report_tx_metrics(reducer, Some(tx_data), tx_metrics_mut, Some(tx_metrics_downgrade));
-
-                    (offset, execution_metrics)
-                };
-            // Release the tx on drop, so that we record metrics.
+            let (tx_offset_send, tx_offset) = oneshot::channel();
+            // Release the tx on drop, so that we record metrics
+            // and set the transaction offset.
             let mut tx = scopeguard::guard(tx, |tx| {
-                release_tx(tx, tx_data.clone(), tx_metrics_mut.take());
+                let (offset, tx_metrics_downgrade, reducer) = db.release_tx(tx);
+                let _ = tx_offset_send.send(offset);
+                db.report_tx_metrics(
+                    reducer,
+                    Some(Arc::new(tx_data)),
+                    Some(tx_metrics_mut),
+                    Some(tx_metrics_downgrade),
+                );
             });
 
             // Compute the header for the result set
@@ -244,13 +241,10 @@ pub fn run(
             // Update transaction metrics
             tx.metrics.merge(metrics);
 
-            // Release the tx and get the tx offset.
-            let (tx_offset, metrics) = release_tx(ScopeGuard::into_inner(tx), tx_data, tx_metrics_mut.take());
-
             Ok(SqlResult {
                 tx_offset,
                 rows,
-                metrics,
+                metrics: tx.metrics,
             })
         }
         Statement::DML(stmt) => {
@@ -270,9 +264,13 @@ pub fn run(
                 let metrics = tx.metrics;
                 return db.commit_tx(tx).map(|tx_opt| {
                     let (tx_offset, tx_data, tx_metrics, reducer) = tx_opt.unwrap();
+
+                    let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
+                    let _ = tx_offset_sender.send(tx_offset);
+
                     db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                     SqlResult {
-                        tx_offset,
+                        tx_offset: tx_offset_receiver,
                         rows: vec![],
                         metrics,
                     }

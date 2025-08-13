@@ -11,7 +11,7 @@ use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
 use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::worker_metrics::WORKER_METRICS;
-use core::{fmt, mem};
+use core::mem;
 use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
@@ -20,7 +20,6 @@ use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, SingleQueryUpdate,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
-use spacetimedb_datastore::locking_tx_datastore::datastore::MutTxOffset;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -29,11 +28,9 @@ use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::future::{self, Future, IntoFuture};
-use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 /// Clients are uniquely identified by their Identity and ConnectionId.
 /// Identity is insufficient because different ConnectionIds can use the same Identity.
@@ -552,68 +549,12 @@ impl<T> SenderWithGauge<T> {
     }
 }
 
-/// The offset of a transaction.
-///
-/// Depending on the datastore implementation and the isolation level of the
-/// transaction, the offset may be available immediately or in the future, when
-/// the transaction commits.
-pub enum TransactionOffset {
-    Now(TxOffset),
-    Later(Later),
-}
-
-type Later = Pin<Box<dyn Future<Output = Option<TxOffset>> + Send + Sync + 'static>>;
-
-impl TransactionOffset {
-    /// Resolve the offset, waiting if it is not readily available.
-    ///
-    /// Returns `None` if the transaction aborted.
-    pub async fn get(self) -> Option<TxOffset> {
-        match self {
-            Self::Now(x) => Some(x),
-            Self::Later(x) => x.await,
-        }
-    }
-}
-
-impl fmt::Debug for TransactionOffset {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut debug = f.debug_tuple("TransactionOffset");
-        match self {
-            Self::Now(x) => debug.field(&x),
-            Self::Later(_) => debug.field(&"<<future>>"),
-        }
-        .finish()
-    }
-}
-
-impl From<TxOffset> for TransactionOffset {
-    fn from(value: TxOffset) -> Self {
-        Self::Now(value)
-    }
-}
-
-impl From<future::Ready<TxOffset>> for TransactionOffset {
-    fn from(ready: future::Ready<TxOffset>) -> Self {
-        Self::from(ready.into_inner())
-    }
-}
-
-impl From<MutTxOffset> for TransactionOffset {
-    fn from(fut: MutTxOffset) -> Self {
-        Self::Later(fut.into_future())
-    }
-}
+/// [`SendWorkerMessage`]s are sent while holding the database lock, i.e.
+/// without committing the transaction. When the transaction commits, the
+/// message sender is expected to send the transaction offset along this channel.
+pub type TransactionOffset = oneshot::Receiver<TxOffset>;
 
 /// Message sent by the [`SubscriptionManager`] to the [`SendWorker`].
-//
-// NOTE: Variants that store an unresolved [`TransactionOffset`] do so as an
-// artifact of the locking strategy, by which messages are sent while the
-// transaction is still uncommitted. This is fine as the locking datastore
-// will not abort transactions, i.e. all transactions are guaranteed to commit
-// unless manually rolled back.
-// In the future, we'll want to store the resolved [`TxOffset`], and not even
-// submit results of aborted transactions to the queue.
 #[derive(Debug)]
 enum SendWorkerMessage {
     /// A transaction has completed and the [`SubscriptionManager`] has evaluated the incremental queries,
@@ -1449,7 +1390,7 @@ impl BroadcastQueue {
     pub fn send_client_message(
         &self,
         recipient: Arc<ClientConnectionSender>,
-        tx_offset: Option<impl Into<TransactionOffset>>,
+        tx_offset: Option<TransactionOffset>,
         message: impl Into<SerializableMessage>,
     ) -> Result<(), BroadcastError> {
         self.0.send(SendWorkerMessage::SendMessage {
@@ -1517,22 +1458,20 @@ impl SendWorker {
                         let _ = recipient.send_message(None, message);
                     }
                     Some(tx_offset) => {
-                        if let Some(tx_offset) = tx_offset.get().await {
-                            let _ = recipient.send_message(Some(tx_offset), message);
-                        }
-                        // Results of an aborted transaction should not appear
-                        // on the channel, see commentary on [`SendWorkerMessage`].
+                        let Ok(tx_offset) = tx_offset.await else {
+                            return;
+                        };
+                        let _ = recipient.send_message(Some(tx_offset), message);
                     }
                 },
                 SendWorkerMessage::RemoveClient(client_id) => {
                     self.clients.remove(&client_id);
                 }
                 SendWorkerMessage::Broadcast { tx_offset, queries } => {
-                    if let Some(tx_offset) = tx_offset.get().await {
-                        self.send_one_computed_queries(tx_offset, queries);
-                    }
-                    // Results of an aborted transaction should not appear
-                    // on the channel, see commentary on [`SendWorkerMessage`].
+                    let Ok(tx_offset) = tx_offset.await else {
+                        return;
+                    };
+                    self.send_one_computed_queries(tx_offset, queries);
                 }
             }
         }
@@ -1685,6 +1624,7 @@ mod tests {
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::product;
     use spacetimedb_subscription::SubscriptionPlan;
+    use tokio::sync::oneshot;
 
     use super::{Plan, SubscriptionManager};
     use crate::db::relational_db::tests_utils::with_read_only;
@@ -2547,11 +2487,14 @@ mod tests {
             timer: None,
         });
 
-        db.with_read_only(Workload::Update, |tx| {
-            let tx_offset = tx.tx_offset();
-            let delta_tx = DeltaTx::from(&*tx);
-            subscriptions.eval_updates_sequential((&delta_tx, tx_offset), event, Some(Arc::new(client0)))
+        let (offset_tx, offset_rx) = oneshot::channel();
+        let tx = scopeguard::guard(db.begin_tx(Workload::Update), |tx| {
+            let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
+            let _ = offset_tx.send(tx_offset);
+            db.report_read_tx_metrics(reducer, tx_metrics);
         });
+        let delta_tx = DeltaTx::from(&*tx);
+        subscriptions.eval_updates_sequential((&delta_tx, offset_rx), event, Some(Arc::new(client0)));
 
         runtime.block_on(async move {
             tokio::time::timeout(Duration::from_millis(20), async move {

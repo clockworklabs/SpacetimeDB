@@ -38,17 +38,10 @@ use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef};
-use std::{borrow::Cow, future};
-use std::{
-    future::{Future, IntoFuture},
-    sync::Arc,
-};
-use std::{
-    pin::Pin,
-    time::{Duration, Instant},
-};
+use std::borrow::Cow;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use thiserror::Error;
-use tokio::sync::watch;
 
 pub type Result<T> = std::result::Result<T, DatastoreError>;
 
@@ -333,7 +326,6 @@ impl DataRow for Locking {
 
 impl Tx for Locking {
     type Tx = TxId;
-    type TxOffset = future::Ready<TxOffset>;
 
     /// Begins a read-only transaction under the given `workload`.
     ///
@@ -367,15 +359,6 @@ impl Tx for Locking {
     /// - `String`, the name of the reducer which ran within this transaction.
     fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String) {
         tx.release()
-    }
-
-    /// Obtain a promise to retrieve the smallest transaction offset visible to
-    /// this transaction.
-    ///
-    /// Since the locking datastore does not exhibit read anomalies, this is
-    /// always [`future::Ready`] at the offset the transaction started.
-    fn tx_offset(&self, tx: &Self::Tx) -> Self::TxOffset {
-        tx.tx_offset()
     }
 }
 
@@ -855,59 +838,8 @@ impl TxMetrics {
     }
 }
 
-/// Implementation of [`MutTx::TxOffset`].
-//
-// NOTE: This uses a `watch::Receiver` for two reasons:
-//
-// 1. Multiple consumers are supported (unlike e.g. `oneshot::Receiver`)
-// 2. We can detect if the transaction was dropped without properly releasing
-//    it (unlike e.g. `SetOnce`).
-//
-// The second is a programmer error that our API doesn't yet prevent.
-// We may want to switch to `SetOnce` in the future.
-pub struct MutTxOffset(watch::Receiver<TxStatus>);
-
-#[derive(Clone, Copy)]
-pub(crate) enum TxStatus {
-    Started,
-    Aborted,
-    Committed(TxOffset),
-}
-
-impl IntoFuture for MutTxOffset {
-    type Output = Option<TxOffset>;
-    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + Sync + 'static>>;
-
-    fn into_future(self) -> Self::IntoFuture {
-        let mut recv = self.0;
-        let fut = async move {
-            loop {
-                let state = *recv.borrow_and_update();
-                match state {
-                    TxStatus::Started => {
-                        if recv.changed().await.is_err() {
-                            return None;
-                        }
-                    }
-                    TxStatus::Aborted => return None,
-                    TxStatus::Committed(offset) => return Some(offset),
-                }
-            }
-        };
-
-        Box::pin(fut)
-    }
-}
-
-impl From<watch::Receiver<TxStatus>> for MutTxOffset {
-    fn from(recv: watch::Receiver<TxStatus>) -> Self {
-        Self(recv)
-    }
-}
-
 impl MutTx for Locking {
     type MutTx = MutTxId;
-    type TxOffset = MutTxOffset;
 
     /// Begins a mutable transaction under the given `isolation_level` and `workload`.
     ///
@@ -926,13 +858,11 @@ impl MutTx for Locking {
         let committed_state_write_lock = self.committed_state.write_arc();
         let sequence_state_lock = self.sequence_state.lock_arc();
         let lock_wait_time = timer.elapsed();
-        let (tx_status, _) = watch::channel(TxStatus::Started);
 
         MutTxId {
             committed_state_write_lock,
             sequence_state_lock,
             tx_state: TxState::default(),
-            tx_status,
             lock_wait_time,
             timer,
             ctx,
@@ -946,10 +876,6 @@ impl MutTx for Locking {
 
     fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>> {
         Ok(Some(tx.commit()))
-    }
-
-    fn tx_offset(&self, tx: &Self::MutTx) -> Self::TxOffset {
-        tx.tx_offset()
     }
 }
 
