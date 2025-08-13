@@ -3,7 +3,7 @@ import unittest
 from typing import Callable
 import json
 
-from .. import COMPOSE_FILE, Smoketest, requires_docker, spacetime, parse_sql_result
+from .. import COMPOSE_FILE, Smoketest, random_string, requires_docker, spacetime, parse_sql_result
 from ..docker import DockerManager
 
 def retry(func: Callable, max_retries: int = 3, retry_delay: int = 2):
@@ -414,26 +414,36 @@ class QuorumLoss(ReplicationTest):
 class EnableReplication(ReplicationTest):
     AUTOPUBLISH = False
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.expected_counter_rows = []
+
+    def run_counter(self, id, n = 100):
+        self.start(id, n)
+        self.cluster.wait_counter_value(id, n)
+        self.expected_counter_rows.append({"id": id, "value": n})
+        self.assertEqual(self.collect_counter_rows(), self.expected_counter_rows)
+
     def test_enable_replication(self):
-        """Tests enabling replication on an un-replicated database"""
+        """Tests enabling and disabling replication"""
 
         name = random_string()
 
         self.publish_module(name, num_replicas = 1)
-        leader = self.cluster.wait_for_leader_change(None)
+        self.cluster.wait_for_leader_change(None)
 
-        n1 = 1_000
-        n2 = 100
-        self.start(1, n1)
+        self.add_me_as_admin()
+        n = 100
 
-        self.cluster.wait_counter_value(1, n1, max_attempts=10, delay=10)
-
+        # start un-replicated
+        self.run_counter(1, n)
+        # enable replication
         self.call_control("enable_replication", {"Name": name}, 3)
-
-        self.cluster.wait_for_leader_change(leader)
-        self.start(2, n2)
-
-        self.cluster.wait_counter_value(2, n2)
-
-        rows = self.collect_counter_rows()
-        self.assertEqual([{"id": 1, "value": n1}, {"id": 2, "value": n2}], rows)
+        self.run_counter(2, n)
+        # disable replication
+        self.call_control("disable_replication", {"Name": name })
+        self.run_counter(3, n)
+        # enable it one more time
+        self.call_control("enable_replication", {"Name": name}, 3)
+        self.run_counter(4, n)
