@@ -47,6 +47,8 @@ pub(crate) enum PgError {
     DatabaseNameRequired,
     #[error(transparent)]
     Pg(#[from] PgWireError),
+    #[error("SSL is not supported by SpacetimeDB")]
+    SSLNotSupported,
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -225,8 +227,6 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 
                 let login_info = LoginInfo::from_client_info(client);
 
-                log::debug!("PG: Login info: {login_info:?}");
-
                 if login_info.database().is_none() {
                     return Err(PgError::DatabaseNameRequired.into());
                 }
@@ -282,7 +282,17 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 self.cached.lock().await.clone_from(&metadata);
                 finish_authentication(client, &self.parameter_provider).await?;
             }
-            _ => {}
+            PgWireFrontendMessage::SslRequest(ssl) => {
+                if ssl.is_some() {
+                    let err = PgError::SSLNotSupported;
+                    log::warn!("{err}");
+                    let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), format!("PG: {err}"));
+                    return close_client(client, err).await;
+                }
+            }
+            _ => {
+                // The other messages are for features not supported by SpacetimeDB, that are rejected by the parser.
+            }
         }
         Ok(())
     }
@@ -357,13 +367,10 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + 'static>(
     mut shutdown: watch::Receiver<()>,
     ctx: Arc<T>,
-    listen_address: &str,
+    tcp: TcpListener,
 ) {
     let auth = SpacetimeAuth::alloc(&ctx).await.unwrap();
     let factory = Arc::new(PgSpacetimeDBFactory::new(ctx, auth));
-
-    let server_addr = format!("{}:5432", listen_address.split(':').next().unwrap());
-    let tcp = TcpListener::bind(server_addr).await.unwrap();
 
     log::debug!(
         "PG: Starting SpacetimeDB Protocol listening on {}",
@@ -376,7 +383,7 @@ pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + Node
                     Ok((stream, _addr)) => {
                         let factory_ref = factory.clone();
                         tokio::spawn(async move {
-                            process_socket(stream, None,  factory_ref).await.inspect_err(|err|{
+                            process_socket(stream, None, factory_ref).await.inspect_err(|err|{
                                 log::error!("PG: Error processing socket: {err:?}");
                             })
                         });

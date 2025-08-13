@@ -4,17 +4,17 @@ import os
 import tomllib
 
 
-def psql(identity: str, sql: str) -> str:
+def psql(identity: str, sql: str, extra=None) -> str:
     """Call `psql` and execute the given SQL statement."""
-
+    if extra is None:
+        extra = dict()
     result = subprocess.run(
         ["psql", "-h", "127.0.0.1", "-p", "5432", "-U", "postgres", "-d", "quickstart", "--quiet", "-c", sql],
         encoding="utf8",
-        env={**os.environ, "PGPASSWORD": identity},
+        env={**os.environ, **extra, "PGPASSWORD": identity},
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        # check=True
     )
 
     if result.stderr:
@@ -127,11 +127,15 @@ pub fn test(ctx: &ReducerContext) {
         print(sql_out)
         self.assertMultiLineEqual(sql_out, expected)
 
-    def test_sql_format(self):
-        """This test is designed to test calling `psql` to execute SQL statements"""
+    def read_token(self):
+        """Read the token from the config file."""
         with open(self.config_path, "rb") as f:
             config = tomllib.load(f)
-            token = config['spacetimedb_token']
+            return config['spacetimedb_token']
+
+    def test_sql_format(self):
+        """This test is designed to test calling `psql` to execute SQL statements"""
+        token = self.read_token()
         self.publish_module("quickstart", clear=False)
 
         self.call("test")
@@ -166,3 +170,32 @@ tuple
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  {"bool": true, "f32": 594806.56, "f64": -3454353.3453890434, "str": "This is spacetimedb", "bytes": 0x01020304050607, "identity": 0x0000000000000000000000000000000000000000000000000000000000000001, "connection_id": 0x00000000000000000000000000000000, "timestamp": 1970-01-01T00:00:00+00:00, "duration": PT10S}
 (1 row)""")
+
+    def test_failures(self):
+        """This test is designed to test failure cases"""
+        token = self.read_token()
+        self.publish_module("quickstart", clear=False)
+
+        # Empty query
+        sql_out = psql(token, "")
+        self.assertEqual(sql_out, "")
+
+        # Connection fails when `ssl` is required
+        for ssl_mode in ["require", "verify-ca", "verify-full"]:
+            with self.assertRaises(Exception) as cm:
+                psql(token, "SELECT * FROM t_uints", extra={"PGSSLMODE": ssl_mode})
+            self.assertIn("not support SSL", str(cm.exception))
+
+        # But works with `ssl` is disabled or optional
+        for ssl_mode in ["disable", "allow", "prefer"]:
+            psql(token, "SELECT * FROM t_uints", extra={"PGSSLMODE": ssl_mode})
+
+        # Connection fails with invalid token
+        with self.assertRaises(Exception) as cm:
+            psql("invalid_token", "SELECT * FROM t_uints")
+        self.assertIn("Invalid token", str(cm.exception))
+
+        # Returns error for unsupported `sql` statements
+        with self.assertRaises(Exception) as cm:
+            psql(token, "SELECT CASE a WHEN 1 THEN 'one' ELSE 'other' END FROM t_uints")
+        self.assertIn("Unsupported", str(cm.exception))

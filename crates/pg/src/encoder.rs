@@ -32,13 +32,11 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
         AlgebraicType::Bool => Type::BOOL,
         AlgebraicType::U8 | AlgebraicType::I8 | AlgebraicType::I16 => Type::INT2,
         AlgebraicType::U16 | AlgebraicType::I32 => Type::INT4,
-        AlgebraicType::I64 => Type::INT8,
-        AlgebraicType::U32
-        | AlgebraicType::U64
-        | AlgebraicType::I128
-        | AlgebraicType::U128
-        | AlgebraicType::I256
-        | AlgebraicType::U256 => Type::NUMERIC,
+        AlgebraicType::U32 | AlgebraicType::I64 => Type::INT8,
+
+        AlgebraicType::U64 | AlgebraicType::I128 | AlgebraicType::U128 | AlgebraicType::I256 | AlgebraicType::U256 => {
+            Type::NUMERIC
+        }
         AlgebraicType::F32 => Type::FLOAT4,
         AlgebraicType::F64 => Type::FLOAT8,
         AlgebraicType::Array(ty) => match *ty.elem_ty {
@@ -47,9 +45,8 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
             AlgebraicType::U8 => Type::BYTEA,
             AlgebraicType::I8 | AlgebraicType::I16 => Type::INT2_ARRAY,
             AlgebraicType::U16 | AlgebraicType::I32 => Type::INT4_ARRAY,
-            AlgebraicType::I64 => Type::INT8_ARRAY,
-            AlgebraicType::U32
-            | AlgebraicType::U64
+            AlgebraicType::U32 | AlgebraicType::I64 => Type::INT8_ARRAY,
+            AlgebraicType::U64
             | AlgebraicType::I128
             | AlgebraicType::U128
             | AlgebraicType::I256
