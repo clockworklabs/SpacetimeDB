@@ -109,8 +109,7 @@ function App() {
       setConnected(true);
       localStorage.setItem('auth_token', token);
       console.log(
-        'Connected to SpacetimeDB with identity:',
-        identity.toHexString()
+        `Connected to SpacetimeDB with identity: ${identity.toHexString()} and connection id ${conn.connectionId.toHexString()}`
       );
       conn.reducers.onSendMessage(() => {
         console.log('Message sent.');

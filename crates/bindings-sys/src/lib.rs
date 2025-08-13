@@ -1098,23 +1098,23 @@ pub fn identity() -> [u8; 32] {
 #[inline]
 pub fn has_jwt(connection_id: [u8; 16]) -> bool {
     let mut v: u8 = 0;
-    unsafe {
-        raw::has_jwt(connection_id.as_ptr(), &mut v)
-    }
+    unsafe { raw::has_jwt(connection_id.as_ptr(), &mut v) }
     v != 0
 }
 
 #[inline]
-pub fn get_jwt(connection_id: [u8; 16]) -> String {
-    // let mut buf = Vec::with_capacity(1024*1024);
+pub fn get_jwt(connection_id: [u8; 16]) -> Option<String> {
+    // TODO: I just picked a big number, but we could get the size of it beforehand.
     let mut buf = vec![0u8; 1024 * 1024];
 
     let mut v: u32 = buf.len() as u32;
-    // v = buf.capacity() as u32;
     unsafe {
         raw::get_jwt(connection_id.as_ptr(), buf.as_mut_ptr(), &mut v);
     }
-     std::str::from_utf8(&buf[..v as usize]).unwrap().to_string()
+    if v == 0 {
+        return None; // No JWT found.
+    }
+    Some(std::str::from_utf8(&buf[..v as usize]).unwrap().to_string())
 }
 
 pub struct RowIter {

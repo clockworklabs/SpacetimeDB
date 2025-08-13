@@ -8,6 +8,7 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
+use crate::error::DatastoreError;
 use crate::execution_context::ExecutionContext;
 use crate::execution_context::Workload;
 use crate::system_tables::{
@@ -24,6 +25,7 @@ use crate::{
         ST_SEQUENCE_ID, ST_TABLE_ID,
     },
 };
+use anyhow::anyhow;
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
@@ -60,8 +62,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use anyhow::anyhow;
-use crate::error::DatastoreError;
 
 type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
@@ -1355,11 +1355,7 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
-
-    pub fn get_jwt_payload(
-        &self,
-        connection_id: ConnectionId,
-    ) -> Result<Option<String>> {
+    pub fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>> {
         log::info!("Getting JWT payload for connection id: {}", connection_id.to_hex());
         let mut buf: Vec<u8> = Vec::new();
         self.iter_by_col_eq(

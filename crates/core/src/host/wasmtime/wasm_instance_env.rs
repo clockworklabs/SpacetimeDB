@@ -367,7 +367,6 @@ impl WasmInstanceEnv {
         })
     }
 
-
     /// Writes the number of rows currently in table identified by `table_id` to `out`.
     ///
     /// # Traps
@@ -1209,7 +1208,11 @@ impl WasmInstanceEnv {
         })
     }
 
-    pub fn has_jwt(caller: Caller<'_, Self>, connection_id: WasmPtr<ConnectionId>, out_ptr: WasmPtr<u8>) -> RtResult<()> {
+    pub fn has_jwt(
+        caller: Caller<'_, Self>,
+        connection_id: WasmPtr<ConnectionId>,
+        out_ptr: WasmPtr<u8>,
+    ) -> RtResult<()> {
         log::info!("Calling has_jwt");
         Self::with_span(caller, AbiCall::HasJwt, |caller| {
             //caller.data_mut().instance_env.tx.get().unwrap().get_jwt_payload()
@@ -1229,36 +1232,42 @@ impl WasmInstanceEnv {
         })
     }
 
-    pub fn get_jwt(caller: Caller<'_, Self>, connection_id: WasmPtr<ConnectionId>, target_ptr: WasmPtr<u8>, target_ptr_len: WasmPtr<u32>) -> RtResult<()> {
+    pub fn get_jwt(
+        caller: Caller<'_, Self>,
+        connection_id: WasmPtr<ConnectionId>,
+        target_ptr: WasmPtr<u8>,
+        target_ptr_len: WasmPtr<u32>,
+    ) -> RtResult<()> {
         log::info!("Calling get_jwt");
         Self::with_span(caller, AbiCall::HasJwt, |caller| {
-            //caller.data_mut().instance_env.tx.get().unwrap().get_jwt_payload()
-            // caller.data_mut().instance_env.tx.get().unwrap().insert_st_client()
-            // caller.data().instance_env.tx.get().unwrap().
-            // caller.data().reducer_name
             let (mem, env) = Self::mem_env(caller);
             let cid = ConnectionId::read_from(mem, connection_id)?;
-            let jwt = env.instance_env.tx.get().unwrap().get_jwt_payload(cid)?.ok_or_else(|| {
-                anyhow::anyhow!("no JWT payload found for connection ID: {:?}", cid)
-            })?;
+            let jwt = match env.instance_env.tx.get().unwrap().get_jwt_payload(cid)? {
+                None => {
+                    // Consider logging here, since this should only happen during an upgrade.
+                    0u32.write_to(mem, target_ptr_len)?;
+                    return Ok(());
+                }
+                Some(jwt) => jwt,
+            };
             log::info!("JWT payload found for connection ID: {:?}: {}", cid.to_hex(), jwt);
             let jwt_len = jwt.len();
             // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
             let buffer_len = u32::read_from(mem, target_ptr_len)?;
-            log::info!("buffer_len: {}", buffer_len);
+            log::info!("buffer_len: {buffer_len}");
             if buffer_len < jwt_len as u32 {
                 return Err(anyhow::anyhow!("buffer too small to hold JWT payload"));
             }
             log::info!("About to write length");
             // Write the length of the JWT payload to the target pointer.
             (jwt_len as u32).write_to(mem, target_ptr_len)?;
-            log::info!("wrote length of {}", jwt_len);
-            log::info!("Byte len {}", jwt.as_bytes().len());
+            log::info!("wrote length of {jwt_len}");
+            log::info!("Byte len {}", jwt.len());
 
             // Write the JWT payload to the target pointer.
             // Get a mutable view to the `buffer`.
-            let mut buffer = mem.deref_slice_mut(target_ptr, buffer_len)?;
-            buffer[..jwt_len].copy_from_slice(&jwt.as_bytes());
+            let buffer = mem.deref_slice_mut(target_ptr, buffer_len)?;
+            buffer[..jwt_len].copy_from_slice(jwt.as_bytes());
             log::info!("wrote jwt bytes to slice");
             Ok(())
         })

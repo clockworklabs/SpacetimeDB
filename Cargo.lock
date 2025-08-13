@@ -5269,6 +5269,7 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "scoped-tls",
+ "serde_json",
  "spacetimedb-bindings-macro",
  "spacetimedb-bindings-sys",
  "spacetimedb-lib",

@@ -484,6 +484,8 @@ extern "C" fn __call_reducer__(
 
     // Assemble the `ReducerContext`.
     let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
+    let ctx = ReducerContext::new(crate::Local {}, sender, conn_id, timestamp);
+    /*
     let ctx = ReducerContext {
         db: crate::Local {},
         sender,
@@ -491,6 +493,8 @@ extern "C" fn __call_reducer__(
         connection_id: conn_id,
         rng: std::cell::OnceCell::new(),
     };
+
+     */
 
     // Fetch reducer function.
     let reducers = REDUCERS.get().unwrap();

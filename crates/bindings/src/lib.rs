@@ -13,7 +13,7 @@ pub mod rt;
 pub mod table;
 
 use spacetimedb_lib::bsatn;
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 
 pub use log;
 #[cfg(feature = "rand")]
@@ -732,11 +732,32 @@ pub struct ReducerContext {
     /// See the [`#[table]`](macro@crate::table) macro for more information.
     pub db: Local,
 
+    /// The authentication information for the caller of this reducer.
+    /// This can be accessed via the sender_auth() method.
+    sender_auth: Box<dyn AuthCtx>,
+
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
 }
 
 impl ReducerContext {
+    #[doc(hidden)]
+    pub fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
+        let sender_auth: Box<dyn AuthCtx> = match connection_id {
+            Some(cid) => Box::new(ConnectionIdBasedAuthCtx::new(cid)),
+            None => Box::new(InternalAuthCtx),
+        };
+        Self {
+            db,
+            sender,
+            timestamp,
+            connection_id,
+            sender_auth,
+            #[cfg(feature = "rand08")]
+            rng: std::cell::OnceCell::new(),
+        }
+    }
+
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self {
@@ -744,6 +765,7 @@ impl ReducerContext {
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
+            sender_auth: Box::new(InternalAuthCtx),
             rng: std::cell::OnceCell::new(),
         }
     }
@@ -768,9 +790,8 @@ impl ReducerContext {
         }
     }
 
-    pub fn jwt(&self) -> String {
-        let cid = self.connection_id.unwrap();
-        spacetimedb_bindings_sys::get_jwt(cid.as_le_byte_array())
+    pub fn sender_auth(&self) -> &dyn AuthCtx {
+        self.sender_auth.as_ref()
     }
 }
 
@@ -880,6 +901,121 @@ impl std::ops::Deref for IterBuf {
 impl std::ops::DerefMut for IterBuf {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.buf
+    }
+}
+
+#[non_exhaustive]
+pub struct JwtClaims {
+    payload: String,
+    parsed: OnceCell<serde_json::Value>,
+    audience: OnceCell<Vec<String>>,
+}
+
+impl JwtClaims {
+    fn new(jwt: String) -> Self {
+        Self {
+            payload: jwt,
+            parsed: OnceCell::new(),
+            audience: OnceCell::new(),
+        }
+    }
+
+    fn get_parsed(&self) -> &serde_json::Value {
+        self.parsed
+            .get_or_init(|| serde_json::from_str(&self.payload).expect("Failed to parse JWT payload"))
+    }
+
+    pub fn subject(&self) -> &str {
+        // This is a placeholder; actual implementation would parse the JWT claims.
+        self.get_parsed().get("sub").unwrap().as_str().unwrap()
+    }
+
+    pub fn issuer(&self) -> &str {
+        self.get_parsed().get("iss").unwrap().as_str().unwrap()
+    }
+
+    fn extract_audience(&self) -> Vec<String> {
+        let aud = self.get_parsed().get("aud").unwrap();
+        match aud {
+            serde_json::Value::String(s) => vec![s.clone()],
+            serde_json::Value::Array(arr) => arr.iter().filter_map(|v| v.as_str().map(String::from)).collect(),
+            _ => panic!("Unexpected type for 'aud' claim in JWT"),
+        }
+    }
+
+    pub fn audience(&self) -> &[String] {
+        self.audience.get_or_init(|| self.extract_audience())
+    }
+
+    // A convenience method, since this may not be in the token.
+    pub fn identity(&self) -> Identity {
+        Identity::from_claims(self.issuer(), self.subject())
+    }
+
+    // We can expose the whole payload for users that want to parse custom claims.
+    pub fn raw_payload(&self) -> &str {
+        &self.payload
+    }
+}
+
+/// AuthCtx represents the authentication information for a caller.
+pub trait AuthCtx {
+    // True if this reducer was spawned from inside the database.
+    fn is_internal(&self) -> bool;
+    // Check if there is a JWT without loading it.
+    // If is_internal is true, this will be false.
+    fn has_jwt(&self) -> bool;
+    // Load the jwt.
+    fn jwt(&self) -> Option<&JwtClaims>;
+}
+
+struct ConnectionIdBasedAuthCtx {
+    connection_id: ConnectionId,
+    claims: std::cell::OnceCell<Option<JwtClaims>>,
+}
+
+impl ConnectionIdBasedAuthCtx {
+    fn new(connection_id: ConnectionId) -> Self {
+        Self {
+            connection_id,
+            claims: std::cell::OnceCell::new(),
+        }
+    }
+}
+
+struct InternalAuthCtx;
+impl AuthCtx for InternalAuthCtx {
+    fn is_internal(&self) -> bool {
+        true
+    }
+
+    fn has_jwt(&self) -> bool {
+        false
+    }
+
+    fn jwt(&self) -> Option<&JwtClaims> {
+        None
+    }
+}
+
+impl AuthCtx for ConnectionIdBasedAuthCtx {
+    fn is_internal(&self) -> bool {
+        false
+    }
+
+    fn has_jwt(&self) -> bool {
+        if let Some(maybe_claims) = self.claims.get() {
+            return maybe_claims.is_some();
+        }
+        spacetimedb_bindings_sys::has_jwt(self.connection_id.as_le_byte_array())
+    }
+
+    fn jwt(&self) -> Option<&JwtClaims> {
+        self.claims
+            .get_or_init(|| {
+                spacetimedb_bindings_sys::get_jwt(self.connection_id.as_le_byte_array()).map(JwtClaims::new)
+            })
+            .as_ref()
     }
 }
 
