@@ -181,6 +181,11 @@ impl ClientConnectionSender {
                 // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
                 // the channel, so forcibly kick the client
                 tracing::warn!(identity = %self.id.identity, connection_id = %self.id.connection_id, "client channel capacity exceeded");
+                log::warn!(
+                    "client channel capacity exceeded for identity {}, connection id {}",
+                    self.id.identity,
+                    self.id.connection_id
+                );
                 self.abort_handle.abort();
                 self.cancelled.store(true, Ordering::Relaxed);
                 return Err(ClientSendError::Cancelled);
@@ -455,10 +460,16 @@ impl ClientConnection {
 
             let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
             module_info.metrics.ws_clients_spawned.inc();
-            scopeguard::defer! {
+            scopeguard::defer_on_success! {
                 let database_identity = module_info.database_identity;
                 let client_identity = id.identity;
-                log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
+                log::warn!("websocket connection aborted (defer_on_success) for client identity `{client_identity}` and database identity `{database_identity}`");
+                module_info.metrics.ws_clients_aborted.inc();
+            }
+            scopeguard::defer_on_unwind! {
+                let database_identity = module_info.database_identity;
+                let client_identity = id.identity;
+                log::warn!("websocket connection aborted (defer_on_unwind) for client identity `{client_identity}` and database identity `{database_identity}`");
                 module_info.metrics.ws_clients_aborted.inc();
             };
 
