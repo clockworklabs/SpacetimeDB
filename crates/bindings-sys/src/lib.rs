@@ -589,8 +589,9 @@ pub mod raw {
         /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
         pub fn identity(out_ptr: *mut u8);
 
-        /// Check if the caller has a jwt.
-        pub fn has_jwt(connection_id_ptr: *const u8, out_ptr: *mut u8);
+        /// Check the size of the jwt associated with the given connection.
+        /// Returns 0 if there is no jwt for the connection.
+        pub fn jwt_len(connection_id_ptr: *const u8, out_ptr: *mut u32);
 
         /// Write the jwt payload for the given connection id to the out_ptr.
         pub fn get_jwt(connection_id_ptr: *const u8, target_ptr: *mut u8, target_ptr_len: *mut u32);
@@ -1096,16 +1097,22 @@ pub fn identity() -> [u8; 32] {
 }
 
 #[inline]
-pub fn has_jwt(connection_id: [u8; 16]) -> bool {
-    let mut v: u8 = 0;
-    unsafe { raw::has_jwt(connection_id.as_ptr(), &mut v) }
-    v != 0
+pub fn jwt_length(connection_id: [u8; 16]) -> Option<u32> {
+    let mut v: u32 = 0;
+    unsafe { raw::jwt_len(connection_id.as_ptr(), &mut v) }
+    if v == 0 {
+        None
+    } else {
+        Some(v)
+    }
 }
 
 #[inline]
 pub fn get_jwt(connection_id: [u8; 16]) -> Option<String> {
-    // TODO: I just picked a big number, but we could get the size of it beforehand.
-    let mut buf = vec![0u8; 1024 * 1024];
+    let Some(jwt_len) = jwt_length(connection_id) else {
+        return None; // No JWT found.
+    };
+    let mut buf = vec![0u8; jwt_len as usize];
 
     let mut v: u32 = buf.len() as u32;
     unsafe {

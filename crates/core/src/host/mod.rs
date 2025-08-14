@@ -146,5 +146,6 @@ pub enum AbiCall {
     Identity,
 
     VolatileNonatomicScheduleImmediate,
-    HasJwt,
+    JwtLength,
+    GetJwt,
 }

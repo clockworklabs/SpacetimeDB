@@ -783,13 +783,6 @@ impl ReducerContext {
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
     }
 
-    pub fn has_jwt(&self) -> bool {
-        match self.connection_id {
-            Some(ref id) => spacetimedb_bindings_sys::has_jwt(id.as_le_byte_array()),
-            None => false,
-        }
-    }
-
     pub fn sender_auth(&self) -> &dyn AuthCtx {
         self.sender_auth.as_ref()
     }
@@ -1007,7 +1000,7 @@ impl AuthCtx for ConnectionIdBasedAuthCtx {
         if let Some(maybe_claims) = self.claims.get() {
             return maybe_claims.is_some();
         }
-        spacetimedb_bindings_sys::has_jwt(self.connection_id.as_le_byte_array())
+        spacetimedb_bindings_sys::jwt_length(self.connection_id.as_le_byte_array()).is_some()
     }
 
     fn jwt(&self) -> Option<&JwtClaims> {

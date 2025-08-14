@@ -1208,26 +1208,24 @@ impl WasmInstanceEnv {
         })
     }
 
-    pub fn has_jwt(
+    pub fn jwt_len(
         caller: Caller<'_, Self>,
         connection_id: WasmPtr<ConnectionId>,
-        out_ptr: WasmPtr<u8>,
+        out_ptr: WasmPtr<u32>,
     ) -> RtResult<()> {
         log::info!("Calling has_jwt");
-        Self::with_span(caller, AbiCall::HasJwt, |caller| {
-            //caller.data_mut().instance_env.tx.get().unwrap().get_jwt_payload()
-            // caller.data_mut().instance_env.tx.get().unwrap().insert_st_client()
-            // caller.data().instance_env.tx.get().unwrap().
-            // caller.data().reducer_name
+        Self::with_span(caller, AbiCall::JwtLength, |caller| {
             let (mem, env) = Self::mem_env(caller);
             let cid = ConnectionId::read_from(mem, connection_id)?;
-            if env.instance_env.tx.get().unwrap().get_jwt_payload(cid)?.is_some() {
-                // Write `1` to `out_ptr` if JWT exists.
-                1u8.write_to(mem, out_ptr)?;
-            } else {
-                // Write `0` to `out_ptr` if JWT does not exist.
-                0u8.write_to(mem, out_ptr)?;
-            }
+            let length = env
+                .instance_env
+                .tx
+                .get()
+                .unwrap()
+                .get_jwt_payload(cid)?
+                .map(|p| p.len() as u32)
+                .unwrap_or(0u32);
+            length.write_to(mem, out_ptr)?;
             Ok(())
         })
     }
@@ -1239,7 +1237,7 @@ impl WasmInstanceEnv {
         target_ptr_len: WasmPtr<u32>,
     ) -> RtResult<()> {
         log::info!("Calling get_jwt");
-        Self::with_span(caller, AbiCall::HasJwt, |caller| {
+        Self::with_span(caller, AbiCall::GetJwt, |caller| {
             let (mem, env) = Self::mem_env(caller);
             let cid = ConnectionId::read_from(mem, connection_id)?;
             let jwt = match env.instance_env.tx.get().unwrap().get_jwt_payload(cid)? {
