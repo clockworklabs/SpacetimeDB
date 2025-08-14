@@ -2,7 +2,9 @@
 
 use super::module_common::{build_common_module_from_raw, ModuleCommon};
 use super::module_host::{CallReducerParams, DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime};
+use super::UpdateDatabaseResult;
 use crate::host::v8::error::{exception_already_thrown, Throwable};
+use crate::host::wasm_common::module_host_actor::InstanceCommon;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
 use anyhow::anyhow;
 use de::deserialize_js;
@@ -10,6 +12,7 @@ use error::catch_exception;
 use from_value::cast;
 use key_cache::get_or_create_key_cache;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::RawModuleDef;
 use std::sync::{Arc, LazyLock};
 use v8::{Function, HandleScope};
@@ -114,19 +117,23 @@ impl Module for JsModule {
     }
 }
 
-struct JsInstance;
+struct JsInstance {
+    common: InstanceCommon,
+    replica_ctx: Arc<ReplicaContext>,
+}
 
 impl ModuleInstance for JsInstance {
     fn trapped(&self) -> bool {
-        todo!()
+        self.common.trapped
     }
 
     fn update_database(
         &mut self,
-        _program: spacetimedb_datastore::traits::Program,
-        _old_module_info: Arc<ModuleInfo>,
-    ) -> anyhow::Result<super::UpdateDatabaseResult> {
-        todo!()
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        let replica_ctx = &self.replica_ctx;
+        self.common.update_database(replica_ctx, program, old_module_info)
     }
 
     fn call_reducer(&mut self, _tx: Option<MutTxId>, _params: CallReducerParams) -> super::ReducerCallResult {
