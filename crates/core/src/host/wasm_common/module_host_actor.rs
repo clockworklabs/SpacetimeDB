@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use prometheus::IntGauge;
+use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_schema::auto_migrate::ponder_migrate;
 use std::sync::Arc;
@@ -22,7 +22,7 @@ use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::WriteConflict;
-use crate::util::prometheus_handle::HistogramExt;
+use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
@@ -326,6 +326,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let reducer_def = self.info.module_def.reducer_by_id(reducer_id);
         let reducer_name = &*reducer_def.name;
 
+        // Do some `with_label_values`.
+        // TODO(perf, centril): consider caching this.
+        let vm_metrics = VmMetrics::new(&database_identity, reducer_name);
+
         let _outer_span = start_call_reducer_span(reducer_name, &caller_identity, caller_connection_id_opt);
 
         let energy_fingerprint = ReducerFingerprint {
@@ -345,23 +349,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             arg_bytes: args.get_bsatn().clone(),
         };
 
-        // Before we take the lock, do some `with_label_values`.
-        let metric_reducer_plus_query_duration = WORKER_METRICS
-            .reducer_plus_query_duration
-            .with_label_values(&database_identity, reducer_name);
-        let metric_reducer_wasmtime_fuel_used = DB_METRICS
-            .reducer_wasmtime_fuel_used
-            .with_label_values(&database_identity, reducer_name);
-        let metric_reducer_duration_usec = DB_METRICS
-            .reducer_duration_usec
-            .with_label_values(&database_identity, reducer_name);
-        let metric_reducer_abi_time_usec = DB_METRICS
-            .reducer_abi_time_usec
-            .with_label_values(&database_identity, reducer_name);
-
         let workload = Workload::Reducer(ReducerContext::from(op.clone()));
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
-        let _guard = metric_reducer_plus_query_duration.with_timer(tx.timer);
+        let _guard = vm_metrics.timer_guard_for_reducer_plus_query(tx.timer);
 
         let mut tx_slot = self.instance.instance_env().tx.clone();
 
@@ -376,9 +366,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             call_result,
         } = result;
 
-        metric_reducer_wasmtime_fuel_used.inc_by(energy.wasmtime_fuel_used);
-        metric_reducer_duration_usec.inc_by(timings.total_duration.as_micros() as u64);
-        metric_reducer_abi_time_usec.inc_by(timings.wasm_instance_env_call_times.sum().as_micros() as u64);
+        vm_metrics.report(
+            energy.wasmtime_fuel_used,
+            timings.total_duration,
+            &timings.wasm_instance_env_call_times,
+        );
 
         self.energy_monitor
             .record_reducer(&energy_fingerprint, energy.used, timings.total_duration);
@@ -417,22 +409,23 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     EventStatus::Failed("The Wasm instance encountered a fatal error.".into())
                 }
             }
-            Ok(Err(errmsg)) => {
-                log::info!("reducer returned error: {errmsg}");
-                log_reducer_error(self.replica_context(), timestamp, reducer_name, &errmsg);
-                EventStatus::Failed(errmsg.into())
-            }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
-            Ok(Ok(())) => match lifecyle_modifications_to_tx(
-                reducer_def.lifecycle,
-                caller_identity,
-                caller_connection_id,
-                database_identity,
-                &mut tx,
-            ) {
+            Ok(res) => match res.and_then(|()| {
+                lifecyle_modifications_to_tx(
+                    reducer_def.lifecycle,
+                    caller_identity,
+                    caller_connection_id,
+                    database_identity,
+                    &mut tx,
+                )
+            }) {
                 Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
-                Err(err) => EventStatus::Failed(err.to_string()),
+                Err(err) => {
+                    log::info!("reducer returned error: {err}");
+                    log_reducer_error(self.replica_context(), timestamp, reducer_name, &err);
+                    EventStatus::Failed(err.into())
+                }
             },
         };
 
@@ -463,6 +456,55 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     // Helpers - NOT API
     fn system_logger(&self) -> &SystemLogger {
         self.replica_context().logger.system_logger()
+    }
+}
+
+/// VM-related metrics for reducer execution.
+struct VmMetrics {
+    /// The time spent executing a reducer + plus evaluating its subscription queries.
+    reducer_plus_query_duration: Histogram,
+    /// The total VM fuel used.
+    reducer_fuel_used: IntCounter,
+    /// The total runtime of reducer calls.
+    reducer_duration_usec: IntCounter,
+    /// The total time spent in reducer ABI calls.
+    reducer_abi_time_usec: IntCounter,
+}
+
+impl VmMetrics {
+    /// Returns new metrics counters for `database_identity` and `reducer_name`.
+    fn new(database_identity: &Identity, reducer_name: &str) -> Self {
+        let reducer_plus_query_duration = WORKER_METRICS
+            .reducer_plus_query_duration
+            .with_label_values(database_identity, reducer_name);
+        let reducer_fuel_used = DB_METRICS
+            .reducer_wasmtime_fuel_used
+            .with_label_values(database_identity, reducer_name);
+        let reducer_duration_usec = DB_METRICS
+            .reducer_duration_usec
+            .with_label_values(database_identity, reducer_name);
+        let reducer_abi_time_usec = DB_METRICS
+            .reducer_abi_time_usec
+            .with_label_values(database_identity, reducer_name);
+
+        Self {
+            reducer_plus_query_duration,
+            reducer_fuel_used,
+            reducer_duration_usec,
+            reducer_abi_time_usec,
+        }
+    }
+
+    /// Returns a timer guard for `reducer_plus_query_duration`.
+    fn timer_guard_for_reducer_plus_query(&self, start: Instant) -> TimerGuard {
+        self.reducer_plus_query_duration.clone().with_timer(start)
+    }
+
+    /// Reports some VM metrics.
+    fn report(&self, fuel_used: u64, reducer_duration: Duration, abi_time: &CallTimes) {
+        self.reducer_fuel_used.inc_by(fuel_used);
+        self.reducer_duration_usec.inc_by(reducer_duration.as_micros() as u64);
+        self.reducer_abi_time_usec.inc_by(abi_time.sum().as_micros() as u64);
     }
 }
 
@@ -505,7 +547,7 @@ fn maybe_log_long_running_reducer(reducer_name: &str, total_duration: Duration) 
 
 /// Logs an error `message` for `reducer` at `timestamp` into `replica_ctx`.
 fn log_reducer_error(replica_ctx: &ReplicaContext, timestamp: Timestamp, reducer: &str, message: &str) {
-    let record = &database_logger::Record {
+    let record = database_logger::Record {
         ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
         target: Some(reducer),
         filename: None,
@@ -523,12 +565,13 @@ fn lifecyle_modifications_to_tx(
     caller_conn_id: ConnectionId,
     db_id: Identity,
     tx: &mut MutTxId,
-) -> Result<(), DatastoreError> {
+) -> Result<(), Box<str>> {
     match lifecycle {
         Some(Lifecycle::OnConnect) => tx.insert_st_client(caller_id, caller_conn_id),
         Some(Lifecycle::OnDisconnect) => tx.delete_st_client(caller_id, caller_conn_id, db_id),
         _ => Ok(()),
     }
+    .map_err(|e| e.to_string().into())
 }
 
 /// Commits the transaction
