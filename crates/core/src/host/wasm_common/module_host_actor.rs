@@ -419,18 +419,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             }
             Ok(Err(errmsg)) => {
                 log::info!("reducer returned error: {errmsg}");
-
-                self.replica_context().logger.write(
-                    database_logger::LogLevel::Error,
-                    &database_logger::Record {
-                        ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
-                        target: Some(reducer_name),
-                        filename: None,
-                        line_number: None,
-                        message: &errmsg,
-                    },
-                    &(),
-                );
+                log_reducer_error(self.replica_context(), timestamp, reducer_name, &errmsg);
                 EventStatus::Failed(errmsg.into())
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
@@ -512,6 +501,18 @@ fn maybe_log_long_running_reducer(reducer_name: &str, total_duration: Duration) 
             ?total_duration,
         );
     }
+}
+
+/// Logs an error `message` for `reducer` at `timestamp` into `replica_ctx`.
+fn log_reducer_error(replica_ctx: &ReplicaContext, timestamp: Timestamp, reducer: &str, message: &str) {
+    let record = &database_logger::Record {
+        ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
+        target: Some(reducer),
+        filename: None,
+        line_number: None,
+        message,
+    };
+    replica_ctx.logger.write(database_logger::LogLevel::Error, &record, &());
 }
 
 /// Detects lifecycle events for connecting/disconnecting a new client
