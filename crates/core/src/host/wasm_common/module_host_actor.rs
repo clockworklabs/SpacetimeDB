@@ -8,7 +8,7 @@ use tracing::span::EnteredSpan;
 
 use super::instrumentation::CallTimes;
 use crate::client::ClientConnectionSender;
-use crate::database_logger::{self, SystemLogger};
+use crate::database_logger;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
@@ -225,57 +225,18 @@ impl<T: WasmInstance> std::fmt::Debug for WasmModuleInstance<T> {
     }
 }
 
-impl<T: WasmInstance> WasmModuleInstance<T> {
-    fn replica_context(&self) -> &ReplicaContext {
-        &self.instance.instance_env().replica_ctx
-    }
-}
-
 impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.common.trapped
     }
 
-    #[tracing::instrument(level = "trace", skip_all)]
     fn update_database(
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        let plan = ponder_migrate(&old_module_info.module_def, &self.common.info.module_def);
-        let plan = match plan {
-            Ok(plan) => plan,
-            Err(errs) => {
-                return Ok(UpdateDatabaseResult::AutoMigrateError(errs));
-            }
-        };
-        let stdb = &*self.replica_context().relational_db;
-
-        let program_hash = program.hash;
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| stdb.update_program(tx, HostType::Wasm, program))?;
-        self.system_logger().info(&format!("Updated program to {program_hash}"));
-
-        let auth_ctx = AuthCtx::for_current(self.replica_context().database.owner_identity);
-        let res = crate::db::update::update_database(stdb, &mut tx, auth_ctx, plan, self.system_logger());
-
-        match res {
-            Err(e) => {
-                log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
-                self.system_logger().warn(&format!("Database update failed: {e}"));
-                let (tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
-                Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
-            }
-            Ok(()) => {
-                if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                    stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
-                }
-                self.system_logger().info("Database updated");
-                log::info!("Database updated, {}", stdb.database_identity());
-                Ok(UpdateDatabaseResult::UpdatePerformed)
-            }
-        }
+        let replica_ctx = &self.instance.instance_env().replica_ctx;
+        self.common.update_database(replica_ctx, program, old_module_info)
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
@@ -284,6 +245,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 }
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
+    #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
         self.common.call_reducer_with_tx(
             &self.instance.instance_env().replica_ctx.clone(),
@@ -299,11 +261,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             },
         )
     }
-
-    // Helpers - NOT API
-    fn system_logger(&self) -> &SystemLogger {
-        self.replica_context().logger.system_logger()
-    }
 }
 
 struct InstanceCommon {
@@ -315,6 +272,51 @@ struct InstanceCommon {
 }
 
 impl InstanceCommon {
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn update_database(
+        &mut self,
+        replica_ctx: &ReplicaContext,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        let system_logger = replica_ctx.logger.system_logger();
+        let stdb = &replica_ctx.relational_db;
+
+        let plan = ponder_migrate(&old_module_info.module_def, &self.info.module_def);
+        let plan = match plan {
+            Ok(plan) => plan,
+            Err(errs) => {
+                return Ok(UpdateDatabaseResult::AutoMigrateError(errs));
+            }
+        };
+
+        let program_hash = program.hash;
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| stdb.update_program(tx, HostType::Wasm, program))?;
+        system_logger.info(&format!("Updated program to {program_hash}"));
+
+        let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
+        let res = crate::db::update::update_database(stdb, &mut tx, auth_ctx, plan, system_logger);
+
+        match res {
+            Err(e) => {
+                log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
+                system_logger.warn(&format!("Database update failed: {e}"));
+                let (tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
+                Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
+            }
+            Ok(()) => {
+                if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+                    stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+                }
+                system_logger.info("Database updated");
+                log::info!("Database updated, {}", stdb.database_identity());
+                Ok(UpdateDatabaseResult::UpdatePerformed)
+            }
+        }
+    }
+
     /// Execute a reducer.
     ///
     /// If `Some` [`MutTxId`] is supplied, the reducer is called within the
@@ -331,7 +333,6 @@ impl InstanceCommon {
     /// The method also performs various measurements and records energy usage,
     /// as well as broadcasting a [`ModuleEvent`] containing information about
     /// the outcome of the call.
-    #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(
         &mut self,
         replica_ctx: &ReplicaContext,
