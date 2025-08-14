@@ -55,11 +55,9 @@ pub trait WasmInstance: Send + Sync + 'static {
 
     fn instance_env(&self) -> &InstanceEnv;
 
-    type Trap: Send;
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> ExecuteResult;
 
-    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> ExecuteResult<Self::Trap>;
-
-    fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap);
+    fn log_traceback(func_type: &str, func: &str, trap: &anyhow::Error);
 }
 
 pub struct EnergyStats {
@@ -73,11 +71,11 @@ pub struct ExecutionTimings {
     pub wasm_instance_env_call_times: CallTimes,
 }
 
-pub struct ExecuteResult<E> {
+pub struct ExecuteResult {
     pub energy: EnergyStats,
     pub timings: ExecutionTimings,
     pub memory_allocation: usize,
-    pub call_result: Result<Result<(), Box<str>>, E>,
+    pub call_result: Result<Result<(), Box<str>>, anyhow::Error>,
 }
 
 pub(crate) struct WasmModuleHostActor<T: WasmModule> {
@@ -163,8 +161,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, instance: T::Instance) -> WasmModuleInstance<T::Instance> {
-        WasmModuleInstance {
-            instance,
+        let common = InstanceCommon {
             info: self.common.info(),
             energy_monitor: self.common.energy_monitor(),
             // will be updated on the first reducer call
@@ -173,7 +170,8 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
                 .wasm_memory_bytes
                 .with_label_values(self.common.database_identity()),
             trapped: false,
-        }
+        };
+        WasmModuleInstance { instance, common }
     }
 }
 
@@ -216,17 +214,13 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
 
 pub struct WasmModuleInstance<T: WasmInstance> {
     instance: T,
-    info: Arc<ModuleInfo>,
-    energy_monitor: Arc<dyn EnergyMonitor>,
-    allocated_memory: usize,
-    metric_wasm_memory_bytes: IntGauge,
-    trapped: bool,
+    common: InstanceCommon,
 }
 
 impl<T: WasmInstance> std::fmt::Debug for WasmModuleInstance<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WasmInstanceActor")
-            .field("trapped", &self.trapped)
+            .field("trapped", &self.common.trapped)
             .finish()
     }
 }
@@ -239,7 +233,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
 impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     fn trapped(&self) -> bool {
-        self.trapped
+        self.common.trapped
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -248,7 +242,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        let plan = ponder_migrate(&old_module_info.module_def, &self.info.module_def);
+        let plan = ponder_migrate(&old_module_info.module_def, &self.common.info.module_def);
         let plan = match plan {
             Ok(plan) => plan,
             Err(errs) => {
@@ -290,6 +284,37 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 }
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
+    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+        self.common.call_reducer_with_tx(
+            &self.instance.instance_env().replica_ctx.clone(),
+            tx,
+            params,
+            |ty, fun, err| T::log_traceback(ty, fun, err),
+            |tx, op, budget| {
+                self.instance
+                    .instance_env()
+                    .tx
+                    .clone()
+                    .set(tx, || self.instance.call_reducer(op, budget))
+            },
+        )
+    }
+
+    // Helpers - NOT API
+    fn system_logger(&self) -> &SystemLogger {
+        self.replica_context().logger.system_logger()
+    }
+}
+
+struct InstanceCommon {
+    info: Arc<ModuleInfo>,
+    energy_monitor: Arc<dyn EnergyMonitor>,
+    allocated_memory: usize,
+    metric_wasm_memory_bytes: IntGauge,
+    trapped: bool,
+}
+
+impl InstanceCommon {
     /// Execute a reducer.
     ///
     /// If `Some` [`MutTxId`] is supplied, the reducer is called within the
@@ -307,7 +332,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// as well as broadcasting a [`ModuleEvent`] containing information about
     /// the outcome of the call.
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+    fn call_reducer_with_tx(
+        &mut self,
+        replica_ctx: &ReplicaContext,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
+        vm_call_reducer: impl FnOnce(MutTxId, ReducerOp<'_>, ReducerBudget) -> (MutTxId, ExecuteResult),
+    ) -> ReducerCallResult {
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -320,7 +352,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         } = params;
         let caller_connection_id_opt = (caller_connection_id != ConnectionId::ZERO).then_some(caller_connection_id);
 
-        let replica_ctx = self.replica_context();
         let stdb = &*replica_ctx.relational_db.clone();
         let database_identity = replica_ctx.database_identity;
         let reducer_def = self.info.module_def.reducer_by_id(reducer_id);
@@ -354,11 +385,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
         let _guard = vm_metrics.timer_guard_for_reducer_plus_query(tx.timer);
 
-        let mut tx_slot = self.instance.instance_env().tx.clone();
-
         let reducer_span = start_run_reducer_span(budget);
 
-        let (mut tx, result) = tx_slot.set(tx, || self.instance.call_reducer(op, budget));
+        let (mut tx, result) = vm_call_reducer(tx, op, budget);
 
         let ExecuteResult {
             energy,
@@ -389,7 +418,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let status = match call_result {
             Err(err) => {
-                T::log_traceback("reducer", reducer_name, &err);
+                log_traceback("reducer", reducer_name, &err);
 
                 WORKER_METRICS
                     .wasm_instance_errors
@@ -424,7 +453,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
                 Err(err) => {
                     log::info!("reducer returned error: {err}");
-                    log_reducer_error(self.replica_context(), timestamp, reducer_name, &err);
+                    log_reducer_error(replica_ctx, timestamp, reducer_name, &err);
                     EventStatus::Failed(err.into())
                 }
             },
@@ -452,11 +481,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy_used: energy.used,
             execution_duration: timings.total_duration,
         }
-    }
-
-    // Helpers - NOT API
-    fn system_logger(&self) -> &SystemLogger {
-        self.replica_context().logger.system_logger()
     }
 }
 
