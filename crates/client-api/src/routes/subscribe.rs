@@ -296,7 +296,7 @@ pub struct WebSocketOptions {
     ///
     /// If this number is exceeded, the client is disconnected.
     ///
-    /// Default: 2048
+    /// Default: 16384
     #[serde(default = "WebSocketOptions::default_incoming_queue_length")]
     pub incoming_queue_length: NonZeroUsize,
 }
@@ -311,7 +311,7 @@ impl WebSocketOptions {
     const DEFAULT_PING_INTERVAL: Duration = Duration::from_secs(15);
     const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
     const DEFAULT_CLOSE_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(250);
-    const DEFAULT_INCOMING_QUEUE_LENGTH: NonZeroUsize = NonZeroUsize::new(2048).expect("2048 > 0, qed");
+    const DEFAULT_INCOMING_QUEUE_LENGTH: NonZeroUsize = NonZeroUsize::new(16384).expect("16384 > 0, qed");
 
     const DEFAULT: Self = Self {
         ping_interval: Self::DEFAULT_PING_INTERVAL,
