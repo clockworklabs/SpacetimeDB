@@ -351,7 +351,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         // Before we take the lock, do some `with_label_values`.
         let metric_reducer_plus_query_duration = WORKER_METRICS
             .reducer_plus_query_duration
-            .with_label_values(&database_identity, op.name);
+            .with_label_values(&database_identity, reducer_name);
         let metric_reducer_wasmtime_fuel_used = DB_METRICS
             .reducer_wasmtime_fuel_used
             .with_label_values(&database_identity, reducer_name);
@@ -444,22 +444,16 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
-            //
-            // Detecting a new client, and inserting it in `st_clients`
-            // and conversely removing from `st_clients` on disconnect.
-            Ok(Ok(())) => {
-                let res = match reducer_def.lifecycle {
-                    Some(Lifecycle::OnConnect) => tx.insert_st_client(caller_identity, caller_connection_id),
-                    Some(Lifecycle::OnDisconnect) => {
-                        tx.delete_st_client(caller_identity, caller_connection_id, database_identity)
-                    }
-                    _ => Ok(()),
-                };
-                match res {
-                    Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
-                    Err(err) => EventStatus::Failed(err.to_string()),
-                }
-            }
+            Ok(Ok(())) => match lifecyle_modifications_to_tx(
+                reducer_def.lifecycle,
+                caller_identity,
+                caller_connection_id,
+                database_identity,
+                &mut tx,
+            ) {
+                Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
+                Err(err) => EventStatus::Failed(err.to_string()),
+            },
         };
 
         let event = ModuleEvent {
@@ -509,6 +503,22 @@ fn maybe_log_long_running_reducer(reducer_name: &str, total_duration: Duration) 
             reducer_name,
             ?total_duration,
         );
+    }
+}
+
+/// Detects lifecycle events for connecting/disconnecting a new client
+/// and inserts/removes into `st_clients` depending on which.
+fn lifecyle_modifications_to_tx(
+    lifecycle: Option<Lifecycle>,
+    caller_id: Identity,
+    caller_conn_id: ConnectionId,
+    db_id: Identity,
+    tx: &mut MutTxId,
+) -> Result<(), DatastoreError> {
+    match lifecycle {
+        Some(Lifecycle::OnConnect) => tx.insert_st_client(caller_id, caller_conn_id),
+        Some(Lifecycle::OnDisconnect) => tx.delete_st_client(caller_id, caller_conn_id, db_id),
+        _ => Ok(()),
     }
 }
 
