@@ -826,7 +826,9 @@ fn ws_recv_queue(
         log::warn!("client {client_id} sent message after close or error");
     };
 
-    let (tx, rx) = mpsc::channel(state.config.incoming_queue_length.get());
+    let max_incoming_queue_length = state.config.incoming_queue_length.get();
+
+    let (tx, rx) = mpsc::channel(max_incoming_queue_length);
     let rx = MeteredReceiverStream {
         inner: MeteredReceiver::with_gauge(
             rx,
@@ -842,6 +844,8 @@ fn ws_recv_queue(
                 match e {
                     // If the queue is full, disconnect the client.
                     mpsc::error::TrySendError::Full(item) => {
+                        let client_id = state.client_id;
+                        log::warn!("Client {client_id} exceeded incoming_queue_length limit of {max_incoming_queue_length} requests");
                         // If we can't send close (send task already terminated):
                         //
                         // - Let downstream handlers know that we're closing,
