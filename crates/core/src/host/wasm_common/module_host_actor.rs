@@ -4,6 +4,7 @@ use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_schema::auto_migrate::ponder_migrate;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::span::EnteredSpan;
 
 use super::instrumentation::CallTimes;
 use crate::client::ClientConnectionSender;
@@ -325,12 +326,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let reducer_def = self.info.module_def.reducer_by_id(reducer_id);
         let reducer_name = &*reducer_def.name;
 
-        let _outer_span = tracing::trace_span!("call_reducer",
-            reducer_name,
-            %caller_identity,
-            caller_connection_id = caller_connection_id_opt.map(tracing::field::debug),
-        )
-        .entered();
+        let _outer_span = start_call_reducer_span(reducer_name, &caller_identity, caller_connection_id_opt);
 
         let energy_fingerprint = ReducerFingerprint {
             module_hash: self.info.module_hash,
@@ -369,13 +365,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let mut tx_slot = self.instance.instance_env().tx.clone();
 
-        let reducer_span = tracing::trace_span!(
-            "run_reducer",
-            timings.total_duration = tracing::field::Empty,
-            energy.budget = budget.get(),
-            energy.used = tracing::field::Empty,
-        )
-        .entered();
+        let reducer_span = start_run_reducer_span(budget);
 
         let (mut tx, result) = tx_slot.set(tx, || self.instance.call_reducer(op, budget));
 
@@ -485,6 +475,31 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     fn system_logger(&self) -> &SystemLogger {
         self.replica_context().logger.system_logger()
     }
+}
+
+/// Starts the `call_reducer` span.
+fn start_call_reducer_span(
+    reducer_name: &str,
+    caller_identity: &Identity,
+    caller_connection_id_opt: Option<ConnectionId>,
+) -> EnteredSpan {
+    tracing::trace_span!("call_reducer",
+        reducer_name,
+        %caller_identity,
+        caller_connection_id = caller_connection_id_opt.map(tracing::field::debug),
+    )
+    .entered()
+}
+
+/// Starts the `run_reducer` span.
+fn start_run_reducer_span(budget: ReducerBudget) -> EnteredSpan {
+    tracing::trace_span!(
+        "run_reducer",
+        timings.total_duration = tracing::field::Empty,
+        energy.budget = budget.get(),
+        energy.used = tracing::field::Empty,
+    )
+    .entered()
 }
 
 /// Logs a tracing message if a reducer doesn't finish in a single frame at 60 FPS.
