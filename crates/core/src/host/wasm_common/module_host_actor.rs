@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::instrumentation::CallTimes;
+use crate::client::ClientConnectionSender;
 use crate::database_logger::{self, SystemLogger};
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::host::instance_env::InstanceEnv;
@@ -471,15 +472,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             request_id,
             timer,
         };
-        let (event, _) = match self
-            .info
-            .subscriptions
-            .commit_and_broadcast_event(client, event, tx)
-            .unwrap()
-        {
-            Ok(ev) => ev,
-            Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
-        };
+        let event = commit_and_broadcast_event(&self.info, client, event, tx);
 
         ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
@@ -519,6 +512,24 @@ fn lifecyle_modifications_to_tx(
         Some(Lifecycle::OnConnect) => tx.insert_st_client(caller_id, caller_conn_id),
         Some(Lifecycle::OnDisconnect) => tx.delete_st_client(caller_id, caller_conn_id, db_id),
         _ => Ok(()),
+    }
+}
+
+/// Commits the transaction
+/// and evaluates and broadcasts subscriptions updates.
+fn commit_and_broadcast_event(
+    info: &ModuleInfo,
+    client: Option<Arc<ClientConnectionSender>>,
+    event: ModuleEvent,
+    tx: MutTxId,
+) -> Arc<ModuleEvent> {
+    match info
+        .subscriptions
+        .commit_and_broadcast_event(client, event, tx)
+        .unwrap()
+    {
+        Ok((event, _)) => event,
+        Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
     }
 }
 
