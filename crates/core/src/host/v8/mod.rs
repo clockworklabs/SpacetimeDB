@@ -183,7 +183,7 @@ mod test {
     #[test]
     fn call_describe_module_works() {
         let code = r#"
-            function describe_module() {
+            function __describe_module__() {
                 return {
                     "tag": "V9",
                     "value": {
