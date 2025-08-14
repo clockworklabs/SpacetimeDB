@@ -325,6 +325,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let database_identity = replica_ctx.database_identity;
         let reducer_def = self.info.module_def.reducer_by_id(reducer_id);
         let reducer_name = &*reducer_def.name;
+        let reducer = reducer_name.to_string();
 
         // Do some `with_label_values`.
         // TODO(perf, centril): consider caching this.
@@ -434,7 +435,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             caller_identity,
             caller_connection_id: caller_connection_id_opt,
             function_call: ModuleFunctionCall {
-                reducer: reducer_name.to_owned(),
+                reducer,
                 reducer_id,
                 args,
             },
