@@ -400,15 +400,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .record("timings.total_duration", tracing::field::debug(timings.total_duration))
             .record("energy.used", tracing::field::debug(energy.used));
 
-        const FRAME_LEN_60FPS: Duration = Duration::from_secs(1).checked_div(60).unwrap();
-        if timings.total_duration > FRAME_LEN_60FPS {
-            // If we can't get your reducer done in a single frame we should debug it.
-            tracing::debug!(
-                message = "Long running reducer finished executing",
-                reducer_name,
-                ?timings.total_duration,
-            );
-        }
+        maybe_log_long_running_reducer(reducer_name, timings.total_duration);
         reducer_span.exit();
 
         let status = match call_result {
@@ -505,6 +497,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     // Helpers - NOT API
     fn system_logger(&self) -> &SystemLogger {
         self.replica_context().logger.system_logger()
+    }
+}
+
+/// Logs a tracing message if a reducer doesn't finish in a single frame at 60 FPS.
+fn maybe_log_long_running_reducer(reducer_name: &str, total_duration: Duration) {
+    const FRAME_LEN_60FPS: Duration = Duration::from_secs(1).checked_div(60).unwrap();
+    if total_duration > FRAME_LEN_60FPS {
+        tracing::debug!(
+            message = "Long running reducer finished executing",
+            reducer_name,
+            ?total_duration,
+        );
     }
 }
 
