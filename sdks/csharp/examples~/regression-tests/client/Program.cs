@@ -118,7 +118,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling ThrowError");
     waiting++;
     context.Reducers.ThrowError("this is an error");
-    
+
     // RemoteQuery test
     Log.Debug("Calling RemoteQuery");
     var remoteRows = context.Db.ExampleData.RemoteQuery("WHERE Id = 1").Result;
