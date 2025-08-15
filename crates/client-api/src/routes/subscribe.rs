@@ -26,7 +26,7 @@ use spacetimedb::client::messages::{
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageExecutionError, MessageHandleError,
-    MeteredReceiver, Protocol,
+    MeteredReceiver, MeteredSender, Protocol,
 };
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
@@ -676,7 +676,10 @@ async fn ws_recv_task<MessageHandler>(
 ) where
     MessageHandler: Future<Output = Result<(), MessageHandleError>>,
 {
-    let recv_queue = ws_recv_queue(state.clone(), unordered_tx.clone(), ws);
+    let recv_queue_gauge = WORKER_METRICS
+        .total_incoming_queue_length
+        .with_label_values(&state.database);
+    let recv_queue = ws_recv_queue(state.clone(), unordered_tx.clone(), recv_queue_gauge, ws);
     let recv_loop = pin!(ws_recv_loop(state.clone(), idle_tx, recv_queue));
     let recv_handler = ws_client_message_handler(state.clone(), client_closed_metric, recv_loop);
     pin_mut!(recv_handler);
@@ -816,6 +819,7 @@ fn ws_recv_loop(
 fn ws_recv_queue(
     state: Arc<ActorState>,
     unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
+    recv_queue_gauge: IntGauge,
     mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin + Send + 'static,
 ) -> impl Stream<Item = Result<WsMessage, WsError>> {
     const CLOSE: UnorderedWsMessage = UnorderedWsMessage::Close(CloseFrame {
@@ -829,14 +833,10 @@ fn ws_recv_queue(
     let max_incoming_queue_length = state.config.incoming_queue_length.get();
 
     let (tx, rx) = mpsc::channel(max_incoming_queue_length);
-    let rx = MeteredReceiverStream {
-        inner: MeteredReceiver::with_gauge(
-            rx,
-            WORKER_METRICS
-                .total_incoming_queue_length
-                .with_label_values(&state.database),
-        ),
-    };
+
+    let mut tx = MeteredSender::with_gauge(tx, recv_queue_gauge.clone());
+    let rx = MeteredReceiver::with_gauge(rx, recv_queue_gauge);
+    let rx = MeteredReceiverStream { inner: rx };
 
     tokio::spawn(async move {
         while let Some(item) = ws.next().await {
@@ -1692,8 +1692,14 @@ mod tests {
         let (unordered_tx, mut unordered_rx) = mpsc::unbounded_channel();
         let input = stream::iter((0..20).map(|i| Ok(WsMessage::text(format!("message {i}")))));
 
-        let received = ws_recv_queue(state, unordered_tx, input).collect::<Vec<_>>().await;
+        let metric = IntGauge::new("bleep", "unhelpful").unwrap();
+        let received = ws_recv_queue(state, unordered_tx, metric.clone(), input)
+            .collect::<Vec<_>>()
+            .await;
+
         assert_matches!(unordered_rx.recv().await, Some(UnorderedWsMessage::Close(_)));
+        // Queue length metric should be zero
+        assert_eq!(metric.get(), 0);
         // Should have received all of the input.
         assert_eq!(received.len(), 20);
     }
@@ -1708,10 +1714,14 @@ mod tests {
         let (unordered_tx, _) = mpsc::unbounded_channel();
         let input = stream::iter((0..20).map(|i| Ok(WsMessage::text(format!("message {i}")))));
 
-        let received = ws_recv_queue(state.clone(), unordered_tx, input)
+        let metric = IntGauge::new("bleep", "unhelpful").unwrap();
+        let received = ws_recv_queue(state.clone(), unordered_tx, metric.clone(), input)
             .collect::<Vec<_>>()
             .await;
+
         assert!(state.closed());
+        // Queue length metric should be zero
+        assert_eq!(metric.get(), 0);
         // Should have received up to capacity.
         assert_eq!(received.len(), 10);
     }

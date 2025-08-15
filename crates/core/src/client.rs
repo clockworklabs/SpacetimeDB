@@ -8,7 +8,7 @@ pub mod messages;
 
 pub use client_connection::{
     ClientConfig, ClientConnection, ClientConnectionSender, ClientSendError, DataMessage, MeteredDeque,
-    MeteredReceiver, Protocol,
+    MeteredReceiver, MeteredSender, Protocol,
 };
 pub use client_connection_index::ClientActorIndex;
 pub use message_handlers::{MessageExecutionError, MessageHandleError};

@@ -28,6 +28,7 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
+use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
@@ -383,6 +384,41 @@ impl<T> Drop for MeteredReceiver<T> {
         if let Some(gauge) = &self.gauge {
             gauge.sub(self.inner.len() as _);
         }
+    }
+}
+
+/// Wraps the transmitting end of a channel with a gauge for tracking the size of the channel.
+pub struct MeteredSender<T> {
+    inner: mpsc::Sender<T>,
+    gauge: Option<IntGauge>,
+}
+
+impl<T> MeteredSender<T> {
+    pub fn new(inner: mpsc::Sender<T>) -> Self {
+        Self { inner, gauge: None }
+    }
+
+    pub fn with_gauge(inner: mpsc::Sender<T>, gauge: IntGauge) -> Self {
+        Self {
+            inner,
+            gauge: Some(gauge),
+        }
+    }
+
+    pub async fn send(&mut self, value: T) -> Result<(), SendError<T>> {
+        self.inner.send(value).await?;
+        if let Some(gauge) = &self.gauge {
+            gauge.inc();
+        }
+        Ok(())
+    }
+
+    pub fn try_send(&mut self, value: T) -> Result<(), TrySendError<T>> {
+        self.inner.try_send(value)?;
+        if let Some(gauge) = &self.gauge {
+            gauge.inc();
+        }
+        Ok(())
     }
 }
 
