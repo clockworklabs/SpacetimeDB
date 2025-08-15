@@ -272,7 +272,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(()) => {
-                if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+                if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
                     stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                 }
                 self.system_logger().info("Database updated");
@@ -485,7 +485,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             request_id,
             timer,
         };
-        let (event, _) = match self
+        let (_tx_offset, event, _) = match self
             .info
             .subscriptions
             .commit_and_broadcast_event(client, event, tx)
