@@ -14,7 +14,8 @@ pub use client_connection_index::ClientActorIndex;
 pub use message_handlers::{MessageExecutionError, MessageHandleError};
 use spacetimedb_lib::ConnectionId;
 
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+// #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct ClientActorId {
     pub identity: Identity,
     pub connection_id: ConnectionId,
