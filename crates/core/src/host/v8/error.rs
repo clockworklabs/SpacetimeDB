@@ -1,6 +1,9 @@
 //! Utilities for error handling when dealing with V8.
 
+use spacetimedb_sats::Deserialize;
 use v8::{Exception, HandleScope, Local, TryCatch, Value};
+
+use crate::host::v8::deserialize_js;
 
 /// The result of trying to convert a [`Value`] in scope `'scope` to some type `T`.
 pub(super) type ValueResult<'scope, T> = Result<T, ExceptionValue<'scope>>;
@@ -125,6 +128,31 @@ pub(super) struct JsError {
 impl JsError {
     /// Turns a caught JS exception in `scope` into a [`JSError`].
     fn from_caught(scope: &mut TryCatch<'_, HandleScope<'_>>) -> Self {
+        let m = scope.message().unwrap();
+        let s = m.get_stack_trace(scope).unwrap();
+        for i in 0..s.get_frame_count() {
+            let f = s.get_frame(scope, i).unwrap();
+            dbg!(
+                f.get_line_number(),
+                f.get_column(),
+                f.get_script_id(),
+                f.get_script_name_or_source_url(scope),
+                f.get_function_name(scope).unwrap().to_rust_string_lossy(scope),
+            );
+        }
+
+        let e = scope.exception().unwrap();
+
+        #[derive(Deserialize, Debug)]
+        struct Foo {
+            error: String,
+            //line_number: u64,
+            //column_number: u64,
+            message: String,
+        }
+        let e: Foo = deserialize_js(scope, e).unwrap();
+        dbg!(e);
+
         let msg = match scope.message() {
             Some(msg) => msg.get(scope).to_rust_string_lossy(scope),
             None => "unknown error".to_owned(),

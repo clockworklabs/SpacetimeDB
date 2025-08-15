@@ -4,7 +4,9 @@ use super::module_common::{build_common_module_from_raw, ModuleCommon};
 use super::module_host::{CallReducerParams, DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime};
 use super::UpdateDatabaseResult;
 use crate::host::v8::error::{exception_already_thrown, Throwable};
+use crate::host::v8::ser::serialize_to_js;
 use crate::host::wasm_common::module_host_actor::InstanceCommon;
+use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
 use anyhow::anyhow;
 use de::deserialize_js;
@@ -13,7 +15,7 @@ use from_value::cast;
 use key_cache::get_or_create_key_cache;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_lib::RawModuleDef;
+use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef};
 use std::sync::{Arc, LazyLock};
 use v8::{Function, HandleScope};
 
@@ -141,9 +143,54 @@ impl ModuleInstance for JsInstance {
     }
 }
 
-// Calls the `describe_module` function on the global proxy object to extract a [`RawModuleDef`].
+// Calls the `__call_reducer__` function on the global proxy object.
+fn call_call_reducer(
+    scope: &mut HandleScope<'_>,
+    reducer_id: u32,
+    sender: &Identity,
+    conn_id: &ConnectionId,
+    timestamp: u64,
+    reducer_args: &ArgsTuple,
+) -> anyhow::Result<Result<(), Box<str>>> {
+    // Get a cached version of the `__call_reducer__` property.
+    let key_cache = get_or_create_key_cache(scope);
+    let call_reducer_key = key_cache.borrow_mut().call_reducer(scope).into();
+
+    catch_exception(scope, |scope| {
+        // Serialize the arguments.
+        let reducer_id = serialize_to_js(scope, &reducer_id)?;
+        let sender = serialize_to_js(scope, &sender.to_u256())?;
+        let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
+        let timestamp = serialize_to_js(scope, &timestamp)?;
+        let reducer_args = serialize_to_js(scope, &reducer_args.tuple.elements)?;
+        let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
+
+        // Get the function on the global proxy object.
+        let object = scope
+            .get_current_context()
+            .global(scope)
+            .get(scope, call_reducer_key)
+            .ok_or_else(exception_already_thrown)?;
+
+        // Convert to a function.
+        let fun =
+            cast!(scope, object, Function, "function export for `__call_reducer__`").map_err(|e| e.throw(scope))?;
+
+        // Call the function.
+        let receiver = v8::undefined(scope).into();
+        let ret = fun.call(scope, receiver, args).ok_or_else(exception_already_thrown)?;
+
+        // Deserialize the user result.
+        let user_res = deserialize_js(scope, ret)?;
+
+        Ok(user_res)
+    })
+    .map_err(Into::into)
+}
+
+// Calls the `__describe_module__` function on the global proxy object to extract a [`RawModuleDef`].
 fn call_describe_module(scope: &mut HandleScope<'_>) -> anyhow::Result<RawModuleDef> {
-    // Get a cached version of the `describe_module` property.
+    // Get a cached version of the `__describe_module__` property.
     let key_cache = get_or_create_key_cache(scope);
     let describe_module_key = key_cache.borrow_mut().describe_module(scope).into();
 
@@ -157,7 +204,7 @@ fn call_describe_module(scope: &mut HandleScope<'_>) -> anyhow::Result<RawModule
 
         // Convert to a function.
         let fun =
-            cast!(scope, object, Function, "function export for `describe_module`").map_err(|e| e.throw(scope))?;
+            cast!(scope, object, Function, "function export for `__describe_module__`").map_err(|e| e.throw(scope))?;
 
         // Call the function.
         let receiver = v8::undefined(scope).into();
@@ -185,6 +232,26 @@ mod test {
             let script_val = v8::Script::compile(scope, code, None).unwrap().run(scope).unwrap();
             logic(scope, script_val)
         })
+    }
+
+    #[test]
+    fn call_call_reducer_works() {
+        let code = r#"
+            function __call_reducer__(reducer_id, sender, conn_id, timestamp, args) {
+                throw new Error("foobar");
+            }
+        "#;
+        let ret = with_script(code, |scope, _| {
+            call_call_reducer(
+                scope,
+                42,
+                &Identity::ONE,
+                &ConnectionId::ZERO,
+                24,
+                &ArgsTuple::nullary(),
+            )
+        });
+        dbg!(ret);
     }
 
     #[test]
