@@ -962,6 +962,24 @@ but you must call one of them, or else the connection will never progress.
         self
     }
 
+    /// Sets whether to use confirmed reads.
+    ///
+    /// When enabled, the server will send query results only after they are
+    /// confirmed to be durable.
+    ///
+    /// What durable means depends on the server configuration: a single node
+    /// server may consider a transaction durable once it is `fsync`'ed to disk,
+    /// a cluster after some number of replicas have acknowledged that they
+    /// have stored the transaction.
+    ///
+    /// Note that enabling confirmed reads will increase the latency between a
+    /// reducer call and the corresponding subscription update arriving at the
+    /// client.
+    pub fn with_confirmed_reads(mut self, confirmed: bool) -> Self {
+        self.params.confirmed = confirmed;
+        self
+    }
+
     /// Register a callback to run when the connection is successfully initiated.
     ///
     /// The callback will receive three arguments:

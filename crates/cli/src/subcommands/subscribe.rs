@@ -2,7 +2,7 @@ use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches};
 use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
-use http::uri::Scheme;
+use http::uri::{PathAndQuery, Scheme};
 use serde_json::Value;
 use spacetimedb_client_api_messages::websocket::{self as ws, JsonFormat};
 use spacetimedb_data_structures::map::HashMap;
@@ -64,6 +64,13 @@ pub fn cli() -> clap::Command {
                 .long("print-initial-update")
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
+        )
+        .arg(
+            Arg::new("confirmed")
+                .required(false)
+                .long("confirmed")
+                .action(ArgAction::SetTrue)
+                .help("Instruct the server to deliver only updates of confirmed transactions"),
         )
         .arg(common_args::anonymous())
         .arg(common_args::yes())
@@ -130,6 +137,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
+    let confirmed = args.get_flag("confirmed");
 
     let conn = parse_req(config, args).await?;
     let api = ClientApi::new(conn);
@@ -146,6 +154,9 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             s
         }
     });
+    if confirmed {
+        append_query_param(&mut uri, ("confirmed", "true"));
+    }
 
     // Create the websocket request.
     let mut req = http::Uri::from_parts(uri)?.into_client_request()?;
@@ -333,4 +344,22 @@ fn format_output_json(msg: &ws::DatabaseUpdate<JsonFormat>, schema: &RawModuleDe
     let output = serde_json::to_string(&formatted)? + "\n";
 
     Ok(output)
+}
+
+fn append_query_param(uri: &mut http::uri::Parts, (k, v): (&str, &str)) {
+    let (mut path, query) = uri
+        .path_and_query
+        .as_ref()
+        .map(|pq| (pq.path().to_owned(), pq.query()))
+        .unwrap_or_default();
+    path.push('?');
+    if let Some(query) = query {
+        path.push_str(query);
+        path.push('&');
+    }
+    path.push_str(k);
+    path.push('=');
+    path.push_str(v);
+
+    uri.path_and_query = Some(PathAndQuery::from_maybe_shared(path).unwrap());
 }
