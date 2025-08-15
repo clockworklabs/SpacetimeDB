@@ -49,7 +49,7 @@ Speed and latency is achieved by holding all of your application state in memory
 The above illustrates the Workflow that happens when using SpacetimeDB.
 
 * All clientside reads happen with the data view that is cached locally.
-* Clientside subscriptions tell the server what data client cares about and wants to be synced within its data view. Changes to data will be pushed by the server to the clientside cache.
+* Client-side subscriptions tell the server what data client cares about and wants to be synced within its data view. Changes to data will be pushed by the server to the client cache.
 * RLS filters restrict the data view server-side before subscriptions are evaluated. These filters can be used for access control or client scoping.
 * Reducers are effectively async RPC's. The request is sent off and if the results of that reducer makes changes to data, it will be written to the database directly. As a result of that, if those changes make it through the two layers above, then the client will see the result when it queries its local cache.
 
