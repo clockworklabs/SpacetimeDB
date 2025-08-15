@@ -109,6 +109,17 @@ pub enum AutoMigrateStep<'def> {
     ///
     /// This should be done before any new indices are added.
     ChangeColumns(<TableDef as ModuleDefLookup>::Key<'def>),
+    /// Add columns to a table, in a layout-INCOMPATIBLE way.
+    ///
+    /// This is a destructive operation that requires first running a `DisconnectAllUsers`.
+    ///
+    /// The added columns are guaranteed to be contiguous
+    /// and at the end of the table.
+    /// They are also guaranteed to have default values set.
+    ///
+    /// When this step is present,
+    /// no `ChangeColumns` steps will be, for the same table.
+    AddColumns(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Add a table, including all indexes, constraints, and sequences.
     /// There will NOT be separate steps in the plan for adding indexes, constraints, and sequences.
@@ -124,6 +135,9 @@ pub enum AutoMigrateStep<'def> {
 
     /// Change the access of a table.
     ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
+
+    /// Disconnect all users connected to the module.
+    DisconnectAllUsers,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -137,7 +151,7 @@ pub struct ChangeColumnTypeParts {
 /// Something that might prevent an automatic migration.
 #[derive(thiserror::Error, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AutoMigrateError {
-    #[error("Adding a column {column} to table {table} requires a manual migration")]
+    #[error("Adding a column {column} to table {table} requires a default value annotation")]
     AddColumn { table: Identifier, column: Identifier },
 
     #[error("Removing a column {column} from table {table} requires a manual migration")]
@@ -386,11 +400,18 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     })
     .map(|col_diff| -> Result<_> {
         match col_diff {
-            Diff::Add { new } => Err(AutoMigrateError::AddColumn {
-                table: new.table_name.clone(),
-                column: new.name.clone(),
+            Diff::Add { new } => {
+                if new.default_value.is_some() {
+                    // `row_type_changed`, `columns_added`
+                    Ok(ProductMonoid(Any(false), Any(true)))
+                } else {
+                    Err(AutoMigrateError::AddColumn {
+                        table: new.table_name.clone(),
+                        column: new.name.clone(),
+                    }
+                    .into())
+                }
             }
-            .into()),
             Diff::Remove { old } => Err(AutoMigrateError::RemoveColumn {
                 table: old.table_name.clone(),
                 column: old.name.clone(),
@@ -408,6 +429,10 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 
                 // Note that the diff algorithm relies on `ModuleDefLookup` for `ColumnDef`,
                 // which looks up columns by NAME, NOT position: precisely to allow this step to work!
+
+                // Note: We reject changes to positions. This means that, if a column was present in the old version of the table,
+                // it must be in the same place in the new version of the table.
+                // This guarantees that any added columns live at the end of the table.
                 let positions_ok = if old.col_id == new.col_id {
                     Ok(())
                 } else {
@@ -417,15 +442,29 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                     .into())
                 };
 
-                (types_ok, positions_ok).combine_errors().map(|(x, _)| x)
+                (types_ok, positions_ok)
+                    .combine_errors()
+                    // row_type_changed, column_added
+                    .map(|(x, _)| ProductMonoid(x, Any(false)))
             }
         }
     })
-    .collect_all_errors::<Any>();
+    .collect_all_errors::<ProductMonoid<Any, Any>>();
 
-    let ((), Any(row_type_changed)) = (type_ok, columns_ok).combine_errors()?;
+    let ((), ProductMonoid(Any(row_type_changed), Any(columns_added))) = (type_ok, columns_ok).combine_errors()?;
 
-    if row_type_changed {
+    // If we're adding a column, we'll rewrite the whole table.
+    // That makes any `ChangeColumns` moot, so we can skip it.
+    if columns_added {
+        if !plan
+            .steps
+            .iter()
+            .any(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers))
+        {
+            plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
+        }
+        plan.steps.push(AutoMigrateStep::AddColumns(key));
+    } else if row_type_changed {
         plan.steps.push(AutoMigrateStep::ChangeColumns(key));
     }
 
@@ -433,6 +472,7 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 }
 
 /// An "any" monoid with `false` as identity and `|` as the operator.
+#[derive(Default)]
 struct Any(bool);
 
 impl FromIterator<Any> for Any {
@@ -445,6 +485,26 @@ impl BitOr for Any {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self::Output {
         Self(self.0 | rhs.0)
+    }
+}
+
+/// A monoid that allows running two `Any`s in parallel.
+#[derive(Default)]
+struct ProductMonoid<M1, M2>(M1, M2);
+
+impl<M1: BitOr<Output = M1>, M2: BitOr<Output = M2>> BitOr for ProductMonoid<M1, M2> {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0, self.1 | rhs.1)
+    }
+}
+
+impl<M1: BitOr<Output = M1> + Default, M2: BitOr<Output = M2> + Default> FromIterator<ProductMonoid<M1, M2>>
+    for ProductMonoid<M1, M2>
+{
+    fn from_iter<T: IntoIterator<Item = ProductMonoid<M1, M2>>>(iter: T) -> Self {
+        iter.into_iter().reduce(|p1, p2| p1 | p2).unwrap_or_default()
     }
 }
 
@@ -700,7 +760,7 @@ mod tests {
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::{
         db::raw_def::{v9::btree, *},
-        AlgebraicType, ProductType, ScheduleAt,
+        AlgebraicType, AlgebraicValue, ProductType, ScheduleAt,
     };
     use spacetimedb_primitives::ColId;
     use v9::{RawModuleDefV9Builder, TableAccess};
@@ -813,11 +873,13 @@ mod tests {
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
                     ("count", AlgebraicType::U16),
+                    ("freshness", AlgebraicType::U32), // added column!
                 ]),
                 true,
             )
             // add column sequence
             .with_column_sequence(0)
+            .with_default_column_value(3, AlgebraicValue::U32(5))
             // change access
             .with_access(TableAccess::Private)
             .finish();
@@ -963,6 +1025,11 @@ mod tests {
             steps.contains(&AutoMigrateStep::ChangeColumns(&deliveries)),
             "{steps:?}"
         );
+
+        assert!(steps.contains(&AutoMigrateStep::DisconnectAllUsers), "{steps:?}");
+        assert!(steps.contains(&AutoMigrateStep::AddColumns(&bananas)), "{steps:?}");
+        // Column is changed but it will not reflect in steps due to `AutoMigrateStep::AddColumns`
+        assert!(!steps.contains(&AutoMigrateStep::ChangeColumns(&bananas)), "{steps:?}");
     }
 
     #[test]
@@ -1066,7 +1133,7 @@ mod tests {
                     ("sum1", new_sum1_refty.into()),
                     ("prod1", new_prod1_refty.into()),
                     // remove count
-                    ("weight", AlgebraicType::U16), // add weight
+                    ("weight", AlgebraicType::U16), // add weight; we don't set a default, which makes this an error.
                 ]),
                 true,
             )
@@ -1107,6 +1174,7 @@ mod tests {
 
         expect_error_matching!(
             result,
+            // This is an error because we didn't set a default value.
             AutoMigrateError::AddColumn {
                 table,
                 column
