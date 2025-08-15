@@ -25,12 +25,17 @@ mod wasm_common;
 
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
-    extract_schema, DurabilityProvider, ExternalDurability, ExternalStorage, HostController, ProgramStorage,
-    ReducerCallResult, ReducerOutcome, StartSnapshotWatcher,
+    extract_schema, DurabilityProvider, ExternalDurability, ExternalStorage, HostController, ProcedureCallResult,
+    ProcedureOutcome, ProgramStorage, ReducerCallResult, ReducerOutcome, StartSnapshotWatcher,
 };
-pub use module_host::{ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult};
+pub use module_host::{
+    ClientConnectedError, ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult,
+};
 pub use scheduler::Scheduler;
 
+/// Encoded arguments to a database function.
+///
+/// Despite the name, this may be arguments to either a reducer or a procedure.
 #[derive(Debug)]
 pub enum ReducerArgs {
     Json(ByteString),
@@ -112,6 +117,14 @@ pub struct InvalidReducerArguments {
     #[source]
     err: anyhow::Error,
     reducer: Box<str>,
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("invalid arguments for procedure {procedure}: {err}")]
+pub struct InvalidProcedureArguments {
+    #[source]
+    err: anyhow::Error,
+    procedure: Box<str>,
 }
 
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {

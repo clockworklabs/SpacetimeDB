@@ -6,8 +6,8 @@ use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
 use super::{collect_table_update, TableUpdateType};
 use crate::client::messages::{
-    SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult,
-    SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
+    ProcedureResultMessage, SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage,
+    SubscriptionResult, SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
@@ -624,6 +624,16 @@ impl ModuleSubscriptions {
         Ok((plans, auth, scopeguard::ScopeGuard::into_inner(tx), compile_timer))
     }
 
+    /// Like [`Self::send_client_message`],
+    /// but doesn't require a `TxId` because procedures don't hold a transaction open.
+    pub fn send_procedure_message(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        message: ProcedureResultMessage,
+    ) -> Result<(), BroadcastError> {
+        self.broadcast_queue.send_client_message(recipient, message)
+    }
+
     /// Send a message to a client connection.
     /// This will eventually be sent by the send-worker.
     /// This takes a `TxId`, because this should be called while still holding a lock on the database.
@@ -1044,7 +1054,7 @@ mod tests {
             timestamp: Timestamp::now(),
             caller_identity: Identity::ZERO,
             caller_connection_id: None,
-            function_call: ModuleFunctionCall::default(),
+            function_call: ModuleFunctionCall::dummy_for_testing(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
             energy_quanta_used: EnergyQuanta { quanta: 0 },
             host_execution_duration: Duration::from_millis(0),

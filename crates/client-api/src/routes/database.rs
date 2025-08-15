@@ -19,11 +19,10 @@ use futures::StreamExt;
 use http::StatusCode;
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::host::module_host::ClientConnectedError;
-use spacetimedb::host::ReducerArgs;
-use spacetimedb::host::ReducerCallError;
-use spacetimedb::host::ReducerOutcome;
-use spacetimedb::host::UpdateDatabaseResult;
+use spacetimedb::host::{
+    ClientConnectedError, ProcedureCallError, ProcedureOutcome, ReducerArgs, ReducerCallError, ReducerOutcome,
+    UpdateDatabaseResult,
+};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PublishOp, PublishResult};
@@ -65,7 +64,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             log::error!("Could not find database: {}", db_identity.to_hex());
             NO_SUCH_DATABASE
         })?;
-    let identity = database.owner_identity;
+    let owner_identity = database.owner_identity;
 
     let leader = worker_ctx
         .leader(database.id)
@@ -78,35 +77,13 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     // so generate one.
     let connection_id = generate_random_connection_id();
 
-    match module.call_identity_connected(caller_identity, connection_id).await {
-        // If `call_identity_connected` returns `Err(Rejected)`, then the `client_connected` reducer errored,
-        // meaning the connection was refused. Return 403 forbidden.
-        Err(ClientConnectedError::Rejected(msg)) => return Err((StatusCode::FORBIDDEN, msg).into()),
-        // If `call_identity_connected` returns `Err(OutOfEnergy)`,
-        // then, well, the database is out of energy.
-        // Return 503 service unavailable.
-        Err(err @ ClientConnectedError::OutOfEnergy) => {
-            return Err((StatusCode::SERVICE_UNAVAILABLE, err.to_string()).into())
-        }
-        // If `call_identity_connected` returns `Err(ReducerCall)`,
-        // something went wrong while invoking the `client_connected` reducer.
-        // I (pgoldman 2025-03-27) am not really sure how this would happen,
-        // but we returned 404 not found in this case prior to my editing this code,
-        // so I guess let's keep doing that.
-        Err(ClientConnectedError::ReducerCall(e)) => {
-            return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into())
-        }
-        // If `call_identity_connected` returns `Err(DBError)`,
-        // then the module didn't define `client_connected`,
-        // but something went wrong when we tried to insert into `st_client`.
-        // That's weird and scary, so return 500 internal error.
-        Err(e @ ClientConnectedError::DBError(_)) => {
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into())
-        }
+    // Call the database's `client_connected` reducer, if any.
+    // If it fails or rejects the connection, bail.
+    module
+        .call_identity_connected(caller_identity, connection_id)
+        .await
+        .map_err(client_connected_error_to_response)?;
 
-        // If `call_identity_connected` returns `Ok`, then we can actually call the reducer we want.
-        Ok(()) => (),
-    }
     let result = match module
         .call_reducer(caller_identity, Some(connection_id), None, None, None, &reducer, args)
         .await
@@ -134,17 +111,14 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         }
     };
 
-    if let Err(e) = module.call_identity_disconnected(caller_identity, connection_id).await {
-        // If `call_identity_disconnected` errors, something is very wrong:
-        // it means we tried to delete the `st_client` row but failed.
-        // Note that `call_identity_disconnected` swallows errors from the `client_disconnected` reducer.
-        // Slap a 500 on it and pray.
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", anyhow::anyhow!(e))).into());
-    }
+    module
+        .call_identity_disconnected(caller_identity, connection_id)
+        .await
+        .map_err(client_disconnected_error_to_response)?;
 
     match result {
         Ok(result) => {
-            let (status, body) = reducer_outcome_response(&identity, &reducer, result.outcome);
+            let (status, body) = reducer_outcome_response(&owner_identity, &reducer, result.outcome);
             Ok((
                 status,
                 TypedHeader(SpacetimeEnergyUsed(result.energy_used)),
@@ -156,7 +130,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     }
 }
 
-fn reducer_outcome_response(identity: &Identity, reducer: &str, outcome: ReducerOutcome) -> (StatusCode, String) {
+fn reducer_outcome_response(owner_identity: &Identity, reducer: &str, outcome: ReducerOutcome) -> (StatusCode, String) {
     match outcome {
         ReducerOutcome::Committed => (StatusCode::OK, "".to_owned()),
         ReducerOutcome::Failed(errmsg) => {
@@ -164,7 +138,7 @@ fn reducer_outcome_response(identity: &Identity, reducer: &str, outcome: Reducer
             (StatusCode::from_u16(530).unwrap(), errmsg)
         }
         ReducerOutcome::BudgetExceeded => {
-            log::warn!("Node's energy budget exceeded for identity: {identity} while executing {reducer}");
+            log::warn!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
             (
                 StatusCode::PAYMENT_REQUIRED,
                 "Module energy budget exhausted.".to_owned(),
@@ -173,11 +147,156 @@ fn reducer_outcome_response(identity: &Identity, reducer: &str, outcome: Reducer
     }
 }
 
+fn client_connected_error_to_response(err: ClientConnectedError) -> ErrorResponse {
+    match err {
+        // If `call_identity_connected` returns `Err(Rejected)`, then the `client_connected` reducer errored,
+        // meaning the connection was refused. Return 403 forbidden.
+        ClientConnectedError::Rejected(msg) => (StatusCode::FORBIDDEN, msg).into(),
+        // If `call_identity_connected` returns `Err(OutOfEnergy)`,
+        // then, well, the database is out of energy.
+        // Return 503 service unavailable.
+        ClientConnectedError::OutOfEnergy => (StatusCode::SERVICE_UNAVAILABLE, err.to_string()).into(),
+        // If `call_identity_connected` returns `Err(ReducerCall)`,
+        // something went wrong while invoking the `client_connected` reducer.
+        // I (pgoldman 2025-03-27) am not really sure how this would happen,
+        // but we returned 404 not found in this case prior to my editing this code,
+        // so I guess let's keep doing that.
+        ClientConnectedError::ReducerCall(e) => (StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into(),
+        // If `call_identity_connected` returns `Err(DBError)`,
+        // then the module didn't define `client_connected`,
+        // but something went wrong when we tried to insert into `st_client`.
+        // That's weird and scary, so return 500 internal error.
+        ClientConnectedError::DBError(_) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into(),
+    }
+}
+
+/// If `call_identity_disconnected` errors, something is very wrong:
+/// it means we tried to delete the `st_client` row but failed.
+///
+/// Note that `call_identity_disconnected` swallows errors from the `client_disconnected` reducer.
+/// Slap a 500 on it and pray.
+fn client_disconnected_error_to_response(err: ReducerCallError) -> ErrorResponse {
+    (StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", anyhow::anyhow!(err))).into()
+}
+
 #[derive(Debug, derive_more::From)]
 pub enum DBCallErr {
     HandlerError(ErrorResponse),
     NoSuchDatabase,
     InstanceNotScheduled,
+}
+
+#[derive(Deserialize)]
+pub struct ProcedureParams {
+    name_or_identity: NameOrIdentity,
+    procedure: String,
+}
+
+async fn procedure<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Path(ProcedureParams {
+        name_or_identity,
+        procedure,
+    }): Path<ProcedureParams>,
+    TypedHeader(content_type): TypedHeader<headers::ContentType>,
+    ByteStringBody(body): ByteStringBody,
+) -> axum::response::Result<impl IntoResponse> {
+    if content_type != headers::ContentType::json() {
+        return Err(axum::extract::rejection::MissingJsonContentType::default().into());
+    }
+    let caller_identity = auth.identity;
+
+    let args = ReducerArgs::Json(body);
+
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?;
+    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
+        .await?
+        .ok_or_else(|| {
+            log::error!("Could not find database: {}", db_identity.to_hex());
+            NO_SUCH_DATABASE
+        })?;
+    let owner_identity = database.owner_identity;
+
+    let leader = worker_ctx
+        .leader(database.id)
+        .await
+        .map_err(log_and_500)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let module = leader.module().await.map_err(log_and_500)?;
+
+    // HTTP callers always need a connection ID to provide to connect/disconnect,
+    // so generate one.
+    let connection_id = generate_random_connection_id();
+
+    // Call the database's `client_connected` reducer, if any.
+    // If it fails or rejects the connection, bail.
+    module
+        .call_identity_connected(caller_identity, connection_id)
+        .await
+        .map_err(client_connected_error_to_response)?;
+
+    let result = match module
+        .call_procedure(caller_identity, Some(connection_id), None, &procedure, args)
+        .await
+    {
+        Ok(res) => Ok(res),
+        Err(e) => {
+            let status_code = match e {
+                ProcedureCallError::Args(_) => {
+                    log::debug!("Attempt to call reducer with invalid arguments");
+                    StatusCode::BAD_REQUEST
+                }
+                ProcedureCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
+                ProcedureCallError::NoSuchProcedure => {
+                    log::debug!("Attempt to call non-existent procedure {procedure}");
+                    StatusCode::NOT_FOUND
+                }
+            };
+            log::debug!("Error while invoking procedure {e:#}");
+            Err((status_code, format!("{:#}", anyhow::anyhow!(e))))
+        }
+    };
+
+    module
+        .call_identity_disconnected(caller_identity, connection_id)
+        .await
+        .map_err(client_disconnected_error_to_response)?;
+
+    match result {
+        Ok(result) => {
+            // Procedures don't assign a special meaning to error returns, unlike reducers,
+            // as there's no transaction for them to automatically abort.
+            // Instead, we just pass on their return value with the OK status so long as we successfully invoked the procedure.
+            let (status, body) = procedure_outcome_response(owner_identity, &procedure, result.outcome);
+            Ok((
+                status,
+                TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
+                body,
+            ))
+        }
+        Err(e) => Err((e.0, e.1).into()),
+    }
+}
+
+fn procedure_outcome_response(
+    owner_identity: Identity,
+    procedure: &str,
+    outcome: ProcedureOutcome,
+) -> (StatusCode, axum::response::Response) {
+    match outcome {
+        ProcedureOutcome::Returned(val) => (
+            StatusCode::OK,
+            axum::Json(sats::serde::SerdeWrapper(val)).into_response(),
+        ),
+        ProcedureOutcome::BudgetExceeded => {
+            log::warn!("Node's energy budget exceeded for identity: {owner_identity} while executing {procedure}");
+            (
+                StatusCode::PAYMENT_REQUIRED,
+                "Module energy budget exhausted".into_response(),
+            )
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -777,6 +896,8 @@ pub struct DatabaseRoutes<S> {
     pub subscribe_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/call/:reducer
     pub call_reducer_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/procedure/:reducer
+    pub call_procedure_post: MethodRouter<S>,
     /// GET: /database/:name_or_identity/schema
     pub schema_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/logs
@@ -805,6 +926,7 @@ where
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),
             call_reducer_post: post(call::<S>),
+            call_procedure_post: post(procedure::<S>),
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
@@ -828,6 +950,7 @@ where
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
             .route("/call/:reducer", self.call_reducer_post)
+            .route("/procedure/:procedure", self.call_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)

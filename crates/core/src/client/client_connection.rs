@@ -9,10 +9,12 @@ use std::time::Instant;
 
 use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
+use crate::client::messages::ProcedureResultMessage;
 use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::messages::websocket::Subscribe;
+use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
@@ -555,6 +557,29 @@ impl ClientConnection {
                 args,
             )
             .await
+    }
+
+    pub async fn call_procedure(
+        &self,
+        procedure: &str,
+        args: ReducerArgs,
+        request_id: RequestId,
+        timer: Instant,
+    ) -> Result<(), BroadcastError> {
+        let res = self
+            .module
+            .call_procedure(
+                self.id.identity,
+                Some(self.id.connection_id),
+                Some(timer),
+                procedure,
+                args,
+            )
+            .await;
+
+        self.module
+            .subscriptions()
+            .send_procedure_message(self.sender(), ProcedureResultMessage::from_result(&res, request_id))
     }
 
     pub async fn subscribe_single(

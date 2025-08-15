@@ -254,6 +254,15 @@ impl ModuleDef {
         self.reducers.get_index(id.idx()).map(|(_, def)| def)
     }
 
+    /// Convenience method to look up a procedure, possibly by a string, returning its id as well.
+    pub fn procedure_full<K: ?Sized + Hash + Equivalent<Identifier>>(
+        &self,
+        name: &K,
+    ) -> Option<(ProcedureId, &ProcedureDef)> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.procedures.get_full(name).map(|(idx, _, def)| (idx.into(), def))
+    }
+
     pub fn procedure_by_id(&self, id: ProcedureId) -> &ProcedureDef {
         &self.procedures[id.idx()]
     }

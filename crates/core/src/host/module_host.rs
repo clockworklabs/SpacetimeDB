@@ -1,4 +1,8 @@
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
+use super::host_controller::ProcedureCallResult;
+use super::{
+    ArgsTuple, InvalidProcedureArguments, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId,
+    ReducerOutcome, Scheduler,
+};
 use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
@@ -531,6 +535,16 @@ pub enum ReducerCallError {
 }
 
 #[derive(thiserror::Error, Debug)]
+pub enum ProcedureCallError {
+    #[error(transparent)]
+    Args(#[from] InvalidProcedureArguments),
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error("no such procedure")]
+    NoSuchProcedure,
+}
+
+#[derive(thiserror::Error, Debug)]
 pub enum InitDatabaseError {
     #[error(transparent)]
     Args(#[from] InvalidReducerArguments),
@@ -990,6 +1004,17 @@ impl ModuleHost {
         }
 
         res
+    }
+
+    pub async fn call_procedure(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        timer: Option<Instant>,
+        procedure_name: &str,
+        args: ReducerArgs,
+    ) -> Result<ProcedureCallResult, ProcedureCallError> {
+        todo!()
     }
 
     // Scheduled reducers require a different function here to call their reducer
