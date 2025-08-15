@@ -11,6 +11,7 @@ mod rng;
 pub mod rt;
 #[doc(hidden)]
 pub mod table;
+use auto_impl::auto_impl;
 
 use spacetimedb_lib::bsatn;
 use std::cell::{OnceCell, RefCell};
@@ -786,6 +787,10 @@ impl ReducerContext {
     pub fn sender_auth(&self) -> &dyn AuthCtx {
         self.sender_auth.as_ref()
     }
+
+    pub fn sender_auth_impl_version(&self) -> impl AuthCtx + '_ {
+        &self.sender_auth
+    }
 }
 
 /// A handle on a database with a particular table schema.
@@ -919,7 +924,7 @@ impl JwtClaims {
     }
 
     pub fn subject(&self) -> &str {
-        // This is a placeholder; actual implementation would parse the JWT claims.
+        // TODO: Add more error messages here.
         self.get_parsed().get("sub").unwrap().as_str().unwrap()
     }
 
@@ -952,6 +957,7 @@ impl JwtClaims {
 }
 
 /// AuthCtx represents the authentication information for a caller.
+#[auto_impl(&, Box)]
 pub trait AuthCtx {
     // True if this reducer was spawned from inside the database.
     fn is_internal(&self) -> bool;
@@ -962,6 +968,7 @@ pub trait AuthCtx {
     fn jwt(&self) -> Option<&JwtClaims>;
 }
 
+/// The auth information is fetched from system tables for the connection id.
 struct ConnectionIdBasedAuthCtx {
     connection_id: ConnectionId,
     claims: std::cell::OnceCell<Option<JwtClaims>>,
