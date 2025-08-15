@@ -213,7 +213,6 @@ impl ClientConnectionSender {
 pub struct ClientConnection {
     sender: Arc<ClientConnectionSender>,
     pub replica_id: u64,
-    pub module: ModuleHost,
     module_rx: watch::Receiver<ModuleHost>,
 }
 
@@ -392,15 +391,49 @@ impl<T> Drop for MeteredReceiver<T> {
 const CLIENT_CHANNEL_CAPACITY: usize = 16 * KB;
 const KB: usize = 1024;
 
+/// Value returned by [`ClientConnection::call_client_connected_maybe_reject`]
+/// and consumed by [`ClientConnection::spawn`] which acts as a proof that the client is authorized.
+///
+/// Because this struct does not capture the module or database info or the client connection info,
+/// a malicious caller could [`ClientConnected::call_client_connected_maybe_reject`] for one client
+/// and then use the resulting `Connected` token to [`ClientConnection::spawn`] for a different client.
+/// We're not particularly worried about that.
+/// This token exists as a sanity check that non-malicious callers don't accidentally [`ClientConnection::spawn`]
+/// for an unauthorized client.
+#[non_exhaustive]
+pub struct Connected {
+    _private: (),
+}
+
 impl ClientConnection {
-    /// Returns an error if ModuleHost closed
+    /// Call the database at `module_rx`'s `client_connection` reducer, if any,
+    /// and return `Err` if it signals rejecting this client's connection.
+    ///
+    /// Call this method before [`Self::spawn`]
+    /// and pass the returned [`Connected`] to [`Self::spawn`] as proof that the client is authorized.
+    pub async fn call_client_connected_maybe_reject(
+        module_rx: &mut watch::Receiver<ModuleHost>,
+        id: ClientActorId,
+    ) -> Result<Connected, ClientConnectedError> {
+        let module = module_rx.borrow_and_update().clone();
+        module.call_identity_connected(id.identity, id.connection_id).await?;
+        Ok(Connected { _private: () })
+    }
+
+    /// Spawn a new [`ClientConnection`] for a WebSocket subscriber.
+    ///
+    /// Callers should first call [`Self::call_client_connected_maybe_reject`]
+    /// to verify that the database at `module_rx` approves of this connection,
+    /// and should not invoke this method if that call returns an error,
+    /// and pass the returned [`Connected`] as `_proof_of_client_connected_call`.
     pub async fn spawn<Fut>(
         id: ClientActorId,
         config: ClientConfig,
         replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
         actor: impl FnOnce(ClientConnection, MeteredReceiver<SerializableMessage>) -> Fut,
-    ) -> Result<ClientConnection, ClientConnectedError>
+        _proof_of_client_connected_call: Connected,
+    ) -> ClientConnection
     where
         Fut: Future<Output = ()> + Send + 'static,
     {
@@ -409,7 +442,6 @@ impl ClientConnection {
         // logically subscribed to the database, not any particular replica. We should handle failover for
         // them and stuff. Not right now though.
         let module = module_rx.borrow_and_update().clone();
-        module.call_identity_connected(id.identity, id.connection_id).await?;
 
         let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
 
@@ -447,7 +479,6 @@ impl ClientConnection {
         let this = Self {
             sender,
             replica_id,
-            module,
             module_rx,
         };
 
@@ -455,26 +486,38 @@ impl ClientConnection {
         // if this fails, the actor() function called .abort(), which like... okay, I guess?
         let _ = fut_tx.send(actor_fut);
 
-        Ok(this)
+        this
     }
 
     pub fn dummy(
         id: ClientActorId,
         config: ClientConfig,
         replica_id: u64,
-        mut module_rx: watch::Receiver<ModuleHost>,
+        module_rx: watch::Receiver<ModuleHost>,
     ) -> Self {
-        let module = module_rx.borrow_and_update().clone();
         Self {
             sender: Arc::new(ClientConnectionSender::dummy(id, config)),
             replica_id,
-            module,
             module_rx,
         }
     }
 
     pub fn sender(&self) -> Arc<ClientConnectionSender> {
         self.sender.clone()
+    }
+
+    /// Get the [`ModuleHost`] for this connection.
+    ///
+    /// Note that modules can be hotswapped, in which case the returned handle
+    /// becomes invalid (i.e. all calls on it will result in an error).
+    /// Callers should thus drop the value as soon as they are done, and obtain
+    /// a fresh one when needed.
+    ///
+    /// While this [`ClientConnection`] is active, [`Self::watch_module_host`]
+    /// should be polled in the background, and the connection closed if and
+    /// when it returns an error.
+    pub fn module(&self) -> ModuleHost {
+        self.module_rx.borrow().clone()
     }
 
     #[inline]
@@ -486,13 +529,26 @@ impl ClientConnection {
         message_handlers::handle(self, message.into(), timer)
     }
 
+    /// Waits until the [`ModuleHost`] of this [`ClientConnection`] instance
+    /// exits, in which case `Err` containing [`NoSuchModule`] is returned.
+    ///
+    /// Should be polled while this [`ClientConnection`] is active, so as to be
+    /// able to shut down the connection gracefully if and when the module
+    /// exits.
+    ///
+    /// Note that this borrows `self` mutably, so may require cloning the
+    /// [`ClientConnection`] instance. The module is shared, however, so all
+    /// clones will observe a swapped module.
     pub async fn watch_module_host(&mut self) -> Result<(), NoSuchModule> {
-        match self.module_rx.changed().await {
-            Ok(()) => {
-                self.module = self.module_rx.borrow_and_update().clone();
-                Ok(())
+        loop {
+            // First check if the module exited between creating the client
+            // connection and calling `watch_module_host`...
+            if self.module_rx.changed().await.is_err() {
+                return Err(NoSuchModule);
             }
-            Err(_) => Err(NoSuchModule),
+            // ...then mark the current module as seen, so the next iteration
+            // of the loop waits until the module changes or exits.
+            self.module_rx.mark_unchanged();
         }
     }
 
@@ -511,7 +567,7 @@ impl ClientConnection {
             CallReducerFlags::NoSuccessNotify => None,
         };
 
-        self.module
+        self.module()
             .call_reducer(
                 self.id.identity,
                 Some(self.id.connection_id),
@@ -530,9 +586,9 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        self.module
+        self.module()
             .on_module_thread("subscribe_single", move || {
-                me.module
+                me.module()
                     .subscriptions()
                     .add_single_subscription(me.sender, subscription, timer, None)
             })
@@ -542,7 +598,7 @@ impl ClientConnection {
     pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         asyncify(move || {
-            me.module
+            me.module()
                 .subscriptions()
                 .remove_single_subscription(me.sender, request, timer)
         })
@@ -555,9 +611,9 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        self.module
+        self.module()
             .on_module_thread("subscribe_multi", move || {
-                me.module
+                me.module()
                     .subscriptions()
                     .add_multi_subscription(me.sender, request, timer, None)
             })
@@ -570,9 +626,9 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        self.module
+        self.module()
             .on_module_thread("unsubscribe_multi", move || {
-                me.module
+                me.module()
                     .subscriptions()
                     .remove_multi_subscription(me.sender, request, timer)
             })
@@ -582,7 +638,7 @@ impl ClientConnection {
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
         let me = self.clone();
         asyncify(move || {
-            me.module
+            me.module()
                 .subscriptions()
                 .add_legacy_subscriber(me.sender, subscription, timer, None)
         })
@@ -595,7 +651,7 @@ impl ClientConnection {
         message_id: &[u8],
         timer: Instant,
     ) -> Result<(), anyhow::Error> {
-        self.module
+        self.module()
             .one_off_query::<JsonFormat>(
                 self.id.identity,
                 query.to_owned(),
@@ -613,7 +669,7 @@ impl ClientConnection {
         message_id: &[u8],
         timer: Instant,
     ) -> Result<(), anyhow::Error> {
-        self.module
+        self.module()
             .one_off_query::<BsatnFormat>(
                 self.id.identity,
                 query.to_owned(),
@@ -626,6 +682,6 @@ impl ClientConnection {
     }
 
     pub async fn disconnect(self) {
-        self.module.disconnect_client(self.id).await
+        self.module().disconnect_client(self.id).await
     }
 }

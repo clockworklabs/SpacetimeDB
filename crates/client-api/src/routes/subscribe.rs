@@ -145,7 +145,7 @@ where
 
     let identity_token = auth.creds.token().into();
 
-    let module_rx = leader.module_watcher().await.map_err(log_and_500)?;
+    let mut module_rx = leader.module_watcher().await.map_err(log_and_500)?;
 
     let client_id = ClientActorId {
         identity: auth.identity,
@@ -163,31 +163,45 @@ where
         let ws = match ws_upgrade.upgrade(ws_config).await {
             Ok(ws) => ws,
             Err(err) => {
-                log::error!("WebSocket init error: {err}");
+                log::error!("websocket: WebSocket init error: {err}");
                 return;
             }
         };
 
-        match forwarded_for {
+        let identity = client_id.identity;
+        let client_log_string = match forwarded_for {
             Some(TypedHeader(XForwardedFor(ip))) => {
-                log::debug!("New client connected from ip {ip}")
+                format!("ip {ip} with Identity {identity} and ConnectionId {connection_id}")
             }
-            None => log::debug!("New client connected from unknown ip"),
-        }
+            None => format!("unknown ip with Identity {identity} and ConnectionId {connection_id}"),
+        };
 
-        let actor = |client, sendrx| ws_client_actor(ws_opts, client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor).await
-        {
-            Ok(s) => s,
+        log::debug!("websocket: New client connected from {client_log_string}");
+
+        let connected = match ClientConnection::call_client_connected_maybe_reject(&mut module_rx, client_id).await {
+            Ok(connected) => {
+                log::debug!("websocket: client_connected returned Ok for {client_log_string}");
+                connected
+            }
             Err(e @ (ClientConnectedError::Rejected(_) | ClientConnectedError::OutOfEnergy)) => {
-                log::info!("{e}");
+                log::info!(
+                    "websocket: Rejecting connection for {client_log_string} due to error from client_connected reducer: {e}"
+                );
                 return;
             }
             Err(e @ (ClientConnectedError::DBError(_) | ClientConnectedError::ReducerCall(_))) => {
-                log::warn!("ModuleHost died while we were connecting: {e:#}");
+                log::warn!("websocket: ModuleHost died while {client_log_string} was connecting: {e:#}");
                 return;
             }
         };
+
+        log::debug!(
+            "websocket: Database accepted connection from {client_log_string}; spawning ws_client_actor and ClientConnection"
+        );
+
+        let actor = |client, sendrx| ws_client_actor(ws_opts, client, ws, sendrx);
+        let client =
+            ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor, connected).await;
 
         // Send the client their identity token message as the first message
         // NOTE: We're adding this to the protocol because some client libraries are
@@ -200,7 +214,7 @@ where
             connection_id,
         };
         if let Err(e) = client.send_message(message) {
-            log::warn!("{e}, before identity token was sent")
+            log::warn!("websocket: Error sending IdentityToken message to {client_log_string}: {e}");
         }
     });
 
@@ -282,7 +296,7 @@ pub struct WebSocketOptions {
     ///
     /// If this number is exceeded, the client is disconnected.
     ///
-    /// Default: 2048
+    /// Default: 16384
     #[serde(default = "WebSocketOptions::default_incoming_queue_length")]
     pub incoming_queue_length: NonZeroUsize,
 }
@@ -297,7 +311,7 @@ impl WebSocketOptions {
     const DEFAULT_PING_INTERVAL: Duration = Duration::from_secs(15);
     const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
     const DEFAULT_CLOSE_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(250);
-    const DEFAULT_INCOMING_QUEUE_LENGTH: NonZeroUsize = NonZeroUsize::new(2048).expect("2048 > 0, qed");
+    const DEFAULT_INCOMING_QUEUE_LENGTH: NonZeroUsize = NonZeroUsize::new(16384).expect("16384 > 0, qed");
 
     const DEFAULT: Self = Self {
         ping_interval: Self::DEFAULT_PING_INTERVAL,
@@ -345,7 +359,7 @@ async fn ws_client_actor_inner(
     ws: WebSocketStream,
     sendrx: MeteredReceiver<SerializableMessage>,
 ) {
-    let database = client.module.info().database_identity;
+    let database = client.module().info().database_identity;
     let client_id = client.id;
     let client_closed_metric = WORKER_METRICS.ws_clients_closed_connection.with_label_values(&database);
     let state = Arc::new(ActorState::new(database, client_id, config));
@@ -772,7 +786,7 @@ fn ws_recv_loop(
                     | WsError::Capacity(_)
                     | WsError::Protocol(_)
                     | WsError::WriteBufferFull(_)
-                    | WsError::Utf8
+                    | WsError::Utf8(_)
                     | WsError::AttackAttempt
                     | WsError::Url(_)
                     | WsError::Http(_)
@@ -812,7 +826,9 @@ fn ws_recv_queue(
         log::warn!("client {client_id} sent message after close or error");
     };
 
-    let (tx, rx) = mpsc::channel(state.config.incoming_queue_length.get());
+    let max_incoming_queue_length = state.config.incoming_queue_length.get();
+
+    let (tx, rx) = mpsc::channel(max_incoming_queue_length);
     let rx = MeteredReceiverStream {
         inner: MeteredReceiver::with_gauge(
             rx,
@@ -828,6 +844,8 @@ fn ws_recv_queue(
                 match e {
                     // If the queue is full, disconnect the client.
                     mpsc::error::TrySendError::Full(item) => {
+                        let client_id = state.client_id;
+                        log::warn!("Client {client_id} exceeded incoming_queue_length limit of {max_incoming_queue_length} requests");
                         // If we can't send close (send task already terminated):
                         //
                         // - Let downstream handlers know that we're closing,

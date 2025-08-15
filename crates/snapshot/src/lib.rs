@@ -940,7 +940,7 @@ impl SnapshotRepository {
         let (snapshot, compress_type) = Snapshot::read_from_file(&snapshot_file)?;
 
         if compress_type != CompressType::None {
-            log::info!(
+            log::debug!(
                 "Snapshot {snapshot_dir:?} of replica {} is already compressed: {compress_type:?}",
                 snapshot.replica_id
             );

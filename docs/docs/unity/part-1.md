@@ -6,7 +6,7 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 
 > A completed version of the game we'll create in this tutorial is available at:
 >
-> https://github.com/ClockworkLabs/Blackholio
+> https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio
 
 ## Prepare Project Structure
 
@@ -87,4 +87,4 @@ Our Unity project is all set up! If you press play, it will show a blank screen,
 
 ### Create the Server Module
 
-We've now got the very basics set up. In [part 2](part-2) you'll learn the basics of how how to create a SpacetimeDB server module and how to connect to it from your client.
+We've now got the very basics set up. In [part 2](part-2) you'll learn the basics of how to create a SpacetimeDB server module and how to connect to it from your client.

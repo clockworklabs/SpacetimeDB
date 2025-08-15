@@ -103,11 +103,13 @@ fn generate_non_compound<Val: Arbitrary + Into<AlgebraicValue> + 'static>() -> B
     any::<Val>().prop_map(Into::into).boxed()
 }
 
-fn any_u256() -> impl Strategy<Value = u256> {
+/// Generates any `u256`.
+pub fn any_u256() -> impl Strategy<Value = u256> {
     any::<(u128, u128)>().prop_map(|(hi, lo)| u256::from_words(hi, lo))
 }
 
-fn any_i256() -> impl Strategy<Value = i256> {
+/// Generates any `i256`.
+pub fn any_i256() -> impl Strategy<Value = i256> {
     any::<(i128, i128)>().prop_map(|(hi, lo)| i256::from_words(hi, lo))
 }
 

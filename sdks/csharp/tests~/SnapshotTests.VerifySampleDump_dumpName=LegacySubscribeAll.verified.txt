@@ -1,0 +1,263 @@
+﻿{
+  Events: {
+    Log: SpacetimeDBClient: Connecting to wss://spacetimedb.com example,
+    OnConnect: {
+      identity: Identity_1,
+      token: eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiJjMjAwNDgzMTUyZDY0MmM3ZDQwMmRlMDZjYWNjMzZkY2IwYzJhMWYyYmJlYjhlN2Q1YTY3M2YyNDM1Y2NhOTc1Iiwic3ViIjoiNmQ0YjU0MzAtMDBjZi00YTk5LTkzMmMtYWQyZDA3YmFiODQxIiwiaXNzIjoibG9jYWxob3N0IiwiYXVkIjpbInNwYWNldGltZWRiIl0sImlhdCI6MTczNzY2NTc2OSwiZXhwIjpudWxsfQ.GaKhvswWYW6wpPpK70_-Tw8DKjKJ2qnidwwj1fTUf3mctcsm_UusPYSws_pSW3qGnMNnGjEXt7rRNvGvuWf9ow
+    },
+    OnInsertUser: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.SubscribeApplied
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      user: {
+        Identity: Identity_1,
+        Online: true
+      }
+    },
+    OnInsertUser: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnknownTransaction
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      user: {
+        Identity: Identity_2,
+        Online: true
+      }
+    },
+    OnInsertUser: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnknownTransaction
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      user: {
+        Identity: Identity_3,
+        Online: true
+      }
+    },
+    OnUpdateUser: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnknownTransaction
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      oldUser: {
+        Identity: Identity_1,
+        Online: true
+      },
+      newUser: {
+        Identity: Identity_1,
+        Name: A,
+        Online: true
+      }
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnknownTransaction
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      message: {
+        Sender: Identity_3,
+        Sent: 1718487775346381,
+        Text: Hello, A!
+      }
+    },
+    OnUpdateUser: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnknownTransaction
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      oldUser: {
+        Identity: Identity_3,
+        Online: true
+      },
+      newUser: {
+        Identity: Identity_3,
+        Name: B,
+        Online: true
+      }
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnknownTransaction
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      message: {
+        Sender: Identity_1,
+        Sent: 1718487783175083,
+        Text: Hello, B!
+      }
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnknownTransaction
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      message: {
+        Sender: Identity_3,
+        Sent: 1718487787645364,
+        Text: Goodbye!
+      }
+    },
+    OnUpdateUser: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnknownTransaction
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      oldUser: {
+        Identity: Identity_3,
+        Name: B,
+        Online: true
+      },
+      newUser: {
+        Identity: Identity_3,
+        Name: B,
+        Online: false
+      }
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnknownTransaction
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
+      },
+      message: {
+        Sender: Identity_1,
+        Sent: 1718487794937841,
+        Text: Goodbye!
+      }
+    }
+  },
+  FinalSnapshot: {
+    User: [
+      {
+        Identity: Identity_1,
+        Name: A,
+        Online: true
+      },
+      {
+        Identity: Identity_2,
+        Online: true
+      },
+      {
+        Identity: Identity_3,
+        Name: B,
+        Online: false
+      }
+    ],
+    Message: [
+      {
+        Sender: Identity_3,
+        Sent: 1718487775346381,
+        Text: Hello, A!
+      },
+      {
+        Sender: Identity_1,
+        Sent: 1718487783175083,
+        Text: Hello, B!
+      },
+      {
+        Sender: Identity_3,
+        Sent: 1718487787645364,
+        Text: Goodbye!
+      },
+      {
+        Sender: Identity_1,
+        Sent: 1718487794937841,
+        Text: Goodbye!
+      }
+    ]
+  },
+  Stats: {
+    ReducerRequestTracker: {
+      requestsAwaitingResponse: 9
+    },
+    SubscriptionRequestTracker: {
+      sampleCount: 1
+    },
+    OneOffRequestTracker: {},
+    AllReducersTracker: {
+      sampleCount: 9
+    },
+    ParseMessageQueueTracker: {
+      sampleCount: 11
+    },
+    ParseMessageTracker: {
+      sampleCount: 11
+    },
+    ApplyMessageQueueTracker: {
+      sampleCount: 11
+    },
+    ApplyMessageTracker: {
+      sampleCount: 11
+    }
+  }
+}
