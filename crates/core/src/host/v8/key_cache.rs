@@ -24,6 +24,8 @@ pub(super) struct KeyCache {
     value: Option<Global<v8::String>>,
     /// The `__describe_module__` property on the global proxy object.
     describe_module: Option<Global<v8::String>>,
+    /// The `__call_reducer__` property on the global proxy object.
+    call_reducer: Option<Global<v8::String>>,
 }
 
 impl KeyCache {
@@ -40,6 +42,11 @@ impl KeyCache {
     /// Returns the `__describe_module__` property name.
     pub(super) fn describe_module<'scope>(&mut self, scope: &mut HandleScope<'scope>) -> Local<'scope, v8::String> {
         Self::get_or_create_key(scope, &mut self.describe_module, "__describe_module__")
+    }
+
+    /// Returns the `__call_reducer__` property name.
+    pub(super) fn call_reducer<'scope>(&mut self, scope: &mut HandleScope<'scope>) -> Local<'scope, v8::String> {
+        Self::get_or_create_key(scope, &mut self.call_reducer, "__call_reducer__")
     }
 
     /// Returns an interned string corresponding to `string`
