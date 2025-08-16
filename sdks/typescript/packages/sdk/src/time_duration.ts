@@ -21,4 +21,11 @@ export class TimeDuration {
   static fromMillis(millis: number): TimeDuration {
     return new TimeDuration(BigInt(millis) * TimeDuration.MICROS_PER_MILLIS);
   }
+
+  /**
+   * Compare two TimeDuration for equality.
+   */
+  isEqual(other: TimeDuration): boolean {
+    return this.micros === other.micros;
+  }
 }

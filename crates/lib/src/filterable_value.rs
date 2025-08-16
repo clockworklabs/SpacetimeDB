@@ -1,6 +1,8 @@
 use crate::{ConnectionId, Identity};
 use core::ops;
 use spacetimedb_sats::bsatn;
+use spacetimedb_sats::time_duration::TimeDuration;
+use spacetimedb_sats::timestamp::Timestamp;
 use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 
 /// Types which can appear as an argument to an index filtering operation
@@ -17,6 +19,8 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 /// - [`Identity`].
 /// - [`ConnectionId`].
 /// - [`Hash`](struct@Hash).
+/// - [`Timestamp`](struct@Timestamp).
+/// - [`TimeDuration`](struct@TimeDuration).
 /// - No-payload enums annotated with `#[derive(SpacetimeType)]`.
 ///   No-payload enums are sometimes called "plain," "simple" or "C-style."
 ///   They are enums where no variant has any payload data.
@@ -97,11 +101,10 @@ impl_filterable_value! {
     ConnectionId: Copy,
     Hash: Copy,
 
-    // Some day we will likely also want to support `Vec<u8>` and `[u8]`,
-    // as they have trivial portable equality and ordering,
-    // but @RReverser's proposed filtering rules do not include them.
-    // Vec<u8>,
-    // &[u8] => Vec<u8>,
+    Timestamp: Copy,
+    TimeDuration: Copy,
+
+    &[u8] => Vec<u8>,
 }
 
 pub enum TermBound<T> {

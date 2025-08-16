@@ -132,8 +132,8 @@ error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering ope
              &RawMiscModuleExportV9
              &TableAccess
              &TableType
-             &bool
-             &ethnum::int::I256
+             &TimeDuration
+             &[u8]
            and $N others
 note: required by a bound in `UniqueColumn::<Tbl, <Col as Column>::ColType, Col>::find`
   --> src/table.rs
@@ -159,8 +159,8 @@ error[E0277]: the trait bound `Alpha: IndexScanRangeBounds<(Alpha,), SingleBound
              &RawMiscModuleExportV9
              &TableAccess
              &TableType
-             &bool
-             &ethnum::int::I256
+             &TimeDuration
+             &[u8]
            and $N others
    = note: required for `Alpha` to implement `IndexScanRangeBounds<(Alpha,), SingleBound>`
 note: required by a bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`

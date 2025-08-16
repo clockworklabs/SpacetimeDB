@@ -365,7 +365,7 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public static Timestamp operator -(Timestamp point, TimeDuration interval) =>
         new Timestamp(checked(point.MicrosecondsSinceUnixEpoch - interval.Microseconds));
 
-    public int CompareTo(Timestamp that)
+    public readonly int CompareTo(Timestamp that)
     {
         return this.MicrosecondsSinceUnixEpoch.CompareTo(that.MicrosecondsSinceUnixEpoch);
     }
@@ -428,7 +428,9 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
 /// This type has less precision than TimeSpan (units of microseconds rather than units of 100ns).
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
-public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
+public record struct TimeDuration(long Microseconds)
+    : IStructuralReadWrite,
+        IComparable<TimeDuration>
 {
     public static readonly TimeDuration ZERO = new(0);
 
@@ -482,6 +484,22 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
         var secs = pos / Util.MicrosecondsPerSecond;
         var microsRemaining = pos % Util.MicrosecondsPerSecond;
         return $"{sign}{secs}.{microsRemaining:D6}";
+    }
+
+    /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
+    public readonly int CompareTo(TimeDuration that)
+    {
+        return this.Microseconds.CompareTo(that.Microseconds);
+    }
+
+    public static bool operator <(TimeDuration l, TimeDuration r)
+    {
+        return l.CompareTo(r) == -1;
+    }
+
+    public static bool operator >(TimeDuration l, TimeDuration r)
+    {
+        return l.CompareTo(r) == 1;
     }
 
     // --- auto-generated ---
