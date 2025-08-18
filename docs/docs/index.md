@@ -46,7 +46,7 @@ Speed and latency is achieved by holding all of your application state in memory
 </figure>
 
 
-The above illustrates the Workflow that happens when using SpacetimeDB.
+The above illustrates the workflow when using SpacetimeDB.
 
 * All client-side reads happen with the data view that is cached locally.
 * Client-side subscriptions tell the server what data client cares about and wants to be synced within its data view. Changes to data will be pushed by the server to the client cache.
