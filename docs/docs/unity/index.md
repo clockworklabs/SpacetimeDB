@@ -8,7 +8,7 @@ By the end, you should have a basic understanding of what SpacetimeDB offers for
 
 The game is inspired by [agar.io](https://agar.io), but SpacetimeDB themed with some fun twists. If you're not familiar [agar.io](https://agar.io), it's a web game in which you and hundreds of other players compete to cultivate mass to become the largest cell in the Petri dish.
 
-Our game, called [Blackhol.io](https://github.com/ClockworkLabs/tree/master/demo/Blackholio), will be similar but space themed. It should give you a great idea of the types of games you can develop easily with SpacetimeDB.
+Our game, called [Blackhol.io](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio), will be similar but space themed. It should give you a great idea of the types of games you can develop easily with SpacetimeDB.
 
 This tutorial assumes that you have a basic understanding of the Unity Editor, using a command line terminal and programming. We'll give you some CLI commands to execute. If you are using Windows, we recommend using Git Bash or PowerShell. For Mac, we recommend Terminal.
 
@@ -32,4 +32,4 @@ First you'll get started with the core client/server setup. For part 2, you'll b
 
 If you already have a good understanding of the SpacetimeDB client and server, check out our completed tutorial project!
 
-https://github.com/ClockworkLabs/tree/master/demo/Blackholio
+https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio
