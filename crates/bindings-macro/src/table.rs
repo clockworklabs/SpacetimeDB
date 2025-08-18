@@ -451,12 +451,13 @@ fn superize_vis(vis: &syn::Visibility) -> Cow<'_, syn::Visibility> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 struct Column<'a> {
     index: u16,
     vis: &'a syn::Visibility,
     ident: &'a syn::Ident,
     ty: &'a syn::Type,
+    default_value: Option<syn::Expr>,
 }
 
 fn try_find_column<'a, 'b, T: ?Sized>(cols: &'a [Column<'b>], name: &T) -> Option<&'a Column<'b>>
@@ -475,6 +476,7 @@ enum ColumnAttr {
     AutoInc(Span),
     PrimaryKey(Span),
     Index(IndexArg),
+    Default(syn::Expr, Span),
 }
 
 impl ColumnAttr {
@@ -494,10 +496,31 @@ impl ColumnAttr {
         } else if ident == sym::primary_key {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::PrimaryKey(ident.span()))
+        } else if ident == sym::default {
+            Some(parse_default_attr(attr, ident)?)
         } else {
             None
         })
     }
+}
+
+fn parse_default_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<ColumnAttr> {
+    let mut default_value = None;
+
+    attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("value") {
+            // #[default(value = expr)]
+            let expr: syn::Expr = meta.value()?.parse()?;
+            default_value = Some(expr);
+        };
+        Ok(())
+    })?;
+
+    let expr = default_value.ok_or_else(|| {
+        syn::Error::new_spanned(&attr.meta, "must provide a default value, e.g. #[default(value = 42)]")
+    })?;
+
+    Ok(ColumnAttr::Default(expr, ident.span()))
 }
 
 pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
@@ -548,6 +571,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let mut unique = None;
         let mut auto_inc = None;
         let mut primary_key = None;
+        let mut default_value = None;
         for attr in field.original_attrs {
             let Some(attr) = ColumnAttr::parse(attr, field_ident)? else {
                 continue;
@@ -566,7 +590,20 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                     primary_key = Some(span);
                 }
                 ColumnAttr::Index(index_arg) => args.indices.push(index_arg),
+                ColumnAttr::Default(expr, span) => {
+                    check_duplicate(&default_value, span)?;
+                    default_value = Some(expr);
+                }
             }
+        }
+
+        if let Some(default_value) = &default_value {
+            if auto_inc.is_some() || primary_key.is_some() || unique.is_some() {
+                return Err(syn::Error::new(
+                    default_value.span(),
+                    "invalid combination: auto_inc, unique index or primary key cannot have a default value",
+                ));
+            };
         }
 
         let column = Column {
@@ -574,20 +611,21 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             ident: field_ident,
             vis: field.vis,
             ty: field.ty,
+            default_value,
         };
 
         if unique.is_some() || primary_key.is_some() {
-            unique_columns.push(column);
+            unique_columns.push(column.clone());
         }
         if auto_inc.is_some() {
-            sequenced_columns.push(column);
+            sequenced_columns.push(column.clone());
         }
         if let Some(span) = primary_key {
             check_duplicate_msg(&primary_key_column, span, "can only have one primary key per table")?;
-            primary_key_column = Some(column);
+            primary_key_column = Some(column.clone());
         }
 
-        columns.push(column);
+        columns.push(column.clone());
     }
 
     let row_type = quote!(#original_struct_ident);
@@ -647,8 +685,44 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let table_access = args.access.iter().map(|acc| acc.to_value());
     let unique_col_ids = unique_columns.iter().map(|col| col.index);
-    let primary_col_id = primary_key_column.iter().map(|col| col.index);
+    let primary_col_id = primary_key_column.clone().into_iter().map(|col| col.index);
     let sequence_col_ids = sequenced_columns.iter().map(|col| col.index);
+
+    let default_type_check: TokenStream = columns
+        .iter()
+        .filter_map(|col| {
+            if let Some(val) = &col.default_value {
+                let ty = &col.ty;
+                let ident_span = col.ident.span();
+                Some(quote_spanned! { ident_span =>
+                    // This closure enforces that `val` is of type `ty` at compile-time.
+                    let _check: #ty = #val;
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let col_defaults: Vec<TokenStream> = columns.iter().filter_map(|col| {
+        if let Some(val) = &col.default_value {
+            let col_id = col.index;
+            Some(quote! {
+                spacetimedb::table::ColumnDefault {
+                    col_id: #col_id,
+                    value: #val.serialize(spacetimedb::sats::algebraic_value::ser::ValueSerializer).expect("default value serialization failed"),
+                }
+            })
+        } else {
+            None
+        }
+    }).collect();
+
+    let default_fn: TokenStream = quote! {
+        fn get_default_col_values() -> Vec<spacetimedb::table::ColumnDefault> {
+            [#(#col_defaults)*].to_vec()
+        }
+    };
 
     let (schedule, schedule_typecheck) = args
         .scheduled
@@ -719,6 +793,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
 
     let tabletype_impl = quote! {
+        use spacetimedb::Serialize;
         impl spacetimedb::Table for #tablehandle_ident {
             type Row = #row_type;
 
@@ -738,6 +813,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #(const SCHEDULE: Option<spacetimedb::table::ScheduleDesc<'static>> = Some(#schedule);)*
 
             #table_id_from_name_func
+            #default_fn
         }
     };
 
@@ -773,6 +849,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         const _: () = {
             #(let _ = <#field_types as spacetimedb::rt::TableColumn>::_ITEM;)*
             #schedule_typecheck
+            #default_type_check
         };
 
         #trait_def
