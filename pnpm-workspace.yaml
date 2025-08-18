@@ -1,0 +1,5 @@
+packages:
+  - 'crates/bindings-typescript'
+  - 'sdks/typescript'
+  - 'sdks/typescript/packages/*'
+  - 'sdks/typescript/examples/**'
