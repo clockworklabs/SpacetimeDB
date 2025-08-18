@@ -1,6 +1,6 @@
-import { AlgebraicType } from './algebraic_type';
-import type { MapValue } from './algebraic_value';
-import BinaryWriter from './binary_writer';
+import { AlgebraicType } from '../../../../../crates/bindings-typescript/src/algebraic_type';
+import type { MapValue } from '../../../../../crates/bindings-typescript/src/algebraic_value';
+import BinaryWriter from '../../../../../crates/bindings-typescript/src/binary_writer';
 
 export interface Serializer {
   write(type: AlgebraicType, value: any): any;

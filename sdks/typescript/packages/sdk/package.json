@@ -42,11 +42,12 @@
     "undici": "^6.19.2"
   },
   "devDependencies": {
-    "@clockworklabs/test-app": "file:../test-app",
+    "@clockworklabs/test-app": "workspace:^",
     "tsup": "^8.1.0",
     "undici": "^6.19.2"
   },
   "dependencies": {
+    "spacetimedb": "workspace:^",
     "@zxing/text-encoding": "^0.9.0",
     "base64-js": "^1.5.1"
   }

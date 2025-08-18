@@ -1,0 +1,40 @@
+{
+  "name": "spacetimedb",
+  "version": "0.0.1",
+  "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
+  "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
+  "bugs": { "url": "https://github.com/clockworklabs/SpacetimeDB/issues" },
+
+  "source": "src/index.ts",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "source": "./src/index.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+
+  "files": ["src", "dist", "README.md", "LICENSE.txt"],
+
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clockworklabs/SpacetimeDB.git"
+  },
+  "license": "ISC",
+  "author": "Clockwork Labs",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "@zxing/text-encoding": "^0.9.0",
+    "base64-js": "^1.5.1"
+  }
+}
