@@ -1,8 +1,8 @@
-import { ConnectionId } from './connection_id';
+import { ConnectionId } from 'spacetimedb';
 import type { UpdateStatus } from './client_api/index.ts';
-import { Identity } from './identity.ts';
+import { Identity } from 'spacetimedb';
 import type { TableUpdate } from './table_cache.ts';
-import { Timestamp } from './timestamp.ts';
+import { Timestamp } from 'spacetimedb';
 
 export type InitialSubscriptionMessage = {
   tag: 'InitialSubscription';

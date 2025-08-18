@@ -1,4 +1,4 @@
-import { ConnectionId } from './connection_id';
+import { ConnectionId } from 'spacetimedb';
 import {
   AlgebraicType,
   ProductType,
@@ -6,23 +6,22 @@ import {
   SumType,
   SumTypeVariant,
   type ComparablePrimitive,
-} from './algebraic_type.ts';
+} from 'spacetimedb';
 import {
   AlgebraicValue,
   parseValue,
   ProductValue,
   type ReducerArgsAdapter,
   type ValueAdapter,
-} from './algebraic_value.ts';
-import BinaryReader from './binary_reader.ts';
-import BinaryWriter from './binary_writer.ts';
+} from 'spacetimedb';
+import { BinaryReader } from 'spacetimedb';
+import { BinaryWriter } from 'spacetimedb';
 import { BsatnRowList } from './client_api/bsatn_row_list_type.ts';
 import { ClientMessage } from './client_api/client_message_type.ts';
 import { DatabaseUpdate } from './client_api/database_update_type.ts';
 import { QueryUpdate } from './client_api/query_update_type.ts';
 import { ServerMessage } from './client_api/server_message_type.ts';
 import { TableUpdate as RawTableUpdate } from './client_api/table_update_type.ts';
-import type * as clientApi from './client_api/index.ts';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { type DbContext } from './db_context.ts';
@@ -35,7 +34,7 @@ import {
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import { decompress } from './decompress.ts';
-import type { Identity } from './identity.ts';
+import type { Identity } from 'spacetimedb';
 import type {
   IdentityTokenMessage,
   Message,
@@ -50,7 +49,7 @@ import {
   type PendingCallback,
   type TableUpdate as CacheTableUpdate,
 } from './table_cache.ts';
-import { deepEqual, toPascalCase } from './utils.ts';
+import { deepEqual } from 'spacetimedb';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
 import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
 import {
