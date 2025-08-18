@@ -12,35 +12,36 @@
 //! Technical terms:
 //!
 //! - `valid` refers to, when referring to a type, granule, or row,
-//!    depending on the context, a memory location that holds a *safe* object.
-//!    When "valid for writes" is used, the location must be properly aligned
-//!    and none of its bytes may be uninit,
-//!    but the value need not be valid at the type in question.
-//!    "Valid for writes" is equivalent to valid-unconstrained.
+//!   depending on the context, a memory location that holds a *safe* object.
+//!   When "valid for writes" is used, the location must be properly aligned
+//!   and none of its bytes may be uninit,
+//!   but the value need not be valid at the type in question.
+//!   "Valid for writes" is equivalent to valid-unconstrained.
 //!
 //! - `valid-unconstrained`, when referring to a memory location with a given type,
-//!    that the location stores a byte pattern which Rust/LLVM's memory model recognizes as valid,
-//!    and therefore must not contain any uninit,
-//!    but the value is not required to be logically meaningful,
-//!    and no code may depend on the data within it to uphold any invariants.
-//!    E.g. an unallocated [`VarLenGranule`] within a page stores valid-unconstrained bytes,
-//!    because the bytes are either 0 from the initial [`alloc_zeroed`] of the page,
-//!    or contain stale data from a previously freed [`VarLenGranule`].
+//!   that the location stores a byte pattern which Rust/LLVM's memory model recognizes as valid,
+//!   and therefore must not contain any uninit,
+//!   but the value is not required to be logically meaningful,
+//!   and no code may depend on the data within it to uphold any invariants.
+//!   E.g. an unallocated [`VarLenGranule`] within a page stores valid-unconstrained bytes,
+//!   because the bytes are either 0 from the initial [`alloc_zeroed`] of the page,
+//!   or contain stale data from a previously freed [`VarLenGranule`].
 //!
 //! - `unused` means that it is safe to overwrite a block of memory without cleaning up its previous value.
 //!
-//!    See the post [Two Kinds of Invariants: Safety and Validity][ralf_safe_valid]
-//!    for a discussion on safety and validity invariants.
+//!   See the post [Two Kinds of Invariants: Safety and Validity][ralf_safe_valid]
+//!   for a discussion on safety and validity invariants.
 
 use super::{
     blob_store::BlobStore,
     fixed_bit_set::FixedBitSet,
-    indexes::{Byte, Bytes, PageOffset, Size, PAGE_HEADER_SIZE, PAGE_SIZE},
-    layout::MIN_ROW_SIZE,
+    indexes::{Byte, Bytes, PageOffset, PAGE_HEADER_SIZE, PAGE_SIZE},
     var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
 };
-use crate::{fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes, MemoryUsage};
+use crate::{fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes};
 use core::{mem, ops::ControlFlow};
+use spacetimedb_sats::layout::{Size, MIN_ROW_SIZE};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
 
@@ -660,6 +661,7 @@ impl<'page> VarView<'page> {
     ///    b. For each `(_, len) ∈ cs`, caller must ensure that
     ///       the relevant granule is initialized with data for at least `len`
     ///       before the granule's data is read from / assumed to be initialized.
+    #[expect(clippy::doc_overindented_list_items)]
     fn alloc_for_obj_common<'chunk, Cs: Iterator<Item = (&'chunk [u8], usize)>>(
         &mut self,
         obj_len: usize,
@@ -812,8 +814,7 @@ impl<'page> VarView<'page> {
 
         debug_assert!(
             is_granule_offset_aligned(granule),
-            "Allocated an unaligned var-len granule: {:x}",
-            granule,
+            "Allocated an unaligned var-len granule: {granule:x}",
         );
 
         self.header.num_granules += 1;
@@ -857,7 +858,7 @@ impl<'page> VarView<'page> {
         // TODO(perf,future-work): if `chunk` is at the HWM, return it to the gap.
         //       Returning a single chunk to the gap is easy,
         //       but we want to return a whole "run" of sequential freed chunks,
-        //       which requries some bookkeeping (or an O(> n) linked list traversal).
+        //       which requires some bookkeeping (or an O(> n) linked list traversal).
         self.header.freelist_len += 1;
         self.header.num_granules -= 1;
         let adjuster = self.adjuster();
@@ -1398,7 +1399,7 @@ impl Page {
 
         // Store all var-len refs into their appropriate slots in the fixed-len row.
         // SAFETY:
-        // - The `fixed_len_offset` given by `alloc_fixed_len` resuls in `row`
+        // - The `fixed_len_offset` given by `alloc_fixed_len` results in `row`
         //   being properly aligned for the row type.
         // - Caller promised that `fixed_row.len()` matches the row type size exactly.
         // - `var_len_visitor` is suitable for `fixed_row`.
@@ -1837,8 +1838,16 @@ impl Page {
     /// The reset page supports `max_rows_in_page` at most.
     pub fn reset_for(&mut self, max_rows_in_page: usize) {
         self.header.reset_for(max_rows_in_page);
-        // SAFETY: We just reset the page header.
-        unsafe { self.zero_data() };
+
+        // NOTE(centril): We previously zeroed pages when resetting.
+        // This had an adverse performance impact.
+        // The reason why we previously zeroed was for security under a multi-tenant setup
+        // when exposing a module ABI that allows modules to memcpy whole pages over.
+        // However, we have no such ABI for the time being, so we can soundly avoid zeroing.
+        // If we ever decide to add such an ABI, we must start zeroing again.
+        //
+        // // SAFETY: We just reset the page header.
+        // unsafe { self.zero_data() };
     }
 
     /// Sets the header and the row data.
@@ -1962,11 +1971,10 @@ impl<'page> Iterator for VarLenGranulesIter<'page> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::{
-        blob_store::NullBlobStore, layout::row_size_for_type, page_pool::PagePool, var_len::AlignedVarLenOffsets,
-    };
+    use crate::{blob_store::NullBlobStore, page_pool::PagePool, var_len::AlignedVarLenOffsets};
     use proptest::{collection::vec, prelude::*};
-    use spacetimedb_lib::bsatn;
+    use spacetimedb_sats::bsatn;
+    use spacetimedb_sats::layout::row_size_for_type;
 
     fn u64_row_size() -> Size {
         let fixed_row_size = row_size_for_type::<u64>();
@@ -2050,8 +2058,7 @@ pub(crate) mod tests {
             let row_val = read_u64(&page, row_idx);
             assert_eq!(
                 row_val, expected_val,
-                "row_val {:x} /= expected_val {:x}",
-                row_val, expected_val
+                "row_val {row_val:x} /= expected_val {expected_val:x}"
             );
         }
     }
@@ -2232,8 +2239,7 @@ pub(crate) mod tests {
                 assert_eq!(
                     data,
                     chunk,
-                    "Chunk {} does not match. Left is found, right is expected.",
-                    i,
+                    "Chunk {i} does not match. Left is found, right is expected.",
                 );
             }
 
@@ -2390,8 +2396,7 @@ pub(crate) mod tests {
         for (i, (data, chunk)) in (&mut data_iter).zip(&mut chunks_iter).enumerate() {
             assert_eq!(
                 data, chunk,
-                "Chunk {} does not match. Left is found, right is expected.",
-                i,
+                "Chunk {i} does not match. Left is found, right is expected.",
             );
         }
 
@@ -2493,7 +2498,7 @@ pub(crate) mod tests {
 
     #[test]
     fn serde_round_trip_whole_page() {
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut page = Page::new(u64_row_size());
 
         // Construct an empty page, ser/de it, and assert that it's still empty.

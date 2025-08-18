@@ -81,3 +81,6 @@ tikv-jemalloc-ctl = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }
+
+[lints]
+workspace = true

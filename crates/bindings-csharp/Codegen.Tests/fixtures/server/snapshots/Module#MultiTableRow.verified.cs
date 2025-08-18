@@ -20,6 +20,11 @@ partial struct MultiTableRow
         BSATN.BarRW.Write(writer, Bar);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"MultiTableRow {{ Name = {SpacetimeDB.BSATN.StringUtil.GenericToString(Name)}, Foo = {SpacetimeDB.BSATN.StringUtil.GenericToString(Foo)}, Bar = {SpacetimeDB.BSATN.StringUtil.GenericToString(Bar)} }}";
 
@@ -29,8 +34,12 @@ partial struct MultiTableRow
         internal static readonly SpacetimeDB.BSATN.U32 FooRW = new();
         internal static readonly SpacetimeDB.BSATN.U32 BarRW = new();
 
-        public MultiTableRow Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<MultiTableRow>(reader);
+        public MultiTableRow Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new MultiTableRow();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, MultiTableRow value)
         {
@@ -56,13 +65,19 @@ partial struct MultiTableRow
 
     public override int GetHashCode()
     {
-        return Name.GetHashCode() ^ Foo.GetHashCode() ^ Bar.GetHashCode();
+        var ___hashName = Name == null ? 0 : Name.GetHashCode();
+        var ___hashFoo = Foo.GetHashCode();
+        var ___hashBar = Bar.GetHashCode();
+        return ___hashName ^ ___hashFoo ^ ___hashBar;
     }
 
 #nullable enable
     public bool Equals(MultiTableRow that)
     {
-        return Name.Equals(that.Name) && Foo.Equals(that.Foo) && Bar.Equals(that.Bar);
+        var ___eqName = this.Name == null ? that.Name == null : this.Name.Equals(that.Name);
+        var ___eqFoo = this.Foo.Equals(that.Foo);
+        var ___eqBar = this.Bar.Equals(that.Bar);
+        return ___eqName && ___eqFoo && ___eqBar;
     }
 
     public override bool Equals(object? that)

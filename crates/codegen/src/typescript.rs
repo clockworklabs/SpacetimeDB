@@ -8,11 +8,12 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
+use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
-use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, PrimitiveType};
+use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
 
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::Lang;
@@ -105,7 +106,7 @@ impl Lang for TypeScript {
 
         writeln!(
             out,
-            "import {{ EventContext, Reducer, RemoteReducers, RemoteTables }} from \".\";"
+            "import {{ type EventContext, type Reducer, RemoteReducers, RemoteTables }} from \".\";"
         );
 
         let table_name = table.name.deref();
@@ -636,16 +637,16 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "DbConnectionBuilder",
         "TableCache",
         "BinaryWriter",
-        "CallReducerFlags",
-        "EventContextInterface",
-        "ReducerEventContextInterface",
-        "SubscriptionEventContextInterface",
-        "ErrorContextInterface",
+        "type CallReducerFlags",
+        "type EventContextInterface",
+        "type ReducerEventContextInterface",
+        "type SubscriptionEventContextInterface",
+        "type ErrorContextInterface",
         "SubscriptionBuilderImpl",
         "BinaryReader",
         "DbConnectionImpl",
-        "DbContext",
-        "Event",
+        "type DbContext",
+        "type Event",
         "deepEqual",
     ];
     types.sort();

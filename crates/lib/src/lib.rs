@@ -15,7 +15,6 @@ pub mod identity;
 pub mod metrics;
 pub mod operator;
 pub mod query;
-pub mod relation;
 pub mod scheduler;
 pub mod st_var;
 pub mod version;
@@ -120,6 +119,7 @@ impl TableDesc {
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct ReducerDef {
     pub name: Box<str>,
@@ -190,6 +190,7 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
 
 //WARNING: Change this structure (or any of their members) is an ABI change.
 #[derive(Debug, Clone, Default, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct RawModuleDefV8 {
     pub typespace: sats::Typespace,
@@ -214,6 +215,7 @@ impl RawModuleDefV8 {
 ///
 /// This is what is actually returned by the module when `__describe_module__` is called, serialized to BSATN.
 #[derive(Debug, Clone, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 #[non_exhaustive]
 pub enum RawModuleDef {
@@ -341,12 +343,14 @@ impl TypespaceBuilder for ModuleDefBuilder {
 
 // an enum to keep it extensible without breaking abi
 #[derive(Debug, Clone, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub enum MiscModuleExport {
     TypeAlias(TypeAlias),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct TypeAlias {
     pub name: String,

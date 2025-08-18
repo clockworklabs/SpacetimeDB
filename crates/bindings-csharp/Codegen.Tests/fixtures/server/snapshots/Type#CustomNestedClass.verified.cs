@@ -30,6 +30,11 @@ partial class CustomNestedClass
         BSATN.NestedNullableCustomRecordRW.Write(writer, NestedNullableCustomRecord);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"CustomNestedClass {{ NestedClass = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedClass)}, NestedNullableClass = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedNullableClass)}, NestedEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedEnum)}, NestedNullableEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedNullableEnum)}, NestedTaggedEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedTaggedEnum)}, NestedNullableTaggedEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedNullableTaggedEnum)}, NestedCustomRecord = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedCustomRecord)}, NestedNullableCustomRecord = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedNullableCustomRecord)} }}";
 
@@ -56,8 +61,12 @@ partial class CustomNestedClass
             CustomRecord.BSATN
         > NestedNullableCustomRecordRW = new();
 
-        public CustomNestedClass Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomNestedClass>(reader);
+        public CustomNestedClass Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new CustomNestedClass();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomNestedClass value)
         {
@@ -99,14 +108,26 @@ partial class CustomNestedClass
 
     public override int GetHashCode()
     {
-        return NestedClass.GetHashCode()
-            ^ (NestedNullableClass == null ? 0 : NestedNullableClass.GetHashCode())
-            ^ NestedEnum.GetHashCode()
-            ^ NestedNullableEnum.GetHashCode()
-            ^ NestedTaggedEnum.GetHashCode()
-            ^ (NestedNullableTaggedEnum == null ? 0 : NestedNullableTaggedEnum.GetHashCode())
-            ^ NestedCustomRecord.GetHashCode()
-            ^ (NestedNullableCustomRecord == null ? 0 : NestedNullableCustomRecord.GetHashCode());
+        var ___hashNestedClass = NestedClass == null ? 0 : NestedClass.GetHashCode();
+        var ___hashNestedNullableClass =
+            NestedNullableClass == null ? 0 : NestedNullableClass.GetHashCode();
+        var ___hashNestedEnum = NestedEnum.GetHashCode();
+        var ___hashNestedNullableEnum = NestedNullableEnum.GetHashCode();
+        var ___hashNestedTaggedEnum = NestedTaggedEnum == null ? 0 : NestedTaggedEnum.GetHashCode();
+        var ___hashNestedNullableTaggedEnum =
+            NestedNullableTaggedEnum == null ? 0 : NestedNullableTaggedEnum.GetHashCode();
+        var ___hashNestedCustomRecord =
+            NestedCustomRecord == null ? 0 : NestedCustomRecord.GetHashCode();
+        var ___hashNestedNullableCustomRecord =
+            NestedNullableCustomRecord == null ? 0 : NestedNullableCustomRecord.GetHashCode();
+        return ___hashNestedClass
+            ^ ___hashNestedNullableClass
+            ^ ___hashNestedEnum
+            ^ ___hashNestedNullableEnum
+            ^ ___hashNestedTaggedEnum
+            ^ ___hashNestedNullableTaggedEnum
+            ^ ___hashNestedCustomRecord
+            ^ ___hashNestedNullableCustomRecord;
     }
 
 #nullable enable
@@ -116,26 +137,41 @@ partial class CustomNestedClass
         {
             return false;
         }
-        return NestedClass.Equals(that.NestedClass)
-            && (
-                NestedNullableClass == null
-                    ? that.NestedNullableClass == null
-                    : NestedNullableClass.Equals(that.NestedNullableClass)
-            )
-            && NestedEnum.Equals(that.NestedEnum)
-            && NestedNullableEnum.Equals(that.NestedNullableEnum)
-            && NestedTaggedEnum.Equals(that.NestedTaggedEnum)
-            && (
-                NestedNullableTaggedEnum == null
-                    ? that.NestedNullableTaggedEnum == null
-                    : NestedNullableTaggedEnum.Equals(that.NestedNullableTaggedEnum)
-            )
-            && NestedCustomRecord.Equals(that.NestedCustomRecord)
-            && (
-                NestedNullableCustomRecord == null
-                    ? that.NestedNullableCustomRecord == null
-                    : NestedNullableCustomRecord.Equals(that.NestedNullableCustomRecord)
-            );
+
+        var ___eqNestedClass =
+            this.NestedClass == null
+                ? that.NestedClass == null
+                : this.NestedClass.Equals(that.NestedClass);
+        var ___eqNestedNullableClass =
+            this.NestedNullableClass == null
+                ? that.NestedNullableClass == null
+                : this.NestedNullableClass.Equals(that.NestedNullableClass);
+        var ___eqNestedEnum = this.NestedEnum == that.NestedEnum;
+        var ___eqNestedNullableEnum = this.NestedNullableEnum.Equals(that.NestedNullableEnum);
+        var ___eqNestedTaggedEnum =
+            this.NestedTaggedEnum == null
+                ? that.NestedTaggedEnum == null
+                : this.NestedTaggedEnum.Equals(that.NestedTaggedEnum);
+        var ___eqNestedNullableTaggedEnum =
+            this.NestedNullableTaggedEnum == null
+                ? that.NestedNullableTaggedEnum == null
+                : this.NestedNullableTaggedEnum.Equals(that.NestedNullableTaggedEnum);
+        var ___eqNestedCustomRecord =
+            this.NestedCustomRecord == null
+                ? that.NestedCustomRecord == null
+                : this.NestedCustomRecord.Equals(that.NestedCustomRecord);
+        var ___eqNestedNullableCustomRecord =
+            this.NestedNullableCustomRecord == null
+                ? that.NestedNullableCustomRecord == null
+                : this.NestedNullableCustomRecord.Equals(that.NestedNullableCustomRecord);
+        return ___eqNestedClass
+            && ___eqNestedNullableClass
+            && ___eqNestedEnum
+            && ___eqNestedNullableEnum
+            && ___eqNestedTaggedEnum
+            && ___eqNestedNullableTaggedEnum
+            && ___eqNestedCustomRecord
+            && ___eqNestedNullableCustomRecord;
     }
 
     public override bool Equals(object? that)

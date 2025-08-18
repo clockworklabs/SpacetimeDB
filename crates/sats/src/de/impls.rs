@@ -211,11 +211,11 @@ impl<'de, T: Deserialize<'de>> SumVisitor<'de> for OptionVisitor<T> {
     }
 }
 
-impl<'de, T: Deserialize<'de>> VariantVisitor for OptionVisitor<T> {
+impl<'de, T: Deserialize<'de>> VariantVisitor<'de> for OptionVisitor<T> {
     type Output = bool;
 
-    fn variant_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(["some", "none"])
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
+        ["some", "none"].into_iter()
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -268,11 +268,11 @@ impl<'de, T: Deserialize<'de>, E: Deserialize<'de>> SumVisitor<'de> for ResultVi
     }
 }
 
-impl<'de, T: Deserialize<'de>, U: Deserialize<'de>> VariantVisitor for ResultVisitor<T, U> {
+impl<'de, T: Deserialize<'de>, U: Deserialize<'de>> VariantVisitor<'de> for ResultVisitor<T, U> {
     type Output = ResultVariant;
 
-    fn variant_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(["ok", "err"])
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
+        ["ok", "err"].into_iter()
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -335,11 +335,11 @@ impl<'de, S: Copy + DeserializeSeed<'de>> SumVisitor<'de> for BoundVisitor<S> {
     }
 }
 
-impl<'de, T: Copy + DeserializeSeed<'de>> VariantVisitor for BoundVisitor<T> {
+impl<'de, T: Copy + DeserializeSeed<'de>> VariantVisitor<'de> for BoundVisitor<T> {
     type Output = BoundVariant;
 
-    fn variant_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(["included", "excluded", "unbounded"])
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
+        ["included", "excluded", "unbounded"].into_iter()
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -420,12 +420,12 @@ impl<'de> SumVisitor<'de> for WithTypespace<'_, SumType> {
     }
 }
 
-impl VariantVisitor for WithTypespace<'_, SumType> {
+impl VariantVisitor<'_> for WithTypespace<'_, SumType> {
     type Output = u8;
 
-    fn variant_names(&self, names: &mut dyn super::ValidNames) {
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
         // Provide the names known from the `SumType`.
-        names.extend(self.ty().variants.iter().filter_map(|v| v.name()))
+        self.ty().variants.iter().filter_map(|v| v.name())
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -600,7 +600,7 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
     // This is worst case quadratic in complexity
     // as fields can be specified out of order (value side) compared to `elems` (type side).
     for _ in 0..elems.len() {
-        // Deserialize a field name, match against the element types, .
+        // Deserialize a field name, match against the element types.
         let index = tup.get_field_ident(TupleNameVisitor { elems, kind })?.ok_or_else(|| {
             // Couldn't deserialize a field name.
             // Find the first field name we haven't filled an element for.
@@ -643,8 +643,8 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
     // The index of the field name.
     type Output = usize;
 
-    fn field_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(self.elems.iter().filter_map(|f| f.name()))
+    fn field_names(&self) -> impl '_ + Iterator<Item = Option<&str>> {
+        self.elems.iter().map(|f| f.name())
     }
 
     fn kind(&self) -> ProductKind {
@@ -657,6 +657,15 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
             .iter()
             .position(|f| f.has_name(name))
             .ok_or_else(|| Error::unknown_field_name(name, &self))
+    }
+
+    fn visit_seq(self, index: usize) -> Self::Output {
+        // Confirm that the index exists.
+        self.elems
+            .get(index)
+            .expect("`index` should exist when `visit_seq` is called");
+
+        index
     }
 }
 

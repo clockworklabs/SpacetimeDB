@@ -2,12 +2,60 @@ namespace SpacetimeDB.BSATN;
 
 using System.Text;
 
+/// <summary>
+/// Implemented by product types marked with [SpacetimeDB.Type].
+/// All rows in SpacetimeDB are product types, so this is also implemented by all row types.
+/// </summary>
 public interface IStructuralReadWrite
 {
+    /// <summary>
+    /// Initialize this value from the reader.
+    /// The reader is assumed to store a <see href="https://spacetimedb.com/docs/bsatn">BSATN-encoded</see>
+    /// value of this type.
+    /// Advances the reader to the first byte past the end of the read value.
+    /// Throws an exception if this would advance past the end of the reader.
+    /// </summary>
+    /// <param name="reader"></param>
     void ReadFields(BinaryReader reader);
 
+    /// <summary>
+    /// Write the fields of this type to the writer.
+    /// Throws an exception if the underlying writer throws.
+    /// Throws if this value is malformed (i.e. has null values for fields that
+    /// are not explicitly marked nullable.)
+    /// </summary>
+    /// <param name="writer"></param>
     void WriteFields(BinaryWriter writer);
 
+    /// <summary>
+    /// Get an IReadWrite implementation that can read values of this type.
+    /// In Rust, this would return <c>IReadWrite&lt;Self&gt;</c>, but the C# type system
+    /// has no equivalent Self type -- that is, you can't use the implementing type in type signatures
+    /// in an interface. So, you have to manually downcast.
+    /// A typical invocation looks like: <c>(IReadWrite&lt;Row&gt;) new Row().GetSerializer()</c>
+    ///
+    /// This is an instance method because of limitations of C# interfaces.
+    /// (C# 11 has static virtual interface members, but Unity does not support C# 11.)
+    /// This method always works, whether or not the row it is called on is correctly initialized.
+    /// The returned serializer has nothing to do with the row GetSerializer is called on -- it returns
+    /// new rows and does not modify or interact with the original row.
+    ///
+    /// Using the resulting serializer rather than <c>Read&lt;T&gt;</c> is usually faster in Mono/IL2CPP.
+    /// This is because we manually monomorphise the code to read rows in our automatically-generated
+    /// implementation of IReadWrite. This allows rows to be initialized with new() rather than reflection
+    /// in the compiled code.
+    /// </summary>
+    /// <returns>An <c>IReadWrite&lt;T&gt;</c> for <c>T : IStructuralReadWrite</c>.</returns>
+    object GetSerializer();
+
+    /// <summary>
+    /// Read a row from the reader.
+    /// This method usually uses Activator.CreateInstance to create the resulting row;
+    /// if this is too slow, prefer using GetSerializer.
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="reader"></param>
+    /// <returns></returns>
     static T Read<T>(BinaryReader reader)
         where T : IStructuralReadWrite, new()
     {
@@ -38,28 +86,69 @@ public interface IStructuralReadWrite
     }
 }
 
+/// <summary>
+/// Interface for types that know how to serialize another type.
+/// We auto-generate an implementation of <c>IReadWrite&lt;T&gt;</c> for all
+/// types marked with <c>[SpacetimeDB.Type]</c>. For a type <c>T</c>, this implementation
+/// is accessible at <c>T.BSATN</c>. The implementation is always a zero-sized struct.
+/// </summary>
+/// <typeparam name="T"></typeparam>
 public interface IReadWrite<T>
 {
+    /// <summary>
+    /// Read a BSATN-encoded value of type T from the reader.
+    /// Throws on end-of-stream or if the stream is malformed.
+    /// Advances the reader to the first byte past the end of the encoded value.
+    /// </summary>
+    /// <param name="reader"></param>
+    /// <returns></returns>
     T Read(BinaryReader reader);
 
+    /// <summary>
+    /// Write a BSATN-encoded value of type T to the writer.
+    /// </summary>
     void Write(BinaryWriter writer, T value);
 
+    /// <summary>
+    /// Get metadata for this type. Used in module initialization.
+    /// </summary>
+    /// <param name="registrar"></param>
+    /// <returns></returns>
     AlgebraicType GetAlgebraicType(ITypeRegistrar registrar);
 }
 
+/// <summary>
+/// Serializer for enums.
+/// </summary>
+/// <typeparam name="T"></typeparam>
 public readonly struct Enum<T> : IReadWrite<T>
     where T : struct, Enum
 {
-    private static readonly ulong NumVariants;
+    /// <summary>
+    /// Map from tag -> value, implemented as an array.
+    /// Note: the [Type] macro rejects enums with explicitly set values (see Codegen.Tests),
+    /// so this array is guaranteed to be continuous and indexed starting from 0.
+    /// </summary>
+    private static readonly T[] TagToValue = Enum.GetValues(typeof(T)).Cast<T>().ToArray();
 
-    static Enum()
+    public T Read(BinaryReader reader)
     {
-        NumVariants = (ulong)Enum.GetValues(typeof(T)).Length;
+        var tag = reader.ReadByte();
+        try
+        {
+            return TagToValue[tag];
+        }
+        catch
+        {
+            throw new ArgumentOutOfRangeException(
+                $"Tag {tag} is out of range of enum {typeof(T).Name}"
+            );
+        }
     }
 
-    private static T Validate(T value)
+    public void Write(BinaryWriter writer, T value)
     {
-        // Previously this was: `if (!Enum.IsDefined(typeof(T), value))`.
+        // Previously this was: `if (Enum.IsDefined(typeof(T), value))`.
         // This was quite expensive because:
         //   1. It uses reflection
         //   2. It allocates
@@ -68,20 +157,21 @@ public readonly struct Enum<T> : IReadWrite<T>
         // However, enum values are guaranteed to be sequential and zero based.
         // Hence we only ever need to do an upper bound check.
         // See `SpacetimeDB.Type.ParseEnum` for the syntax analysis.
-        if (Convert.ToUInt64(value) >= NumVariants)
+        //
+        // Note: this actually still uses reflection and allocates.
+        // It's hard to figure out how to avoid this without custom-generating a writer for each enum type.
+        var tag = Convert.ToByte(value);
+        if (tag < TagToValue.Length)
+        {
+            writer.Write(tag);
+        }
+        else
         {
             throw new ArgumentOutOfRangeException(
-                nameof(value),
-                $"Value {value} is out of range of enum {typeof(T).Name}"
+                $"Value {value} is out of range for enum {typeof(T).Name}"
             );
         }
-        return value;
     }
-
-    public T Read(BinaryReader reader) => Validate((T)Enum.ToObject(typeof(T), reader.ReadByte()));
-
-    public void Write(BinaryWriter writer, T value) =>
-        writer.Write(Convert.ToByte(Validate(value)));
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
         registrar.RegisterType<T>(

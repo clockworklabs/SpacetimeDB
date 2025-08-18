@@ -32,12 +32,13 @@
 
 use super::{
     blob_store::BlobHash,
-    indexes::{Byte, Bytes, PageOffset, Size},
+    indexes::{Byte, Bytes, PageOffset},
 };
 use crate::{static_assert_align, static_assert_size};
 use core::iter;
 use core::marker::PhantomData;
 use core::mem::{self};
+use spacetimedb_sats::layout::{Size, VAR_LEN_REF_LAYOUT};
 
 /// Reference to var-len object within a page.
 // TODO: make this larger and do short-string optimization?
@@ -62,6 +63,9 @@ pub struct VarLenRef {
 // `size = 4` and `align = 2` of `VarLenRef`.
 static_assert_size!(VarLenRef, 4);
 static_assert_align!(VarLenRef, 2);
+
+const _: () = assert!(VAR_LEN_REF_LAYOUT.size as usize == mem::size_of::<VarLenRef>());
+const _: () = assert!(VAR_LEN_REF_LAYOUT.align as usize == mem::align_of::<VarLenRef>());
 
 impl VarLenRef {
     /// Does this refer to a large blob object
@@ -167,8 +171,7 @@ impl VarLenGranuleHeader {
         let capped_len = (len as u16) & Self::LEN_BITMASK;
         debug_assert_eq!(
             capped_len, len as u16,
-            "Len {} overflows the length of a `VarLenGranule`",
-            len
+            "Len {len} overflows the length of a `VarLenGranule`",
         );
 
         // Insert the truncated `len`.
@@ -196,7 +199,7 @@ impl VarLenGranuleHeader {
         // Ensure that the `next` is aligned,
         // and therefore doesn't overwrite any of the `len`.
         let aligned_next = next & Self::NEXT_BITMASK;
-        debug_assert_eq!(aligned_next, next, "Next {:x} is unaligned", next);
+        debug_assert_eq!(aligned_next, next, "Next {next:x} is unaligned");
 
         // Insert the aligned `next`.
         new.0 |= aligned_next;

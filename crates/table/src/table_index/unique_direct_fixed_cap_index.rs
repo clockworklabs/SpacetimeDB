@@ -1,9 +1,9 @@
 use super::unique_direct_index::{UniqueDirectIndexPointIter, NONE_PTR};
 use crate::indexes::RowPointer;
-use crate::MemoryUsage;
 use core::mem;
 use core::ops::{Bound, RangeBounds};
 use core::slice::Iter;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 
 /// A direct index with for relating unsigned integer keys to [`RowPointer`].
 /// The index is provided a capacity on creation and will have that during its lifetime.
@@ -119,6 +119,21 @@ impl UniqueDirectFixedCapIndex {
     pub fn clear(&mut self) {
         self.array.fill(NONE_PTR);
         self.len = 0;
+    }
+
+    /// Returns whether `other` can be merged into `self`
+    /// with an error containing the element in `self` that caused the violation.
+    ///
+    /// The closure `ignore` indicates whether a row in `self` should be ignored.
+    pub(crate) fn can_merge(&self, other: &Self, ignore: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
+        for (slot_s, slot_o) in self.array.iter().zip(other.array.iter()) {
+            let ptr_s = slot_s.with_reserved_bit(false);
+            if *slot_s != NONE_PTR && *slot_o != NONE_PTR && !ignore(&ptr_s) {
+                // For the same key, we found both slots occupied, so we cannot merge.
+                return Err(ptr_s);
+            }
+        }
+        Ok(())
     }
 }
 

@@ -5,20 +5,20 @@
 //! [`SpacetimePaths`] holds the paths to the various directories used by the CLI & database.
 //!
 //! * **cli-bin-dir**: a directory under which all versions of all
-//!     SpacetimeDB binaries is be stored. Each binary is stored in a
-//!     directory named with version number of the binary in this directory. If a
-//!     binary has any related files required by that binary which are specific to
-//!     that version, for example, template configuration files, these files will be
-//!     installed in this folder as well.
+//!   SpacetimeDB binaries is be stored. Each binary is stored in a
+//!   directory named with version number of the binary in this directory. If a
+//!   binary has any related files required by that binary which are specific to
+//!   that version, for example, template configuration files, these files will be
+//!   installed in this folder as well.
 //!
 //! * **cli-config-dir**: a directory where configuration and state for the CLI,
-//!     as well as the keyfiles used by the server, are stored.
+//!   as well as the keyfiles used by the server, are stored.
 //!
 //! * **cli-bin-file**: the location of the default spacetime CLI executable, which
-//!     is a symlink to the actual `spacetime` binary in the cli-bin-dir.
+//!   is a symlink to the actual `spacetime` binary in the cli-bin-dir.
 //!
 //! * **data-dir**: the directory where all persistent server & database files
-//!     are stored.
+//!   are stored.
 //!
 //! ## Unix Directory Structure
 //!
@@ -217,7 +217,7 @@ pub struct SpacetimePaths {
 }
 
 impl SpacetimePaths {
-    /// Get the default directories for the currrent platform.
+    /// Get the default directories for the current platform.
     ///
     /// Returns an error if the platform director(y/ies) cannot be found.
     pub fn platform_defaults() -> anyhow::Result<Self> {
@@ -268,13 +268,12 @@ impl SpacetimePaths {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::{OsStr, OsString};
+    use crate::{PathBufExt, RootDir, SpacetimePaths};
     use std::path::Path;
 
-    use super::*;
-
+    #[cfg(not(windows))]
     mod vars {
-        use super::*;
+        use std::ffi::{OsStr, OsString};
         struct ResetVar<'a>(&'a str, Option<OsString>);
         impl Drop for ResetVar<'_> {
             fn drop(&mut self) {
@@ -320,6 +319,8 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows() {
+        use crate::SpacetimePaths;
+
         let paths = SpacetimePaths::platform_defaults().unwrap();
         let appdata_local = dirs::data_local_dir().unwrap();
         assert_eq!(paths.cli_config_dir.0, appdata_local.join("config"));

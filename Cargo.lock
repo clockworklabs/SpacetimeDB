@@ -430,6 +430,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bindgen"
+version = "0.71.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
+dependencies = [
+ "bitflags 2.9.0",
+ "cexpr",
+ "clang-sys",
+ "itertools 0.12.1",
+ "log",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash",
+ "shlex",
+ "syn 2.0.101",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -713,6 +733,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
 
 [[package]]
+name = "cexpr"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
+dependencies = [
+ "nom",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -774,6 +803,17 @@ checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
 dependencies = [
  "crypto-common",
  "inout",
+]
+
+[[package]]
+name = "clang-sys"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b023947811758c97c59bf9d1c188fd619ad4718dcaa767947df1cadb14f39f4"
+dependencies = [
+ "glob",
+ "libc",
+ "libloading",
 ]
 
 [[package]]
@@ -895,7 +935,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -910,7 +950,7 @@ dependencies = [
 
 [[package]]
 name = "connect_disconnect_client"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "spacetimedb-sdk",
@@ -976,6 +1016,17 @@ name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
+
+[[package]]
+name = "core_affinity"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a034b3a7b624016c6e13f5df875747cc25f884156aad2abd12b6c46797971342"
+dependencies = [
+ "libc",
+ "num_cpus",
+ "winapi",
+]
 
 [[package]]
 name = "cpp_demangle"
@@ -1876,6 +1927,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fslock"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04412b8935272e3a9bae6f48c7bfff74c2911f60525404edfdd28e49884c3bfb"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "fuchsia-cprng"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2057,6 +2118,15 @@ name = "glob"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
+
+[[package]]
+name = "gzip-header"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95cc527b92e6029a62960ad99aa8a6660faa4555fe5f731aab13aa6a921795a2"
+dependencies = [
+ "crc32fast",
+]
 
 [[package]]
 name = "h2"
@@ -2477,7 +2547,7 @@ dependencies = [
  "shlex",
  "tempfile",
  "version-compare",
- "which",
+ "which 4.4.2",
 ]
 
 [[package]]
@@ -2824,15 +2894,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2840,9 +2901,9 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
 name = "jemalloc_pprof"
-version = "0.7.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5622af6d21ff86ed7797ef98e11b8f302da25ec69a7db9f6cde8e2e1c8df9992"
+checksum = "74ff642505c7ce8d31c0d43ec0e235c6fd4585d9b8172d8f9dd04d36590200b5"
 dependencies = [
  "anyhow",
  "libc",
@@ -2941,6 +3002,16 @@ name = "libc"
 version = "0.2.172"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
+
+[[package]]
+name = "libloading"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
+dependencies = [
+ "cfg-if",
+ "windows-targets 0.53.0",
+]
 
 [[package]]
 name = "libm"
@@ -3076,9 +3147,9 @@ dependencies = [
 
 [[package]]
 name = "mappings"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e434981a332777c2b3062652d16a55f8e74fa78e6b1882633f0d77399c84fc2a"
+checksum = "db4d277bb50d4508057e7bddd7fcd19ef4a4cc38051b6a5a36868d75ae2cbeb9"
 dependencies = [
  "anyhow",
  "libc",
@@ -3156,6 +3227,12 @@ name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+
+[[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
@@ -3279,10 +3356,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
+dependencies = [
+ "bitflags 2.9.0",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
+
+[[package]]
+name = "nom"
+version = "7.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
+]
 
 [[package]]
 name = "nu-ansi-term"
@@ -3846,9 +3945,9 @@ checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "pprof_util"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fa015c78eed2130951e22c58d2095849391e73817ab2e74f71b0b9f63dd8416"
+checksum = "f9aba4251d95ac86f14c33e688d57a9344bfcff29e9b0c5a063fc66b5facc8a1"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -3876,6 +3975,16 @@ checksum = "3ae130e2f271fbc2ac3a40fb1d07180839cdbbe443c7a27e1e3c13c5cac0116d"
 dependencies = [
  "diff",
  "yansi",
+]
+
+[[package]]
+name = "prettyplease"
+version = "0.2.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6837b9e10d61f45f987d50808f83d1ee3d206c66acf650c3e4ae2e1f6ddedf55"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.101",
 ]
 
 [[package]]
@@ -3983,7 +4092,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.101",
@@ -4723,7 +4832,7 @@ dependencies = [
  "libc",
  "log",
  "memchr",
- "nix",
+ "nix 0.26.4",
  "radix_trie",
  "scopeguard",
  "unicode-segmentation",
@@ -5151,7 +5260,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "bytemuck",
  "derive_more",
@@ -5169,7 +5278,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-auth"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -5181,7 +5290,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bench"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "anymap",
@@ -5207,6 +5316,7 @@ dependencies = [
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-data-structures",
+ "spacetimedb-datastore",
  "spacetimedb-execution",
  "spacetimedb-lib",
  "spacetimedb-paths",
@@ -5227,7 +5337,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "heck 0.4.1",
  "humantime",
@@ -5239,14 +5349,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -5307,9 +5417,10 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "async-trait",
  "axum",
  "axum-extra",
@@ -5321,6 +5432,7 @@ dependencies = [
  "futures",
  "headers",
  "http 1.3.1",
+ "humantime",
  "hyper 1.6.0",
  "hyper-util",
  "itoa",
@@ -5328,6 +5440,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mime",
+ "pretty_assertions",
  "prometheus",
  "rand 0.9.1",
  "regex",
@@ -5338,6 +5451,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
+ "spacetimedb-datastore",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-lib",
  "spacetimedb-paths",
@@ -5346,6 +5460,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
+ "toml 0.8.22",
  "tower-http",
  "tower-layer",
  "tower-service",
@@ -5355,15 +5470,13 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api-messages"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
- "brotli",
  "bytes",
  "bytestring",
  "chrono",
  "derive_more",
  "enum-as-inner",
- "flate2",
  "hex",
  "itertools 0.12.1",
  "proptest",
@@ -5380,7 +5493,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-codegen"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "convert_case 0.6.0",
@@ -5397,7 +5510,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-commitlog"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "async-stream",
  "bitflags 2.9.0",
@@ -5429,7 +5542,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-core"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -5444,8 +5557,10 @@ dependencies = [
  "bytes",
  "bytestring",
  "chrono",
+ "core_affinity",
  "criterion",
  "crossbeam-channel",
+ "crossbeam-queue",
  "derive_more",
  "dirs",
  "enum-as-inner",
@@ -5465,6 +5580,7 @@ dependencies = [
  "lazy_static",
  "log",
  "memchr",
+ "nix 0.30.1",
  "once_cell",
  "openssl",
  "parking_lot 0.12.3",
@@ -5496,6 +5612,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
+ "spacetimedb-datastore",
  "spacetimedb-durability",
  "spacetimedb-execution",
  "spacetimedb-expr",
@@ -5503,6 +5620,7 @@ dependencies = [
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",
  "spacetimedb-lib",
+ "spacetimedb-memory-usage",
  "spacetimedb-metrics",
  "spacetimedb-paths",
  "spacetimedb-physical-plan",
@@ -5537,24 +5655,62 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
+ "v8",
  "wasmtime",
 ]
 
 [[package]]
 name = "spacetimedb-data-structures"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "ahash 0.8.12",
+ "crossbeam-queue",
  "hashbrown 0.15.3",
  "nohash-hasher",
  "serde",
  "smallvec",
+ "spacetimedb-memory-usage",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-datastore"
+version = "1.3.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "derive_more",
+ "enum-as-inner",
+ "enum-map",
+ "itertools 0.12.1",
+ "lazy_static",
+ "log",
+ "once_cell",
+ "parking_lot 0.12.3",
+ "pretty_assertions",
+ "prometheus",
+ "proptest",
+ "smallvec",
+ "spacetimedb-commitlog",
+ "spacetimedb-data-structures",
+ "spacetimedb-durability",
+ "spacetimedb-execution",
+ "spacetimedb-lib",
+ "spacetimedb-metrics",
+ "spacetimedb-paths",
+ "spacetimedb-primitives",
+ "spacetimedb-sats",
+ "spacetimedb-schema",
+ "spacetimedb-snapshot",
+ "spacetimedb-table",
+ "strum",
+ "thin-vec",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "spacetimedb-durability"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -5568,7 +5724,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-execution"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -5583,7 +5739,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-expr"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "bigdecimal",
@@ -5601,7 +5757,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-fs-utils"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -5643,7 +5799,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "bitflags 2.9.0",
@@ -5662,7 +5818,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spacetimedb-bindings-macro",
- "spacetimedb-data-structures",
+ "spacetimedb-memory-usage",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
  "spacetimedb-sats",
@@ -5670,8 +5826,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-memory-usage"
+version = "1.3.0"
+dependencies = [
+ "decorum",
+ "ethnum",
+ "hashbrown 0.15.3",
+ "smallvec",
+]
+
+[[package]]
 name = "spacetimedb-metrics"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "arrayvec",
  "itertools 0.12.1",
@@ -5681,7 +5847,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-paths"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5697,7 +5863,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-physical-plan"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "derive_more",
@@ -5713,18 +5879,19 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "bitflags 2.9.0",
  "either",
  "itertools 0.12.1",
  "nohash-hasher",
  "proptest",
+ "spacetimedb-memory-usage",
 ]
 
 [[package]]
 name = "spacetimedb-query"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -5741,7 +5908,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sats"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5766,6 +5933,7 @@ dependencies = [
  "sha3",
  "smallvec",
  "spacetimedb-bindings-macro",
+ "spacetimedb-memory-usage",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
  "thiserror 1.0.69",
@@ -5773,9 +5941,10 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-schema"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
+ "derive_more",
  "enum-as-inner",
  "enum-map",
  "hashbrown 0.15.3",
@@ -5800,13 +5969,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sdk"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anymap",
  "base64 0.21.7",
  "brotli",
  "bytes",
  "cursive",
+ "flate2",
  "futures",
  "futures-channel",
  "hex",
@@ -5829,7 +5999,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-snapshot"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -5843,6 +6013,7 @@ dependencies = [
  "rand 0.9.1",
  "scopeguard",
  "spacetimedb-core",
+ "spacetimedb-datastore",
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
  "spacetimedb-lib",
@@ -5861,7 +6032,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sql-parser"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "derive_more",
  "spacetimedb-lib",
@@ -5871,7 +6042,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5887,12 +6058,14 @@ dependencies = [
  "parse-size",
  "prometheus",
  "scopeguard",
+ "serde",
  "serde_json",
  "sled",
  "socket2",
  "spacetimedb-client-api",
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
+ "spacetimedb-datastore",
  "spacetimedb-lib",
  "spacetimedb-paths",
  "spacetimedb-table",
@@ -5908,7 +6081,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-subscription"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "spacetimedb-execution",
@@ -5921,7 +6094,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-table"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "ahash 0.8.12",
  "blake3",
@@ -5938,6 +6111,7 @@ dependencies = [
  "smallvec",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
+ "spacetimedb-memory-usage",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-schema",
@@ -5946,7 +6120,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-testing"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "clap 4.5.37",
@@ -5973,7 +6147,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-update"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5998,7 +6172,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-vm"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -6089,7 +6263,7 @@ dependencies = [
 
 [[package]]
 name = "sqltest"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6107,6 +6281,7 @@ dependencies = [
  "rusqlite",
  "rust_decimal",
  "spacetimedb-core",
+ "spacetimedb-datastore",
  "spacetimedb-lib",
  "spacetimedb-sats",
  "spacetimedb-vm",
@@ -6394,9 +6569,9 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.19.1"
+version = "3.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7437ac7763b9b123ccf33c338a5cc1bac6f69b45a136c19bdd8a65e3916435bf"
+checksum = "e8a64e3985349f2441a1a9ef0b853f869006c3855f2cda6862a94d26ebb9d6a1"
 dependencies = [
  "fastrand",
  "getrandom 0.3.2",
@@ -6426,7 +6601,7 @@ dependencies = [
 
 [[package]]
 name = "test-client"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
@@ -6438,7 +6613,7 @@ dependencies = [
 
 [[package]]
 name = "test-counter"
-version = "1.1.1"
+version = "1.3.0"
 dependencies = [
  "anyhow",
  "spacetimedb-data-structures",
@@ -6715,9 +6890,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.26.2"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a9daff607c6d2bf6c16fd681ccb7eecc83e4e2cdc1ca067ffaadfca5de7f084"
+checksum = "489a59b6730eda1b0171fcfda8b121f4bee2b35cba8645ca35c5f7ba3eb736c1"
 dependencies = [
  "futures-util",
  "log",
@@ -6985,9 +7160,9 @@ dependencies = [
 
 [[package]]
 name = "tungstenite"
-version = "0.26.2"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4793cb5e56680ecbb1d843515b23b6de9a75eb04b66643e256a396d43be33c13"
+checksum = "eadc29d668c91fcc564941132e17b28a7ceb2f3ebf0b9dae3e03fd7a6748eb0d"
 dependencies = [
  "bytes",
  "data-encoding",
@@ -7081,6 +7256,7 @@ name = "upgrade-version"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap 4.5.37",
  "duct",
  "regex",
@@ -7141,6 +7317,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "458f7a779bf54acc9f347480ac654f68407d3aab21269a6e3c9f922acd9e2da9"
 dependencies = [
  "getrandom 0.3.2",
+]
+
+[[package]]
+name = "v8"
+version = "137.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ca393e2032ddba2a57169e15cac5d0a81cdb3d872a8886f4468bc0f486098d2"
+dependencies = [
+ "bindgen",
+ "bitflags 2.9.0",
+ "fslock",
+ "gzip-header",
+ "home",
+ "miniz_oxide",
+ "paste",
+ "which 6.0.3",
 ]
 
 [[package]]
@@ -7618,6 +7810,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "which"
+version = "6.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4ee928febd44d98f2f459a4a79bd4d928591333a494a10a868418ac1b39cf1f"
+dependencies = [
+ "either",
+ "home",
+ "rustix 0.38.44",
+ "winsafe",
+]
+
+[[package]]
 name = "whoami"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7650,7 +7854,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -8098,6 +8302,12 @@ dependencies = [
  "cfg-if",
  "windows-sys 0.48.0",
 ]
+
+[[package]]
+name = "winsafe"
+version = "0.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"
 
 [[package]]
 name = "wit-bindgen-rt"

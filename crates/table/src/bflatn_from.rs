@@ -5,9 +5,6 @@
 use super::{
     blob_store::BlobStore,
     indexes::{Bytes, PageOffset},
-    layout::{
-        align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayout, RowTypeLayout, SumTypeLayout, VarLenType,
-    },
     page::Page,
     row_hash,
     var_len::VarLenRef,
@@ -16,8 +13,11 @@ use core::cell::Cell;
 use core::str;
 use spacetimedb_sats::{
     i256, impl_serialize,
+    layout::{
+        align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayoutView, RowTypeLayout, SumTypeLayout, VarLenType,
+    },
     ser::{SerializeNamedProduct, Serializer},
-    u256, AlgebraicType,
+    u256, ArrayType,
 };
 
 /// Serializes the row in `page` where the fixed part starts at `fixed_offset`
@@ -68,7 +68,7 @@ unsafe fn serialize_product<S: Serializer>(
     page: &Page,
     blob_store: &dyn BlobStore,
     curr_offset: CurrOffset<'_>,
-    ty: &ProductTypeLayout,
+    ty: ProductTypeLayoutView<'_>,
 ) -> Result<S::Ok, S::Error> {
     let elems = &ty.elements;
     let mut ser = ser.serialize_named_product(elems.len())?;
@@ -188,7 +188,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { serialize_product(ser, bytes, page, blob_store, curr_offset, ty) }
+            unsafe { serialize_product(ser, bytes, page, blob_store, curr_offset, ty.view()) }
         }
         // The primitive types:
         //
@@ -243,7 +243,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
         }
         AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { serialize_bsatn(ser, bytes, page, blob_store, curr_offset, ty) }
+            unsafe { serialize_array(ser, bytes, page, blob_store, curr_offset, ty) }
         }
     }
 }
@@ -285,13 +285,13 @@ unsafe fn serialize_string<S: Serializer>(
     }
 }
 
-unsafe fn serialize_bsatn<S: Serializer>(
+unsafe fn serialize_array<S: Serializer>(
     ser: S,
     bytes: &Bytes,
     page: &Page,
     blob_store: &dyn BlobStore,
     curr_offset: CurrOffset<'_>,
-    ty: &AlgebraicType,
+    ty: &ArrayType,
 ) -> Result<S::Ok, S::Error> {
     // SAFETY: `value` was valid at and aligned for `ty`.
     // These `ty` store a `vlr: VarLenRef` as their fixed value.

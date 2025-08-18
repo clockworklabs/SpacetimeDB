@@ -132,7 +132,7 @@ pub struct EveryVecStruct {
 ///     to delete a row.
 ///     e.g. delete_by delete_my_table = delete_by_name(name: String)
 ///
-/// - fields is a comma-separated list of field specifiers, which are optional attribues,
+/// - fields is a comma-separated list of field specifiers, which are optional attributes,
 ///   followed by a field name identifier and a type.
 ///   e.g. #[unique] name String
 ///

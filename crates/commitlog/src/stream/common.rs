@@ -92,15 +92,15 @@ impl RangeFromMaybeToInclusive {
         };
         let end = match b.end_bound() {
             Bound::Unbounded => None,
-            Bound::Included(end) => Some((*end).max(start)),
-            Bound::Excluded(end) => Some(end.saturating_sub(1).max(start)),
+            Bound::Included(end) => Some(*end),
+            Bound::Excluded(end) => Some(end.saturating_sub(1)),
         };
 
         Self { start, end }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.end.is_some_and(|end| end <= self.start)
+        self.end.is_some_and(|end| end < self.start)
     }
 
     pub fn contains(&self, item: &u64) -> bool {

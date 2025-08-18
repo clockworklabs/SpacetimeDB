@@ -3,11 +3,12 @@ use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment};
 use convert_case::{Case, Casing};
+use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
-use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, PrimitiveType};
+use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
@@ -1271,6 +1272,9 @@ impl __sdk::DbContext for DbConnection {{
     fn connection_id(&self) -> __sdk::ConnectionId {{
         self.imp.connection_id()
     }}
+    fn try_connection_id(&self) -> Option<__sdk::ConnectionId> {{
+        self.imp.try_connection_id()
+    }}
 }}
 
 impl DbConnection {{
@@ -1462,7 +1466,7 @@ impl<Ctx: __sdk::DbContext<
 ///
 /// If `event_type` is `Some`, `event_type_doc_link` should be as well.
 /// It should be a rustdoc-formatted link (including square brackets and all) to the `event_type`.
-/// This may differ (in the `strcmp` sense) from `event_type` because it should not inlcude generic parameters.
+/// This may differ (in the `strcmp` sense) from `event_type` because it should not include generic parameters.
 fn define_event_context(
     out: &mut Indenter,
     struct_and_trait_name: &str,
@@ -1586,6 +1590,9 @@ impl __sdk::DbContext for {struct_and_trait_name} {{
     }}
     fn connection_id(&self) -> __sdk::ConnectionId {{
         self.imp.connection_id()
+    }}
+    fn try_connection_id(&self) -> Option<__sdk::ConnectionId> {{
+        self.imp.try_connection_id()
     }}
 }}
 

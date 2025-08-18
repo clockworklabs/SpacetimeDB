@@ -4,13 +4,6 @@
 
 partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlineTuple>
 {
-    private TestTaggedEnumInlineTuple() { }
-
-    internal enum @enum : byte
-    {
-        Item1
-    }
-
     public sealed record Item1(int Item1_) : TestTaggedEnumInlineTuple
     {
         public override string ToString() =>
@@ -31,6 +24,7 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
                         "Invalid tag value, this state should be unreachable."
                     )
             };
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestTaggedEnumInlineTuple value)
         {
@@ -65,7 +59,8 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
         switch (this)
         {
             case Item1(var inner):
-                return inner.GetHashCode();
+                var ___hashItem1 = inner.GetHashCode();
+                return ___hashItem1;
             default:
                 return 0;
         }

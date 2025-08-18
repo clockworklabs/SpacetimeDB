@@ -1,7 +1,8 @@
 use crate::buffer::BufWriter;
+use crate::de::DeserializeSeed;
 use crate::ser::{self, Error, ForwardNamedToSeqProduct, SerializeArray, SerializeSeqProduct};
-use crate::AlgebraicValue;
 use crate::{i256, u256};
+use crate::{AlgebraicValue, WithTypespace};
 use core::fmt;
 
 /// Defines the BSATN serialization data format.
@@ -159,20 +160,26 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
         value.serialize(self)
     }
 
-    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
-        debug_assert!(AlgebraicValue::decode(ty, &mut { bsatn }).is_ok());
+    unsafe fn serialize_bsatn<Ty>(self, ty: &Ty, bsatn: &[u8]) -> Result<Self::Ok, Self::Error>
+    where
+        for<'a, 'de> WithTypespace<'a, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
+        debug_assert!(crate::bsatn::decode(ty, &mut { bsatn }).is_ok());
         self.writer.put_slice(bsatn);
         Ok(())
     }
 
-    unsafe fn serialize_bsatn_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
+    unsafe fn serialize_bsatn_in_chunks<'a, Ty, I: Clone + Iterator<Item = &'a [u8]>>(
         self,
-        ty: &crate::AlgebraicType,
+        ty: &Ty,
         total_bsatn_len: usize,
         bsatn: I,
-    ) -> Result<Self::Ok, Self::Error> {
+    ) -> Result<Self::Ok, Self::Error>
+    where
+        for<'b, 'de> WithTypespace<'b, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
         debug_assert!(total_bsatn_len <= isize::MAX as usize);
-        debug_assert!(AlgebraicValue::decode(ty, &mut &*concat_bytes_slow(total_bsatn_len, bsatn.clone())).is_ok());
+        debug_assert!(crate::bsatn::decode(ty, &mut &*concat_bytes_slow(total_bsatn_len, bsatn.clone())).is_ok());
 
         for chunk in bsatn {
             self.writer.put_slice(chunk);

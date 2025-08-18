@@ -4,8 +4,7 @@ use super::{
     blob_store::BlobStore,
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
-    indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE},
-    layout::{AlgebraicTypeLayout, RowTypeLayout},
+    indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset, PAGE_DATA_SIZE},
     page::{FixedLenRowsIter, Page},
     page_pool::PagePool,
     pages::Pages,
@@ -18,19 +17,20 @@ use super::{
     static_layout::StaticLayout,
     table_index::{TableIndex, TableIndexPointIter, TableIndexRangeIter},
     var_len::VarLenMembers,
-    MemoryUsage,
 };
-use core::ops::RangeBounds;
 use core::{fmt, ptr};
 use core::{
     hash::{Hash, Hasher},
     hint::unreachable_unchecked,
 };
+use core::{mem, ops::RangeBounds};
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
-use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
+use spacetimedb_sats::layout::{AlgebraicTypeLayout, PrimitiveType, RowTypeLayout, Size};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError, ToBsatn},
@@ -40,7 +40,10 @@ use spacetimedb_sats::{
     ser::{Serialize, Serializer},
     u256, AlgebraicValue, ProductType, ProductValue,
 };
-use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema, type_for_generate::PrimitiveType};
+use spacetimedb_schema::{
+    def::IndexAlgorithm,
+    schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
+};
 use std::{
     collections::{btree_map, BTreeMap},
     sync::Arc,
@@ -94,6 +97,8 @@ pub struct Table {
     is_scheduler: bool,
 }
 
+type StaticLayoutInTable = Option<(StaticLayout, StaticBsatnValidator)>;
+
 /// The part of a `Table` concerned only with storing rows.
 ///
 /// Separated from the "outer" parts of `Table`, especially the `indexes`,
@@ -110,7 +115,7 @@ pub(crate) struct TableInner {
     ///
     /// A [`StaticBsatnValidator`] is also included.
     /// It's used to validate BSATN-encoded rows before converting to BFLATN.
-    static_layout: Option<(StaticLayout, StaticBsatnValidator)>,
+    static_layout: StaticLayoutInTable,
     /// The visitor program for `row_layout`.
     ///
     /// Must be in the `TableInner` so that [`RowRef::blob_store_bytes`] can use it.
@@ -137,11 +142,45 @@ impl TableInner {
     /// - The `SquashedOffset` of `ptr` must match the enclosing table's `table.squashed_offset`.
     ///
     /// Showing that `ptr` was the result of a call to [`Table::insert(table, ..)`]
-    /// and has not been passed to [`Table::delete(table, ..)`]
+    /// and has not been passed to [`Table::delete_internal_skip_pointer_map(table, ..)`]
     /// is sufficient to demonstrate all of these properties.
-    unsafe fn get_row_ref_unchecked<'a>(&'a self, blob_store: &'a dyn BlobStore, ptr: RowPointer) -> RowRef<'a> {
+    unsafe fn get_row_ref_unchecked<'a>(
+        &'a self,
+        blob_store: &'a dyn BlobStore,
+        squashed_offset: SquashedOffset,
+        ptr: RowPointer,
+    ) -> RowRef<'a> {
         // SAFETY: Forward caller requirements.
-        unsafe { RowRef::new(self, blob_store, ptr) }
+        unsafe { RowRef::new(self, blob_store, squashed_offset, ptr) }
+    }
+
+    /// Returns whether the row at `ptr` is present or not.
+    // TODO: Remove all uses of this method,
+    //       or more likely, gate them behind `debug_assert!`
+    //       so they don't have semantic meaning.
+    //
+    //       Unlike the previous `locking_tx_datastore::Table`'s `RowId`,
+    //       `RowPointer` is not content-addressed.
+    //       This means it is possible to:
+    //       - have a `RowPointer` A* to row A,
+    //       - Delete row A,
+    //       - Insert row B into the same storage as freed from A,
+    //       - Test `is_row_present(A*)`, which falsely reports that row A is still present.
+    //
+    //       In the final interface, this method is superfluous anyways,
+    //       as `RowPointer` is not part of our public interface.
+    //       Instead, we will always discover a known-present `RowPointer`
+    //       during a table scan or index seek.
+    //       As such, our `delete` and `insert` methods can be `unsafe`
+    //       and trust that the `RowPointer` is valid.
+    fn is_row_present(&self, _squashed_offset: SquashedOffset, ptr: RowPointer) -> bool {
+        if _squashed_offset != ptr.squashed_offset() {
+            return false;
+        }
+        let Some((page, offset)) = self.try_page_and_offset(ptr) else {
+            return false;
+        };
+        page.has_row_offset(self.row_layout.size(), offset)
     }
 
     fn try_page_and_offset(&self, ptr: RowPointer) -> Option<(&Page, PageOffset)> {
@@ -222,17 +261,139 @@ pub enum ReadViaBsatnError {
     DecodeError(#[from] DecodeError),
 }
 
+#[derive(Error, Debug)]
+#[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`")]
+pub struct ChangeColumnsError {
+    table_id: TableId,
+    table_name: Box<str>,
+    old: Vec<ColumnSchema>,
+    new: Vec<ColumnSchema>,
+}
+
+/// Computes the parts of a table definition, that are row type dependent, from the row type.
+fn table_row_type_dependents(row_type: ProductType) -> (RowTypeLayout, StaticLayoutInTable, VarLenVisitorProgram) {
+    let row_layout: RowTypeLayout = row_type.into();
+    let static_layout = StaticLayout::for_row_type(&row_layout).map(|sl| (sl, static_bsatn_validator(&row_layout)));
+    let visitor_prog = row_type_visitor(&row_layout);
+
+    (row_layout, static_layout, visitor_prog)
+}
+
 // Public API:
 impl Table {
     /// Creates a new empty table with the given `schema` and `squashed_offset`.
     pub fn new(schema: Arc<TableSchema>, squashed_offset: SquashedOffset) -> Self {
-        let row_layout: RowTypeLayout = schema.get_row_type().clone().into();
-        let static_layout = StaticLayout::for_row_type(&row_layout).map(|sl| (sl, static_bsatn_validator(&row_layout)));
-        let visitor_prog = row_type_visitor(&row_layout);
+        let (row_layout, static_layout, visitor_prog) = table_row_type_dependents(schema.get_row_type().clone());
+
         // By default, we start off with an empty pointer map,
         // which is removed when the first unique index is added.
         let pm = Some(PointerMap::default());
-        Self::new_with_indexes_capacity(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
+        Self::new_raw(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
+    }
+
+    /// Change the columns of `self` to those in `column_schemas`
+    /// and returns the old column schemas.
+    ///
+    /// Returns an error if the new list of column is incompatible with the old.
+    pub fn change_columns_to(
+        &mut self,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<Vec<ColumnSchema>, ChangeColumnsError> {
+        fn validate(
+            this: &Table,
+            new_row_layout: &RowTypeLayout,
+            column_schemas: &[ColumnSchema],
+        ) -> Result<(), ChangeColumnsError> {
+            // Validate that the old row type layout can be changed to the new.
+            let schema = this.get_schema();
+            let row_layout = this.row_layout();
+
+            // Require that a scheduler table doesn't change the `id` and `at` fields.
+            let schedule_compat = schema.schedule.as_ref().zip(schema.pk()).is_none_or(|(schedule, pk)| {
+                let at_col = schedule.at_column.idx();
+                let id_col = pk.col_pos.idx();
+                row_layout[at_col] == new_row_layout[at_col] && row_layout[id_col] == new_row_layout[id_col]
+            });
+
+            // The `row_layout` must also be compatible with the new.
+            if schedule_compat && row_layout.is_compatible_with(new_row_layout) {
+                return Ok(());
+            }
+
+            Err(ChangeColumnsError {
+                table_id: schema.table_id,
+                table_name: schema.table_name.clone(),
+                old: schema.columns().to_vec(),
+                new: column_schemas.to_vec(),
+            })
+        }
+
+        unsafe { self.change_columns_to_unchecked(column_schemas, validate) }
+    }
+
+    /// Change the columns of `self` to those in `column_schemas`
+    /// and returns the old column schemas.
+    ///
+    /// Returns an error if the new list of column is incompatible with the old.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure, using `validate`,
+    /// that `new_row_layout` is compatible with the rows existing in `self`.
+    pub unsafe fn change_columns_to_unchecked<E>(
+        &mut self,
+        column_schemas: Vec<ColumnSchema>,
+        validate: impl FnOnce(&Self, &RowTypeLayout, &[ColumnSchema]) -> Result<(), E>,
+    ) -> Result<Vec<ColumnSchema>, E> {
+        // Compute the new row type, layout, and related stuff.
+        let new_row_type: ProductType = columns_to_row_type(&column_schemas);
+        let (new_row_layout, new_static_layout, new_visitor_prog) = table_row_type_dependents(new_row_type.clone());
+
+        validate(self, &new_row_layout, &column_schemas)?;
+
+        // Set the new layout and friends.
+        self.inner.row_layout = new_row_layout;
+        self.inner.static_layout = new_static_layout;
+        self.inner.visitor_prog = new_visitor_prog;
+
+        // Update the schema.
+        let old_column_schemas = self.with_mut_schema(|s| {
+            s.row_type = new_row_type;
+            mem::replace(&mut s.columns, column_schemas)
+        });
+
+        // Recompute the index types.
+        self.compute_index_types();
+
+        Ok(old_column_schemas)
+    }
+
+    /// Change the row layout and schema to the one of `other`.
+    ///
+    /// # Safety
+    ///
+    /// This is safe when a `ChangeColumnsError` would not occur
+    /// when using `other.get_schema().columns.clone()`.
+    /// The actual safety requirements are more complex but the above
+    /// is a super-set of the actual requirements.
+    pub unsafe fn set_layout_and_schema_to(&mut self, other: &Table) {
+        self.inner.row_layout = other.inner.row_layout.clone();
+        self.inner.static_layout = other.inner.static_layout.clone();
+        self.inner.visitor_prog = other.inner.visitor_prog.clone();
+
+        self.use_schema_of(other);
+        self.compute_index_types();
+    }
+
+    /// Re-computes the index key types.
+    fn compute_index_types(&mut self) {
+        let schema = self.get_schema().clone();
+        let row_type = schema.get_row_type();
+        for index in self.indexes.values_mut() {
+            index.key_type = row_type
+                .project(&index.indexed_columns)
+                .expect("new row type should have as many columns as before")
+        }
     }
 
     /// Returns whether this is a scheduler table.
@@ -304,7 +465,7 @@ impl Table {
         // but we check just in case it isn't.
         let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, row_ptr) };
+        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, row_ptr) };
         Ok((hash, row_ref))
     }
 
@@ -333,7 +494,7 @@ impl Table {
             )
         }?;
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         Ok((row_ref, blob_bytes))
     }
@@ -402,7 +563,7 @@ impl Table {
         };
 
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         Ok((row_ref, blob_bytes))
     }
@@ -589,7 +750,7 @@ impl Table {
             .iter_mut()
             .try_for_each(|(index_id, index)| {
                 // SAFETY: We just inserted `ptr`, so it must be present.
-                let new = unsafe { self.inner.get_row_ref_unchecked(blob_store, new) };
+                let new = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, new) };
                 // SAFETY: any index in this table was constructed with the same row type as this table.
                 let violation = unsafe { index.check_and_insert(new) };
                 violation.map_err(|old| (*index_id, old, new))
@@ -871,9 +1032,8 @@ impl Table {
     /// and has not been passed to [`Table::delete(table, ..)`]
     /// is sufficient to demonstrate all of these properties.
     pub unsafe fn get_row_ref_unchecked<'a>(&'a self, blob_store: &'a dyn BlobStore, ptr: RowPointer) -> RowRef<'a> {
-        debug_assert!(self.is_row_present(ptr));
         // SAFETY: Caller promised that ^-- holds.
-        unsafe { RowRef::new(&self.inner, blob_store, ptr) }
+        unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) }
     }
 
     /// Deletes a row in the page manager
@@ -887,6 +1047,7 @@ impl Table {
         blob_store: &mut dyn BlobStore,
         ptr: RowPointer,
     ) -> BlobNumBytes {
+        debug_assert!(self.is_row_present(ptr));
         // Delete the physical row.
         //
         // SAFETY:
@@ -912,7 +1073,7 @@ impl Table {
         // Remove the set semantic association.
         if let Some(pointer_map) = &mut self.pointer_map {
             // SAFETY: `self.is_row_present(row)` holds.
-            let row = unsafe { RowRef::new(&self.inner, blob_store, ptr) };
+            let row = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
             let _remove_result = pointer_map.remove(row.row_hash(), ptr);
             debug_assert!(_remove_result);
@@ -945,7 +1106,7 @@ impl Table {
     /// SAFETY: `self.is_row_present(row)` must hold.
     unsafe fn delete_from_indices_until(&mut self, blob_store: &dyn BlobStore, ptr: RowPointer, index_id: IndexId) {
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         for (_, index) in self.indexes.range_mut(..index_id) {
             index.delete(row_ref).unwrap();
@@ -957,7 +1118,7 @@ impl Table {
     /// SAFETY: `self.is_row_present(row)` must hold.
     unsafe fn delete_from_indices(&mut self, blob_store: &dyn BlobStore, ptr: RowPointer) {
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         for index in self.indexes.values_mut() {
             index.delete(row_ref).unwrap();
@@ -983,7 +1144,7 @@ impl Table {
         };
 
         // SAFETY: We only call `get_row_ref_unchecked` when `is_row_present` holds.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, ptr) };
 
         let ret = before(row_ref);
 
@@ -1062,8 +1223,23 @@ impl Table {
     /// If none but `self` refers to the schema, then the mutation will be in-place.
     /// Otherwise, the schema must be cloned, mutated,
     /// and then the cloned version is written back to the table.
-    pub fn with_mut_schema(&mut self, with: impl FnOnce(&mut TableSchema)) {
-        with(Arc::make_mut(&mut self.schema));
+    pub fn with_mut_schema<R>(&mut self, with: impl FnOnce(&mut TableSchema) -> R) -> R {
+        with(Arc::make_mut(&mut self.schema))
+    }
+
+    /// Runs a mutation on the [`TableSchema`] of this table
+    /// and then sets the schema of `other` to that of `self`.
+    pub fn with_mut_schema_and_clone<R>(&mut self, other: &mut Table, with: impl FnOnce(&mut TableSchema) -> R) -> R {
+        let ret = self.with_mut_schema(with);
+        other.use_schema_of(self);
+        ret
+    }
+
+    /// Makes `self` use the schema of `other`.
+    ///
+    /// Here, `self` will typically be a commit table and `other` a tx table, or the reverse.
+    fn use_schema_of(&mut self, other: &Self) {
+        self.schema = other.get_schema().clone();
     }
 
     /// Returns a new [`TableIndex`] for `table`.
@@ -1100,35 +1276,35 @@ impl Table {
     /// # Safety
     ///
     /// Caller must promise that `index` was constructed with the same row type/layout as this table.
-    pub unsafe fn add_index(&mut self, index_id: IndexId, index: TableIndex) {
+    pub unsafe fn add_index(&mut self, index_id: IndexId, index: TableIndex) -> Option<PointerMap> {
         let is_unique = index.is_unique();
         self.indexes.insert(index_id, index);
 
         // Remove the pointer map, if any.
         if is_unique {
-            self.pointer_map = None;
+            self.pointer_map.take()
+        } else {
+            None
         }
     }
 
     /// Removes an index from the table.
     ///
     /// Returns whether an index existed with `index_id`.
-    pub fn delete_index(&mut self, blob_store: &dyn BlobStore, index_id: IndexId) -> bool {
-        let index = self.indexes.remove(&index_id);
-        let ret = index.is_some();
+    pub fn delete_index(
+        &mut self,
+        blob_store: &dyn BlobStore,
+        index_id: IndexId,
+        pointer_map: Option<PointerMap>,
+    ) -> Option<TableIndex> {
+        let index = self.indexes.remove(&index_id)?;
 
         // If we removed the last unique index, add a pointer map.
-        if index.is_some_and(|i| i.is_unique()) && !self.indexes.values().any(|idx| idx.is_unique()) {
-            self.rebuild_pointer_map(blob_store);
+        if index.is_unique() && !self.indexes.values().any(|idx| idx.is_unique()) {
+            self.pointer_map = Some(pointer_map.unwrap_or_else(|| self.rebuild_pointer_map(blob_store)));
         }
 
-        // Remove index from schema.
-        //
-        // This likely will do a clone-write as over time?
-        // The schema might have found other referents.
-        self.with_mut_schema(|s| s.indexes.retain(|x| x.index_id != index_id));
-
-        ret
+        Some(index)
     }
 
     /// Returns an iterator over all the rows of `self`, yielded as [`RefRef`]s.
@@ -1186,13 +1362,19 @@ impl Table {
     /// The new table will be completely empty
     /// and will use the given `squashed_offset` instead of that of `self`.
     pub fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
+        // Clone a bunch of static data.
+        // NOTE(centril): It's important that these be cheap to clone.
+        // This is why they are all `Arc`ed or have some sort of small-vec optimization.
         let schema = self.schema.clone();
         let layout = self.row_layout().clone();
         let sbl = self.inner.static_layout.clone();
         let visitor = self.inner.visitor_prog.clone();
+
         // If we had a pointer map, we'll have one in the cloned one as well, but empty.
         let pm = self.pointer_map.as_ref().map(|_| PointerMap::default());
-        let mut new = Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, pm);
+
+        // Make the new table.
+        let mut new = Table::new_raw(schema, layout, sbl, visitor, squashed_offset, pm);
 
         // Clone the index structure. The table is empty, so no need to `build_from_rows`.
         for (&index_id, index) in self.indexes.iter() {
@@ -1225,7 +1407,7 @@ impl Table {
         // Recompute table metadata based on the new pages.
         // Compute the row count first, in case later computations want to use it as a capacity to pre-allocate.
         self.compute_row_count(blob_store);
-        self.rebuild_pointer_map(blob_store);
+        self.pointer_map = Some(self.rebuild_pointer_map(blob_store));
     }
 
     /// Consumes the table, returning some constituents needed for merge.
@@ -1241,9 +1423,9 @@ impl Table {
 
     /// Returns the number of rows resident in this table.
     ///
-    /// This scales in runtime with the number of pages in the table.
+    /// This method runs in constant time.
     pub fn num_rows(&self) -> u64 {
-        self.pages().iter().map(|page| page.num_rows() as u64).sum()
+        self.row_count
     }
 
     #[cfg(test)]
@@ -1266,6 +1448,9 @@ impl Table {
     /// Of these, the caller should inspect the blob store in order to account for memory usage by large blobs,
     /// and call [`Self::bytes_used_by_index_keys`] to account for indexes,
     /// but we intend to eat all the other overheads when billing.
+    ///
+    // TODO(perf, centril): consider storing the total number of granules in the table instead
+    // so that this runs in constant time rather than O(|Pages|).
     pub fn bytes_used_by_rows(&self) -> u64 {
         self.pages()
             .iter()
@@ -1283,6 +1468,11 @@ impl Table {
                 page.reconstruct_bytes_used_by_rows(self.inner.row_layout.size(), &self.inner.visitor_prog)
             } as u64)
             .sum()
+    }
+
+    /// Returns the number of indices in this table.
+    pub fn num_indices(&self) -> usize {
+        self.indexes.len()
     }
 
     /// Returns the number of rows (or [`RowPointer`]s, more accurately)
@@ -1351,7 +1541,13 @@ impl<'a> RowRef<'a> {
     /// Showing that `pointer` was the result of a call to `table.insert`
     /// and has not been passed to `table.delete`
     /// is sufficient to demonstrate all of these properties.
-    unsafe fn new(table: &'a TableInner, blob_store: &'a dyn BlobStore, pointer: RowPointer) -> Self {
+    unsafe fn new(
+        table: &'a TableInner,
+        blob_store: &'a dyn BlobStore,
+        _squashed_offset: SquashedOffset,
+        pointer: RowPointer,
+    ) -> Self {
+        debug_assert!(table.is_row_present(_squashed_offset, pointer));
         Self {
             table,
             blob_store,
@@ -1687,6 +1883,16 @@ impl<'a> TableAndIndex<'a> {
         self.index
     }
 
+    /// Wraps `ptr` in a [`RowRef`].
+    ///
+    /// # Safety
+    ///
+    /// The `self.table().is_row_present(ptr)` must hold.
+    pub unsafe fn combine_with_ptr(&self, ptr: RowPointer) -> RowRef<'a> {
+        // SAFETY: forward caller requirement.
+        unsafe { self.table.get_row_ref_unchecked(self.blob_store, ptr) }
+    }
+
     /// Returns an iterator yielding all rows in this index for `key`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
@@ -1723,20 +1929,21 @@ pub struct IndexScanPointIter<'a> {
     btree_index_iter: TableIndexPointIter<'a>,
 }
 
+impl<'a> IndexScanPointIter<'a> {
+    /// Consume the iterator, returning the inner one.
+    pub fn index(self) -> TableIndexPointIter<'a> {
+        self.btree_index_iter
+    }
+}
+
 impl<'a> Iterator for IndexScanPointIter<'a> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ptr = self.btree_index_iter.next()?;
-        // FIXME: Determine if this is correct and if so use `_unchecked`.
-        // Will a table's index necessarily hold only pointers into that index?
-        // Edge case: if an index is added during a transaction which then scans that index,
-        // it appears that the newly-created `TxState` index
-        // will also hold pointers into the `CommittedState`.
-        //
-        // SAFETY: Assuming this is correct,
-        // `ptr` came from the index, which always holds pointers to valid rows.
-        self.table.get_row_ref(self.blob_store, ptr)
+        self.btree_index_iter.next().map(|ptr| {
+            // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
+            unsafe { self.table.get_row_ref_unchecked(self.blob_store, ptr) }
+        })
     }
 }
 
@@ -1757,16 +1964,10 @@ impl<'a> Iterator for IndexScanRangeIter<'a> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ptr = self.btree_index_iter.next()?;
-        // FIXME: Determine if this is correct and if so use `_unchecked`.
-        // Will a table's index necessarily hold only pointers into that index?
-        // Edge case: if an index is added during a transaction which then scans that index,
-        // it appears that the newly-created `TxState` index
-        // will also hold pointers into the `CommittedState`.
-        //
-        // SAFETY: Assuming this is correct,
-        // `ptr` came from the index, which always holds pointers to valid rows.
-        self.table.get_row_ref(self.blob_store, ptr)
+        self.btree_index_iter.next().map(|ptr| {
+            // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
+            unsafe { self.table.get_row_ref_unchecked(self.blob_store, ptr) }
+        })
     }
 }
 
@@ -1782,26 +1983,36 @@ pub struct UniqueConstraintViolation {
 impl UniqueConstraintViolation {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
+    ///
+    /// In this version, the [`IndexSchema`] is looked up in `schema` based on `index_id`.
     #[cold]
     fn build(schema: &TableSchema, index: &TableIndex, index_id: IndexId, value: AlgebraicValue) -> Self {
+        let index_schema = schema.indexes.iter().find(|i| i.index_id == index_id).unwrap();
+        Self::build_with_index_schema(schema, index, index_schema, value)
+    }
+
+    /// Returns a unique constraint violation error for the given `index`
+    /// and the `value` that would have been duplicated.
+    ///
+    /// In this version, the `index_schema` is explicitly passed.
+    #[cold]
+    pub fn build_with_index_schema(
+        schema: &TableSchema,
+        index: &TableIndex,
+        index_schema: &IndexSchema,
+        value: AlgebraicValue,
+    ) -> Self {
         // Fetch the table name.
         let table_name = schema.table_name.clone();
 
         // Fetch the names of the columns used in the index.
-        let cols = index
-            .indexed_columns
-            .iter()
-            .map(|x| schema.columns()[x.idx()].col_name.clone())
+        let cols = schema
+            .get_columns(&index.indexed_columns)
+            .map(|(_, cs)| cs.unwrap().col_name.clone())
             .collect();
 
         // Fetch the name of the index.
-        let constraint_name = schema
-            .indexes
-            .iter()
-            .find(|i| i.index_id == index_id)
-            .unwrap()
-            .index_name
-            .clone();
+        let constraint_name = index_schema.index_name.clone();
 
         Self {
             constraint_name,
@@ -1828,7 +2039,7 @@ impl Table {
     }
 
     /// Returns a new empty table using the particulars passed.
-    fn new_with_indexes_capacity(
+    fn new_raw(
         schema: Arc<TableSchema>,
         row_layout: RowTypeLayout,
         static_layout: Option<(StaticLayout, StaticBsatnValidator)>,
@@ -1922,14 +2133,12 @@ impl Table {
     /// Called when restoring from a snapshot after installing the pages,
     /// but after computing the row count,
     /// since snapshots do not save the pointer map..
-    fn rebuild_pointer_map(&mut self, blob_store: &dyn BlobStore) {
+    fn rebuild_pointer_map(&mut self, blob_store: &dyn BlobStore) -> PointerMap {
         // TODO(perf): Pre-allocate `PointerMap.map` with capacity `self.row_count`.
         // Alternatively, do this at the same time as `compute_row_count`.
-        let ptrs = self
-            .scan_rows(blob_store)
+        self.scan_rows(blob_store)
             .map(|row_ref| (row_ref.row_hash(), row_ref.pointer()))
-            .collect::<PointerMap>();
-        self.pointer_map = Some(ptrs);
+            .collect()
     }
 
     /// Compute and store `self.row_count` and `self.blob_store_bytes`
@@ -1997,7 +2206,7 @@ pub(crate) mod test {
         let index_schema = schema.indexes[0].clone();
 
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let cols = ColList::new(0.into());
         let algo = BTreeAlgorithm { columns: cols.clone() }.into();
 
@@ -2032,7 +2241,7 @@ pub(crate) mod test {
                 assert_eq!(cols.iter().map(|c| c.to_string()).collect::<Vec<_>>(), &["unique_col"]);
                 assert_eq!(value, AlgebraicValue::I32(0));
             }
-            Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
+            Err(e) => panic!("Expected UniqueConstraintViolation but found {e:?}"),
         }
 
         // Second insert did clear the hash while we had a constraint violation,
@@ -2042,7 +2251,7 @@ pub(crate) mod test {
 
     fn insert_retrieve_body(ty: impl Into<ProductType>, val: impl Into<ProductValue>) -> TestCaseResult {
         let val = val.into();
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(ty.into());
         let (hash, row) = table.insert(&pool, &mut blob_store, &val).unwrap();
@@ -2104,7 +2313,7 @@ pub(crate) mod test {
         vals: Vec<ProductValue>,
         indexed_columns: ColList,
     ) -> Result<(), TestCaseError> {
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(ty.clone());
 
@@ -2178,7 +2387,7 @@ pub(crate) mod test {
 
         #[test]
         fn insert_delete_removed_from_pointer_map((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
             let (hash, row) = table.insert(&pool, &mut blob_store, &val).unwrap();
@@ -2210,7 +2419,7 @@ pub(crate) mod test {
 
         #[test]
         fn insert_duplicate_set_semantic((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
 
@@ -2246,7 +2455,7 @@ pub(crate) mod test {
 
         #[test]
         fn insert_bsatn_same_as_pv((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut bs_pv = HashMapBlobStore::default();
             let mut table_pv = table(ty.clone());
             let res_pv = table_pv.insert(&pool, &mut bs_pv, &val);
@@ -2262,7 +2471,7 @@ pub(crate) mod test {
 
         #[test]
         fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(128, 2048)) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
@@ -2304,7 +2513,7 @@ pub(crate) mod test {
 
         // Optimistically insert the `row` before checking any constraints
         // under the assumption that errors (unique constraint & set semantic violations) are rare.
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let (row_ref, blob_bytes) = table.insert_physically_bsatn(&pool, blob_store, row)?;
         let row_ptr = row_ref.pointer();
 
@@ -2312,14 +2521,14 @@ pub(crate) mod test {
         // SAFETY: We just inserted `ptr`, so it must be present.
         let (hash, row_ptr) = unsafe { table.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
-        let row_ref = unsafe { table.inner.get_row_ref_unchecked(blob_store, row_ptr) };
+        let row_ref = unsafe { table.get_row_ref_unchecked(blob_store, row_ptr) };
         Ok((hash, row_ref))
     }
 
     // Compare `scan_rows` against a simpler implementation.
     #[test]
     fn table_scan_iter_eq_flatmap() {
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(AlgebraicType::U64.into());
         for v in 0..2u64.pow(14) {
@@ -2346,7 +2555,7 @@ pub(crate) mod test {
         let pt = AlgebraicType::U64.into();
         let pv = product![42u64];
         let mut table = table(pt);
-        let pool = &PagePool::default();
+        let pool = &PagePool::new_for_test();
         let blob_store = &mut NullBlobStore;
         let (_, row_ref) = table.insert(pool, blob_store, &pv).unwrap();
 
@@ -2362,7 +2571,7 @@ pub(crate) mod test {
     #[test]
     fn test_blob_store_bytes() {
         let pt: ProductType = [AlgebraicType::String, AlgebraicType::I32].into();
-        let pool = &PagePool::default();
+        let pool = &PagePool::new_for_test();
         let blob_store = &mut HashMapBlobStore::default();
         let mut insert = |table: &mut Table, string, num| {
             table

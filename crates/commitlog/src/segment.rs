@@ -149,7 +149,7 @@ impl<W: io::Write> Writer<W> {
             index
                 .append_after_commit(self.commit.min_tx_offset, self.bytes_written, commit_len)
                 .map_err(|e| {
-                    debug!("failed to append to offset index: {:?}", e);
+                    debug!("failed to append to offset index: {e:?}");
                 })
         });
 
@@ -348,12 +348,8 @@ impl FileLike for IndexFileMut<TxOffset> {
     }
 
     fn ftruncate(&mut self, tx_offset: u64, _size: u64) -> io::Result<()> {
-        self.truncate(tx_offset).map_err(|e| {
-            io::Error::new(
-                ErrorKind::Other,
-                format!("failed to truncate offset index at {tx_offset}: {e:?}"),
-            )
-        })
+        self.truncate(tx_offset)
+            .map_err(|e| io::Error::other(format!("failed to truncate offset index at {tx_offset}: {e:?}")))
     }
 }
 
@@ -387,7 +383,7 @@ impl<R: io::BufRead + io::Seek> Reader<R> {
         }
     }
 
-    pub fn seek_to_offset(&mut self, index_file: &TxOffsetIndex, start_tx_offset: u64) -> Result<(), IndexError> {
+    pub fn seek_to_offset(&mut self, index_file: &TxOffsetIndex, start_tx_offset: u64) -> Result<u64, IndexError> {
         seek_to_offset(&mut self.inner, index_file, start_tx_offset)
     }
 
@@ -424,33 +420,35 @@ impl<R: io::BufRead + io::Seek> Reader<R> {
 /// - `segment` - segment reader
 /// - `min_tx_offset` - minimum transaction offset in the segment
 /// - `start_tx_offset` - transaction offset to advance to
+///
+/// Returns the byte position `segment` is at after seeking.
 pub fn seek_to_offset<R: io::Read + io::Seek>(
     mut segment: &mut R,
     index_file: &TxOffsetIndex,
     start_tx_offset: u64,
-) -> Result<(), IndexError> {
+) -> Result<u64, IndexError> {
     let (index_key, byte_offset) = index_file.key_lookup(start_tx_offset)?;
 
-    // If the index_key is 0, it means the index file is empty, no need to seek
+    // If the index_key is 0, it means the index file is empty, return error without seeking
     if index_key == 0 {
-        return Ok(());
+        return Err(IndexError::KeyNotFound);
     }
     debug!("index lookup for key={start_tx_offset}: found key={index_key} at byte-offset={byte_offset}");
     // returned `index_key` should never be greater than `start_tx_offset`
     debug_assert!(index_key <= start_tx_offset);
 
     // Check if the offset index is pointing to the right commit.
-    validate_commit_header(&mut segment, byte_offset).map(|hdr| {
-        if hdr.min_tx_offset == index_key {
-            // Advance the segment Seek if expected commit is found.
-            segment
-                .seek(SeekFrom::Start(byte_offset))
-                .map(|_| ())
-                .map_err(Into::into)
-        } else {
-            Err(io::Error::new(io::ErrorKind::InvalidData, "mismatch key in index offset file").into())
-        }
-    })?
+    let hdr = validate_commit_header(&mut segment, byte_offset)?;
+    if hdr.min_tx_offset == index_key {
+        // Advance the segment Seek if expected commit is found.
+        segment.seek(SeekFrom::Start(byte_offset))
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "mismatched key in offset index file",
+        ))
+    }
+    .map_err(Into::into)
 }
 
 /// Try to extract the commit header from the asked position without advancing seek.
@@ -526,14 +524,24 @@ impl<R: io::BufRead> Iterator for CommitsWithVersion<R> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Metadata {
+    /// The segment header.
     pub header: Header,
+    /// The range of transactions contained in the segment.
     pub tx_range: Range<u64>,
+    /// The size of the segment.
     pub size_in_bytes: u64,
+    /// The largest epoch found in the segment.
     pub max_epoch: u64,
+    /// The latest commit found in the segment.
+    ///
+    /// The value is the `min_tx_offset` of the commit, i.e.
+    /// `max_commit_offset..tx_range.end` is the range of
+    /// transactions contained in it.
+    pub max_commit_offset: u64,
 }
 
 impl Metadata {
-    /// Reads and validates metadata from a segment.  
+    /// Reads and validates metadata from a segment.
     /// It will look for last commit index offset and then traverse the segment
     ///
     /// Determines `max_tx_offset`, `size_in_bytes`, and `max_epoch` from the segment.
@@ -562,6 +570,7 @@ impl Metadata {
                 },
                 size_in_bytes: Header::LEN as u64,
                 max_epoch: u64::default(),
+                max_commit_offset: min_tx_offset,
             });
 
         reader.seek(SeekFrom::Start(sofar.size_in_bytes))?;
@@ -597,6 +606,7 @@ impl Metadata {
             sofar.size_in_bytes += commit.size_in_bytes;
             // TODO: Should it be an error to encounter an epoch going backwards?
             sofar.max_epoch = commit.epoch.max(sofar.max_epoch);
+            sofar.max_commit_offset = commit.tx_range.start;
         }
 
         Ok(sofar)
@@ -607,7 +617,7 @@ impl Metadata {
     ///
     /// Returns
     /// * `Ok((Metadata)` - If a valid commit is found containing the commit, It adds a default
-    ///     header, which should be replaced with the actual header.
+    ///   header, which should be replaced with the actual header.
     /// * `Err` - If no valid commit is found or if the index is empty
     fn find_valid_indexed_commit<R: io::Read + io::Seek>(
         min_tx_offset: u64,
@@ -628,6 +638,7 @@ impl Metadata {
                         },
                         size_in_bytes: byte_offset + commit.size_in_bytes,
                         max_epoch: commit.epoch,
+                        max_commit_offset: commit.tx_range.start,
                     });
                 }
 
@@ -643,7 +654,7 @@ impl Metadata {
 
         Err(io::Error::new(
             ErrorKind::InvalidData,
-            format!("No valid commit found in index up to key: {}", candidate_last_key),
+            format!("No valid commit found in index up to key: {candidate_last_key}"),
         ))
     }
 
@@ -682,6 +693,7 @@ mod tests {
     use super::*;
     use crate::{payload::ArrayDecoder, repo, Options};
     use itertools::Itertools;
+    use pretty_assertions::assert_matches;
     use proptest::prelude::*;
     use spacetimedb_paths::server::CommitLogDir;
     use tempfile::tempdir;
@@ -734,28 +746,31 @@ mod tests {
         let repo = repo::Memory::default();
 
         let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
+        // Commit 0..2
         writer.append([0; 32]).unwrap();
         writer.append([0; 32]).unwrap();
         writer.commit().unwrap();
+        // Commit 2..3
         writer.append([1; 32]).unwrap();
         writer.commit().unwrap();
+        // Commit 3..5
         writer.append([2; 32]).unwrap();
         writer.append([2; 32]).unwrap();
         writer.commit().unwrap();
 
         let reader = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, 0).unwrap();
-        let Metadata {
-            header: _,
-            tx_range,
-            size_in_bytes,
-            max_epoch: _,
-        } = reader.metadata().unwrap();
+        let metadata = reader.metadata().unwrap();
 
-        assert_eq!(tx_range.start, 0);
-        assert_eq!(tx_range.end, 5);
         assert_eq!(
-            size_in_bytes,
-            (Header::LEN + (5 * 32) + (3 * Commit::FRAMING_LEN)) as u64
+            metadata,
+            Metadata {
+                header: Header::default(),
+                tx_range: Range { start: 0, end: 5 },
+                // header + 5 txs + 3 commits
+                size_in_bytes: (Header::LEN + (5 * 32) + (3 * Commit::FRAMING_LEN)) as u64,
+                max_epoch: Commit::DEFAULT_EPOCH,
+                max_commit_offset: 3
+            }
         );
     }
 
@@ -908,16 +923,28 @@ mod tests {
 
         // Truncating to any offset in the written range or larger
         // retains that offset - 1, or the max offset written.
-        let truncate_to: TxOffset = rand::random_range(1..=32);
-        let retained_key = truncate_to.saturating_sub(1).min(10);
-        let retained_val = retained_key * 128;
-        let retained = (retained_key, retained_val);
+        for truncate_to in (2..=10u64).rev() {
+            let retained_key = truncate_to.saturating_sub(1).min(10);
+            let retained_val = retained_key * 128;
+            let retained = (retained_key, retained_val);
 
-        writer.ftruncate(truncate_to, rand::random()).unwrap();
-        assert_eq!(writer.head.key_lookup(truncate_to).unwrap(), retained);
-        // Make sure this also holds after reopen.
-        drop(writer);
-        let index = TxOffsetIndex::open_index_file(&index_path).unwrap();
-        assert_eq!(index.key_lookup(truncate_to).unwrap(), retained);
+            writer.ftruncate(truncate_to, rand::random()).unwrap();
+            assert_matches!(
+                writer.head.key_lookup(truncate_to),
+                Ok(x) if x == retained,
+                "truncate to {truncate_to} should retain {retained:?}"
+            );
+            // Make sure this also holds after reopen.
+            let index = TxOffsetIndex::open_index_file(&index_path).unwrap();
+            assert_matches!(
+                index.key_lookup(truncate_to),
+                Ok(x) if x == retained,
+                "truncate to {truncate_to} should retain {retained:?} after reopen"
+            );
+        }
+
+        // Truncating to 1 leaves no entries in the index
+        writer.ftruncate(1, rand::random()).unwrap();
+        assert_matches!(writer.head.key_lookup(1), Err(IndexError::KeyNotFound));
     }
 }

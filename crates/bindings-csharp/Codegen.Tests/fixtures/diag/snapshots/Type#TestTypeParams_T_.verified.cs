@@ -16,6 +16,11 @@ partial struct TestTypeParams<T>
         BSATN.FieldRW.Write(writer, Field);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"TestTypeParams {{ Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(Field)} }}";
 
@@ -23,8 +28,12 @@ partial struct TestTypeParams<T>
     {
         internal static readonly TRW FieldRW = new();
 
-        public TestTypeParams<T> Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestTypeParams<T>>(reader);
+        public TestTypeParams<T> Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestTypeParams<T>();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestTypeParams<T> value)
         {
@@ -51,13 +60,15 @@ partial struct TestTypeParams<T>
 
     public override int GetHashCode()
     {
-        return Field.GetHashCode();
+        var ___hashField = Field == null ? 0 : Field.GetHashCode();
+        return ___hashField;
     }
 
 #nullable enable
     public bool Equals(TestTypeParams<T> that)
     {
-        return Field.Equals(that.Field);
+        var ___eqField = this.Field == null ? that.Field == null : this.Field.Equals(that.Field);
+        return ___eqField;
     }
 
     public override bool Equals(object? that)

@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::execution_context::WorkloadType;
+use spacetimedb_datastore::execution_context::WorkloadType;
 
 /// Records the execution time of some `sql`
 /// and logs when the duration goes above a specific one.
@@ -48,29 +48,28 @@ impl<'a> SlowQueryLogger<'a> {
 mod tests {
     use super::*;
 
-    use crate::db::datastore::system_tables::ST_VARNAME_SLOW_QRY;
-    use crate::db::datastore::system_tables::{StVarName, ST_VARNAME_SLOW_INC, ST_VARNAME_SLOW_SUB};
     use crate::sql::compiler::compile_sql;
     use crate::sql::execute::tests::execute_for_testing;
+    use spacetimedb_datastore::system_tables::ST_VARNAME_SLOW_QRY;
+    use spacetimedb_datastore::system_tables::{StVarName, ST_VARNAME_SLOW_INC, ST_VARNAME_SLOW_SUB};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::ProductValue;
 
-    use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit, TestDB};
     use crate::db::relational_db::RelationalDB;
-    use crate::execution_context::Workload;
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::relation::MemTable;
 
     fn run_query(db: &RelationalDB, sql: String) -> ResultTest<MemTable> {
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(db);
         let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
         Ok(execute_for_testing(db, &sql, q)?.pop().unwrap())
     }
 
     fn run_query_write(db: &RelationalDB, sql: String) -> ResultTest<()> {
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(db);
         let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
         drop(tx);
 
@@ -85,13 +84,13 @@ mod tests {
         let table_id =
             db.create_table_for_test("test", &[("x", AlgebraicType::I32), ("y", AlgebraicType::I32)], &[])?;
 
-        db.with_auto_commit(Workload::ForTests, |tx| -> ResultTest<_> {
+        with_auto_commit(&db, |tx| -> ResultTest<_> {
             for i in 0..100_000 {
                 insert(&db, tx, table_id, &product![i, i * 2])?;
             }
             Ok(())
         })?;
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
 
         let sql = "select * from test where x > 0";
         let q = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?;
@@ -115,44 +114,35 @@ mod tests {
         }
 
         // Check we can read the default config
-        let row1 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_QRY))?);
-        let row2 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_SUB))?);
-        let row3 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_INC))?);
+        let row1 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_QRY}"))?);
+        let row2 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_SUB}"))?);
+        let row3 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_INC}"))?);
 
         assert_eq!(row1, None);
         assert_eq!(row2, None);
         assert_eq!(row3, None);
 
         // Check we can write a new config
-        run_query_write(&db, format!("SET {} TO 1", ST_VARNAME_SLOW_QRY))?;
-        run_query_write(&db, format!("SET {} TO 1", ST_VARNAME_SLOW_SUB))?;
-        run_query_write(&db, format!("SET {} TO 1", ST_VARNAME_SLOW_INC))?;
+        run_query_write(&db, format!("SET {ST_VARNAME_SLOW_QRY} TO 1"))?;
+        run_query_write(&db, format!("SET {ST_VARNAME_SLOW_SUB} TO 1"))?;
+        run_query_write(&db, format!("SET {ST_VARNAME_SLOW_INC} TO 1"))?;
 
-        let row1 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_QRY))?);
-        let row2 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_SUB))?);
-        let row3 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_INC))?);
+        let row1 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_QRY}"))?);
+        let row2 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_SUB}"))?);
+        let row3 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_INC}"))?);
 
         assert_eq!(row1, Some(product!(StVarName::SlowQryThreshold, StVarValue::U64(1))));
         assert_eq!(row2, Some(product!(StVarName::SlowSubThreshold, StVarValue::U64(1))));
         assert_eq!(row3, Some(product!(StVarName::SlowIncThreshold, StVarValue::U64(1))));
 
         // And disable the config
-        run_query_write(
-            &db,
-            format!("DELETE FROM st_var WHERE name = '{}'", ST_VARNAME_SLOW_QRY),
-        )?;
-        run_query_write(
-            &db,
-            format!("DELETE FROM st_var WHERE name = '{}'", ST_VARNAME_SLOW_SUB),
-        )?;
-        run_query_write(
-            &db,
-            format!("DELETE FROM st_var WHERE name = '{}'", ST_VARNAME_SLOW_INC),
-        )?;
+        run_query_write(&db, format!("DELETE FROM st_var WHERE name = '{ST_VARNAME_SLOW_QRY}'"))?;
+        run_query_write(&db, format!("DELETE FROM st_var WHERE name = '{ST_VARNAME_SLOW_SUB}'"))?;
+        run_query_write(&db, format!("DELETE FROM st_var WHERE name = '{ST_VARNAME_SLOW_INC}'"))?;
 
-        let row1 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_QRY))?);
-        let row2 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_SUB))?);
-        let row3 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_INC))?);
+        let row1 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_QRY}"))?);
+        let row2 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_SUB}"))?);
+        let row3 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_INC}"))?);
 
         assert_eq!(row1, None);
         assert_eq!(row2, None);

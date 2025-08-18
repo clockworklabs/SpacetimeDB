@@ -22,6 +22,11 @@ partial class Timers
             BSATN.TextRW.Write(writer, Text);
         }
 
+        object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+        {
+            return new BSATN();
+        }
+
         public override string ToString() =>
             $"SendMessageTimer {{ ScheduledId = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduledId)}, ScheduledAt = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduledAt)}, Text = {SpacetimeDB.BSATN.StringUtil.GenericToString(Text)} }}";
 
@@ -31,8 +36,12 @@ partial class Timers
             internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduledAtRW = new();
             internal static readonly SpacetimeDB.BSATN.String TextRW = new();
 
-            public Timers.SendMessageTimer Read(System.IO.BinaryReader reader) =>
-                SpacetimeDB.BSATN.IStructuralReadWrite.Read<Timers.SendMessageTimer>(reader);
+            public Timers.SendMessageTimer Read(System.IO.BinaryReader reader)
+            {
+                var ___result = new Timers.SendMessageTimer();
+                ___result.ReadFields(reader);
+                return ___result;
+            }
 
             public void Write(System.IO.BinaryWriter writer, Timers.SendMessageTimer value)
             {
@@ -60,15 +69,22 @@ partial class Timers
 
         public override int GetHashCode()
         {
-            return ScheduledId.GetHashCode() ^ ScheduledAt.GetHashCode() ^ Text.GetHashCode();
+            var ___hashScheduledId = ScheduledId.GetHashCode();
+            var ___hashScheduledAt = ScheduledAt == null ? 0 : ScheduledAt.GetHashCode();
+            var ___hashText = Text == null ? 0 : Text.GetHashCode();
+            return ___hashScheduledId ^ ___hashScheduledAt ^ ___hashText;
         }
 
 #nullable enable
         public bool Equals(Timers.SendMessageTimer that)
         {
-            return ScheduledId.Equals(that.ScheduledId)
-                && ScheduledAt.Equals(that.ScheduledAt)
-                && Text.Equals(that.Text);
+            var ___eqScheduledId = this.ScheduledId.Equals(that.ScheduledId);
+            var ___eqScheduledAt =
+                this.ScheduledAt == null
+                    ? that.ScheduledAt == null
+                    : this.ScheduledAt.Equals(that.ScheduledAt);
+            var ___eqText = this.Text == null ? that.Text == null : this.Text.Equals(that.Text);
+            return ___eqScheduledId && ___eqScheduledAt && ___eqText;
         }
 
         public override bool Equals(object? that)

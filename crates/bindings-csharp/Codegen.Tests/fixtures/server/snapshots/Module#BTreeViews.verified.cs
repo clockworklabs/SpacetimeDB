@@ -20,6 +20,11 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
         BSATN.FactionRW.Write(writer, Faction);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"BTreeViews {{ Id = {SpacetimeDB.BSATN.StringUtil.GenericToString(Id)}, X = {SpacetimeDB.BSATN.StringUtil.GenericToString(X)}, Y = {SpacetimeDB.BSATN.StringUtil.GenericToString(Y)}, Faction = {SpacetimeDB.BSATN.StringUtil.GenericToString(Faction)} }}";
 
@@ -30,8 +35,12 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
         internal static readonly SpacetimeDB.BSATN.U32 YRW = new();
         internal static readonly SpacetimeDB.BSATN.String FactionRW = new();
 
-        public BTreeViews Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<BTreeViews>(reader);
+        public BTreeViews Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new BTreeViews();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, BTreeViews value)
         {
@@ -58,16 +67,22 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
 
     public override int GetHashCode()
     {
-        return Id.GetHashCode() ^ X.GetHashCode() ^ Y.GetHashCode() ^ Faction.GetHashCode();
+        var ___hashId = Id.GetHashCode();
+        var ___hashX = X.GetHashCode();
+        var ___hashY = Y.GetHashCode();
+        var ___hashFaction = Faction == null ? 0 : Faction.GetHashCode();
+        return ___hashId ^ ___hashX ^ ___hashY ^ ___hashFaction;
     }
 
 #nullable enable
     public bool Equals(BTreeViews that)
     {
-        return Id.Equals(that.Id)
-            && X.Equals(that.X)
-            && Y.Equals(that.Y)
-            && Faction.Equals(that.Faction);
+        var ___eqId = this.Id.Equals(that.Id);
+        var ___eqX = this.X.Equals(that.X);
+        var ___eqY = this.Y.Equals(that.Y);
+        var ___eqFaction =
+            this.Faction == null ? that.Faction == null : this.Faction.Equals(that.Faction);
+        return ___eqId && ___eqX && ___eqY && ___eqFaction;
     }
 
     public override bool Equals(object? that)

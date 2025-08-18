@@ -1,12 +1,12 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::relational_db::{MutTx, RelationalDB};
-use crate::error::{DBError, IndexError, NodesError};
+use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
@@ -84,11 +84,6 @@ impl ChunkPool {
     ///
     /// These limits place an upper bound on the memory usage of a single [`ChunkPool`].
     pub fn put(&mut self, mut chunk: Vec<u8>) {
-        log::trace!(
-            "put: chunk of capacity {} into pool of {} chunks",
-            chunk.capacity(),
-            self.free_chunks.len()
-        );
         if chunk.capacity() > MAX_CHUNK_SIZE_IN_BYTES {
             return;
         }
@@ -227,7 +222,7 @@ impl InstanceEnv {
                 #[cold]
                 #[inline(never)]
                 |e| match e {
-                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => {}
                     _ => {
                         let res = stdb.table_name_from_id_mut(tx, table_id);
                         if let Ok(Some(table_name)) = res {
@@ -263,7 +258,7 @@ impl InstanceEnv {
             .table_scheduled_id_and_at(tx, table_id)?
             .expect("schedule_row should only be called when we know its a scheduler table");
 
-        let row_ref = tx.get(table_id, row_ptr)?.unwrap();
+        let row_ref = tx.get(table_id, row_ptr).map_err(DBError::from)?.unwrap();
         let (schedule_id, schedule_at) = get_schedule_from_row(&row_ref, id_column, at_column)
             // NOTE(centril): Should never happen,
             // as we successfully inserted and thus `ret` is verified against the table schema.
@@ -296,7 +291,7 @@ impl InstanceEnv {
                 #[cold]
                 #[inline(never)]
                 |e| match e {
-                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => {}
                     _ => {
                         let res = stdb.table_name_from_id_mut(tx, table_id);
                         if let Ok(Some(table_name)) = res {
@@ -512,20 +507,16 @@ mod test {
 
     use crate::{
         database_logger::DatabaseLogger,
-        db::{
-            datastore::traits::IsolationLevel,
-            relational_db::{tests_utils::TestDB, RelationalDB},
+        db::relational_db::{
+            tests_utils::{begin_mut_tx, with_auto_commit, with_read_only, TestDB},
+            RelationalDB,
         },
-        execution_context::Workload,
         host::Scheduler,
         messages::control_db::{Database, HostType},
         replica_context::ReplicaContext,
-        subscription::{
-            module_subscription_actor::ModuleSubscriptions, module_subscription_manager::SubscriptionManager,
-        },
+        subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
-    use parking_lot::RwLock;
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
     use spacetimedb_paths::{server::ModuleLogsDir, FromPathUnchecked};
@@ -536,47 +527,46 @@ mod test {
     /// An `InstanceEnv` requires a `DatabaseLogger`
     fn temp_logger() -> Result<DatabaseLogger> {
         let temp = TempDir::new()?;
-        let path = ModuleLogsDir::from_path_unchecked(temp.into_path());
+        let path = ModuleLogsDir::from_path_unchecked(temp.keep());
         let path = path.today();
         Ok(DatabaseLogger::open(path))
     }
 
-    /// An `InstanceEnv` requires `ModuleSubscriptions`
-    fn subscription_actor(relational_db: Arc<RelationalDB>) -> ModuleSubscriptions {
-        ModuleSubscriptions::new(
-            relational_db,
-            Arc::new(RwLock::new(SubscriptionManager::default())),
-            Identity::ZERO,
-        )
-    }
-
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
-    fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<ReplicaContext> {
-        Ok(ReplicaContext {
-            database: Database {
-                id: 0,
-                database_identity: Identity::ZERO,
-                owner_identity: Identity::ZERO,
-                host_type: HostType::Wasm,
-                initial_program: Hash::ZERO,
+    fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<(ReplicaContext, tokio::runtime::Runtime)> {
+        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db.clone());
+        Ok((
+            ReplicaContext {
+                database: Database {
+                    id: 0,
+                    database_identity: Identity::ZERO,
+                    owner_identity: Identity::ZERO,
+                    host_type: HostType::Wasm,
+                    initial_program: Hash::ZERO,
+                },
+                replica_id: 0,
+                logger: Arc::new(temp_logger()?),
+                subscriptions: subs,
+                relational_db,
             },
-            replica_id: 0,
-            logger: Arc::new(temp_logger()?),
-            subscriptions: subscription_actor(relational_db.clone()),
-            relational_db,
-        })
+            runtime,
+        ))
     }
 
     /// An `InstanceEnv` used for testing the database syscalls.
-    fn instance_env(db: Arc<RelationalDB>) -> Result<InstanceEnv> {
+    fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
-        Ok(InstanceEnv {
-            replica_ctx: Arc::new(replica_ctx(db)?),
-            scheduler,
-            tx: TxSlot::default(),
-            start_time: Timestamp::now(),
-        })
+        let (replica_context, runtime) = replica_ctx(db)?;
+        Ok((
+            InstanceEnv {
+                replica_ctx: Arc::new(replica_context),
+                scheduler,
+                tx: TxSlot::default(),
+                start_time: Timestamp::now(),
+            },
+            runtime,
+        ))
     }
 
     /// An in-memory `RelationalDB` for testing.
@@ -618,7 +608,7 @@ mod test {
             &[("id", AlgebraicType::U64), ("str", AlgebraicType::String)],
             &[0.into()],
         )?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(db, |tx| {
             db.schema_for_table(tx, table_id)?
                 .indexes
                 .iter()
@@ -632,7 +622,7 @@ mod test {
                 .map(|schema| schema.index_id)
                 .ok_or_else(|| anyhow!("Index not found for ColId `{}`", 0))
         })?;
-        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_> {
+        with_auto_commit(db, |tx| -> Result<_> {
             for i in 1..=5 {
                 db.insert(tx, table_id, &bsatn_row(i)?)?;
             }
@@ -649,7 +639,7 @@ mod test {
             &[0.into()],
             StAccess::Public,
         )?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(db, |tx| {
             db.schema_for_table(tx, table_id)?
                 .indexes
                 .iter()
@@ -663,7 +653,7 @@ mod test {
                 .map(|schema| schema.index_id)
                 .ok_or_else(|| anyhow!("Index not found for ColId `{}`", 0))
         })?;
-        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_> {
+        with_auto_commit(db, |tx| -> Result<_> {
             for i in 1..=5 {
                 db.insert(tx, table_id, &bsatn_row(i)?)?;
             }
@@ -675,14 +665,14 @@ mod test {
     #[test]
     fn table_scan_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, _) = create_table_with_index(&db)?;
 
         let mut tx_slot = env.tx.clone();
 
         let f = || env.datastore_table_scan_bsatn_chunks(&mut ChunkPool::default(), table_id);
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, scan_result) = tx_slot.set(tx, f);
 
         scan_result?;
@@ -707,7 +697,7 @@ mod test {
     #[test]
     fn index_scan_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (_, index_id) = create_table_with_index(&db)?;
 
@@ -735,7 +725,7 @@ mod test {
             )?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, scan_result) = tx_slot.set(tx, f);
 
         scan_result?;
@@ -759,7 +749,7 @@ mod test {
     #[test]
     fn insert_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, _) = create_table_with_index(&db)?;
 
@@ -773,7 +763,7 @@ mod test {
             }
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, insert_result) = tx_slot.set(tx, f);
 
         insert_result?;
@@ -796,7 +786,7 @@ mod test {
     #[test]
     fn update_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, index_id) = create_table_with_unique_index(&db)?;
 
@@ -811,7 +801,7 @@ mod test {
             env.update(table_id, index_id, new_row_bytes.as_mut_slice())?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, res) = tx_slot.set(tx, f);
 
         res?;
@@ -823,7 +813,7 @@ mod test {
     #[test]
     fn delete_by_index_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (_, index_id) = create_table_with_index(&db)?;
 
@@ -835,7 +825,7 @@ mod test {
             env.datastore_delete_by_index_scan_range_bsatn(index_id, &[], 0.into(), &index_key, &index_key)?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, delete_result) = tx_slot.set(tx, f);
 
         delete_result?;
@@ -851,7 +841,7 @@ mod test {
     #[test]
     fn delete_by_value_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, _) = create_table_with_index(&db)?;
 
@@ -864,7 +854,7 @@ mod test {
             env.datastore_delete_all_by_eq_bsatn(table_id, &bsatn_rows)?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, delete_result) = tx_slot.set(tx, f);
 
         delete_result?;

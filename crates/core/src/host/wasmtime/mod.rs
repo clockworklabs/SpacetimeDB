@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::time::Duration;
 
 use anyhow::Context;
 use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
@@ -6,6 +7,7 @@ use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
 
 use crate::energy::{EnergyQuanta, ReducerBudget};
 use crate::error::NodesError;
+use crate::host::module_host::ModuleRuntime;
 use crate::module_host_context::ModuleCreationContext;
 
 mod wasm_instance_env;
@@ -23,12 +25,17 @@ pub struct WasmtimeRuntime {
     linker: Box<Linker<WasmInstanceEnv>>,
 }
 
+const EPOCH_TICK_LENGTH: Duration = Duration::from_millis(10);
+
+const EPOCH_TICKS_PER_SECOND: u64 = Duration::from_secs(1).div_duration_f64(EPOCH_TICK_LENGTH) as u64;
+
 impl WasmtimeRuntime {
     pub fn new(data_dir: Option<&ServerDataDir>) -> Self {
         let mut config = wasmtime::Config::new();
         config
             .cranelift_opt_level(wasmtime::OptLevel::Speed)
             .consume_fuel(true)
+            .epoch_interruption(true)
             .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
 
         // Offer a compile-time flag for enabling perfmap generation,
@@ -45,6 +52,16 @@ impl WasmtimeRuntime {
 
         let engine = Engine::new(&config).unwrap();
 
+        let weak_engine = engine.weak();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(EPOCH_TICK_LENGTH);
+            loop {
+                interval.tick().await;
+                let Some(engine) = weak_engine.upgrade() else { break };
+                engine.increment_epoch();
+            }
+        });
+
         let mut linker = Box::new(Linker::new(&engine));
         WasmtimeModule::link_imports(&mut linker).unwrap();
 
@@ -60,15 +77,14 @@ impl WasmtimeRuntime {
             directory = (toml::Value::try_from(cache_dir.0)?)
         };
         let tmpfile = tempfile::NamedTempFile::new()?;
-        write!(&tmpfile, "{}", cache_config)?;
+        write!(&tmpfile, "{cache_config}")?;
         config.cache_config_load(tmpfile.path())?;
         Ok(())
     }
+}
 
-    pub fn make_actor(
-        &self,
-        mcc: ModuleCreationContext,
-    ) -> Result<impl super::module_host::Module, ModuleCreationError> {
+impl ModuleRuntime for WasmtimeRuntime {
+    fn make_actor(&self, mcc: ModuleCreationContext) -> anyhow::Result<impl super::module_host::Module> {
         let module = Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
         let func_imports = module

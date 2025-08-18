@@ -27,17 +27,18 @@
 //! The `VarLenMembers` impl for `VarLenVisitorProgram`
 //! implements a simple interpreter loop for the var-len visitor bytecode.
 
-use crate::MemoryUsage;
-
 use super::{
     indexes::{Byte, Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout, SumTypeLayout},
     page::get_ref,
     var_len::{VarLenMembers, VarLenRef},
 };
 use core::fmt;
 use core::marker::PhantomData;
 use itertools::Itertools;
+use spacetimedb_sats::layout::{
+    align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout, SumTypeLayout,
+};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::sync::Arc;
 
 /// Construct an implementor of `VarLenMembers`,
@@ -59,7 +60,7 @@ pub fn row_type_visitor(ty: &RowTypeLayout) -> VarLenVisitorProgram {
 /// Construct a `VarLenRoseTree` from `ty`.
 ///
 /// See [`algebraic_type_to_rose_tree`] for more details.
-fn product_type_to_rose_tree(ty: &ProductTypeLayout, current_offset: &mut usize) -> VarLenRoseTree {
+fn product_type_to_rose_tree(ty: ProductTypeLayoutView<'_>, current_offset: &mut usize) -> VarLenRoseTree {
     // Loop over all the product elements,
     // which we store in-order,
     // and collect them into a subtree.
@@ -67,7 +68,7 @@ fn product_type_to_rose_tree(ty: &ProductTypeLayout, current_offset: &mut usize)
     // Better to over-allocate than under-allocate (maybe).
     let mut contents = Vec::with_capacity(ty.elements.len());
 
-    for elt in &*ty.elements {
+    for elt in ty.elements {
         match algebraic_type_to_rose_tree(&elt.ty, current_offset) {
             // No need to collect empty subtrees.
             VarLenRoseTree::Empty => {}
@@ -175,7 +176,7 @@ fn algebraic_type_to_rose_tree(ty: &AlgebraicTypeLayout, current_offset: &mut us
             *current_offset += primitive_type.size();
             VarLenRoseTree::Empty
         }
-        AlgebraicTypeLayout::Product(ty) => product_type_to_rose_tree(ty, current_offset),
+        AlgebraicTypeLayout::Product(ty) => product_type_to_rose_tree(ty.view(), current_offset),
         AlgebraicTypeLayout::Sum(ty) => sum_type_to_rose_tree(ty, current_offset),
     }
 }
@@ -368,8 +369,8 @@ impl MemoryUsage for VarLenVisitorProgram {
     }
 }
 
-/// Evalutes the `program`,
-/// provided the `instr_ptr` as its program counter / intruction pointer,
+/// Evaluates the `program`,
+/// provided the `instr_ptr` as its program counter / instruction pointer,
 /// and a callback `read_tag` to extract a tag at the given offset,
 /// until `Some(offset)` is reached,
 /// or the program halts.
@@ -509,7 +510,7 @@ impl<'row> Iterator for VarLenVisitorProgramIterMut<'_, 'row> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::indexes::Size;
+    use spacetimedb_sats::layout::Size;
     use spacetimedb_sats::{AlgebraicType, ProductType};
 
     fn row_type<T: Into<ProductType>>(row_ty: T) -> RowTypeLayout {

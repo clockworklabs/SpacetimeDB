@@ -15,7 +15,7 @@ use std::sync::OnceLock;
 
 #[cfg(target_env = "msvc")]
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -141,7 +141,7 @@ fn serialize_benchmarks<
         Arc::new(table_schema),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
     );
-    let pool = PagePool::default();
+    let pool = PagePool::new_for_test();
     let mut blob_store = spacetimedb_table::blob_store::HashMapBlobStore::default();
 
     let ptrs = data_pv

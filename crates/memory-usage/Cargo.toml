@@ -1,0 +1,19 @@
+[package]
+name = "spacetimedb-memory-usage"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Provides the trait `MemoryUsage`"
+
+[features]
+hashbrown = ["dep:hashbrown"]
+smallvec = ["dep:smallvec"]
+ethnum = ["dep:ethnum"]
+decorum = ["dep:decorum"]
+default = ["hashbrown", "smallvec", "ethnum", "decorum"]
+
+[dependencies]
+hashbrown = { workspace = true, optional = true }
+smallvec = { workspace = true, optional = true }
+ethnum = { workspace = true, optional = true }
+decorum = { workspace = true, optional = true }

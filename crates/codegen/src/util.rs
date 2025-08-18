@@ -8,6 +8,7 @@ use std::{
 use super::code_indenter::Indenter;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
+use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::version;
 use spacetimedb_lib::{db::raw_def::v9::Lifecycle, sats::AlgebraicTypeRef};
 use spacetimedb_primitives::ColList;
@@ -20,7 +21,7 @@ use spacetimedb_schema::{
 use spacetimedb_schema::{
     def::{ModuleDef, ReducerDef},
     identifier::Identifier,
-    type_for_generate::{AlgebraicTypeUse, PrimitiveType},
+    type_for_generate::AlgebraicTypeUse,
 };
 
 /// Turns a closure `f: Fn(&mut Formatter) -> Result` into `fmt::Display`.
@@ -96,7 +97,7 @@ pub(super) fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &Reducer
 
 /// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
 ///
-/// Sorting is necessary to have deterministic reproducable codegen.
+/// Sorting is necessary to have deterministic reproducible codegen.
 pub(super) fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
     module.tables().sorted_by_key(|table| &table.name)
 }
@@ -124,7 +125,7 @@ pub(super) fn iter_indexes(table: &TableDef) -> impl Iterator<Item = &IndexDef> 
 
 /// Iterate over all the [`TypeDef`]s defined by the module, in alphabetical order by name.
 ///
-/// Sorting is necessary to have deterministic reproducable codegen.
+/// Sorting is necessary to have deterministic reproducible codegen.
 pub fn iter_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> {
     module.types().sorted_by_key(|table| &table.name)
 }

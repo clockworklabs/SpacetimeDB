@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use iter::PlanIter;
 use spacetimedb_lib::{
     bsatn::{EncodeError, ToBsatn},
+    query::Delta,
     sats::impl_serialize,
     AlgebraicValue, ProductValue,
 };
@@ -86,6 +87,22 @@ pub trait DeltaStore {
     fn inserts_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;
     fn deletes_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;
 
+    fn index_scan_range_for_delta(
+        &self,
+        table_id: TableId,
+        index_id: IndexId,
+        delta: Delta,
+        range: impl RangeBounds<AlgebraicValue>,
+    ) -> impl Iterator<Item = Row>;
+
+    fn index_scan_point_for_delta(
+        &self,
+        table_id: TableId,
+        index_id: IndexId,
+        delta: Delta,
+        point: &AlgebraicValue,
+    ) -> impl Iterator<Item = Row>;
+
     fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter {
         match inserts {
             true => DeltaScanIter {
@@ -98,11 +115,24 @@ pub trait DeltaStore {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub enum Row<'a> {
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
 }
+
+impl PartialEq for Row<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Ptr(x), Self::Ptr(y)) => x == y,
+            (Self::Ref(x), Self::Ref(y)) => x == y,
+            (Self::Ptr(x), Self::Ref(y)) => x == *y,
+            (Self::Ref(x), Self::Ptr(y)) => y == *x,
+        }
+    }
+}
+
+impl Eq for Row<'_> {}
 
 impl Hash for Row<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {

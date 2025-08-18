@@ -5,7 +5,7 @@ use std::{
     mem,
 };
 
-use log::debug;
+use log::{debug, trace};
 use memmap2::MmapMut;
 use spacetimedb_paths::server::OffsetIndexFile;
 
@@ -17,7 +17,7 @@ const ENTRY_SIZE: usize = KEY_SIZE + mem::size_of::<u64>();
 ///
 /// `IndexFileMut` provides efficient read and write access to an index file, which stores
 /// key-value pairs
-/// Succesive key written should be sorted in ascending order, 0 is invalid-key value
+/// Successive key written should be sorted in ascending order, 0 is invalid-key value
 #[derive(Debug)]
 pub struct IndexFileMut<Key> {
     // A mutable memory-mapped buffer that represents the file contents.
@@ -61,13 +61,13 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
             num_entries: 0,
             _marker: PhantomData,
         };
-        me.num_entries = me.num_entries().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        me.num_entries = me.num_entries().map_err(io::Error::other)?;
 
         Ok(me)
     }
 
     pub fn delete_index_file(path: &OffsetIndexFile) -> io::Result<()> {
-        fs::remove_file(path).map_err(Into::into)
+        fs::remove_file(path)
     }
 
     // Searches for first 0-key, to count number of entries
@@ -113,6 +113,10 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
 
         let low_key = self.index_lookup(low).map(|(k, _)| k.into())?;
         if low == 0 && key < low_key {
+            return Err(IndexError::KeyNotFound);
+        }
+        // If found key is 0, return `KeyNotFound`
+        if low_key == 0 {
             return Err(IndexError::KeyNotFound);
         }
 
@@ -181,24 +185,37 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// Asynchronously flushes any pending changes to the index file
     ///
     /// Due to Async nature, `Ok(())` does not guarantee that the changes are flushed.
-    /// an `Err` value indicates it definately did not succeed
+    /// an `Err` value indicates it definitely did not succeed
     pub fn async_flush(&self) -> io::Result<()> {
         self.inner.flush_async()
     }
 
-    /// Truncates the index file starting from the entry with a key greater than or equal to the given key.
+    /// Truncates the index file starting from the entry with a key greater than
+    /// or equal to the given key.
+    ///
+    /// If successful, `key` will no longer be in the index.
     pub(crate) fn truncate(&mut self, key: Key) -> Result<(), IndexError> {
         let key = key.into();
-        let (found_key, index) = self.find_index(Key::from(key))?;
+        let (found_key, index) = self
+            .find_index(Key::from(key))
+            .map(|(found, index)| (found.into(), index))?;
 
-        // If returned key is smalled than asked key, truncate from next entry
-        self.num_entries = if found_key.into() == key {
+        // If returned key is smaller than asked key, truncate from next entry
+        self.num_entries = if found_key == key {
             index as usize
         } else {
             index as usize + 1
         };
 
         let start = self.num_entries * ENTRY_SIZE;
+        trace!(
+            "truncate key={} found={} index={} num-entries={} start={}",
+            key,
+            found_key,
+            index,
+            self.num_entries,
+            start
+        );
 
         if start < self.inner.len() {
             self.inner[start..].fill(0);
@@ -250,9 +267,7 @@ impl<Key: Into<u64> + From<u64>> IndexFile<Key> {
             num_entries: 0,
             _marker: PhantomData,
         };
-        inner.num_entries = inner
-            .num_entries()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        inner.num_entries = inner.num_entries().map_err(io::Error::other)?;
 
         Ok(Self { inner })
     }
@@ -334,6 +349,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use pretty_assertions::assert_matches;
     use spacetimedb_paths::server::CommitLogDir;
     use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
@@ -403,6 +419,14 @@ mod tests {
         // key smaller than 1st entry should return error
         assert!(index.key_lookup(1).is_err());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_index_lookup_should_fail() -> Result<(), IndexError> {
+        let index = create_index_in(TempDir::new().unwrap().path(), 100)?;
+        assert_matches!(index.key_lookup(0), Err(IndexError::KeyNotFound));
+        assert_matches!(index.key_lookup(10), Err(IndexError::KeyNotFound));
         Ok(())
     }
 

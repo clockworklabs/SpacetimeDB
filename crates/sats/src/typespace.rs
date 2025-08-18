@@ -21,7 +21,7 @@ pub enum TypeRefError {
 
 /// A `Typespace` represents the typing context in SATS.
 ///
-/// That is, this is the `Δ` or `Γ` you'll see in type theory litterature.
+/// That is, this is the `Δ` or `Γ` you'll see in type theory literature.
 ///
 /// We use (sort of) [deBrujin indices](https://en.wikipedia.org/wiki/De_Bruijn_index)
 /// to represent our type variables.
@@ -447,7 +447,7 @@ mod tests {
 
         fn assert_not_valid(ty: AlgebraicType) {
             let typespace = Typespace::new(vec![ty.clone()]);
-            assert!(!typespace.is_valid_for_client_code_generation(), "{:?}", ty);
+            assert!(!typespace.is_valid_for_client_code_generation(), "{ty:?}");
         }
         assert_not_valid(AlgebraicType::product([AlgebraicType::U8, bad_inner_1.clone()]));
         assert_not_valid(AlgebraicType::product([AlgebraicType::U8, bad_inner_2.clone()]));

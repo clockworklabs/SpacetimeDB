@@ -113,7 +113,7 @@ fn main() {
 
         "should-fail" => exec_should_fail(),
 
-        "reconnect-same-connection-id" => exec_reconnect_same_connection_id(),
+        "reconnect-different-connection-id" => exec_reconnect_different_connection_id(),
         "caller-always-notified" => exec_caller_always_notified(),
 
         "subscribe-all-select-star" => exec_subscribe_all_select_star(),
@@ -134,7 +134,7 @@ fn main() {
 
         "overlapping-subscriptions" => exec_overlapping_subscriptions(),
 
-        _ => panic!("Unknown test: {}", test),
+        _ => panic!("Unknown test: {test}"),
     }
 }
 
@@ -383,7 +383,7 @@ fn connect_with_then(
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|_ctx, error| panic!("Connect errored: {:?}", error));
+        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
     let conn = with_builder(builder).build().unwrap();
     conn.run_threaded();
     conn
@@ -411,7 +411,7 @@ fn subscribe_these_then(
 ) {
     ctx.subscription_builder()
         .on_applied(callback)
-        .on_error(|_ctx, error| panic!("Subscription errored: {:?}", error))
+        .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
         .subscribe(queries);
 }
 
@@ -425,7 +425,7 @@ fn exec_subscribe_and_cancel() {
                 .on_applied(move |_ctx: &SubscriptionEventContext| {
                     panic!("Subscription should never be applied");
                 })
-                .on_error(|_ctx, error| panic!("Subscription errored: {:?}", error))
+                .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
                 .subscribe("SELECT * FROM one_u8;");
             assert!(!handle.is_active());
             assert!(!handle.is_ended());
@@ -468,7 +468,7 @@ fn exec_subscribe_and_unsubscribe() {
                         }))
                         .unwrap();
                 })
-                .on_error(|_ctx, error| panic!("Subscription errored: {:?}", error))
+                .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
                 .subscribe("SELECT * FROM one_u8;");
             handle_cell.lock().unwrap().replace(handle.clone());
             assert!(!handle.is_active());
@@ -1391,7 +1391,7 @@ fn exec_insert_delete_large_table() {
                                 ..
                             })
                         ) {
-                            anyhow::bail!("Unexpected event: expeced InsertLargeTable but found {:?}", ctx.event,);
+                            anyhow::bail!("Unexpected event: expected InsertLargeTable but found {:?}", ctx.event,);
                         }
 
                         // Now we'll delete the row we just inserted and check that the delete callback is called.
@@ -1437,7 +1437,7 @@ fn exec_insert_delete_large_table() {
                                 ..
                             })
                         ) {
-                            anyhow::bail!("Unexpected event: expeced DeleteLargeTable but found {:?}", ctx.event,);
+                            anyhow::bail!("Unexpected event: expected DeleteLargeTable but found {:?}", ctx.event,);
                         }
                         Ok(())
                     };
@@ -1527,7 +1527,7 @@ fn exec_insert_primitives_as_strings() {
                             })
                         ) {
                             anyhow::bail!(
-                                "Unexpected Event: expeced reducer InsertPrimitivesAsStrings but found {:?}",
+                                "Unexpected Event: expected reducer InsertPrimitivesAsStrings but found {:?}",
                                 ctx.event,
                             );
                         }
@@ -1665,7 +1665,7 @@ fn exec_reauth_part_1() {
         .on_connect(|_, _identity, token| {
             save_result(creds_store().save(token).map_err(Into::into));
         })
-        .on_connect_error(|_ctx, error| panic!("Connect failed: {:?}", error))
+        .on_connect_error(|_ctx, error| panic!("Connect failed: {error:?}"))
         .with_module_name(name)
         .with_uri(LOCALHOST)
         .build()
@@ -1699,7 +1699,7 @@ fn exec_reauth_part_2() {
                 creds_match_result(run_checks());
             }
         })
-        .on_connect_error(|_ctx, error| panic!("Connect failed: {:?}", error))
+        .on_connect_error(|_ctx, error| panic!("Connect failed: {error:?}"))
         .with_module_name(name)
         .with_token(Some(token))
         .with_uri(LOCALHOST)
@@ -1710,7 +1710,8 @@ fn exec_reauth_part_2() {
     test_counter.wait_for_all();
 }
 
-fn exec_reconnect_same_connection_id() {
+// Ensure a new connection gets a different connection id.
+fn exec_reconnect_different_connection_id() {
     let initial_test_counter = TestCounter::new();
     let initial_connect_result = initial_test_counter.add_test("connect");
 
@@ -1720,7 +1721,7 @@ fn exec_reconnect_same_connection_id() {
     let initial_connection = DbConnection::builder()
         .with_module_name(db_name_or_panic())
         .with_uri(LOCALHOST)
-        .on_connect_error(|_ctx, error| panic!("on_connect_error: {:?}", error))
+        .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
         .on_connect(move |_, _, _| {
             initial_connect_result(Ok(()));
         })
@@ -1748,11 +1749,12 @@ fn exec_reconnect_same_connection_id() {
     let re_connection = DbConnection::builder()
         .with_module_name(db_name_or_panic())
         .with_uri(LOCALHOST)
-        .on_connect_error(|_ctx, error| panic!("on_connect_error: {:?}", error))
+        .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
         .on_connect(move |ctx, _, _| {
             reconnect_result(Ok(()));
             let run_checks = || {
-                anyhow::ensure!(ctx.connection_id() == my_connection_id);
+                // A new connection should have a different connection id.
+                anyhow::ensure!(ctx.connection_id() != my_connection_id);
                 Ok(())
             };
             addr_after_reconnect_result(run_checks());

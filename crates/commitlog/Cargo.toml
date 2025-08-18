@@ -35,6 +35,7 @@ zstd-framed.workspace = true
 
 # For the 'test' feature
 env_logger = { workspace = true, optional = true }
+pretty_assertions.workspace = true
 
 [dev-dependencies]
 # Enable streaming in tests
@@ -49,3 +50,6 @@ proptest.workspace = true
 rand.workspace = true
 tempfile.workspace = true
 tokio-stream = { version = "0.1.17", features = ["fs"] }
+
+[lints]
+workspace = true

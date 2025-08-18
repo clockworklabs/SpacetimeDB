@@ -1,3 +1,4 @@
+use std::num::NonZeroU8;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -97,7 +98,7 @@ impl Host {
                         &mut header,
                     )
                     .map_err(|e| {
-                        log::warn!("{}", e);
+                        log::warn!("{e}");
                         if let Some(auth_err) = e.get_auth_error() {
                             (StatusCode::UNAUTHORIZED, auth_err.to_string())
                         } else {
@@ -149,7 +150,9 @@ pub struct DatabaseDef {
     /// The compiled program of the database module.
     pub program_bytes: Vec<u8>,
     /// The desired number of replicas the database shall have.
-    pub num_replicas: u32,
+    ///
+    /// If `None`, the edition default is used.
+    pub num_replicas: Option<NonZeroU8>,
     /// The host type of the supplied program.
     pub host_type: HostType,
 }

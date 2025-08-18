@@ -22,6 +22,11 @@ partial struct CustomStruct
         BSATN.NullableStringFieldRW.Write(writer, NullableStringField);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"CustomStruct {{ IntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntField)}, StringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringField)}, NullableIntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableIntField)}, NullableStringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableStringField)} }}";
 
@@ -38,8 +43,12 @@ partial struct CustomStruct
             SpacetimeDB.BSATN.String
         > NullableStringFieldRW = new();
 
-        public CustomStruct Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomStruct>(reader);
+        public CustomStruct Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new CustomStruct();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomStruct value)
         {
@@ -66,23 +75,34 @@ partial struct CustomStruct
 
     public override int GetHashCode()
     {
-        return IntField.GetHashCode()
-            ^ StringField.GetHashCode()
-            ^ NullableIntField.GetHashCode()
-            ^ (NullableStringField == null ? 0 : NullableStringField.GetHashCode());
+        var ___hashIntField = IntField.GetHashCode();
+        var ___hashStringField = StringField == null ? 0 : StringField.GetHashCode();
+        var ___hashNullableIntField = NullableIntField.GetHashCode();
+        var ___hashNullableStringField =
+            NullableStringField == null ? 0 : NullableStringField.GetHashCode();
+        return ___hashIntField
+            ^ ___hashStringField
+            ^ ___hashNullableIntField
+            ^ ___hashNullableStringField;
     }
 
 #nullable enable
     public bool Equals(CustomStruct that)
     {
-        return IntField.Equals(that.IntField)
-            && StringField.Equals(that.StringField)
-            && NullableIntField.Equals(that.NullableIntField)
-            && (
-                NullableStringField == null
-                    ? that.NullableStringField == null
-                    : NullableStringField.Equals(that.NullableStringField)
-            );
+        var ___eqIntField = this.IntField.Equals(that.IntField);
+        var ___eqStringField =
+            this.StringField == null
+                ? that.StringField == null
+                : this.StringField.Equals(that.StringField);
+        var ___eqNullableIntField = this.NullableIntField.Equals(that.NullableIntField);
+        var ___eqNullableStringField =
+            this.NullableStringField == null
+                ? that.NullableStringField == null
+                : this.NullableStringField.Equals(that.NullableStringField);
+        return ___eqIntField
+            && ___eqStringField
+            && ___eqNullableIntField
+            && ___eqNullableStringField;
     }
 
     public override bool Equals(object? that)

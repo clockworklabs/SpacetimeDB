@@ -13,20 +13,4 @@ GIT_ROOT="$(git rev-parse --show-toplevel)"
 PATTERN='^// This was generated using spacetimedb cli version.*'
 failed=0
 
-for file in $(git diff --name-only -- "$SUBDIR"); do
-  echo "Checking file $file"
-  full_file="$GIT_ROOT/$file"
-  # Only check files that still exist in working dir
-  [ -f "$full_file" ] || continue
-
-  diff_out=$(diff -u --ignore-matching-lines="$PATTERN" \
-    <(git show HEAD:"$file" 2>/dev/null || cat /dev/null) "$full_file")
-  if [ $? -ne 0 ]; then
-    echo "Difference found in $file:"
-    echo "$diff_out"
-    echo # blank line for clarity
-    failed=1
-  fi
-done
-
-exit $failed
+git diff --exit-code --ignore-matching-lines="$PATTERN" -- "$SUBDIR"

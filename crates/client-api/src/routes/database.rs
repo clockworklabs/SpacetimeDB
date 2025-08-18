@@ -1,3 +1,4 @@
+use std::num::NonZeroU8;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -28,9 +29,9 @@ use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PublishOp, PublishResult};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::sats;
+use spacetimedb_lib::{sats, Timestamp};
 
-use super::subscribe::handle_websocket;
+use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
 #[derive(Deserialize)]
 pub struct CallParams {
@@ -119,16 +120,16 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
                 }
                 ReducerCallError::NoSuchModule(_) | ReducerCallError::ScheduleReducerNotFound => StatusCode::NOT_FOUND,
                 ReducerCallError::NoSuchReducer => {
-                    log::debug!("Attempt to call non-existent reducer {}", reducer);
+                    log::debug!("Attempt to call non-existent reducer {reducer}");
                     StatusCode::NOT_FOUND
                 }
                 ReducerCallError::LifecycleReducer(lifecycle) => {
-                    log::debug!("Attempt to call {lifecycle:?} lifeycle reducer {}", reducer);
+                    log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {reducer}");
                     StatusCode::BAD_REQUEST
                 }
             };
 
-            log::debug!("Error while invoking reducer {:#}", e);
+            log::debug!("Error while invoking reducer {e:#}");
             Err((status_code, format!("{:#}", anyhow::anyhow!(e))))
         }
     };
@@ -163,11 +164,7 @@ fn reducer_outcome_response(identity: &Identity, reducer: &str, outcome: Reducer
             (StatusCode::from_u16(530).unwrap(), errmsg)
         }
         ReducerOutcome::BudgetExceeded => {
-            log::warn!(
-                "Node's energy budget exceeded for identity: {} while executing {}",
-                identity,
-                reducer
-            );
+            log::warn!("Node's energy budget exceeded for identity: {identity} while executing {reducer}");
             (
                 StatusCode::PAYMENT_REQUIRED,
                 "Module energy budget exhausted.".to_owned(),
@@ -262,7 +259,7 @@ pub async fn db_info<S: ControlStateDelegate>(
     State(worker_ctx): State<S>,
     Path(DatabaseParam { name_or_identity }): Path<DatabaseParam>,
 ) -> axum::response::Result<impl IntoResponse> {
-    log::trace!("Trying to resolve database identity: {:?}", name_or_identity);
+    log::trace!("Trying to resolve database identity: {name_or_identity:?}");
     let database_identity = name_or_identity.resolve(&worker_ctx).await?;
     log::trace!("Resolved identity to: {database_identity:?}");
     let database = worker_ctx_find_database(&worker_ctx, &database_identity)
@@ -370,7 +367,7 @@ fn mime_ndjson() -> mime::Mime {
     "application/x-ndjson".parse().unwrap()
 }
 
-async fn worker_ctx_find_database(
+pub(crate) async fn worker_ctx_find_database(
     worker_ctx: &(impl ControlStateDelegate + ?Sized),
     database_identity: &Identity,
 ) -> axum::response::Result<Option<Database>> {
@@ -471,6 +468,7 @@ pub struct PublishDatabaseParams {
 pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
+    num_replicas: Option<usize>,
 }
 
 use std::env;
@@ -498,7 +496,7 @@ fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PublishDatabaseParams { name_or_identity }): Path<PublishDatabaseParams>,
-    Query(PublishDatabaseQueryParams { clear }): Query<PublishDatabaseQueryParams>,
+    Query(PublishDatabaseQueryParams { clear, num_replicas }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
@@ -572,13 +570,21 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         }
     };
 
+    let num_replicas = num_replicas
+        .map(|n| {
+            let n = u8::try_from(n).map_err(|_| (StatusCode::BAD_REQUEST, "Replication factor {n} out of bounds"))?;
+            Ok::<_, ErrorResponse>(NonZeroU8::new(n))
+        })
+        .transpose()?
+        .flatten();
+
     let maybe_updated = ctx
         .publish_database(
             &auth.identity,
             DatabaseDef {
                 database_identity,
                 program_bytes: body.into(),
-                num_replicas: 1,
+                num_replicas,
                 host_type: HostType::Wasm,
             },
         )
@@ -694,6 +700,18 @@ pub async fn set_names<S: ControlStateDelegate>(
         ));
     }
 
+    for name in &validated_names {
+        if ctx.lookup_identity(name.as_str()).unwrap().is_some() {
+            return Ok((
+                StatusCode::BAD_REQUEST,
+                axum::Json(name::SetDomainsResult::OtherError(format!(
+                    "Cannot rename to {} because it already is in use.",
+                    name.as_str()
+                ))),
+            ));
+        }
+    }
+
     let response = ctx
         .replace_dns_records(&database_identity, &database.owner_identity, &validated_names)
         .await
@@ -708,6 +726,33 @@ pub async fn set_names<S: ControlStateDelegate>(
     };
 
     Ok((status, axum::Json(response)))
+}
+
+#[derive(serde::Deserialize)]
+pub struct TimestampParams {
+    name_or_identity: NameOrIdentity,
+}
+
+/// Returns the database's view of the current time,
+/// as a SATS-JSON encoded [`Timestamp`].
+///
+/// Takes a particular database's [`NameOrIdentity`] as an argument
+/// because in a clusterized SpacetimeDB-cloud deployment,
+/// this request will be routed to the node running the requested database.
+async fn get_timestamp<S: ControlStateDelegate>(
+    State(worker_ctx): State<S>,
+    Path(TimestampParams { name_or_identity }): Path<TimestampParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?;
+
+    let _database = worker_ctx_find_database(&worker_ctx, &db_identity)
+        .await?
+        .ok_or_else(|| {
+            log::error!("Could not find database: {}", db_identity.to_hex());
+            NO_SUCH_DATABASE
+        })?;
+
+    Ok(axum::Json(sats::serde::SerdeWrapper(Timestamp::now())).into_response())
 }
 
 /// This struct allows the edition to customize `/database` routes more meticulously.
@@ -738,11 +783,14 @@ pub struct DatabaseRoutes<S> {
     pub logs_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
     pub sql_post: MethodRouter<S>,
+
+    /// GET: /database/: name_or_identity/unstable/timestamp
+    pub timestamp_get: MethodRouter<S>,
 }
 
 impl<S> Default for DatabaseRoutes<S>
 where
-    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
+    S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Clone + 'static,
 {
     fn default() -> Self {
         use axum::routing::{delete, get, post, put};
@@ -760,6 +808,7 @@ where
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
+            timestamp_get: get(get_timestamp::<S>),
         }
     }
 }
@@ -781,7 +830,8 @@ where
             .route("/call/:reducer", self.call_reducer_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
-            .route("/sql", self.sql_post);
+            .route("/sql", self.sql_post)
+            .route("/unstable/timestamp", self.timestamp_get);
 
         axum::Router::new()
             .route("/", self.root_post)

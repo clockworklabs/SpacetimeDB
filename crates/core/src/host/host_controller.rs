@@ -3,23 +3,28 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_logger::DatabaseLogger;
-use crate::db::datastore::traits::Program;
-use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
-use crate::db::{self, db_metrics};
+use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
+use crate::host::module_host::ModuleRuntime as _;
+use crate::host::v8::V8Runtime;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
-use crate::subscription::module_subscription_manager::SubscriptionManager;
-use crate::util::spawn_rayon;
+use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
+use crate::util::asyncify;
+use crate::util::jobs::{JobCore, JobCores};
+use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
@@ -73,6 +78,10 @@ pub type ProgramStorage = Arc<dyn ExternalStorage>;
 
 /// A host controller manages the lifecycle of spacetime databases and their
 /// associated modules.
+///
+/// This type is, and must remain, cheap to clone.
+/// All of its fields should either be [`Copy`], enclosed in an [`Arc`],
+/// or have some other fast [`Clone`] implementation.
 #[derive(Clone)]
 pub struct HostController {
     /// Map of all hosts managed by this controller,
@@ -93,16 +102,20 @@ pub struct HostController {
     pub page_pool: PagePool,
     /// The runtimes for running our modules.
     runtimes: Arc<HostRuntimes>,
+    /// The CPU cores that are reserved for ModuleHost operations to run on.
+    db_cores: JobCores,
 }
 
 struct HostRuntimes {
     wasmtime: WasmtimeRuntime,
+    v8: V8Runtime,
 }
 
 impl HostRuntimes {
     fn new(data_dir: Option<&ServerDataDir>) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir);
-        Arc::new(Self { wasmtime })
+        let v8 = V8Runtime::default();
+        Arc::new(Self { wasmtime, v8 })
     }
 }
 
@@ -167,6 +180,7 @@ impl HostController {
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
         durability: Arc<dyn DurabilityProvider>,
+        db_cores: JobCores,
     ) -> Self {
         Self {
             hosts: <_>::default(),
@@ -177,6 +191,7 @@ impl HostController {
             runtimes: HostRuntimes::new(Some(&data_dir)),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
+            db_cores,
         }
     }
 
@@ -246,10 +261,31 @@ impl HostController {
         }
 
         trace!("launch host {}/{}", database.database_identity, replica_id);
-        let host = self.try_init_host(database, replica_id).await?;
 
-        let rx = host.module.subscribe();
-        *guard = Some(host);
+        // `HostController::clone` is fast,
+        // as all of its fields are either `Copy` or wrapped in `Arc`.
+        let this = self.clone();
+
+        // `try_init_host` is not cancel safe, as it will spawn other async tasks
+        // which hold a filesystem lock past when `try_init_host` returns or is cancelled.
+        // This means that, if `try_init_host` is cancelled, subsequent calls will fail.
+        //
+        // This is problematic because Axum will cancel its handler tasks if the client disconnects,
+        // and this method is called from Axum handlers, e.g. for the subscribe route.
+        // `tokio::spawn` a task to build the `Host` and install it in the `guard`,
+        // so that it will run to completion even if the caller goes away.
+        //
+        // Note that `tokio::spawn` only cancels its tasks when the runtime shuts down,
+        // at which point we won't be calling `try_init_host` again anyways.
+        let rx = tokio::spawn(async move {
+            let host = this.try_init_host(database, replica_id).await?;
+
+            let rx = host.module.subscribe();
+            *guard = Some(host);
+
+            Ok::<_, anyhow::Error>(rx)
+        })
+        .await??;
 
         Ok(rx)
     }
@@ -265,7 +301,19 @@ impl HostController {
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
     pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<Arc<ModuleInfo>> {
-        Host::try_init_in_memory_to_check(&self.runtimes, self.page_pool.clone(), database, program).await
+        Host::try_init_in_memory_to_check(
+            &self.runtimes,
+            self.page_pool.clone(),
+            database,
+            program,
+            // This takes a db core to check validity, and we will later take
+            // another core to actually run the module. Due to the round-robin
+            // algorithm that JobCores uses, that will likely just be the same
+            // core - there's not a concern that we'll only end up using 1/2
+            // of the actual cores.
+            self.db_cores.take(),
+        )
+        .await
     }
 
     /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by
@@ -282,13 +330,13 @@ impl HostController {
         trace!("using database {}/{}", database.database_identity, replica_id);
         let module = self.get_or_launch_module_host(database, replica_id).await?;
         let on_panic = self.unregister_fn(replica_id);
-        let result = tokio::task::spawn_blocking(move || f(&module.replica_ctx().relational_db))
-            .await
-            .unwrap_or_else(|e| {
-                warn!("database operation panicked");
-                on_panic();
-                std::panic::resume_unwind(e.into_panic())
-            });
+        scopeguard::defer_on_unwind!({
+            warn!("database operation panicked");
+            on_panic();
+        });
+
+        let db = module.replica_ctx().relational_db.clone();
+        let result = module.on_module_thread("using_database", move || f(&db)).await?;
         Ok(result)
     }
 
@@ -321,27 +369,52 @@ impl HostController {
         );
 
         let mut guard = self.acquire_write_lock(replica_id).await;
-        let mut host = match guard.take() {
-            None => {
-                trace!("host not running, try_init");
-                self.try_init_host(database, replica_id).await?
-            }
-            Some(host) => {
-                trace!("host found, updating");
-                host
-            }
-        };
-        let update_result = host
-            .update_module(
-                self.runtimes.clone(),
-                host_type,
-                program,
-                self.energy_monitor.clone(),
-                self.unregister_fn(replica_id),
-            )
-            .await?;
 
-        *guard = Some(host);
+        // `HostController::clone` is fast,
+        // as all of its fields are either `Copy` or wrapped in `Arc`.
+        let this = self.clone();
+
+        // `try_init_host` is not cancel safe, as it will spawn other async tasks
+        // which hold a filesystem lock past when `try_init_host` returns or is cancelled.
+        // This means that, if `try_init_host` is cancelled, subsequent calls will fail.
+        //
+        // The rest of this future is also not cancel safe, as it will `Option::take` out of the guard
+        // at the start of the block and then store back into it at the end.
+        //
+        // This is problematic because Axum will cancel its handler tasks if the client disconnects,
+        // and this method is called from Axum handlers, e.g. for the publish route.
+        // `tokio::spawn` a task to update the contents of `guard`,
+        // so that it will run to completion even if the caller goes away.
+        //
+        // Note that `tokio::spawn` only cancels its tasks when the runtime shuts down,
+        // at which point we won't be calling `try_init_host` again anyways.
+        let update_result = tokio::spawn(async move {
+            let mut host = match guard.take() {
+                None => {
+                    trace!("host not running, try_init");
+                    this.try_init_host(database, replica_id).await?
+                }
+                Some(host) => {
+                    trace!("host found, updating");
+                    host
+                }
+            };
+            let update_result = host
+                .update_module(
+                    this.runtimes.clone(),
+                    host_type,
+                    program,
+                    this.energy_monitor.clone(),
+                    this.unregister_fn(replica_id),
+                    this.db_cores.take(),
+                )
+                .await?;
+
+            *guard = Some(host);
+            Ok::<_, anyhow::Error>(update_result)
+        })
+        .await??;
+
         Ok(update_result)
     }
 
@@ -377,58 +450,80 @@ impl HostController {
         let program_hash = database.initial_program;
 
         let mut guard = self.acquire_write_lock(replica_id).await;
-        let mut host = match guard.take() {
-            Some(host) => host,
-            None => self.try_init_host(database, replica_id).await?,
-        };
-        let module = host.module.subscribe();
 
-        // The program is now either:
+        // `HostController::clone` is fast,
+        // as all of its fields are either `Copy` or wrapped in `Arc`.
+        let this = self.clone();
+
+        // `try_init_host` is not cancel safe, as it will spawn other async tasks
+        // which hold a filesystem lock past when `try_init_host` returns or is cancelled.
+        // This means that, if `try_init_host` is cancelled, subsequent calls will fail.
         //
-        // - the desired one from [Database], in which case we do nothing
-        // - `Some` expected hash, in which case we update to the desired one
-        // - `None` expected hash, in which case we also update
-        let stored_hash = stored_program_hash(host.db())?
-            .with_context(|| format!("[{}] database improperly initialized", db_addr))?;
-        if stored_hash == program_hash {
-            info!("[{}] database up-to-date with {}", db_addr, program_hash);
-            *guard = Some(host);
-        } else {
-            if let Some(expected_hash) = expected_hash {
-                ensure!(
-                    expected_hash == stored_hash,
-                    "[{}] expected program {} found {}",
-                    db_addr,
-                    expected_hash,
-                    stored_hash
-                );
+        // The rest of this future is also not cancel safe, as it will `Option::take` out of the guard
+        // at the start of the block and then store back into it at the end.
+        //
+        // This is problematic because Axum will cancel its handler tasks if the client disconnects,
+        // and this method is called from Axum handlers, e.g. for the publish route.
+        // `tokio::spawn` a task to update the contents of `guard`,
+        // so that it will run to completion even if the caller goes away.
+        //
+        // Note that `tokio::spawn` only cancels its tasks when the runtime shuts down,
+        // at which point we won't be calling `try_init_host` again anyways.
+        let module = tokio::spawn(async move {
+            let mut host = match guard.take() {
+                Some(host) => host,
+                None => this.try_init_host(database, replica_id).await?,
+            };
+            let module = host.module.subscribe();
+
+            // The program is now either:
+            //
+            // - the desired one from [Database], in which case we do nothing
+            // - `Some` expected hash, in which case we update to the desired one
+            // - `None` expected hash, in which case we also update
+            let stored_hash = stored_program_hash(host.db())?
+                .with_context(|| format!("[{db_addr}] database improperly initialized"))?;
+            if stored_hash == program_hash {
+                info!("[{db_addr}] database up-to-date with {program_hash}");
+                *guard = Some(host);
+            } else {
+                if let Some(expected_hash) = expected_hash {
+                    ensure!(
+                        expected_hash == stored_hash,
+                        "[{}] expected program {} found {}",
+                        db_addr,
+                        expected_hash,
+                        stored_hash
+                    );
+                }
+                info!("[{db_addr}] updating database from `{stored_hash}` to `{program_hash}`");
+                let program = load_program(&this.program_storage, program_hash).await?;
+                let update_result = host
+                    .update_module(
+                        this.runtimes.clone(),
+                        host_type,
+                        program,
+                        this.energy_monitor.clone(),
+                        this.unregister_fn(replica_id),
+                        this.db_cores.take(),
+                    )
+                    .await?;
+                match update_result {
+                    UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
+                        *guard = Some(host);
+                    }
+                    UpdateDatabaseResult::AutoMigrateError(e) => {
+                        return Err(anyhow::anyhow!(e));
+                    }
+                    UpdateDatabaseResult::ErrorExecutingMigration(e) => {
+                        return Err(e);
+                    }
+                }
             }
-            info!(
-                "[{}] updating database from `{}` to `{}`",
-                db_addr, stored_hash, program_hash
-            );
-            let program = load_program(&self.program_storage, program_hash).await?;
-            let update_result = host
-                .update_module(
-                    self.runtimes.clone(),
-                    host_type,
-                    program,
-                    self.energy_monitor.clone(),
-                    self.unregister_fn(replica_id),
-                )
-                .await?;
-            match update_result {
-                UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
-                    *guard = Some(host);
-                }
-                UpdateDatabaseResult::AutoMigrateError(e) => {
-                    return Err(anyhow::anyhow!(e));
-                }
-                UpdateDatabaseResult::ErrorExecutingMigration(e) => {
-                    return Err(e);
-                }
-            }
-        }
+
+            Ok::<_, anyhow::Error>(module)
+        })
+        .await??;
 
         Ok(module)
     }
@@ -437,14 +532,14 @@ impl HostController {
     /// and deregister it from the controller.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64) -> Result<(), anyhow::Error> {
-        trace!("exit module host {}", replica_id);
+        trace!("exit module host {replica_id}");
         let lock = self.hosts.lock().remove(&replica_id);
         if let Some(lock) = lock {
             if let Some(host) = lock.write_owned().await.take() {
                 let module = host.module.borrow().clone();
                 module.exit().await;
                 let table_names = module.info().module_def.tables().map(|t| t.name.deref());
-                db_metrics::data_size::remove_database_gauges(&module.info().database_identity, table_names);
+                remove_database_gauges(&module.info().database_identity, table_names);
             }
         }
 
@@ -458,7 +553,7 @@ impl HostController {
     /// the host if it is not running.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn get_module_host(&self, replica_id: u64) -> Result<ModuleHost, NoSuchModule> {
-        trace!("get module host {}", replica_id);
+        trace!("get module host {replica_id}");
         let guard = self.acquire_read_lock(replica_id).await;
         guard
             .as_ref()
@@ -473,7 +568,7 @@ impl HostController {
     /// launches the host if it is not running.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn watch_module_host(&self, replica_id: u64) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
-        trace!("watch module host {}", replica_id);
+        trace!("watch module host {replica_id}");
         let guard = self.acquire_read_lock(replica_id).await;
         guard
             .as_ref()
@@ -526,9 +621,17 @@ async fn make_replica_ctx(
     relational_db: Arc<RelationalDB>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
-    let subscriptions = Arc::new(RwLock::new(SubscriptionManager::default()));
+    let send_worker_queue = spawn_send_worker(Some(database.database_identity));
+    let subscriptions = Arc::new(parking_lot::RwLock::new(SubscriptionManager::new(
+        send_worker_queue.clone(),
+    )));
     let downgraded = Arc::downgrade(&subscriptions);
-    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, database.owner_identity);
+    let subscriptions = ModuleSubscriptions::new(
+        relational_db.clone(),
+        subscriptions,
+        send_worker_queue,
+        database.owner_identity,
+    );
 
     // If an error occurs when evaluating a subscription,
     // we mark each client that was affected,
@@ -539,11 +642,8 @@ async fn make_replica_ctx(
             let Some(subscriptions) = downgraded.upgrade() else {
                 break;
             };
-            tokio::task::spawn_blocking(move || {
-                subscriptions.write().remove_dropped_clients();
-            })
-            .await
-            .unwrap();
+            // This should happen on the module thread, but we haven't created the module yet.
+            asyncify(move || subscriptions.write().remove_dropped_clients()).await
         }
     });
 
@@ -551,13 +651,14 @@ async fn make_replica_ctx(
         database,
         replica_id,
         logger,
-        relational_db,
         subscriptions,
+        relational_db,
     })
 }
 
 /// Initialize a module host for the given program.
 /// The passed replica_ctx may not be configured for this version of the program's database schema yet.
+#[allow(clippy::too_many_arguments)]
 async fn make_module_host(
     runtimes: Arc<HostRuntimes>,
     host_type: HostType,
@@ -566,20 +667,32 @@ async fn make_module_host(
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
+    core: JobCore,
 ) -> anyhow::Result<(Program, ModuleHost)> {
-    spawn_rayon(move || {
+    // `make_actor` is blocking, as it needs to compile the wasm to native code,
+    // which may be computationally expensive - sometimes up to 1s for a large module.
+    // TODO: change back to using `spawn_rayon` here - asyncify runs on tokio blocking
+    //       threads, but those aren't for computation. Also, wasmtime uses rayon
+    //       to run compilation in parallel, so it'll need to run stuff in rayon anyway.
+    asyncify(move || {
+        let mcc = ModuleCreationContext {
+            replica_ctx,
+            scheduler,
+            program: &program,
+            energy_monitor,
+        };
+
+        let start = Instant::now();
         let module_host = match host_type {
             HostType::Wasm => {
-                let mcc = ModuleCreationContext {
-                    replica_ctx,
-                    scheduler,
-                    program: &program,
-                    energy_monitor,
-                };
-                let start = Instant::now();
                 let actor = runtimes.wasmtime.make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister)
+                ModuleHost::new(actor, unregister, core)
+            }
+            HostType::Js => {
+                let actor = runtimes.v8.make_actor(mcc)?;
+                trace!("v8::make_actor blocked for {:?}", start.elapsed());
+                ModuleHost::new(actor, unregister, core)
             }
         };
         Ok((program, module_host))
@@ -591,7 +704,7 @@ async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Pr
     let bytes = storage
         .lookup(hash)
         .await?
-        .with_context(|| format!("program {} not found", hash))?;
+        .with_context(|| format!("program {hash} not found"))?;
     Ok(Program { hash, bytes })
 }
 
@@ -612,6 +725,7 @@ async fn launch_module(
     energy_monitor: Arc<dyn EnergyMonitor>,
     replica_dir: ReplicaDir,
     runtimes: Arc<HostRuntimes>,
+    core: JobCore,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
     let db_identity = database.database_identity;
     let host_type = database.host_type;
@@ -628,6 +742,7 @@ async fn launch_module(
         program,
         energy_monitor.clone(),
         on_panic,
+        core,
     )
     .await?;
 
@@ -696,7 +811,10 @@ struct Host {
     ///
     /// The task collects metrics from the `replica_ctx`, and so stays alive as long
     /// as the `replica_ctx` is live. The task is aborted when [`Host`] is dropped.
-    metrics_task: AbortHandle,
+    disk_metrics_recorder_task: AbortHandle,
+    /// Handle to the task responsible for recording metrics for each transaction.
+    /// The task is aborted when [`Host`] is dropped.
+    tx_metrics_recorder_task: AbortHandle,
 }
 
 impl Host {
@@ -704,8 +822,7 @@ impl Host {
     ///
     /// Note that this does **not** run module initialization routines, but may
     /// create on-disk artifacts if the host / database did not exist.
-
-    #[tracing::instrument(level = "debug", skip_all, err)]
+    #[tracing::instrument(level = "debug", skip_all)]
     async fn try_init(host_controller: &HostController, database: Database, replica_id: u64) -> anyhow::Result<Self> {
         let HostController {
             data_dir,
@@ -719,6 +836,7 @@ impl Host {
         } = host_controller;
         let on_panic = host_controller.unregister_fn(replica_id);
         let replica_dir = data_dir.replica(replica_id);
+        let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder();
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
@@ -728,6 +846,7 @@ impl Host {
                 EmptyHistory::new(),
                 None,
                 None,
+                Some(tx_metrics_queue),
                 page_pool.clone(),
             )?,
             db::Storage::Disk => {
@@ -743,8 +862,19 @@ impl Host {
                     history,
                     Some(durability),
                     Some(snapshot_repo),
+                    Some(tx_metrics_queue),
                     page_pool.clone(),
-                )?;
+                )
+                // Make sure we log the source chain of the error
+                // as a single line, with the help of `anyhow`.
+                .map_err(anyhow::Error::from)
+                .inspect_err(|e| {
+                    tracing::error!(
+                        database = %database.database_identity,
+                        replica = replica_id,
+                        "Failed to open database: {e:#}"
+                    );
+                })?;
                 if let Some(start_snapshot_watcher) = start_snapshot_watcher {
                     let watcher = db.subscribe_to_snapshots().expect("we passed snapshot_repo");
                     start_snapshot_watcher(watcher)
@@ -769,6 +899,7 @@ impl Host {
             energy_monitor.clone(),
             replica_dir,
             runtimes.clone(),
+            host_controller.db_cores.take(),
         )
         .await?;
 
@@ -802,13 +933,14 @@ impl Host {
         }
 
         scheduler_starter.start(&module_host)?;
-        let metrics_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
+        let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
 
         Ok(Host {
             module: watch::Sender::new(module_host),
             replica_ctx,
             scheduler,
-            metrics_task,
+            disk_metrics_recorder_task,
+            tx_metrics_recorder_task,
         })
     }
 
@@ -827,6 +959,7 @@ impl Host {
         page_pool: PagePool,
         database: Database,
         program: Program,
+        core: JobCore,
     ) -> anyhow::Result<Arc<ModuleInfo>> {
         // Even in-memory databases acquire a lockfile.
         // Grab a tempdir to put that lockfile in.
@@ -841,6 +974,7 @@ impl Host {
             database.database_identity,
             database.owner_identity,
             EmptyHistory::new(),
+            None,
             None,
             None,
             page_pool,
@@ -858,6 +992,7 @@ impl Host {
             Arc::new(NullEnergyMonitor),
             phony_replica_dir,
             runtimes.clone(),
+            core,
         )
         .await?;
 
@@ -888,6 +1023,7 @@ impl Host {
         program: Program,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
+        core: JobCore,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
@@ -900,6 +1036,7 @@ impl Host {
             program,
             energy_monitor,
             on_panic,
+            core,
         )
         .await?;
 
@@ -927,7 +1064,8 @@ impl Host {
 
 impl Drop for Host {
     fn drop(&mut self) {
-        self.metrics_task.abort();
+        self.disk_metrics_recorder_task.abort();
+        self.tx_metrics_recorder_task.abort();
     }
 }
 
@@ -936,20 +1074,27 @@ const STORAGE_METERING_INTERVAL: Duration = Duration::from_secs(15);
 /// Periodically collect gauge stats and update prometheus metrics.
 async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
     // TODO: Consider adding a metric for heap usage.
+    let message_log_size = DB_METRICS
+        .message_log_size
+        .with_label_values(&replica_ctx.database_identity);
+    let module_log_file_size = DB_METRICS
+        .module_log_file_size
+        .with_label_values(&replica_ctx.database_identity);
+
     loop {
-        let disk_usage = tokio::task::block_in_place(|| replica_ctx.total_disk_usage());
-        replica_ctx.update_gauges();
-        if let Some(num_bytes) = disk_usage.durability {
-            DB_METRICS
-                .message_log_size
-                .with_label_values(&replica_ctx.database_identity)
-                .set(num_bytes as i64);
-        }
-        if let Some(num_bytes) = disk_usage.logs {
-            DB_METRICS
-                .module_log_file_size
-                .with_label_values(&replica_ctx.database_identity)
-                .set(num_bytes as i64);
+        let ctx = replica_ctx.clone();
+        // We spawn a blocking task here because this grabs blocking locks.
+        let disk_usage_future = tokio::task::spawn_blocking(move || {
+            ctx.update_gauges();
+            ctx.total_disk_usage()
+        });
+        if let Ok(disk_usage) = disk_usage_future.await {
+            if let Some(num_bytes) = disk_usage.durability {
+                message_log_size.set(num_bytes as i64);
+            }
+            if let Some(num_bytes) = disk_usage.logs {
+                module_log_file_size.set(num_bytes as i64);
+            }
         }
         tokio::time::sleep(STORAGE_METERING_INTERVAL).await;
     }
@@ -972,9 +1117,43 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     };
 
     let runtimes = HostRuntimes::new(None);
-    let page_pool = PagePool::default();
-    let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program).await?;
-    let module_info = Arc::into_inner(module_info).unwrap();
+    let page_pool = PagePool::new(None);
+    let core = JobCore::default();
+    let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program, core).await?;
+    // this should always succeed, but sometimes it doesn't
+    let module_def = match Arc::try_unwrap(module_info) {
+        Ok(info) => info.module_def,
+        Err(info) => info.module_def.clone(),
+    };
 
-    Ok(module_info.module_def)
+    Ok(module_def)
+}
+
+// Remove all gauges associated with a database.
+// This is useful if a database is being deleted.
+pub fn remove_database_gauges<'a, I>(db: &Identity, table_names: I)
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    // Remove the per-table gauges.
+    for table_name in table_names {
+        let _ = DATA_SIZE_METRICS
+            .data_size_table_num_rows
+            .remove_label_values(db, table_name);
+        let _ = DATA_SIZE_METRICS
+            .data_size_table_bytes_used_by_rows
+            .remove_label_values(db, table_name);
+        let _ = DATA_SIZE_METRICS
+            .data_size_table_num_rows_in_indexes
+            .remove_label_values(db, table_name);
+        let _ = DATA_SIZE_METRICS
+            .data_size_table_bytes_used_by_index_keys
+            .remove_label_values(db, table_name);
+    }
+    // Remove the per-db gauges.
+    let _ = DATA_SIZE_METRICS.data_size_blob_store_num_blobs.remove_label_values(db);
+    let _ = DATA_SIZE_METRICS
+        .data_size_blob_store_bytes_used_by_blobs
+        .remove_label_values(db);
+    let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
 }

@@ -61,7 +61,7 @@ impl ReducerContext {
 /// [`rand::Rng`] in order to access many useful random algorithms.
 ///
 /// `StdbRng` uses the same PRNG as `rand`'s [`StdRng`]. Note, however, that
-/// because it is seeded from a publically-known timestamp, it is not
+/// because it is seeded from a publicly-known timestamp, it is not
 /// cryptographically secure.
 ///
 /// You may be looking for a level of reproducibility that's finer-grained

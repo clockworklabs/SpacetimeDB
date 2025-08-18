@@ -37,7 +37,7 @@ HAVE_DOCKER = False
 # and a dotnet installation is detected
 HAVE_DOTNET = False
 
-# default value can be overriden by `--compose-file` flag
+# default value can be overridden by `--compose-file` flag
 COMPOSE_FILE = "./docker-compose.yml"
 
 # we need to late-bind the output stream to allow unittests to capture stdout/stderr.
@@ -237,7 +237,7 @@ class Smoketest(unittest.TestCase):
                 code = proc.wait()
                 if code:
                     raise subprocess.CalledProcessError(code, fake_args)
-                print("no inital update, but no error code either")
+                print("no initial update, but no error code either")
             except subprocess.TimeoutExpired:
                 print("no initial update, but process is still running")
 
@@ -253,6 +253,10 @@ class Smoketest(unittest.TestCase):
         # and **not raise any exceptions to the caller**.
         return ReturnThread(run).join
 
+    # Make an HTTP call with `method` to `path`.
+    #
+    # If the response is 200, return the body.
+    # Otherwise, throw an `Exception` constructed with two arguments, the response object and the body.
     def api_call(self, method, path, body = None, headers = {}):
         with open(self.config_path, "rb") as f:
             config = tomllib.load(f)
@@ -264,10 +268,11 @@ class Smoketest(unittest.TestCase):
             log_cmd([method, path])
             conn.request(method, path, body, headers)
             resp = conn.getresponse()
-            logging.debug(f"{resp.status} {resp.read()}")
+            body = resp.read()
+            logging.debug(f"{resp.status} {body}")
             if resp.status != 200:
-                raise resp
-            resp
+                raise Exception(resp, body)
+            return body
 
 
     @classmethod

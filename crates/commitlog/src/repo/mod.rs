@@ -106,17 +106,17 @@ pub trait Repo: Clone {
     /// Create [`TxOffsetIndexMut`] for the given `offset` or open it if already exist.
     /// The `cap` parameter is the maximum number of entries in the index.
     fn create_offset_index(&self, _offset: TxOffset, _cap: u64) -> io::Result<TxOffsetIndexMut> {
-        Err(io::Error::new(io::ErrorKind::Other, "not implemented"))
+        Err(io::Error::other("not implemented"))
     }
 
     /// Remove [`TxOffsetIndexMut`] named with `offset`.
     fn remove_offset_index(&self, _offset: TxOffset) -> io::Result<()> {
-        Err(io::Error::new(io::ErrorKind::Other, "not implemented"))
+        Err(io::Error::other("not implemented"))
     }
 
     /// Get [`TxOffsetIndex`] for the given `offset`.
     fn get_offset_index(&self, _offset: TxOffset) -> io::Result<TxOffsetIndex> {
-        Err(io::Error::new(io::ErrorKind::Other, "not implemented"))
+        Err(io::Error::other("not implemented"))
     }
 }
 
@@ -243,6 +243,7 @@ pub fn resume_segment_writer<R: Repo>(
         tx_range,
         size_in_bytes,
         max_epoch,
+        max_commit_offset: _,
     } = match Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");

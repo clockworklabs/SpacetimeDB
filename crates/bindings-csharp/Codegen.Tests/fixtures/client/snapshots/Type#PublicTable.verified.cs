@@ -62,6 +62,11 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
         BSATN.NullableReferenceFieldRW.Write(writer, NullableReferenceField);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"PublicTable {{ ByteField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ByteField)}, UshortField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UshortField)}, UintField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UintField)}, UlongField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UlongField)}, U128Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(U128Field)}, U256Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(U256Field)}, SbyteField = {SpacetimeDB.BSATN.StringUtil.GenericToString(SbyteField)}, ShortField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ShortField)}, IntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntField)}, LongField = {SpacetimeDB.BSATN.StringUtil.GenericToString(LongField)}, I128Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(I128Field)}, I256Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(I256Field)}, BoolField = {SpacetimeDB.BSATN.StringUtil.GenericToString(BoolField)}, FloatField = {SpacetimeDB.BSATN.StringUtil.GenericToString(FloatField)}, DoubleField = {SpacetimeDB.BSATN.StringUtil.GenericToString(DoubleField)}, StringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringField)}, IdentityField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IdentityField)}, ConnectionIdField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ConnectionIdField)}, CustomStructField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomStructField)}, CustomClassField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomClassField)}, CustomEnumField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomEnumField)}, CustomTaggedEnumField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomTaggedEnumField)}, ListField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ListField)}, NullableValueField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableValueField)}, NullableReferenceField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableReferenceField)} }}";
 
@@ -100,8 +105,12 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
             SpacetimeDB.BSATN.String
         > NullableReferenceFieldRW = new();
 
-        public PublicTable Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<PublicTable>(reader);
+        public PublicTable Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new PublicTable();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, PublicTable value)
         {
@@ -155,65 +164,155 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
 
     public override int GetHashCode()
     {
-        return ByteField.GetHashCode()
-            ^ UshortField.GetHashCode()
-            ^ UintField.GetHashCode()
-            ^ UlongField.GetHashCode()
-            ^ U128Field.GetHashCode()
-            ^ U256Field.GetHashCode()
-            ^ SbyteField.GetHashCode()
-            ^ ShortField.GetHashCode()
-            ^ IntField.GetHashCode()
-            ^ LongField.GetHashCode()
-            ^ I128Field.GetHashCode()
-            ^ I256Field.GetHashCode()
-            ^ BoolField.GetHashCode()
-            ^ FloatField.GetHashCode()
-            ^ DoubleField.GetHashCode()
-            ^ StringField.GetHashCode()
-            ^ IdentityField.GetHashCode()
-            ^ ConnectionIdField.GetHashCode()
-            ^ CustomStructField.GetHashCode()
-            ^ CustomClassField.GetHashCode()
-            ^ CustomEnumField.GetHashCode()
-            ^ CustomTaggedEnumField.GetHashCode()
-            ^ ListField.GetHashCode()
-            ^ NullableValueField.GetHashCode()
-            ^ (NullableReferenceField == null ? 0 : NullableReferenceField.GetHashCode());
+        var ___hashByteField = ByteField.GetHashCode();
+        var ___hashUshortField = UshortField.GetHashCode();
+        var ___hashUintField = UintField.GetHashCode();
+        var ___hashUlongField = UlongField.GetHashCode();
+        var ___hashU128Field = U128Field.GetHashCode();
+        var ___hashU256Field = U256Field.GetHashCode();
+        var ___hashSbyteField = SbyteField.GetHashCode();
+        var ___hashShortField = ShortField.GetHashCode();
+        var ___hashIntField = IntField.GetHashCode();
+        var ___hashLongField = LongField.GetHashCode();
+        var ___hashI128Field = I128Field.GetHashCode();
+        var ___hashI256Field = I256Field.GetHashCode();
+        var ___hashBoolField = BoolField.GetHashCode();
+        var ___hashFloatField = FloatField.GetHashCode();
+        var ___hashDoubleField = DoubleField.GetHashCode();
+        var ___hashStringField = StringField == null ? 0 : StringField.GetHashCode();
+        var ___hashIdentityField = IdentityField.GetHashCode();
+        var ___hashConnectionIdField = ConnectionIdField.GetHashCode();
+        var ___hashCustomStructField = CustomStructField.GetHashCode();
+        var ___hashCustomClassField = CustomClassField.GetHashCode();
+        var ___hashCustomEnumField = CustomEnumField.GetHashCode();
+        var ___hashCustomTaggedEnumField =
+            CustomTaggedEnumField == null ? 0 : CustomTaggedEnumField.GetHashCode();
+        var ___hashListField = 0;
+        if (ListField != null)
+        {
+            var ___hc0 = new System.HashCode();
+            for (int ___i0 = 0; ___i0 < ListField.Count; ___i0++)
+            {
+                var ___tmp0 = ListField[___i0];
+                var ___out1 = ___tmp0.GetHashCode();
+                ___hc0.Add(___out1);
+            }
+            ___hashListField = ___hc0.ToHashCode();
+        }
+        var ___hashNullableValueField = NullableValueField.GetHashCode();
+        var ___hashNullableReferenceField =
+            NullableReferenceField == null ? 0 : NullableReferenceField.GetHashCode();
+        return ___hashByteField
+            ^ ___hashUshortField
+            ^ ___hashUintField
+            ^ ___hashUlongField
+            ^ ___hashU128Field
+            ^ ___hashU256Field
+            ^ ___hashSbyteField
+            ^ ___hashShortField
+            ^ ___hashIntField
+            ^ ___hashLongField
+            ^ ___hashI128Field
+            ^ ___hashI256Field
+            ^ ___hashBoolField
+            ^ ___hashFloatField
+            ^ ___hashDoubleField
+            ^ ___hashStringField
+            ^ ___hashIdentityField
+            ^ ___hashConnectionIdField
+            ^ ___hashCustomStructField
+            ^ ___hashCustomClassField
+            ^ ___hashCustomEnumField
+            ^ ___hashCustomTaggedEnumField
+            ^ ___hashListField
+            ^ ___hashNullableValueField
+            ^ ___hashNullableReferenceField;
     }
 
 #nullable enable
     public bool Equals(PublicTable that)
     {
-        return ByteField.Equals(that.ByteField)
-            && UshortField.Equals(that.UshortField)
-            && UintField.Equals(that.UintField)
-            && UlongField.Equals(that.UlongField)
-            && U128Field.Equals(that.U128Field)
-            && U256Field.Equals(that.U256Field)
-            && SbyteField.Equals(that.SbyteField)
-            && ShortField.Equals(that.ShortField)
-            && IntField.Equals(that.IntField)
-            && LongField.Equals(that.LongField)
-            && I128Field.Equals(that.I128Field)
-            && I256Field.Equals(that.I256Field)
-            && BoolField.Equals(that.BoolField)
-            && FloatField.Equals(that.FloatField)
-            && DoubleField.Equals(that.DoubleField)
-            && StringField.Equals(that.StringField)
-            && IdentityField.Equals(that.IdentityField)
-            && ConnectionIdField.Equals(that.ConnectionIdField)
-            && CustomStructField.Equals(that.CustomStructField)
-            && CustomClassField.Equals(that.CustomClassField)
-            && CustomEnumField.Equals(that.CustomEnumField)
-            && CustomTaggedEnumField.Equals(that.CustomTaggedEnumField)
-            && ListField.Equals(that.ListField)
-            && NullableValueField.Equals(that.NullableValueField)
-            && (
-                NullableReferenceField == null
-                    ? that.NullableReferenceField == null
-                    : NullableReferenceField.Equals(that.NullableReferenceField)
-            );
+        var ___eqByteField = this.ByteField.Equals(that.ByteField);
+        var ___eqUshortField = this.UshortField.Equals(that.UshortField);
+        var ___eqUintField = this.UintField.Equals(that.UintField);
+        var ___eqUlongField = this.UlongField.Equals(that.UlongField);
+        var ___eqU128Field = this.U128Field.Equals(that.U128Field);
+        var ___eqU256Field = this.U256Field.Equals(that.U256Field);
+        var ___eqSbyteField = this.SbyteField.Equals(that.SbyteField);
+        var ___eqShortField = this.ShortField.Equals(that.ShortField);
+        var ___eqIntField = this.IntField.Equals(that.IntField);
+        var ___eqLongField = this.LongField.Equals(that.LongField);
+        var ___eqI128Field = this.I128Field.Equals(that.I128Field);
+        var ___eqI256Field = this.I256Field.Equals(that.I256Field);
+        var ___eqBoolField = this.BoolField.Equals(that.BoolField);
+        var ___eqFloatField = this.FloatField.Equals(that.FloatField);
+        var ___eqDoubleField = this.DoubleField.Equals(that.DoubleField);
+        var ___eqStringField =
+            this.StringField == null
+                ? that.StringField == null
+                : this.StringField.Equals(that.StringField);
+        var ___eqIdentityField = this.IdentityField.Equals(that.IdentityField);
+        var ___eqConnectionIdField = this.ConnectionIdField.Equals(that.ConnectionIdField);
+        var ___eqCustomStructField = this.CustomStructField.Equals(that.CustomStructField);
+        var ___eqCustomClassField = this.CustomClassField.Equals(that.CustomClassField);
+        var ___eqCustomEnumField = this.CustomEnumField == that.CustomEnumField;
+        var ___eqCustomTaggedEnumField =
+            this.CustomTaggedEnumField == null
+                ? that.CustomTaggedEnumField == null
+                : this.CustomTaggedEnumField.Equals(that.CustomTaggedEnumField);
+        var ___eqListField = true;
+        if (this.ListField == null || that.ListField == null)
+        {
+            ___eqListField = this.ListField == that.ListField;
+        }
+        else if (this.ListField.Count != that.ListField.Count)
+        {
+            ___eqListField = false;
+        }
+        else
+        {
+            for (int ___i0 = 0; ___i0 < this.ListField.Count; ___i0++)
+            {
+                var ___tmpA0 = this.ListField[___i0];
+                var ___tmpB0 = that.ListField[___i0];
+                var ___out1 = ___tmpA0.Equals(___tmpB0);
+                if (!___out1)
+                {
+                    ___eqListField = false;
+                    break;
+                }
+            }
+        }
+        var ___eqNullableValueField = this.NullableValueField.Equals(that.NullableValueField);
+        var ___eqNullableReferenceField =
+            this.NullableReferenceField == null
+                ? that.NullableReferenceField == null
+                : this.NullableReferenceField.Equals(that.NullableReferenceField);
+        return ___eqByteField
+            && ___eqUshortField
+            && ___eqUintField
+            && ___eqUlongField
+            && ___eqU128Field
+            && ___eqU256Field
+            && ___eqSbyteField
+            && ___eqShortField
+            && ___eqIntField
+            && ___eqLongField
+            && ___eqI128Field
+            && ___eqI256Field
+            && ___eqBoolField
+            && ___eqFloatField
+            && ___eqDoubleField
+            && ___eqStringField
+            && ___eqIdentityField
+            && ___eqConnectionIdField
+            && ___eqCustomStructField
+            && ___eqCustomClassField
+            && ___eqCustomEnumField
+            && ___eqCustomTaggedEnumField
+            && ___eqListField
+            && ___eqNullableValueField
+            && ___eqNullableReferenceField;
     }
 
     public override bool Equals(object? that)

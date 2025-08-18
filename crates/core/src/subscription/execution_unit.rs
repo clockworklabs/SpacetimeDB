@@ -1,19 +1,20 @@
 use super::query::{self, Supported};
 use super::subscription::{IncrementalJoin, SupportedQuery};
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue, UpdatesRelValue};
 use crate::messages::websocket::TableUpdate;
+use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, WebsocketFormat};
-use spacetimedb_lib::db::error::AuthError;
-use spacetimedb_lib::relation::DbTable;
-use spacetimedb_lib::{Identity, ProductValue};
+use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate};
+use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::u256;
+use spacetimedb_sats::{u256, ProductValue};
+use spacetimedb_schema::def::error::AuthError;
+use spacetimedb_schema::relation::DbTable;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -130,7 +131,7 @@ impl PartialEq for ExecutionUnit {
 impl From<SupportedQuery> for ExecutionUnit {
     // Used in tests and benches.
     // TODO(bikeshedding): Remove this impl,
-    // in favor of more explcit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
+    // in favor of more explicit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
     fn from(plan: SupportedQuery) -> Self {
         Self::new(plan, QueryHash::NONE).unwrap()
     }
@@ -234,7 +235,7 @@ impl ExecutionUnit {
 
     /// Evaluate this execution unit against the database using the specified format.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn eval<F: WebsocketFormat>(
+    pub fn eval<F: BuildableWebsocketFormat>(
         &self,
         db: &RelationalDB,
         tx: &Tx,
@@ -254,7 +255,11 @@ impl ExecutionUnit {
             let deletes = F::List::default();
             let qu = QueryUpdate { deletes, inserts };
             let update = F::into_query_update(qu, compression);
-            TableUpdate::new(self.return_table(), self.return_name(), (update, num_rows))
+            TableUpdate::new(
+                self.return_table(),
+                self.return_name(),
+                SingleQueryUpdate { update, num_rows },
+            )
         })
     }
 

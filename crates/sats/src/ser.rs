@@ -5,7 +5,13 @@ mod impls;
 #[cfg(feature = "serde")]
 pub mod serde;
 
-use core::fmt;
+use crate::de::DeserializeSeed;
+use crate::{algebraic_value::ser::ValueSerializer, bsatn, buffer::BufWriter};
+use crate::{AlgebraicValue, WithTypespace};
+use core::marker::PhantomData;
+use core::{convert::Infallible, fmt};
+use ethnum::{i256, u256};
+pub use spacetimedb_bindings_macro::Serialize;
 
 /// A data format that can deserialize any data structure supported by SATs.
 ///
@@ -126,9 +132,24 @@ pub trait Serializer: Sized {
     ///
     /// # Safety
     ///
-    /// - `AlgebraicValue::decode(ty, &mut bsatn).is_ok()`.
+    /// - `decode(ty, &mut bsatn).is_ok()`.
     ///   That is, `bsatn` encodes a valid element of `ty`.
-    unsafe fn serialize_bsatn(self, ty: &AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error>;
+    ///   It's up to the caller to arrange `Ty` such that this holds.
+    unsafe fn serialize_bsatn<Ty>(self, ty: &Ty, bsatn: &[u8]) -> Result<Self::Ok, Self::Error>
+    where
+        for<'a, 'de> WithTypespace<'a, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
+        // TODO(Centril): Consider instead deserializing the `bsatn` through a
+        // deserializer that serializes into `self` directly.
+
+        // First convert the BSATN to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_bsatn(ty, bsatn) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        value.serialize(self)
+    }
 
     /// Serialize the given `bsatn` encoded data of type `ty`.
     ///
@@ -153,14 +174,30 @@ pub trait Serializer: Sized {
     ///
     /// - `total_bsatn_len == bsatn.map(|c| c.len()).sum() <= isize::MAX`
     /// - Let `buf` be defined as above, i.e., the bytes of `bsatn` concatenated.
-    ///   Then `AlgebraicValue::decode(ty, &mut buf).is_ok()`.
+    ///   Then `decode(ty, &mut buf).is_ok()`.
     ///   That is, `buf` encodes a valid element of `ty`.
-    unsafe fn serialize_bsatn_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
+    ///   It's up to the caller to arrange `Ty` such that this holds.
+    unsafe fn serialize_bsatn_in_chunks<'a, Ty, I: Clone + Iterator<Item = &'a [u8]>>(
         self,
-        ty: &AlgebraicType,
+        ty: &Ty,
         total_bsatn_len: usize,
         bsatn: I,
-    ) -> Result<Self::Ok, Self::Error>;
+    ) -> Result<Self::Ok, Self::Error>
+    where
+        for<'b, 'de> WithTypespace<'b, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
+        // TODO(Centril): Unlike above, in this case we must at minimum concatenate `bsatn`
+        // before we can do the piping mentioned above, but that's better than
+        // serializing to `AlgebraicValue` first, so consider that.
+
+        // First convert the BSATN to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_bsatn_in_chunks(ty, total_bsatn_len, bsatn) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        value.serialize(self)
+    }
 
     /// Serialize the given `string`.
     ///
@@ -194,13 +231,17 @@ pub trait Serializer: Sized {
         self,
         total_len: usize,
         string: I,
-    ) -> Result<Self::Ok, Self::Error>;
+    ) -> Result<Self::Ok, Self::Error> {
+        // First convert the `string` to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_str_in_chunks(total_len, string) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        // This incurs a very minor cost of branching on `AlgebraicValue::String`.
+        value.serialize(self)
+    }
 }
-
-use ethnum::{i256, u256};
-pub use spacetimedb_bindings_macro::Serialize;
-
-use crate::{bsatn, buffer::BufWriter, AlgebraicType};
 
 /// A **data structure** that can be serialized into any data format supported by
 /// the SpacetimeDB Algebraic Type System.
@@ -353,5 +394,52 @@ impl<S: SerializeSeqProduct> SerializeNamedProduct for ForwardNamedToSeqProduct<
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
         self.tup.end()
+    }
+}
+
+/// A type usable in one of the associated types of [`Serializer`]
+/// when the data format does not support the data.
+pub struct Impossible<Ok, Error> {
+    // They gave each other a pledge. Unheard of, absurd.
+    absurd: Infallible,
+    marker: PhantomData<(Ok, Error)>,
+}
+
+impl<Ok, Error: self::Error> SerializeArray for Impossible<Ok, Error> {
+    type Ok = Ok;
+    type Error = Error;
+
+    fn serialize_element<T: Serialize + ?Sized>(&mut self, _: &T) -> Result<(), Self::Error> {
+        match self.absurd {}
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        match self.absurd {}
+    }
+}
+
+impl<Ok, Error: self::Error> SerializeSeqProduct for Impossible<Ok, Error> {
+    type Ok = Ok;
+    type Error = Error;
+
+    fn serialize_element<T: Serialize + ?Sized>(&mut self, _: &T) -> Result<(), Self::Error> {
+        match self.absurd {}
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        match self.absurd {}
+    }
+}
+
+impl<Ok, Error: self::Error> SerializeNamedProduct for Impossible<Ok, Error> {
+    type Ok = Ok;
+    type Error = Error;
+
+    fn serialize_element<T: Serialize + ?Sized>(&mut self, _: Option<&str>, _: &T) -> Result<(), Self::Error> {
+        match self.absurd {}
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        match self.absurd {}
     }
 }

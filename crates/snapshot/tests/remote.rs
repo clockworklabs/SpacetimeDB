@@ -5,17 +5,15 @@ use log::info;
 use pretty_assertions::assert_matches;
 use rand::seq::IndexedRandom as _;
 use spacetimedb::{
-    db::{
-        datastore::locking_tx_datastore::datastore::Locking,
-        relational_db::{
-            tests_utils::{TempReplicaDir, TestDB},
-            SNAPSHOT_FREQUENCY,
-        },
+    db::relational_db::{
+        tests_utils::{TempReplicaDir, TestDB},
+        SNAPSHOT_FREQUENCY,
     },
     error::DBError,
-    execution_context::Workload,
     Identity,
 };
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::locking_tx_datastore::datastore::Locking;
 use spacetimedb_durability::{EmptyHistory, TxOffset};
 use spacetimedb_fs_utils::dir_trie::DirTrie;
 use spacetimedb_lib::{
@@ -60,7 +58,7 @@ async fn can_sync_a_snapshot() -> anyhow::Result<()> {
     assert_eq!(stats.objects_written, total_objects);
 
     // Assert that the copied snapshot is valid.
-    let pool = PagePool::default();
+    let pool = PagePool::new_for_test();
     let dst_snapshot_full = dst_repo.read_snapshot(src.offset, &pool)?;
     Locking::restore_from_snapshot(dst_snapshot_full, pool)?;
 
@@ -231,7 +229,7 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     let start = Instant::now();
     let mut watch = spawn_blocking(|| {
         let tmp = TempReplicaDir::new()?;
-        let db = TestDB::open_db(&tmp, EmptyHistory::new(), None, Some(repo), 0)?;
+        let db = TestDB::open_db(&tmp, EmptyHistory::new(), None, Some(repo), None, 0)?;
         let watch = db.subscribe_to_snapshots().unwrap();
 
         let table_id = db.with_auto_commit(Workload::Internal, |tx| {

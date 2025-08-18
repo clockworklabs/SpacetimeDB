@@ -4,16 +4,6 @@
 
 partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
 {
-    private CustomTaggedEnum() { }
-
-    internal enum @enum : byte
-    {
-        IntVariant,
-        StringVariant,
-        NullableIntVariant,
-        NullableStringVariant
-    }
-
     public sealed record IntVariant(int IntVariant_) : CustomTaggedEnum
     {
         public override string ToString() =>
@@ -66,6 +56,7 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
                         "Invalid tag value, this state should be unreachable."
                     )
             };
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomTaggedEnum value)
         {
@@ -116,13 +107,17 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
         switch (this)
         {
             case IntVariant(var inner):
-                return inner.GetHashCode();
+                var ___hashIntVariant = inner.GetHashCode();
+                return ___hashIntVariant;
             case StringVariant(var inner):
-                return inner.GetHashCode();
+                var ___hashStringVariant = inner == null ? 0 : inner.GetHashCode();
+                return ___hashStringVariant;
             case NullableIntVariant(var inner):
-                return inner.GetHashCode();
+                var ___hashNullableIntVariant = inner.GetHashCode();
+                return ___hashNullableIntVariant;
             case NullableStringVariant(var inner):
-                return inner == null ? 0 : inner.GetHashCode();
+                var ___hashNullableStringVariant = inner == null ? 0 : inner.GetHashCode();
+                return ___hashNullableStringVariant;
             default:
                 return 0;
         }

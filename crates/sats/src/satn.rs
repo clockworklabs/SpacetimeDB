@@ -1,16 +1,13 @@
+use crate::de::DeserializeSeed;
 use crate::time_duration::TimeDuration;
 use crate::timestamp::Timestamp;
-use crate::{
-    algebraic_value::ser::ValueSerializer,
-    ser::{self, Serialize},
-    ProductType, ProductTypeElement,
-};
-use crate::{i256, u256};
+use crate::{i256, u256, AlgebraicValue, WithTypespace};
+use crate::{ser, ProductType, ProductTypeElement};
 use core::fmt;
 use core::fmt::Write as _;
 use derive_more::{From, Into};
 
-/// An extension trait for [`Serialize`] providing formatting methods.
+/// An extension trait for [`Serialize`](ser::Serialize) providing formatting methods.
 pub trait Satn: ser::Serialize {
     /// Formats the value using the SATN data format into the formatter `f`.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -232,7 +229,7 @@ struct SatnFormatter<'a, 'f> {
     f: Writer<'a, 'f>,
 }
 
-/// An error occured during serialization to the SATS data format.
+/// An error occurred during serialization to the SATS data format.
 #[derive(From, Into)]
 struct SatnError(fmt::Error);
 
@@ -305,7 +302,7 @@ impl<'a, 'f> ser::Serializer for SatnFormatter<'a, 'f> {
     }
 
     fn serialize_str(mut self, v: &str) -> Result<Self::Ok, Self::Error> {
-        write!(self, "\"{}\"", v)
+        write!(self, "\"{v}\"")
     }
 
     fn serialize_bytes(mut self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
@@ -341,60 +338,13 @@ impl<'a, 'f> ser::Serializer for SatnFormatter<'a, 'f> {
         write!(self, "(")?;
         EntryWrapper::<','>::new(self.f.as_mut()).entry(|mut f| {
             if let Some(name) = name {
-                write!(f, "{}", name)?;
+                write!(f, "{name}")?;
             }
             write!(f, " = ")?;
             value.serialize(SatnFormatter { f })?;
             Ok(())
         })?;
         write!(self, ")")
-    }
-
-    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
-        // TODO(Centril): Consider instead deserializing the `bsatn` through a
-        // deserializer that serializes into `self` directly.
-
-        // First convert the BSATN to an `AlgebraicValue`.
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        let res = unsafe { ValueSerializer.serialize_bsatn(ty, bsatn) };
-        let value = res.unwrap_or_else(|x| match x {});
-
-        // Then serialize that.
-        value.serialize(self)
-    }
-
-    unsafe fn serialize_bsatn_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
-        self,
-        ty: &crate::AlgebraicType,
-        total_bsatn_len: usize,
-        bsatn: I,
-    ) -> Result<Self::Ok, Self::Error> {
-        // TODO(Centril): Unlike above, in this case we must at minimum concatenate `bsatn`
-        // before we can do the piping mentioned above, but that's better than
-        // serializing to `AlgebraicValue` first, so consider that.
-
-        // First convert the BSATN to an `AlgebraicValue`.
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        let res = unsafe { ValueSerializer.serialize_bsatn_in_chunks(ty, total_bsatn_len, bsatn) };
-        let value = res.unwrap_or_else(|x| match x {});
-
-        // Then serialize that.
-        value.serialize(self)
-    }
-
-    unsafe fn serialize_str_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
-        self,
-        total_len: usize,
-        string: I,
-    ) -> Result<Self::Ok, Self::Error> {
-        // First convert the `string` to an `AlgebraicValue`.
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        let res = unsafe { ValueSerializer.serialize_str_in_chunks(total_len, string) };
-        let value = res.unwrap_or_else(|x| match x {});
-
-        // Then serialize that.
-        // This incurs a very minor cost of branching on `AlgebraicValue::String`.
-        value.serialize(self)
     }
 }
 
@@ -458,7 +408,7 @@ impl ser::SerializeNamedProduct for NamedFormatter<'_, '_> {
         let res = self.f.entry(|mut f| {
             // Format the name or use the index if unnamed.
             if let Some(name) = name {
-                write!(f, "{}", name)?;
+                write!(f, "{name}")?;
             } else {
                 write!(f, "{}", self.idx)?;
             }
@@ -530,9 +480,9 @@ impl ser::SerializeNamedProduct for PsqlNamedFormatter<'_, '_> {
                 }
                 // Format the name or use the index if unnamed.
                 if let Some(name) = name {
-                    write!(f, "{}", name)?;
+                    write!(f, "{name}")?;
                 } else {
-                    write!(f, "{}", idx)?;
+                    write!(f, "{idx}")?;
                 }
                 write!(f, " = ")?;
             }
@@ -757,17 +707,23 @@ impl<'a, 'f> ser::Serializer for PsqlFormatter<'a, 'f> {
         self.fmt.serialize_variant(tag, name, value)
     }
 
-    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
+    unsafe fn serialize_bsatn<Ty>(self, ty: &Ty, bsatn: &[u8]) -> Result<Self::Ok, Self::Error>
+    where
+        for<'b, 'de> WithTypespace<'b, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
         // SAFETY: Forward caller requirements of this method to that we are calling.
         unsafe { self.fmt.serialize_bsatn(ty, bsatn) }
     }
 
-    unsafe fn serialize_bsatn_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
+    unsafe fn serialize_bsatn_in_chunks<'c, Ty, I: Clone + Iterator<Item = &'c [u8]>>(
         self,
-        ty: &crate::AlgebraicType,
+        ty: &Ty,
         total_bsatn_len: usize,
         bsatn: I,
-    ) -> Result<Self::Ok, Self::Error> {
+    ) -> Result<Self::Ok, Self::Error>
+    where
+        for<'b, 'de> WithTypespace<'b, Ty>: DeserializeSeed<'de, Output: Into<AlgebraicValue>>,
+    {
         // SAFETY: Forward caller requirements of this method to that we are calling.
         unsafe { self.fmt.serialize_bsatn_in_chunks(ty, total_bsatn_len, bsatn) }
     }

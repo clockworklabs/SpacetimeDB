@@ -3,17 +3,13 @@
 //! we are interested in only a single column (or a small set of columns),
 //! and would like to avoid the allocation required by a `ProductValue`.
 
-use crate::{
-    bflatn_from,
-    indexes::{PageOffset, Size},
-    layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, VarLenType},
-    table::RowRef,
-};
+use crate::{bflatn_from, indexes::PageOffset, table::RowRef};
+use spacetimedb_sats::layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, Size, VarLenType};
 use spacetimedb_sats::{
     algebraic_value::{ser::ValueSerializer, Packed},
     i256,
     sum_value::SumTag,
-    u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumValue,
+    u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumValue, F32, F64,
 };
 use std::{cell::Cell, mem};
 use thiserror::Error;
@@ -339,6 +335,8 @@ impl_read_column_via_from! {
     i128 => Packed<i128>;
     u256 => Box<u256>;
     i256 => Box<i256>;
+    f32 => F32;
+    f64 => F64;
 }
 
 /// SAFETY: `is_compatible_type` only returns true for sum types,
@@ -382,7 +380,7 @@ mod test {
         /// inserting the row, then doing `AlgebraicValue::read_column` on each column of the row
         /// returns the expected value.
         fn read_column_same_value((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
 
@@ -399,7 +397,7 @@ mod test {
         /// which does not match the actual column type
         /// returns an appropriate error.
         fn read_column_wrong_type((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
@@ -430,7 +428,7 @@ mod test {
         /// i.e. with an out-of-bounds index,
         /// returns an appropriate error.
         fn read_column_out_of_bounds((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
@@ -451,8 +449,8 @@ mod test {
                         prop_assert_eq!(&found_col.algebraic_type, &ty_col.algebraic_type);
                     }
                 }
-                Err(e) => panic!("Expected TypeError::IndexOutOfBounds but found {:?}", e),
-                Ok(val) => panic!("Expected error but found Ok({:?})", val),
+                Err(e) => panic!("Expected TypeError::IndexOutOfBounds but found {e:?}"),
+                Ok(val) => panic!("Expected error but found Ok({val:?})"),
             }
         }
     }
@@ -473,8 +471,8 @@ mod test {
                     prop_assert_eq!(desired, std::any::type_name::<Col>());
                     prop_assert_eq!(&found, col_ty);
                 }
-                Err(e) => panic!("Expected TypeError::WrongType but found {:?}", e),
-                Ok(val) => panic!("Expected error but found Ok({:?})", val),
+                Err(e) => panic!("Expected TypeError::WrongType but found {e:?}"),
+                Ok(val) => panic!("Expected error but found Ok({val:?})"),
             }
         }
         Ok(())
@@ -488,7 +486,7 @@ mod test {
         ($name:ident { $algebraic_type:expr => $rust_type:ty = $val:expr }) => {
             #[test]
             fn $name() {
-                let pool = PagePool::default();
+                let pool = PagePool::new_for_test();
                 let mut blob_store = HashMapBlobStore::default();
                 let mut table = table(ProductType::from_iter([$algebraic_type]));
 
@@ -550,7 +548,7 @@ mod test {
     fn read_sum_tag_from_sum_with_payload() {
         let algebraic_type = AlgebraicType::sum([("a", AlgebraicType::U8), ("b", AlgebraicType::U16)]);
 
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(ProductType::from([algebraic_type]));
 

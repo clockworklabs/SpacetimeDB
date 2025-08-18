@@ -5,13 +5,13 @@
 use super::{
     bflatn_from::read_tag,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
     page::Page,
     row_hash::read_from_bytes,
     static_layout::StaticLayout,
     util::range_move,
     var_len::VarLenRef,
 };
+use spacetimedb_sats::layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout};
 
 /// Equates row `a` in `page_a` with its fixed part starting at `fixed_offset_a`
 /// to row `b` in `page_b` with its fixed part starting at `fixed_offset_b`.
@@ -102,7 +102,7 @@ struct EqCtx<'page_a, 'page_b> {
 /// 1. `value_a/b` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
 ///    `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
-unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
+unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: ProductTypeLayoutView<'_>) -> bool {
     let base_offset = ctx.curr_offset;
     ty.elements.iter().all(|elem_ty| {
         ctx.curr_offset = base_offset + elem_ty.offset as usize;
@@ -155,7 +155,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value_a/b` are valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { eq_product(ctx, ty) }
+            unsafe { eq_product(ctx, ty.view()) }
         }
 
         // The primitive types:
@@ -241,7 +241,7 @@ mod test {
             AlgebraicType::product([AlgebraicType::U8, AlgebraicType::U32]), // xpppxxxx
         ])]);
 
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let bs = &mut NullBlobStore;
         let mut table_a = crate::table::test::table(ty.clone());
         let mut table_b = crate::table::test::table(ty);

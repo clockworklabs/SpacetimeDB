@@ -18,6 +18,11 @@ partial struct TestUniqueNotEquatable
         BSATN.PrimaryKeyFieldRW.Write(writer, PrimaryKeyField);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"TestUniqueNotEquatable {{ UniqueField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UniqueField)}, PrimaryKeyField = {SpacetimeDB.BSATN.StringUtil.GenericToString(PrimaryKeyField)} }}";
 
@@ -30,8 +35,12 @@ partial struct TestUniqueNotEquatable
         internal static readonly SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues> PrimaryKeyFieldRW =
             new();
 
-        public TestUniqueNotEquatable Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestUniqueNotEquatable>(reader);
+        public TestUniqueNotEquatable Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestUniqueNotEquatable();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestUniqueNotEquatable value)
         {
@@ -58,13 +67,17 @@ partial struct TestUniqueNotEquatable
 
     public override int GetHashCode()
     {
-        return UniqueField.GetHashCode() ^ PrimaryKeyField.GetHashCode();
+        var ___hashUniqueField = UniqueField.GetHashCode();
+        var ___hashPrimaryKeyField = PrimaryKeyField.GetHashCode();
+        return ___hashUniqueField ^ ___hashPrimaryKeyField;
     }
 
 #nullable enable
     public bool Equals(TestUniqueNotEquatable that)
     {
-        return UniqueField.Equals(that.UniqueField) && PrimaryKeyField.Equals(that.PrimaryKeyField);
+        var ___eqUniqueField = this.UniqueField.Equals(that.UniqueField);
+        var ___eqPrimaryKeyField = this.PrimaryKeyField == that.PrimaryKeyField;
+        return ___eqUniqueField && ___eqPrimaryKeyField;
     }
 
     public override bool Equals(object? that)

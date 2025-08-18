@@ -18,6 +18,11 @@ partial struct CustomStruct
         BSATN.StringFieldRW.Write(writer, StringField);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"CustomStruct {{ IntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntField)}, StringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringField)} }}";
 
@@ -26,8 +31,12 @@ partial struct CustomStruct
         internal static readonly SpacetimeDB.BSATN.I32 IntFieldRW = new();
         internal static readonly SpacetimeDB.BSATN.String StringFieldRW = new();
 
-        public CustomStruct Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomStruct>(reader);
+        public CustomStruct Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new CustomStruct();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomStruct value)
         {
@@ -52,13 +61,20 @@ partial struct CustomStruct
 
     public override int GetHashCode()
     {
-        return IntField.GetHashCode() ^ StringField.GetHashCode();
+        var ___hashIntField = IntField.GetHashCode();
+        var ___hashStringField = StringField == null ? 0 : StringField.GetHashCode();
+        return ___hashIntField ^ ___hashStringField;
     }
 
 #nullable enable
     public bool Equals(CustomStruct that)
     {
-        return IntField.Equals(that.IntField) && StringField.Equals(that.StringField);
+        var ___eqIntField = this.IntField.Equals(that.IntField);
+        var ___eqStringField =
+            this.StringField == null
+                ? that.StringField == null
+                : this.StringField.Equals(that.StringField);
+        return ___eqIntField && ___eqStringField;
     }
 
     public override bool Equals(object? that)

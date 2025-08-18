@@ -7,9 +7,10 @@ use std::time::Instant;
 
 use spacetimedb::config::CertificateAuthority;
 use spacetimedb::messages::control_db::HostType;
+use spacetimedb::util::jobs::JobCores;
 use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
-use spacetimedb_client_api::routes::subscribe::generate_random_connection_id;
+use spacetimedb_client_api::routes::subscribe::{generate_random_connection_id, WebSocketOptions};
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use spacetimedb_schema::def::ModuleDef;
 use tokio::runtime::{Builder, Runtime};
@@ -178,9 +179,17 @@ impl CompiledModule {
         };
 
         let certs = CertificateAuthority::in_cli_config_dir(&paths.cli_config_dir);
-        let env = spacetimedb_standalone::StandaloneEnv::init(config, &certs, paths.data_dir.into())
-            .await
-            .unwrap();
+        let env = spacetimedb_standalone::StandaloneEnv::init(
+            spacetimedb_standalone::StandaloneOptions {
+                db_config: config,
+                websocket: WebSocketOptions::default(),
+            },
+            &certs,
+            paths.data_dir.into(),
+            JobCores::default(),
+        )
+        .await
+        .unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().identity;
@@ -193,7 +202,7 @@ impl CompiledModule {
             DatabaseDef {
                 database_identity: db_identity,
                 program_bytes,
-                num_replicas: 1,
+                num_replicas: None,
                 host_type: HostType::Wasm,
             },
         )
@@ -238,7 +247,11 @@ pub static DEFAULT_CONFIG: Config = Config {
 /// For performance tests, do not persist to disk.
 pub static IN_MEMORY_CONFIG: Config = Config {
     storage: Storage::Disk,
-    page_pool_max_size: None,
+    // For some reason, a large page pool capacity causes `test_index_scans` to slow down,
+    // and makes the perf test for `chunk` go over 1ms.
+    // The threshold for failure on i7-7700K, 64GB RAM seems to be at 1 << 26.
+    // TODO(centril): investigate further why this size affects the benchmark.
+    page_pool_max_size: Some(1 << 16),
 };
 
 /// Used to parse output from module logs.
