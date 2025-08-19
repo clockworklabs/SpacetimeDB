@@ -3,10 +3,5 @@
 export * from './db_connection_impl.ts';
 
 export * from "spacetimedb";
-// export * from "./connection_id";
-// export * from './schedule_at';
 export * from './client_cache.ts';
-// export * from './identity.ts';
 export * from './message_types.ts';
-// export * from './timestamp.ts';
-// export * from './time_duration.ts';

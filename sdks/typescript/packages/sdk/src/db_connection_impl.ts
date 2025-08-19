@@ -1,6 +1,7 @@
 import { ConnectionId } from 'spacetimedb';
 import {
   AlgebraicType,
+  type AlgebraicTypeVariants,
   ProductType,
   ProductTypeElement,
   SumType,
@@ -8,11 +9,7 @@ import {
   type ComparablePrimitive,
 } from 'spacetimedb';
 import {
-  AlgebraicValue,
   parseValue,
-  ProductValue,
-  type ReducerArgsAdapter,
-  type ValueAdapter,
 } from 'spacetimedb';
 import { BinaryReader } from 'spacetimedb';
 import { BinaryWriter } from 'spacetimedb';
@@ -64,21 +61,17 @@ import { fromByteArray } from 'base64-js';
 
 export {
   AlgebraicType,
-  AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   DbConnectionBuilder,
   deepEqual,
   ProductType,
   ProductTypeElement,
-  ProductValue,
   SubscriptionBuilderImpl,
   SumType,
   SumTypeVariant,
   TableCache,
   type Event,
-  type ReducerArgsAdapter,
-  type ValueAdapter,
 };
 
 export type {
@@ -322,10 +315,11 @@ export class DbConnectionImpl<
         this.#remoteModule.tables[tableName]!.primaryKeyInfo;
       while (reader.offset < buffer.length + buffer.byteOffset) {
         const initialOffset = reader.offset;
-        const row = rowType.deserialize(reader);
+        const row = AlgebraicType.deserializeValue(reader, rowType);
         let rowId: ComparablePrimitive | undefined = undefined;
         if (primaryKeyInfo !== undefined) {
-          rowId = primaryKeyInfo.colType.intoMapKey(
+          rowId = AlgebraicType.intoMapKey(
+            primaryKeyInfo.colType, 
             row[primaryKeyInfo.colName]
           );
         } else {
@@ -421,7 +415,7 @@ export class DbConnectionImpl<
         const args = txUpdate.reducerCall.args;
         const energyQuantaUsed = txUpdate.energyQuantaUsed;
 
-        let tableUpdates: CacheTableUpdate[];
+        let tableUpdates: CacheTableUpdate[] = [];
         let errMessage = '';
         switch (txUpdate.status.tag) {
           case 'Committed':
@@ -617,7 +611,7 @@ export class DbConnectionImpl<
             this.#remoteModule.reducers[reducerInfo.reducerName];
           try {
             const reader = new BinaryReader(reducerInfo.args as Uint8Array);
-            reducerArgs = reducerTypeInfo.argsType.deserialize(reader);
+            reducerArgs = AlgebraicType.deserializeValue(reader, reducerTypeInfo.argsType);
           } catch {
             // This should only be printed in development, since it's
             // possible for clients to receive new reducers that they don't
@@ -680,8 +674,8 @@ export class DbConnectionImpl<
         );
 
         const argsArray: any[] = [];
-        reducerTypeInfo.argsType.product.elements.forEach((element, index) => {
-          argsArray.push(reducerArgs[element.name]);
+        (reducerTypeInfo.argsType as AlgebraicTypeVariants.Product).value.elements.forEach((element, index) => {
+          argsArray.push(reducerArgs[element.name!]);
         });
         this.#reducerEmitter.emit(
           reducerInfo.reducerName,
