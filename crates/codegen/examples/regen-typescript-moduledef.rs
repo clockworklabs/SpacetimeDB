@@ -32,19 +32,16 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir(dir)?;
 
     let module: ModuleDef = module.try_into()?;
-    generate(
-        &module,
-        &typescript::TypeScript,
-    )
-    .into_iter()
-    .try_for_each(|(filename, code)| {
-        // Skip the index.ts since we don't need it.
-        if filename == "index.ts" {
-            return Ok(());
-        }
-        let code = regex_replace!(&code, r"@clockworklabs/spacetimedb-sdk", "../index");
-        fs::write(dir.join(filename), code.as_bytes())
-    })?;
+    generate(&module, &typescript::TypeScript)
+        .into_iter()
+        .try_for_each(|(filename, code)| {
+            // Skip the index.ts since we don't need it.
+            if filename == "index.ts" {
+                return Ok(());
+            }
+            let code = regex_replace!(&code, r"@clockworklabs/spacetimedb-sdk", "../index");
+            fs::write(dir.join(filename), code.as_bytes())
+        })?;
 
     Ok(())
 }
