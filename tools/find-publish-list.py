@@ -1,29 +1,35 @@
 import argparse
-import toml
+import json
+import subprocess
 import sys
+import toml
 from pathlib import Path
+from typing import Dict
 
-def find_spacetimedb_dependencies(cargo_toml_path):
+def get_all_crate_metadata() -> Dict[str, dict]:
+    result = subprocess.run(
+        ['cargo', 'metadata', '--format-version=1', '--no-deps'],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    metadata = json.loads(result.stdout)
+    return {pkg['name']: pkg for pkg in metadata.get('packages', [])}
+
+def find_spacetimedb_dependencies(crate_metadata, cargo_toml_path):
     with open(cargo_toml_path, 'r') as file:
         cargo_data = toml.load(file)
 
     deps = cargo_data.get('dependencies', {})
-    return [dep for dep in deps if dep.startswith("spacetimedb-")]
+    return [dep for dep in deps if dep in crate_metadata]
 
-def dep_to_crate_dir(dep_name):
-    return dep_name.replace("spacetimedb-", "", 1)
-
-def process_crate(crate_name, crates_dir, recursive=False, debug=False):
-    cargo_toml_path = crates_dir / crate_name / "Cargo.toml"
-
-    if not cargo_toml_path.is_file():
-        print(f"Warning: Cargo.toml not found for crate '{crate_name}' at {cargo_toml_path}", file=sys.stderr)
-        return []
+def process_crate(crate_name, crate_metadata, recursive=False, debug=False):
+    cargo_toml_path = Path(crate_metadata[crate_name]['manifest_path'])
 
     if debug:
         print(f"\nChecking crate '{crate_name}'...")
 
-    deps = find_spacetimedb_dependencies(cargo_toml_path)
+    deps = find_spacetimedb_dependencies(crate_metadata, cargo_toml_path)
 
     if debug:
         if deps:
@@ -36,8 +42,7 @@ def process_crate(crate_name, crates_dir, recursive=False, debug=False):
 
     if recursive:
         for dep_name in deps:
-            sub_crate = dep_to_crate_dir(dep_name)
-            sub_deps = process_crate(sub_crate, crates_dir, recursive=True, debug=debug)
+            sub_deps = process_crate(dep_name, crate_metadata, recursive=True, debug=debug)
             all_deps.extend(sub_deps)
 
     return all_deps
@@ -58,12 +63,15 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true", help="Only print the final output")
     args = parser.parse_args()
 
-    crates_dir = Path("crates")
+    if not args.quiet:
+        print("Loading crate metadata...", file=sys.stderr)
+    crate_metadata = get_all_crate_metadata()
+
     all_crates = list(args.root)
 
     for crate in args.root:
-        deps = process_crate(crate, crates_dir, recursive=args.recursive, debug=not args.quiet)
-        all_crates.extend(dep_to_crate_dir(dep) for dep in deps)
+        deps = process_crate(crate, crate_metadata, recursive=args.recursive, debug=not args.quiet)
+        all_crates.extend(deps)
 
     # It takes a bit of reasoning to conclude that this is, in fact, going to be a legitimate
     # dependency-order of all of these crates. Because of how the list is constructed, once it's reversed,
