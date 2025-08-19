@@ -5,6 +5,7 @@ pub struct User {
     #[primary_key]
     identity: Identity,
     name: Option<String>,
+    jwt: Option<String>,
     online: bool,
 }
 
@@ -65,10 +66,32 @@ pub fn init(_ctx: &ReducerContext) {}
 
 #[spacetimedb::reducer(client_connected)]
 pub fn identity_connected(ctx: &ReducerContext) {
+    let auth_ctx = ctx.sender_auth();
+    let jwt = match auth_ctx.jwt() {
+        Some(claims) => claims.subject().to_string(),
+        None => {
+            log::warn!("Client connected without JWT");
+            "no jwt".to_string()
+        }
+    };
+    /*
+    let jwt = if ctx.has_jwt() {
+        log::info!("has jwt!");
+        log::info!("jwt is {}", ctx.jwt().raw_payload());
+        Some(ctx.jwt().subject().to_string())
+    } else {
+        log::info!("no jwt");
+        None
+    };
+    */
     if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
         // If this is a returning user, i.e. we already have a `User` with this `Identity`,
         // set `online: true`, but leave `name` and `identity` unchanged.
-        ctx.db.user().identity().update(User { online: true, ..user });
+        ctx.db.user().identity().update(User {
+            online: true,
+            jwt: Some(jwt),
+            ..user
+        });
     } else {
         // If this is a new user, create a `User` row for the `Identity`,
         // which is online, but hasn't set a name.
@@ -76,6 +99,7 @@ pub fn identity_connected(ctx: &ReducerContext) {
             name: None,
             identity: ctx.sender,
             online: true,
+            jwt: Some(jwt),
         });
     }
 }

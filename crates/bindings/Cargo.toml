@@ -24,11 +24,13 @@ spacetimedb-bindings-sys.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true
+serde_json.workspace = true
 
 bytemuck.workspace = true
 derive_more.workspace = true
 log.workspace = true
 scoped-tls.workspace = true
+auto_impl = "1.3.0"
 
 rand08 = { workspace = true, optional = true }
 # we depend on getrandom and enable the `custom` feature, so that
@@ -39,6 +41,8 @@ getrandom02 = { workspace = true, optional = true, features = ["custom"] }
 [dev-dependencies]
 insta.workspace = true
 trybuild.workspace = true
+serde_json.workspace = true
+auto_impl = "1.3.0"
 
 [lints]
 workspace = true

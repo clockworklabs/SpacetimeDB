@@ -109,8 +109,7 @@ function App() {
       setConnected(true);
       localStorage.setItem('auth_token', token);
       console.log(
-        'Connected to SpacetimeDB with identity:',
-        identity.toHexString()
+        `Connected to SpacetimeDB with identity: ${identity.toHexString()} and connection id ${conn.connectionId.toHexString()}`
       );
       conn.reducers.onSendMessage(() => {
         console.log('Message sent.');
@@ -128,16 +127,19 @@ function App() {
       console.log('Error connecting to SpacetimeDB:', err);
     };
 
-    setConn(
-      DbConnection.builder()
-        .withUri('ws://localhost:3000')
-        .withModuleName('quickstart-chat')
-        .withToken(localStorage.getItem('auth_token') || '')
-        .onConnect(onConnect)
-        .onDisconnect(onDisconnect)
-        .onConnectError(onConnectError)
-        .build()
-    );
+    let connection = DbConnection.builder()
+      .withUri('ws://localhost:3000')
+      .withModuleName('quickstart-chat')
+      .withToken(localStorage.getItem('auth_token') || '')
+      .onConnect(onConnect)
+      .onDisconnect(onDisconnect)
+      .onConnectError(onConnectError)
+      .build();
+    setConn(connection);
+    return () => {
+      console.log('Cleaning up connection...');
+      connection.disconnect();
+    };
   }, []);
 
   useEffect(() => {

@@ -588,6 +588,13 @@ pub mod raw {
         ///
         /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
         pub fn identity(out_ptr: *mut u8);
+
+        /// Check the size of the jwt associated with the given connection.
+        /// Returns 0 if there is no jwt for the connection.
+        pub fn jwt_len(connection_id_ptr: *const u8, out_ptr: *mut u32);
+
+        /// Write the jwt payload for the given connection id to the out_ptr.
+        pub fn get_jwt(connection_id_ptr: *const u8, target_ptr: *mut u8, target_ptr_len: *mut u32);
     }
 
     /// What strategy does the database index use?
@@ -1087,6 +1094,34 @@ pub fn identity() -> [u8; 32] {
         raw::identity(buf.as_mut_ptr());
     }
     buf
+}
+
+#[inline]
+pub fn jwt_length(connection_id: [u8; 16]) -> Option<u32> {
+    let mut v: u32 = 0;
+    unsafe { raw::jwt_len(connection_id.as_ptr(), &mut v) }
+    if v == 0 {
+        None
+    } else {
+        Some(v)
+    }
+}
+
+#[inline]
+pub fn get_jwt(connection_id: [u8; 16]) -> Option<String> {
+    let Some(jwt_len) = jwt_length(connection_id) else {
+        return None; // No JWT found.
+    };
+    let mut buf = vec![0u8; jwt_len as usize];
+
+    let mut v: u32 = buf.len() as u32;
+    unsafe {
+        raw::get_jwt(connection_id.as_ptr(), buf.as_mut_ptr(), &mut v);
+    }
+    if v == 0 {
+        return None; // No JWT found.
+    }
+    Some(std::str::from_utf8(&buf[..v as usize]).unwrap().to_string())
 }
 
 pub struct RowIter {

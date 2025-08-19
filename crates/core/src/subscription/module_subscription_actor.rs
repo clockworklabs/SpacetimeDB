@@ -876,37 +876,16 @@ impl ModuleSubscriptions {
                     return Ok(Err(WriteConflict));
                 };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
-                (read_tx, Some(tx_data), tx_metrics)
+                (read_tx, Arc::new(tx_data), tx_metrics)
             }
             EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
-                let (tx_metrics, tx) = stdb.rollback_mut_tx_downgrade(tx, Workload::Update);
-                (tx, None, tx_metrics)
-            }
-        };
+                // If the transaction failed, we need to rollback the mutable tx.
+                // We don't need to do any subscription updates in this case, so we will exit early.
 
-        let tx_data = tx_data.map(Arc::new);
-
-        // When we're done with this method, release the tx and report metrics.
-        let mut read_tx = scopeguard::guard(read_tx, |tx| {
-            let (tx_metrics_read, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db
-                .report_tx_metrics(reducer, tx_data.clone(), Some(tx_metrics_mut), Some(tx_metrics_read));
-        });
-        // Create the delta transaction we'll use to eval updates against.
-        let delta_read_tx = tx_data
-            .as_ref()
-            .as_ref()
-            .map(|tx_data| DeltaTx::new(&read_tx, tx_data, subscriptions.index_ids_for_subscriptions()))
-            .unwrap_or_else(|| DeltaTx::from(&*read_tx));
-
-        let event = Arc::new(event);
-        let mut update_metrics: ExecutionMetrics = ExecutionMetrics::default();
-
-        match &event.status {
-            EventStatus::Committed(_) => {
-                update_metrics = subscriptions.eval_updates_sequential(&delta_read_tx, event.clone(), caller);
-            }
-            EventStatus::Failed(_) => {
+                let event = Arc::new(event);
+                let (tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                self.relational_db
+                    .report_tx_metrics(reducer, None, Some(tx_metrics), None);
                 if let Some(client) = caller {
                     let message = TransactionUpdateMessage {
                         event: Some(event.clone()),
@@ -917,9 +896,25 @@ impl ModuleSubscriptions {
                 } else {
                     log::trace!("Reducer failed but there is no client to send the failure to!")
                 }
+                return Ok(Ok((event, ExecutionMetrics::default())));
             }
-            EventStatus::OutOfEnergy => {} // ?
-        }
+        };
+        let event = Arc::new(event);
+
+        // When we're done with this method, release the tx and report metrics.
+        let mut read_tx = scopeguard::guard(read_tx, |tx| {
+            let (tx_metrics_read, reducer) = self.relational_db.release_tx(tx);
+            self.relational_db.report_tx_metrics(
+                reducer,
+                Some(tx_data.clone()),
+                Some(tx_metrics_mut),
+                Some(tx_metrics_read),
+            );
+        });
+        // Create the delta transaction we'll use to eval updates against.
+        let delta_read_tx = DeltaTx::new(&read_tx, tx_data.as_ref(), subscriptions.index_ids_for_subscriptions());
+
+        let update_metrics = subscriptions.eval_updates_sequential(&delta_read_tx, event.clone(), caller);
 
         // Merge in the subscription evaluation metrics.
         read_tx.metrics.merge(update_metrics);
