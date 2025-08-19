@@ -6,15 +6,14 @@ import {
   User,
 } from '@clockworklabs/test-app/src/module_bindings';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { ConnectionId } from '../src/connection_id';
-import { Timestamp } from '../src/timestamp';
-import { TimeDuration } from '../src/time_duration';
-import { AlgebraicType } from '../src/algebraic_type';
-import { parseValue } from '../src/algebraic_value';
-import BinaryWriter from '../src/binary_writer';
+import { ConnectionId } from 'spacetimedb';
+import { Timestamp } from 'spacetimedb';
+import { TimeDuration } from 'spacetimedb';
+import { AlgebraicType } from 'spacetimedb';
+import { BinaryWriter } from 'spacetimedb';
 import * as ws from '../src/client_api';
-import { ReducerEvent } from '../src/db_connection_impl';
-import { Identity } from '../src/identity';
+import type { ReducerEvent } from '../src/db_connection_impl';
+import { Identity } from 'spacetimedb';
 import WebsocketTestAdapter from '../src/websocket_test_adapter';
 
 const anIdentity = Identity.fromString(
@@ -30,8 +29,8 @@ const sallyIdentity = Identity.fromString(
 class Deferred<T> {
   #isResolved: boolean = false;
   #isRejected: boolean = false;
-  #resolve: (value: T | PromiseLike<T>) => void;
-  #reject: (reason?: any) => void;
+  #resolve: (value: T | PromiseLike<T>) => void = () => {};
+  #reject: (reason?: any) => void = () => {};
   promise: Promise<T>;
 
   constructor() {
@@ -84,7 +83,7 @@ function encodeUser(value: User): Uint8Array {
 
 function encodeCreatePlayerArgs(name: string, location: Point): Uint8Array {
   const writer = new BinaryWriter(1024);
-  AlgebraicType.createStringType().serialize(writer, name);
+  AlgebraicType.serializeValue(writer, AlgebraicType.String, name);
   Point.serialize(writer, location);
   return writer.getBuffer();
 }
@@ -124,7 +123,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {
         called = true;
         onConnectPromise.resolve();
@@ -152,7 +151,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {
         called = true;
       })
@@ -330,7 +329,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {
         called = true;
       })
@@ -402,7 +401,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {
         called = true;
       })
@@ -482,7 +481,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .onConnect(() => {
         called = true;
       })
@@ -618,7 +617,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
+      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
       .build();
     await client['wsPromise'];
     const user1 = { identity: bobIdentity, username: 'bob' };

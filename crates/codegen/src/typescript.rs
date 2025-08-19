@@ -708,6 +708,8 @@ fn define_namespace_and_object_type_for_product(
         out.with_indent(|out| write_arglist_no_delimiters(module, out, elements, None, true).unwrap());
         writeln!(out, "}};");
     }
+    
+    writeln!(out, "export default {name};");
 
     out.newline();
 
@@ -727,14 +729,14 @@ fn define_namespace_and_object_type_for_product(
         "export function serialize(writer: BinaryWriter, value: {name}): void {{"
     );
     out.indent(1);
-    writeln!(out, "{name}.getTypeScriptAlgebraicType().serialize(writer, value);");
+    writeln!(out, "AlgebraicType.serializeValue(writer, {name}.getTypeScriptAlgebraicType(), value);");
     out.dedent(1);
     writeln!(out, "}}");
     writeln!(out);
 
     writeln!(out, "export function deserialize(reader: BinaryReader): {name} {{");
     out.indent(1);
-    writeln!(out, "return {name}.getTypeScriptAlgebraicType().deserialize(reader);");
+    writeln!(out, "return AlgebraicType.deserializeValue(reader, {name}.getTypeScriptAlgebraicType());");
     out.dedent(1);
     writeln!(out, "}}");
     writeln!(out);
@@ -828,10 +830,10 @@ fn write_variant_constructors(
         if matches!(ty, AlgebraicTypeUse::Unit) {
             // If the variant has no members, we can export a simple object.
             // ```
-            // export const Foo = { tag: "Foo" };
+            // export const Foo: { tag: "Foo" } = { tag: "Foo" };
             // ```
-            write!(out, "export const {ident} = ");
-            writeln!(out, "{{ tag: \"{ident}\" }};");
+            write!(out, "export const {ident}: {{ tag: \"{ident}\" }} = {{ tag: \"{ident}\" }};");
+            writeln!(out);
             continue;
         }
         let variant_name = ident.deref().to_case(Case::Pascal);
@@ -859,22 +861,37 @@ fn write_get_algebraic_type_for_sum(
 fn define_namespace_and_types_for_sum(
     module: &ModuleDef,
     out: &mut Indenter,
-    name: &str,
+    mut name: &str,
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
-    writeln!(out, "// A namespace for generated variants and helper functions.");
-    writeln!(out, "export namespace {name} {{");
-    out.indent(1);
+
+    // For the purpose of bootstrapping AlgebraicType, if the name of the type
+    // is `AlgebraicType`, we need to use an alias.
+    if name == "AlgebraicType" {
+        name = "__AlgebraicType";
+    }
 
     // Write all of the variant types.
     writeln!(
         out,
         "// These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
-// the tagged union."
+// the tagged union.
+// NOTE: These are generated in a separate namespace because TypeScript
+// interprets `Foo` in the statement `const x: Foo.Variant = ...` as the type `Foo` instead of
+// the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
+// type. e.g. `const x: FooVariants.Variant`"
     );
+    writeln!(out, "export namespace {name}Variants {{");
+    out.indent(1);
     write_variant_types(module, out, variants);
+    out.dedent(1);
+    writeln!(out, "}}");
     writeln!(out);
+
+    writeln!(out, "// A namespace for generated variants and helper functions.");
+    writeln!(out, "export namespace {name} {{");
+    out.indent(1);
 
     // Write all of the variant constructors.
     writeln!(
@@ -895,16 +912,16 @@ fn define_namespace_and_types_for_sum(
 
     writeln!(
         out,
-        "export function serialize(writer: BinaryWriter, value: {name}): void {{
-    {name}.getTypeScriptAlgebraicType().serialize(writer, value);
+  "export function serialize(writer: BinaryWriter, value: {name}): void {{
+    AlgebraicType.serializeValue(writer, {name}.getTypeScriptAlgebraicType(), value);
 }}"
     );
     writeln!(out);
 
     writeln!(
         out,
-        "export function deserialize(reader: BinaryReader): {name} {{
-    return {name}.getTypeScriptAlgebraicType().deserialize(reader);
+  "export function deserialize(reader: BinaryReader): {name} {{
+    return AlgebraicType.deserializeValue(reader, {name}.getTypeScriptAlgebraicType());
 }}"
     );
     writeln!(out);
@@ -915,15 +932,27 @@ fn define_namespace_and_types_for_sum(
     out.newline();
 
     writeln!(out, "// The tagged union or sum type for the algebraic type `{name}`.");
+
+    // For the purpose of bootstrapping AlgebraicType, if the name of the type
+    // is `AlgebraicType`, we need to use an alias.
+    if name == "AlgebraicType" {
+        name = "__AlgebraicType";
+    }
+
     write!(out, "export type {name} = ");
 
     let names = variants
         .iter()
-        .map(|(ident, _)| format!("{name}.{}", ident.deref().to_case(Case::Pascal)))
+        .map(|(ident, _)| format!("{name}Variants.{}", ident.deref().to_case(Case::Pascal)))
         .collect::<Vec<String>>()
-        .join(" | ");
+        .join(" |\n  ");
 
-    writeln!(out, "{names};");
+    if variants.is_empty() {
+        writeln!(out, "never;");
+    } else {
+        writeln!(out, "{names};");
+    }
+
     out.newline();
 
     writeln!(out, "export default {name};");
@@ -1073,7 +1102,7 @@ fn convert_algebraic_type<'a>(
             write!(out, ")");
         }
         AlgebraicTypeUse::Array(ty) => {
-            write!(out, "AlgebraicType.createArrayType(");
+            write!(out, "AlgebraicType.Array(");
             convert_algebraic_type(module, out, ty, ref_prefix);
             write!(out, ")");
         }
@@ -1083,11 +1112,11 @@ fn convert_algebraic_type<'a>(
             type_ref_name(module, *r)
         ),
         AlgebraicTypeUse::Primitive(prim) => {
-            write!(out, "AlgebraicType.create{prim:?}Type()");
+            write!(out, "AlgebraicType.{prim:?}");
         }
-        AlgebraicTypeUse::Unit => write!(out, "AlgebraicType.createProductType([])"),
+        AlgebraicTypeUse::Unit => write!(out, "AlgebraicType.Product({{ elements: [] }})"),
         AlgebraicTypeUse::Never => unimplemented!(),
-        AlgebraicTypeUse::String => write!(out, "AlgebraicType.createStringType()"),
+        AlgebraicTypeUse::String => write!(out, "AlgebraicType.String"),
     }
 }
 
@@ -1097,15 +1126,19 @@ fn convert_sum_type<'a>(
     variants: &'a [(Identifier, AlgebraicTypeUse)],
     ref_prefix: &'a str,
 ) {
-    writeln!(out, "AlgebraicType.createSumType([");
+    writeln!(out, "AlgebraicType.Sum({{");
+    out.indent(1);
+    writeln!(out, "variants: [");
     out.indent(1);
     for (ident, ty) in variants {
-        write!(out, "new SumTypeVariant(\"{ident}\", ",);
+        write!(out, "{{ name: \"{ident}\", algebraicType: ",);
         convert_algebraic_type(module, out, ty, ref_prefix);
-        writeln!(out, "),");
+        writeln!(out, " }},");
     }
     out.dedent(1);
-    write!(out, "])")
+    writeln!(out, "]");
+    out.dedent(1);
+    write!(out, "}})")
 }
 
 fn convert_product_type<'a>(
@@ -1114,19 +1147,23 @@ fn convert_product_type<'a>(
     elements: &'a [(Identifier, AlgebraicTypeUse)],
     ref_prefix: &'a str,
 ) {
-    writeln!(out, "AlgebraicType.createProductType([");
+    writeln!(out, "AlgebraicType.Product({{");
+    out.indent(1);
+    writeln!(out, "elements: [");
     out.indent(1);
     for (ident, ty) in elements {
         write!(
             out,
-            "new ProductTypeElement(\"{}\", ",
+            "{{ name: \"{}\", algebraicType: ",
             ident.deref().to_case(Case::Camel)
         );
         convert_algebraic_type(module, out, ty, ref_prefix);
-        writeln!(out, "),");
+        writeln!(out, "}},");
     }
     out.dedent(1);
-    write!(out, "])")
+    writeln!(out, "]");
+    out.dedent(1);
+    write!(out, "}})")
 }
 
 /// Print imports for each of the `imports`.
