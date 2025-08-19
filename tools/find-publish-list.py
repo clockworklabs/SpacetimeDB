@@ -61,6 +61,7 @@ if __name__ == "__main__":
     parser.add_argument("root", nargs="+", help="One or more crate names to start with")
     parser.add_argument("--recursive", action="store_true", help="Recursively resolve dependencies")
     parser.add_argument("--quiet", action="store_true", help="Only print the final output")
+    parser.add_argument("--directories", action="store_true", help="Print crate paths instead of names")
     args = parser.parse_args()
 
     if not args.quiet:
@@ -84,4 +85,7 @@ if __name__ == "__main__":
     if not args.quiet:
         print("\nAll crates to publish, in order:")
     for crate in publish_order:
-        print(crate)
+        if args.directories:
+            print(crate_metadata[crate]['manifest_path'])
+        else:
+            print(crate)

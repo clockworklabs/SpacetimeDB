@@ -40,34 +40,34 @@ fi
 
 BASEDIR=$(pwd)
 # TODO: Do we really need to publish the `cli` and `standalone` crates?
-declare -a ROOTS=(bindings sdk cli standalone)
-declare -a CRATES=($(python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"))
+declare -a ROOTS=(spacetimedb spacetimedb-sdk spacetimedb-cli spacetimedb-standalone)
+declare -a CRATES=($(python3 tools/find-publish-list.py --recursive --quiet --directories "${ROOTS[@]}"))
 
 echo Crates to publish: "${CRATES[@]}"
 echo
 
-for crate in "${CRATES[@]}"; do
-    if [ ! -d "${BASEDIR}/crates/${crate}" ]; then
-        echo "This crate does not exist: ${crate}"
+for path in "${CRATES[@]}"; do
+    if [ ! -d "${path}" ]; then
+        echo "This crate does not exist: ${path}"
         exit 1
     fi
 done
 
 i=0
-for crate in "${CRATES[@]}"; do
+for path in "${CRATES[@]}"; do
     i=$(($i+1))
-    cd "${BASEDIR}/crates/${crate}"
+    cd "${path}"
 
     PUBLISH_CMD="cargo publish"
     [[ $DRY_RUN -eq 1 ]] && PUBLISH_CMD+=" --dry-run"
     [[ $ALLOW_DIRTY -eq 1 ]] && PUBLISH_CMD+=" --allow-dirty"
 
-    echo "[$i/${#CRATES[@]}] Publishing crate: $crate with command: $PUBLISH_CMD"
+    echo "[$i/${#CRATES[@]}] Publishing crate at $path with command: $PUBLISH_CMD"
     if ! OUTPUT=$($PUBLISH_CMD 2>&1); then
         if [ $SKIP_ALREADY_PUBLISHED -eq 1 ] && echo "$OUTPUT" | grep -q "already exists"; then
-            echo "WARNING: Crate $crate version is already published. Skipping..."
+            echo "WARNING: Crate at $path is already published at this version. Skipping..."
         else
-            echo "ERROR: Failed to publish $crate. Check logs:"
+            echo "ERROR: Failed to publish crate at $path. Check logs:"
             echo "$OUTPUT"
             exit 1
         fi
