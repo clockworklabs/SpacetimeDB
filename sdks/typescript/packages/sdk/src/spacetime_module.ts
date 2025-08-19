@@ -1,4 +1,4 @@
-import type { AlgebraicType } from '../../../../../crates/bindings-typescript/src/algebraic_type';
+import type { AlgebraicType } from 'spacetimedb';
 import type { DbConnectionImpl } from './db_connection_impl';
 
 export interface TableRuntimeTypeInfo {
