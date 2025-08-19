@@ -708,7 +708,7 @@ fn define_namespace_and_object_type_for_product(
         out.with_indent(|out| write_arglist_no_delimiters(module, out, elements, None, true).unwrap());
         writeln!(out, "}};");
     }
-    
+
     writeln!(out, "export default {name};");
 
     out.newline();
@@ -729,14 +729,20 @@ fn define_namespace_and_object_type_for_product(
         "export function serialize(writer: BinaryWriter, value: {name}): void {{"
     );
     out.indent(1);
-    writeln!(out, "AlgebraicType.serializeValue(writer, {name}.getTypeScriptAlgebraicType(), value);");
+    writeln!(
+        out,
+        "AlgebraicType.serializeValue(writer, {name}.getTypeScriptAlgebraicType(), value);"
+    );
     out.dedent(1);
     writeln!(out, "}}");
     writeln!(out);
 
     writeln!(out, "export function deserialize(reader: BinaryReader): {name} {{");
     out.indent(1);
-    writeln!(out, "return AlgebraicType.deserializeValue(reader, {name}.getTypeScriptAlgebraicType());");
+    writeln!(
+        out,
+        "return AlgebraicType.deserializeValue(reader, {name}.getTypeScriptAlgebraicType());"
+    );
     out.dedent(1);
     writeln!(out, "}}");
     writeln!(out);
@@ -832,7 +838,10 @@ fn write_variant_constructors(
             // ```
             // export const Foo: { tag: "Foo" } = { tag: "Foo" };
             // ```
-            write!(out, "export const {ident}: {{ tag: \"{ident}\" }} = {{ tag: \"{ident}\" }};");
+            write!(
+                out,
+                "export const {ident}: {{ tag: \"{ident}\" }} = {{ tag: \"{ident}\" }};"
+            );
             writeln!(out);
             continue;
         }
@@ -864,7 +873,6 @@ fn define_namespace_and_types_for_sum(
     mut name: &str,
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
-
     // For the purpose of bootstrapping AlgebraicType, if the name of the type
     // is `AlgebraicType`, we need to use an alias.
     if name == "AlgebraicType" {
@@ -912,7 +920,7 @@ fn define_namespace_and_types_for_sum(
 
     writeln!(
         out,
-  "export function serialize(writer: BinaryWriter, value: {name}): void {{
+        "export function serialize(writer: BinaryWriter, value: {name}): void {{
     AlgebraicType.serializeValue(writer, {name}.getTypeScriptAlgebraicType(), value);
 }}"
     );
@@ -920,7 +928,7 @@ fn define_namespace_and_types_for_sum(
 
     writeln!(
         out,
-  "export function deserialize(reader: BinaryReader): {name} {{
+        "export function deserialize(reader: BinaryReader): {name} {{
     return AlgebraicType.deserializeValue(reader, {name}.getTypeScriptAlgebraicType());
 }}"
     );
