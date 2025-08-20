@@ -1,12 +1,13 @@
 //! This module provides enhanced functionality for rendering automatic migration plans to strings.
 
-use super::{ansi_formatter::ColorScheme, AutoMigratePlan, IndexAlgorithm, ModuleDefLookup, TableDef};
+use std::io;
+
+use super::{AutoMigratePlan, IndexAlgorithm, ModuleDefLookup, TableDef};
 use crate::{
     auto_migrate::AutoMigrateStep,
     def::{ConstraintData, ModuleDef, ScheduleDef},
     identifier::Identifier,
 };
-use colored::{self, ColoredString, Colorize};
 use spacetimedb_lib::{
     db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType},
     AlgebraicType, AlgebraicValue,
@@ -15,7 +16,7 @@ use spacetimedb_sats::WithTypespace;
 use thiserror::Error;
 
 pub fn format_plan<F: MigrationFormatter>(f: &mut F, plan: &AutoMigratePlan) -> Result<(), FormattingErrors> {
-    f.format_header();
+    f.format_header()?;
 
     for step in &plan.steps {
         format_step(f, step, plan)?;
@@ -68,13 +69,15 @@ fn format_step<F: MigrationFormatter>(
         }
         AutoMigrateStep::AddRowLevelSecurity(rls) => {
             if let Some(rls_info) = extract_rls_info(*rls, plan)? {
-                f.format_rls(&rls_info, Action::Created)
+                f.format_rls(&rls_info, Action::Created)?;
             }
+            Ok(())
         }
         AutoMigrateStep::RemoveRowLevelSecurity(rls) => {
             if let Some(rls_info) = extract_rls_info(*rls, plan)? {
-                f.format_rls(&rls_info, Action::Removed)
+                f.format_rls(&rls_info, Action::Removed)?;
             }
+            Ok(())
         }
         AutoMigrateStep::ChangeColumns(table) => {
             let column_changes = extract_column_changes(*table, plan)?;
@@ -85,12 +88,12 @@ fn format_step<F: MigrationFormatter>(
             f.format_add_columns(&new_columns)
         }
         AutoMigrateStep::DisconnectAllUsers => f.format_disconnect_warning(),
-    }
+    }?;
 
     Ok(())
 }
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug)]
 pub enum FormattingErrors {
     #[error("Table not found: {table}")]
     TableNotFound { table: Box<str> },
@@ -106,6 +109,8 @@ pub enum FormattingErrors {
     TypeResolution,
     #[error("Column not found")]
     ColumnNotFound,
+    #[error("IO error: {0}")]
+    IO(#[from] std::io::Error),
 }
 
 /// Action types for database operations
@@ -116,31 +121,21 @@ pub enum Action {
     Changed,
 }
 
-impl Action {
-    pub fn format_with_color(&self, colors: &ColorScheme) -> ColoredString {
-        match self {
-            Action::Created => "Created".color(colors.created).bold(),
-            Action::Removed => "Removed".color(colors.removed).bold(),
-            Action::Changed => "Changed".color(colors.changed).bold(),
-        }
-    }
-}
-
 /// Trait for formatting migration steps
 /// This trait defines methods for formatting various components of a migration plan.
 /// It allows for different implementations, such as ANSI formatting or plain text formatting.
 pub trait MigrationFormatter {
-    fn format_header(&mut self);
-    fn format_add_table(&mut self, table_info: &TableInfo);
-    fn format_index(&mut self, index_info: &IndexInfo, action: Action);
-    fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action);
-    fn format_sequence(&mut self, sequence_info: &SequenceInfo, action: Action);
-    fn format_change_access(&mut self, access_info: &AccessChangeInfo);
-    fn format_schedule(&mut self, schedule_info: &ScheduleInfo, action: Action);
-    fn format_rls(&mut self, rls_info: &RlsInfo, action: Action);
-    fn format_change_columns(&mut self, column_changes: &ColumnChanges);
-    fn format_add_columns(&mut self, new_columns: &NewColumns);
-    fn format_disconnect_warning(&mut self);
+    fn format_header(&mut self) -> io::Result<()>;
+    fn format_add_table(&mut self, table_info: &TableInfo) -> io::Result<()>;
+    fn format_index(&mut self, index_info: &IndexInfo, action: Action) -> io::Result<()>;
+    fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action) -> io::Result<()>;
+    fn format_sequence(&mut self, sequence_info: &SequenceInfo, action: Action) -> io::Result<()>;
+    fn format_change_access(&mut self, access_info: &AccessChangeInfo) -> io::Result<()>;
+    fn format_schedule(&mut self, schedule_info: &ScheduleInfo, action: Action) -> io::Result<()>;
+    fn format_rls(&mut self, rls_info: &RlsInfo, action: Action) -> io::Result<()>;
+    fn format_change_columns(&mut self, column_changes: &ColumnChanges) -> io::Result<()>;
+    fn format_add_columns(&mut self, new_columns: &NewColumns) -> io::Result<()>;
+    fn format_disconnect_warning(&mut self) -> io::Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq)]

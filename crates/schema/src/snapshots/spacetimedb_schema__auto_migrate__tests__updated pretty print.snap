@@ -1,37 +1,37 @@
 ---
 source: crates/schema/src/auto_migrate.rs
-expression: "plan.pretty_print(false).expect(\"should pretty print\")"
+expression: "plan.pretty_print(PrettyPrintStyle::AnsiColor).expect(\"should pretty print\")"
 ---
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[1;94mDatabase Migration Plan[0m
+[0m[1m[34mDatabase Migration Plan[0m
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-▸ [1;91mRemoved[0m index Apples_id_name_idx_btree on [id, name] of table [1;36mApples[0m
-▸ [1;91mRemoved[0m unique constraint Apples_id_key on [id] of table [1;36mApples[0m
-▸ [1;91mRemoved[0m auto-increment constraint Apples_id_seq on column id of table [1;36mApples[0m
-▸ [1;91mRemoved[0m schedule for table [1;36mDeliveries_sched[0m calling reducer check_deliveries
-▸ [1;91mRemoved[0m row level security policy:
-    `[34mSELECT * FROM Apples[0m`
-▸ [1;33mChanged[0m columns for table [1;36mApples[0m
-▸ [1;33mChanged[0m columns for table [1;36mDeliveries[0m
-▸ [1;32mCreated[0m column in table [1;36mBananas[0m
-    + freshness: [35mU32[0m (default: U32(
+▸ [0m[1m[31mRemoved[0m index Apples_id_name_idx_btree on [id, name] of table [0m[1m[36mApples[0m
+▸ [0m[1m[31mRemoved[0m unique constraint Apples_id_key on [id] of table [0m[1m[36mApples[0m
+▸ [0m[1m[31mRemoved[0m auto-increment constraint Apples_id_seq on column id of table [0m[1m[36mApples[0m
+▸ [0m[1m[31mRemoved[0m schedule for table [0m[1m[36mDeliveries_sched[0m calling reducer check_deliveries
+▸ [0m[1m[31mRemoved[0m row level security policy:
+    `[0m[34mSELECT * FROM Apples[0m`
+▸ [0m[1m[33mChanged[0m columns for table [0m[1m[36mApples[0m
+▸ [0m[1m[33mChanged[0m columns for table [0m[1m[36mDeliveries[0m
+▸ [0m[1m[32mCreated[0m column in table [0m[1m[36mBananas[0m
+    + freshness: [0m[35mU32[0m (default: U32(
     5,
 ))
-▸ [1;32mCreated[0m user table: [1;36mOranges[0m ([92mpublic[0m)
-    [1;34mColumns:[0m
-        • id: [35mU32[0m
-    [1;34mUnique constraints:[0m
+▸ [0m[1m[32mCreated[0m user table: [0m[1m[36mOranges[0m ([0m[32mpublic[0m)
+    [0m[1m[34mColumns:[0m
+        • id: [0m[35mU32[0m
+    [0m[1m[34mUnique constraints:[0m
         • Oranges_id_key on [id]
-    [1;34mIndexes:[0m
+    [0m[1m[34mIndexes:[0m
         • Oranges_id_idx_btree on [id]
-    [1;34mAuto-increment constraints:[0m
+    [0m[1m[34mAuto-increment constraints:[0m
         • Oranges_id_seq on id
 
-▸ [1;32mCreated[0m index Apples_id_count_idx_btree on [id, count] of table [1;36mApples[0m
-▸ [1;32mCreated[0m auto-increment constraint Bananas_id_seq on column id of table [1;36mBananas[0m
-▸ [1;32mCreated[0m schedule for table [1;36mInspections_sched[0m calling reducer perform_inspection
-▸ [1;32mCreated[0m row level security policy:
-    `[34mSELECT * FROM Bananas[0m`
-▸ [1;33mChanged[0m access for table [1;36mBananas[0m ([92mpublic → private[0m)
-[1;41m!!! Warning: All clients will be disconnected due to breaking schema changes[0m
+▸ [0m[1m[32mCreated[0m index Apples_id_count_idx_btree on [id, count] of table [0m[1m[36mApples[0m
+▸ [0m[1m[32mCreated[0m auto-increment constraint Bananas_id_seq on column id of table [0m[1m[36mBananas[0m
+▸ [0m[1m[32mCreated[0m schedule for table [0m[1m[36mInspections_sched[0m calling reducer perform_inspection
+▸ [0m[1m[32mCreated[0m row level security policy:
+    `[0m[34mSELECT * FROM Bananas[0m`
+▸ [0m[1m[33mChanged[0m access for table [0m[1m[36mBananas[0m ([0m[32mpublic → private[0m)
+[0m[1m[41m!!! Warning: All clients will be disconnected due to breaking schema changes[0m

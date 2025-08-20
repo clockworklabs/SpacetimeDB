@@ -1,7 +1,6 @@
 use core::{cmp::Ordering, ops::BitOr};
 
 use crate::{def::*, error::PrettyAlgebraicType, identifier::Identifier};
-use ansi_formatter::{AnsiFormatter, ColorScheme};
 use formatter::format_plan;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
@@ -15,9 +14,9 @@ use spacetimedb_sats::{
     layout::{HasLayout, SumTypeLayout},
     WithTypespace,
 };
-mod ansi_formatter;
+use termcolor_formatter::{ColorScheme, TermColorFormatter};
 mod formatter;
-mod plain_formatter;
+mod termcolor_formatter;
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
@@ -61,11 +60,11 @@ impl<'def> MigratePlan<'def> {
 
             MigratePlan::Auto(plan) => match style {
                 NoColor => {
-                    let mut fmt = plain_formatter::PlainFormatter::new(1024);
+                    let mut fmt = TermColorFormatter::new(ColorScheme::default(), termcolor::ColorChoice::Never);
                     format_plan(&mut fmt, plan).map(|_| fmt.to_string())
                 }
                 AnsiColor => {
-                    let mut fmt = AnsiFormatter::new(1024, ColorScheme::default());
+                    let mut fmt = TermColorFormatter::new(ColorScheme::default(), termcolor::ColorChoice::AlwaysAnsi);
                     format_plan(&mut fmt, plan).map(|_| fmt.to_string())
                 }
             }

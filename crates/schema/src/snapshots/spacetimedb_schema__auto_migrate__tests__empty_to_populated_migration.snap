@@ -1,55 +1,55 @@
 ---
 source: crates/schema/src/auto_migrate.rs
-expression: "plan.pretty_print(false).expect(\"should pretty print\")"
+expression: "plan.pretty_print(PrettyPrintStyle::AnsiColor).expect(\"should pretty print\")"
 ---
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[1;94mDatabase Migration Plan[0m
+[0m[1m[34mDatabase Migration Plan[0m
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-▸ [1;32mCreated[0m user table: [1;36mApples[0m ([92mpublic[0m)
-    [1;34mColumns:[0m
-        • id: [35mU64[0m
-        • name: [35mString[0m
-        • count: [35mU16[0m
-        • sum: [35m(v1: U64)[0m
-    [1;34mUnique constraints:[0m
+▸ [0m[1m[32mCreated[0m user table: [0m[1m[36mApples[0m ([0m[32mpublic[0m)
+    [0m[1m[34mColumns:[0m
+        • id: [0m[35mU64[0m
+        • name: [0m[35mString[0m
+        • count: [0m[35mU16[0m
+        • sum: [0m[35m(v1: U64)[0m
+    [0m[1m[34mUnique constraints:[0m
         • Apples_id_key on [id]
-    [1;34mIndexes:[0m
+    [0m[1m[34mIndexes:[0m
         • Apples_id_idx_btree on [id]
         • Apples_id_name_idx_btree on [id, name]
-    [1;34mAuto-increment constraints:[0m
+    [0m[1m[34mAuto-increment constraints:[0m
         • Apples_id_seq on id
 
-▸ [1;32mCreated[0m user table: [1;36mBananas[0m ([92mpublic[0m)
-    [1;34mColumns:[0m
-        • id: [35mU64[0m
-        • name: [35mString[0m
-        • count: [35mU16[0m
+▸ [0m[1m[32mCreated[0m user table: [0m[1m[36mBananas[0m ([0m[32mpublic[0m)
+    [0m[1m[34mColumns:[0m
+        • id: [0m[35mU64[0m
+        • name: [0m[35mString[0m
+        • count: [0m[35mU16[0m
 
-▸ [1;32mCreated[0m user table: [1;36mDeliveries[0m ([92mpublic[0m)
-    [1;34mColumns:[0m
-        • scheduled_id: [35mU64[0m
-        • scheduled_at: [35m(Interval: (__time_duration_micros__: I64) | Time: (__timestamp_micros_since_unix_epoch__: I64))[0m
-        • sum: [35mArray<(v1: U64)>[0m
-    [1;34mUnique constraints:[0m
+▸ [0m[1m[32mCreated[0m user table: [0m[1m[36mDeliveries[0m ([0m[32mpublic[0m)
+    [0m[1m[34mColumns:[0m
+        • scheduled_id: [0m[35mU64[0m
+        • scheduled_at: [0m[35m(Interval: (__time_duration_micros__: I64) | Time: (__timestamp_micros_since_unix_epoch__: I64))[0m
+        • sum: [0m[35mArray<(v1: U64)>[0m
+    [0m[1m[34mUnique constraints:[0m
         • Deliveries_scheduled_id_key on [scheduled_id]
-    [1;34mIndexes:[0m
+    [0m[1m[34mIndexes:[0m
         • Deliveries_scheduled_id_idx_btree on [scheduled_id]
-    [1;34mAuto-increment constraints:[0m
+    [0m[1m[34mAuto-increment constraints:[0m
         • Deliveries_scheduled_id_seq on scheduled_id
-    [1;34mSchedule:[0m
+    [0m[1m[34mSchedule:[0m
         • Calls reducer: check_deliveries
 
-▸ [1;32mCreated[0m user table: [1;36mInspections[0m ([92mpublic[0m)
-    [1;34mColumns:[0m
-        • scheduled_id: [35mU64[0m
-        • scheduled_at: [35m(Interval: (__time_duration_micros__: I64) | Time: (__timestamp_micros_since_unix_epoch__: I64))[0m
-    [1;34mUnique constraints:[0m
+▸ [0m[1m[32mCreated[0m user table: [0m[1m[36mInspections[0m ([0m[32mpublic[0m)
+    [0m[1m[34mColumns:[0m
+        • scheduled_id: [0m[35mU64[0m
+        • scheduled_at: [0m[35m(Interval: (__time_duration_micros__: I64) | Time: (__timestamp_micros_since_unix_epoch__: I64))[0m
+    [0m[1m[34mUnique constraints:[0m
         • Inspections_scheduled_id_key on [scheduled_id]
-    [1;34mIndexes:[0m
+    [0m[1m[34mIndexes:[0m
         • Inspections_scheduled_id_idx_btree on [scheduled_id]
-    [1;34mAuto-increment constraints:[0m
+    [0m[1m[34mAuto-increment constraints:[0m
         • Inspections_scheduled_id_seq on scheduled_id
 
-▸ [1;32mCreated[0m row level security policy:
-    `[34mSELECT * FROM Apples[0m`
+▸ [0m[1m[32mCreated[0m row level security policy:
+    `[0m[34mSELECT * FROM Apples[0m`
