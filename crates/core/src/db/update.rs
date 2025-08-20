@@ -252,7 +252,7 @@ fn auto_migrate_database(
                 log!(logger, "Removing-row level security `{sql_rls}`");
                 stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
-            _ => unimplemented!(),
+            _ => anyhow::bail!("migration step not implemented: {step:?}"),
         }
     }
 

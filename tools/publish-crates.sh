@@ -39,8 +39,7 @@ if [ $DRY_RUN -ne 1 ]; then
 fi
 
 BASEDIR=$(pwd)
-# TODO: Do we really need to publish the `cli` and `standalone` crates?
-declare -a ROOTS=(bindings sdk cli standalone)
+declare -a ROOTS=(bindings sdk)
 declare -a CRATES=($(python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"))
 
 echo Crates to publish: "${CRATES[@]}"

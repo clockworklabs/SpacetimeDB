@@ -80,16 +80,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         .combine_errors()
         .and_then(|(mut tables, types, reducers)| {
             let sched_exists = check_scheduled_reducers_exist(&tables, &reducers);
-            let default_values_work = misc_exports
-                .into_iter()
-                .map(|export| match export {
-                    RawMiscModuleExportV9::ColumnDefaultValue(fdv) => {
-                        validator.validate_column_default_value(&mut tables, fdv)
-                    }
-                    _ => unimplemented!("unknown misc export"),
-                })
-                .collect_all_errors::<()>();
-
+            let default_values_work = proccess_misc_exports(misc_exports, &validator, &mut tables);
             (sched_exists, default_values_work).combine_errors()?;
 
             Ok((tables, types, reducers))
@@ -357,52 +348,41 @@ impl ModuleValidator<'_> {
     }
 
     fn validate_column_default_value(
-        &mut self,
-        tables: &mut HashMap<Identifier, TableDef>,
-        cdv: RawColumnDefaultValueV9,
-    ) -> Result<()> {
+        &self,
+        tables: &HashMap<Identifier, TableDef>,
+        cdv: &RawColumnDefaultValueV9,
+    ) -> Result<AlgebraicValue> {
         let table_name = identifier(cdv.table.clone())?;
 
-        let table = tables
-            .get_mut(&table_name)
-            .ok_or_else(|| ValidationError::TableNotFound {
-                table: cdv.table.clone(),
-            })?;
+        // Extract the table. We cannot make progress otherwise.
+        let table = tables.get(&table_name).ok_or_else(|| ValidationError::TableNotFound {
+            table: cdv.table.clone(),
+        })?;
 
-        if table.columns.len() <= cdv.col_id.idx() {
+        // Get the column that a default is being added to.
+        let Some(col) = table.columns.get(cdv.col_id.idx()) else {
             return Err(ValidationError::ColumnNotFound {
                 table: cdv.table.clone(),
                 def: cdv.table.clone(),
                 column: cdv.col_id,
             }
             .into());
-        }
+        };
 
-        let col = &mut table.columns[cdv.col_id.idx()];
-        // First time we have a type for it, so decode it.
+        // First time the type of the default value is known, so decode it.
         let mut reader = &cdv.value[..];
         let ty = WithTypespace::new(self.typespace, &col.ty);
-        let field_value = match ty.deserialize(Deserializer::new(&mut reader)) {
-            Ok(field_value) => Some(field_value),
-            Err(decode_error) => {
-                return Err(ValidationError::ColumnDefaultValueMalformed {
+        let field_value: Result<AlgebraicValue> =
+            ty.deserialize(Deserializer::new(&mut reader)).map_err(|decode_error| {
+                ValidationError::ColumnDefaultValueMalformed {
                     table: cdv.table.clone(),
                     col_id: cdv.col_id,
                     err: decode_error,
                 }
-                .into())
-            }
-        };
-        if col.default_value.is_some() {
-            return Err(ValidationError::MultipleColumnDefaultValues {
-                table: cdv.table.clone(),
-                col_id: cdv.col_id,
-            }
-            .into());
-        }
-        col.default_value = field_value.clone();
+                .into()
+            });
 
-        Ok(())
+        field_value
     }
 
     /// Validate a type definition.
@@ -951,6 +931,59 @@ fn check_scheduled_reducers_exist(
             }
         })
         .collect_all_errors()
+}
+
+fn proccess_misc_exports(
+    misc_exports: Vec<RawMiscModuleExportV9>,
+    validator: &ModuleValidator,
+    tables: &mut IdentifierMap<TableDef>,
+) -> Result<()> {
+    misc_exports
+        .into_iter()
+        .map(|export| match export {
+            RawMiscModuleExportV9::ColumnDefaultValue(cdv) => process_column_default_value(&cdv, validator, tables),
+            _ => unimplemented!("unknown misc export"),
+        })
+        .collect_all_errors::<()>()
+}
+
+fn process_column_default_value(
+    cdv: &RawColumnDefaultValueV9,
+    validator: &ModuleValidator,
+    tables: &mut IdentifierMap<TableDef>,
+) -> Result<()> {
+    // Validate the default value
+    let validated_value = validator.validate_column_default_value(tables, cdv)?;
+
+    let table_name = identifier(cdv.table.clone())?;
+    let table = tables
+        .get_mut(&table_name)
+        .ok_or_else(|| ValidationError::TableNotFound {
+            table: cdv.table.clone(),
+        })?;
+
+    let column = table
+        .columns
+        .get_mut(cdv.col_id.idx())
+        .ok_or_else(|| ValidationError::ColumnNotFound {
+            table: cdv.table.clone(),
+            def: cdv.table.clone(),
+            column: cdv.col_id,
+        })?;
+
+    // Ensure there's only one default value.
+    if column.default_value.is_some() {
+        return Err(ValidationError::MultipleColumnDefaultValues {
+            table: cdv.table.clone(),
+            col_id: cdv.col_id,
+        }
+        .into());
+    }
+
+    // Set the default value
+    column.default_value = Some(validated_value);
+
+    Ok(())
 }
 
 #[cfg(test)]

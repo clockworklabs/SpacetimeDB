@@ -44,6 +44,17 @@ Now create `server`, our module, which runs in the database:
 spacetime init --lang rust server
 ```
 
+## How to Compile
+
+> [!IMPORTANT]
+> You cannot use the traditional `cargo build` to build SpacetimeDB server modules. Keep this in mind when using an IDE that assumes using *cargo* for building. 
+Above, we just initialized a SpacetimeDB server module at `./server`:
+
+```bash
+cd server
+spacetime build
+```
+
 ## Declare imports
 
 `spacetime init` should have pre-populated `server/src/lib.rs` with a trivial module. Clear it out so we can write a new, simple module: a bare-bones chat server.

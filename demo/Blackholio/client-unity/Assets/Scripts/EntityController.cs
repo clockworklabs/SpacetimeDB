@@ -16,7 +16,7 @@ public abstract class EntityController : MonoBehaviour
 
 	protected float LerpTime;
 	protected Vector3 LerpStartPosition;
-	protected Vector3 LerpTargetPositio;
+	protected Vector3 LerpTargetPosition;
 	protected Vector3 TargetScale;
 
 	protected virtual void Spawn(uint entityId)
@@ -24,7 +24,7 @@ public abstract class EntityController : MonoBehaviour
 		EntityId = entityId;
 
 		var entity = GameManager.Conn.Db.Entity.EntityId.Find(entityId);
-		LerpStartPosition = LerpTargetPositio = transform.position = (Vector2)entity.Position;
+		LerpStartPosition = LerpTargetPosition = transform.position = (Vector2)entity.Position;
 		transform.localScale = Vector3.one;
 		TargetScale = MassToScale(entity.Mass);
 	}
@@ -38,7 +38,7 @@ public abstract class EntityController : MonoBehaviour
 	{
 		LerpTime = 0.0f;
 		LerpStartPosition = transform.position;
-		LerpTargetPositio = (Vector2)newVal.Position;
+		LerpTargetPosition = (Vector2)newVal.Position;
 		TargetScale = MassToScale(newVal.Mass);
 	}
 
@@ -78,7 +78,7 @@ public abstract class EntityController : MonoBehaviour
 	{
 		//Interpolate position and scale
 		LerpTime = Mathf.Min(LerpTime + Time.deltaTime, LERP_DURATION_SEC);
-		transform.position = Vector3.Lerp(LerpStartPosition, LerpTargetPositio, LerpTime / LERP_DURATION_SEC);
+		transform.position = Vector3.Lerp(LerpStartPosition, LerpTargetPosition, LerpTime / LERP_DURATION_SEC);
 		transform.localScale = Vector3.Lerp(transform.localScale, TargetScale, Time.deltaTime * 8);
 	}
 
