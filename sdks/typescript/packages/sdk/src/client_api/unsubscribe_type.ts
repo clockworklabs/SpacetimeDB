@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { QueryId as __QueryId } from "./query_id_type";
+} from '../index';
+import { QueryId as __QueryId } from './query_id_type';
 
 export type Unsubscribe = {
-  requestId: number,
-  queryId: __QueryId,
+  requestId: number;
+  queryId: __QueryId;
 };
 export default Unsubscribe;
 
@@ -45,26 +45,33 @@ export default Unsubscribe;
  */
 export namespace Unsubscribe {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "requestId", algebraicType: AlgebraicType.U32},
-        { name: "queryId", algebraicType: __QueryId.getTypeScriptAlgebraicType()},
-      ]
+        { name: 'requestId', algebraicType: AlgebraicType.U32 },
+        {
+          name: 'queryId',
+          algebraicType: __QueryId.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: Unsubscribe): void {
-    AlgebraicType.serializeValue(writer, Unsubscribe.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      Unsubscribe.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): Unsubscribe {
-    return AlgebraicType.deserializeValue(reader, Unsubscribe.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      Unsubscribe.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

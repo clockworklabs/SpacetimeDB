@@ -4,7 +4,11 @@ import { describe, expect, test } from 'vitest';
 
 import { Player } from '@clockworklabs/test-app/src/module_bindings';
 
-import { AlgebraicType, ProductType, type AlgebraicTypeVariants } from 'spacetimedb';
+import {
+  AlgebraicType,
+  ProductType,
+  type AlgebraicTypeVariants,
+} from 'spacetimedb';
 
 interface ApplyOperations {
   ops: Operation[];
@@ -103,14 +107,14 @@ describe('TableCache', () => {
       elements: [
         { name: 'x', algebraicType: AlgebraicType.U16 },
         { name: 'y', algebraicType: AlgebraicType.U16 },
-      ]
+      ],
     });
     const playerType = AlgebraicType.Product({
       elements: [
         { name: 'ownerId', algebraicType: AlgebraicType.String },
         { name: 'name', algebraicType: AlgebraicType.String },
         { name: 'location', algebraicType: pointType },
-      ]
+      ],
     });
     const tableTypeInfo: TableRuntimeTypeInfo = {
       tableName: 'player',
@@ -410,21 +414,22 @@ describe('TableCache', () => {
       elements: [
         { name: 'x', algebraicType: AlgebraicType.U16 },
         { name: 'y', algebraicType: AlgebraicType.U16 },
-      ]
+      ],
     });
     const playerType: AlgebraicType = AlgebraicType.Product({
       elements: [
         { name: 'ownerId', algebraicType: AlgebraicType.String },
         { name: 'name', algebraicType: AlgebraicType.String },
         { name: 'location', algebraicType: pointType },
-      ]
+      ],
     });
     const tableTypeInfo: TableRuntimeTypeInfo = {
       tableName: 'player',
       rowType: playerType,
       primaryKeyInfo: {
         colName: 'ownerId',
-        colType: (playerType as AlgebraicTypeVariants.Product).value.elements[0].algebraicType,
+        colType: (playerType as AlgebraicTypeVariants.Product).value.elements[0]
+          .algebraicType,
       },
     };
     const newTable = () => new TableCache<Player>(tableTypeInfo);
@@ -769,14 +774,14 @@ describe('TableCache', () => {
     elements: [
       { name: 'x', algebraicType: AlgebraicType.U16 },
       { name: 'y', algebraicType: AlgebraicType.U16 },
-    ]
+    ],
   });
   const playerType = AlgebraicType.Product({
     elements: [
       { name: 'ownerId', algebraicType: AlgebraicType.String },
       { name: 'name', algebraicType: AlgebraicType.String },
       { name: 'location', algebraicType: pointType },
-    ]
+    ],
   });
 
   test('should be empty on creation', () => {
@@ -785,7 +790,8 @@ describe('TableCache', () => {
       rowType: playerType,
       primaryKeyInfo: {
         colName: 'ownerId',
-        colType: (playerType as AlgebraicTypeVariants.Product).value.elements[0].algebraicType,
+        colType: (playerType as AlgebraicTypeVariants.Product).value.elements[0]
+          .algebraicType,
       },
     };
     const tableCache = new TableCache<Player>(tableTypeInfo);

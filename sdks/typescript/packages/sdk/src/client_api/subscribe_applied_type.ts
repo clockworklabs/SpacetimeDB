@@ -31,15 +31,15 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { QueryId as __QueryId } from "./query_id_type";
-import { SubscribeRows as __SubscribeRows } from "./subscribe_rows_type";
+} from '../index';
+import { QueryId as __QueryId } from './query_id_type';
+import { SubscribeRows as __SubscribeRows } from './subscribe_rows_type';
 
 export type SubscribeApplied = {
-  requestId: number,
-  totalHostExecutionDurationMicros: bigint,
-  queryId: __QueryId,
-  rows: __SubscribeRows,
+  requestId: number;
+  totalHostExecutionDurationMicros: bigint;
+  queryId: __QueryId;
+  rows: __SubscribeRows;
 };
 export default SubscribeApplied;
 
@@ -48,28 +48,44 @@ export default SubscribeApplied;
  */
 export namespace SubscribeApplied {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "requestId", algebraicType: AlgebraicType.U32},
-        { name: "totalHostExecutionDurationMicros", algebraicType: AlgebraicType.U64},
-        { name: "queryId", algebraicType: __QueryId.getTypeScriptAlgebraicType()},
-        { name: "rows", algebraicType: __SubscribeRows.getTypeScriptAlgebraicType()},
-      ]
+        { name: 'requestId', algebraicType: AlgebraicType.U32 },
+        {
+          name: 'totalHostExecutionDurationMicros',
+          algebraicType: AlgebraicType.U64,
+        },
+        {
+          name: 'queryId',
+          algebraicType: __QueryId.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'rows',
+          algebraicType: __SubscribeRows.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: SubscribeApplied): void {
-    AlgebraicType.serializeValue(writer, SubscribeApplied.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: SubscribeApplied
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      SubscribeApplied.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): SubscribeApplied {
-    return AlgebraicType.deserializeValue(reader, SubscribeApplied.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      SubscribeApplied.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

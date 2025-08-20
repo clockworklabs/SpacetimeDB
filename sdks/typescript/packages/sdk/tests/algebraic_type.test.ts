@@ -3,12 +3,10 @@ import { AlgebraicType, BinaryReader, BinaryWriter } from 'spacetimedb';
 
 describe('AlgebraicValue', () => {
   test('when created with a ProductValue it assigns the product property', () => {
-    const value = { foo: "foobar" };
+    const value = { foo: 'foobar' };
     const algebraic_type = AlgebraicType.Product({
-      elements: [
-        { name: "foo", algebraicType: AlgebraicType.String },
-      ],
-    })
+      elements: [{ name: 'foo', algebraicType: AlgebraicType.String }],
+    });
     const binaryWriter = new BinaryWriter(1024);
     AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
 

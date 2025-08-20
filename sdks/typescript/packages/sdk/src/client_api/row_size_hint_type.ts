@@ -31,7 +31,7 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
 // the tagged union.
@@ -40,8 +40,8 @@ import {
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
 export namespace RowSizeHintVariants {
-  export type FixedSize = { tag: "FixedSize", value: number };
-  export type RowOffsets = { tag: "RowOffsets", value: bigint[] };
+  export type FixedSize = { tag: 'FixedSize'; value: number };
+  export type RowOffsets = { tag: 'RowOffsets'; value: bigint[] };
 }
 
 // A namespace for generated variants and helper functions.
@@ -52,31 +52,44 @@ export namespace RowSizeHint {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const FixedSize = (value: number): RowSizeHint => ({ tag: "FixedSize", value });
-  export const RowOffsets = (value: bigint[]): RowSizeHint => ({ tag: "RowOffsets", value });
+  export const FixedSize = (value: number): RowSizeHint => ({
+    tag: 'FixedSize',
+    value,
+  });
+  export const RowOffsets = (value: bigint[]): RowSizeHint => ({
+    tag: 'RowOffsets',
+    value,
+  });
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
-        { name: "FixedSize", algebraicType: AlgebraicType.U16 },
-        { name: "RowOffsets", algebraicType: AlgebraicType.Array(AlgebraicType.U64) },
-      ]
+        { name: 'FixedSize', algebraicType: AlgebraicType.U16 },
+        {
+          name: 'RowOffsets',
+          algebraicType: AlgebraicType.Array(AlgebraicType.U64),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: RowSizeHint): void {
-      AlgebraicType.serializeValue(writer, RowSizeHint.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      RowSizeHint.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RowSizeHint {
-      return AlgebraicType.deserializeValue(reader, RowSizeHint.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RowSizeHint.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `RowSizeHint`.
-export type RowSizeHint = RowSizeHint.FixedSize |
-  RowSizeHint.RowOffsets;
+export type RowSizeHint = RowSizeHint.FixedSize | RowSizeHint.RowOffsets;
 
 export default RowSizeHint;
-
