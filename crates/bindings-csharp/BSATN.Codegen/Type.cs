@@ -479,17 +479,6 @@ public abstract record BaseTypeDeclaration<M>
         if (Kind is TypeKind.Sum)
         {
             extensions.Contents.Append(
-                $$"""
-                      private {{ShortName}}() { }
-
-                      internal enum @enum: byte
-                      {
-                          {{string.Join(",\n        ", bsatnDecls.Select(decl => decl.Name))}}
-                      }
-
-                  """
-            );
-            extensions.Contents.Append(
                 string.Join(
                     "\n",
                     bsatnDecls.Select(m =>

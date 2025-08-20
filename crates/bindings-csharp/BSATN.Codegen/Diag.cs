@@ -105,8 +105,7 @@ public class ErrorDescriptor<TContext>
                 toLocation(ctx).ApplicationSyntaxReference is { } r
                     ? r.SyntaxTree.GetLocation(r.Span)
                     : null
-        )
-    { }
+        ) { }
 
     public Diagnostic ToDiag(TContext ctx) =>
         Diagnostic.Create(descriptor, toLocation(ctx), makeFormatArgs(ctx));
