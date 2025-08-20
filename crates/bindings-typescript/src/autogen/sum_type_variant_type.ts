@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { AlgebraicType as __AlgebraicType } from "./algebraic_type_type";
+} from '../index';
+import { AlgebraicType as __AlgebraicType } from './algebraic_type_type';
 
 export type SumTypeVariant = {
-  name: string | undefined,
-  algebraicType: __AlgebraicType,
+  name: string | undefined;
+  algebraicType: __AlgebraicType;
 };
 export default SumTypeVariant;
 
@@ -45,26 +45,36 @@ export default SumTypeVariant;
  */
 export namespace SumTypeVariant {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.createOptionType(AlgebraicType.String)},
-        { name: "algebraicType", algebraicType: __AlgebraicType.getTypeScriptAlgebraicType()},
-      ]
+        {
+          name: 'name',
+          algebraicType: AlgebraicType.createOptionType(AlgebraicType.String),
+        },
+        {
+          name: 'algebraicType',
+          algebraicType: __AlgebraicType.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: SumTypeVariant): void {
-    AlgebraicType.serializeValue(writer, SumTypeVariant.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      SumTypeVariant.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): SumTypeVariant {
-    return AlgebraicType.deserializeValue(reader, SumTypeVariant.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      SumTypeVariant.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

@@ -31,7 +31,7 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
 // the tagged union.
@@ -40,8 +40,8 @@ import {
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
 export namespace TableTypeVariants {
-  export type System = { tag: "System" };
-  export type User = { tag: "User" };
+  export type System = { tag: 'System' };
+  export type User = { tag: 'User' };
 }
 
 // A namespace for generated variants and helper functions.
@@ -52,31 +52,41 @@ export namespace TableType {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const System: { tag: "System" } = { tag: "System" };
-  export const User: { tag: "User" } = { tag: "User" };
+  export const System: { tag: 'System' } = { tag: 'System' };
+  export const User: { tag: 'User' } = { tag: 'User' };
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
-        { name: "System", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "User", algebraicType: AlgebraicType.Product({ elements: [] }) },
-      ]
+        {
+          name: 'System',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+        {
+          name: 'User',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: TableType): void {
-      AlgebraicType.serializeValue(writer, TableType.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      TableType.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): TableType {
-      return AlgebraicType.deserializeValue(reader, TableType.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      TableType.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `TableType`.
-export type TableType = TableTypeVariants.System |
-  TableTypeVariants.User;
+export type TableType = TableTypeVariants.System | TableTypeVariants.User;
 
 export default TableType;
-

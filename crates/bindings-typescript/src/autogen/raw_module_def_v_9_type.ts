@@ -31,21 +31,21 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { Typespace as __Typespace } from "./typespace_type";
-import { RawTableDefV9 as __RawTableDefV9 } from "./raw_table_def_v_9_type";
-import { RawReducerDefV9 as __RawReducerDefV9 } from "./raw_reducer_def_v_9_type";
-import { RawTypeDefV9 as __RawTypeDefV9 } from "./raw_type_def_v_9_type";
-import { RawMiscModuleExportV9 as __RawMiscModuleExportV9 } from "./raw_misc_module_export_v_9_type";
-import { RawRowLevelSecurityDefV9 as __RawRowLevelSecurityDefV9 } from "./raw_row_level_security_def_v_9_type";
+} from '../index';
+import { Typespace as __Typespace } from './typespace_type';
+import { RawTableDefV9 as __RawTableDefV9 } from './raw_table_def_v_9_type';
+import { RawReducerDefV9 as __RawReducerDefV9 } from './raw_reducer_def_v_9_type';
+import { RawTypeDefV9 as __RawTypeDefV9 } from './raw_type_def_v_9_type';
+import { RawMiscModuleExportV9 as __RawMiscModuleExportV9 } from './raw_misc_module_export_v_9_type';
+import { RawRowLevelSecurityDefV9 as __RawRowLevelSecurityDefV9 } from './raw_row_level_security_def_v_9_type';
 
 export type RawModuleDefV9 = {
-  typespace: __Typespace,
-  tables: __RawTableDefV9[],
-  reducers: __RawReducerDefV9[],
-  types: __RawTypeDefV9[],
-  miscExports: __RawMiscModuleExportV9[],
-  rowLevelSecurity: __RawRowLevelSecurityDefV9[],
+  typespace: __Typespace;
+  tables: __RawTableDefV9[];
+  reducers: __RawReducerDefV9[];
+  types: __RawTypeDefV9[];
+  miscExports: __RawMiscModuleExportV9[];
+  rowLevelSecurity: __RawRowLevelSecurityDefV9[];
 };
 export default RawModuleDefV9;
 
@@ -54,30 +54,62 @@ export default RawModuleDefV9;
  */
 export namespace RawModuleDefV9 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "typespace", algebraicType: __Typespace.getTypeScriptAlgebraicType()},
-        { name: "tables", algebraicType: AlgebraicType.Array(__RawTableDefV9.getTypeScriptAlgebraicType())},
-        { name: "reducers", algebraicType: AlgebraicType.Array(__RawReducerDefV9.getTypeScriptAlgebraicType())},
-        { name: "types", algebraicType: AlgebraicType.Array(__RawTypeDefV9.getTypeScriptAlgebraicType())},
-        { name: "miscExports", algebraicType: AlgebraicType.Array(__RawMiscModuleExportV9.getTypeScriptAlgebraicType())},
-        { name: "rowLevelSecurity", algebraicType: AlgebraicType.Array(__RawRowLevelSecurityDefV9.getTypeScriptAlgebraicType())},
-      ]
+        {
+          name: 'typespace',
+          algebraicType: __Typespace.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'tables',
+          algebraicType: AlgebraicType.Array(
+            __RawTableDefV9.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'reducers',
+          algebraicType: AlgebraicType.Array(
+            __RawReducerDefV9.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'types',
+          algebraicType: AlgebraicType.Array(
+            __RawTypeDefV9.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'miscExports',
+          algebraicType: AlgebraicType.Array(
+            __RawMiscModuleExportV9.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'rowLevelSecurity',
+          algebraicType: AlgebraicType.Array(
+            __RawRowLevelSecurityDefV9.getTypeScriptAlgebraicType()
+          ),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: RawModuleDefV9): void {
-    AlgebraicType.serializeValue(writer, RawModuleDefV9.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      RawModuleDefV9.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawModuleDefV9 {
-    return AlgebraicType.deserializeValue(reader, RawModuleDefV9.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawModuleDefV9.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

@@ -31,9 +31,9 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { SumType as __SumType } from "./sum_type_type";
-import { ProductType as __ProductType } from "./product_type_type";
+} from '../index';
+import { SumType as __SumType } from './sum_type_type';
+import { ProductType as __ProductType } from './product_type_type';
 
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
@@ -43,26 +43,26 @@ import { ProductType as __ProductType } from "./product_type_type";
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
 export namespace __AlgebraicTypeVariants {
-  export type Ref = { tag: "Ref", value: number };
-  export type Sum = { tag: "Sum", value: __SumType };
-  export type Product = { tag: "Product", value: __ProductType };
-  export type Array = { tag: "Array", value: __AlgebraicType };
-  export type String = { tag: "String" };
-  export type Bool = { tag: "Bool" };
-  export type I8 = { tag: "I8" };
-  export type U8 = { tag: "U8" };
-  export type I16 = { tag: "I16" };
-  export type U16 = { tag: "U16" };
-  export type I32 = { tag: "I32" };
-  export type U32 = { tag: "U32" };
-  export type I64 = { tag: "I64" };
-  export type U64 = { tag: "U64" };
-  export type I128 = { tag: "I128" };
-  export type U128 = { tag: "U128" };
-  export type I256 = { tag: "I256" };
-  export type U256 = { tag: "U256" };
-  export type F32 = { tag: "F32" };
-  export type F64 = { tag: "F64" };
+  export type Ref = { tag: 'Ref'; value: number };
+  export type Sum = { tag: 'Sum'; value: __SumType };
+  export type Product = { tag: 'Product'; value: __ProductType };
+  export type Array = { tag: 'Array'; value: __AlgebraicType };
+  export type String = { tag: 'String' };
+  export type Bool = { tag: 'Bool' };
+  export type I8 = { tag: 'I8' };
+  export type U8 = { tag: 'U8' };
+  export type I16 = { tag: 'I16' };
+  export type U16 = { tag: 'U16' };
+  export type I32 = { tag: 'I32' };
+  export type U32 = { tag: 'U32' };
+  export type I64 = { tag: 'I64' };
+  export type U64 = { tag: 'U64' };
+  export type I128 = { tag: 'I128' };
+  export type U128 = { tag: 'U128' };
+  export type I256 = { tag: 'I256' };
+  export type U256 = { tag: 'U256' };
+  export type F32 = { tag: 'F32' };
+  export type F64 = { tag: 'F64' };
 }
 
 // A namespace for generated variants and helper functions.
@@ -73,85 +73,130 @@ export namespace __AlgebraicType {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const Ref = (value: number): __AlgebraicType => ({ tag: "Ref", value });
-  export const Sum = (value: __SumType): __AlgebraicType => ({ tag: "Sum", value });
-  export const Product = (value: __ProductType): __AlgebraicType => ({ tag: "Product", value });
-  export const Array = (value: __AlgebraicType): __AlgebraicType => ({ tag: "Array", value });
-  export const String: { tag: "String" } = { tag: "String" };
-  export const Bool: { tag: "Bool" } = { tag: "Bool" };
-  export const I8: { tag: "I8" } = { tag: "I8" };
-  export const U8: { tag: "U8" } = { tag: "U8" };
-  export const I16: { tag: "I16" } = { tag: "I16" };
-  export const U16: { tag: "U16" } = { tag: "U16" };
-  export const I32: { tag: "I32" } = { tag: "I32" };
-  export const U32: { tag: "U32" } = { tag: "U32" };
-  export const I64: { tag: "I64" } = { tag: "I64" };
-  export const U64: { tag: "U64" } = { tag: "U64" };
-  export const I128: { tag: "I128" } = { tag: "I128" };
-  export const U128: { tag: "U128" } = { tag: "U128" };
-  export const I256: { tag: "I256" } = { tag: "I256" };
-  export const U256: { tag: "U256" } = { tag: "U256" };
-  export const F32: { tag: "F32" } = { tag: "F32" };
-  export const F64: { tag: "F64" } = { tag: "F64" };
+  export const Ref = (value: number): __AlgebraicType => ({
+    tag: 'Ref',
+    value,
+  });
+  export const Sum = (value: __SumType): __AlgebraicType => ({
+    tag: 'Sum',
+    value,
+  });
+  export const Product = (value: __ProductType): __AlgebraicType => ({
+    tag: 'Product',
+    value,
+  });
+  export const Array = (value: __AlgebraicType): __AlgebraicType => ({
+    tag: 'Array',
+    value,
+  });
+  export const String: { tag: 'String' } = { tag: 'String' };
+  export const Bool: { tag: 'Bool' } = { tag: 'Bool' };
+  export const I8: { tag: 'I8' } = { tag: 'I8' };
+  export const U8: { tag: 'U8' } = { tag: 'U8' };
+  export const I16: { tag: 'I16' } = { tag: 'I16' };
+  export const U16: { tag: 'U16' } = { tag: 'U16' };
+  export const I32: { tag: 'I32' } = { tag: 'I32' };
+  export const U32: { tag: 'U32' } = { tag: 'U32' };
+  export const I64: { tag: 'I64' } = { tag: 'I64' };
+  export const U64: { tag: 'U64' } = { tag: 'U64' };
+  export const I128: { tag: 'I128' } = { tag: 'I128' };
+  export const U128: { tag: 'U128' } = { tag: 'U128' };
+  export const I256: { tag: 'I256' } = { tag: 'I256' };
+  export const U256: { tag: 'U256' } = { tag: 'U256' };
+  export const F32: { tag: 'F32' } = { tag: 'F32' };
+  export const F64: { tag: 'F64' } = { tag: 'F64' };
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
-        { name: "Ref", algebraicType: AlgebraicType.U32 },
-        { name: "Sum", algebraicType: __SumType.getTypeScriptAlgebraicType() },
-        { name: "Product", algebraicType: __ProductType.getTypeScriptAlgebraicType() },
-        { name: "Array", algebraicType: __AlgebraicType.getTypeScriptAlgebraicType() },
-        { name: "String", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "Bool", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "I8", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "U8", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "I16", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "U16", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "I32", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "U32", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "I64", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "U64", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "I128", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "U128", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "I256", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "U256", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "F32", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "F64", algebraicType: AlgebraicType.Product({ elements: [] }) },
-      ]
+        { name: 'Ref', algebraicType: AlgebraicType.U32 },
+        { name: 'Sum', algebraicType: __SumType.getTypeScriptAlgebraicType() },
+        {
+          name: 'Product',
+          algebraicType: __ProductType.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'Array',
+          algebraicType: __AlgebraicType.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'String',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+        {
+          name: 'Bool',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+        { name: 'I8', algebraicType: AlgebraicType.Product({ elements: [] }) },
+        { name: 'U8', algebraicType: AlgebraicType.Product({ elements: [] }) },
+        { name: 'I16', algebraicType: AlgebraicType.Product({ elements: [] }) },
+        { name: 'U16', algebraicType: AlgebraicType.Product({ elements: [] }) },
+        { name: 'I32', algebraicType: AlgebraicType.Product({ elements: [] }) },
+        { name: 'U32', algebraicType: AlgebraicType.Product({ elements: [] }) },
+        { name: 'I64', algebraicType: AlgebraicType.Product({ elements: [] }) },
+        { name: 'U64', algebraicType: AlgebraicType.Product({ elements: [] }) },
+        {
+          name: 'I128',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+        {
+          name: 'U128',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+        {
+          name: 'I256',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+        {
+          name: 'U256',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+        { name: 'F32', algebraicType: AlgebraicType.Product({ elements: [] }) },
+        { name: 'F64', algebraicType: AlgebraicType.Product({ elements: [] }) },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: __AlgebraicType): void {
-      AlgebraicType.serializeValue(writer, __AlgebraicType.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: __AlgebraicType
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      __AlgebraicType.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): __AlgebraicType {
-      return AlgebraicType.deserializeValue(reader, __AlgebraicType.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      __AlgebraicType.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `__AlgebraicType`.
-export type __AlgebraicType = __AlgebraicTypeVariants.Ref |
-  __AlgebraicTypeVariants.Sum |
-  __AlgebraicTypeVariants.Product |
-  __AlgebraicTypeVariants.Array |
-  __AlgebraicTypeVariants.String |
-  __AlgebraicTypeVariants.Bool |
-  __AlgebraicTypeVariants.I8 |
-  __AlgebraicTypeVariants.U8 |
-  __AlgebraicTypeVariants.I16 |
-  __AlgebraicTypeVariants.U16 |
-  __AlgebraicTypeVariants.I32 |
-  __AlgebraicTypeVariants.U32 |
-  __AlgebraicTypeVariants.I64 |
-  __AlgebraicTypeVariants.U64 |
-  __AlgebraicTypeVariants.I128 |
-  __AlgebraicTypeVariants.U128 |
-  __AlgebraicTypeVariants.I256 |
-  __AlgebraicTypeVariants.U256 |
-  __AlgebraicTypeVariants.F32 |
-  __AlgebraicTypeVariants.F64;
+export type __AlgebraicType =
+  | __AlgebraicTypeVariants.Ref
+  | __AlgebraicTypeVariants.Sum
+  | __AlgebraicTypeVariants.Product
+  | __AlgebraicTypeVariants.Array
+  | __AlgebraicTypeVariants.String
+  | __AlgebraicTypeVariants.Bool
+  | __AlgebraicTypeVariants.I8
+  | __AlgebraicTypeVariants.U8
+  | __AlgebraicTypeVariants.I16
+  | __AlgebraicTypeVariants.U16
+  | __AlgebraicTypeVariants.I32
+  | __AlgebraicTypeVariants.U32
+  | __AlgebraicTypeVariants.I64
+  | __AlgebraicTypeVariants.U64
+  | __AlgebraicTypeVariants.I128
+  | __AlgebraicTypeVariants.U128
+  | __AlgebraicTypeVariants.I256
+  | __AlgebraicTypeVariants.U256
+  | __AlgebraicTypeVariants.F32
+  | __AlgebraicTypeVariants.F64;
 
 export default __AlgebraicType;
-

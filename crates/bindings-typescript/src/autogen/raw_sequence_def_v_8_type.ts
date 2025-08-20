@@ -31,15 +31,15 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type RawSequenceDefV8 = {
-  sequenceName: string,
-  colPos: number,
-  increment: bigint,
-  start: bigint | undefined,
-  minValue: bigint | undefined,
-  maxValue: bigint | undefined,
-  allocated: bigint,
+  sequenceName: string;
+  colPos: number;
+  increment: bigint;
+  start: bigint | undefined;
+  minValue: bigint | undefined;
+  maxValue: bigint | undefined;
+  allocated: bigint;
 };
 export default RawSequenceDefV8;
 
@@ -48,31 +48,47 @@ export default RawSequenceDefV8;
  */
 export namespace RawSequenceDefV8 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "sequenceName", algebraicType: AlgebraicType.String},
-        { name: "colPos", algebraicType: AlgebraicType.U16},
-        { name: "increment", algebraicType: AlgebraicType.I128},
-        { name: "start", algebraicType: AlgebraicType.createOptionType(AlgebraicType.I128)},
-        { name: "minValue", algebraicType: AlgebraicType.createOptionType(AlgebraicType.I128)},
-        { name: "maxValue", algebraicType: AlgebraicType.createOptionType(AlgebraicType.I128)},
-        { name: "allocated", algebraicType: AlgebraicType.I128},
-      ]
+        { name: 'sequenceName', algebraicType: AlgebraicType.String },
+        { name: 'colPos', algebraicType: AlgebraicType.U16 },
+        { name: 'increment', algebraicType: AlgebraicType.I128 },
+        {
+          name: 'start',
+          algebraicType: AlgebraicType.createOptionType(AlgebraicType.I128),
+        },
+        {
+          name: 'minValue',
+          algebraicType: AlgebraicType.createOptionType(AlgebraicType.I128),
+        },
+        {
+          name: 'maxValue',
+          algebraicType: AlgebraicType.createOptionType(AlgebraicType.I128),
+        },
+        { name: 'allocated', algebraicType: AlgebraicType.I128 },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: RawSequenceDefV8): void {
-    AlgebraicType.serializeValue(writer, RawSequenceDefV8.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: RawSequenceDefV8
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      RawSequenceDefV8.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawSequenceDefV8 {
-    return AlgebraicType.deserializeValue(reader, RawSequenceDefV8.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawSequenceDefV8.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

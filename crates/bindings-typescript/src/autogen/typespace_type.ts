@@ -31,11 +31,11 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { AlgebraicType as __AlgebraicType } from "./algebraic_type_type";
+} from '../index';
+import { AlgebraicType as __AlgebraicType } from './algebraic_type_type';
 
 export type Typespace = {
-  types: __AlgebraicType[],
+  types: __AlgebraicType[];
 };
 export default Typespace;
 
@@ -44,25 +44,34 @@ export default Typespace;
  */
 export namespace Typespace {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "types", algebraicType: AlgebraicType.Array(__AlgebraicType.getTypeScriptAlgebraicType())},
-      ]
+        {
+          name: 'types',
+          algebraicType: AlgebraicType.Array(
+            __AlgebraicType.getTypeScriptAlgebraicType()
+          ),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: Typespace): void {
-    AlgebraicType.serializeValue(writer, Typespace.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      Typespace.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): Typespace {
-    return AlgebraicType.deserializeValue(reader, Typespace.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      Typespace.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

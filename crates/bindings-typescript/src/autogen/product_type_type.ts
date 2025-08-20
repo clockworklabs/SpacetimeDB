@@ -31,11 +31,11 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { ProductTypeElement as __ProductTypeElement } from "./product_type_element_type";
+} from '../index';
+import { ProductTypeElement as __ProductTypeElement } from './product_type_element_type';
 
 export type ProductType = {
-  elements: __ProductTypeElement[],
+  elements: __ProductTypeElement[];
 };
 export default ProductType;
 
@@ -44,25 +44,34 @@ export default ProductType;
  */
 export namespace ProductType {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "elements", algebraicType: AlgebraicType.Array(__ProductTypeElement.getTypeScriptAlgebraicType())},
-      ]
+        {
+          name: 'elements',
+          algebraicType: AlgebraicType.Array(
+            __ProductTypeElement.getTypeScriptAlgebraicType()
+          ),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: ProductType): void {
-    AlgebraicType.serializeValue(writer, ProductType.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      ProductType.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): ProductType {
-    return AlgebraicType.deserializeValue(reader, ProductType.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      ProductType.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

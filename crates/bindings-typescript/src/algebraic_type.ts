@@ -5,7 +5,10 @@ import type BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
 import { Identity } from './identity';
 import ScheduleAt from './schedule_at';
-import { __AlgebraicType, type __AlgebraicType as __AlgebraicTypeType } from './autogen/algebraic_type_type';
+import {
+  __AlgebraicType,
+  type __AlgebraicType as __AlgebraicTypeType,
+} from './autogen/algebraic_type_type';
 import { ProductType } from './autogen/product_type_type';
 import { SumType } from './autogen/sum_type_type';
 
@@ -29,7 +32,7 @@ export * from './autogen/product_type_element_type';
 export * from './autogen/sum_type_variant_type';
 export { type __AlgebraicTypeVariants as AlgebraicTypeVariants } from './autogen/algebraic_type_type';
 
-declare module "./autogen/product_type_type" {
+declare module './autogen/product_type_type' {
   /**
    * A structural product type  of the factors given by `elements`.
    *
@@ -56,20 +59,41 @@ declare module "./autogen/product_type_type" {
    * [structural]: https://en.wikipedia.org/wiki/Structural_type_system
    */
   export namespace ProductType {
-    export function serializeValue(writer: BinaryWriter, ty: ProductType, value: any): void;
-    export function deserializeValue(reader: BinaryReader, ty: ProductType): any;
+    export function serializeValue(
+      writer: BinaryWriter,
+      ty: ProductType,
+      value: any
+    ): void;
+    export function deserializeValue(
+      reader: BinaryReader,
+      ty: ProductType
+    ): any;
 
-    export function intoMapKey(ty: ProductType, value: any): ComparablePrimitive;
+    export function intoMapKey(
+      ty: ProductType,
+      value: any
+    ): ComparablePrimitive;
   }
 }
 
-ProductType.serializeValue = function (writer: BinaryWriter, ty: ProductType, value: any): void {
+ProductType.serializeValue = function (
+  writer: BinaryWriter,
+  ty: ProductType,
+  value: any
+): void {
   for (let element of ty.elements) {
-    __AlgebraicType.serializeValue(writer, element.algebraicType, value[element.name!]);
+    __AlgebraicType.serializeValue(
+      writer,
+      element.algebraicType,
+      value[element.name!]
+    );
   }
-}
+};
 
-ProductType.deserializeValue = function (reader: BinaryReader, ty: ProductType): { [key: string]: any } {
+ProductType.deserializeValue = function (
+  reader: BinaryReader,
+  ty: ProductType
+): { [key: string]: any } {
   let result: { [key: string]: any } = {};
   if (ty.elements.length === 1) {
     if (ty.elements[0].name === '__time_duration_micros__') {
@@ -90,14 +114,20 @@ ProductType.deserializeValue = function (reader: BinaryReader, ty: ProductType):
   }
 
   for (let element of ty.elements) {
-    result[element.name!] = __AlgebraicType.deserializeValue(reader, element.algebraicType);
+    result[element.name!] = __AlgebraicType.deserializeValue(
+      reader,
+      element.algebraicType
+    );
   }
   return result;
-}
+};
 
 export { ProductType };
 
-ProductType.intoMapKey = function (ty: ProductType, value: any): ComparablePrimitive {
+ProductType.intoMapKey = function (
+  ty: ProductType,
+  value: any
+): ComparablePrimitive {
   if (ty.elements.length === 1) {
     if (ty.elements[0].name === '__time_duration_micros__') {
       return (value as TimeDuration).__time_duration_micros__;
@@ -119,9 +149,9 @@ ProductType.intoMapKey = function (ty: ProductType, value: any): ComparablePrimi
   const writer = new BinaryWriter(10);
   AlgebraicType.serializeValue(writer, AlgebraicType.Product(ty), value);
   return writer.toBase64();
-}
+};
 
-declare module "./autogen/sum_type_type" {
+declare module './autogen/sum_type_type' {
   /**
    * Unlike most languages, sums in SATS are *[structural]* and not nominal.
    * When checking whether two nominal types are the same,
@@ -147,12 +177,20 @@ declare module "./autogen/sum_type_type" {
    * [structural]: https://en.wikipedia.org/wiki/Structural_type_system
    */
   export namespace SumType {
-    export function serializeValue(writer: BinaryWriter, ty: SumType, value: any): void;
+    export function serializeValue(
+      writer: BinaryWriter,
+      ty: SumType,
+      value: any
+    ): void;
     export function deserializeValue(reader: BinaryReader, ty: SumType): any;
   }
 }
 
-SumType.serializeValue = function (writer: BinaryWriter, ty: SumType, value: any): void {
+SumType.serializeValue = function (
+  writer: BinaryWriter,
+  ty: SumType,
+  value: any
+): void {
   if (
     ty.variants.length == 2 &&
     ty.variants[0].name === 'some' &&
@@ -160,7 +198,11 @@ SumType.serializeValue = function (writer: BinaryWriter, ty: SumType, value: any
   ) {
     if (value !== null && value !== undefined) {
       writer.writeByte(0);
-      __AlgebraicType.serializeValue(writer, ty.variants[0].algebraicType, value);
+      __AlgebraicType.serializeValue(
+        writer,
+        ty.variants[0].algebraicType,
+        value
+      );
     } else {
       writer.writeByte(1);
     }
@@ -171,9 +213,13 @@ SumType.serializeValue = function (writer: BinaryWriter, ty: SumType, value: any
       throw `Can't serialize a sum type, couldn't find ${value.tag} tag`;
     }
     writer.writeU8(index);
-    __AlgebraicType.serializeValue(writer, ty.variants[index].algebraicType, value['value']);
+    __AlgebraicType.serializeValue(
+      writer,
+      ty.variants[index].algebraicType,
+      value['value']
+    );
   }
-}
+};
 
 SumType.deserializeValue = function (reader: BinaryReader, ty: SumType): any {
   let tag = reader.readU8();
@@ -186,7 +232,10 @@ SumType.deserializeValue = function (reader: BinaryReader, ty: SumType): any {
     ty.variants[1].name === 'none'
   ) {
     if (tag === 0) {
-      return __AlgebraicType.deserializeValue(reader, ty.variants[0].algebraicType);
+      return __AlgebraicType.deserializeValue(
+        reader,
+        ty.variants[0].algebraicType
+      );
     } else if (tag === 1) {
       return undefined;
     } else {
@@ -197,11 +246,11 @@ SumType.deserializeValue = function (reader: BinaryReader, ty: SumType): any {
     let value = __AlgebraicType.deserializeValue(reader, variant.algebraicType);
     return { tag: variant.name, value };
   }
-}
+};
 
 export { SumType };
 
-declare module "./autogen/algebraic_type_type" {
+declare module './autogen/algebraic_type_type' {
   /**
    * The SpacetimeDB Algebraic Type System (SATS) is a structural type system in
    * which a nominal type system can be constructed.
@@ -210,14 +259,23 @@ declare module "./autogen/algebraic_type_type" {
    * primitive types into a single type system.
    */
   export namespace __AlgebraicType {
-    export function createOptionType(innerType: __AlgebraicType): __AlgebraicType;
+    export function createOptionType(
+      innerType: __AlgebraicType
+    ): __AlgebraicType;
     export function createIdentityType(): __AlgebraicType;
     export function createConnectionIdType(): __AlgebraicType;
     export function createScheduleAtType(): __AlgebraicType;
     export function createTimestampType(): __AlgebraicType;
     export function createTimeDurationType(): __AlgebraicType;
-    export function serializeValue(writer: BinaryWriter, ty: __AlgebraicType, value: any): void;
-    export function deserializeValue(reader: BinaryReader, ty: __AlgebraicType): any;
+    export function serializeValue(
+      writer: BinaryWriter,
+      ty: __AlgebraicType,
+      value: any
+    ): void;
+    export function deserializeValue(
+      reader: BinaryReader,
+      ty: __AlgebraicType
+    ): any;
 
     /**
      * Convert a value of the algebraic type into something that can be used as a key in a map.
@@ -226,57 +284,78 @@ declare module "./autogen/algebraic_type_type" {
      * @param value A value of the algebraic type
      * @returns Something that can be used as a key in a map.
      */
-    export function intoMapKey(ty: __AlgebraicType, value: any): ComparablePrimitive;
+    export function intoMapKey(
+      ty: __AlgebraicType,
+      value: any
+    ): ComparablePrimitive;
   }
 }
 
-__AlgebraicType.createOptionType = function (innerType: __AlgebraicType): __AlgebraicType {
+__AlgebraicType.createOptionType = function (
+  innerType: __AlgebraicType
+): __AlgebraicType {
   return __AlgebraicType.Sum({
     variants: [
-      { name: "some", algebraicType: innerType },
-      { name: "none", algebraicType: __AlgebraicType.Product({ elements: [] }) }
-    ]
+      { name: 'some', algebraicType: innerType },
+      {
+        name: 'none',
+        algebraicType: __AlgebraicType.Product({ elements: [] }),
+      },
+    ],
   });
-}
+};
 
 __AlgebraicType.createIdentityType = function (): __AlgebraicType {
-  return __AlgebraicType.Product({ elements: [
-    { name: "__identity__", algebraicType: __AlgebraicType.U256 }
-  ]})
-}
+  return __AlgebraicType.Product({
+    elements: [{ name: '__identity__', algebraicType: __AlgebraicType.U256 }],
+  });
+};
 
 __AlgebraicType.createConnectionIdType = function (): __AlgebraicType {
-  return __AlgebraicType.Product({ elements: [
-    { name: "__connection_id__", algebraicType: __AlgebraicType.U128 }
-  ]});
-}
+  return __AlgebraicType.Product({
+    elements: [
+      { name: '__connection_id__', algebraicType: __AlgebraicType.U128 },
+    ],
+  });
+};
 
 __AlgebraicType.createScheduleAtType = function (): __AlgebraicType {
   return ScheduleAt.getAlgebraicType();
-}
+};
 
 __AlgebraicType.createTimestampType = function (): __AlgebraicType {
-  return __AlgebraicType.Product({ elements: [
-    { name: "__timestamp_micros_since_unix_epoch__", algebraicType: __AlgebraicType.I64 }
-  ]});
-}
+  return __AlgebraicType.Product({
+    elements: [
+      {
+        name: '__timestamp_micros_since_unix_epoch__',
+        algebraicType: __AlgebraicType.I64,
+      },
+    ],
+  });
+};
 
 __AlgebraicType.createTimeDurationType = function (): __AlgebraicType {
-  return __AlgebraicType.Product({ elements: [
-    { name: "__time_duration_micros__", algebraicType: __AlgebraicType.I64 }
-  ]});
-}
+  return __AlgebraicType.Product({
+    elements: [
+      { name: '__time_duration_micros__', algebraicType: __AlgebraicType.I64 },
+    ],
+  });
+};
 
-__AlgebraicType.serializeValue = function (writer: BinaryWriter, ty: __AlgebraicType, value: any): void {
+__AlgebraicType.serializeValue = function (
+  writer: BinaryWriter,
+  ty: __AlgebraicType,
+  value: any
+): void {
   switch (ty.tag) {
-    case "Product":
+    case 'Product':
       ProductType.serializeValue(writer, ty.value, value);
       break;
-    case "Sum":
+    case 'Sum':
       SumType.serializeValue(writer, ty.value, value);
       break;
-    case "Array":
-      if (ty.value.tag === "U8") {
+    case 'Array':
+      if (ty.value.tag === 'U8') {
         writer.writeUInt8Array(value);
       } else {
         const elemType = ty.value;
@@ -286,67 +365,70 @@ __AlgebraicType.serializeValue = function (writer: BinaryWriter, ty: __Algebraic
         }
       }
       break;
-    case "Bool":
+    case 'Bool':
       writer.writeBool(value);
       break;
-    case "I8":
+    case 'I8':
       writer.writeI8(value);
       break;
-    case "U8":
+    case 'U8':
       writer.writeU8(value);
       break;
-    case "I16":
+    case 'I16':
       writer.writeI16(value);
       break;
-    case "U16":
+    case 'U16':
       writer.writeU16(value);
       break;
-    case "I32":
+    case 'I32':
       writer.writeI32(value);
       break;
-    case "U32":
+    case 'U32':
       writer.writeU32(value);
       break;
-    case "I64":
+    case 'I64':
       writer.writeI64(value);
       break;
-    case "U64":
+    case 'U64':
       writer.writeU64(value);
       break;
-    case "I128":
+    case 'I128':
       writer.writeI128(value);
       break;
-    case "U128":
+    case 'U128':
       writer.writeU128(value);
       break;
-    case "I256":
+    case 'I256':
       writer.writeI256(value);
       break;
-    case "U256":
+    case 'U256':
       writer.writeU256(value);
       break;
-    case "F32":
+    case 'F32':
       writer.writeF32(value);
       break;
-    case "F64":
+    case 'F64':
       writer.writeF64(value);
       break;
-    case "String":
+    case 'String':
       writer.writeString(value);
       break;
     default:
       throw new Error(`not implemented, ${ty.tag}`);
   }
-}
+};
 
-__AlgebraicType.deserializeValue = function (reader: BinaryReader, ty: __AlgebraicType): any {
+__AlgebraicType.deserializeValue = function (
+  reader: BinaryReader,
+  ty: __AlgebraicType
+): any {
   switch (ty.tag) {
-    case "Product":
+    case 'Product':
       return ProductType.deserializeValue(reader, ty.value);
-    case "Sum":
+    case 'Sum':
       return SumType.deserializeValue(reader, ty.value);
-    case "Array":
-      if (ty.value.tag === "U8") {
+    case 'Array':
+      if (ty.value.tag === 'U8') {
         return reader.readUInt8Array();
       } else {
         const elemType = ty.value;
@@ -357,42 +439,42 @@ __AlgebraicType.deserializeValue = function (reader: BinaryReader, ty: __Algebra
         }
         return result;
       }
-    case "Bool":
+    case 'Bool':
       return reader.readBool();
-    case "I8":
+    case 'I8':
       return reader.readI8();
-    case "U8":
+    case 'U8':
       return reader.readU8();
-    case "I16":
+    case 'I16':
       return reader.readI16();
-    case "U16":
+    case 'U16':
       return reader.readU16();
-    case "I32":
+    case 'I32':
       return reader.readI32();
-    case "U32":
+    case 'U32':
       return reader.readU32();
-    case "I64":
+    case 'I64':
       return reader.readI64();
-    case "U64":
+    case 'U64':
       return reader.readU64();
-    case "I128":
+    case 'I128':
       return reader.readI128();
-    case "U128":
+    case 'U128':
       return reader.readU128();
-    case "I256":
+    case 'I256':
       return reader.readI256();
-    case "U256":
+    case 'U256':
       return reader.readU256();
-    case "F32":
+    case 'F32':
       return reader.readF32();
-    case "F64":
+    case 'F64':
       return reader.readF64();
-    case "String":
+    case 'String':
       return reader.readString();
     default:
       throw new Error(`not implemented, ${ty.tag}`);
   }
-}
+};
 
 /**
  * Convert a value of the algebraic type into something that can be used as a key in a map.
@@ -401,31 +483,34 @@ __AlgebraicType.deserializeValue = function (reader: BinaryReader, ty: __Algebra
  * @param value A value of the algebraic type
  * @returns Something that can be used as a key in a map.
  */
-__AlgebraicType.intoMapKey = function (ty: __AlgebraicType, value: any): ComparablePrimitive {
+__AlgebraicType.intoMapKey = function (
+  ty: __AlgebraicType,
+  value: any
+): ComparablePrimitive {
   switch (ty.tag) {
-    case "U8":
-    case "U16":
-    case "U32":
-    case "U64":
-    case "U128":
-    case "U256":
-    case "I8":
-    case "I16":
-    case "I64":
-    case "I128":
-    case "F32":
-    case "F64":
-    case "String":
-    case "Bool":
+    case 'U8':
+    case 'U16':
+    case 'U32':
+    case 'U64':
+    case 'U128':
+    case 'U256':
+    case 'I8':
+    case 'I16':
+    case 'I64':
+    case 'I128':
+    case 'F32':
+    case 'F64':
+    case 'String':
+    case 'Bool':
       return value;
-    case "Product":
+    case 'Product':
       return ProductType.intoMapKey(ty.value, value);
     default:
       const writer = new BinaryWriter(10);
       this.serialize(writer, value);
       return writer.toBase64();
   }
-}
+};
 
 export type AlgebraicType = __AlgebraicTypeType;
 export const AlgebraicType: typeof __AlgebraicType = __AlgebraicType;

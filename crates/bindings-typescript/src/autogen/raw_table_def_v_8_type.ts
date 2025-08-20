@@ -31,21 +31,21 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { RawColumnDefV8 as __RawColumnDefV8 } from "./raw_column_def_v_8_type";
-import { RawIndexDefV8 as __RawIndexDefV8 } from "./raw_index_def_v_8_type";
-import { RawConstraintDefV8 as __RawConstraintDefV8 } from "./raw_constraint_def_v_8_type";
-import { RawSequenceDefV8 as __RawSequenceDefV8 } from "./raw_sequence_def_v_8_type";
+} from '../index';
+import { RawColumnDefV8 as __RawColumnDefV8 } from './raw_column_def_v_8_type';
+import { RawIndexDefV8 as __RawIndexDefV8 } from './raw_index_def_v_8_type';
+import { RawConstraintDefV8 as __RawConstraintDefV8 } from './raw_constraint_def_v_8_type';
+import { RawSequenceDefV8 as __RawSequenceDefV8 } from './raw_sequence_def_v_8_type';
 
 export type RawTableDefV8 = {
-  tableName: string,
-  columns: __RawColumnDefV8[],
-  indexes: __RawIndexDefV8[],
-  constraints: __RawConstraintDefV8[],
-  sequences: __RawSequenceDefV8[],
-  tableType: string,
-  tableAccess: string,
-  scheduled: string | undefined,
+  tableName: string;
+  columns: __RawColumnDefV8[];
+  indexes: __RawIndexDefV8[];
+  constraints: __RawConstraintDefV8[];
+  sequences: __RawSequenceDefV8[];
+  tableType: string;
+  tableAccess: string;
+  scheduled: string | undefined;
 };
 export default RawTableDefV8;
 
@@ -54,32 +54,59 @@ export default RawTableDefV8;
  */
 export namespace RawTableDefV8 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "tableName", algebraicType: AlgebraicType.String},
-        { name: "columns", algebraicType: AlgebraicType.Array(__RawColumnDefV8.getTypeScriptAlgebraicType())},
-        { name: "indexes", algebraicType: AlgebraicType.Array(__RawIndexDefV8.getTypeScriptAlgebraicType())},
-        { name: "constraints", algebraicType: AlgebraicType.Array(__RawConstraintDefV8.getTypeScriptAlgebraicType())},
-        { name: "sequences", algebraicType: AlgebraicType.Array(__RawSequenceDefV8.getTypeScriptAlgebraicType())},
-        { name: "tableType", algebraicType: AlgebraicType.String},
-        { name: "tableAccess", algebraicType: AlgebraicType.String},
-        { name: "scheduled", algebraicType: AlgebraicType.createOptionType(AlgebraicType.String)},
-      ]
+        { name: 'tableName', algebraicType: AlgebraicType.String },
+        {
+          name: 'columns',
+          algebraicType: AlgebraicType.Array(
+            __RawColumnDefV8.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'indexes',
+          algebraicType: AlgebraicType.Array(
+            __RawIndexDefV8.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'constraints',
+          algebraicType: AlgebraicType.Array(
+            __RawConstraintDefV8.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'sequences',
+          algebraicType: AlgebraicType.Array(
+            __RawSequenceDefV8.getTypeScriptAlgebraicType()
+          ),
+        },
+        { name: 'tableType', algebraicType: AlgebraicType.String },
+        { name: 'tableAccess', algebraicType: AlgebraicType.String },
+        {
+          name: 'scheduled',
+          algebraicType: AlgebraicType.createOptionType(AlgebraicType.String),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: RawTableDefV8): void {
-    AlgebraicType.serializeValue(writer, RawTableDefV8.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      RawTableDefV8.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawTableDefV8 {
-    return AlgebraicType.deserializeValue(reader, RawTableDefV8.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawTableDefV8.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

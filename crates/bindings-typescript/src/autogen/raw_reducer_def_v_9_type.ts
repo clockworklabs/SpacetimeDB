@@ -31,14 +31,14 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { ProductType as __ProductType } from "./product_type_type";
-import { Lifecycle as __Lifecycle } from "./lifecycle_type";
+} from '../index';
+import { ProductType as __ProductType } from './product_type_type';
+import { Lifecycle as __Lifecycle } from './lifecycle_type';
 
 export type RawReducerDefV9 = {
-  name: string,
-  params: __ProductType,
-  lifecycle: __Lifecycle | undefined,
+  name: string;
+  params: __ProductType;
+  lifecycle: __Lifecycle | undefined;
 };
 export default RawReducerDefV9;
 
@@ -47,27 +47,42 @@ export default RawReducerDefV9;
  */
 export namespace RawReducerDefV9 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.String},
-        { name: "params", algebraicType: __ProductType.getTypeScriptAlgebraicType()},
-        { name: "lifecycle", algebraicType: AlgebraicType.createOptionType(__Lifecycle.getTypeScriptAlgebraicType())},
-      ]
+        { name: 'name', algebraicType: AlgebraicType.String },
+        {
+          name: 'params',
+          algebraicType: __ProductType.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'lifecycle',
+          algebraicType: AlgebraicType.createOptionType(
+            __Lifecycle.getTypeScriptAlgebraicType()
+          ),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: RawReducerDefV9): void {
-    AlgebraicType.serializeValue(writer, RawReducerDefV9.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: RawReducerDefV9
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      RawReducerDefV9.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawReducerDefV9 {
-    return AlgebraicType.deserializeValue(reader, RawReducerDefV9.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawReducerDefV9.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

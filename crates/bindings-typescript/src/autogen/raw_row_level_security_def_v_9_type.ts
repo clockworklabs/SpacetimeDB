@@ -31,9 +31,9 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type RawRowLevelSecurityDefV9 = {
-  sql: string,
+  sql: string;
 };
 export default RawRowLevelSecurityDefV9;
 
@@ -42,25 +42,30 @@ export default RawRowLevelSecurityDefV9;
  */
 export namespace RawRowLevelSecurityDefV9 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
-      elements: [
-        { name: "sql", algebraicType: AlgebraicType.String},
-      ]
+      elements: [{ name: 'sql', algebraicType: AlgebraicType.String }],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: RawRowLevelSecurityDefV9): void {
-    AlgebraicType.serializeValue(writer, RawRowLevelSecurityDefV9.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: RawRowLevelSecurityDefV9
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      RawRowLevelSecurityDefV9.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawRowLevelSecurityDefV9 {
-    return AlgebraicType.deserializeValue(reader, RawRowLevelSecurityDefV9.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawRowLevelSecurityDefV9.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

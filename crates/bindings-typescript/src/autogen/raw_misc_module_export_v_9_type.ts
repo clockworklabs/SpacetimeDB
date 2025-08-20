@@ -31,7 +31,7 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
 // the tagged union.
@@ -39,8 +39,7 @@ import {
 // interprets `Foo` in the statement `const x: Foo.Variant = ...` as the type `Foo` instead of
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
-export namespace RawMiscModuleExportV9Variants {
-}
+export namespace RawMiscModuleExportV9Variants {}
 
 // A namespace for generated variants and helper functions.
 export namespace RawMiscModuleExportV9 {
@@ -53,23 +52,30 @@ export namespace RawMiscModuleExportV9 {
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
-      variants: [
-      ]
+      variants: [],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: RawMiscModuleExportV9): void {
-      AlgebraicType.serializeValue(writer, RawMiscModuleExportV9.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: RawMiscModuleExportV9
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      RawMiscModuleExportV9.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawMiscModuleExportV9 {
-      return AlgebraicType.deserializeValue(reader, RawMiscModuleExportV9.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawMiscModuleExportV9.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `RawMiscModuleExportV9`.
 export type RawMiscModuleExportV9 = never;
 
 export default RawMiscModuleExportV9;
-

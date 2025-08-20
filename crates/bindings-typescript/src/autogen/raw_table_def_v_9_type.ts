@@ -31,24 +31,24 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { RawIndexDefV9 as __RawIndexDefV9 } from "./raw_index_def_v_9_type";
-import { RawConstraintDefV9 as __RawConstraintDefV9 } from "./raw_constraint_def_v_9_type";
-import { RawSequenceDefV9 as __RawSequenceDefV9 } from "./raw_sequence_def_v_9_type";
-import { RawScheduleDefV9 as __RawScheduleDefV9 } from "./raw_schedule_def_v_9_type";
-import { TableType as __TableType } from "./table_type_type";
-import { TableAccess as __TableAccess } from "./table_access_type";
+} from '../index';
+import { RawIndexDefV9 as __RawIndexDefV9 } from './raw_index_def_v_9_type';
+import { RawConstraintDefV9 as __RawConstraintDefV9 } from './raw_constraint_def_v_9_type';
+import { RawSequenceDefV9 as __RawSequenceDefV9 } from './raw_sequence_def_v_9_type';
+import { RawScheduleDefV9 as __RawScheduleDefV9 } from './raw_schedule_def_v_9_type';
+import { TableType as __TableType } from './table_type_type';
+import { TableAccess as __TableAccess } from './table_access_type';
 
 export type RawTableDefV9 = {
-  name: string,
-  productTypeRef: number,
-  primaryKey: number[],
-  indexes: __RawIndexDefV9[],
-  constraints: __RawConstraintDefV9[],
-  sequences: __RawSequenceDefV9[],
-  schedule: __RawScheduleDefV9 | undefined,
-  tableType: __TableType,
-  tableAccess: __TableAccess,
+  name: string;
+  productTypeRef: number;
+  primaryKey: number[];
+  indexes: __RawIndexDefV9[];
+  constraints: __RawConstraintDefV9[];
+  sequences: __RawSequenceDefV9[];
+  schedule: __RawScheduleDefV9 | undefined;
+  tableType: __TableType;
+  tableAccess: __TableAccess;
 };
 export default RawTableDefV9;
 
@@ -57,33 +57,66 @@ export default RawTableDefV9;
  */
 export namespace RawTableDefV9 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.String},
-        { name: "productTypeRef", algebraicType: AlgebraicType.U32},
-        { name: "primaryKey", algebraicType: AlgebraicType.Array(AlgebraicType.U16)},
-        { name: "indexes", algebraicType: AlgebraicType.Array(__RawIndexDefV9.getTypeScriptAlgebraicType())},
-        { name: "constraints", algebraicType: AlgebraicType.Array(__RawConstraintDefV9.getTypeScriptAlgebraicType())},
-        { name: "sequences", algebraicType: AlgebraicType.Array(__RawSequenceDefV9.getTypeScriptAlgebraicType())},
-        { name: "schedule", algebraicType: AlgebraicType.createOptionType(__RawScheduleDefV9.getTypeScriptAlgebraicType())},
-        { name: "tableType", algebraicType: __TableType.getTypeScriptAlgebraicType()},
-        { name: "tableAccess", algebraicType: __TableAccess.getTypeScriptAlgebraicType()},
-      ]
+        { name: 'name', algebraicType: AlgebraicType.String },
+        { name: 'productTypeRef', algebraicType: AlgebraicType.U32 },
+        {
+          name: 'primaryKey',
+          algebraicType: AlgebraicType.Array(AlgebraicType.U16),
+        },
+        {
+          name: 'indexes',
+          algebraicType: AlgebraicType.Array(
+            __RawIndexDefV9.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'constraints',
+          algebraicType: AlgebraicType.Array(
+            __RawConstraintDefV9.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'sequences',
+          algebraicType: AlgebraicType.Array(
+            __RawSequenceDefV9.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'schedule',
+          algebraicType: AlgebraicType.createOptionType(
+            __RawScheduleDefV9.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'tableType',
+          algebraicType: __TableType.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'tableAccess',
+          algebraicType: __TableAccess.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: RawTableDefV9): void {
-    AlgebraicType.serializeValue(writer, RawTableDefV9.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      RawTableDefV9.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawTableDefV9 {
-    return AlgebraicType.deserializeValue(reader, RawTableDefV9.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawTableDefV9.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

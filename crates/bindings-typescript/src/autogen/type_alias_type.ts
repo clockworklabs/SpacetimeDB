@@ -31,10 +31,10 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type TypeAlias = {
-  name: string,
-  ty: number,
+  name: string;
+  ty: number;
 };
 export default TypeAlias;
 
@@ -43,26 +43,30 @@ export default TypeAlias;
  */
 export namespace TypeAlias {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.String},
-        { name: "ty", algebraicType: AlgebraicType.U32},
-      ]
+        { name: 'name', algebraicType: AlgebraicType.String },
+        { name: 'ty', algebraicType: AlgebraicType.U32 },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: TypeAlias): void {
-    AlgebraicType.serializeValue(writer, TypeAlias.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      TypeAlias.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): TypeAlias {
-    return AlgebraicType.deserializeValue(reader, TypeAlias.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      TypeAlias.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-
