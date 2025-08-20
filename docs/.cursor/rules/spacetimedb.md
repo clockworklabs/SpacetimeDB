@@ -1,0 +1,4 @@
+- Before implementing SpacetimeDB code, reference the LLMs text and ensure you are using the proper syntax.
+- If you aren't certain about the SpacetimeDB implementation, ask the user
+- You're executing commands in Powershell, so make sure if you want to execute multiple commands to use ; instead of &&
+- All your commands that you execute start from the project directory, so make sure you take that into account when you're navigating directories.
