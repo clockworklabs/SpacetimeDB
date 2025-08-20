@@ -104,8 +104,8 @@ export namespace CompressableQueryUpdate {
 
 // The tagged union or sum type for the algebraic type `CompressableQueryUpdate`.
 export type CompressableQueryUpdate =
-  | CompressableQueryUpdate.Uncompressed
-  | CompressableQueryUpdate.Brotli
-  | CompressableQueryUpdate.Gzip;
+  | CompressableQueryUpdateVariants.Uncompressed
+  | CompressableQueryUpdateVariants.Brotli
+  | CompressableQueryUpdateVariants.Gzip;
 
 export default CompressableQueryUpdate;

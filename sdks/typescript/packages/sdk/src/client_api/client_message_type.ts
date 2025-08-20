@@ -155,12 +155,12 @@ export namespace ClientMessage {
 
 // The tagged union or sum type for the algebraic type `ClientMessage`.
 export type ClientMessage =
-  | ClientMessage.CallReducer
-  | ClientMessage.Subscribe
-  | ClientMessage.OneOffQuery
-  | ClientMessage.SubscribeSingle
-  | ClientMessage.SubscribeMulti
-  | ClientMessage.Unsubscribe
-  | ClientMessage.UnsubscribeMulti;
+  | ClientMessageVariants.CallReducer
+  | ClientMessageVariants.Subscribe
+  | ClientMessageVariants.OneOffQuery
+  | ClientMessageVariants.SubscribeSingle
+  | ClientMessageVariants.SubscribeMulti
+  | ClientMessageVariants.Unsubscribe
+  | ClientMessageVariants.UnsubscribeMulti;
 
 export default ClientMessage;
