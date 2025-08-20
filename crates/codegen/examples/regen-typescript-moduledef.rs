@@ -40,6 +40,7 @@ fn main() -> anyhow::Result<()> {
                 return Ok(());
             }
             let code = regex_replace!(&code, r"@clockworklabs/spacetimedb-sdk", "../index");
+            let code = &code.replace("AlgebraicType as __AlgebraicType", "__AlgebraicType");
             fs::write(dir.join(filename), code.as_bytes())
         })?;
 
