@@ -8,4 +8,3 @@ export * from './time_duration';
 export * from './timestamp';
 export * from './utils';
 export * from './identity';
-

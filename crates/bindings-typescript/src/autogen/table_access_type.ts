@@ -31,7 +31,7 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
 // the tagged union.
@@ -40,8 +40,8 @@ import {
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
 export namespace TableAccessVariants {
-  export type Public = { tag: "Public" };
-  export type Private = { tag: "Private" };
+  export type Public = { tag: 'Public' };
+  export type Private = { tag: 'Private' };
 }
 
 // A namespace for generated variants and helper functions.
@@ -52,31 +52,43 @@ export namespace TableAccess {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const Public: { tag: "Public" } = { tag: "Public" };
-  export const Private: { tag: "Private" } = { tag: "Private" };
+  export const Public: { tag: 'Public' } = { tag: 'Public' };
+  export const Private: { tag: 'Private' } = { tag: 'Private' };
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
-        { name: "Public", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "Private", algebraicType: AlgebraicType.Product({ elements: [] }) },
-      ]
+        {
+          name: 'Public',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+        {
+          name: 'Private',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: TableAccess): void {
-      AlgebraicType.serializeValue(writer, TableAccess.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      TableAccess.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): TableAccess {
-      return AlgebraicType.deserializeValue(reader, TableAccess.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      TableAccess.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `TableAccess`.
-export type TableAccess = TableAccessVariants.Public |
-  TableAccessVariants.Private;
+export type TableAccess =
+  | TableAccessVariants.Public
+  | TableAccessVariants.Private;
 
 export default TableAccess;
-

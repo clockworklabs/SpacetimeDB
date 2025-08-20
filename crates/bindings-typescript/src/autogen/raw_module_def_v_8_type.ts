@@ -31,17 +31,17 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { Typespace as __Typespace } from "./typespace_type";
-import { TableDesc as __TableDesc } from "./table_desc_type";
-import { ReducerDef as __ReducerDef } from "./reducer_def_type";
-import { MiscModuleExport as __MiscModuleExport } from "./misc_module_export_type";
+} from '../index';
+import { Typespace as __Typespace } from './typespace_type';
+import { TableDesc as __TableDesc } from './table_desc_type';
+import { ReducerDef as __ReducerDef } from './reducer_def_type';
+import { MiscModuleExport as __MiscModuleExport } from './misc_module_export_type';
 
 export type RawModuleDefV8 = {
-  typespace: __Typespace,
-  tables: __TableDesc[],
-  reducers: __ReducerDef[],
-  miscExports: __MiscModuleExport[],
+  typespace: __Typespace;
+  tables: __TableDesc[];
+  reducers: __ReducerDef[];
+  miscExports: __MiscModuleExport[];
 };
 export default RawModuleDefV8;
 
@@ -50,28 +50,50 @@ export default RawModuleDefV8;
  */
 export namespace RawModuleDefV8 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "typespace", algebraicType: __Typespace.getTypeScriptAlgebraicType()},
-        { name: "tables", algebraicType: AlgebraicType.Array(__TableDesc.getTypeScriptAlgebraicType())},
-        { name: "reducers", algebraicType: AlgebraicType.Array(__ReducerDef.getTypeScriptAlgebraicType())},
-        { name: "miscExports", algebraicType: AlgebraicType.Array(__MiscModuleExport.getTypeScriptAlgebraicType())},
-      ]
+        {
+          name: 'typespace',
+          algebraicType: __Typespace.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'tables',
+          algebraicType: AlgebraicType.Array(
+            __TableDesc.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'reducers',
+          algebraicType: AlgebraicType.Array(
+            __ReducerDef.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'miscExports',
+          algebraicType: AlgebraicType.Array(
+            __MiscModuleExport.getTypeScriptAlgebraicType()
+          ),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: RawModuleDefV8): void {
-    AlgebraicType.serializeValue(writer, RawModuleDefV8.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      RawModuleDefV8.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawModuleDefV8 {
-    return AlgebraicType.deserializeValue(reader, RawModuleDefV8.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawModuleDefV8.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

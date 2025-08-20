@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { AlgebraicType as __AlgebraicType } from "./algebraic_type_type";
+} from '../index';
+import { AlgebraicType as __AlgebraicType } from './algebraic_type_type';
 
 export type RawColumnDefV8 = {
-  colName: string,
-  colType: __AlgebraicType,
+  colName: string;
+  colType: __AlgebraicType;
 };
 export default RawColumnDefV8;
 
@@ -45,26 +45,33 @@ export default RawColumnDefV8;
  */
 export namespace RawColumnDefV8 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "colName", algebraicType: AlgebraicType.String},
-        { name: "colType", algebraicType: __AlgebraicType.getTypeScriptAlgebraicType()},
-      ]
+        { name: 'colName', algebraicType: AlgebraicType.String },
+        {
+          name: 'colType',
+          algebraicType: __AlgebraicType.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: RawColumnDefV8): void {
-    AlgebraicType.serializeValue(writer, RawColumnDefV8.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      RawColumnDefV8.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawColumnDefV8 {
-    return AlgebraicType.deserializeValue(reader, RawColumnDefV8.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawColumnDefV8.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

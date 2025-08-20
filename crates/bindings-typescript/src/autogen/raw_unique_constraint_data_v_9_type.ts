@@ -31,9 +31,9 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type RawUniqueConstraintDataV9 = {
-  columns: number[],
+  columns: number[];
 };
 export default RawUniqueConstraintDataV9;
 
@@ -42,25 +42,35 @@ export default RawUniqueConstraintDataV9;
  */
 export namespace RawUniqueConstraintDataV9 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "columns", algebraicType: AlgebraicType.Array(AlgebraicType.U16)},
-      ]
+        {
+          name: 'columns',
+          algebraicType: AlgebraicType.Array(AlgebraicType.U16),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: RawUniqueConstraintDataV9): void {
-    AlgebraicType.serializeValue(writer, RawUniqueConstraintDataV9.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: RawUniqueConstraintDataV9
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      RawUniqueConstraintDataV9.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawUniqueConstraintDataV9 {
-    return AlgebraicType.deserializeValue(reader, RawUniqueConstraintDataV9.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawUniqueConstraintDataV9.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

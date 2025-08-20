@@ -31,11 +31,11 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type RawConstraintDefV8 = {
-  constraintName: string,
-  constraints: number,
-  columns: number[],
+  constraintName: string;
+  constraints: number;
+  columns: number[];
 };
 export default RawConstraintDefV8;
 
@@ -44,27 +44,37 @@ export default RawConstraintDefV8;
  */
 export namespace RawConstraintDefV8 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "constraintName", algebraicType: AlgebraicType.String},
-        { name: "constraints", algebraicType: AlgebraicType.U8},
-        { name: "columns", algebraicType: AlgebraicType.Array(AlgebraicType.U16)},
-      ]
+        { name: 'constraintName', algebraicType: AlgebraicType.String },
+        { name: 'constraints', algebraicType: AlgebraicType.U8 },
+        {
+          name: 'columns',
+          algebraicType: AlgebraicType.Array(AlgebraicType.U16),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: RawConstraintDefV8): void {
-    AlgebraicType.serializeValue(writer, RawConstraintDefV8.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: RawConstraintDefV8
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      RawConstraintDefV8.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawConstraintDefV8 {
-    return AlgebraicType.deserializeValue(reader, RawConstraintDefV8.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawConstraintDefV8.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

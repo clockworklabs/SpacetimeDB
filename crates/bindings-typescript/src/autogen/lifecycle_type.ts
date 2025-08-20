@@ -31,7 +31,7 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
 // the tagged union.
@@ -40,9 +40,9 @@ import {
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
 export namespace LifecycleVariants {
-  export type Init = { tag: "Init" };
-  export type OnConnect = { tag: "OnConnect" };
-  export type OnDisconnect = { tag: "OnDisconnect" };
+  export type Init = { tag: 'Init' };
+  export type OnConnect = { tag: 'OnConnect' };
+  export type OnDisconnect = { tag: 'OnDisconnect' };
 }
 
 // A namespace for generated variants and helper functions.
@@ -53,34 +53,49 @@ export namespace Lifecycle {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const Init: { tag: "Init" } = { tag: "Init" };
-  export const OnConnect: { tag: "OnConnect" } = { tag: "OnConnect" };
-  export const OnDisconnect: { tag: "OnDisconnect" } = { tag: "OnDisconnect" };
+  export const Init: { tag: 'Init' } = { tag: 'Init' };
+  export const OnConnect: { tag: 'OnConnect' } = { tag: 'OnConnect' };
+  export const OnDisconnect: { tag: 'OnDisconnect' } = { tag: 'OnDisconnect' };
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
-        { name: "Init", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "OnConnect", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "OnDisconnect", algebraicType: AlgebraicType.Product({ elements: [] }) },
-      ]
+        {
+          name: 'Init',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+        {
+          name: 'OnConnect',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+        {
+          name: 'OnDisconnect',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: Lifecycle): void {
-      AlgebraicType.serializeValue(writer, Lifecycle.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      Lifecycle.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): Lifecycle {
-      return AlgebraicType.deserializeValue(reader, Lifecycle.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      Lifecycle.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `Lifecycle`.
-export type Lifecycle = LifecycleVariants.Init |
-  LifecycleVariants.OnConnect |
-  LifecycleVariants.OnDisconnect;
+export type Lifecycle =
+  | LifecycleVariants.Init
+  | LifecycleVariants.OnConnect
+  | LifecycleVariants.OnDisconnect;
 
 export default Lifecycle;
-

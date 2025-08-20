@@ -31,8 +31,8 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { TypeAlias as __TypeAlias } from "./type_alias_type";
+} from '../index';
+import { TypeAlias as __TypeAlias } from './type_alias_type';
 
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
@@ -42,7 +42,7 @@ import { TypeAlias as __TypeAlias } from "./type_alias_type";
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
 export namespace MiscModuleExportVariants {
-  export type TypeAlias = { tag: "TypeAlias", value: __TypeAlias };
+  export type TypeAlias = { tag: 'TypeAlias'; value: __TypeAlias };
 }
 
 // A namespace for generated variants and helper functions.
@@ -53,28 +53,42 @@ export namespace MiscModuleExport {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const TypeAlias = (value: __TypeAlias): MiscModuleExport => ({ tag: "TypeAlias", value });
+  export const TypeAlias = (value: __TypeAlias): MiscModuleExport => ({
+    tag: 'TypeAlias',
+    value,
+  });
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
-        { name: "TypeAlias", algebraicType: __TypeAlias.getTypeScriptAlgebraicType() },
-      ]
+        {
+          name: 'TypeAlias',
+          algebraicType: __TypeAlias.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: MiscModuleExport): void {
-      AlgebraicType.serializeValue(writer, MiscModuleExport.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: MiscModuleExport
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      MiscModuleExport.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): MiscModuleExport {
-      return AlgebraicType.deserializeValue(reader, MiscModuleExport.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      MiscModuleExport.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `MiscModuleExport`.
 export type MiscModuleExport = MiscModuleExportVariants.TypeAlias;
 
 export default MiscModuleExport;
-

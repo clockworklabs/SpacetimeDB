@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { ProductTypeElement as __ProductTypeElement } from "./product_type_element_type";
+} from '../index';
+import { ProductTypeElement as __ProductTypeElement } from './product_type_element_type';
 
 export type ReducerDef = {
-  name: string,
-  args: __ProductTypeElement[],
+  name: string;
+  args: __ProductTypeElement[];
 };
 export default ReducerDef;
 
@@ -45,26 +45,35 @@ export default ReducerDef;
  */
 export namespace ReducerDef {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.String},
-        { name: "args", algebraicType: AlgebraicType.Array(__ProductTypeElement.getTypeScriptAlgebraicType())},
-      ]
+        { name: 'name', algebraicType: AlgebraicType.String },
+        {
+          name: 'args',
+          algebraicType: AlgebraicType.Array(
+            __ProductTypeElement.getTypeScriptAlgebraicType()
+          ),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: ReducerDef): void {
-    AlgebraicType.serializeValue(writer, ReducerDef.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      ReducerDef.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): ReducerDef {
-    return AlgebraicType.deserializeValue(reader, ReducerDef.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      ReducerDef.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

@@ -31,7 +31,7 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
 // the tagged union.
@@ -40,9 +40,9 @@ import {
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
 export namespace RawIndexAlgorithmVariants {
-  export type BTree = { tag: "BTree", value: number[] };
-  export type Hash = { tag: "Hash", value: number[] };
-  export type Direct = { tag: "Direct", value: number };
+  export type BTree = { tag: 'BTree'; value: number[] };
+  export type Hash = { tag: 'Hash'; value: number[] };
+  export type Direct = { tag: 'Direct'; value: number };
 }
 
 // A namespace for generated variants and helper functions.
@@ -53,34 +53,55 @@ export namespace RawIndexAlgorithm {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const BTree = (value: number[]): RawIndexAlgorithm => ({ tag: "BTree", value });
-  export const Hash = (value: number[]): RawIndexAlgorithm => ({ tag: "Hash", value });
-  export const Direct = (value: number): RawIndexAlgorithm => ({ tag: "Direct", value });
+  export const BTree = (value: number[]): RawIndexAlgorithm => ({
+    tag: 'BTree',
+    value,
+  });
+  export const Hash = (value: number[]): RawIndexAlgorithm => ({
+    tag: 'Hash',
+    value,
+  });
+  export const Direct = (value: number): RawIndexAlgorithm => ({
+    tag: 'Direct',
+    value,
+  });
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
-        { name: "BTree", algebraicType: AlgebraicType.Array(AlgebraicType.U16) },
-        { name: "Hash", algebraicType: AlgebraicType.Array(AlgebraicType.U16) },
-        { name: "Direct", algebraicType: AlgebraicType.U16 },
-      ]
+        {
+          name: 'BTree',
+          algebraicType: AlgebraicType.Array(AlgebraicType.U16),
+        },
+        { name: 'Hash', algebraicType: AlgebraicType.Array(AlgebraicType.U16) },
+        { name: 'Direct', algebraicType: AlgebraicType.U16 },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: RawIndexAlgorithm): void {
-      AlgebraicType.serializeValue(writer, RawIndexAlgorithm.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: RawIndexAlgorithm
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      RawIndexAlgorithm.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawIndexAlgorithm {
-      return AlgebraicType.deserializeValue(reader, RawIndexAlgorithm.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawIndexAlgorithm.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `RawIndexAlgorithm`.
-export type RawIndexAlgorithm = RawIndexAlgorithmVariants.BTree |
-  RawIndexAlgorithmVariants.Hash |
-  RawIndexAlgorithmVariants.Direct;
+export type RawIndexAlgorithm =
+  | RawIndexAlgorithmVariants.BTree
+  | RawIndexAlgorithmVariants.Hash
+  | RawIndexAlgorithmVariants.Direct;
 
 export default RawIndexAlgorithm;
-

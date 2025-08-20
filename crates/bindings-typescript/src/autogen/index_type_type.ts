@@ -31,7 +31,7 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
 // the tagged union.
@@ -40,8 +40,8 @@ import {
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
 export namespace IndexTypeVariants {
-  export type BTree = { tag: "BTree" };
-  export type Hash = { tag: "Hash" };
+  export type BTree = { tag: 'BTree' };
+  export type Hash = { tag: 'Hash' };
 }
 
 // A namespace for generated variants and helper functions.
@@ -52,31 +52,41 @@ export namespace IndexType {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const BTree: { tag: "BTree" } = { tag: "BTree" };
-  export const Hash: { tag: "Hash" } = { tag: "Hash" };
+  export const BTree: { tag: 'BTree' } = { tag: 'BTree' };
+  export const Hash: { tag: 'Hash' } = { tag: 'Hash' };
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
-        { name: "BTree", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "Hash", algebraicType: AlgebraicType.Product({ elements: [] }) },
-      ]
+        {
+          name: 'BTree',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+        {
+          name: 'Hash',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: IndexType): void {
-      AlgebraicType.serializeValue(writer, IndexType.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      IndexType.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): IndexType {
-      return AlgebraicType.deserializeValue(reader, IndexType.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      IndexType.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `IndexType`.
-export type IndexType = IndexTypeVariants.BTree |
-  IndexTypeVariants.Hash;
+export type IndexType = IndexTypeVariants.BTree | IndexTypeVariants.Hash;
 
 export default IndexType;
-

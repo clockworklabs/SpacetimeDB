@@ -31,8 +31,8 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { RawUniqueConstraintDataV9 as __RawUniqueConstraintDataV9 } from "./raw_unique_constraint_data_v_9_type";
+} from '../index';
+import { RawUniqueConstraintDataV9 as __RawUniqueConstraintDataV9 } from './raw_unique_constraint_data_v_9_type';
 
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
@@ -42,7 +42,7 @@ import { RawUniqueConstraintDataV9 as __RawUniqueConstraintDataV9 } from "./raw_
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
 export namespace RawConstraintDataV9Variants {
-  export type Unique = { tag: "Unique", value: __RawUniqueConstraintDataV9 };
+  export type Unique = { tag: 'Unique'; value: __RawUniqueConstraintDataV9 };
 }
 
 // A namespace for generated variants and helper functions.
@@ -53,28 +53,42 @@ export namespace RawConstraintDataV9 {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const Unique = (value: __RawUniqueConstraintDataV9): RawConstraintDataV9 => ({ tag: "Unique", value });
+  export const Unique = (
+    value: __RawUniqueConstraintDataV9
+  ): RawConstraintDataV9 => ({ tag: 'Unique', value });
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
-        { name: "Unique", algebraicType: __RawUniqueConstraintDataV9.getTypeScriptAlgebraicType() },
-      ]
+        {
+          name: 'Unique',
+          algebraicType:
+            __RawUniqueConstraintDataV9.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: RawConstraintDataV9): void {
-      AlgebraicType.serializeValue(writer, RawConstraintDataV9.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: RawConstraintDataV9
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      RawConstraintDataV9.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawConstraintDataV9 {
-      return AlgebraicType.deserializeValue(reader, RawConstraintDataV9.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawConstraintDataV9.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `RawConstraintDataV9`.
 export type RawConstraintDataV9 = RawConstraintDataV9Variants.Unique;
 
 export default RawConstraintDataV9;
-

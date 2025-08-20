@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { RawTableDefV8 as __RawTableDefV8 } from "./raw_table_def_v_8_type";
+} from '../index';
+import { RawTableDefV8 as __RawTableDefV8 } from './raw_table_def_v_8_type';
 
 export type TableDesc = {
-  schema: __RawTableDefV8,
-  data: number,
+  schema: __RawTableDefV8;
+  data: number;
 };
 export default TableDesc;
 
@@ -45,26 +45,33 @@ export default TableDesc;
  */
 export namespace TableDesc {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "schema", algebraicType: __RawTableDefV8.getTypeScriptAlgebraicType()},
-        { name: "data", algebraicType: AlgebraicType.U32},
-      ]
+        {
+          name: 'schema',
+          algebraicType: __RawTableDefV8.getTypeScriptAlgebraicType(),
+        },
+        { name: 'data', algebraicType: AlgebraicType.U32 },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: TableDesc): void {
-    AlgebraicType.serializeValue(writer, TableDesc.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      TableDesc.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): TableDesc {
-    return AlgebraicType.deserializeValue(reader, TableDesc.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      TableDesc.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { RawConstraintDataV9 as __RawConstraintDataV9 } from "./raw_constraint_data_v_9_type";
+} from '../index';
+import { RawConstraintDataV9 as __RawConstraintDataV9 } from './raw_constraint_data_v_9_type';
 
 export type RawConstraintDefV9 = {
-  name: string | undefined,
-  data: __RawConstraintDataV9,
+  name: string | undefined;
+  data: __RawConstraintDataV9;
 };
 export default RawConstraintDefV9;
 
@@ -45,26 +45,39 @@ export default RawConstraintDefV9;
  */
 export namespace RawConstraintDefV9 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.createOptionType(AlgebraicType.String)},
-        { name: "data", algebraicType: __RawConstraintDataV9.getTypeScriptAlgebraicType()},
-      ]
+        {
+          name: 'name',
+          algebraicType: AlgebraicType.createOptionType(AlgebraicType.String),
+        },
+        {
+          name: 'data',
+          algebraicType: __RawConstraintDataV9.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: RawConstraintDefV9): void {
-    AlgebraicType.serializeValue(writer, RawConstraintDefV9.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: RawConstraintDefV9
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      RawConstraintDefV9.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawConstraintDefV9 {
-    return AlgebraicType.deserializeValue(reader, RawConstraintDefV9.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawConstraintDefV9.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

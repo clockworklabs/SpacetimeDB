@@ -31,14 +31,14 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { IndexType as __IndexType } from "./index_type_type";
+} from '../index';
+import { IndexType as __IndexType } from './index_type_type';
 
 export type RawIndexDefV8 = {
-  indexName: string,
-  isUnique: boolean,
-  indexType: __IndexType,
-  columns: number[],
+  indexName: string;
+  isUnique: boolean;
+  indexType: __IndexType;
+  columns: number[];
 };
 export default RawIndexDefV8;
 
@@ -47,28 +47,38 @@ export default RawIndexDefV8;
  */
 export namespace RawIndexDefV8 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "indexName", algebraicType: AlgebraicType.String},
-        { name: "isUnique", algebraicType: AlgebraicType.Bool},
-        { name: "indexType", algebraicType: __IndexType.getTypeScriptAlgebraicType()},
-        { name: "columns", algebraicType: AlgebraicType.Array(AlgebraicType.U16)},
-      ]
+        { name: 'indexName', algebraicType: AlgebraicType.String },
+        { name: 'isUnique', algebraicType: AlgebraicType.Bool },
+        {
+          name: 'indexType',
+          algebraicType: __IndexType.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'columns',
+          algebraicType: AlgebraicType.Array(AlgebraicType.U16),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: RawIndexDefV8): void {
-    AlgebraicType.serializeValue(writer, RawIndexDefV8.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      RawIndexDefV8.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawIndexDefV8 {
-    return AlgebraicType.deserializeValue(reader, RawIndexDefV8.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawIndexDefV8.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

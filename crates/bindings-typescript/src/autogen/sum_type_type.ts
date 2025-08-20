@@ -31,11 +31,11 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { SumTypeVariant as __SumTypeVariant } from "./sum_type_variant_type";
+} from '../index';
+import { SumTypeVariant as __SumTypeVariant } from './sum_type_variant_type';
 
 export type SumType = {
-  variants: __SumTypeVariant[],
+  variants: __SumTypeVariant[];
 };
 export default SumType;
 
@@ -44,25 +44,34 @@ export default SumType;
  */
 export namespace SumType {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "variants", algebraicType: AlgebraicType.Array(__SumTypeVariant.getTypeScriptAlgebraicType())},
-      ]
+        {
+          name: 'variants',
+          algebraicType: AlgebraicType.Array(
+            __SumTypeVariant.getTypeScriptAlgebraicType()
+          ),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: SumType): void {
-    AlgebraicType.serializeValue(writer, SumType.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      SumType.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): SumType {
-    return AlgebraicType.deserializeValue(reader, SumType.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      SumType.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-
