@@ -12,6 +12,10 @@ pub struct Person {
     name: String,
 }
 
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
+}
+
 #[spacetimedb::reducer]
 pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
