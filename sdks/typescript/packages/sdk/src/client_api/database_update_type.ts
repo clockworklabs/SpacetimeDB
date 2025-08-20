@@ -31,11 +31,11 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { TableUpdate as __TableUpdate } from "./table_update_type";
+} from '../index';
+import { TableUpdate as __TableUpdate } from './table_update_type';
 
 export type DatabaseUpdate = {
-  tables: __TableUpdate[],
+  tables: __TableUpdate[];
 };
 export default DatabaseUpdate;
 
@@ -44,25 +44,34 @@ export default DatabaseUpdate;
  */
 export namespace DatabaseUpdate {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "tables", algebraicType: AlgebraicType.Array(__TableUpdate.getTypeScriptAlgebraicType())},
-      ]
+        {
+          name: 'tables',
+          algebraicType: AlgebraicType.Array(
+            __TableUpdate.getTypeScriptAlgebraicType()
+          ),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: DatabaseUpdate): void {
-    AlgebraicType.serializeValue(writer, DatabaseUpdate.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      DatabaseUpdate.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): DatabaseUpdate {
-    return AlgebraicType.deserializeValue(reader, DatabaseUpdate.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      DatabaseUpdate.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

@@ -31,14 +31,14 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { CompressableQueryUpdate as __CompressableQueryUpdate } from "./compressable_query_update_type";
+} from '../index';
+import { CompressableQueryUpdate as __CompressableQueryUpdate } from './compressable_query_update_type';
 
 export type TableUpdate = {
-  tableId: number,
-  tableName: string,
-  numRows: bigint,
-  updates: __CompressableQueryUpdate[],
+  tableId: number;
+  tableName: string;
+  numRows: bigint;
+  updates: __CompressableQueryUpdate[];
 };
 export default TableUpdate;
 
@@ -47,28 +47,37 @@ export default TableUpdate;
  */
 export namespace TableUpdate {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "tableId", algebraicType: AlgebraicType.U32},
-        { name: "tableName", algebraicType: AlgebraicType.String},
-        { name: "numRows", algebraicType: AlgebraicType.U64},
-        { name: "updates", algebraicType: AlgebraicType.Array(__CompressableQueryUpdate.getTypeScriptAlgebraicType())},
-      ]
+        { name: 'tableId', algebraicType: AlgebraicType.U32 },
+        { name: 'tableName', algebraicType: AlgebraicType.String },
+        { name: 'numRows', algebraicType: AlgebraicType.U64 },
+        {
+          name: 'updates',
+          algebraicType: AlgebraicType.Array(
+            __CompressableQueryUpdate.getTypeScriptAlgebraicType()
+          ),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: TableUpdate): void {
-    AlgebraicType.serializeValue(writer, TableUpdate.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      TableUpdate.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): TableUpdate {
-    return AlgebraicType.deserializeValue(reader, TableUpdate.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      TableUpdate.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

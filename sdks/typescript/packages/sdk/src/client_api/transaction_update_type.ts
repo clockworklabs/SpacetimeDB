@@ -31,19 +31,19 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { UpdateStatus as __UpdateStatus } from "./update_status_type";
-import { ReducerCallInfo as __ReducerCallInfo } from "./reducer_call_info_type";
-import { EnergyQuanta as __EnergyQuanta } from "./energy_quanta_type";
+} from '../index';
+import { UpdateStatus as __UpdateStatus } from './update_status_type';
+import { ReducerCallInfo as __ReducerCallInfo } from './reducer_call_info_type';
+import { EnergyQuanta as __EnergyQuanta } from './energy_quanta_type';
 
 export type TransactionUpdate = {
-  status: __UpdateStatus,
-  timestamp: Timestamp,
-  callerIdentity: Identity,
-  callerConnectionId: ConnectionId,
-  reducerCall: __ReducerCallInfo,
-  energyQuantaUsed: __EnergyQuanta,
-  totalHostExecutionDuration: TimeDuration,
+  status: __UpdateStatus;
+  timestamp: Timestamp;
+  callerIdentity: Identity;
+  callerConnectionId: ConnectionId;
+  reducerCall: __ReducerCallInfo;
+  energyQuantaUsed: __EnergyQuanta;
+  totalHostExecutionDuration: TimeDuration;
 };
 export default TransactionUpdate;
 
@@ -52,31 +52,59 @@ export default TransactionUpdate;
  */
 export namespace TransactionUpdate {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "status", algebraicType: __UpdateStatus.getTypeScriptAlgebraicType()},
-        { name: "timestamp", algebraicType: AlgebraicType.createTimestampType()},
-        { name: "callerIdentity", algebraicType: AlgebraicType.createIdentityType()},
-        { name: "callerConnectionId", algebraicType: AlgebraicType.createConnectionIdType()},
-        { name: "reducerCall", algebraicType: __ReducerCallInfo.getTypeScriptAlgebraicType()},
-        { name: "energyQuantaUsed", algebraicType: __EnergyQuanta.getTypeScriptAlgebraicType()},
-        { name: "totalHostExecutionDuration", algebraicType: AlgebraicType.createTimeDurationType()},
-      ]
+        {
+          name: 'status',
+          algebraicType: __UpdateStatus.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'timestamp',
+          algebraicType: AlgebraicType.createTimestampType(),
+        },
+        {
+          name: 'callerIdentity',
+          algebraicType: AlgebraicType.createIdentityType(),
+        },
+        {
+          name: 'callerConnectionId',
+          algebraicType: AlgebraicType.createConnectionIdType(),
+        },
+        {
+          name: 'reducerCall',
+          algebraicType: __ReducerCallInfo.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'energyQuantaUsed',
+          algebraicType: __EnergyQuanta.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'totalHostExecutionDuration',
+          algebraicType: AlgebraicType.createTimeDurationType(),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: TransactionUpdate): void {
-    AlgebraicType.serializeValue(writer, TransactionUpdate.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: TransactionUpdate
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      TransactionUpdate.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): TransactionUpdate {
-    return AlgebraicType.deserializeValue(reader, TransactionUpdate.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      TransactionUpdate.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

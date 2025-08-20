@@ -31,13 +31,13 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { QueryId as __QueryId } from "./query_id_type";
+} from '../index';
+import { QueryId as __QueryId } from './query_id_type';
 
 export type SubscribeMulti = {
-  queryStrings: string[],
-  requestId: number,
-  queryId: __QueryId,
+  queryStrings: string[];
+  requestId: number;
+  queryId: __QueryId;
 };
 export default SubscribeMulti;
 
@@ -46,27 +46,37 @@ export default SubscribeMulti;
  */
 export namespace SubscribeMulti {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "queryStrings", algebraicType: AlgebraicType.Array(AlgebraicType.String)},
-        { name: "requestId", algebraicType: AlgebraicType.U32},
-        { name: "queryId", algebraicType: __QueryId.getTypeScriptAlgebraicType()},
-      ]
+        {
+          name: 'queryStrings',
+          algebraicType: AlgebraicType.Array(AlgebraicType.String),
+        },
+        { name: 'requestId', algebraicType: AlgebraicType.U32 },
+        {
+          name: 'queryId',
+          algebraicType: __QueryId.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: SubscribeMulti): void {
-    AlgebraicType.serializeValue(writer, SubscribeMulti.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      SubscribeMulti.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): SubscribeMulti {
-    return AlgebraicType.deserializeValue(reader, SubscribeMulti.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      SubscribeMulti.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

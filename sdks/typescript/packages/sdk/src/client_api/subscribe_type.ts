@@ -31,10 +31,10 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type Subscribe = {
-  queryStrings: string[],
-  requestId: number,
+  queryStrings: string[];
+  requestId: number;
 };
 export default Subscribe;
 
@@ -43,26 +43,33 @@ export default Subscribe;
  */
 export namespace Subscribe {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "queryStrings", algebraicType: AlgebraicType.Array(AlgebraicType.String)},
-        { name: "requestId", algebraicType: AlgebraicType.U32},
-      ]
+        {
+          name: 'queryStrings',
+          algebraicType: AlgebraicType.Array(AlgebraicType.String),
+        },
+        { name: 'requestId', algebraicType: AlgebraicType.U32 },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: Subscribe): void {
-    AlgebraicType.serializeValue(writer, Subscribe.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      Subscribe.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): Subscribe {
-    return AlgebraicType.deserializeValue(reader, Subscribe.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      Subscribe.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

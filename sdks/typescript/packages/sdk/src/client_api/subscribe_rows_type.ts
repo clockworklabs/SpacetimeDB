@@ -31,13 +31,13 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { TableUpdate as __TableUpdate } from "./table_update_type";
+} from '../index';
+import { TableUpdate as __TableUpdate } from './table_update_type';
 
 export type SubscribeRows = {
-  tableId: number,
-  tableName: string,
-  tableRows: __TableUpdate,
+  tableId: number;
+  tableName: string;
+  tableRows: __TableUpdate;
 };
 export default SubscribeRows;
 
@@ -46,27 +46,34 @@ export default SubscribeRows;
  */
 export namespace SubscribeRows {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "tableId", algebraicType: AlgebraicType.U32},
-        { name: "tableName", algebraicType: AlgebraicType.String},
-        { name: "tableRows", algebraicType: __TableUpdate.getTypeScriptAlgebraicType()},
-      ]
+        { name: 'tableId', algebraicType: AlgebraicType.U32 },
+        { name: 'tableName', algebraicType: AlgebraicType.String },
+        {
+          name: 'tableRows',
+          algebraicType: __TableUpdate.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: SubscribeRows): void {
-    AlgebraicType.serializeValue(writer, SubscribeRows.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      SubscribeRows.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): SubscribeRows {
-    return AlgebraicType.deserializeValue(reader, SubscribeRows.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      SubscribeRows.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-
