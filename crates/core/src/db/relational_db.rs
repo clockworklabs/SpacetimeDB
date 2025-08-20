@@ -1043,6 +1043,7 @@ impl RelationalDB {
         Ok(self.inner.alter_table_access_mut_tx(tx, name, access)?)
     }
 
+    #[allow(unused)]
     pub(crate) fn alter_table_row_type(
         &self,
         tx: &mut MutTx,
