@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { QueryId as __QueryId } from "./query_id_type";
+} from '../index';
+import { QueryId as __QueryId } from './query_id_type';
 
 export type UnsubscribeMulti = {
-  requestId: number,
-  queryId: __QueryId,
+  requestId: number;
+  queryId: __QueryId;
 };
 export default UnsubscribeMulti;
 
@@ -45,26 +45,36 @@ export default UnsubscribeMulti;
  */
 export namespace UnsubscribeMulti {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "requestId", algebraicType: AlgebraicType.U32},
-        { name: "queryId", algebraicType: __QueryId.getTypeScriptAlgebraicType()},
-      ]
+        { name: 'requestId', algebraicType: AlgebraicType.U32 },
+        {
+          name: 'queryId',
+          algebraicType: __QueryId.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: UnsubscribeMulti): void {
-    AlgebraicType.serializeValue(writer, UnsubscribeMulti.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: UnsubscribeMulti
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      UnsubscribeMulti.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): UnsubscribeMulti {
-    return AlgebraicType.deserializeValue(reader, UnsubscribeMulti.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      UnsubscribeMulti.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

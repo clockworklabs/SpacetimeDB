@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type CallReducer = {
-  reducer: string,
-  args: Uint8Array,
-  requestId: number,
-  flags: number,
+  reducer: string;
+  args: Uint8Array;
+  requestId: number;
+  flags: number;
 };
 export default CallReducer;
 
@@ -45,28 +45,32 @@ export default CallReducer;
  */
 export namespace CallReducer {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "reducer", algebraicType: AlgebraicType.String},
-        { name: "args", algebraicType: AlgebraicType.Array(AlgebraicType.U8)},
-        { name: "requestId", algebraicType: AlgebraicType.U32},
-        { name: "flags", algebraicType: AlgebraicType.U8},
-      ]
+        { name: 'reducer', algebraicType: AlgebraicType.String },
+        { name: 'args', algebraicType: AlgebraicType.Array(AlgebraicType.U8) },
+        { name: 'requestId', algebraicType: AlgebraicType.U32 },
+        { name: 'flags', algebraicType: AlgebraicType.U8 },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: CallReducer): void {
-    AlgebraicType.serializeValue(writer, CallReducer.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      CallReducer.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): CallReducer {
-    return AlgebraicType.deserializeValue(reader, CallReducer.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      CallReducer.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

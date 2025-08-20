@@ -31,9 +31,9 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type QueryId = {
-  id: number,
+  id: number;
 };
 export default QueryId;
 
@@ -42,25 +42,27 @@ export default QueryId;
  */
 export namespace QueryId {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
-      elements: [
-        { name: "id", algebraicType: AlgebraicType.U32},
-      ]
+      elements: [{ name: 'id', algebraicType: AlgebraicType.U32 }],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: QueryId): void {
-    AlgebraicType.serializeValue(writer, QueryId.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      QueryId.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): QueryId {
-    return AlgebraicType.deserializeValue(reader, QueryId.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      QueryId.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type ReducerCallInfo = {
-  reducerName: string,
-  reducerId: number,
-  args: Uint8Array,
-  requestId: number,
+  reducerName: string;
+  reducerId: number;
+  args: Uint8Array;
+  requestId: number;
 };
 export default ReducerCallInfo;
 
@@ -45,28 +45,35 @@ export default ReducerCallInfo;
  */
 export namespace ReducerCallInfo {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "reducerName", algebraicType: AlgebraicType.String},
-        { name: "reducerId", algebraicType: AlgebraicType.U32},
-        { name: "args", algebraicType: AlgebraicType.Array(AlgebraicType.U8)},
-        { name: "requestId", algebraicType: AlgebraicType.U32},
-      ]
+        { name: 'reducerName', algebraicType: AlgebraicType.String },
+        { name: 'reducerId', algebraicType: AlgebraicType.U32 },
+        { name: 'args', algebraicType: AlgebraicType.Array(AlgebraicType.U8) },
+        { name: 'requestId', algebraicType: AlgebraicType.U32 },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: ReducerCallInfo): void {
-    AlgebraicType.serializeValue(writer, ReducerCallInfo.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: ReducerCallInfo
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      ReducerCallInfo.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): ReducerCallInfo {
-    return AlgebraicType.deserializeValue(reader, ReducerCallInfo.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      ReducerCallInfo.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

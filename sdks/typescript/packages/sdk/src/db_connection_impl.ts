@@ -8,9 +8,7 @@ import {
   SumTypeVariant,
   type ComparablePrimitive,
 } from 'spacetimedb';
-import {
-  parseValue,
-} from 'spacetimedb';
+import { parseValue } from 'spacetimedb';
 import { BinaryReader } from 'spacetimedb';
 import { BinaryWriter } from 'spacetimedb';
 import { BsatnRowList } from './client_api/bsatn_row_list_type.ts';
@@ -319,7 +317,7 @@ export class DbConnectionImpl<
         let rowId: ComparablePrimitive | undefined = undefined;
         if (primaryKeyInfo !== undefined) {
           rowId = AlgebraicType.intoMapKey(
-            primaryKeyInfo.colType, 
+            primaryKeyInfo.colType,
             row[primaryKeyInfo.colName]
           );
         } else {
@@ -611,7 +609,10 @@ export class DbConnectionImpl<
             this.#remoteModule.reducers[reducerInfo.reducerName];
           try {
             const reader = new BinaryReader(reducerInfo.args as Uint8Array);
-            reducerArgs = AlgebraicType.deserializeValue(reader, reducerTypeInfo.argsType);
+            reducerArgs = AlgebraicType.deserializeValue(
+              reader,
+              reducerTypeInfo.argsType
+            );
           } catch {
             // This should only be printed in development, since it's
             // possible for clients to receive new reducers that they don't
@@ -674,7 +675,9 @@ export class DbConnectionImpl<
         );
 
         const argsArray: any[] = [];
-        (reducerTypeInfo.argsType as AlgebraicTypeVariants.Product).value.elements.forEach((element, index) => {
+        (
+          reducerTypeInfo.argsType as AlgebraicTypeVariants.Product
+        ).value.elements.forEach((element, index) => {
           argsArray.push(reducerArgs[element.name!]);
         });
         this.#reducerEmitter.emit(

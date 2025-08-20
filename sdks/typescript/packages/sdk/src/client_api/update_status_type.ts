@@ -31,8 +31,8 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { DatabaseUpdate as __DatabaseUpdate } from "./database_update_type";
+} from '../index';
+import { DatabaseUpdate as __DatabaseUpdate } from './database_update_type';
 
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
@@ -42,9 +42,9 @@ import { DatabaseUpdate as __DatabaseUpdate } from "./database_update_type";
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
 export namespace UpdateStatusVariants {
-  export type Committed = { tag: "Committed", value: __DatabaseUpdate };
-  export type Failed = { tag: "Failed", value: string };
-  export type OutOfEnergy = { tag: "OutOfEnergy" };
+  export type Committed = { tag: 'Committed'; value: __DatabaseUpdate };
+  export type Failed = { tag: 'Failed'; value: string };
+  export type OutOfEnergy = { tag: 'OutOfEnergy' };
 }
 
 // A namespace for generated variants and helper functions.
@@ -55,34 +55,52 @@ export namespace UpdateStatus {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const Committed = (value: __DatabaseUpdate): UpdateStatus => ({ tag: "Committed", value });
-  export const Failed = (value: string): UpdateStatus => ({ tag: "Failed", value });
-  export const OutOfEnergy: { tag: "OutOfEnergy" } = { tag: "OutOfEnergy" };
+  export const Committed = (value: __DatabaseUpdate): UpdateStatus => ({
+    tag: 'Committed',
+    value,
+  });
+  export const Failed = (value: string): UpdateStatus => ({
+    tag: 'Failed',
+    value,
+  });
+  export const OutOfEnergy: { tag: 'OutOfEnergy' } = { tag: 'OutOfEnergy' };
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
-        { name: "Committed", algebraicType: __DatabaseUpdate.getTypeScriptAlgebraicType() },
-        { name: "Failed", algebraicType: AlgebraicType.String },
-        { name: "OutOfEnergy", algebraicType: AlgebraicType.Product({ elements: [] }) },
-      ]
+        {
+          name: 'Committed',
+          algebraicType: __DatabaseUpdate.getTypeScriptAlgebraicType(),
+        },
+        { name: 'Failed', algebraicType: AlgebraicType.String },
+        {
+          name: 'OutOfEnergy',
+          algebraicType: AlgebraicType.Product({ elements: [] }),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: UpdateStatus): void {
-      AlgebraicType.serializeValue(writer, UpdateStatus.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      UpdateStatus.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): UpdateStatus {
-      return AlgebraicType.deserializeValue(reader, UpdateStatus.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      UpdateStatus.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `UpdateStatus`.
-export type UpdateStatus = UpdateStatus.Committed |
-  UpdateStatus.Failed |
-  UpdateStatus.OutOfEnergy;
+export type UpdateStatus =
+  | UpdateStatus.Committed
+  | UpdateStatus.Failed
+  | UpdateStatus.OutOfEnergy;
 
 export default UpdateStatus;
-

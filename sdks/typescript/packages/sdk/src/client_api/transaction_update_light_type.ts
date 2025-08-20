@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { DatabaseUpdate as __DatabaseUpdate } from "./database_update_type";
+} from '../index';
+import { DatabaseUpdate as __DatabaseUpdate } from './database_update_type';
 
 export type TransactionUpdateLight = {
-  requestId: number,
-  update: __DatabaseUpdate,
+  requestId: number;
+  update: __DatabaseUpdate;
 };
 export default TransactionUpdateLight;
 
@@ -45,26 +45,36 @@ export default TransactionUpdateLight;
  */
 export namespace TransactionUpdateLight {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "requestId", algebraicType: AlgebraicType.U32},
-        { name: "update", algebraicType: __DatabaseUpdate.getTypeScriptAlgebraicType()},
-      ]
+        { name: 'requestId', algebraicType: AlgebraicType.U32 },
+        {
+          name: 'update',
+          algebraicType: __DatabaseUpdate.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: TransactionUpdateLight): void {
-    AlgebraicType.serializeValue(writer, TransactionUpdateLight.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: TransactionUpdateLight
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      TransactionUpdateLight.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): TransactionUpdateLight {
-    return AlgebraicType.deserializeValue(reader, TransactionUpdateLight.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      TransactionUpdateLight.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { RowSizeHint as __RowSizeHint } from "./row_size_hint_type";
+} from '../index';
+import { RowSizeHint as __RowSizeHint } from './row_size_hint_type';
 
 export type BsatnRowList = {
-  sizeHint: __RowSizeHint,
-  rowsData: Uint8Array,
+  sizeHint: __RowSizeHint;
+  rowsData: Uint8Array;
 };
 export default BsatnRowList;
 
@@ -45,26 +45,36 @@ export default BsatnRowList;
  */
 export namespace BsatnRowList {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "sizeHint", algebraicType: __RowSizeHint.getTypeScriptAlgebraicType()},
-        { name: "rowsData", algebraicType: AlgebraicType.Array(AlgebraicType.U8)},
-      ]
+        {
+          name: 'sizeHint',
+          algebraicType: __RowSizeHint.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'rowsData',
+          algebraicType: AlgebraicType.Array(AlgebraicType.U8),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: BsatnRowList): void {
-    AlgebraicType.serializeValue(writer, BsatnRowList.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      BsatnRowList.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): BsatnRowList {
-    return AlgebraicType.deserializeValue(reader, BsatnRowList.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      BsatnRowList.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

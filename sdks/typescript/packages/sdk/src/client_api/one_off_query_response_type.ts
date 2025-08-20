@@ -31,14 +31,14 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { OneOffTable as __OneOffTable } from "./one_off_table_type";
+} from '../index';
+import { OneOffTable as __OneOffTable } from './one_off_table_type';
 
 export type OneOffQueryResponse = {
-  messageId: Uint8Array,
-  error: string | undefined,
-  tables: __OneOffTable[],
-  totalHostExecutionDuration: TimeDuration,
+  messageId: Uint8Array;
+  error: string | undefined;
+  tables: __OneOffTable[];
+  totalHostExecutionDuration: TimeDuration;
 };
 export default OneOffQueryResponse;
 
@@ -47,28 +47,49 @@ export default OneOffQueryResponse;
  */
 export namespace OneOffQueryResponse {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "messageId", algebraicType: AlgebraicType.Array(AlgebraicType.U8)},
-        { name: "error", algebraicType: AlgebraicType.createOptionType(AlgebraicType.String)},
-        { name: "tables", algebraicType: AlgebraicType.Array(__OneOffTable.getTypeScriptAlgebraicType())},
-        { name: "totalHostExecutionDuration", algebraicType: AlgebraicType.createTimeDurationType()},
-      ]
+        {
+          name: 'messageId',
+          algebraicType: AlgebraicType.Array(AlgebraicType.U8),
+        },
+        {
+          name: 'error',
+          algebraicType: AlgebraicType.createOptionType(AlgebraicType.String),
+        },
+        {
+          name: 'tables',
+          algebraicType: AlgebraicType.Array(
+            __OneOffTable.getTypeScriptAlgebraicType()
+          ),
+        },
+        {
+          name: 'totalHostExecutionDuration',
+          algebraicType: AlgebraicType.createTimeDurationType(),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: OneOffQueryResponse): void {
-    AlgebraicType.serializeValue(writer, OneOffQueryResponse.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: OneOffQueryResponse
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      OneOffQueryResponse.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): OneOffQueryResponse {
-    return AlgebraicType.deserializeValue(reader, OneOffQueryResponse.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      OneOffQueryResponse.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

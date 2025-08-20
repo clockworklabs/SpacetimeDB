@@ -31,9 +31,9 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type EnergyQuanta = {
-  quanta: bigint,
+  quanta: bigint;
 };
 export default EnergyQuanta;
 
@@ -42,25 +42,27 @@ export default EnergyQuanta;
  */
 export namespace EnergyQuanta {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
-      elements: [
-        { name: "quanta", algebraicType: AlgebraicType.U128},
-      ]
+      elements: [{ name: 'quanta', algebraicType: AlgebraicType.U128 }],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: EnergyQuanta): void {
-    AlgebraicType.serializeValue(writer, EnergyQuanta.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      EnergyQuanta.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): EnergyQuanta {
-    return AlgebraicType.deserializeValue(reader, EnergyQuanta.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      EnergyQuanta.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

@@ -31,11 +31,11 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type IdentityToken = {
-  identity: Identity,
-  token: string,
-  connectionId: ConnectionId,
+  identity: Identity;
+  token: string;
+  connectionId: ConnectionId;
 };
 export default IdentityToken;
 
@@ -44,27 +44,34 @@ export default IdentityToken;
  */
 export namespace IdentityToken {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "identity", algebraicType: AlgebraicType.createIdentityType()},
-        { name: "token", algebraicType: AlgebraicType.String},
-        { name: "connectionId", algebraicType: AlgebraicType.createConnectionIdType()},
-      ]
+        { name: 'identity', algebraicType: AlgebraicType.createIdentityType() },
+        { name: 'token', algebraicType: AlgebraicType.String },
+        {
+          name: 'connectionId',
+          algebraicType: AlgebraicType.createConnectionIdType(),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: IdentityToken): void {
-    AlgebraicType.serializeValue(writer, IdentityToken.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      IdentityToken.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): IdentityToken {
-    return AlgebraicType.deserializeValue(reader, IdentityToken.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      IdentityToken.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

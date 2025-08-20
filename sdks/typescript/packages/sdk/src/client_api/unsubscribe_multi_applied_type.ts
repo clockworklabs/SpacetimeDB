@@ -31,15 +31,15 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { QueryId as __QueryId } from "./query_id_type";
-import { DatabaseUpdate as __DatabaseUpdate } from "./database_update_type";
+} from '../index';
+import { QueryId as __QueryId } from './query_id_type';
+import { DatabaseUpdate as __DatabaseUpdate } from './database_update_type';
 
 export type UnsubscribeMultiApplied = {
-  requestId: number,
-  totalHostExecutionDurationMicros: bigint,
-  queryId: __QueryId,
-  update: __DatabaseUpdate,
+  requestId: number;
+  totalHostExecutionDurationMicros: bigint;
+  queryId: __QueryId;
+  update: __DatabaseUpdate;
 };
 export default UnsubscribeMultiApplied;
 
@@ -48,28 +48,44 @@ export default UnsubscribeMultiApplied;
  */
 export namespace UnsubscribeMultiApplied {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "requestId", algebraicType: AlgebraicType.U32},
-        { name: "totalHostExecutionDurationMicros", algebraicType: AlgebraicType.U64},
-        { name: "queryId", algebraicType: __QueryId.getTypeScriptAlgebraicType()},
-        { name: "update", algebraicType: __DatabaseUpdate.getTypeScriptAlgebraicType()},
-      ]
+        { name: 'requestId', algebraicType: AlgebraicType.U32 },
+        {
+          name: 'totalHostExecutionDurationMicros',
+          algebraicType: AlgebraicType.U64,
+        },
+        {
+          name: 'queryId',
+          algebraicType: __QueryId.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'update',
+          algebraicType: __DatabaseUpdate.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: UnsubscribeMultiApplied): void {
-    AlgebraicType.serializeValue(writer, UnsubscribeMultiApplied.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: UnsubscribeMultiApplied
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      UnsubscribeMultiApplied.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): UnsubscribeMultiApplied {
-    return AlgebraicType.deserializeValue(reader, UnsubscribeMultiApplied.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      UnsubscribeMultiApplied.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

@@ -31,12 +31,12 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { BsatnRowList as __BsatnRowList } from "./bsatn_row_list_type";
+} from '../index';
+import { BsatnRowList as __BsatnRowList } from './bsatn_row_list_type';
 
 export type OneOffTable = {
-  tableName: string,
-  rows: __BsatnRowList,
+  tableName: string;
+  rows: __BsatnRowList;
 };
 export default OneOffTable;
 
@@ -45,26 +45,33 @@ export default OneOffTable;
  */
 export namespace OneOffTable {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "tableName", algebraicType: AlgebraicType.String},
-        { name: "rows", algebraicType: __BsatnRowList.getTypeScriptAlgebraicType()},
-      ]
+        { name: 'tableName', algebraicType: AlgebraicType.String },
+        {
+          name: 'rows',
+          algebraicType: __BsatnRowList.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: OneOffTable): void {
-    AlgebraicType.serializeValue(writer, OneOffTable.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      OneOffTable.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): OneOffTable {
-    return AlgebraicType.deserializeValue(reader, OneOffTable.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      OneOffTable.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

@@ -29,7 +29,11 @@ class WebsocketTestAdapter {
 
   sendToClient(message: ServerMessage): void {
     const writer = new BinaryWriter(1024);
-    AlgebraicType.serializeValue(writer, ServerMessage.getTypeScriptAlgebraicType(), message);
+    AlgebraicType.serializeValue(
+      writer,
+      ServerMessage.getTypeScriptAlgebraicType(),
+      message
+    );
     const rawBytes = writer.getBuffer();
     // The brotli library's `compress` is somehow broken: it returns `null` for some inputs.
     // See https://github.com/foliojs/brotli.js/issues/36, which is closed but not actually fixed.
@@ -40,9 +44,9 @@ class WebsocketTestAdapter {
   }
 
   async createWebSocketFn(args: {
-    url: URL,
-    wsProtocol: string,
-    authToken?: string
+    url: URL;
+    wsProtocol: string;
+    authToken?: string;
   }): Promise<WebsocketTestAdapter> {
     return this;
   }
