@@ -332,7 +332,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
                 writeln!(out, "colName: \"{}\",", pk.col_name.to_string().to_case(Case::Camel));
                 writeln!(
                     out,
-                    "colType: {row_type}.getTypeScriptAlgebraicType().product.elements[{}].algebraicType,",
+                    "colType: ({row_type}.getTypeScriptAlgebraicType() as ProductType).value.elements[{}].algebraicType,",
                     pk.col_pos.0
                 );
                 out.dedent(1);
