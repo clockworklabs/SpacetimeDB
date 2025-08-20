@@ -99,8 +99,8 @@ export namespace UpdateStatus {
 
 // The tagged union or sum type for the algebraic type `UpdateStatus`.
 export type UpdateStatus =
-  | UpdateStatus.Committed
-  | UpdateStatus.Failed
-  | UpdateStatus.OutOfEnergy;
+  | UpdateStatusVariants.Committed
+  | UpdateStatusVariants.Failed
+  | UpdateStatusVariants.OutOfEnergy;
 
 export default UpdateStatus;

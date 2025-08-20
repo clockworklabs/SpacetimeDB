@@ -90,6 +90,8 @@ export namespace RowSizeHint {
 }
 
 // The tagged union or sum type for the algebraic type `RowSizeHint`.
-export type RowSizeHint = RowSizeHint.FixedSize | RowSizeHint.RowOffsets;
+export type RowSizeHint =
+  | RowSizeHintVariants.FixedSize
+  | RowSizeHintVariants.RowOffsets;
 
 export default RowSizeHint;

@@ -25,7 +25,10 @@
   },
   "scripts": {
     "compile": "tsup",
+    "format": "prettier --write .",
+    "lint": "prettier . --check",
     "test": "vitest run",
+    "generate": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-client-api-messages --example get_ws_schema > ws_schema.json && cargo run -p spacetimedb-cli generate --lang typescript --out-dir src/client_api --module-def ws_schema.json && rm ws_schema.json && find src/client_api -type f -exec perl -pi -e 's#\\@clockworklabs/spacetimedb-sdk#../index#g' {} + && prettier --write src/client_api",
     "size": "brotli-size dist/min/index.js"
   },
   "repository": {
@@ -43,6 +46,7 @@
   },
   "devDependencies": {
     "@clockworklabs/test-app": "workspace:^",
+    "prettier": "^3.3.3",
     "tsup": "^8.1.0",
     "undici": "^6.19.2",
     "vitest": "^3.2.4"

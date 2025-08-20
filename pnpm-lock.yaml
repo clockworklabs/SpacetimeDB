@@ -99,6 +99,9 @@ importers:
       jsdom:
         specifier: ^26.0.0
         version: 26.1.0
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
       typescript:
         specifier: ~5.6.2
         version: 5.6.3
@@ -127,6 +130,9 @@ importers:
       '@clockworklabs/test-app':
         specifier: workspace:^
         version: link:../test-app
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
       tsup:
         specifier: ^8.1.0
         version: 8.5.0(postcss@8.5.6)(tsx@4.20.4)(typescript@5.6.3)

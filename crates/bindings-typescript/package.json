@@ -37,7 +37,8 @@
     "build": "tsc -p tsconfig.build.json",
     "prepack": "pnpm run build",
     "format": "prettier --write .",
-    "lint": "prettier . --check --verbose"
+    "lint": "prettier . --check --verbose",
+    "generate": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/autogen"
   },
   "dependencies": {
     "@zxing/text-encoding": "^0.9.0",

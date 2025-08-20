@@ -195,15 +195,15 @@ export namespace ServerMessage {
 
 // The tagged union or sum type for the algebraic type `ServerMessage`.
 export type ServerMessage =
-  | ServerMessage.InitialSubscription
-  | ServerMessage.TransactionUpdate
-  | ServerMessage.TransactionUpdateLight
-  | ServerMessage.IdentityToken
-  | ServerMessage.OneOffQueryResponse
-  | ServerMessage.SubscribeApplied
-  | ServerMessage.UnsubscribeApplied
-  | ServerMessage.SubscriptionError
-  | ServerMessage.SubscribeMultiApplied
-  | ServerMessage.UnsubscribeMultiApplied;
+  | ServerMessageVariants.InitialSubscription
+  | ServerMessageVariants.TransactionUpdate
+  | ServerMessageVariants.TransactionUpdateLight
+  | ServerMessageVariants.IdentityToken
+  | ServerMessageVariants.OneOffQueryResponse
+  | ServerMessageVariants.SubscribeApplied
+  | ServerMessageVariants.UnsubscribeApplied
+  | ServerMessageVariants.SubscriptionError
+  | ServerMessageVariants.SubscribeMultiApplied
+  | ServerMessageVariants.UnsubscribeMultiApplied;
 
 export default ServerMessage;
