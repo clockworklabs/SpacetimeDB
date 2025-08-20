@@ -32,7 +32,7 @@ import {
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
 } from '../index';
-import { AlgebraicType as __AlgebraicType } from './algebraic_type_type';
+import { __AlgebraicType } from './algebraic_type_type';
 
 export type ProductTypeElement = {
   name: string | undefined;
