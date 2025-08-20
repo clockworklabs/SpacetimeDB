@@ -14,8 +14,10 @@
     ".": {
       "types": "./src/index.ts",
       "source": "./src/index.ts",
+      "development": "./src/index.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs"
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.mjs"
     }
   },
   "files": [

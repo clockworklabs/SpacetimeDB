@@ -44,11 +44,12 @@
   "devDependencies": {
     "@clockworklabs/test-app": "workspace:^",
     "tsup": "^8.1.0",
-    "undici": "^6.19.2"
+    "undici": "^6.19.2",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
-    "spacetimedb": "workspace:^",
     "@zxing/text-encoding": "^0.9.0",
-    "base64-js": "^1.5.1"
+    "base64-js": "^1.5.1",
+    "spacetimedb": "workspace:^"
   }
 }
