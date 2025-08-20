@@ -40,7 +40,7 @@ cursive.workspace = true
 futures-channel.workspace = true
 
 # for tests
-spacetimedb-testing = { path = "../testing" }
+spacetimedb-testing = { path = "../../crates/testing" }
 
 [lints]
 workspace = true

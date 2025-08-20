@@ -32,13 +32,14 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors,
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
-    Lifecycle, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm, RawIndexDefV9,
-    RawModuleDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9, RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9,
-    RawSql, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
+    Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm,
+    RawIndexDefV9, RawMiscModuleExportV9, RawModuleDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9, RawScheduleDefV9,
+    RawScopedTypeNameV9, RawSequenceDefV9, RawSql, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess,
+    TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ReducerId, TableId};
-use spacetimedb_sats::AlgebraicType;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 
 pub mod deserialize;
@@ -659,6 +660,9 @@ pub struct ColumnDef {
 
     /// The table this `ColumnDef` is stored in.
     pub table_name: Identifier,
+
+    /// The default value of this column, if present.
+    pub default_value: Option<AlgebraicValue>,
 }
 
 /// A constraint definition attached to a table.
@@ -1055,8 +1059,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::{def::validate::tests::expect_identifier, error::ValidationError};
+
     use super::*;
     use proptest::prelude::*;
+    use spacetimedb_data_structures::expect_error_matching;
+    use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 
     proptest! {
         #[test]
@@ -1071,5 +1079,57 @@ mod tests {
             let raw2: Vec<RawTypeDefV9> = to_raw(map);
             prop_assert_eq!(raw, raw2);
         }
+    }
+
+    #[test]
+    fn validate_new_column_with_multiple_values() {
+        let mut old_builder = RawModuleDefV9Builder::new();
+        old_builder
+            .build_table_with_new_type(
+                "Apples",
+                ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
+                true,
+            )
+            .with_default_column_value(1, AlgebraicValue::U16(12))
+            .with_default_column_value(1, AlgebraicValue::U16(10))
+            .finish();
+
+        let result: Result<ModuleDef, ValidationErrors> = old_builder.finish().try_into();
+        let apples = expect_identifier("Apples");
+
+        expect_error_matching!(
+            result,
+            ValidationError::MultipleColumnDefaultValues {
+                table,
+                ..
+            } => *table == apples.clone().into()
+        );
+    }
+
+    #[test]
+    fn validate_new_column_with_malformed_value() {
+        let mut old_builder = RawModuleDefV9Builder::new();
+        old_builder
+            .build_table_with_new_type(
+                "Apples",
+                ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
+                true,
+            )
+            .with_default_column_value(1, AlgebraicValue::Bool(false))
+            .with_default_column_value(1, AlgebraicValue::unit())
+            .finish();
+
+        let result: Result<ModuleDef, ValidationErrors> = old_builder.finish().try_into();
+        let apples = expect_identifier("Apples");
+
+        expect_error_matching!(
+            result,
+            ValidationError::ColumnDefaultValueMalformed { table, col_id, .. } => *table == apples.clone().into() && *col_id == ColId(1)
+        );
+        assert!(result.is_err_and(|e| e
+            .into_iter()
+            .filter(|e| matches!(e, ValidationError::ColumnDefaultValueMalformed { .. }))
+            .count()
+            == 2))
     }
 }
