@@ -31,11 +31,16 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
-import { UnindexedPlayer } from "./unindexed_player_type";
-import { Point as __Point } from "./point_type";
+} from '@clockworklabs/spacetimedb-sdk';
+import { UnindexedPlayer } from './unindexed_player_type';
+import { Point as __Point } from './point_type';
 
-import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+import {
+  type EventContext,
+  type Reducer,
+  RemoteReducers,
+  RemoteTables,
+} from '.';
 
 /**
  * Table handle for the table `unindexed_player`.
@@ -64,17 +69,17 @@ export class UnindexedPlayerTableHandle {
 
   onInsert = (cb: (ctx: EventContext, row: UnindexedPlayer) => void) => {
     return this.tableCache.onInsert(cb);
-  }
+  };
 
   removeOnInsert = (cb: (ctx: EventContext, row: UnindexedPlayer) => void) => {
     return this.tableCache.removeOnInsert(cb);
-  }
+  };
 
   onDelete = (cb: (ctx: EventContext, row: UnindexedPlayer) => void) => {
     return this.tableCache.onDelete(cb);
-  }
+  };
 
   removeOnDelete = (cb: (ctx: EventContext, row: UnindexedPlayer) => void) => {
     return this.tableCache.removeOnDelete(cb);
-  }
+  };
 }

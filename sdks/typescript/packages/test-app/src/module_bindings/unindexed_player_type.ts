@@ -31,13 +31,13 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
-import { Point as __Point } from "./point_type";
+} from '@clockworklabs/spacetimedb-sdk';
+import { Point as __Point } from './point_type';
 
 export type UnindexedPlayer = {
-  ownerId: string,
-  name: string,
-  location: __Point,
+  ownerId: string;
+  name: string;
+  location: __Point;
 };
 export default UnindexedPlayer;
 
@@ -46,27 +46,37 @@ export default UnindexedPlayer;
  */
 export namespace UnindexedPlayer {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "ownerId", algebraicType: AlgebraicType.String},
-        { name: "name", algebraicType: AlgebraicType.String},
-        { name: "location", algebraicType: __Point.getTypeScriptAlgebraicType()},
-      ]
+        { name: 'ownerId', algebraicType: AlgebraicType.String },
+        { name: 'name', algebraicType: AlgebraicType.String },
+        {
+          name: 'location',
+          algebraicType: __Point.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: UnindexedPlayer): void {
-    AlgebraicType.serializeValue(writer, UnindexedPlayer.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: UnindexedPlayer
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      UnindexedPlayer.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): UnindexedPlayer {
-    return AlgebraicType.deserializeValue(reader, UnindexedPlayer.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      UnindexedPlayer.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-
