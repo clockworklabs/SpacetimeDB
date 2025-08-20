@@ -24,7 +24,7 @@ members = [
   "crates/query",
   "crates/sats",
   "crates/schema",
-  "crates/sdk",
+  "sdks/rust",
   "crates/snapshot",
   "crates/sqltest",
   "crates/sql-parser",

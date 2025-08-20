@@ -91,6 +91,7 @@ impl SchedulerStarter {
     // time to make it better right now.
     pub fn start(mut self, module_host: &ModuleHost) -> anyhow::Result<()> {
         let mut queue: DelayQueue<QueueItem> = DelayQueue::new();
+        let mut key_map = FxHashMap::default();
 
         let tx = self.db.begin_tx(Workload::Internal);
 
@@ -126,7 +127,17 @@ impl SchedulerStarter {
                     id_column,
                     at_column,
                 };
-                queue.insert_at(QueueItem::Id { id, at }, now_instant + duration);
+                let key = queue.insert_at(QueueItem::Id { id, at }, now_instant + duration);
+
+                // This should never happen as duplicate entries should be gated by unique
+                // constraint voilation in scheduled tables.
+                if key_map.insert(id, key).is_some() {
+                    return Err(anyhow!(
+                        "Duplicate key found in scheduler queue: table_id {}, schedule_id {}",
+                        id.table_id,
+                        id.schedule_id
+                    ));
+                }
             }
         }
 
@@ -134,7 +145,7 @@ impl SchedulerStarter {
             SchedulerActor {
                 rx: self.rx,
                 queue,
-                key_map: FxHashMap::default(),
+                key_map,
                 module_host: module_host.downgrade(),
             }
             .run(),
