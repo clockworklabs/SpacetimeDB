@@ -31,63 +31,65 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from '@clockworklabs/spacetimedb-sdk';
 
 // Import and reexport all reducer arg types
-import { CreatePlayer } from "./create_player_reducer.ts";
+import { CreatePlayer } from './create_player_reducer.ts';
 export { CreatePlayer };
 
 // Import and reexport all table handle types
-import { PlayerTableHandle } from "./player_table.ts";
+import { PlayerTableHandle } from './player_table.ts';
 export { PlayerTableHandle };
-import { UnindexedPlayerTableHandle } from "./unindexed_player_table.ts";
+import { UnindexedPlayerTableHandle } from './unindexed_player_table.ts';
 export { UnindexedPlayerTableHandle };
-import { UserTableHandle } from "./user_table.ts";
+import { UserTableHandle } from './user_table.ts';
 export { UserTableHandle };
 
 // Import and reexport all types
-import { Player } from "./player_type.ts";
+import { Player } from './player_type.ts';
 export { Player };
-import { Point } from "./point_type.ts";
+import { Point } from './point_type.ts';
 export { Point };
-import { UnindexedPlayer } from "./unindexed_player_type.ts";
+import { UnindexedPlayer } from './unindexed_player_type.ts';
 export { UnindexedPlayer };
-import { User } from "./user_type.ts";
+import { User } from './user_type.ts';
 export { User };
 
 const REMOTE_MODULE = {
   tables: {
     player: {
-      tableName: "player",
+      tableName: 'player',
       rowType: Player.getTypeScriptAlgebraicType(),
-      primaryKey: "ownerId",
+      primaryKey: 'ownerId',
       primaryKeyInfo: {
-        colName: "ownerId",
-        colType: (Player.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
+        colName: 'ownerId',
+        colType: (Player.getTypeScriptAlgebraicType() as ProductType).value
+          .elements[0].algebraicType,
       },
     },
     unindexed_player: {
-      tableName: "unindexed_player",
+      tableName: 'unindexed_player',
       rowType: UnindexedPlayer.getTypeScriptAlgebraicType(),
     },
     user: {
-      tableName: "user",
+      tableName: 'user',
       rowType: User.getTypeScriptAlgebraicType(),
-      primaryKey: "identity",
+      primaryKey: 'identity',
       primaryKeyInfo: {
-        colName: "identity",
-        colType: (User.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
+        colName: 'identity',
+        colType: (User.getTypeScriptAlgebraicType() as ProductType).value
+          .elements[0].algebraicType,
       },
     },
   },
   reducers: {
     create_player: {
-      reducerName: "create_player",
+      reducerName: 'create_player',
       argsType: CreatePlayer.getTypeScriptAlgebraicType(),
     },
   },
   versionInfo: {
-    cliVersion: "1.3.0",
+    cliVersion: '1.3.0',
   },
   // Constructors which are used by the DbConnectionImpl to
   // extract type information from the generated RemoteModule.
@@ -99,44 +101,55 @@ const REMOTE_MODULE = {
   eventContextConstructor: (imp: DbConnectionImpl, event: Event<Reducer>) => {
     return {
       ...(imp as DbConnection),
-      event
-    }
+      event,
+    };
   },
   dbViewConstructor: (imp: DbConnectionImpl) => {
     return new RemoteTables(imp);
   },
-  reducersConstructor: (imp: DbConnectionImpl, setReducerFlags: SetReducerFlags) => {
+  reducersConstructor: (
+    imp: DbConnectionImpl,
+    setReducerFlags: SetReducerFlags
+  ) => {
     return new RemoteReducers(imp, setReducerFlags);
   },
   setReducerFlagsConstructor: () => {
     return new SetReducerFlags();
-  }
-}
+  },
+};
 
 // A type representing all the possible variants of a reducer.
-export type Reducer = never
-| { name: "CreatePlayer", args: CreatePlayer }
-;
+export type Reducer = never | { name: 'CreatePlayer'; args: CreatePlayer };
 
 export class RemoteReducers {
-  constructor(private connection: DbConnectionImpl, private setCallReducerFlags: SetReducerFlags) {}
+  constructor(
+    private connection: DbConnectionImpl,
+    private setCallReducerFlags: SetReducerFlags
+  ) {}
 
   createPlayer(name: string, location: Point) {
     const __args = { name, location };
     let __writer = new BinaryWriter(1024);
     CreatePlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("create_player", __argsBuffer, this.setCallReducerFlags.createPlayerFlags);
+    this.connection.callReducer(
+      'create_player',
+      __argsBuffer,
+      this.setCallReducerFlags.createPlayerFlags
+    );
   }
 
-  onCreatePlayer(callback: (ctx: ReducerEventContext, name: string, location: Point) => void) {
-    this.connection.onReducer("create_player", callback);
+  onCreatePlayer(
+    callback: (ctx: ReducerEventContext, name: string, location: Point) => void
+  ) {
+    this.connection.onReducer('create_player', callback);
   }
 
-  removeOnCreatePlayer(callback: (ctx: ReducerEventContext, name: string, location: Point) => void) {
-    this.connection.offReducer("create_player", callback);
+  removeOnCreatePlayer(
+    callback: (ctx: ReducerEventContext, name: string, location: Point) => void
+  ) {
+    this.connection.offReducer('create_player', callback);
   }
-
 }
 
 export class SetReducerFlags {
@@ -144,37 +157,82 @@ export class SetReducerFlags {
   createPlayer(flags: CallReducerFlags) {
     this.createPlayerFlags = flags;
   }
-
 }
 
 export class RemoteTables {
   constructor(private connection: DbConnectionImpl) {}
 
   get player(): PlayerTableHandle {
-    return new PlayerTableHandle(this.connection.clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.player));
+    return new PlayerTableHandle(
+      this.connection.clientCache.getOrCreateTable<Player>(
+        REMOTE_MODULE.tables.player
+      )
+    );
   }
 
   get unindexedPlayer(): UnindexedPlayerTableHandle {
-    return new UnindexedPlayerTableHandle(this.connection.clientCache.getOrCreateTable<UnindexedPlayer>(REMOTE_MODULE.tables.unindexed_player));
+    return new UnindexedPlayerTableHandle(
+      this.connection.clientCache.getOrCreateTable<UnindexedPlayer>(
+        REMOTE_MODULE.tables.unindexed_player
+      )
+    );
   }
 
   get user(): UserTableHandle {
-    return new UserTableHandle(this.connection.clientCache.getOrCreateTable<User>(REMOTE_MODULE.tables.user));
+    return new UserTableHandle(
+      this.connection.clientCache.getOrCreateTable<User>(
+        REMOTE_MODULE.tables.user
+      )
+    );
   }
 }
 
-export class SubscriptionBuilder extends SubscriptionBuilderImpl<RemoteTables, RemoteReducers, SetReducerFlags> { }
+export class SubscriptionBuilder extends SubscriptionBuilderImpl<
+  RemoteTables,
+  RemoteReducers,
+  SetReducerFlags
+> {}
 
-export class DbConnection extends DbConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags> {
-  static builder = (): DbConnectionBuilder<DbConnection, ErrorContext, SubscriptionEventContext> => {
-    return new DbConnectionBuilder<DbConnection, ErrorContext, SubscriptionEventContext>(REMOTE_MODULE, (imp: DbConnectionImpl) => imp as DbConnection);
-  }
+export class DbConnection extends DbConnectionImpl<
+  RemoteTables,
+  RemoteReducers,
+  SetReducerFlags
+> {
+  static builder = (): DbConnectionBuilder<
+    DbConnection,
+    ErrorContext,
+    SubscriptionEventContext
+  > => {
+    return new DbConnectionBuilder<
+      DbConnection,
+      ErrorContext,
+      SubscriptionEventContext
+    >(REMOTE_MODULE, (imp: DbConnectionImpl) => imp as DbConnection);
+  };
   subscriptionBuilder = (): SubscriptionBuilder => {
     return new SubscriptionBuilder(this);
-  }
+  };
 }
 
-export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;
-export type ReducerEventContext = ReducerEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;
-export type SubscriptionEventContext = SubscriptionEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;
-export type ErrorContext = ErrorContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;
+export type EventContext = EventContextInterface<
+  RemoteTables,
+  RemoteReducers,
+  SetReducerFlags,
+  Reducer
+>;
+export type ReducerEventContext = ReducerEventContextInterface<
+  RemoteTables,
+  RemoteReducers,
+  SetReducerFlags,
+  Reducer
+>;
+export type SubscriptionEventContext = SubscriptionEventContextInterface<
+  RemoteTables,
+  RemoteReducers,
+  SetReducerFlags
+>;
+export type ErrorContext = ErrorContextInterface<
+  RemoteTables,
+  RemoteReducers,
+  SetReducerFlags
+>;
