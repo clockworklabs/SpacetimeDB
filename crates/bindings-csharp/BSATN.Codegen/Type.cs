@@ -42,13 +42,16 @@ public abstract record TypeUse(string Name, string BSATNName)
     /// The name of the static field containing an IReadWrite in the IReadWrite struct associated with this type.
     /// We make sure this is different from the field name so that collisions cannot occur.
     /// </summary>
-    public string BsatnFieldName
-    {
-        get => $"{Name}{BSATN_FIELD_SUFFIX}";
-    }
+    internal string BsatnFieldName => $"{Name}{BSATN_FIELD_SUFFIX}";
 
-    public MemberDeclaration(ISymbol member, ITypeSymbol type, DiagReporter diag)
-        : this(member.Name, SymbolToName(type), "", Utils.IsNullableReferenceType(type))
+    /// <summary>
+    /// Parse a type use for a member.
+    /// </summary>
+    /// <param name="member">The member name. Only used for reporting parsing failures.</param>
+    /// <param name="typeSymbol">The type we are using. May not be the type of the member: this method is called recursively.</param>
+    /// <param name="diag"></param>
+    /// <returns></returns>
+    public static TypeUse Parse(ISymbol member, ITypeSymbol typeSymbol, DiagReporter diag)
     {
         var type = SymbolToName(typeSymbol);
         string typeInfo;
@@ -344,19 +347,17 @@ public record MemberDeclaration(
         var visStr = SyntaxFacts.GetText(visibility);
         return string.Join(
             "\n        ",
-            members.Select(m =>
-                $"{visStr} static readonly {m.TypeInfo} {m.BsatnFieldName} = new();"
-            )
+            members.Select(m => $"{visStr} static readonly {m.Type.Name} {m.Type.BsatnFieldName} = new();")
         );
     }
 
     public static string GenerateDefs(IEnumerable<MemberDeclaration> members) =>
         string.Join(
             ",\n                ",
-            // we can't use nameof(m.BsatnFieldName) because the bsatn field name differs from the logical name
+            // we can't use nameof(m.Type.BsatnFieldName) because the bsatn field name differs from the logical name
             // assigned in the type.
             members.Select(m =>
-                $"new(\"{m.Name}\", {m.BsatnFieldName}.GetAlgebraicType(registrar))"
+                $"new(\"{m.Name}\", {m.Type.BsatnFieldName}.GetAlgebraicType(registrar))"
             )
         );
 }
@@ -477,23 +478,16 @@ public abstract record BaseTypeDeclaration<M>
 
         if (Kind is TypeKind.Sum)
         {
-            var enumTag = new MemberDeclaration(
-                "__enumTag",
-                "@enum",
-                "SpacetimeDB.BSATN.Enum<@enum>",
-                false
-            );
-
             extensions.Contents.Append(
                 $$"""
-                    private {{ShortName}}() { }
+                      private {{ShortName}}() { }
 
-                    internal enum @enum: byte
-                    {
-                        {{string.Join(",\n        ", bsatnDecls.Select(decl => decl.Name))}}
-                    }
-                
-                """
+                      internal enum @enum: byte
+                      {
+                          {{string.Join(",\n        ", bsatnDecls.Select(decl => decl.Name))}}
+                      }
+
+                  """
             );
             extensions.Contents.Append(
                 string.Join(
@@ -515,11 +509,11 @@ public abstract record BaseTypeDeclaration<M>
             );
 
             read = $$"""
-                    {{enumTag.BsatnFieldName}}.Read(reader) switch {
+                    return reader.ReadByte() switch {
                         {{string.Join(
                             "\n            ",
-                            bsatnDecls.Select(m =>
-                                $"@enum.{m.Name} => new {m.Name}({m.BsatnFieldName}.Read(reader)),"
+                            bsatnDecls.Select((m, i) =>
+                                $"{i} => new {m.Name}({m.Type.BsatnFieldName}.Read(reader)),"
                             )
                         )}}
                         _ => throw new System.InvalidOperationException("Invalid tag value, this state should be unreachable.")
@@ -530,12 +524,12 @@ public abstract record BaseTypeDeclaration<M>
             switch (value) {
             {{string.Join(
                 "\n",
-                bsatnDecls.Select(m => $"""
-                            case {m.Name}(var inner):
-                                {enumTag.BsatnFieldName}.Write(writer, @enum.{m.Name});
-                                {m.BsatnFieldName}.Write(writer, inner);
-                                break;
-                """))}}
+                bsatnDecls.Select((m, i) => $"""
+                                                            case {m.Name}(var inner):
+                                                                writer.Write((byte){i});
+                                                                {m.Type.BsatnFieldName}.Write(writer, inner);
+                                                                break;
+                                                """))}}
                         }
             """;
 
@@ -558,10 +552,6 @@ public abstract record BaseTypeDeclaration<M>
                         return 0;
                     }
             """;
-
-            // It's important that this happen here; only the stuff later in this method
-            // needs to see the enum tag as one of the bsatn declarations.
-            bsatnDecls = bsatnDecls.Prepend(enumTag);
         }
         else
         {
@@ -572,14 +562,14 @@ public abstract record BaseTypeDeclaration<M>
                 public void ReadFields(System.IO.BinaryReader reader) {
             {{string.Join(
                     "\n",
-                    bsatnDecls.Select(m => $"        {m.Name} = BSATN.{m.BsatnFieldName}.Read(reader);")
+                    bsatnDecls.Select(m => $"        {m.Name} = BSATN.{m.Type.BsatnFieldName}.Read(reader);")
                 )}}
                 }
 
                 public void WriteFields(System.IO.BinaryWriter writer) {
             {{string.Join(
                     "\n",
-                    bsatnDecls.Select(m => $"        BSATN.{m.BsatnFieldName}.Write(writer, {m.Name});")
+                    bsatnDecls.Select(m => $"        BSATN.{m.Type.BsatnFieldName}.Write(writer, {m.Name});")
                 )}}
                 }
 
