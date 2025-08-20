@@ -18,6 +18,8 @@ def get_all_crate_metadata() -> Dict[str, dict]:
 def find_spacetimedb_dependencies(crate_metadata, crate):
     deps = crate_metadata[crate].get('dependencies', [])
     deps = [ dep['name'] for dep in deps if dep['kind'] != 'dev' ]
+    # We use --no-deps to generate the metadata, so a dep will be in crate_metadata only if it is
+    # one we create in this workspace.
     deps = [ dep for dep in deps if dep in crate_metadata ]
     return deps
 
