@@ -31,10 +31,10 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from '@clockworklabs/spacetimedb-sdk';
+} from "@clockworklabs/spacetimedb-sdk";
 export type Point = {
-  x: number;
-  y: number;
+  x: number,
+  y: number,
 };
 export default Point;
 
@@ -43,19 +43,26 @@ export default Point;
  */
 export namespace Point {
   /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
+<<<<<<< HEAD
         { name: 'x', algebraicType: AlgebraicType.U16 },
         { name: 'y', algebraicType: AlgebraicType.U16 },
       ],
+=======
+        { name: "x", algebraicType: AlgebraicType.U16},
+        { name: "y", algebraicType: AlgebraicType.U16},
+      ]
+>>>>>>> 41e4bf0ef (Testing fixes)
     });
   }
 
   export function serialize(writer: BinaryWriter, value: Point): void {
+<<<<<<< HEAD
     AlgebraicType.serializeValue(
       writer,
       Point.getTypeScriptAlgebraicType(),
@@ -68,5 +75,15 @@ export namespace Point {
       reader,
       Point.getTypeScriptAlgebraicType()
     );
+=======
+    AlgebraicType.serializeValue(writer, Point.getTypeScriptAlgebraicType(), value);
   }
+
+  export function deserialize(reader: BinaryReader): Point {
+    return AlgebraicType.deserializeValue(reader, Point.getTypeScriptAlgebraicType());
+>>>>>>> 41e4bf0ef (Testing fixes)
+  }
+
 }
+
+
