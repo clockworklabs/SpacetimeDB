@@ -144,7 +144,7 @@ record ColumnDeclaration : MemberDeclaration
 
     // For the `TableDesc` constructor.
     public string GenerateColumnDef() =>
-        $"new (nameof({Name}), BSATN.{BsatnFieldName}.GetAlgebraicType(registrar))";
+        $"new (nameof({Name}), BSATN.{Name}{TypeUse.BsatnFieldSuffix}.GetAlgebraicType(registrar))";
 }
 
 record Scheduled(string ReducerName, int ScheduledAtColumn);
@@ -494,7 +494,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                             $$"""
                             if (row.{{m.Name}} == default)
                             {
-                                row.{{m.Name}} = {{globalName}}.BSATN.{{m.BsatnFieldName}}.Read(reader);
+                                row.{{m.Name}} = {{globalName}}.BSATN.{{m.Name}}{{TypeUse.BsatnFieldSuffix}}.Read(reader);
                             }
                             """
                         )
@@ -636,7 +636,7 @@ record ReducerDeclaration
             ? "throw new System.InvalidOperationException()"
             : $"{FullName}({string.Join(
                 ", ",
-                Args.Select(a => $"{a.BsatnFieldName}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
+                Args.Select(a => $"{a.Name}{TypeUse.BsatnFieldSuffix}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
             )})";
 
         return $$"""
