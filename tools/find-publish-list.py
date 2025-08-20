@@ -17,9 +17,13 @@ def get_all_crate_metadata() -> Dict[str, dict]:
 
 def find_spacetimedb_dependencies(crate_metadata, crate):
     deps = crate_metadata[crate].get('dependencies', [])
-    deps = [ dep['name'] for dep in deps if dep['kind'] != 'dev' ]
-    deps = [ dep for dep in deps if dep in crate_metadata ]
-    return deps
+    # filter out dev-dependencies. otherwise, we get dependency cycles.
+    deps = [ dep for dep in deps if dep['kind'] != 'dev' ]
+    dep_names = [ dep['name'] for dep in deps ]
+    # We use --no-deps to generate the metadata, so a dep will be in crate_metadata only if it is
+    # one we create in this workspace.
+    dep_names = [ dep for dep in dep_names if dep in crate_metadata ]
+    return dep_names
 
 def process_crate(crate_name, crate_metadata, recursive=False, debug=False):
     if debug:
