@@ -2,7 +2,6 @@ import argparse
 import json
 import subprocess
 import sys
-import toml
 from pathlib import Path
 from typing import Dict
 
@@ -16,20 +15,17 @@ def get_all_crate_metadata() -> Dict[str, dict]:
     metadata = json.loads(result.stdout)
     return {pkg['name']: pkg for pkg in metadata.get('packages', [])}
 
-def find_spacetimedb_dependencies(crate_metadata, cargo_toml_path):
-    with open(cargo_toml_path, 'r') as file:
-        cargo_data = toml.load(file)
-
-    deps = cargo_data.get('dependencies', {})
-    return [dep for dep in deps if dep in crate_metadata]
+def find_spacetimedb_dependencies(crate_metadata, crate):
+    deps = crate_metadata[crate].get('dependencies', [])
+    deps = [ dep['name'] for dep in deps if dep['kind'] != 'dev' ]
+    deps = [ dep for dep in deps if dep in crate_metadata ]
+    return deps
 
 def process_crate(crate_name, crate_metadata, recursive=False, debug=False):
-    cargo_toml_path = Path(crate_metadata[crate_name]['manifest_path'])
-
     if debug:
         print(f"\nChecking crate '{crate_name}'...")
 
-    deps = find_spacetimedb_dependencies(crate_metadata, cargo_toml_path)
+    deps = find_spacetimedb_dependencies(crate_metadata, crate_name)
 
     if debug:
         if deps:
