@@ -12,6 +12,7 @@ pub struct Person {
     name: String,
 }
 
+#[spacetimedb::reducer]
 pub fn add_person(ctx: &ReducerContext, name: String) {
     ctx.db.person().insert(Person { name });
 }
