@@ -920,7 +920,7 @@ const REMOTE_MODULE = {
       primaryKey: "identity",
       primaryKeyInfo: {
         colName: "identity",
-        colType: Player.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+        colType: (Player.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
       },
     },
     person: {
@@ -929,7 +929,7 @@ const REMOTE_MODULE = {
       primaryKey: "id",
       primaryKeyInfo: {
         colName: "id",
-        colType: Person.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+        colType: (Person.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
       },
     },
     pk_multi_identity: {
@@ -938,7 +938,7 @@ const REMOTE_MODULE = {
       primaryKey: "id",
       primaryKeyInfo: {
         colName: "id",
-        colType: PkMultiIdentity.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+        colType: (PkMultiIdentity.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
       },
     },
     player: {
@@ -947,7 +947,7 @@ const REMOTE_MODULE = {
       primaryKey: "identity",
       primaryKeyInfo: {
         colName: "identity",
-        colType: Player.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+        colType: (Player.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
       },
     },
     points: {
@@ -964,7 +964,7 @@ const REMOTE_MODULE = {
       primaryKey: "scheduledId",
       primaryKeyInfo: {
         colName: "scheduledId",
-        colType: RepeatingTestArg.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+        colType: (RepeatingTestArg.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
       },
     },
     test_a: {
@@ -981,7 +981,7 @@ const REMOTE_MODULE = {
       primaryKey: "id",
       primaryKeyInfo: {
         colName: "id",
-        colType: TestE.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+        colType: (TestE.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
       },
     },
     test_f: {
