@@ -31,13 +31,13 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { RawScopedTypeNameV9 as __RawScopedTypeNameV9 } from "./raw_scoped_type_name_v_9_type";
+} from '../index';
+import { RawScopedTypeNameV9 as __RawScopedTypeNameV9 } from './raw_scoped_type_name_v_9_type';
 
 export type RawTypeDefV9 = {
-  name: __RawScopedTypeNameV9,
-  ty: number,
-  customOrdering: boolean,
+  name: __RawScopedTypeNameV9;
+  ty: number;
+  customOrdering: boolean;
 };
 export default RawTypeDefV9;
 
@@ -46,27 +46,34 @@ export default RawTypeDefV9;
  */
 export namespace RawTypeDefV9 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "name", algebraicType: __RawScopedTypeNameV9.getTypeScriptAlgebraicType()},
-        { name: "ty", algebraicType: AlgebraicType.U32},
-        { name: "customOrdering", algebraicType: AlgebraicType.Bool},
-      ]
+        {
+          name: 'name',
+          algebraicType: __RawScopedTypeNameV9.getTypeScriptAlgebraicType(),
+        },
+        { name: 'ty', algebraicType: AlgebraicType.U32 },
+        { name: 'customOrdering', algebraicType: AlgebraicType.Bool },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: RawTypeDefV9): void {
-    AlgebraicType.serializeValue(writer, RawTypeDefV9.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      RawTypeDefV9.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawTypeDefV9 {
-    return AlgebraicType.deserializeValue(reader, RawTypeDefV9.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawTypeDefV9.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

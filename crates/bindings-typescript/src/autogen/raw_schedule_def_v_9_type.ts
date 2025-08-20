@@ -31,11 +31,11 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type RawScheduleDefV9 = {
-  name: string | undefined,
-  reducerName: string,
-  scheduledAtColumn: number,
+  name: string | undefined;
+  reducerName: string;
+  scheduledAtColumn: number;
 };
 export default RawScheduleDefV9;
 
@@ -44,27 +44,37 @@ export default RawScheduleDefV9;
  */
 export namespace RawScheduleDefV9 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.createOptionType(AlgebraicType.String)},
-        { name: "reducerName", algebraicType: AlgebraicType.String},
-        { name: "scheduledAtColumn", algebraicType: AlgebraicType.U16},
-      ]
+        {
+          name: 'name',
+          algebraicType: AlgebraicType.createOptionType(AlgebraicType.String),
+        },
+        { name: 'reducerName', algebraicType: AlgebraicType.String },
+        { name: 'scheduledAtColumn', algebraicType: AlgebraicType.U16 },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: RawScheduleDefV9): void {
-    AlgebraicType.serializeValue(writer, RawScheduleDefV9.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: RawScheduleDefV9
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      RawScheduleDefV9.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawScheduleDefV9 {
-    return AlgebraicType.deserializeValue(reader, RawScheduleDefV9.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawScheduleDefV9.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-

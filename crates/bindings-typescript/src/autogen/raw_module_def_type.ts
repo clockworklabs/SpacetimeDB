@@ -31,9 +31,9 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
-import { RawModuleDefV8 as __RawModuleDefV8 } from "./raw_module_def_v_8_type";
-import { RawModuleDefV9 as __RawModuleDefV9 } from "./raw_module_def_v_9_type";
+} from '../index';
+import { RawModuleDefV8 as __RawModuleDefV8 } from './raw_module_def_v_8_type';
+import { RawModuleDefV9 as __RawModuleDefV9 } from './raw_module_def_v_9_type';
 
 // These are the generated variant types for each variant of the tagged union.
 // One type is generated per variant and will be used in the `value` field of
@@ -43,8 +43,8 @@ import { RawModuleDefV9 as __RawModuleDefV9 } from "./raw_module_def_v_9_type";
 // the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
 // type. e.g. `const x: FooVariants.Variant`
 export namespace RawModuleDefVariants {
-  export type V8BackCompat = { tag: "V8BackCompat", value: __RawModuleDefV8 };
-  export type V9 = { tag: "V9", value: __RawModuleDefV9 };
+  export type V8BackCompat = { tag: 'V8BackCompat'; value: __RawModuleDefV8 };
+  export type V9 = { tag: 'V9'; value: __RawModuleDefV9 };
 }
 
 // A namespace for generated variants and helper functions.
@@ -55,31 +55,49 @@ export namespace RawModuleDef {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const V8BackCompat = (value: __RawModuleDefV8): RawModuleDef => ({ tag: "V8BackCompat", value });
-  export const V9 = (value: __RawModuleDefV9): RawModuleDef => ({ tag: "V9", value });
+  export const V8BackCompat = (value: __RawModuleDefV8): RawModuleDef => ({
+    tag: 'V8BackCompat',
+    value,
+  });
+  export const V9 = (value: __RawModuleDefV9): RawModuleDef => ({
+    tag: 'V9',
+    value,
+  });
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
-        { name: "V8BackCompat", algebraicType: __RawModuleDefV8.getTypeScriptAlgebraicType() },
-        { name: "V9", algebraicType: __RawModuleDefV9.getTypeScriptAlgebraicType() },
-      ]
+        {
+          name: 'V8BackCompat',
+          algebraicType: __RawModuleDefV8.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'V9',
+          algebraicType: __RawModuleDefV9.getTypeScriptAlgebraicType(),
+        },
+      ],
     });
   }
 
   export function serialize(writer: BinaryWriter, value: RawModuleDef): void {
-      AlgebraicType.serializeValue(writer, RawModuleDef.getTypeScriptAlgebraicType(), value);
+    AlgebraicType.serializeValue(
+      writer,
+      RawModuleDef.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawModuleDef {
-      return AlgebraicType.deserializeValue(reader, RawModuleDef.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawModuleDef.getTypeScriptAlgebraicType()
+    );
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `RawModuleDef`.
-export type RawModuleDef = RawModuleDefVariants.V8BackCompat |
-  RawModuleDefVariants.V9;
+export type RawModuleDef =
+  | RawModuleDefVariants.V8BackCompat
+  | RawModuleDefVariants.V9;
 
 export default RawModuleDef;
-

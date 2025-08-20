@@ -31,10 +31,10 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "../index";
+} from '../index';
 export type RawScopedTypeNameV9 = {
-  scope: string[],
-  name: string,
+  scope: string[];
+  name: string;
 };
 export default RawScopedTypeNameV9;
 
@@ -43,26 +43,36 @@ export default RawScopedTypeNameV9;
  */
 export namespace RawScopedTypeNameV9 {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-        { name: "scope", algebraicType: AlgebraicType.Array(AlgebraicType.String)},
-        { name: "name", algebraicType: AlgebraicType.String},
-      ]
+        {
+          name: 'scope',
+          algebraicType: AlgebraicType.Array(AlgebraicType.String),
+        },
+        { name: 'name', algebraicType: AlgebraicType.String },
+      ],
     });
   }
 
-  export function serialize(writer: BinaryWriter, value: RawScopedTypeNameV9): void {
-    AlgebraicType.serializeValue(writer, RawScopedTypeNameV9.getTypeScriptAlgebraicType(), value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: RawScopedTypeNameV9
+  ): void {
+    AlgebraicType.serializeValue(
+      writer,
+      RawScopedTypeNameV9.getTypeScriptAlgebraicType(),
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): RawScopedTypeNameV9 {
-    return AlgebraicType.deserializeValue(reader, RawScopedTypeNameV9.getTypeScriptAlgebraicType());
+    return AlgebraicType.deserializeValue(
+      reader,
+      RawScopedTypeNameV9.getTypeScriptAlgebraicType()
+    );
   }
-
 }
-
-
