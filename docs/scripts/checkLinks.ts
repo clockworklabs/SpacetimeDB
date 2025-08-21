@@ -11,7 +11,7 @@ function extractSlugToPathMap(nav: { items: any[] }): Map<string, string> {
   const slugToPath = new Map<string, string>();
 
   function traverseNav(items: any[]): void {
-    items.forEach((item) => {
+    items.forEach(item => {
       if (item.type === 'page' && item.slug && item.path) {
         const resolvedPath = path.resolve(__dirname, '../docs', item.path);
         slugToPath.set(`/docs/${item.slug}`, resolvedPath);
@@ -29,13 +29,17 @@ function extractSlugToPathMap(nav: { items: any[] }): Map<string, string> {
 function validatePathsExist(slugToPath: Map<string, string>): void {
   slugToPath.forEach((filePath, slug) => {
     if (!fs.existsSync(filePath)) {
-      throw new Error(`File not found: ${filePath} (Referenced by slug: ${slug})`);
+      throw new Error(
+        `File not found: ${filePath} (Referenced by slug: ${slug})`
+      );
     }
   });
 }
 
 // Function to extract links and images from markdown files with line numbers
-function extractLinksAndImagesFromMarkdown(filePath: string): { link: string; type: 'image' | 'link'; line: number }[] {
+function extractLinksAndImagesFromMarkdown(
+  filePath: string
+): { link: string; type: 'image' | 'link'; line: number }[] {
   const content = fs.readFileSync(filePath, 'utf-8');
   const tree = unified().use(remarkParse).parse(content);
 
@@ -45,7 +49,11 @@ function extractLinksAndImagesFromMarkdown(filePath: string): { link: string; ty
     const link = node.url;
     const line = node.position?.start?.line ?? 0;
     if (link) {
-      results.push({ link, type: node.type === 'image' ? 'image' : 'link', line });
+      results.push({
+        link,
+        type: node.type === 'image' ? 'image' : 'link',
+        line,
+      });
     }
   });
 
@@ -66,13 +74,22 @@ function resolveLink(link: string, currentSlug: string): string {
 
   // Resolve relative links based on slug
   const currentSlugDir = path.dirname(currentSlug);
-  const resolvedSlug = path.normalize(path.join(currentSlugDir, link)).replace(/\\/g, '/');
-  return resolvedSlug.startsWith('/docs') ? resolvedSlug : `/docs${resolvedSlug}`;
+  const resolvedSlug = path
+    .normalize(path.join(currentSlugDir, link))
+    .replace(/\\/g, '/');
+  return resolvedSlug.startsWith('/docs')
+    ? resolvedSlug
+    : `/docs${resolvedSlug}`;
 }
 
 // Function to check if the links in .md files match the slugs in nav.ts and validate fragments/images
 function checkLinks(): void {
-  const brokenLinks: { file: string; link: string; type: 'image' | 'link'; line: number }[] = [];
+  const brokenLinks: {
+    file: string;
+    link: string;
+    type: 'image' | 'link';
+    line: number;
+  }[] = [];
   let totalFiles = 0;
   let totalLinks = 0;
   let validLinks = 0;
@@ -106,7 +123,7 @@ function checkLinks(): void {
 
   totalFiles = mdFiles.length;
 
-  mdFiles.forEach((file) => {
+  mdFiles.forEach(file => {
     const linksAndImages = extractLinksAndImagesFromMarkdown(file);
     totalLinks += linksAndImages.length;
 
@@ -127,7 +144,9 @@ function checkLinks(): void {
 
       if (type === 'image') {
         // Validate image paths
-        const normalizedLink = resolvedLink.startsWith('/') ? resolvedLink.slice(1) : resolvedLink;
+        const normalizedLink = resolvedLink.startsWith('/')
+          ? resolvedLink.slice(1)
+          : resolvedLink;
         const imagePath = path.resolve(__dirname, '../', normalizedLink);
 
         if (!fs.existsSync(imagePath)) {
@@ -229,7 +248,7 @@ function getMarkdownFiles(dir: string): string[] {
   let files: string[] = [];
   const items = fs.readdirSync(dir);
 
-  items.forEach((item) => {
+  items.forEach(item => {
     const fullPath = path.join(dir, item);
     const stat = fs.lstatSync(fullPath);
 

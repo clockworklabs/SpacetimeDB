@@ -4,7 +4,7 @@ Need help with the tutorial or CLI commands? [Join our Discord server](https://d
 
 In this tutorial you'll learn how to build a small-scoped MMORPG in Unity, from scratch, using SpacetimeDB. Although, the game we're going to build is small in scope, it'll scale to hundreds of players and will help you get acquainted with all the features and best practices of SpacetimeDB, while building [a fun little game](https://github.com/ClockworkLabs/Blackholio).
 
-By the end, you should have a basic understanding of what SpacetimeDB offers for developers making multiplayer games. 
+By the end, you should have a basic understanding of what SpacetimeDB offers for developers making multiplayer games.
 
 The game is inspired by [agar.io](https://agar.io), but SpacetimeDB themed with some fun twists. If you're not familiar [agar.io](https://agar.io), it's a web game in which you and hundreds of other players compete to cultivate mass to become the largest cell in the Petri dish.
 

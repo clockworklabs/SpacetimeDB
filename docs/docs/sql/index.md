@@ -334,10 +334,10 @@ Returns the value of a system variable.
 
 - `row_limit`
 
-    ```sql
-    -- Reject queries that scan more than 10K rows
-    SET row_limit = 10000
-    ```
+  ```sql
+  -- Reject queries that scan more than 10K rows
+  SET row_limit = 10000
+  ```
 
 ## Data types
 
@@ -488,33 +488,34 @@ When designing your schema or crafting your queries,
 consider the following best practices to ensure optimal performance:
 
 - **Add Primary Key and/or Unique Constraints:**  
-    Constrain columns whose values are guaranteed to be distinct as either unique or primary keys.
-    The query planner can further optimize joins if it knows the join values to be unique.
+   Constrain columns whose values are guaranteed to be distinct as either unique or primary keys.
+  The query planner can further optimize joins if it knows the join values to be unique.
 
 - **Index Filtered Columns:**  
-    Index columns frequently used in a `WHERE` clause.
-    Indexes reduce the number of rows scanned by the query engine.
+   Index columns frequently used in a `WHERE` clause.
+  Indexes reduce the number of rows scanned by the query engine.
 
 - **Index Join Columns:**  
-    Index columns whose values are frequently used as join keys.
-    These are columns that are used in the `ON` condition of a `JOIN`.
+   Index columns whose values are frequently used as join keys.
+  These are columns that are used in the `ON` condition of a `JOIN`.
 
-    Again, this reduces the number of rows that must be scanned to answer a query.
-    It is also critical for the performance of subscription updates --
-    so much so that it is a compiler-enforced requirement,
-    as mentioned in the [subscription](#from) section.
+  Again, this reduces the number of rows that must be scanned to answer a query.
+  It is also critical for the performance of subscription updates --
+  so much so that it is a compiler-enforced requirement,
+  as mentioned in the [subscription](#from) section.
 
-    If a column that has already been constrained as unique or a primary key,
-    it is not necessary to explicitly index it as well,
-    since these constraints automatically index the column in question.
+  If a column that has already been constrained as unique or a primary key,
+  it is not necessary to explicitly index it as well,
+  since these constraints automatically index the column in question.
 
 - **Optimize Join Order:**  
-    Place tables with the most selective filters first in your `FROM` clause.
-    This minimizes intermediate result sizes and improves query efficiency.
+   Place tables with the most selective filters first in your `FROM` clause.
+  This minimizes intermediate result sizes and improves query efficiency.
 
 ### Example
 
 Take the following query that was used in a previous example:
+
 ```sql
 -- Find all customers who ordered a particular product and when they ordered it
 SELECT customer.first_name, customer.last_name, o.date
@@ -534,6 +535,7 @@ In order to conform with the best practices for optimizing performance and scala
 - `Customers` should come next because it joins directly with `Orders`.
 
 :::server-rust
+
 ```rust
 #[table(
     name = Inventory,
@@ -573,8 +575,10 @@ struct Orders {
     ..
 }
 ```
+
 :::
 :::server-csharp
+
 ```cs
 [SpacetimeDB.Table(Name = "Inventory")]
 [SpacetimeDB.Index(Name = "product_name", BTree = ["name"])]
@@ -608,6 +612,7 @@ public partial struct Orders
     ..
 }
 ```
+
 :::
 
 ```sql
@@ -642,10 +647,8 @@ column
     ;
 ```
 
-
-[sdk]:       /docs/sdks/rust#subscribe-to-queries
-[http]:      /docs/http/database#post-v1databasename_or_identitysql
-[cli]:       /docs/cli-reference#spacetime-sql
-
+[sdk]: /docs/sdks/rust#subscribe-to-queries
+[http]: /docs/http/database#post-v1databasename_or_identitysql
+[cli]: /docs/cli-reference#spacetime-sql
 [Identity]: /docs#identity
-[ConnectionId]:  /docs#connectionid
+[ConnectionId]: /docs#connectionid

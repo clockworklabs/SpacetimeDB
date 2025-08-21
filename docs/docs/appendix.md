@@ -6,15 +6,15 @@ For each table containing an `#[auto_inc]` column, SpacetimeDB creates a sequenc
 
 ### How It Works
 
-* Sequences in SpacetimeDB use Rust’s `i128` integer type.
-* The field type marked with `#[auto_inc]`   is cast to `i128` and increments by `1` for each new row.
-* Sequences are pre-allocated in chunks of `4096` to speed up number generation, and then are only persisted to disk when the pre-allocated chunk is exhausted.
+- Sequences in SpacetimeDB use Rust’s `i128` integer type.
+- The field type marked with `#[auto_inc]` is cast to `i128` and increments by `1` for each new row.
+- Sequences are pre-allocated in chunks of `4096` to speed up number generation, and then are only persisted to disk when the pre-allocated chunk is exhausted.
 
 > **⚠ Warning:** Sequence number generation is not transactional.
 
-* Numbers are incremented even if a transaction is later rolled back.
-* Unused numbers are not reclaimed, meaning sequences may have *gaps*.
-* If the server restarts or a transaction rolls back, the sequence continues from the next pre-allocated chunk + `1`:
+- Numbers are incremented even if a transaction is later rolled back.
+- Unused numbers are not reclaimed, meaning sequences may have _gaps_.
+- If the server restarts or a transaction rolls back, the sequence continues from the next pre-allocated chunk + `1`:
 
 **Example:**
 

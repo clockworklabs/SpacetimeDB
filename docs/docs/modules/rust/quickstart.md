@@ -47,8 +47,8 @@ spacetime init --lang rust server
 ## How to Compile
 
 > [!IMPORTANT]
-> You cannot use the traditional `cargo build` to build SpacetimeDB server modules. Keep this in mind when using an IDE that assumes using *cargo* for building. 
-Above, we just initialized a SpacetimeDB server module at `./server`:
+> You cannot use the traditional `cargo build` to build SpacetimeDB server modules. Keep this in mind when using an IDE that assumes using _cargo_ for building.
+> Above, we just initialized a SpacetimeDB server module at `./server`:
 
 ```bash
 cd server

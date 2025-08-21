@@ -460,7 +460,7 @@ Afterward, close the connection to the database.
 To `Program.cs`, add:
 
 ```csharp
-/// Our separate thread from main, where we can call process updates and process commands without blocking the main thread. 
+/// Our separate thread from main, where we can call process updates and process commands without blocking the main thread.
 void ProcessThread(DbConnection conn, CancellationToken ct)
 {
     try

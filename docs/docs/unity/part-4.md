@@ -198,7 +198,7 @@ Next, add the following reducer to the `Module` class of your `Lib.cs` file.
 [Reducer]
 public static void UpdatePlayerInput(ReducerContext ctx, DbVector2 direction)
 {
-    var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("Player not found");				
+    var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("Player not found");
     foreach (var c in ctx.Db.circle.player_id.Filter(player.player_id))
     {
         var circle = c;
@@ -215,6 +215,7 @@ This is a simple reducer that takes the movement input from the client and appli
 Finally, let's schedule a reducer to run every 50 milliseconds to move the player's circles around based on the most recently set player input.
 
 :::server-rust
+
 ```rust
 #[spacetimedb::table(name = move_all_players_timer, scheduled(move_all_players))]
 pub struct MoveAllPlayersTimer {
@@ -262,8 +263,10 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
     Ok(())
 }
 ```
+
 :::
 :::server-csharp
+
 ```csharp
 [Table(Name = "move_all_players_timer", Scheduled = nameof(MoveAllPlayers), ScheduledAt = nameof(scheduled_at))]
 public partial struct MoveAllPlayersTimer
@@ -303,6 +306,7 @@ public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
     }
 }
 ```
+
 :::
 
 This reducer is very similar to a standard game "tick" or "frame" that you might find in an ordinary game server or similar to something like the `Update` loop in a game engine like Unity. We've scheduled it every 50 milliseconds and we can use it to step forward our simulation by moving all the circles a little bit further in the direction they're moving.
@@ -320,6 +324,7 @@ ctx.db
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
     })?;
 ```
+
 :::
 :::server-csharp
 Add the following to your `Init` reducer to schedule the `MoveAllPlayers` reducer to run every 50 milliseconds.
@@ -330,8 +335,8 @@ ctx.Db.move_all_players_timer.Insert(new MoveAllPlayersTimer
     scheduled_at = new ScheduleAt.Interval(TimeSpan.FromMilliseconds(50))
 });
 ```
-:::
 
+:::
 
 Republish your module with:
 
@@ -411,7 +416,7 @@ fn is_overlapping(a: &Entity, b: &Entity) -> bool {
     let radius_a = mass_to_radius(a.mass);
     let radius_b = mass_to_radius(b.mass);
 
-    // If the distance between the two circle centers is less than the 
+    // If the distance between the two circle centers is less than the
     // maximum radius, then the center of the smaller circle is inside
     // the larger circle. This gives some leeway for the circles to overlap
     // before being eaten.
@@ -479,6 +484,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
     Ok(())
 }
 ```
+
 :::
 :::server-csharp
 Wrong. With SpacetimeDB it's extremely easy. All we have to do is add an `IsOverlapping` helper function which does some basic math based on mass radii, and modify our `MoveAllPlayers` reducer to loop through every entity in the arena for every circle, checking each for overlaps. This may not be the most efficient way to do collision checking (building a quad tree or doing [spatial hashing](https://conkerjo.wordpress.com/2009/06/13/spatial-hashing-implementation-for-fast-2d-collisions/) might be better), but SpacetimeDB is very fast so for this number of entities it'll be a breeze for SpacetimeDB.
@@ -496,7 +502,7 @@ public static bool IsOverlapping(Entity a, Entity b)
 
     var radius_a = MassToRadius(a.mass);
     var radius_b = MassToRadius(b.mass);
-    
+
     // If the distance between the two circle centers is less than the
     // maximum radius, then the center of the smaller circle is inside
     // the larger circle. This gives some leeway for the circles to overlap
@@ -541,7 +547,7 @@ public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
                     ctx.Db.food.entity_id.Delete(entity.entity_id);
                     circle_entity.mass += entity.mass;
                 }
-                
+
                 // Check to see if we're overlapping with another circle owned by another player
                 var other_circle = ctx.Db.circle.entity_id.Find(entity.entity_id);
                 if (other_circle.HasValue &&
@@ -561,12 +567,12 @@ public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
     }
 }
 ```
-:::
 
+:::
 
 For every circle, we look at all other entities. If they are overlapping then for food, we add the mass of the food to the circle and delete the food, otherwise if it's a circle we delete the smaller circle and add the mass to the bigger circle.
 
-That's it. We don't even have to do anything on the client. 
+That's it. We don't even have to do anything on the client.
 
 ```sh
 spacetime publish --server local blackholio
@@ -579,12 +585,14 @@ We didn't even have to update the client, because our client's `OnDelete` callba
 Notice that the food automatically respawns as you vaccuum them up. This is because our scheduled reducer is automatically replacing the food 2 times per second, to ensure that there is always 600 food on the map.
 
 ## Connecting to Maincloud
+
 - Publish to Maincloud `spacetime publish -s maincloud <your database name> --delete-data`
   - `<your database name>` This name should be unique and cannot contain any special characters other than internal hyphens (`-`).
 - Update the URL in the Unity project to: `https://maincloud.spacetimedb.com`
 - Update the module name in the Unity project to `<your database name>`.
 - Clear the PlayerPrefs in Start() within `GameManager.cs`
 - Your `GameManager.cs` should look something like this:
+
 ```csharp
 const string SERVER_URL = "https://maincloud.spacetimedb.com";
 const string MODULE_NAME = "<your module name>";
@@ -595,7 +603,7 @@ private void Start()
 {
     // Clear cached connection data to ensure proper connection
     PlayerPrefs.DeleteAll();
-    
+
     // Continue with initialization
 }
 ```

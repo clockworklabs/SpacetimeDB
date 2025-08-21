@@ -3,11 +3,13 @@
 This tutorial will guide you through setting up SpacetimeDB on an Ubuntu 24.04 server, securing it with HTTPS using Nginx and Let's Encrypt, and configuring a systemd service to keep it running.
 
 ## Prerequisites
+
 - A fresh Ubuntu 24.04 server (VM or cloud instance of your choice)
 - A domain name (e.g., `example.com`)
 - `sudo` privileges on the server
 
 ## Step 1: Create a Dedicated User for SpacetimeDB
+
 For security purposes, create a dedicated `spacetimedb` user to run SpacetimeDB:
 
 ```sh
@@ -23,6 +25,7 @@ sudo -u spacetimedb bash -c 'curl -sSf https://install.spacetimedb.com | sh -s -
 ```
 
 ## Step 2: Create a Systemd Service for SpacetimeDB
+
 To ensure SpacetimeDB runs on startup, create a systemd service file:
 
 ```sh
@@ -69,6 +72,7 @@ sudo apt install nginx -y
 ```
 
 ### Configure Nginx Reverse Proxy
+
 Create a new Nginx configuration file:
 
 ```sh
@@ -159,6 +163,7 @@ sudo systemctl restart nginx
 ```
 
 ### Configure Firewall
+
 Ensure your firewall allows HTTPS traffic:
 
 ```sh
@@ -189,6 +194,7 @@ sudo systemctl restart nginx
 ```
 
 ### Auto-Renew SSL Certificates
+
 Certbot automatically installs a renewal timer. Verify that it is active:
 
 ```sh
@@ -214,6 +220,7 @@ ssh ubuntu@<host> spacetime publish -s local --bin-path spacetime_module.wasm <d
 You could put the above commands into a shell script to make publishing to your server easier and faster. It's also possible to integrate a script like this into Github Actions to publish on some event (like a PR merging into master).
 
 ## Step 6: Updating SpacetimeDB Version
+
 To update SpacetimeDB to the latest version, first stop the service:
 
 ```sh
@@ -241,6 +248,7 @@ sudo systemctl start spacetimedb
 ## Step 7: Troubleshooting
 
 ### SpacetimeDB Service Fails to Start
+
 Check the logs for errors:
 
 ```sh
@@ -260,6 +268,7 @@ sudo chmod +x /stdb/spacetime
 ```
 
 ### Let's Encrypt Certificate Renewal Issues
+
 Manually renew the certificate and check for errors:
 
 ```sh
@@ -267,6 +276,7 @@ sudo certbot renew --dry-run
 ```
 
 ### Nginx Fails to Start
+
 Test the configuration:
 
 ```sh
