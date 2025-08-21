@@ -4,7 +4,7 @@ The SpacetimeDB client SDK for TypeScript contains all the tools you need to bui
 
 | Name                                                              | Description                                                                                                                            |
 |-------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
-| [Project setup](#project-setup)                                   | Configure a Rust crate to use the SpacetimeDB Rust client SDK.                                                                         |
+| [Project setup](#project-setup)                                   | Configure your TypeScript project to use the SpacetimeDB TypeScript client SDK.                                                        |
 | [Generate module bindings](#generate-module-bindings)             | Use the SpacetimeDB CLI to generate module-specific types and interfaces.                                                              |
 | [`DbConnection` type](#type-dbconnection)                         | A connection to a remote database.                                                                                                     |
 | [`DbContext` interface](#interface-dbcontext)                     | Methods for interacting with the remote database. Implemented by [`DbConnection`](#type-dbconnection) and various event context types. |

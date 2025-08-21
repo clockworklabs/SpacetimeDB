@@ -560,4 +560,4 @@ You can find the full code for this client [in the C# client SDK's examples](htt
 
 Check out the [C# client SDK Reference](/docs/sdks/c-sharp) for a more comprehensive view of the SpacetimeDB C# client SDK.
 
-If you are interested in developing in the Unity game engine, check out our [Unity Comprehensive Tutorial](/docs/unity) and [Blackholio](https://github.com/ClockworkLabs/tree/master/demo/Blackholio) game example.
+If you are interested in developing in the Unity game engine, check out our [Unity Comprehensive Tutorial](/docs/unity) and [Blackholio](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio) game example.

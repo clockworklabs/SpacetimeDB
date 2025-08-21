@@ -29,6 +29,7 @@ public static partial class Module
 	}
 
 	[Table(Name = "entity", Public = true)]
+	[Table(Name = "logged_out_entity")]
 	public partial struct Entity
 	{
 		[PrimaryKey, AutoInc]
@@ -39,6 +40,7 @@ public static partial class Module
 
 	[Table(Name = "circle", Public = true)]
 	[SpacetimeDB.Index.BTree(Name = "player_id", Columns = [nameof(player_id)])]
+	[Table(Name = "logged_out_circle")]
 	public partial struct Circle
 	{
 		[PrimaryKey]
@@ -141,6 +143,15 @@ public static partial class Module
 		{
 			ctx.Db.player.Insert(player.Value);
 			ctx.Db.logged_out_player.identity.Delete(player.Value.identity);
+
+			foreach (var circle in ctx.Db.logged_out_circle.player_id.Filter(player.Value.player_id))
+			{
+				var entity = ctx.Db.logged_out_entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Could not find Entity");
+				ctx.Db.entity.Insert(entity);
+				ctx.Db.logged_out_entity.entity_id.Delete(entity.entity_id);
+				ctx.Db.circle.Insert(circle);
+				ctx.Db.logged_out_circle.entity_id.Delete(entity.entity_id);
+			}
 		}
 		else
 		{
@@ -159,7 +170,9 @@ public static partial class Module
 		foreach (var circle in ctx.Db.circle.player_id.Filter(player.player_id))
 		{
 			var entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Could not find circle");
+			ctx.Db.logged_out_entity.Insert(entity);
 			ctx.Db.entity.entity_id.Delete(entity.entity_id);
+			ctx.Db.logged_out_circle.Insert(circle);
 			ctx.Db.circle.entity_id.Delete(entity.entity_id);
 		}
 		ctx.Db.logged_out_player.Insert(player);
