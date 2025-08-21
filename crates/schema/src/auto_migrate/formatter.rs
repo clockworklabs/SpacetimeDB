@@ -8,6 +8,7 @@ use crate::{
     def::{ConstraintData, ModuleDef, ScheduleDef},
     identifier::Identifier,
 };
+use itertools::Itertools;
 use spacetimedb_lib::{
     db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType},
     AlgebraicType, AlgebraicValue,
@@ -247,6 +248,7 @@ fn extract_table_info(
     let constraints = table_def
         .constraints
         .values()
+        .sorted_by_key(|c| c.name.clone())
         .map(|constraint| {
             let ConstraintData::Unique(unique) = &constraint.data;
             Ok(ConstraintInfo {
@@ -267,6 +269,7 @@ fn extract_table_info(
     let indexes = table_def
         .indexes
         .values()
+        .sorted_by_key(|c| c.name.clone())
         .map(|index| {
             let columns = match &index.algorithm {
                 IndexAlgorithm::BTree(btree) => btree
@@ -296,6 +299,7 @@ fn extract_table_info(
     let sequences = table_def
         .sequences
         .values()
+        .sorted_by_key(|c| c.name.clone())
         .map(|sequence| {
             let column = table_def
                 .get_column(sequence.column)
