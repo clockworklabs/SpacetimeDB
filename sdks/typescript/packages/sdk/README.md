@@ -69,5 +69,5 @@ connection.reducers.createPlayer();
 To run the tests, do:
 
 ```sh
-pnpm compile && pnpm test
+pnpm build && pnpm test
 ```

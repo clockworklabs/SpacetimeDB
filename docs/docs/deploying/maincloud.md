@@ -17,6 +17,7 @@ spacetime publish -s maincloud my-cool-module
 By logging in your CLI via spacetimedb.com, you can view your published modules on the web dashboard.
 
 If you did not log in with spacetimedb.com when publishing your module, you can log in by running:
+
 ```bash
 spacetime logout
 spacetime login
@@ -30,22 +31,25 @@ spacetime login
 With SpacetimeDB Maincloud, you benefit from automatic scaling, robust security, and the convenience of not having to manage the hosting environment.
 
 # Connect from Client SDKs
+
 To connect to your deployed module in your client code, use the host url of `https://maincloud.spacetimedb.com`:
 
 ## Rust
+
 ```rust
 DbConnection::builder()
     .with_uri("https://maincloud.spacetimedb.com")
 ```
 
 ## C#
+
 ```csharp
 DbConnection.Builder()
     .WithUri("https://maincloud.spacetimedb.com")
 ```
 
 ## TypeScript
+
 ```ts
-  DbConnection.builder()
-    .withUri('https://maincloud.spacetimedb.com')
+DbConnection.builder().withUri('https://maincloud.spacetimedb.com');
 ```

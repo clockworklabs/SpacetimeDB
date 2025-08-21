@@ -1,4 +1,5 @@
 ## Migration note
+
 We are in the process of moving from the `spacetimedb-docs` repo to the `docs` subdirectory of [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB). **Any new changes should be made there**. The `spacetimedb-docs` repo will only be updated on release. Apologies in advance for any sharp edges while the migration is in progress.
 
 ## SpacetimeDB Documentation
@@ -37,9 +38,11 @@ git push -u origin a-branch-name-that-describes-my-change
 > NOTE! If you make a change to `nav.ts` you will have to run `npm run build` to generate a new `docs/nav.js` file.
 
 #### CLI Reference Section
+
 1. Run `cargo run --features markdown-docs -p spacetimedb-cli > cli-reference.md`
 
 We currently don't properly render markdown backticks and bolding that are inside of headers, so do these two manual replacements to make them look okay (these have only been tested on Linux):
+
 ```bash
 sed -i'' -E 's!^(##) `(.*)`$!\1 \2!' docs/cli-reference.md
 sed -i'' -E 's!^(######) \*\*(.*)\*\*$!\1 <b>\2</b>!' docs/cli-reference.md

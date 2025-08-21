@@ -12,6 +12,7 @@ By using these interfaces, you can create efficient and responsive client applic
 ## SubscriptionBuilder
 
 :::server-rust
+
 ```rust
 pub struct SubscriptionBuilder<M: SpacetimeModule> { /* private fields */ }
 
@@ -47,8 +48,10 @@ pub trait IntoQueries {
     fn into_queries(self) -> Box<[Box<str>]>;
 }
 ```
+
 :::
 :::server-csharp
+
 ```cs
 public sealed class SubscriptionBuilder
 {
@@ -97,6 +100,7 @@ public sealed class SubscriptionBuilder
     public void SubscribeToAllTables();
 }
 ```
+
 :::
 
 A `SubscriptionBuilder` provides an interface for registering subscription queries with a database.
@@ -107,6 +111,7 @@ A client can react to these updates by registering row callbacks for the appropr
 ### Example Usage
 
 :::server-rust
+
 ```rust
 // Establish a database connection
 let conn: DbConnection = connect_to_db();
@@ -118,8 +123,10 @@ let subscription_handle = conn
     .on_error(|error_ctx, error| { /* handle error */ })
     .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
 ```
+
 :::
 :::server-csharp
+
 ```cs
 // Establish a database connection
 var conn = ConnectToDB();
@@ -131,11 +138,13 @@ var userSubscription = conn
     .OnError((errorCtx, error) => { /* handle error */ })
     .Subscribe(new string[] { "SELECT * FROM user", "SELECT * FROM message" });
 ```
+
 :::
 
 ## SubscriptionHandle
 
 :::server-rust
+
 ```rust
 pub trait SubscriptionHandle: InModule + Clone + Send + 'static
 where
@@ -160,8 +169,10 @@ where
     fn unsubscribe(self) -> crate::Result<()>;
 }
 ```
+
 :::
 :::server-csharp
+
 ```cs
     public class SubscriptionHandle<SubscriptionEventContext, ErrorContext> : ISubscriptionHandle
         where SubscriptionEventContext : ISubscriptionEventContext
@@ -179,7 +190,7 @@ where
 
         /// <summary>
         /// Unsubscribe from the query controlled by this subscription handle.
-        /// 
+        ///
         /// Calling this more than once will result in an exception.
         /// </summary>
         public void Unsubscribe();
@@ -191,6 +202,7 @@ where
         public void UnsubscribeThen(Action<SubscriptionEventContext>? onEnded);
     }
 ```
+
 :::
 
 When you register a subscription, you receive a `SubscriptionHandle`.
@@ -301,6 +313,7 @@ This will improve throughput by reducing the amount of data transferred from the
 #### Example
 
 :::server-rust
+
 ```rust
 let conn: DbConnection = connect_to_db();
 
@@ -321,8 +334,10 @@ let shop_subscription = conn
         "SELECT * FROM shop_items WHERE required_level <= 5",
     ]);
 ```
+
 :::
 :::server-csharp
+
 ```cs
 var conn = ConnectToDB();
 
@@ -343,6 +358,7 @@ var shopSubscription = conn
         "SELECT * FROM shop_items WHERE required_level <= 5"
     });
 ```
+
 :::
 
 ### 3. Subscribe Before Unsubscribing
@@ -358,6 +374,7 @@ unsubscribing from it does not result in any server processing or data serializt
 #### Example
 
 :::server-rust
+
 ```rust
 let conn: DbConnection = connect_to_db();
 
@@ -384,8 +401,10 @@ if shop_subscription.is_active() {
     shop_subscription.unsubscribe();
 }
 ```
+
 :::
 :::server-csharp
+
 ```cs
 var conn = ConnectToDB();
 
@@ -413,6 +432,7 @@ if (shopSubscription.IsActive)
     shopSubscription.Unsubscribe();
 }
 ```
+
 :::
 
 ### 4. Avoid Overlapping Queries
@@ -422,6 +442,7 @@ which can result in the server processing and serializing the same row multiple 
 While SpacetimeDB can manage this redundancy, it may lead to unnecessary inefficiencies.
 
 Consider the following two queries:
+
 ```sql
 SELECT * FROM User
 SELECT * FROM User WHERE id = 5
@@ -433,6 +454,7 @@ This is because the server will use an index when processing the 2nd query,
 and it will only serialize a single row for the 2nd query.
 
 In contrast, consider these two queries:
+
 ```sql
 SELECT * FROM User
 SELECT * FROM User WHERE id != 5

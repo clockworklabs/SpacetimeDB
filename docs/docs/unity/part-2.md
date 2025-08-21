@@ -51,6 +51,7 @@ First we need to add some imports at the top of the file. Some will remain unuse
 use std::time::Duration;
 use spacetimedb::{rand::Rng, Identity, SpacetimeType, ReducerContext, ScheduleAt, Table, Timestamp};
 ```
+
 :::
 :::server-csharp
 **Copy and paste into Lib.cs:**
@@ -63,9 +64,10 @@ public static partial class Module
 
 }
 ```
+
 :::
 
-We are going to start by defining a SpacetimeDB *table*. A *table* in SpacetimeDB is a relational database table which stores rows, similar to something you might find in SQL. SpacetimeDB tables differ from normal relational database tables in that they are stored fully in memory, are blazing fast to access, and are defined in your module code, rather than in SQL.
+We are going to start by defining a SpacetimeDB _table_. A _table_ in SpacetimeDB is a relational database table which stores rows, similar to something you might find in SQL. SpacetimeDB tables differ from normal relational database tables in that they are stored fully in memory, are blazing fast to access, and are defined in your module code, rather than in SQL.
 
 :::server-rust
 Each row in a SpacetimeDB table is associated with a `struct` type in Rust.
@@ -172,6 +174,7 @@ pub struct Food {
     pub entity_id: u32,
 }
 ```
+
 :::
 :::server-csharp
 Next, we're going to define a new `SpacetimeType` called `DbVector2` which we're going to use to store positions. The difference between a `[SpacetimeDB.Type]` and a `[SpacetimeDB.Table]` is that tables actually store data, whereas the deriving `SpacetimeType` just allows you to create a new column of that type in a SpacetimeDB table. Therefore, `DbVector2` is only a type, and does not define a table.
@@ -200,7 +203,7 @@ Let's create a few tables to represent entities in our game by adding the follow
 [Table(Name = "entity", Public = true)]
 public partial struct Entity
 {
-	[PrimaryKey, AutoInc] 
+	[PrimaryKey, AutoInc]
 	public uint entity_id;
 	public DbVector2 position;
 	public uint mass;
@@ -225,6 +228,7 @@ public partial struct Food
 	public uint entity_id;
 }
 ```
+
 :::
 
 The first table we defined is the `entity` table. An entity represents an object in our game world. We have decided, for convenience, that all entities in our game should share some common fields, namely `position` and `mass`.
@@ -240,6 +244,7 @@ The `Circle` table, however, represents an entity that is controlled by a player
 Next, let's create a table to store our player data.
 
 :::server-rust
+
 ```rust
 #[spacetimedb::table(name = player, public)]
 #[derive(Debug, Clone)]
@@ -256,6 +261,7 @@ pub struct Player {
 There's a few new concepts we should touch on. First of all, we are using the `#[unique]` attribute on the `player_id` field. This attribute adds a constraint to the table that ensures that only one row in the player table has a particular `player_id`.
 :::
 :::server-csharp
+
 ```csharp
 [Table(Name = "player", Public = true)]
 public partial struct Player
@@ -278,6 +284,7 @@ We also have an `identity` field which uses the `Identity` type. The `Identity` 
 Next, we write our very first reducer. A reducer is a module function which can be called by clients. Let's write a simple debug reducer to see how they work.
 
 :::server-rust
+
 ```rust
 #[spacetimedb::reducer]
 pub fn debug(ctx: &ReducerContext) -> Result<(), String> {
@@ -285,6 +292,7 @@ pub fn debug(ctx: &ReducerContext) -> Result<(), String> {
     Ok(())
 }
 ```
+
 :::
 :::server-csharp
 
@@ -294,9 +302,10 @@ Add this function to the `Module` class in `Lib.cs`:
 [Reducer]
 public static void Debug(ReducerContext ctx)
 {
-    Log.Info($"This reducer was called by {ctx.Sender}");	  
+    Log.Info($"This reducer was called by {ctx.Sender}");
 }
 ```
+
 :::
 
 This reducer doesn't update any tables, it just prints out the `Identity` of the client that called it.
@@ -307,7 +316,7 @@ This reducer doesn't update any tables, it just prints out the `Identity` of the
 
 "Reducer" is a term coined by Clockwork Labs that refers to a function which when executed "reduces" a set of inserts and deletes into the database state. The term derives from functional programming and is closely related to [similarly named concepts](https://redux.js.org/tutorials/fundamentals/part-2-concepts-data-flow#reducers) in other frameworks like React Redux. Reducers can be called remotely using the CLI, client SDK or can be scheduled to be called at some future time from another reducer call.
 
-All reducers execute *transactionally* and *atomically*, meaning that from within the reducer it will appear as though all changes are being applied to the database immediately, however from the outside changes made in a reducer will only be applied to the database once the reducer completes successfully. If you return an error from a reducer or panic within a reducer, all changes made to the database will be rolled back, as if the function had never been called. If you're unfamiliar with atomic transactions, it may not be obvious yet just how useful and important this feature is, but once you build a somewhat complex application it will become clear just how invaluable this feature is.
+All reducers execute _transactionally_ and _atomically_, meaning that from within the reducer it will appear as though all changes are being applied to the database immediately, however from the outside changes made in a reducer will only be applied to the database once the reducer completes successfully. If you return an error from a reducer or panic within a reducer, all changes made to the database will be rolled back, as if the function had never been called. If you're unfamiliar with atomic transactions, it may not be obvious yet just how useful and important this feature is, but once you build a somewhat complex application it will become clear just how invaluable this feature is.
 
 ---
 
@@ -352,6 +361,7 @@ Created new database with name: blackholio, identity: c200d2c69b4524292b91822afa
 ```sh
 spacetime call blackholio debug
 ```
+
 :::
 :::server-csharp
 Next, use the `spacetime` command to call our newly defined `Debug` reducer:
@@ -359,6 +369,7 @@ Next, use the `spacetime` command to call our newly defined `Debug` reducer:
 ```sh
 spacetime call blackholio Debug
 ```
+
 :::
 
 If the call completed successfully, that command will have no output, but we can see the debug logs by running:
@@ -399,9 +410,9 @@ The `client_connected` argument to the `spacetimedb::reducer` macro indicates to
 > - `init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
 > - `client_connected` - Called when a user connects to the SpacetimeDB database. Their identity can be found in the `sender` value of the `ReducerContext`.
 > - `client_disconnected` - Called when a user disconnects from the SpacetimeDB database.
-:::
-:::server-csharp
-Next let's connect our client to our database. Let's start by modifying our `Debug` reducer. Rename the reducer to be called `Connect` and add `ReducerKind.ClientConnected` in parentheses after `SpacetimeDB.Reducer`. The end result should look like this:
+>   :::
+>   :::server-csharp
+>   Next let's connect our client to our database. Let's start by modifying our `Debug` reducer. Rename the reducer to be called `Connect` and add `ReducerKind.ClientConnected` in parentheses after `SpacetimeDB.Reducer`. The end result should look like this:
 
 ```csharp
 [Reducer(ReducerKind.ClientConnected)]
@@ -418,7 +429,7 @@ The `ReducerKind.ClientConnected` argument to the `SpacetimeDB.Reducer` attribut
 > - `ReducerKind.Init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
 > - `ReducerKind.ClientConnected` - Called when a user connects to the SpacetimeDB database. Their identity can be found in the `Sender` value of the `ReducerContext`.
 > - `ReducerKind.ClientDisconnected` - Called when a user disconnects from the SpacetimeDB database.
-:::
+>   :::
 
 Publish your module again by running:
 
@@ -617,4 +628,3 @@ spacetime logs blackholio
 You've learned how to setup a Unity project with the SpacetimeDB SDK, write a basic SpacetimeDB server module, and how to connect your Unity client to SpacetimeDB. That's pretty much all there is to the setup. You're now ready to start building the game.
 
 In the [next part](/docs/unity/part-3), we'll build out the functionality of the game and you'll learn how to access your table data and call reducers in Unity.
-

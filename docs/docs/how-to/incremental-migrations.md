@@ -5,6 +5,7 @@ SpacetimeDB does not provide built-in support for general schema-modifying migra
 Our friends at [Lightfox Games](https://www.lightfoxgames.com/) taught us a pattern they call "incremental migrations," which mitigates all these problems, and works perfectly with SpacetimeDB's capabilities. The short version is that, instead of altering an existing table, you add a new table with the desired new schema. Whenever your module wants to access a row from that table, it first checks the new table. If the row is present in the new table, then you've already migrated, so do whatever you want to do. If the new table doesn't have the row, instead look it up in the old table, compute and insert a row for the new table, and use that. (If the row isn't present in either the old or new table, it's just not present.) If possible, you should also update the row in the old table to match any mutations that happen in the new table, so that outdated clients can still function.
 
 This has several advantages:
+
 - SpacetimeDB's module hotswapping makes this a zero-downtime update. Write your new module, `spacetime publish` it, and watch the new table populate as it's used.
 - It amortizes the cost of transforming rows or computing new columns across many transactions. Rows will only be added to the new table when they're needed.
 - In many cases, old clients from before the update can coexist with new clients that use the new table. You can publish the updated module without disconnecting your clients, roll out the client update through normal channels, and allow your users to update at their own pace.
@@ -117,7 +118,7 @@ $ spacetime sql incr-migration-demo 'SELECT * FROM character'
 
  player_id | nickname | level | class
 -----------+----------+-------+----------------
- <snip>    | "Gefjon" | 2     | (Fighter = ()) 
+ <snip>    | "Gefjon" | 2     | (Fighter = ())
 ```
 
 See [the SATS JSON reference](/docs/sats-json) for more on the encoding of arguments to `spacetime call`.
@@ -336,7 +337,7 @@ $ spacetime sql incr-migration-demo 'SELECT * FROM character_v2'
 
  player_id | nickname | level | class          | alliance
 -----------+----------+-------+----------------+----------------
- <snip>    | "Gefjon" | 3     | (Fighter = ()) | (Neutral = ()) 
+ <snip>    | "Gefjon" | 3     | (Fighter = ()) | (Neutral = ())
 
 # The original row in `character` still got updated by `level_up_character`,
 # so outdated clients can continue to function:
