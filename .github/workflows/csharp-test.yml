@@ -71,6 +71,8 @@ jobs:
           cache-all-crates: true
 
       - name: Install SpacetimeDB CLI from the local checkout
+        # Rebuild only if we didn't get a precise cache hit.
+        if: steps.cache-rust-deps.outputs.cache-hit == 'false'
         run: |
           cargo install --force --path crates/cli --locked --message-format=short
           cargo install --force --path crates/standalone --locked --message-format=short
