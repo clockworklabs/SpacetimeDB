@@ -63,14 +63,19 @@ pub trait StateView {
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>>;
 
-    /// Reads the schema information for the specified `table_id` directly from the database.
-    fn schema_for_table_raw(&self, table_id: TableId) -> Result<TableSchema> {
+    /// Read the schema for the specified `table_id` directly from the system tables.
+    /// Returns None if the table is not found.
+    fn schema_for_table_raw_option(&self, table_id: TableId) -> Result<Option<TableSchema>> {
         // Look up the table_name for the table in question.
         let value_eq = &table_id.into();
-        let row = self
+        let row = match self
             .iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, value_eq)?
-            .next()
-            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
+            .next() {
+            Some(row) => row,
+            None => {
+                return Ok(None);
+            }
+        };
         let row = StTableRow::try_from(row)?;
         let table_name = row.table_name;
         let table_id: TableId = row.table_id;
@@ -121,7 +126,7 @@ pub trait StateView {
             })
             .transpose()?;
 
-        Ok(TableSchema::new(
+        Ok(Some(TableSchema::new(
             table_id,
             table_name,
             columns,
@@ -132,7 +137,15 @@ pub trait StateView {
             table_access,
             schedule,
             table_primary_key,
-        ))
+        )))
+    }
+    /// Reads the schema information for the specified `table_id` directly from the database.
+    fn schema_for_table_raw(&self, table_id: TableId) -> Result<TableSchema> {
+        if let Some(s) = self.schema_for_table_raw_option(table_id)? {
+               Ok(s)
+        } else {
+            Err(TableError::IdNotFound(SystemTable::st_table, table_id.into()).into())
+        }
     }
 
     /// Reads the schema information for the specified `table_id`, consulting the `cache` first.

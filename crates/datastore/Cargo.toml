@@ -19,6 +19,8 @@ spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true
 spacetimedb-snapshot.workspace = true
 spacetimedb-execution.workspace = true
+# Adding for debugging.
+pretty_assertions.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
 bytes.workspace = true

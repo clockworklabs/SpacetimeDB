@@ -182,6 +182,13 @@ impl MutTxId {
         Ok(())
     }
 
+    /*
+    pub fn create_system_table(&mut self, mut table_schema: TableSchema) -> Result<TableId> {
+
+        let table_name = table_schema.table_name.clone();
+        log::trace!("TABLE CREATING: {table_name}");
+    }
+     */
     /// Create a table.
     ///
     /// Requires:
@@ -193,19 +200,24 @@ impl MutTxId {
     /// - The table metadata is inserted into the system tables.
     /// - The returned ID is unique and not `TableId::SENTINEL`.
     pub fn create_table(&mut self, mut table_schema: TableSchema) -> Result<TableId> {
+        /*
         if table_schema.table_id != TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{:#?}`", table_schema).into());
             // checks for children are performed in the relevant `create_...` functions.
         }
 
+         */
+
         let table_name = table_schema.table_name.clone();
         log::trace!("TABLE CREATING: {table_name}");
+        println!("TABLE CREATING: {table_name}");
+        println!("Custom backtrace: {}", std::backtrace::Backtrace::force_capture());
 
         // Insert the table row into `st_tables`
         // NOTE: Because `st_tables` has a unique index on `table_name`, this will
         // fail if the table already exists.
         let row = StTableRow {
-            table_id: TableId::SENTINEL,
+            table_id: table_schema.table_id,
             table_name: table_name.clone(),
             table_type: table_schema.table_type,
             table_access: table_schema.table_access,
@@ -280,6 +292,7 @@ impl MutTxId {
         }
 
         log::trace!("TABLE CREATED: {table_name}, table_id: {table_id}");
+        println!("TABLE CREATED: {table_name}, table_id: {table_id}");
 
         Ok(table_id)
     }
@@ -878,6 +891,12 @@ impl MutTxId {
             table_id,
             seq.col_pos
         );
+        println!(
+            "SEQUENCE CREATING: {} for table: {} and col: {}",
+            seq.sequence_name,
+            table_id,
+            seq.col_pos
+        );
 
         // Insert the sequence row into st_sequences
         // NOTE: Because st_sequences has a unique index on sequence_name, this will
@@ -905,6 +924,7 @@ impl MutTxId {
         self.push_schema_change(PendingSchemaChange::SequenceAdded(table_id, seq_id));
 
         log::trace!("SEQUENCE CREATED: id = {seq_id}");
+        println!("SEQUENCE CREATED: id = {seq_id}");
 
         Ok(seq_id)
     }

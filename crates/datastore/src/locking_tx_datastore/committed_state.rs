@@ -321,11 +321,46 @@ impl CommittedState {
     /// for objects like indexes and constraints
     /// which are computed at insert-time,
     /// and therefore not included in the hardcoded schemas.
-    pub(super) fn reset_system_table_schemas(&mut self) -> Result<()> {
+    pub fn reset_system_table_schemas(&mut self) -> Result<()> {
+        println!("Resetting system table schemas...");
+        // pub(super) fn reset_system_table_schemas(&mut self) -> Result<()> {
+        // I'm pretty sure this part is throwing.
         // Re-read the schema with the correct ids...
         for schema in system_tables() {
+            let raw_schema = match self.schema_for_table_raw(schema.table_id) {
+                Ok(schema) => schema,
+                Err(e) => {
+                    log::warn!(
+                    "Failed to read schema for system table {}: {}",
+                    schema.table_name, e
+                );
+                    continue;
+                },
+            };
+            /*
             self.tables.get_mut(&schema.table_id).unwrap().schema =
                 Arc::new(self.schema_for_table_raw(schema.table_id)?);
+
+             */
+            {
+                use pretty_assertions;
+                let existing = self.tables.get(&schema.table_id).unwrap().schema.clone();
+                if *existing != raw_schema {
+                    let comparison = pretty_assertions::Comparison::new(
+                        &*existing,
+                        &raw_schema,
+                    );
+                    println!(
+                        "System table {} has a different schema. Comparison: {}",
+                        schema.table_name,
+                        comparison
+                    );
+                }
+            }
+
+
+            self.tables.get_mut(&schema.table_id).unwrap().schema =
+                Arc::new(raw_schema);
         }
 
         Ok(())
@@ -570,10 +605,12 @@ impl CommittedState {
                 for row_ptr in row_ptrs.iter() {
                     debug_assert!(row_ptr.squashed_offset().is_committed_state());
 
+                    let rowref = table.get_row_ref(blob_store, row_ptr.clone())
+                        .expect(&format!("Get for non-existent row in {}: {:?}!", table.schema.table_name, row_ptr)).clone();
                     // TODO: re-write `TxData` to remove `ProductValue`s
                     let pv = table
                         .delete(blob_store, row_ptr, |row| row.to_product_value())
-                        .expect("Delete for non-existent row!");
+                        .expect(&format!("Delete for non-existent row in {}!",table.schema.table_name) );
                     deletes.push(pv);
                 }
 
