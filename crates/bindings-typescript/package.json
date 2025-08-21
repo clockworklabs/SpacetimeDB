@@ -34,8 +34,8 @@
   "author": "Clockwork Labs",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "prepack": "pnpm run build",
+    "build": "tsc",
+    "compile": "pnpm run build",
     "format": "prettier --write .",
     "lint": "prettier . --check --verbose",
     "generate": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/autogen"
