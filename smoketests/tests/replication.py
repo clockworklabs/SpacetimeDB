@@ -229,6 +229,7 @@ fn send_message(ctx: &ReducerContext, text: String) {
         self.docker.compose("up", "-d")
         super().tearDown()
 
+    # TODO: This function seems to run even when `--docker` is not passed, leading to errors unless `-x replication` is passed, due to the docker-related code below.
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

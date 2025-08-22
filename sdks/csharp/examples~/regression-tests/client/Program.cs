@@ -119,6 +119,11 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     waiting++;
     context.Reducers.ThrowError("this is an error");
 
+    // RemoteQuery test
+    Log.Debug("Calling RemoteQuery");
+    var remoteRows = context.Db.ExampleData.RemoteQuery("WHERE Id = 1").Result;
+    Debug.Assert(remoteRows != null && remoteRows.Length > 0);
+
     // Now unsubscribe and check that the unsubscribe is actually applied.
     Log.Debug("Calling Unsubscribe");
     waiting++;
