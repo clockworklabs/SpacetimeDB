@@ -8,7 +8,7 @@ fn main() -> Result<()> {
     let repo_root = find_repo_root().context("Could not locate repo root (looked for `.git/` or `licenses/`)")?;
 
     check_license_symlinks(&repo_root)?;
-    println!("All LICENSE files are valid symlinks into `licenses/`.");
+    log::info!("All LICENSE files are valid symlinks into `licenses/`.");
     Ok(())
 }
 

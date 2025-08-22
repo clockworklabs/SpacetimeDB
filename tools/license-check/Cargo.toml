@@ -9,4 +9,5 @@ path = "main.rs"
 
 [dependencies]
 anyhow = "1.0"
+log.workspace = true
 walkdir = "2.5"
