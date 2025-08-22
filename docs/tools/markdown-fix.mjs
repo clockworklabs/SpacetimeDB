@@ -18,6 +18,20 @@ function pluginTransform() {
       }
     };
 
+    // Normalize lists to "tight" so Prettier won't remove blank lines later
+    visit(tree, node => {
+      if (node.type === 'list') {
+        node.spread = false;
+        if (Array.isArray(node.children)) {
+          for (const li of node.children) {
+            if (li && li.type === 'listItem') {
+              li.spread = false;
+            }
+          }
+        }
+      }
+    });
+
     visit(tree, node => {
       if (node.type !== 'heading') return;
 
