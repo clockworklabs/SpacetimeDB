@@ -17,7 +17,7 @@
     "unist-util-visit": "^5.0.0"
   },
   "scripts": {
-    "build": "tsc --project ./tsconfig.json && && tools/markdown-fix.mjs docs/cli-reference.md && prettier --write docs/nav.js",
+    "build": "tsc --project ./tsconfig.json && tools/markdown-fix.mjs docs/cli-reference.md && prettier --write docs/nav.js",
     "format": "tools/markdown-fix.mjs docs/cli-reference.md && prettier --write .",
     "lint": "prettier . --check --verbose",
     "check-links": "tsx scripts/checkLinks.ts"

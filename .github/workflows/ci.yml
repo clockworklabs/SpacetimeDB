@@ -242,6 +242,24 @@ jobs:
     permissions: read-all
     runs-on: ubuntu-latest
     steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -264,24 +282,6 @@ jobs:
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
-
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
 
