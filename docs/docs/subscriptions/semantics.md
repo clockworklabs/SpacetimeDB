@@ -45,7 +45,7 @@ When invoking `SubscriptionBuilder::subscribe(QUERIES)` from the client SDK:
    - Invokes relevant callbacks:
      - `on_insert` callback for each row.
      - `on_applied` callback for the subscription.
-       > **Note:** No relative ordering guarantees are made regarding the invocation order of these callbacks.
+     > **Note:** No relative ordering guarantees are made regarding the invocation order of these callbacks.
 
 ## Transaction Update Workflow
 
@@ -66,7 +66,7 @@ Upon committing a database transaction:
    - Invokes relevant callbacks:
      - `on_insert`, `on_delete`, `on_update` callbacks for modified rows.
      - Reducer callbacks, if the transaction was the result of a reducer.
-       > **Note:** No relative ordering guarantees are made regarding the invocation order of these callbacks.
+     > **Note:** No relative ordering guarantees are made regarding the invocation order of these callbacks.
 
 ## Multiple Subscription Sets
 

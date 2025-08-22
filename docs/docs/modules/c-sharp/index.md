@@ -29,7 +29,7 @@ This reference assumes you are familiar with the basics of C#. If you aren't, ch
 
 SpacetimeDB modules have two ways to interact with the outside world: tables and reducers.
 
-- [Tables](#tables) store data and optionally make it readable by [clients].
+- [Tables](#tables) store data and optionally make it readable by [clients]. 
 
 - [Reducers](#reducers) are functions that modify data and can be invoked by [clients] over the network. They can read and write data in tables, and write to a private debug log.
 
@@ -53,6 +53,7 @@ static partial class Module
     }
 }
 ```
+
 
 Note that reducers don't return data directly; they can only modify the database. Clients connect directly to the database and use SQL to query [public](#public-and-private-tables) tables. Clients can also subscribe to a set of rows using SQL queries and receive streaming updates whenever any of those rows change.
 
@@ -90,7 +91,7 @@ This creates a `dotnet` project in `my-project-directory` with the following `St
 > NOTE: It is important to not change the `StdbModule.csproj` name because SpacetimeDB assumes that this will be the name of the file.
 
 This is a standard `csproj`, with the exception of the line `<RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>`.
-This line is important: it allows the project to be compiled to a WebAssembly module.
+This line is important: it allows the project to be compiled to a WebAssembly module. 
 
 The project's `Lib.cs` will contain the following skeleton:
 
@@ -126,7 +127,7 @@ public static partial class Module
 }
 ```
 
-This skeleton declares a [table](#tables) and some [reducers](#reducers).
+This skeleton declares a [table](#tables) and some [reducers](#reducers). 
 
 You can also add some [lifecycle reducers](#lifecycle-reducers) to the `Module` class using the following code:
 
@@ -149,6 +150,7 @@ public static void ClientDisconnected(ReducerContext ctx)
     // Called when a client connects.
 }
 ```
+
 
 To compile the project, run the following command:
 
@@ -185,12 +187,11 @@ spacetime publish silly_demo_app
 When you publish your module, a database named `silly_demo_app` will be created with the requested tables, and the module will be installed inside it.
 
 The output of `spacetime publish` will end with a line:
-
 ```text
 Created new database with name: <name>, identity: <hex string>
 ```
 
-This name is the human-readable name of the created database, and the hex string is its [`Identity`](#struct-identity). These distinguish the created database from the other databases running on the SpacetimeDB network. They are used when administering the application, for example using the [`spacetime logs <DATABASE_NAME>`](#class-log) command. You should probably write the database name down in a text file so that you can remember it.
+This name is the human-readable name of the created database, and the hex string is its [`Identity`](#struct-identity). These distinguish the created database from the other databases running on the SpacetimeDB network.  They are used when administering the application, for example using the [`spacetime logs <DATABASE_NAME>`](#class-log) command. You should probably write the database name down in a text file so that you can remember it.
 
 After modifying your project, you can run:
 
@@ -209,7 +210,6 @@ The SpacetimeDB host is an application that hosts SpacetimeDB databases. [Its so
 ## In More Detail: Publishing a Module
 
 The `spacetime publish [DATABASE_IDENTITY]` command compiles a module and uploads it to a SpacetimeDB host. After this:
-
 - The host finds the database with the requested `DATABASE_IDENTITY`.
   - (Or creates a fresh database and identity, if no identity was provided).
 - The host loads the new module and inspects its requested database schema. If there are changes to the schema, the host tries perform an [automatic migration](#automatic-migrations). If the migration fails, publishing fails.
@@ -219,15 +219,15 @@ The `spacetime publish [DATABASE_IDENTITY]` command compiles a module and upload
 
 From the perspective of clients, this process is seamless. Open connections are maintained and subscriptions continue functioning. [Automatic migrations](#automatic-migrations) forbid most table changes except for adding new tables, so client code does not need to be recompiled.
 However:
-
 - Clients may witness a brief interruption in the execution of scheduled reducers (for example, game loops.)
 - New versions of a module may remove or change reducers that were previously present. Client code calling those reducers will receive runtime errors.
+
 
 # Tables
 
 Tables are declared using the `[SpacetimeDB.Table]` attribute.
 
-This macro is applied to a C# `partial class` or `partial struct` with named fields. (The `partial` modifier is required to allow code generation to add methods.) All of the fields of the table must be marked with [`[SpacetimeDB.Type]`](#attribute-spacetimedbtype).
+This macro is applied to a C# `partial class` or `partial struct` with named fields. (The `partial` modifier is required to allow code generation to add methods.) All of the fields of the table must be marked with [`[SpacetimeDB.Type]`]( #attribute-spacetimedbtype).
 
 The resulting type is used to store rows of the table. It's a normal class (or struct). Row values are not special -- operations on row types do not, by themselves, modify the table. Instead, a [`ReducerContext`](#class-reducercontext) is needed to get a handle to the table.
 
@@ -272,7 +272,7 @@ public static partial class Module {
         // To push our change through, we can call `UniqueIndex.Update()`:
         examplePerson = ctx.Db.person.Id.Update(examplePerson);
         // Now the database and our copy are in sync again.
-
+        
         // We can also delete the row in the database using `UniqueIndex.Delete()`.
         ctx.Db.person.Id.Delete(examplePerson.Id);
     }
@@ -308,7 +308,6 @@ public interface ITableView<View, Row>
         /* ... */
 }
 ```
-
 <!-- Actually, `Row` is called `T` in the real declaration, but it would be much clearer
 if it was called `Row`. -->
 
@@ -392,7 +391,7 @@ This applies generally to insertions, deletions, updates, and iteration as well.
 
 By default, tables are considered **private**. This means that they are only readable by the database owner and by reducers. Reducers run inside the database, so clients cannot see private tables at all or even know of their existence.
 
-Using the `[SpacetimeDB.Table(Name = "table_name", Public)]` flag makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers.
+Using the `[SpacetimeDB.Table(Name = "table_name", Public)]` flag makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
 
 (Note that, when run by the module owner, the `spacetime sql <SQL_QUERY>` command can also read private tables. This is for debugging convenience. Only the module owner can see these tables. This is determined by the `Identity` stored by the `spacetime login` command. Run `spacetime login show` to print your current logged-in `Identity`.)
 
@@ -426,7 +425,7 @@ Any `[Unique]` or `[PrimaryKey]` column supports getting a [`UniqueIndex`](#clas
 ctx.Db.{table}.{unique_column}
 ```
 
-For example,
+For example, 
 
 ```csharp
 ctx.Db.citizen.Ssn
@@ -453,7 +452,6 @@ public abstract class UniqueIndex<Handle, Row, Column, RW> : IndexBase<Row>
     /* ... */
 }
 ```
-
 <!-- Actually, `Column` is called `T` in the real declaration, but it would be much clearer
 if it was called `Column`. -->
 
@@ -463,7 +461,7 @@ A unique index on a column. Available for `[Unique]` and `[PrimaryKey]` columns.
 `Row` is the type decorated with `[SpacetimeDB.Table]`, `Column` is the type of the column,
 and `Handle` is the type of the generated table handle.
 
-For a table _table_ with a column _column_, use `ctx.Db.{table}.{column}`
+For a table *table* with a column *column*, use `ctx.Db.{table}.{column}`
 to get a `UniqueColumn` from a [`ReducerContext`](#class-reducercontext).
 
 Example:
@@ -591,7 +589,7 @@ public partial struct AcademicPaper {
     public string Date;
     public string Venue;
     public string Country;
-}
+} 
 ```
 
 Multiple indexes can be declared.
@@ -609,8 +607,9 @@ public partial struct AcademicPaper {
     public string Venue;
     [SpacetimeDB.Index.BTree(Name = "ByCountry")] // The index will be named "ByCountry".
     public string Country;
-}
+} 
 ```
+
 
 Any table supports getting an [`Index`](#class-index) using `ctx.Db.{table}.{index}`. For example, `ctx.Db.academic_paper.TitleAndDate` or `ctx.Db.academic_paper.Venue`.
 
@@ -774,7 +773,7 @@ Allows accessing the local database attached to a module.
 
 The `[Table]` attribute generates a field of this property.
 
-For a table named _table_, use `ctx.Db.{table}` to get a [table view](#interface-itableview).
+For a table named *table*, use `ctx.Db.{table}` to get a [table view](#interface-itableview).
 For example, `ctx.Db.users`.
 
 You can also use `ctx.Db.{table}.{index}` to get an [index](#class-index) or [unique index](#class-uniqueindex).
@@ -826,6 +825,7 @@ This can be used to [check whether a scheduled reducer is being called by a user
 
 Note: this is not the identity of the caller, that's [`ReducerContext.Sender`](#property-reducercontextsender).
 
+
 ## Lifecycle Reducers
 
 A small group of reducers are called at set points in the module lifecycle. These are used to initialize
@@ -853,13 +853,13 @@ This reducer is marked with `[SpacetimeDB.Reducer(ReducerKind.ClientDisconnected
 
 If an error occurs in the disconnect reducer, the client is still recorded as disconnected.
 
+
 ## Scheduled Reducers
 
 Reducers can schedule other reducers to run asynchronously. This allows calling the reducers at a particular time, or at repeating intervals. This can be used to implement timers, game loops, and maintenance tasks.
 
 The scheduling information for a reducer is stored in a table.
 This table has two mandatory fields:
-
 - An `[AutoInc] [PrimaryKey] ulong` field that identifies scheduled reducer calls.
 - A [`ScheduleAt`](#record-scheduleat) field that says when to call the reducer.
 
@@ -967,7 +967,7 @@ The following changes are always allowed and never breaking:
 - ✅ **Adding or removing `[AutoInc]` annotations.**
 - ✅ **Changing tables from private to public**.
 - ✅ **Adding reducers**.
-- ✅ **Removing `[Unique]` annotations.**
+- ✅ **Removing `[Unique]`  annotations.**
 
 The following changes are allowed, but may break clients:
 
@@ -976,13 +976,13 @@ The following changes are allowed, but may break clients:
 - ⚠️ **Removing `[PrimaryKey]` annotations**. Non-updated clients will still use the old `[PrimaryKey]` as a unique key in their local cache, which can result in non-deterministic behavior when updates are received.
 - ⚠️ **Removing indexes**. This is only breaking in some situtations.
   The specific problem is subscription queries <!-- TODO: clientside link --> involving semijoins, such as:
-  ```sql
-  SELECT Employee.*
-  FROM Employee JOIN Dept
-  ON Employee.DeptName = Dept.DeptName
-  )
-  ```
-  For performance reasons, SpacetimeDB will only allow this kind of subscription query if there are indexes on `Employee.DeptName` and `Dept.DeptName`. Removing either of these indexes will invalidate this subscription query, resulting in client-side runtime errors.
+    ```sql
+    SELECT Employee.*
+    FROM Employee JOIN Dept
+    ON Employee.DeptName = Dept.DeptName
+    )
+    ```
+    For performance reasons, SpacetimeDB will only allow this kind of subscription query if there are indexes on `Employee.DeptName` and `Dept.DeptName`. Removing either of these indexes will invalidate this subscription query, resulting in client-side runtime errors.
 
 The following changes are forbidden without a manual migration:
 
@@ -1116,10 +1116,9 @@ public static partial class Module {
 }
 ```
 
-The fields of the struct/enum must also be marked with `[SpacetimeDB.Type]`.
+The fields of the struct/enum must also be marked with `[SpacetimeDB.Type]`. 
 
 Some types from the standard library are also considered to be marked with `[SpacetimeDB.Type]`, including:
-
 - `byte`
 - `sbyte`
 - `ushort`
@@ -1213,12 +1212,10 @@ A positive value means a time after the Unix epoch, and a negative value means a
 public static implicit operator DateTimeOffset(Timestamp t);
 public static implicit operator Timestamp(DateTimeOffset offset);
 ```
-
 `Timestamp` may be converted to/from a [`DateTimeOffset`], but the conversion can lose precision.
 This type has less precision than DateTimeOffset (units of microseconds rather than units of 100ns).
 
 ### Static property `Timestamp.UNIX_EPOCH`
-
 ```csharp
 public static readonly Timestamp UNIX_EPOCH = new Timestamp { MicrosecondsSinceUnixEpoch = 0 };
 ```
@@ -1226,7 +1223,6 @@ public static readonly Timestamp UNIX_EPOCH = new Timestamp { MicrosecondsSinceU
 The [unix epoch] as a `Timestamp`.
 
 ### Method `Timestamp.TimeDurationSince`
-
 ```csharp
 public readonly TimeDuration TimeDurationSince(Timestamp earlier) =>
 ```
@@ -1234,7 +1230,6 @@ public readonly TimeDuration TimeDurationSince(Timestamp earlier) =>
 Create a new [`TimeDuration`] that is the difference between two `Timestamps`.
 
 ### Operator `Timestamp.+`
-
 ```csharp
 public static Timestamp operator +(Timestamp point, TimeDuration interval);
 ```
@@ -1242,7 +1237,6 @@ public static Timestamp operator +(Timestamp point, TimeDuration interval);
 Create a new `Timestamp` that occurs `interval` after `point`.
 
 ### Method `Timestamp.CompareTo`
-
 ```csharp
 public int CompareTo(Timestamp that)
 ```
@@ -1250,7 +1244,6 @@ public int CompareTo(Timestamp that)
 Compare two `Timestamp`s.
 
 ## Struct `TimeDuration`
-
 ```csharp
 namespace SpacetimeDB;
 
@@ -1270,7 +1263,6 @@ This type may be converted to/from a [`TimeSpan`]. It is provided for consistenc
 | Static property [`ZERO`](#static-property-timedurationzero)   | The duration between any [`Timestamp`] and itself |
 
 ### Property `TimeDuration.Microseconds`
-
 ```csharp
 long Microseconds;
 ```
@@ -1278,7 +1270,6 @@ long Microseconds;
 The number of microseconds between two [`Timestamp`]s.
 
 ### Conversion to/from `TimeSpan`
-
 ```csharp
 public static implicit operator TimeSpan(TimeDuration d) =>
     new(d.Microseconds * Util.TicksPerMicrosecond);
@@ -1291,7 +1282,6 @@ public static implicit operator TimeDuration(TimeSpan timeSpan) =>
 This type has less precision than [`TimeSpan`] (units of microseconds rather than units of 100ns).
 
 ### Static property `TimeDuration.ZERO`
-
 ```csharp
 public static readonly TimeDuration ZERO = new TimeDuration { Microseconds = 0 };
 ```
@@ -1299,7 +1289,6 @@ public static readonly TimeDuration ZERO = new TimeDuration { Microseconds = 0 }
 The duration between any `Timestamp` and itself.
 
 ## Record `TaggedEnum`
-
 ```csharp
 namespace SpacetimeDB;
 
@@ -1397,7 +1386,6 @@ Then code using a `ShapeData` will only have to do one check -- do I have a circ
 And in each case, the data will be guaranteed to have exactly the fields needed.
 
 ## Record `ScheduleAt`
-
 ```csharp
 namespace SpacetimeDB;
 

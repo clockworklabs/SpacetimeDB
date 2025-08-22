@@ -13,7 +13,6 @@ To enable RLS, activate the `unstable` feature in your project's `Cargo.toml`:
 ```toml
 spacetimedb = { version = "...", features = ["unstable"] }
 ```
-
 :::
 :::server-csharp
 To enable RLS, include the following preprocessor directive at the top of your module files:
@@ -21,7 +20,6 @@ To enable RLS, include the following preprocessor directive at the top of your m
 ```cs
 #pragma warning disable STDB_UNSTABLE
 ```
-
 :::
 
 ## How It Works
@@ -38,7 +36,6 @@ const ACCOUNT_FILTER: Filter = Filter::Sql(
     "SELECT * FROM account WHERE account.identity = :sender"
 );
 ```
-
 :::
 :::server-csharp
 RLS rules are expressed in SQL and declared as public static readonly fields of type `Filter`.
@@ -59,7 +56,6 @@ public partial class Module
     );
 }
 ```
-
 :::
 
 A module will fail to publish if any of its RLS rules are invalid or malformed.
@@ -70,6 +66,7 @@ You can use the special `:sender` parameter in your rules for user specific acce
 This parameter is automatically bound to the requesting client's [Identity].
 
 Note that module owners have unrestricted access to all tables regardless of RLS.
+
 
 [Identity]: /docs/#identity
 
@@ -87,7 +84,6 @@ This means clients will be able to see to any row that matches at least one of t
 #### Example
 
 :::server-rust
-
 ```rust
 use spacetimedb::{client_visibility_filter, Filter};
 
@@ -103,10 +99,8 @@ const ACCOUNT_FILTER_FOR_ADMINS: Filter = Filter::Sql(
     "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
 );
 ```
-
 :::
 :::server-csharp
-
 ```cs
 using SpacetimeDB;
 
@@ -131,7 +125,6 @@ public partial class Module
     );
 }
 ```
-
 :::
 
 ### Recursive Application
@@ -142,7 +135,6 @@ This ensures that data is never leaked through indirect access patterns.
 #### Example
 
 :::server-rust
-
 ```rust
 use spacetimedb::{client_visibility_filter, Filter};
 
@@ -166,10 +158,8 @@ const PLAYER_FILTER: Filter = Filter::Sql(
     "SELECT p.* FROM account a JOIN player p ON a.id = p.id"
 );
 ```
-
 :::
 :::server-csharp
-
 ```cs
 using SpacetimeDB;
 
@@ -202,7 +192,6 @@ public partial class Module
     );
 }
 ```
-
 :::
 
 And while self-joins are allowed, in general RLS rules cannot be self-referential,
@@ -211,7 +200,6 @@ as this would result in infinite recursion.
 #### Example: Self-Join
 
 :::server-rust
-
 ```rust
 use spacetimedb::{client_visibility_filter, Filter};
 
@@ -225,10 +213,8 @@ const PLAYER_FILTER: Filter = Filter::Sql("
     WHERE a.identity = :sender
 ");
 ```
-
 :::
 :::server-csharp
-
 ```cs
 using SpacetimeDB;
 
@@ -247,7 +233,6 @@ public partial class Module
     ");
 }
 ```
-
 :::
 
 #### Example: Recursive Rules
@@ -255,7 +240,6 @@ public partial class Module
 This module will fail to publish because each rule depends on the other one.
 
 :::server-rust
-
 ```rust
 use spacetimedb::{client_visibility_filter, Filter};
 
@@ -271,10 +255,8 @@ const PLAYER_FILTER: Filter = Filter::Sql(
     "SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
 );
 ```
-
 :::
 :::server-csharp
-
 ```cs
 using SpacetimeDB;
 
@@ -297,7 +279,6 @@ public partial class Module
     );
 }
 ```
-
 :::
 
 ## Usage in Subscriptions
@@ -310,11 +291,13 @@ they do apply to the subscriptions that use them.
 For example, it is valid for an RLS rule to have more joins than are supported by subscriptions.
 However a client will not be able to subscribe to the table for which that rule is defined.
 
+
 [reference docs]: /docs/sql#subscriptions
 
 ## Best Practices
 
 1. Use `:sender` for client specific filtering.
 2. Follow the [SQL best practices] for optimizing your RLS rules.
+
 
 [SQL best practices]: /docs/sql#best-practices-for-performance-and-scalability

@@ -201,7 +201,7 @@ Let's also make it pretty. Replace the contents of `client/src/App.css` with the
 .message {
   grid-row: 2 / 3;
   grid-column: 1 / 2;
-
+  
   /* Ensure this section scrolls if content is long */
   overflow-y: auto;
   padding: 1rem;
@@ -309,16 +309,16 @@ body,
 }
 
 body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
-    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 code {
-  font-family:
-    source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
 }
 
 /* ----- Buttons ----- */
@@ -387,13 +387,7 @@ module_bindings
 With `spacetime generate` we have generated TypeScript types derived from the types you specified in your module, which we can conveniently use in our client. We've placed these in the `module_bindings` folder. The main entry to the SpacetimeDB API is the `DbConnection`, a type which manages a connection to a remote database. Let's import it and a few other types into our `client/src/App.tsx`.
 
 ```tsx
-import {
-  DbConnection,
-  type ErrorContext,
-  type EventContext,
-  Message,
-  User,
-} from './module_bindings';
+import { DbConnection, type ErrorContext, type EventContext, Message, User } from './module_bindings';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 ```
 
@@ -404,55 +398,59 @@ Now that we've imported the `DbConnection` type, we can use it to connect our ap
 Add the following to your `App` function, just below `const [newMessage, setNewMessage] = useState('');`:
 
 ```tsx
-const [connected, setConnected] = useState<boolean>(false);
-const [identity, setIdentity] = useState<Identity | null>(null);
-const [conn, setConn] = useState<DbConnection | null>(null);
+  const [connected, setConnected] = useState<boolean>(false);
+  const [identity, setIdentity] = useState<Identity | null>(null);
+  const [conn, setConn] = useState<DbConnection | null>(null);
 
-useEffect(() => {
-  const subscribeToQueries = (conn: DbConnection, queries: string[]) => {
-    conn
-      ?.subscriptionBuilder()
-      .onApplied(() => {
-        console.log('SDK client cache initialized.');
-      })
-      .subscribe(queries);
-  };
+  useEffect(() => {
+    const subscribeToQueries = (conn: DbConnection, queries: string[]) => {
+      conn
+        ?.subscriptionBuilder()
+        .onApplied(() => {
+          console.log('SDK client cache initialized.');
+        })
+        .subscribe(queries);
+    };
 
-  const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
-    setIdentity(identity);
-    setConnected(true);
-    localStorage.setItem('auth_token', token);
-    console.log(
-      'Connected to SpacetimeDB with identity:',
-      identity.toHexString()
+    const onConnect = (
+      conn: DbConnection,
+      identity: Identity,
+      token: string
+    ) => {
+      setIdentity(identity);
+      setConnected(true);
+      localStorage.setItem('auth_token', token);
+      console.log(
+        'Connected to SpacetimeDB with identity:',
+        identity.toHexString()
+      );
+      conn.reducers.onSendMessage(() => {
+        console.log('Message sent.');
+      });
+
+      subscribeToQueries(conn, ['SELECT * FROM message', 'SELECT * FROM user']);
+    };
+
+    const onDisconnect = () => {
+      console.log('Disconnected from SpacetimeDB');
+      setConnected(false);
+    };
+
+    const onConnectError = (_ctx: ErrorContext, err: Error) => {
+      console.log('Error connecting to SpacetimeDB:', err);
+    };
+
+    setConn(
+      DbConnection.builder()
+        .withUri('ws://localhost:3000')
+        .withModuleName('quickstart-chat')
+        .withToken(localStorage.getItem('auth_token') || '')
+        .onConnect(onConnect)
+        .onDisconnect(onDisconnect)
+        .onConnectError(onConnectError)
+        .build()
     );
-    conn.reducers.onSendMessage(() => {
-      console.log('Message sent.');
-    });
-
-    subscribeToQueries(conn, ['SELECT * FROM message', 'SELECT * FROM user']);
-  };
-
-  const onDisconnect = () => {
-    console.log('Disconnected from SpacetimeDB');
-    setConnected(false);
-  };
-
-  const onConnectError = (_ctx: ErrorContext, err: Error) => {
-    console.log('Error connecting to SpacetimeDB:', err);
-  };
-
-  setConn(
-    DbConnection.builder()
-      .withUri('ws://localhost:3000')
-      .withModuleName('quickstart-chat')
-      .withToken(localStorage.getItem('auth_token') || '')
-      .onConnect(onConnect)
-      .onDisconnect(onDisconnect)
-      .onConnectError(onConnectError)
-      .build()
-  );
-}, []);
+  }, []);
 ```
 
 Here we are configuring our SpacetimeDB connection by specifying the server URI, database name, and a few callbacks including the `onConnect` callback. When `onConnect` is called after connecting, we store the connection state, our `Identity`, and our SpacetimeDB credentials in our React state. If there is an error connecting, we print that error to the console as well.
@@ -545,21 +543,21 @@ These custom React hooks update the React state anytime a row in our tables chan
 Let's add these hooks to our `App` component just below our connection setup:
 
 ```tsx
-const messages = useMessages(conn);
-const users = useUsers(conn);
+  const messages = useMessages(conn);
+  const users = useUsers(conn);
 ```
 
 Let's now prettify our messages in our render function by sorting them by their `sent` timestamp, and joining the username of the sender to the message by looking up the user by their `Identity` in the `user` table. Replace `const prettyMessages: PrettyMessage[] = [];` with the following:
 
 ```tsx
-const prettyMessages: PrettyMessage[] = messages
-  .sort((a, b) => (a.sent > b.sent ? 1 : -1))
-  .map(message => ({
-    senderName:
-      users.get(message.sender.toHexString())?.name ||
-      message.sender.toHexString().substring(0, 8),
-    text: message.text,
-  }));
+  const prettyMessages: PrettyMessage[] = messages
+    .sort((a, b) => (a.sent > b.sent ? 1 : -1))
+    .map(message => ({
+      senderName:
+        users.get(message.sender.toHexString())?.name ||
+        message.sender.toHexString().substring(0, 8),
+      text: message.text,
+    }));
 ```
 
 That's all we have to do to hook up our SpacetimeDB state to our React state. SpacetimeDB will make sure that any change on the server gets pushed down to our application and rerendered on screen in real-time.
@@ -567,22 +565,22 @@ That's all we have to do to hook up our SpacetimeDB state to our React state. Sp
 Let's also update our render function to show a loading message while we're connecting to SpacetimeDB. Add this just below our `prettyMessages` declaration:
 
 ```tsx
-if (!conn || !connected || !identity) {
-  return (
-    <div className="App">
-      <h1>Connecting...</h1>
-    </div>
-  );
-}
+  if (!conn || !connected || !identity) {
+    return (
+      <div className="App">
+        <h1>Connecting...</h1>
+      </div>
+    );
+  }
 ```
 
 Finally, let's also compute the name of the user from the `Identity` in our `name` variable. Replace `const name = '';` with the following:
 
 ```tsx
-const name =
-  users.get(identity?.toHexString())?.name ||
-  identity?.toHexString().substring(0, 8) ||
-  'unknown';
+  const name =
+    users.get(identity?.toHexString())?.name ||
+    identity?.toHexString().substring(0, 8) ||
+    'unknown';
 ```
 
 ### Calling Reducers
@@ -592,21 +590,21 @@ Let's hook up our callbacks so we can send some messages and see them displayed 
 Modify the `onSubmitNewName` callback by adding a call to the `setName` reducer:
 
 ```tsx
-const onSubmitNewName = (e: React.FormEvent<HTMLFormElement>) => {
-  e.preventDefault();
-  setSettingName(false);
-  conn.reducers.setName(newName);
-};
+  const onSubmitNewName = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setSettingName(false);
+    conn.reducers.setName(newName);
+  };
 ```
 
 Next modify the `onSubmitMessage` callback by adding a call to the `sendMessage` reducer:
 
 ```tsx
-const onMessageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-  e.preventDefault();
-  setNewMessage('');
-  conn.reducers.sendMessage(newMessage);
-};
+  const onMessageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setNewMessage("");
+    conn.reducers.sendMessage(newMessage);
+  };
 ```
 
 SpacetimeDB generated these functions for us based on the type information provided by our module. Calling these functions will invoke our reducers in our module.
@@ -636,23 +634,24 @@ Note that these callbacks can fire in two contexts:
 Our `user` table includes all users not just online users, so we want to take care to only show a notification when new users join. Let's add a `useEffect` which subscribes a callback when a `user` is inserted into the table and a callback when a `user` is updated. Add the following to your `App` component just below the other `useEffect`.
 
 ```tsx
-useEffect(() => {
-  if (!conn) return;
-  conn.db.user.onInsert((_ctx, user) => {
-    if (user.online) {
-      const name = user.name || user.identity.toHexString().substring(0, 8);
-      setSystemMessage(prev => prev + `\n${name} has connected.`);
-    }
-  });
-  conn.db.user.onUpdate((_ctx, oldUser, newUser) => {
-    const name = newUser.name || newUser.identity.toHexString().substring(0, 8);
-    if (oldUser.online === false && newUser.online === true) {
-      setSystemMessage(prev => prev + `\n${name} has connected.`);
-    } else if (oldUser.online === true && newUser.online === false) {
-      setSystemMessage(prev => prev + `\n${name} has disconnected.`);
-    }
-  });
-}, [conn]);
+  useEffect(() => {
+    if (!conn) return;
+    conn.db.user.onInsert((_ctx, user) => {
+      if (user.online) {
+        const name = user.name || user.identity.toHexString().substring(0, 8);
+        setSystemMessage(prev => prev + `\n${name} has connected.`);
+      }
+    });
+    conn.db.user.onUpdate((_ctx, oldUser, newUser) => {
+      const name =
+        newUser.name || newUser.identity.toHexString().substring(0, 8);
+      if (oldUser.online === false && newUser.online === true) {
+        setSystemMessage(prev => prev + `\n${name} has connected.`);
+      } else if (oldUser.online === true && newUser.online === false) {
+        setSystemMessage(prev => prev + `\n${name} has disconnected.`);
+      }
+    });
+  }, [conn]);
 ```
 
 Here we post a message saying a new user has connected if the user is being added to the `user` table and they're online, or if an existing user's online status is being set to "online".

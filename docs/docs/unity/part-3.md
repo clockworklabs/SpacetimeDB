@@ -76,7 +76,6 @@ pub fn spawn_food(ctx: &ReducerContext) -> Result<(), String> {
     Ok(())
 }
 ```
-
 :::
 :::server-csharp
 Let's start by spawning food into the map. The first thing we need to do is create a new, special reducer called the `Init` reducer. SpacetimeDB calls the `Init` reducer automatically when you first publish your module, and also after any time you run with `publish --delete-data`. It gives you an opportunity to initialize the state of your database before any clients connect.
@@ -141,7 +140,6 @@ public static float Range(this Random rng, float min, float max) => rng.NextSing
 
 public static uint Range(this Random rng, uint min, uint max) => (uint)rng.NextInt64(min, max);
 ```
-
 :::
 
 In this reducer, we are using the `world_size` we configured along with the `ReducerContext`'s random number generator `.rng()` function to place 600 food uniformly randomly throughout the map. We've also chosen the `mass` of the food to be a random number between 2 and 4 inclusive.
@@ -185,22 +183,19 @@ public partial struct SpawnFoodTimer
 Note the `Scheduled = nameof(SpawnFood)` parameter in the table macro. This tells SpacetimeDB that the rows in this table specify a schedule for when the `SpawnFood` reducer should be called. Each scheduled table requires a `scheduled_id` and a `scheduled_at` field so that SpacetimeDB can call your reducer, however you can also add your own fields to these rows as well.
 :::
 
-You can create, delete, or change a schedule by inserting, deleting, or updating rows in this table.
+You can create, delete, or change a schedule by inserting, deleting, or updating rows in this table. 
 
 You will see an error telling you that the `spawn_food` reducer needs to take two arguments, but currently only takes one. This is because the schedule row must be passed in to all scheduled reducers. Modify your `spawn_food` reducer to take the scheduled row as an argument.
 
 :::server-rust
-
 ```rust
 #[spacetimedb::reducer]
 pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), String> {
     // ...
 }
 ```
-
 :::
 :::server-csharp
-
 ```csharp
 [Reducer]
 public static void SpawnFood(ReducerContext ctx, SpawnFoodTimer _timer)
@@ -208,7 +203,6 @@ public static void SpawnFood(ReducerContext ctx, SpawnFoodTimer _timer)
     // ...
 }
 ```
-
 :::
 
 In our case we aren't interested in the data on the row, so we name the argument `_timer`.
@@ -233,9 +227,9 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 ```
 
 > You can use `ScheduleAt::Interval` to schedule a reducer call at an interval like we're doing here. SpacetimeDB will continue to call the reducer at this interval until you remove the row. You can also use `ScheduleAt::Time()` to specify a specific at which to call a reducer once. SpacetimeDB will remove that row automatically after the reducer has been called.
-> :::
-> :::server-csharp
-> Let's modify our `Init` reducer to schedule our `SpawnFood` reducer to be called every 500 milliseconds.
+:::
+:::server-csharp
+Let's modify our `Init` reducer to schedule our `SpawnFood` reducer to be called every 500 milliseconds.
 
 ```csharp
 [Reducer(ReducerKind.Init)]
@@ -251,7 +245,7 @@ public static void Init(ReducerContext ctx)
 ```
 
 > You can use `ScheduleAt.Interval` to schedule a reducer call at an interval like we're doing here. SpacetimeDB will continue to call the reducer at this interval until you remove the row. You can also use `ScheduleAt.Time()` to specify a specific at which to call a reducer once. SpacetimeDB will remove that row automatically after the reducer has been called.
-> :::
+:::
 
 ### Logging Players In
 
@@ -260,24 +254,19 @@ Let's continue building out our server module by modifying it to log in a player
 Let's add a second table to our `Player` struct. Modify the `Player` struct by adding this above the struct:
 
 :::server-rust
-
 ```rust
 #[spacetimedb::table(name = logged_out_player)]
 ```
-
 :::
 :::server-csharp
-
 ```csharp
 [Table(Name = "logged_out_player")]
 ```
-
 :::
 
 Your struct should now look like this:
 
 :::server-rust
-
 ```rust
 #[spacetimedb::table(name = player, public)]
 #[spacetimedb::table(name = logged_out_player)]
@@ -291,10 +280,8 @@ pub struct Player {
     name: String,
 }
 ```
-
 :::
 :::server-csharp
-
 ```csharp
 [Table(Name = "player", Public = true)]
 [Table(Name = "logged_out_player")]
@@ -307,7 +294,6 @@ public partial struct Player
     public string name;
 }
 ```
-
 :::
 
 This line creates an additional tabled called `logged_out_player` whose rows share the same `Player` type as in the `player` table.
@@ -353,7 +339,6 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
     Ok(())
 }
 ```
-
 :::
 :::server-csharp
 Next, modify your `Connect` reducer and add a new `Disconnect` reducer below it:
@@ -386,7 +371,6 @@ public static void Disconnect(ReducerContext ctx)
     ctx.Db.player.identity.Delete(player.identity);
 }
 ```
-
 :::
 
 Now when a client connects, if the player corresponding to the client is in the `logged_out_player` table, we will move them into the `player` table, thus indicating that they are logged in and connected. For any new unrecognized client connects we will create a `Player` and insert it into the `player` table.
@@ -394,7 +378,6 @@ Now when a client connects, if the player corresponding to the client is in the 
 When a player disconnects, we will transfer their player row from the `player` table to the `logged_out_player` table to indicate they're offline.
 
 > Note that we could have added a `logged_in` boolean to the `Player` type to indicated whether the player is logged in. There's nothing incorrect about that approach, however for several reasons we recommend this two table approach:
->
 > - We can iterate over all logged in players without any `if` statements or branching
 > - The `Player` type now uses less program memory improving cache efficiency
 > - We can easily check whether a player is logged in, based on whether their row exists in the `player` table
@@ -403,7 +386,7 @@ When a player disconnects, we will transfer their player row from the `player` t
 
 ### Spawning Player Circles
 
-Now that we've got our food spawning and our players set up, let's create a match and spawn player circle entities into it. The first thing we should do before spawning a player into a match is give them a name.
+Now that we've got our food spawning and our players set up, let's create a match and spawn player circle entities into it. The first thing we should do before spawning a player into a match is give them a name. 
 
 :::server-rust
 Add the following to the bottom of your file.
@@ -528,7 +511,6 @@ The `EnterGame` reducer takes one argument, the player's `name`. We can use this
 Let's also modify our `disconnect` reducer to remove the circles from the arena when the player disconnects from the database server.
 
 :::server-rust
-
 ```rust
 #[spacetimedb::reducer(client_disconnected)]
 pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
@@ -551,10 +533,8 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
     Ok(())
 }
 ```
-
 :::
 :::server-csharp
-
 ```csharp
 [Reducer(ReducerKind.ClientDisconnected)]
 public static void Disconnect(ReducerContext ctx)
@@ -571,8 +551,8 @@ public static void Disconnect(ReducerContext ctx)
     ctx.Db.player.identity.Delete(player.identity);
 }
 ```
-
 :::
+
 
 Finally, publish the new module to SpacetimeDB with this command:
 
@@ -586,7 +566,7 @@ Deleting the data is optional in this case, but in case you've been messing arou
 
 Now that we've set up our server logic to spawn food and players, let's continue developing our Unity client to display what we have so far.
 
-Start by adding `SetupArena` and `CreateBorderCube` methods to your `GameManager` class:
+Start by adding `SetupArena` and `CreateBorderCube` methods to your `GameManager` class: 
 
 ```cs
     private void SetupArena(float worldSize)
@@ -630,7 +610,7 @@ The `OnApplied` callback will be called after the server synchronizes the initia
 
 In the scene view, select the `GameManager` object. Click on the `Border Material` property and choose `Sprites-Default`.
 
-### Creating GameObjects
+### Creating GameObjects 
 
 Now that we have our arena all set up, we need to take the row data that SpacetimeDB syncs with our client and use it to create and draw `GameObject`s on the screen.
 
@@ -644,7 +624,7 @@ Now let's make some prefabs for our game objects. In the scene hierarchy window,
 
 Rename the new game object in the scene to `CirclePrefab`. Next in the `Inspector` window click the `Add Component` button and add the `Circle Controller` script component that we just created. Finally drag the object into the `Project` folder. Once the prefab file is created, delete the `CirclePrefab` object from the scene. We'll use this prefab to draw the circles that a player controls.
 
-Next repeat that same process for the `FoodPrefab` and `Food Controller` component.
+Next repeat that same process for the `FoodPrefab` and `Food Controller` component. 
 
 In the `Project` view, double click the `CirclePrefab` to bring it up in the scene view. Right-click anywhere in the hierarchy and navigate to:
 
@@ -768,7 +748,7 @@ namespace SpacetimeDB.Types
 
 This just allows us to implicitly convert between our `DbVector2` type and the Unity `Vector2` type.
 
-#### CircleController
+#### CircleController  
 
 Now open the `CircleController` script and modify the contents of the `CircleController` script to be:
 
@@ -786,16 +766,16 @@ public class CircleController : EntityController
         //Yellow
 		(Color)new Color32(175, 159, 49, 255),
 		(Color)new Color32(175, 116, 49, 255),
-
+        
         //Purple
         (Color)new Color32(112, 47, 252, 255),
 		(Color)new Color32(51, 91, 252, 255),
-
+        
         //Red
         (Color)new Color32(176, 54, 54, 255),
 		(Color)new Color32(176, 109, 54, 255),
 		(Color)new Color32(141, 43, 99, 255),
-
+        
         //Blue
         (Color)new Color32(2, 188, 250, 255),
 		(Color)new Color32(7, 50, 251, 255),
@@ -931,7 +911,7 @@ public class PlayerController : MonoBehaviour
         {
             return null;
         }
-
+        
         Vector2 totalPos = Vector2.zero;
         float totalMass = 0;
         foreach (var circle in OwnedCircles)
@@ -1130,7 +1110,7 @@ public class CameraController : MonoBehaviour
         var arenaCenterTransform = new Vector3(WorldSize / 2, WorldSize / 2, -10.0f);
         if (PlayerController.Local == null || !GameManager.IsConnected())
         {
-            // Set the camera to be in middle of the arena if we are not connected or
+            // Set the camera to be in middle of the arena if we are not connected or 
             // there is no local player
             transform.position = arenaCenterTransform;
             return;

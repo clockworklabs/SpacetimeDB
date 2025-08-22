@@ -45,12 +45,13 @@ Speed and latency is achieved by holding all of your application state in memory
     </figcaption>
 </figure>
 
+
 The above illustrates the workflow when using SpacetimeDB.
 
-- All client-side reads happen with the data view that is cached locally.
-- Client-side subscriptions tell the server what data client cares about and wants to be synced within its data view. Changes to data will be pushed by the server to the client cache.
-- RLS filters restrict the data view server-side before subscriptions are evaluated. These filters can be used for access control or client scoping.
-- Reducers are effectively async RPC's. The request is sent off and if the results of that reducer makes changes to data, it will be written to the database directly. As a result of that, if those changes make it through the two layers above, then the client will see the result when it queries its local cache.
+* All client-side reads happen with the data view that is cached locally.
+* Client-side subscriptions tell the server what data client cares about and wants to be synced within its data view. Changes to data will be pushed by the server to the client cache.
+* RLS filters restrict the data view server-side before subscriptions are evaluated. These filters can be used for access control or client scoping.
+* Reducers are effectively async RPC's. The request is sent off and if the results of that reducer makes changes to data, it will be written to the database directly. As a result of that, if those changes make it through the two layers above, then the client will see the result when it queries its local cache.
 
 ## State Mirroring
 
@@ -82,11 +83,9 @@ SpacetimeDB was designed first and foremost as the backend for multiplayer Unity
 ## Key architectural concepts
 
 ### Host
-
 A SpacetimeDB **host** is a server that hosts [databases](#database). You can run your own host, or use the SpacetimeDB maincloud. Many databases can run on a single host.
 
 ### Database
-
 A SpacetimeDB **database** is an application that runs on a [host](#host).
 
 A database exports [tables](#table), which store data, and [reducers](#reducer), which allow [clients](#client) to make requests.
@@ -96,7 +95,6 @@ A database's schema and business logic is specified by a piece of software calle
 (Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) that imports a specific low-level [WebAssembly ABI](/docs/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](#module-libraries) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](/install) is used to deploy the application.)
 
 ### Table
-
 A SpacetimeDB **table** is a SQL database table. Tables are declared in a module's native language. For instance, in C#, a table is declared like so:
 
 ```csharp
@@ -110,7 +108,6 @@ public partial struct Player
     Identity user;
 }
 ```
-
 <!-- TODO: switchable language widget.
 ```rust
 #[spacetimedb::table(name = players, public)]
@@ -128,7 +125,6 @@ The contents of a table can be read and updated by [reducers](#reducer).
 Tables marked `public` can also be read by [clients](#client).
 
 ### Reducer
-
 A **reducer** is a function exported by a [database](#database).
 Connected [clients](#client-side-sdks) can call reducers to interact with the database.
 This is a form of [remote procedure call](https://en.wikipedia.org/wiki/Remote_procedure_call).
@@ -151,7 +147,6 @@ fn main() {
    ctx.reducers.set_player_name(57, "Marceline".into());
 }
 ```
-
 :::
 :::server-csharp
 A reducer can be written in C# like so:
@@ -172,7 +167,6 @@ void Main() {
    Connection.Reducer.SetPlayerName(57, "Marceline");
 }
 ```
-
 :::
 
 These look mostly like regular function calls, but under the hood,
@@ -184,9 +178,9 @@ This can be used to authenticate the caller.
 
 Reducers are run in their own separate and atomic [database transactions](https://en.wikipedia.org/wiki/Database_transaction).
 When a reducer completes successfully, the changes the reducer has made,
-such as inserting a table row, are _committed_ to the database.
+such as inserting a table row, are *committed* to the database.
 However, if the reducer instead returns an error, or throws an exception,
-the database will instead reject the request and _revert_ all those changes.
+the database will instead reject the request and *revert* all those changes.
 That is, reducers and transactions are all-or-nothing requests.
 It's not possible to keep the first half of a reducer's changes and discard the last.
 
@@ -198,7 +192,6 @@ and the overall reducer completes successfully,
 the changes in the nested one are still persisted.
 
 :::server-rust
-
 ```rust
 #[spacetimedb::reducer]
 pub fn hello(ctx: &spacetimedb::ReducerContext) -> Result<(), String> {
@@ -212,13 +205,11 @@ pub fn world(ctx: &spacetimedb::ReducerContext) -> Result<(), String> {
    clear_all_tables(ctx);
 }
 ```
-
 While SpacetimeDB doesn't support nested transactions,
 a reducer can [schedule another reducer](https://docs.rs/spacetimedb/latest/spacetimedb/attr.reducer.html#scheduled-reducers) to run at an interval,
 or at a specific time.
 :::
 :::server-csharp
-
 ```csharp
 [SpacetimeDB.Reducer]
 public static void Hello(ReducerContext ctx)
@@ -236,14 +227,13 @@ public static void World(ReducerContext ctx)
    // ...
 }
 ```
-
 While SpacetimeDB doesn't support nested transactions,
 a reducer can [schedule another reducer](/docs/modules/c-sharp#scheduled-reducers) to run at an interval,
 or at a specific time.
 :::
 
-### Client
 
+### Client
 A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [connection id](#connectionid) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
 
 Clients are written using the [client-side SDKs](#client-side-sdks). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
@@ -272,7 +262,7 @@ def identity_from_claims(issuer: str, subject: str) -> [u8; 32]:
       *id_hash
    ])
    identity_big_endian_bytes: [u8; 32] = [
-      0xC2,
+      0xC2, 
       0x00,
       *checksum_hash[:4],
       *id_hash
@@ -289,7 +279,6 @@ A `ConnectionId` identifies client connections to a SpacetimeDB database.
 A user has a single [`Identity`](#identity), but may open multiple connections to your database. Each of these will receive a unique `ConnectionId`.
 
 ### Energy
-
 **Energy** is the currency used to pay for data storage and compute operations in a SpacetimeDB host.
 
 <!-- TODO(1.0): Rewrite this section after finalizing energy SKUs. -->
@@ -308,5 +297,5 @@ A user has a single [`Identity`](#identity), but may open multiple connections t
 1. How do I create a new database with SpacetimeDB?
    Follow our [Quick Start](/docs/getting-started) guide!
 
-1. How do I create a Unity game with SpacetimeDB?
+5. How do I create a Unity game with SpacetimeDB?
    Follow our [Unity Tutorial](/docs/unity) guide!
