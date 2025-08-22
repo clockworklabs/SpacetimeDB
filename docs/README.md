@@ -40,13 +40,8 @@ git push -u origin a-branch-name-that-describes-my-change
 #### CLI Reference Section
 
 1. Run `cargo run --features markdown-docs -p spacetimedb-cli > cli-reference.md`
+2. Run `pnpm format` to ensure proper formatting. We currently don't properly render markdown backticks and bolding that are inside of headers, so we have the two replacements defined in `tools/markdown-fix.mjs` to make them look okay.
 
-We currently don't properly render markdown backticks and bolding that are inside of headers, so do these two manual replacements to make them look okay (these have only been tested on Linux):
-
-```bash
-sed -i'' -E 's!^(##) `(.*)`$!\1 \2!' docs/cli-reference.md
-sed -i'' -E 's!^(######) \*\*(.*)\*\*$!\1 <b>\2</b>!' docs/cli-reference.md
-```
 
 ### Checking Links
 
