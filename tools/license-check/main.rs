@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 fn main() -> Result<()> {
-    let repo_root = find_repo_root()
-        .context("Could not locate repo root (looked for `.git/` or `licenses/`)")?;
+    let repo_root = find_repo_root().context("Could not locate repo root (looked for `.git/` or `licenses/`)")?;
 
     check_license_symlinks(&repo_root)?;
     println!("All LICENSE files are valid symlinks into `licenses/`.");
@@ -44,7 +43,7 @@ fn check_license_symlinks(repo_root: &Path) -> Result<()> {
     let licenses_dir_canon = fs::canonicalize(&licenses_dir)
         .with_context(|| format!("Could not canonicalize licenses dir: {}", licenses_dir.display()))?;
 
-    let ignore_list = [ "LICENSE.txt", "crates/sqltest/standards/LICENSE" ];
+    let ignore_list = ["LICENSE.txt", "crates/sqltest/standards/LICENSE"];
     let mut errors: Vec<String> = Vec::new();
 
     for entry in WalkDir::new(repo_root).into_iter().filter_map(Result::ok) {
@@ -86,8 +85,8 @@ fn validate_one_license(path: PathBuf, repo_root: &Path, licenses_dir_canon: &Pa
     let raw_target = fs::read_link(&path)
         .with_context(|| format!("Could not read symlink target {}", relative_to(&path, repo_root)))?;
 
-    let resolved = fs::canonicalize(resolve_relative_target(&raw_target, path.parent().unwrap()))
-        .with_context(|| {
+    let resolved =
+        fs::canonicalize(resolve_relative_target(&raw_target, path.parent().unwrap())).with_context(|| {
             format!(
                 "{}: Broken symlink (target {}).",
                 relative_to(&path, repo_root),
