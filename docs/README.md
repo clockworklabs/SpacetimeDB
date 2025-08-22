@@ -42,7 +42,6 @@ git push -u origin a-branch-name-that-describes-my-change
 1. Run `cargo run --features markdown-docs -p spacetimedb-cli > cli-reference.md`
 2. Run `pnpm format` to ensure proper formatting. We currently don't properly render markdown backticks and bolding that are inside of headers, so we have the two replacements defined in `tools/markdown-fix.mjs` to make them look okay.
 
-
 ### Checking Links
 
 We have a CI job which validates internal links. You can run it locally with `npm run check-links`. This will print any internal links (i.e. links to other docs pages) whose targets do not exist, including fragment links (i.e. `#`-ey links to anchors).
