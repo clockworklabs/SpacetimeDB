@@ -93,7 +93,6 @@ use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Ta
 ## Define the main function
 
 Our `main` function will do the following:
-
 1. Connect to the database.
 2. Register a number of callbacks to run in response to various database events.
 3. Subscribe to a set of SQL queries, whose results will be replicated and automatically updated in our client.
@@ -321,7 +320,7 @@ To find the `User` based on the message's `sender` identity, we'll use `ctx.db.u
 
 We'll print the user's name or identity in the same way as we did when notifying about `User` table events, but here we have to handle the case where we don't find a matching `User` row. This can happen when the module owner sends a message using the CLI's `spacetime call`. In this case, we'll print `unknown`.
 
-Notice that our `print_message` function takes an `&impl RemoteDbContext` as an argument. This is a trait, defined in our `module_bindings` by `spacetime generate`, which is implemented by `DbConnection`, `EventContext`, `ErrorContext` and a few other similar types. (`RemoteDbContext` is actually a shorthand for `DbContext`, which applies to connections to _any_ module, with its associated types locked to module-specific ones.) Later on, we're going to call `print_message` with a `ReducerEventContext`, so we need to be more generic than just accepting `EventContext`.
+Notice that our `print_message` function takes an `&impl RemoteDbContext` as an argument. This is a trait, defined in our `module_bindings` by `spacetime generate`, which is implemented by `DbConnection`, `EventContext`, `ErrorContext` and a few other similar types. (`RemoteDbContext` is actually a shorthand for `DbContext`, which applies to connections to *any* module, with its associated types locked to module-specific ones.) Later on, we're going to call `print_message` with a `ReducerEventContext`, so we need to be more generic than just accepting `EventContext`.
 
 To `client/src/main.rs`, add:
 
@@ -359,6 +358,7 @@ These callbacks will be invoked in one of two cases:
 Note that a status of `Failed` or `OutOfEnergy` implies that the caller identity is our own identity.
 
 We already handle successful `set_name` invocations using our `ctx.db.user().on_update(..)` callback, but if the module rejects a user's chosen name, we'd like that user's client to let them know. We define a function `on_set_name` as a `conn.reducers.on_set_name(..)` callback which checks if the reducer failed, and if it did, prints a message including the rejected name and the error.
+
 
 To `client/src/main.rs`, add:
 

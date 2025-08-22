@@ -24,11 +24,11 @@ To do this, we use inductive definitions, and define the following notation:
 
 ### At a glance
 
-| Type                                | Description                                          |
-| ----------------------------------- | ---------------------------------------------------- |
-| [`AlgebraicValue`](#algebraicvalue) | A value of any type.                                 |
-| [`SumValue`](#sumvalue)             | A value of a sum type, i.e. an enum or tagged union. |
-| [`ProductValue`](#productvalue)     | A value of a product type, i.e. a struct or tuple.   |
+| Type                                | Description                                                           |
+|-------------------------------------|-----------------------------------------------------------------------|
+| [`AlgebraicValue`](#algebraicvalue) | A value of any type.                                                  |
+| [`SumValue`](#sumvalue)             | A value of a sum type, i.e. an enum or tagged union.                  |
+| [`ProductValue`](#productvalue)     | A value of a product type, i.e. a struct or tuple.                    |
 
 ### `AlgebraicValue`
 
@@ -87,13 +87,10 @@ where `normalize(a)` for `a: ArrayValue` converts `a` to a list of `AlgebraicVal
 ### Strings
 
 For strings, the encoding is defined as:
-
 ```fsharp
 bsatn(String(s)) = bsatn(len(s) as u32) ++ bsatn(utf8_to_bytes(s))
 ```
-
 That is, the BSATN encoding is the concatenation of
-
 - the bsatn of the string's length as a `u32` integer byte
 - the utf8 representation of the string as a byte array
 

@@ -2,19 +2,19 @@
 
 The SpacetimeDB client for C# contains all the tools you need to build native clients for SpacetimeDB modules using C#.
 
-| Name                                                              | Description                                                                                              |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| [Project setup](#project-setup)                                   | Configure a C# project to use the SpacetimeDB C# client SDK.                                             |
-| [Generate module bindings](#generate-module-bindings)             | Use the SpacetimeDB CLI to generate module-specific types and interfaces.                                |
-| [`DbConnection` type](#type-dbconnection)                         | A connection to a remote database.                                                                       |
-| [`IDbContext` interface](#interface-idbcontext)                   | Methods for interacting with the remote database.                                                        |
-| [`EventContext` type](#type-eventcontext)                         | Implements [`IDbContext`](##interface-idbcontext) for [row callbacks](#callback-oninsert).               |
-| [`ReducerEventContext` type](#type-reducereventcontext)           | Implements [`IDbContext`](##interface-idbcontext) for [reducer callbacks](#observe-and-invoke-reducers). |
-| [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | Implements [`IDbContext`](##interface-idbcontext) for [subscription callbacks](#subscribe-to-queries).   |
-| [`ErrorContext` type](#type-errorcontext)                         | Implements [`IDbContext`](##interface-idbcontext) for error-related callbacks.                           |
-| [Access the client cache](#access-the-client-cache)               | Access to your local view of the database.                                                               |
-| [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers.  |
-| [Identify a client](#identify-a-client)                           | Types for identifying users and client connections.                                                      |
+| Name                                                    | Description                                                               |
+|---------------------------------------------------------|---------------------------------------------------------------------------|
+| [Project setup](#project-setup)                         | Configure a C# project to use the SpacetimeDB C# client SDK.              |
+| [Generate module bindings](#generate-module-bindings)   | Use the SpacetimeDB CLI to generate module-specific types and interfaces. |
+| [`DbConnection` type](#type-dbconnection)               | A connection to a remote database.                                        |
+| [`IDbContext` interface](#interface-idbcontext)         | Methods for interacting with the remote database.                         |
+| [`EventContext` type](#type-eventcontext)               | Implements [`IDbContext`](##interface-idbcontext) for [row callbacks](#callback-oninsert). |
+| [`ReducerEventContext` type](#type-reducereventcontext) | Implements [`IDbContext`](##interface-idbcontext) for [reducer callbacks](#observe-and-invoke-reducers). |
+| [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | Implements [`IDbContext`](##interface-idbcontext) for [subscription callbacks](#subscribe-to-queries). |
+| [`ErrorContext` type](#type-errorcontext)                   | Implements [`IDbContext`](##interface-idbcontext) for error-related callbacks. |
+| [Access the client cache](#access-the-client-cache)         | Access to your local view of the database. |
+| [Observe and invoke reducers](#observe-and-invoke-reducers) | Send requests to the database to run reducers, and register callbacks to run when notified of reducers. |
+| [Identify a client](#identify-a-client)                     | Types for identifying users and client connections. |
 
 ## Project setup
 
@@ -54,8 +54,8 @@ Replace `PATH-TO-MODULE-DIRECTORY` with the path to your SpacetimeDB module.
 A connection to a remote database is represented by the `DbConnection` class. This class is generated per module and contains information about the types, tables, and reducers defined by your module.
 
 | Name                                                                   | Description                                                                   |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| [Connect to a database](#connect-to-a-database)                        | Construct a `DbConnection` instance.                                          |
+|------------------------------------------------------------------------|-------------------------------------------------------------------------------|
+| [Connect to a database](#connect-to-a-database)                            | Construct a `DbConnection` instance.                                          |
 | [Advance the connection](#advance-the-connection-and-process-messages) | Poll the `DbConnection` or run it in the background.                          |
 | [Access tables and reducers](#access-tables-and-reducers)              | Access the client cache, request reducer invocations, and register callbacks. |
 
@@ -70,15 +70,15 @@ class DbConnection
 
 Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithModuleName` to specify the database's name or identity.
 
-| Name                                                | Description                                                                          |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [WithUri method](#method-withuri)                   | Set the URI of the SpacetimeDB instance hosting the remote database.                 |
-| [WithModuleName method](#method-withmodulename)     | Set the name or identity of the remote database.                                     |
-| [OnConnect callback](#callback-onconnect)           | Register a callback to run when the connection is successfully established.          |
-| [OnConnectError callback](#callback-onconnecterror) | Register a callback to run if the connection is rejected or the host is unreachable. |
-| [OnDisconnect callback](#callback-ondisconnect)     | Register a callback to run when the connection ends.                                 |
-| [WithToken method](#method-withtoken)               | Supply a token to authenticate with the remote database.                             |
-| [Build method](#method-build)                       | Finalize configuration and open the connection.                                      |
+| Name                                                    | Description                                                                                |
+|---------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| [WithUri method](#method-withuri)                       | Set the URI of the SpacetimeDB instance hosting the remote database.                       |
+| [WithModuleName method](#method-withmodulename)         | Set the name or identity of the remote database.                                             |
+| [OnConnect callback](#callback-onconnect)               | Register a callback to run when the connection is successfully established.                |
+| [OnConnectError callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable.       |
+| [OnDisconnect callback](#callback-ondisconnect)         | Register a callback to run when the connection ends.                                       |
+| [WithToken method](#method-withtoken)                   | Supply a token to authenticate with the remote database.                                   |
+| [Build method](#method-build)                           | Finalize configuration and open the connection.                                            |
 
 ### Method `WithUri`
 
@@ -163,9 +163,9 @@ After configuring the connection and registering callbacks, attempt to open the 
 
 In the interest of supporting a wide variety of client applications with different execution strategies, the SpacetimeDB SDK allows you to choose when the `DbConnection` spends compute time and processes messages. If you do not arrange for the connection to advance by calling one of these methods, the `DbConnection` will never advance, and no callbacks will ever be invoked.
 
-| Name                                    | Description                                           |
-| --------------------------------------- | ----------------------------------------------------- |
-| [`FrameTick` method](#method-frametick) | Process messages on the main thread without blocking. |
+| Name                                        | Description                                           |
+|---------------------------------------------|-------------------------------------------------------|
+| [`FrameTick` method](#method-frametick)     | Process messages on the main thread without blocking. |
 
 #### Method `FrameTick`
 
@@ -218,16 +218,16 @@ interface IDbContext<DbView, RemoteReducers, ..>
 
 [`DbConnection`](#type-dbconnection), [`EventContext`](#type-eventcontext), [`ReducerEventContext`](#type-reducereventcontext), [`SubscriptionEventContext`](#type-subscriptioneventcontext) and [`ErrorContext`](#type-errorcontext) all implement `IDbContext`. `IDbContext` has methods for inspecting and configuring your connection to the remote database.
 
-The `IDbContext` interface is implemented by connections and contexts to _every_ module - hence why it takes [`DbView`](#method-db) and [`RemoteReducers`](#method-reducers) as type parameters.
+The `IDbContext` interface is implemented by connections and contexts to *every* module - hence why it takes [`DbView`](#method-db) and [`RemoteReducers`](#method-reducers) as type parameters.
 
-| Name                                                        | Description                                                             |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [`IRemoteDbContext` interface](#interface-iremotedbcontext) | Module-specific `IDbContext`.                                           |
-| [`Db` method](#method-db)                                   | Provides access to the subscribed view of the remote database's tables. |
-| [`Reducers` method](#method-reducers)                       | Provides access to reducers exposed by the remote module.               |
-| [`Disconnect` method](#method-disconnect)                   | End the connection.                                                     |
-| [Subscribe to queries](#subscribe-to-queries)               | Register SQL queries to receive updates about matching rows.            |
-| [Read connection metadata](#read-connection-metadata)       | Access the connection's `Identity` and `ConnectionId`                   |
+| Name                                                          | Description                                                              |
+|---------------------------------------------------------------|--------------------------------------------------------------------------|
+| [`IRemoteDbContext` interface](#interface-iremotedbcontext)   | Module-specific `IDbContext`.                                            |
+| [`Db` method](#method-db)                                     | Provides access to the subscribed view of the remote database's tables.  |
+| [`Reducers` method](#method-reducers)                         | Provides access to reducers exposed by the remote module.                |
+| [`Disconnect` method](#method-disconnect)                     | End the connection.                                                      |
+| [Subscribe to queries](#subscribe-to-queries)                 | Register SQL queries to receive updates about matching rows.             |
+| [Read connection metadata](#read-connection-metadata)         | Access the connection's `Identity` and `ConnectionId`                    |
 
 ### Interface `IRemoteDbContext`
 
@@ -288,19 +288,19 @@ Gracefully close the `DbConnection`. Throws an error if the connection is alread
 ### Subscribe to queries
 
 | Name                                                    | Description                                                 |
-| ------------------------------------------------------- | ----------------------------------------------------------- |
+|---------------------------------------------------------|-------------------------------------------------------------|
 | [`SubscriptionBuilder` type](#type-subscriptionbuilder) | Builder-pattern constructor to register subscribed queries. |
 | [`SubscriptionHandle` type](#type-subscriptionhandle)   | Manage an active subscripion.                               |
 
 #### Type `SubscriptionBuilder`
 
-| Name                                                                           | Description                                                     |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| [`ctx.SubscriptionBuilder()` constructor](#constructor-ctxsubscriptionbuilder) | Begin configuring a new subscription.                           |
-| [`OnApplied` callback](#callback-onapplied)                                    | Register a callback to run when matching rows become available. |
-| [`OnError` callback](#callback-onerror)                                        | Register a callback to run if the subscription fails.           |
-| [`Subscribe` method](#method-subscribe)                                        | Finish configuration and subscribe to one or more SQL queries.  |
-| [`SubscribeToAllTables` method](#method-subscribetoalltables)                  | Convenience method to subscribe to the entire database.         |
+| Name                                                                             | Description                                                     |
+|----------------------------------------------------------------------------------|-----------------------------------------------------------------|
+| [`ctx.SubscriptionBuilder()` constructor](#constructor-ctxsubscriptionbuilder)   | Begin configuring a new subscription.                           |
+| [`OnApplied` callback](#callback-onapplied)                                      | Register a callback to run when matching rows become available. |
+| [`OnError` callback](#callback-onerror)                                          | Register a callback to run if the subscription fails.           |
+| [`Subscribe` method](#method-subscribe)                                          | Finish configuration and subscribe to one or more SQL queries.  |
+| [`SubscribeToAllTables` method](#method-subscribetoalltables)                    | Convenience method to subscribe to the entire database.         |
 
 ##### Constructor `ctx.SubscriptionBuilder()`
 
@@ -335,6 +335,7 @@ class SubscriptionBuilder
 
 Register a callback to run if the subscription is rejected or unexpectedly terminated by the server. This is most frequently caused by passing an invalid query to [`Subscribe`](#method-subscribe).
 
+
 ##### Method `Subscribe`
 
 ```csharp
@@ -365,12 +366,12 @@ A `SubscriptionHandle` represents a subscribed query or a group of subscribed qu
 
 The `SubscriptionHandle` does not contain or provide access to the subscribed rows. Subscribed rows of all subscriptions by a connection are contained within that connection's [`ctx.Db`](#property-db). See [Access the client cache](#access-the-client-cache).
 
-| Name                                                | Description                                                                                                      |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [`IsEnded` property](#property-isended)             | Determine whether the subscription has ended.                                                                    |
-| [`IsActive` property](#property-isactive)           | Determine whether the subscription is active and its matching rows are present in the client cache.              |
-| [`Unsubscribe` method](#method-unsubscribe)         | Discard a subscription.                                                                                          |
-| [`UnsubscribeThen` method](#method-unsubscribethen) | Discard a subscription, and register a callback to run when its matching rows are removed from the client cache. |
+| Name                                                  | Description                                                                                                      |
+|-------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| [`IsEnded` property](#property-isended)               | Determine whether the subscription has ended.                                                                    |
+| [`IsActive` property](#property-isactive)             | Determine whether the subscription is active and its matching rows are present in the client cache.              |
+| [`Unsubscribe` method](#method-unsubscribe)           | Discard a subscription.                                                                                          |
+| [`UnsubscribeThen` method](#method-unsubscribethen)   | Discard a subscription, and register a callback to run when its matching rows are removed from the client cache. |
 
 ##### Property `IsEnded`
 
@@ -462,7 +463,7 @@ interface IDbContext
 An `EventContext` is an [`IDbContext`](#interface-idbcontext) augmented with an [`Event`](#record-event) property. `EventContext`s are passed as the first argument to row callbacks [`OnInsert`](#callback-oninsert), [`OnDelete`](#callback-ondelete) and [`OnUpdate`](#callback-onupdate).
 
 | Name                                      | Description                                                   |
-| ----------------------------------------- | ------------------------------------------------------------- |
+|-------------------------------------------|---------------------------------------------------------------|
 | [`Event` property](#property-event)       | Enum describing the cause of the current row callback.        |
 | [`Db` property](#property-db)             | Provides access to the client cache.                          |
 | [`Reducers` property](#property-reducers) | Allows requesting reducers run on the remote database.        |
@@ -503,16 +504,16 @@ The `Reducers` property of the context provides access to reducers exposed by th
 
 ### Record `Event`
 
-| Name                                                        | Description                                                                                                                              |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Reducer` variant](#variant-reducer)                       | A reducer ran in the remote database.                                                                                                    |
-| [`SubscribeApplied` variant](#variant-subscribeapplied)     | A new subscription was applied to the client cache.                                                                                      |
-| [`UnsubscribeApplied` variant](#variant-unsubscribeapplied) | A previous subscription was removed from the client cache after a call to [`Unsubscribe`](#method-unsubscribe).                          |
-| [`SubscribeError` variant](#variant-subscribeerror)         | A previous subscription was removed from the client cache due to an error.                                                               |
-| [`UnknownTransaction` variant](#variant-unknowntransaction) | A transaction ran in the remote database, but was not attributed to a known reducer.                                                     |
+| Name                                                        | Description                                                              |
+|-------------------------------------------------------------|--------------------------------------------------------------------------|
+| [`Reducer` variant](#variant-reducer)                       | A reducer ran in the remote database.                                    |
+| [`SubscribeApplied` variant](#variant-subscribeapplied)     | A new subscription was applied to the client cache.                      |
+| [`UnsubscribeApplied` variant](#variant-unsubscribeapplied) | A previous subscription was removed from the client cache after a call to [`Unsubscribe`](#method-unsubscribe). |
+| [`SubscribeError` variant](#variant-subscribeerror)         | A previous subscription was removed from the client cache due to an error. |
+| [`UnknownTransaction` variant](#variant-unknowntransaction) | A transaction ran in the remote database, but was not attributed to a known reducer. |
 | [`ReducerEvent` record](#record-reducerevent)               | Metadata about a reducer run. Contained in a [`Reducer` event](#variant-reducer) and [`ReducerEventContext`](#type-reducereventcontext). |
-| [`Status` record](#record-status)                           | Completion status of a reducer run.                                                                                                      |
-| [`Reducer` record](#record-reducer)                         | Module-specific generated record with a variant for each reducer defined by the module.                                                  |
+| [`Status` record](#record-status)                           | Completion status of a reducer run. |
+| [`Reducer` record](#record-reducer)                         | Module-specific generated record with a variant for each reducer defined by the module. |
 
 #### Variant `Reducer`
 
@@ -607,7 +608,7 @@ record Status : TaggedEnum<(
 <!-- TODO: Link to the definition of TaggedEnum in the module docs -->
 
 | Name                                          | Description                                         |
-| --------------------------------------------- | --------------------------------------------------- |
+|-----------------------------------------------|-----------------------------------------------------|
 | [`Committed` variant](#variant-committed)     | The reducer ran successfully.                       |
 | [`Failed` variant](#variant-failed)           | The reducer errored.                                |
 | [`OutOfEnergy` variant](#variant-outofenergy) | The reducer was aborted due to insufficient energy. |
@@ -633,7 +634,7 @@ The module bindings contains an record `Reducer` with a variant for each reducer
 A `ReducerEventContext` is an [`IDbContext`](#interface-idbcontext) augmented with an [`Event`](#record-reducerevent) property. `ReducerEventContext`s are passed as the first argument to [reducer callbacks](#observe-and-invoke-reducers).
 
 | Name                                      | Description                                                         |
-| ----------------------------------------- | ------------------------------------------------------------------- |
+|-------------------------------------------|---------------------------------------------------------------------|
 | [`Event` property](#property-event)       | [`ReducerEvent`](#record-reducerevent) containing reducer metadata. |
 | [`Db` property](#property-db)             | Provides access to the client cache.                                |
 | [`Reducers` property](#property-reducers) | Allows requesting reducers run on the remote database.              |
@@ -675,10 +676,10 @@ The `Reducers` property of the context provides access to reducers exposed by th
 
 A `SubscriptionEventContext` is an [`IDbContext`](#interface-idbcontext). Unlike the other context types, `SubscriptionEventContext` doesn't have an `Event` property. `SubscriptionEventContext`s are passed to subscription [`OnApplied`](#callback-onapplied) and [`UnsubscribeThen`](#method-unsubscribethen) callbacks.
 
-| Name                                      | Description                                            |
-| ----------------------------------------- | ------------------------------------------------------ |
-| [`Db` property](#property-db)             | Provides access to the client cache.                   |
-| [`Reducers` property](#property-reducers) | Allows requesting reducers run on the remote database. |
+| Name                                      | Description                                                |
+|-------------------------------------------|------------------------------------------------------------|
+| [`Db` property](#property-db)             | Provides access to the client cache.                       |
+| [`Reducers` property](#property-reducers) | Allows requesting reducers run on the remote database.     |
 
 ### Property `Db`
 
@@ -707,10 +708,11 @@ The `Reducers` property of the context provides access to reducers exposed by th
 An `ErrorContext` is an [`IDbContext`](#interface-idbcontext) augmented with an `Event` property. `ErrorContext`s are to connections' [`OnDisconnect`](#callback-ondisconnect) and [`OnConnectError`](#callback-onconnecterror) callbacks, and to subscriptions' [`OnError`](#callback-onerror) callbacks.
 
 | Name                                      | Description                                            |
-| ----------------------------------------- | ------------------------------------------------------ |
+|-------------------------------------------|--------------------------------------------------------|
 | [`Event` property](#property-event)       | The error which caused the current error callback.     |
 | [`Db` property](#property-db)             | Provides access to the client cache.                   |
 | [`Reducers` property](#property-reducers) | Allows requesting reducers run on the remote database. |
+
 
 ### Property `Event`
 
@@ -750,7 +752,7 @@ All [`IDbContext`](#interface-idbcontext) implementors, including [`DbConnection
 Each table defined by a module has an accessor method, whose name is the table name converted to `snake_case`, on this `.Db` property. The table accessor methods return table handles which inherit from [`RemoteTableHandle`](#type-remotetablehandle) and have methods for searching by index.
 
 | Name                                                              | Description                                                                     |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+|-------------------------------------------------------------------|---------------------------------------------------------------------------------|
 | [`RemoteTableHandle`](#type-remotetablehandle)                    | Provides access to subscribed rows of a specific table within the client cache. |
 | [Unique constraint index access](#unique-constraint-index-access) | Seek a subscribed row by the value in its unique or primary key column.         |
 | [BTree index access](#btree-index-access)                         | Seek subscribed rows by the value in its indexed column.                        |
@@ -759,14 +761,14 @@ Each table defined by a module has an accessor method, whose name is the table n
 
 Implemented by all table handles.
 
-| Name                                      | Description                                                                          |
-| ----------------------------------------- | ------------------------------------------------------------------------------------ |
-| [`Row` type parameter](#type-row)         | The type of rows in the table.                                                       |
-| [`Count` property](#property-count)       | The number of subscribed rows in the table.                                          |
-| [`Iter` method](#method-iter)             | Iterate over all subscribed rows in the table.                                       |
-| [`OnInsert` callback](#callback-oninsert) | Register a callback to run whenever a row is inserted into the client cache.         |
-| [`OnDelete` callback](#callback-ondelete) | Register a callback to run whenever a row is deleted from the client cache.          |
-| [`OnUpdate` callback](#callback-onupdate) | Register a callback to run whenever a subscribed row is replaced with a new version. |
+| Name                                          | Description                                                                  |
+|-----------------------------------------------|------------------------------------------------------------------------------|
+| [`Row` type parameter](#type-row)             | The type of rows in the table.                                               |
+| [`Count` property](#property-count)           | The number of subscribed rows in the table.                                  |
+| [`Iter` method](#method-iter)                 | Iterate over all subscribed rows in the table.                               |
+| [`OnInsert` callback](#callback-oninsert)     | Register a callback to run whenever a row is inserted into the client cache. |
+| [`OnDelete` callback](#callback-ondelete)     | Register a callback to run whenever a row is deleted from the client cache.  |
+| [`OnUpdate` callback](#callback-onupdate)     | Register a callback to run whenever a subscribed row is replaced with a new version.  |
 
 #### Type `Row`
 
@@ -847,10 +849,10 @@ See [the quickstart](/docs/sdks/c-sharp/quickstart#register-callbacks) for examp
 
 For each unique constraint on a table, its table handle has a property which is a unique index handle and whose name is the unique column name. This unique index handle has a method `.Find(Column value)`. If a `Row` with `value` in the unique column is resident in the client cache, `.Find` returns it. Otherwise it returns null.
 
+
 #### Example
 
 Given the following module-side `User` definition:
-
 ```csharp
 [Table(Name = "User", Public = true)]
 public partial class User
@@ -862,7 +864,6 @@ public partial class User
 ```
 
 a client would lookup a user as follows:
-
 ```csharp
 User? FindUser(RemoteTables tables, Identity id) => tables.User.Identity.Find(id);
 ```
@@ -874,7 +875,6 @@ For each btree index defined on a remote table, its corresponding table handle h
 #### Example
 
 Given the following module-side `Player` definition:
-
 ```csharp
 [Table(Name = "Player", Public = true)]
 public partial class Player
@@ -889,7 +889,6 @@ public partial class Player
 ```
 
 a client would count the number of `Player`s at a certain level as follows:
-
 ```csharp
 int CountPlayersAtLevel(RemoteTables tables, uint level) => tables.Player.Level.Filter(level).Count();
 ```

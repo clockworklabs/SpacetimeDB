@@ -28,8 +28,8 @@ Accessible through the CLI as `spacetime publish`.
 
 #### Required Headers
 
-| Name            | Value                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
+| Name            | Value                                                                 |
+| --------------- | --------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](/docs/http/authorization#authorization-headers). |
 
 #### Data
@@ -61,8 +61,8 @@ Accessible through the CLI as `spacetime publish`.
 
 #### Required Headers
 
-| Name            | Value                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
+| Name            | Value                                                                 |
+| --------------- | --------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](/docs/http/authorization#authorization-headers). |
 
 #### Data
@@ -121,8 +121,8 @@ Accessible through the CLI as `spacetime delete <identity>`.
 
 #### Required Headers
 
-| Name            | Value                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
+| Name            | Value                                                                 |
+| --------------- | --------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](/docs/http/authorization#authorization-headers). |
 
 ## `GET /v1/database/:name_or_identity/names`
@@ -145,8 +145,8 @@ Add a new name for this database.
 
 #### Required Headers
 
-| Name            | Value                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
+| Name            | Value                                                                 |
+| --------------- | --------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](/docs/http/authorization#authorization-headers). |
 
 #### Data
@@ -178,8 +178,8 @@ Set the list of names for this database.
 
 #### Required Headers
 
-| Name            | Value                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
+| Name            | Value                                                                 |
+| --------------- | --------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](/docs/http/authorization#authorization-headers). |
 
 #### Data
@@ -231,8 +231,8 @@ The SpacetimeDB text WebSocket protocol, `v1.json.spacetimedb`, encodes messages
 
 #### Optional Headers
 
-| Name            | Value                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
+| Name            | Value                                                                 |
+| --------------- | --------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](/docs/http/authorization#authorization-headers). |
 
 ## `POST /v1/database/:name_or_identity/call/:reducer`
@@ -247,8 +247,8 @@ Invoke a reducer in a database.
 
 #### Required Headers
 
-| Name            | Value                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
+| Name            | Value                                                                 |
+| --------------- | --------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](/docs/http/authorization#authorization-headers). |
 
 #### Data
@@ -407,8 +407,8 @@ Accessible through the CLI as `spacetime logs <name_or_identity>`.
 
 #### Required Headers
 
-| Name            | Value                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
+| Name            | Value                                                                 |
+| --------------- | --------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](/docs/http/authorization#authorization-headers). |
 
 #### Returns
@@ -423,8 +423,8 @@ Accessible through the CLI as `spacetime sql <name_or_identity> <query>`.
 
 #### Required Headers
 
-| Name            | Value                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
+| Name            | Value                                                                 |
+| --------------- | --------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](/docs/http/authorization#authorization-headers). |
 
 #### Data
