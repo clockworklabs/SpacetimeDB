@@ -125,8 +125,9 @@ describe('it correctly serializes and deserializes algebraic values', () => {
   });
 
   test('when it serializes and deserializes a ConnectionId ', () => {
+    const U128_MAX = (1n << 128n) - 1n;
     const value = {
-      __connection_id__: BigInt(1234567890123456789012345678901234567890n),
+      __connection_id__: U128_MAX,
     };
 
     const algebraic_type = AlgebraicType.createConnectionIdType();
@@ -136,8 +137,8 @@ describe('it correctly serializes and deserializes algebraic values', () => {
     const buffer = binaryWriter.getBuffer();
     expect(buffer).toEqual(
       new Uint8Array([
-        210, 10, 63, 206, 150, 95, 188, 172, 184, 243, 219, 192, 117, 32, 201,
-        160,
+        255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        255, 255,
       ])
     );
 
@@ -145,6 +146,8 @@ describe('it correctly serializes and deserializes algebraic values', () => {
       new BinaryReader(buffer),
       algebraic_type
     );
+
+    console.log(deserializedValue);
 
     expect(deserializedValue).toEqual(value);
   });
