@@ -43,16 +43,16 @@ jobs:
         working-directory: docs
         run: |
           pnpm install
+      
+      - name: Lint
+        working-directory: docs
+        run: |
+          pnpm lint
 
       - name: Backup existing nav.js
         working-directory: docs
         run: |
           mv docs/nav.js docs/nav.js.original
-
-      - name: Lint
-        working-directory: docs
-        run: |
-          pnpm lint
 
       - name: Build nav.ts
         working-directory: docs
