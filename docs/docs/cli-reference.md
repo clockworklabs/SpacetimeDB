@@ -82,7 +82,6 @@ Run `spacetime help publish` for more detailed information.
 ###### <b>Options:</b>
 
 - `-c`, `--delete-data` — When publishing to an existing database identity, first DESTROY all data associated with the module
-
 - `--build-options <BUILD_OPTIONS>` — Options to pass to the build command, for example --build-options='--lint-dir='
 
   Default value: \`\`
@@ -92,11 +91,8 @@ Run `spacetime help publish` for more detailed information.
   Default value: `.`
 
 - `-b`, `--bin-path <WASM_FILE>` — The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project.
-
 - `--anonymous` — Perform this action with an anonymous identity
-
 - `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
-
 - `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 
 ## spacetime delete
@@ -131,11 +127,8 @@ Run `spacetime help logs` for more detailed information.
 ###### <b>Options:</b>
 
 - `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
-
 - `-n`, `--num-lines <NUM_LINES>` — The number of lines to print from the start of the log of this database. If no num lines is provided, all lines will be returned.
-
 - `-f`, `--follow` — A flag that causes logs to not stop when end of the log file is reached, but rather to wait for additional data to be appended to the input.
-
 - `--format <FORMAT>` — Output format for the logs
 
   Default value: `text`
@@ -175,7 +168,6 @@ Run `spacetime help describe` for more detailed information.
 ###### <b>Arguments:</b>
 
 - `<DATABASE>` — The name or identity of the database to describe
-
 - `<ENTITY_TYPE>` — Whether to describe a reducer or table
 
   Possible values: `reducer`, `table`
@@ -259,13 +251,11 @@ Run `spacetime help publish` for more detailed information.
 ###### <b>Options:</b>
 
 - `-b`, `--bin-path <WASM_FILE>` — The system path (absolute or relative) to the compiled wasm binary we should inspect
-
 - `-p`, `--project-path <PROJECT_PATH>` — The system path (absolute or relative) to the project you would like to inspect
 
   Default value: `.`
 
 - `-o`, `--out-dir <OUT_DIR>` — The system path (absolute or relative) to the generate output directory
-
 - `--namespace <NAMESPACE>` — The namespace that should be used
 
   Default value: `SpacetimeDB.Types`
@@ -309,7 +299,6 @@ Manage your login to the SpacetimeDB CLI
   Default value: `https://spacetimedb.com`
 
 - `--server-issued-login <SERVER>` — Log in to a SpacetimeDB server directly, without going through a global auth server
-
 - `--token <SPACETIMEDB-TOKEN>` — Bypass the login flow and use a login token directly
 
 ## spacetime login show
