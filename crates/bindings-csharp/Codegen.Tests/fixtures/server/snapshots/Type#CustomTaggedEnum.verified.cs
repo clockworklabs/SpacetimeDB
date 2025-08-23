@@ -30,25 +30,27 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomTaggedEnum>
     {
-        internal static readonly SpacetimeDB.BSATN.I32 IntVariant = new();
-        internal static readonly SpacetimeDB.BSATN.String StringVariant = new();
+        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTagRW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 IntVariantRW = new();
+        internal static readonly SpacetimeDB.BSATN.String StringVariantRW = new();
         internal static readonly SpacetimeDB.BSATN.ValueOption<
             int,
             SpacetimeDB.BSATN.I32
-        > NullableIntVariant = new();
+        > NullableIntVariantRW = new();
         internal static readonly SpacetimeDB.BSATN.RefOption<
             string,
             SpacetimeDB.BSATN.String
-        > NullableStringVariant = new();
+        > NullableStringVariantRW = new();
 
-        public CustomTaggedEnum Read(System.IO.BinaryReader reader)
-        {
-            return reader.ReadByte() switch
+        public CustomTaggedEnum Read(System.IO.BinaryReader reader) =>
+            __enumTagRW.Read(reader) switch
             {
-                0 => new IntVariant(IntVariant.Read(reader)),
-                1 => new StringVariant(StringVariant.Read(reader)),
-                2 => new NullableIntVariant(NullableIntVariant.Read(reader)),
-                3 => new NullableStringVariant(NullableStringVariant.Read(reader)),
+                @enum.IntVariant => new IntVariant(IntVariantRW.Read(reader)),
+                @enum.StringVariant => new StringVariant(StringVariantRW.Read(reader)),
+                @enum.NullableIntVariant
+                    => new NullableIntVariant(NullableIntVariantRW.Read(reader)),
+                @enum.NullableStringVariant
+                    => new NullableStringVariant(NullableStringVariantRW.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
@@ -61,20 +63,20 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
             switch (value)
             {
                 case IntVariant(var inner):
-                    writer.Write((byte)0);
-                    IntVariant.Write(writer, inner);
+                    __enumTagRW.Write(writer, @enum.IntVariant);
+                    IntVariantRW.Write(writer, inner);
                     break;
                 case StringVariant(var inner):
-                    writer.Write((byte)1);
-                    StringVariant.Write(writer, inner);
+                    __enumTagRW.Write(writer, @enum.StringVariant);
+                    StringVariantRW.Write(writer, inner);
                     break;
                 case NullableIntVariant(var inner):
-                    writer.Write((byte)2);
-                    NullableIntVariant.Write(writer, inner);
+                    __enumTagRW.Write(writer, @enum.NullableIntVariant);
+                    NullableIntVariantRW.Write(writer, inner);
                     break;
                 case NullableStringVariant(var inner):
-                    writer.Write((byte)3);
-                    NullableStringVariant.Write(writer, inner);
+                    __enumTagRW.Write(writer, @enum.NullableStringVariant);
+                    NullableStringVariantRW.Write(writer, inner);
                     break;
             }
         }
@@ -85,12 +87,12 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
             registrar.RegisterType<CustomTaggedEnum>(_ => new SpacetimeDB.BSATN.AlgebraicType.Sum(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new(nameof(IntVariant), IntVariant.GetAlgebraicType(registrar)),
-                    new(nameof(StringVariant), StringVariant.GetAlgebraicType(registrar)),
-                    new(nameof(NullableIntVariant), NullableIntVariant.GetAlgebraicType(registrar)),
+                    new("IntVariant", IntVariantRW.GetAlgebraicType(registrar)),
+                    new("StringVariant", StringVariantRW.GetAlgebraicType(registrar)),
+                    new("NullableIntVariant", NullableIntVariantRW.GetAlgebraicType(registrar)),
                     new(
-                        nameof(NullableStringVariant),
-                        NullableStringVariant.GetAlgebraicType(registrar)
+                        "NullableStringVariant",
+                        NullableStringVariantRW.GetAlgebraicType(registrar)
                     )
                 }
             ));

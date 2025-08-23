@@ -8,26 +8,26 @@ partial class CustomNestedClass
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        NestedClass = BSATN.NestedClass.Read(reader);
-        NestedNullableClass = BSATN.NestedNullableClass.Read(reader);
-        NestedEnum = BSATN.NestedEnum.Read(reader);
-        NestedNullableEnum = BSATN.NestedNullableEnum.Read(reader);
-        NestedTaggedEnum = BSATN.NestedTaggedEnum.Read(reader);
-        NestedNullableTaggedEnum = BSATN.NestedNullableTaggedEnum.Read(reader);
-        NestedCustomRecord = BSATN.NestedCustomRecord.Read(reader);
-        NestedNullableCustomRecord = BSATN.NestedNullableCustomRecord.Read(reader);
+        NestedClass = BSATN.NestedClassRW.Read(reader);
+        NestedNullableClass = BSATN.NestedNullableClassRW.Read(reader);
+        NestedEnum = BSATN.NestedEnumRW.Read(reader);
+        NestedNullableEnum = BSATN.NestedNullableEnumRW.Read(reader);
+        NestedTaggedEnum = BSATN.NestedTaggedEnumRW.Read(reader);
+        NestedNullableTaggedEnum = BSATN.NestedNullableTaggedEnumRW.Read(reader);
+        NestedCustomRecord = BSATN.NestedCustomRecordRW.Read(reader);
+        NestedNullableCustomRecord = BSATN.NestedNullableCustomRecordRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.NestedClass.Write(writer, NestedClass);
-        BSATN.NestedNullableClass.Write(writer, NestedNullableClass);
-        BSATN.NestedEnum.Write(writer, NestedEnum);
-        BSATN.NestedNullableEnum.Write(writer, NestedNullableEnum);
-        BSATN.NestedTaggedEnum.Write(writer, NestedTaggedEnum);
-        BSATN.NestedNullableTaggedEnum.Write(writer, NestedNullableTaggedEnum);
-        BSATN.NestedCustomRecord.Write(writer, NestedCustomRecord);
-        BSATN.NestedNullableCustomRecord.Write(writer, NestedNullableCustomRecord);
+        BSATN.NestedClassRW.Write(writer, NestedClass);
+        BSATN.NestedNullableClassRW.Write(writer, NestedNullableClass);
+        BSATN.NestedEnumRW.Write(writer, NestedEnum);
+        BSATN.NestedNullableEnumRW.Write(writer, NestedNullableEnum);
+        BSATN.NestedTaggedEnumRW.Write(writer, NestedTaggedEnum);
+        BSATN.NestedNullableTaggedEnumRW.Write(writer, NestedNullableTaggedEnum);
+        BSATN.NestedCustomRecordRW.Write(writer, NestedCustomRecord);
+        BSATN.NestedNullableCustomRecordRW.Write(writer, NestedNullableCustomRecord);
     }
 
     object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
@@ -40,26 +40,26 @@ partial class CustomNestedClass
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomNestedClass>
     {
-        internal static readonly CustomClass.BSATN NestedClass = new();
+        internal static readonly CustomClass.BSATN NestedClassRW = new();
         internal static readonly SpacetimeDB.BSATN.RefOption<
             CustomClass,
             CustomClass.BSATN
-        > NestedNullableClass = new();
-        internal static readonly SpacetimeDB.BSATN.Enum<CustomEnum> NestedEnum = new();
+        > NestedNullableClassRW = new();
+        internal static readonly SpacetimeDB.BSATN.Enum<CustomEnum> NestedEnumRW = new();
         internal static readonly SpacetimeDB.BSATN.ValueOption<
             CustomEnum,
             SpacetimeDB.BSATN.Enum<CustomEnum>
-        > NestedNullableEnum = new();
-        internal static readonly CustomTaggedEnum.BSATN NestedTaggedEnum = new();
+        > NestedNullableEnumRW = new();
+        internal static readonly CustomTaggedEnum.BSATN NestedTaggedEnumRW = new();
         internal static readonly SpacetimeDB.BSATN.RefOption<
             CustomTaggedEnum,
             CustomTaggedEnum.BSATN
-        > NestedNullableTaggedEnum = new();
-        internal static readonly CustomRecord.BSATN NestedCustomRecord = new();
+        > NestedNullableTaggedEnumRW = new();
+        internal static readonly CustomRecord.BSATN NestedCustomRecordRW = new();
         internal static readonly SpacetimeDB.BSATN.RefOption<
             CustomRecord,
             CustomRecord.BSATN
-        > NestedNullableCustomRecord = new();
+        > NestedNullableCustomRecordRW = new();
 
         public CustomNestedClass Read(System.IO.BinaryReader reader)
         {
@@ -80,28 +80,22 @@ partial class CustomNestedClass
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(NestedClass), NestedClass.GetAlgebraicType(registrar)),
+                        new("NestedClass", NestedClassRW.GetAlgebraicType(registrar)),
                         new(
-                            nameof(NestedNullableClass),
-                            NestedNullableClass.GetAlgebraicType(registrar)
+                            "NestedNullableClass",
+                            NestedNullableClassRW.GetAlgebraicType(registrar)
                         ),
-                        new(nameof(NestedEnum), NestedEnum.GetAlgebraicType(registrar)),
+                        new("NestedEnum", NestedEnumRW.GetAlgebraicType(registrar)),
+                        new("NestedNullableEnum", NestedNullableEnumRW.GetAlgebraicType(registrar)),
+                        new("NestedTaggedEnum", NestedTaggedEnumRW.GetAlgebraicType(registrar)),
                         new(
-                            nameof(NestedNullableEnum),
-                            NestedNullableEnum.GetAlgebraicType(registrar)
+                            "NestedNullableTaggedEnum",
+                            NestedNullableTaggedEnumRW.GetAlgebraicType(registrar)
                         ),
-                        new(nameof(NestedTaggedEnum), NestedTaggedEnum.GetAlgebraicType(registrar)),
+                        new("NestedCustomRecord", NestedCustomRecordRW.GetAlgebraicType(registrar)),
                         new(
-                            nameof(NestedNullableTaggedEnum),
-                            NestedNullableTaggedEnum.GetAlgebraicType(registrar)
-                        ),
-                        new(
-                            nameof(NestedCustomRecord),
-                            NestedCustomRecord.GetAlgebraicType(registrar)
-                        ),
-                        new(
-                            nameof(NestedNullableCustomRecord),
-                            NestedNullableCustomRecord.GetAlgebraicType(registrar)
+                            "NestedNullableCustomRecord",
+                            NestedNullableCustomRecordRW.GetAlgebraicType(registrar)
                         )
                     }
                 )

@@ -8,18 +8,18 @@ partial struct TestUnsupportedType
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        UnsupportedSpecialType = BSATN.UnsupportedSpecialType.Read(reader);
-        UnsupportedSystemType = BSATN.UnsupportedSystemType.Read(reader);
-        UnresolvedType = BSATN.UnresolvedType.Read(reader);
-        UnsupportedEnum = BSATN.UnsupportedEnum.Read(reader);
+        UnsupportedSpecialType = BSATN.UnsupportedSpecialTypeRW.Read(reader);
+        UnsupportedSystemType = BSATN.UnsupportedSystemTypeRW.Read(reader);
+        UnresolvedType = BSATN.UnresolvedTypeRW.Read(reader);
+        UnsupportedEnum = BSATN.UnsupportedEnumRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.UnsupportedSpecialType.Write(writer, UnsupportedSpecialType);
-        BSATN.UnsupportedSystemType.Write(writer, UnsupportedSystemType);
-        BSATN.UnresolvedType.Write(writer, UnresolvedType);
-        BSATN.UnsupportedEnum.Write(writer, UnsupportedEnum);
+        BSATN.UnsupportedSpecialTypeRW.Write(writer, UnsupportedSpecialType);
+        BSATN.UnsupportedSystemTypeRW.Write(writer, UnsupportedSystemType);
+        BSATN.UnresolvedTypeRW.Write(writer, UnresolvedType);
+        BSATN.UnsupportedEnumRW.Write(writer, UnsupportedEnum);
     }
 
     object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
@@ -32,12 +32,12 @@ partial struct TestUnsupportedType
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestUnsupportedType>
     {
-        internal static readonly SpacetimeDB.BSATN.Unsupported<System.DateTime> UnsupportedSpecialType =
+        internal static readonly SpacetimeDB.BSATN.Unsupported<System.DateTime> UnsupportedSpecialTypeRW =
             new();
-        internal static readonly SpacetimeDB.BSATN.Unsupported<System.Exception> UnsupportedSystemType =
+        internal static readonly SpacetimeDB.BSATN.Unsupported<System.Exception> UnsupportedSystemTypeRW =
             new();
-        internal static readonly SpacetimeDB.BSATN.Unsupported<object> UnresolvedType = new();
-        internal static readonly SpacetimeDB.BSATN.Unsupported<LocalEnum> UnsupportedEnum = new();
+        internal static readonly SpacetimeDB.BSATN.Unsupported<object> UnresolvedTypeRW = new();
+        internal static readonly SpacetimeDB.BSATN.Unsupported<LocalEnum> UnsupportedEnumRW = new();
 
         public TestUnsupportedType Read(System.IO.BinaryReader reader)
         {
@@ -59,15 +59,15 @@ partial struct TestUnsupportedType
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
                         new(
-                            nameof(UnsupportedSpecialType),
-                            UnsupportedSpecialType.GetAlgebraicType(registrar)
+                            "UnsupportedSpecialType",
+                            UnsupportedSpecialTypeRW.GetAlgebraicType(registrar)
                         ),
                         new(
-                            nameof(UnsupportedSystemType),
-                            UnsupportedSystemType.GetAlgebraicType(registrar)
+                            "UnsupportedSystemType",
+                            UnsupportedSystemTypeRW.GetAlgebraicType(registrar)
                         ),
-                        new(nameof(UnresolvedType), UnresolvedType.GetAlgebraicType(registrar)),
-                        new(nameof(UnsupportedEnum), UnsupportedEnum.GetAlgebraicType(registrar))
+                        new("UnresolvedType", UnresolvedTypeRW.GetAlgebraicType(registrar)),
+                        new("UnsupportedEnum", UnsupportedEnumRW.GetAlgebraicType(registrar))
                     }
                 )
             );

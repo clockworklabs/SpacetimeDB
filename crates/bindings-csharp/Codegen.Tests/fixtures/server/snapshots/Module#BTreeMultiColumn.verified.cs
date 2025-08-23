@@ -8,16 +8,16 @@ partial struct BTreeMultiColumn
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        X = BSATN.X.Read(reader);
-        Y = BSATN.Y.Read(reader);
-        Z = BSATN.Z.Read(reader);
+        X = BSATN.XRW.Read(reader);
+        Y = BSATN.YRW.Read(reader);
+        Z = BSATN.ZRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.X.Write(writer, X);
-        BSATN.Y.Write(writer, Y);
-        BSATN.Z.Write(writer, Z);
+        BSATN.XRW.Write(writer, X);
+        BSATN.YRW.Write(writer, Y);
+        BSATN.ZRW.Write(writer, Z);
     }
 
     object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
@@ -30,9 +30,9 @@ partial struct BTreeMultiColumn
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<BTreeMultiColumn>
     {
-        internal static readonly SpacetimeDB.BSATN.U32 X = new();
-        internal static readonly SpacetimeDB.BSATN.U32 Y = new();
-        internal static readonly SpacetimeDB.BSATN.U32 Z = new();
+        internal static readonly SpacetimeDB.BSATN.U32 XRW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 YRW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 ZRW = new();
 
         public BTreeMultiColumn Read(System.IO.BinaryReader reader)
         {
@@ -53,9 +53,9 @@ partial struct BTreeMultiColumn
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(X), X.GetAlgebraicType(registrar)),
-                        new(nameof(Y), Y.GetAlgebraicType(registrar)),
-                        new(nameof(Z), Z.GetAlgebraicType(registrar))
+                        new("X", XRW.GetAlgebraicType(registrar)),
+                        new("Y", YRW.GetAlgebraicType(registrar)),
+                        new("Z", ZRW.GetAlgebraicType(registrar))
                     }
                 )
             );
