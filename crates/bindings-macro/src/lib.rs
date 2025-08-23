@@ -57,6 +57,7 @@ mod sym {
     symbol!(scheduled);
     symbol!(unique);
     symbol!(update);
+    symbol!(default);
 
     symbol!(u8);
     symbol!(i8);
@@ -167,7 +168,7 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///
 /// Provides helper attributes for `#[spacetimedb::table]`, so that we don't get unknown attribute errors.
 #[doc(hidden)]
-#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index))]
+#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index, default))]
 pub fn table_helper(input: StdTokenStream) -> StdTokenStream {
     schema_type(input)
 }
