@@ -347,7 +347,9 @@ public record MemberDeclaration(
         var visStr = SyntaxFacts.GetText(visibility);
         return string.Join(
             "\n        ",
-            members.Select(m => $"{visStr} static readonly {m.Type.BSATNName} {m.Name}{TypeUse.BsatnFieldSuffix} = new();")
+            members.Select(m =>
+                $"{visStr} static readonly {m.Type.BSATNName} {m.Name}{TypeUse.BsatnFieldSuffix} = new();"
+            )
         );
     }
 
@@ -471,8 +473,6 @@ public abstract record BaseTypeDeclaration<M>
         var extensions = new Scope.Extensions(Scope, FullName);
 
         var bsatnDecls = Members.Cast<MemberDeclaration>();
-        //var fieldNames = bsatnDecls.Select(m => m.Name);
-        //var fieldNamesAndIds = fieldNames.Select((name, i) => (name, i));
 
         extensions.BaseTypes.Add($"System.IEquatable<{ShortName}>");
 
@@ -481,7 +481,7 @@ public abstract record BaseTypeDeclaration<M>
             extensions.Contents.Append(
                 string.Join(
                     "\n",
-                    bsatnDecls.Select(m =>
+                    Members.Select(m =>
                         // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
                         // To avoid this, we append an underscore to the field name.
                         // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
