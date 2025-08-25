@@ -20,6 +20,11 @@ partial struct FormerlyForbiddenFieldNames
         BSATN.GetAlgebraicTypeRW.Write(writer, GetAlgebraicType);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"FormerlyForbiddenFieldNames {{ Read = {SpacetimeDB.BSATN.StringUtil.GenericToString(Read)}, Write = {SpacetimeDB.BSATN.StringUtil.GenericToString(Write)}, GetAlgebraicType = {SpacetimeDB.BSATN.StringUtil.GenericToString(GetAlgebraicType)} }}";
 
@@ -29,8 +34,12 @@ partial struct FormerlyForbiddenFieldNames
         internal static readonly SpacetimeDB.BSATN.U32 WriteRW = new();
         internal static readonly SpacetimeDB.BSATN.U32 GetAlgebraicTypeRW = new();
 
-        public FormerlyForbiddenFieldNames Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<FormerlyForbiddenFieldNames>(reader);
+        public FormerlyForbiddenFieldNames Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new FormerlyForbiddenFieldNames();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, FormerlyForbiddenFieldNames value)
         {
@@ -58,15 +67,19 @@ partial struct FormerlyForbiddenFieldNames
 
     public override int GetHashCode()
     {
-        return Read.GetHashCode() ^ Write.GetHashCode() ^ GetAlgebraicType.GetHashCode();
+        var ___hashRead = Read.GetHashCode();
+        var ___hashWrite = Write.GetHashCode();
+        var ___hashGetAlgebraicType = GetAlgebraicType.GetHashCode();
+        return ___hashRead ^ ___hashWrite ^ ___hashGetAlgebraicType;
     }
 
 #nullable enable
     public bool Equals(FormerlyForbiddenFieldNames that)
     {
-        return Read.Equals(that.Read)
-            && Write.Equals(that.Write)
-            && GetAlgebraicType.Equals(that.GetAlgebraicType);
+        var ___eqRead = this.Read.Equals(that.Read);
+        var ___eqWrite = this.Write.Equals(that.Write);
+        var ___eqGetAlgebraicType = this.GetAlgebraicType.Equals(that.GetAlgebraicType);
+        return ___eqRead && ___eqWrite && ___eqGetAlgebraicType;
     }
 
     public override bool Equals(object? that)

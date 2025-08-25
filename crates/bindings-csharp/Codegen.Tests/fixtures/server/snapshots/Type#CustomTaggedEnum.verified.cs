@@ -30,7 +30,6 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomTaggedEnum>
     {
-        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTagRW = new();
         internal static readonly SpacetimeDB.BSATN.I32 IntVariantRW = new();
         internal static readonly SpacetimeDB.BSATN.String StringVariantRW = new();
         internal static readonly SpacetimeDB.BSATN.ValueOption<
@@ -42,15 +41,14 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
             SpacetimeDB.BSATN.String
         > NullableStringVariantRW = new();
 
-        public CustomTaggedEnum Read(System.IO.BinaryReader reader) =>
-            __enumTagRW.Read(reader) switch
+        public CustomTaggedEnum Read(System.IO.BinaryReader reader)
+        {
+            return reader.ReadByte() switch
             {
-                @enum.IntVariant => new IntVariant(IntVariantRW.Read(reader)),
-                @enum.StringVariant => new StringVariant(StringVariantRW.Read(reader)),
-                @enum.NullableIntVariant
-                    => new NullableIntVariant(NullableIntVariantRW.Read(reader)),
-                @enum.NullableStringVariant
-                    => new NullableStringVariant(NullableStringVariantRW.Read(reader)),
+                0 => new IntVariant(IntVariantRW.Read(reader)),
+                1 => new StringVariant(StringVariantRW.Read(reader)),
+                2 => new NullableIntVariant(NullableIntVariantRW.Read(reader)),
+                3 => new NullableStringVariant(NullableStringVariantRW.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
@@ -63,19 +61,19 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
             switch (value)
             {
                 case IntVariant(var inner):
-                    __enumTagRW.Write(writer, @enum.IntVariant);
+                    writer.Write((byte)0);
                     IntVariantRW.Write(writer, inner);
                     break;
                 case StringVariant(var inner):
-                    __enumTagRW.Write(writer, @enum.StringVariant);
+                    writer.Write((byte)1);
                     StringVariantRW.Write(writer, inner);
                     break;
                 case NullableIntVariant(var inner):
-                    __enumTagRW.Write(writer, @enum.NullableIntVariant);
+                    writer.Write((byte)2);
                     NullableIntVariantRW.Write(writer, inner);
                     break;
                 case NullableStringVariant(var inner):
-                    __enumTagRW.Write(writer, @enum.NullableStringVariant);
+                    writer.Write((byte)3);
                     NullableStringVariantRW.Write(writer, inner);
                     break;
             }
