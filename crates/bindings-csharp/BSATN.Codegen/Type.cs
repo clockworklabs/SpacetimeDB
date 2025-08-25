@@ -359,7 +359,7 @@ public record MemberDeclaration(
             // we can't use nameof(m.Type.BsatnFieldName) because the bsatn field name differs from the logical name
             // assigned in the type.
             members.Select(m =>
-                $"new(nameof({m.Name}), {m.Name}{TypeUse.BsatnFieldSuffix}.GetAlgebraicType(registrar))"
+                $"new(\"{m.Name}\", {m.Name}{TypeUse.BsatnFieldSuffix}.GetAlgebraicType(registrar))"
             )
         );
 }
