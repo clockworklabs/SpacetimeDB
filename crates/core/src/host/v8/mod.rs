@@ -134,9 +134,9 @@ impl ModuleInstance for JsInstance {
     }
 }
 
-// Calls the `describe_module` function on the global proxy object to extract a [`RawModuleDef`].
+// Calls the `__describe_module__` function on the global proxy object to extract a [`RawModuleDef`].
 fn call_describe_module(scope: &mut HandleScope<'_>) -> anyhow::Result<RawModuleDef> {
-    // Get a cached version of the `describe_module` property.
+    // Get a cached version of the `__describe_module__` property.
     let key_cache = get_or_create_key_cache(scope);
     let describe_module_key = key_cache.borrow_mut().describe_module(scope).into();
 
@@ -150,7 +150,7 @@ fn call_describe_module(scope: &mut HandleScope<'_>) -> anyhow::Result<RawModule
 
         // Convert to a function.
         let fun =
-            cast!(scope, object, Function, "function export for `describe_module`").map_err(|e| e.throw(scope))?;
+            cast!(scope, object, Function, "function export for `__describe_module__`").map_err(|e| e.throw(scope))?;
 
         // Call the function.
         let receiver = v8::undefined(scope).into();
@@ -183,7 +183,7 @@ mod test {
     #[test]
     fn call_describe_module_works() {
         let code = r#"
-            function describe_module() {
+            function __describe_module__() {
                 return {
                     "tag": "V9",
                     "value": {

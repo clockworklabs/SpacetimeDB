@@ -1,6 +1,8 @@
-from .. import Smoketest, extract_field
+from .. import Smoketest, extract_field, requires_local_server
 import re
 
+# We require a local server because these tests have hardcoded server addresses.
+@requires_local_server
 class Servers(Smoketest):
     AUTOPUBLISH = False
 
