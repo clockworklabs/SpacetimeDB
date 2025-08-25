@@ -8,10 +8,10 @@ You can follow the instructions for creating your own SpacetimeDB module here: [
 
 In order to run this example, you need to:
 
-- `pnpm compile` in the root directory (`spacetimedb-typescriptsdk`)
+- `pnpm build` in the root directory (`spacetimedb-typescriptsdk`)
 - `pnpm install` in this directory
-- `pnpm run build` in this directory
-- `pnpm run dev` in this directory to run the example
+- `pnpm build` in this directory
+- `pnpm dev` in this directory to run the example
 
 Below is copied from the original template README:
 
