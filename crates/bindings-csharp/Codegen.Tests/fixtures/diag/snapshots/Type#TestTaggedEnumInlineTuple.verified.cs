@@ -12,13 +12,13 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestTaggedEnumInlineTuple>
     {
-        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTagRW = new();
         internal static readonly SpacetimeDB.BSATN.I32 Item1RW = new();
 
-        public TestTaggedEnumInlineTuple Read(System.IO.BinaryReader reader) =>
-            __enumTagRW.Read(reader) switch
+        public TestTaggedEnumInlineTuple Read(System.IO.BinaryReader reader)
+        {
+            return reader.ReadByte() switch
             {
-                @enum.Item1 => new Item1(Item1RW.Read(reader)),
+                0 => new Item1(Item1RW.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
@@ -31,7 +31,7 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
             switch (value)
             {
                 case Item1(var inner):
-                    __enumTagRW.Write(writer, @enum.Item1);
+                    writer.Write((byte)0);
                     Item1RW.Write(writer, inner);
                     break;
             }
