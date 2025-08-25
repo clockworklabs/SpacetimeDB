@@ -62,14 +62,9 @@ const REMOTE_MODULE = {
       rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: "ownerId",
       primaryKeyInfo: {
-<<<<<<< HEAD
         colName: 'ownerId',
         colType: (Player.getTypeScriptAlgebraicType() as ProductType).value
           .elements[0].algebraicType,
-=======
-        colName: "ownerId",
-        colType: (Player.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
->>>>>>> 41e4bf0ef (Testing fixes)
       },
     },
     unindexed_player: {
@@ -81,14 +76,9 @@ const REMOTE_MODULE = {
       rowType: User.getTypeScriptAlgebraicType(),
       primaryKey: "identity",
       primaryKeyInfo: {
-<<<<<<< HEAD
         colName: 'identity',
         colType: (User.getTypeScriptAlgebraicType() as ProductType).value
           .elements[0].algebraicType,
-=======
-        colName: "identity",
-        colType: (User.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
->>>>>>> 41e4bf0ef (Testing fixes)
       },
     },
   },
@@ -99,11 +89,7 @@ const REMOTE_MODULE = {
     },
   },
   versionInfo: {
-<<<<<<< HEAD
     cliVersion: '1.3.0',
-=======
-    cliVersion: "1.3.0",
->>>>>>> 41e4bf0ef (Testing fixes)
   },
   // Constructors which are used by the DbConnectionImpl to
   // extract type information from the generated RemoteModule.
