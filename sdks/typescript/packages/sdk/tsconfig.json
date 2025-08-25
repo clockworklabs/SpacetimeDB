@@ -15,8 +15,13 @@
     "moduleResolution": "Bundler",
     "allowSyntheticDefaultImports": true,
     "isolatedDeclarations": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "spacetimedb": ["../../../crates/bindings-typescript/src/index.ts"]
+    }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "tests/**/*"],
   "exclude": ["node_modules", "**/__tests__/*", "dist/**/*"]
 }

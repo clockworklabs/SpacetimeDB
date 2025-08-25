@@ -1,5 +1,3 @@
-import BinaryReader from './binary_reader';
-import BinaryWriter from './binary_writer';
 import { hexStringToU256, u256ToHexString, u256ToUint8Array } from './utils';
 
 /**

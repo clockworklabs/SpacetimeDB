@@ -1,28 +1,22 @@
-import { ConnectionId } from './connection_id';
+import { ConnectionId } from 'spacetimedb';
 import {
   AlgebraicType,
+  type AlgebraicTypeVariants,
   ProductType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
   type ComparablePrimitive,
-} from './algebraic_type.ts';
-import {
-  AlgebraicValue,
-  parseValue,
-  ProductValue,
-  type ReducerArgsAdapter,
-  type ValueAdapter,
-} from './algebraic_value.ts';
-import BinaryReader from './binary_reader.ts';
-import BinaryWriter from './binary_writer.ts';
+} from 'spacetimedb';
+import { parseValue } from 'spacetimedb';
+import { BinaryReader } from 'spacetimedb';
+import { BinaryWriter } from 'spacetimedb';
 import { BsatnRowList } from './client_api/bsatn_row_list_type.ts';
 import { ClientMessage } from './client_api/client_message_type.ts';
 import { DatabaseUpdate } from './client_api/database_update_type.ts';
 import { QueryUpdate } from './client_api/query_update_type.ts';
 import { ServerMessage } from './client_api/server_message_type.ts';
 import { TableUpdate as RawTableUpdate } from './client_api/table_update_type.ts';
-import type * as clientApi from './client_api/index.ts';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { type DbContext } from './db_context.ts';
@@ -35,7 +29,7 @@ import {
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import { decompress } from './decompress.ts';
-import type { Identity } from './identity.ts';
+import type { Identity } from 'spacetimedb';
 import type {
   IdentityTokenMessage,
   Message,
@@ -50,7 +44,7 @@ import {
   type PendingCallback,
   type TableUpdate as CacheTableUpdate,
 } from './table_cache.ts';
-import { deepEqual, toPascalCase } from './utils.ts';
+import { deepEqual } from 'spacetimedb';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
 import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
 import {
@@ -65,21 +59,17 @@ import { fromByteArray } from 'base64-js';
 
 export {
   AlgebraicType,
-  AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   DbConnectionBuilder,
   deepEqual,
   ProductType,
   ProductTypeElement,
-  ProductValue,
   SubscriptionBuilderImpl,
   SumType,
   SumTypeVariant,
   TableCache,
   type Event,
-  type ReducerArgsAdapter,
-  type ValueAdapter,
 };
 
 export type {
@@ -323,10 +313,11 @@ export class DbConnectionImpl<
         this.#remoteModule.tables[tableName]!.primaryKeyInfo;
       while (reader.offset < buffer.length + buffer.byteOffset) {
         const initialOffset = reader.offset;
-        const row = rowType.deserialize(reader);
+        const row = AlgebraicType.deserializeValue(reader, rowType);
         let rowId: ComparablePrimitive | undefined = undefined;
         if (primaryKeyInfo !== undefined) {
-          rowId = primaryKeyInfo.colType.intoMapKey(
+          rowId = AlgebraicType.intoMapKey(
+            primaryKeyInfo.colType,
             row[primaryKeyInfo.colName]
           );
         } else {
@@ -422,7 +413,7 @@ export class DbConnectionImpl<
         const args = txUpdate.reducerCall.args;
         const energyQuantaUsed = txUpdate.energyQuantaUsed;
 
-        let tableUpdates: CacheTableUpdate[];
+        let tableUpdates: CacheTableUpdate[] = [];
         let errMessage = '';
         switch (txUpdate.status.tag) {
           case 'Committed':
@@ -618,7 +609,10 @@ export class DbConnectionImpl<
             this.#remoteModule.reducers[reducerInfo.reducerName];
           try {
             const reader = new BinaryReader(reducerInfo.args as Uint8Array);
-            reducerArgs = reducerTypeInfo.argsType.deserialize(reader);
+            reducerArgs = AlgebraicType.deserializeValue(
+              reader,
+              reducerTypeInfo.argsType
+            );
           } catch {
             // This should only be printed in development, since it's
             // possible for clients to receive new reducers that they don't
@@ -681,8 +675,10 @@ export class DbConnectionImpl<
         );
 
         const argsArray: any[] = [];
-        reducerTypeInfo.argsType.product.elements.forEach((element, index) => {
-          argsArray.push(reducerArgs[element.name]);
+        (
+          reducerTypeInfo.argsType as AlgebraicTypeVariants.Product
+        ).value.elements.forEach((element, index) => {
+          argsArray.push(reducerArgs[element.name!]);
         });
         this.#reducerEmitter.emit(
           reducerInfo.reducerName,
