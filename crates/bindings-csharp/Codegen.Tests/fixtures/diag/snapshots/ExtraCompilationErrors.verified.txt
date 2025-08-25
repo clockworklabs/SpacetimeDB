@@ -46,53 +46,9 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOU
     }
   },
   {/*
-    {
-        return Field.GetHashCode();
-               ^^^^^
-    }
-*/
-    Message: Dereference of a possibly null reference.,
-    Severity: Warning,
-    Descriptor: {
-      Id: CS8602,
-      Title: Dereference of a possibly null reference.,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS8602),
-      MessageFormat: Dereference of a possibly null reference.,
-      Category: Compiler,
-      DefaultSeverity: Warning,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry
-      ]
-    }
-  },
-  {/*
-    {
-        return Field.Equals(that.Field);
-               ^^^^^
-    }
-*/
-    Message: Dereference of a possibly null reference.,
-    Severity: Warning,
-    Descriptor: {
-      Id: CS8602,
-      Title: Dereference of a possibly null reference.,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS8602),
-      MessageFormat: Dereference of a possibly null reference.,
-      Category: Compiler,
-      DefaultSeverity: Warning,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry
-      ]
-    }
-  },
-  {/*
-    {
-        internal static readonly TRW FieldRW = new();
-                                 ^^^
+
+partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, SpacetimeDB.BSATN.IStructuralReadWrite {
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 */
     Message: 'TestTypeParams<T>' does not implement interface member 'IEquatable<TestTypeParams>.Equals(TestTypeParams?)',
@@ -160,7 +116,7 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
   },
   {/*
     {
-        internal static readonly TRW Field = new();
+        internal static readonly TRW FieldRW = new();
                                  ^^^
 
 */
