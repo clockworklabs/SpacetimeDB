@@ -79,14 +79,7 @@ pub trait StateView {
         let table_primary_key = row.table_primary_key.as_ref().and_then(ColList::as_singleton);
 
         // Look up the columns for the table in question.
-        let mut columns: Vec<ColumnSchema> = self
-            .iter_by_col_eq(ST_COLUMN_ID, StColumnFields::TableId, value_eq)?
-            .map(|row| {
-                let row = StColumnRow::try_from(row)?;
-                Ok(row.into())
-            })
-            .collect::<Result<Vec<_>>>()?;
-        columns.sort_by_key(|col| col.col_pos);
+        let columns: Vec<ColumnSchema> = read_st_column_for_table(self, table_id)?;
 
         // Look up the constraints for the table in question.
         let constraints = self
@@ -147,6 +140,22 @@ pub trait StateView {
 
         self.schema_for_table_raw(table_id).map(Arc::new)
     }
+}
+
+pub(crate) fn read_st_column_for_table(
+    this: &(impl StateView + ?Sized),
+    table_id: TableId,
+) -> Result<Vec<ColumnSchema>> {
+    // Look up the columns for the table in question.
+    let mut columns: Vec<ColumnSchema> = this
+        .iter_by_col_eq(ST_COLUMN_ID, StColumnFields::TableId, &table_id.into())?
+        .map(|row| {
+            let row = StColumnRow::try_from(row)?;
+            Ok(row.into())
+        })
+        .collect::<Result<Vec<_>>>()?;
+    columns.sort_by_key(|col| col.col_pos);
+    Ok(columns)
 }
 
 pub struct IterMutTx<'a> {
