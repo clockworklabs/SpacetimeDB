@@ -8,18 +8,18 @@ partial struct TestScheduleIssues
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        IdWrongType = BSATN.IdWrongType.Read(reader);
-        IdCorrectType = BSATN.IdCorrectType.Read(reader);
-        ScheduleAtWrongType = BSATN.ScheduleAtWrongType.Read(reader);
-        ScheduleAtCorrectType = BSATN.ScheduleAtCorrectType.Read(reader);
+        IdWrongType = BSATN.IdWrongTypeRW.Read(reader);
+        IdCorrectType = BSATN.IdCorrectTypeRW.Read(reader);
+        ScheduleAtWrongType = BSATN.ScheduleAtWrongTypeRW.Read(reader);
+        ScheduleAtCorrectType = BSATN.ScheduleAtCorrectTypeRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.IdWrongType.Write(writer, IdWrongType);
-        BSATN.IdCorrectType.Write(writer, IdCorrectType);
-        BSATN.ScheduleAtWrongType.Write(writer, ScheduleAtWrongType);
-        BSATN.ScheduleAtCorrectType.Write(writer, ScheduleAtCorrectType);
+        BSATN.IdWrongTypeRW.Write(writer, IdWrongType);
+        BSATN.IdCorrectTypeRW.Write(writer, IdCorrectType);
+        BSATN.ScheduleAtWrongTypeRW.Write(writer, ScheduleAtWrongType);
+        BSATN.ScheduleAtCorrectTypeRW.Write(writer, ScheduleAtCorrectType);
     }
 
     object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
@@ -32,10 +32,10 @@ partial struct TestScheduleIssues
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestScheduleIssues>
     {
-        internal static readonly SpacetimeDB.BSATN.String IdWrongType = new();
-        internal static readonly SpacetimeDB.BSATN.I32 IdCorrectType = new();
-        internal static readonly SpacetimeDB.BSATN.I32 ScheduleAtWrongType = new();
-        internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduleAtCorrectType = new();
+        internal static readonly SpacetimeDB.BSATN.String IdWrongTypeRW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 IdCorrectTypeRW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 ScheduleAtWrongTypeRW = new();
+        internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduleAtCorrectTypeRW = new();
 
         public TestScheduleIssues Read(System.IO.BinaryReader reader)
         {
@@ -56,15 +56,15 @@ partial struct TestScheduleIssues
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(IdWrongType), IdWrongType.GetAlgebraicType(registrar)),
-                        new(nameof(IdCorrectType), IdCorrectType.GetAlgebraicType(registrar)),
+                        new("IdWrongType", IdWrongTypeRW.GetAlgebraicType(registrar)),
+                        new("IdCorrectType", IdCorrectTypeRW.GetAlgebraicType(registrar)),
                         new(
-                            nameof(ScheduleAtWrongType),
-                            ScheduleAtWrongType.GetAlgebraicType(registrar)
+                            "ScheduleAtWrongType",
+                            ScheduleAtWrongTypeRW.GetAlgebraicType(registrar)
                         ),
                         new(
-                            nameof(ScheduleAtCorrectType),
-                            ScheduleAtCorrectType.GetAlgebraicType(registrar)
+                            "ScheduleAtCorrectType",
+                            ScheduleAtCorrectTypeRW.GetAlgebraicType(registrar)
                         )
                     }
                 )
