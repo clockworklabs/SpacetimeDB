@@ -368,6 +368,8 @@ impl HasLayout for ProductTypeLayoutView<'_> {
 
 impl ProductTypeLayoutView<'_> {
     /// Can `self` be changed compatibly to `new`?
+    // TODO(error-reporting): Use `spacetimedb_data_structures::ErrorStream` to combine multiple errors
+    // rather than short-circuiting on the first.
     fn is_compatible_with(self, new: Self) -> Result<(), IncompatibleTypeLayoutError> {
         if self.elements.len() != new.elements.len() {
             return Err(IncompatibleTypeLayoutError::DifferentElementCounts {
@@ -812,6 +814,8 @@ impl SumTypeLayout {
     /// Can `self` be changed compatibly to `new`?
     ///
     /// In the case of sums, the old variants need only be a prefix of the new.
+    // TODO(error-reporting): Use `spacetimedb_data_structures::ErrorStream` to combine multiple errors
+    // rather than short-circuiting on the first.
     fn is_compatible_with(&self, new: &SumTypeLayout) -> Result<(), IncompatibleTypeLayoutError> {
         if self.variants.len() > new.variants.len() {
             return Err(IncompatibleTypeLayoutError::RemovedVariants {

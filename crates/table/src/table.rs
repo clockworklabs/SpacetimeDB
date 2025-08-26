@@ -319,6 +319,8 @@ impl Table {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<Vec<ColumnSchema>, ChangeColumnsError> {
         /// Validate that the old row type layout can be changed to the new.
+        // TODO(error-reporting): Use `spacetimedb_data_structures::ErrorStream` to combine multiple errors
+        // rather than short-circuiting on the first.
         fn validate(
             this: &Table,
             new_row_layout: &RowTypeLayout,
