@@ -79,7 +79,10 @@ pub trait StateView {
         let table_primary_key = row.table_primary_key.as_ref().and_then(ColList::as_singleton);
 
         // Look up the columns for the table in question.
-        let columns: Vec<ColumnSchema> = read_st_column_for_table(self, table_id)?;
+        let mut columns: Vec<ColumnSchema> = iter_st_column_for_table(self, &table_id.into())?
+            .map(|row| Ok(StColumnRow::try_from(row)?.into()))
+            .collect::<Result<Vec<_>>>()?;
+        columns.sort_by_key(|col| col.col_pos);
 
         // Look up the constraints for the table in question.
         let constraints = self
@@ -142,20 +145,12 @@ pub trait StateView {
     }
 }
 
-pub(crate) fn read_st_column_for_table(
-    this: &(impl StateView + ?Sized),
-    table_id: TableId,
-) -> Result<Vec<ColumnSchema>> {
-    // Look up the columns for the table in question.
-    let mut columns: Vec<ColumnSchema> = this
-        .iter_by_col_eq(ST_COLUMN_ID, StColumnFields::TableId, &table_id.into())?
-        .map(|row| {
-            let row = StColumnRow::try_from(row)?;
-            Ok(row.into())
-        })
-        .collect::<Result<Vec<_>>>()?;
-    columns.sort_by_key(|col| col.col_pos);
-    Ok(columns)
+/// Returns an iterator over all `st_column` rows for `table_id`.
+pub(crate) fn iter_st_column_for_table<'a>(
+    this: &'a (impl StateView + ?Sized),
+    table_id: &'a AlgebraicValue,
+) -> Result<impl 'a + Iterator<Item = RowRef<'a>>> {
+    this.iter_by_col_eq(ST_COLUMN_ID, StColumnFields::TableId, table_id)
 }
 
 pub struct IterMutTx<'a> {

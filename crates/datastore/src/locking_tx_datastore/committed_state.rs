@@ -10,7 +10,7 @@ use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, IndexError, TableError},
     execution_context::ExecutionContext,
-    locking_tx_datastore::state_view::read_st_column_for_table,
+    locking_tx_datastore::state_view::iter_st_column_for_table,
     system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
         StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
@@ -29,7 +29,7 @@ use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
     Identity,
 };
-use spacetimedb_primitives::{ColList, ColSet, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema};
@@ -341,13 +341,6 @@ impl CommittedState {
             .map_err(TableError::Bflatn)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
 
-        if table_id == ST_COLUMN_ID {
-            // We've made a modification to `st_column`.
-            // The type of a table has changed, so figure out which.
-            // The first column in `StColumnRow` is `table_id`.
-            self.st_column_changed(rel)?;
-        }
-
         Ok(())
     }
 
@@ -358,7 +351,7 @@ impl CommittedState {
         row: &ProductValue,
     ) -> Result<()> {
         let (table, blob_store, pool) = self.get_table_and_blob_store_or_create(table_id, schema);
-        table.insert(pool, blob_store, row).map_err(|e| -> DatastoreError {
+        let (_, row_ref) = table.insert(pool, blob_store, row).map_err(|e| -> DatastoreError {
             match e {
                 InsertError::Bflatn(e) => TableError::Bflatn(e).into(),
                 InsertError::Duplicate(e) => TableError::Duplicate(e).into(),
@@ -370,30 +363,36 @@ impl CommittedState {
             // We've made a modification to `st_column`.
             // The type of a table has changed, so figure out which.
             // The first column in `StColumnRow` is `table_id`.
-            self.st_column_changed(row)?;
+            let row_ptr = row_ref.pointer();
+            self.st_column_changed(row, row_ptr)?;
         }
 
         Ok(())
     }
 
     /// Refreshes the columns and layout of a table
-    /// when a `row` has been inserted/deleted from `st_column`.
-    fn st_column_changed(&mut self, row: &ProductValue) -> Result<()> {
+    /// when a `row` has been inserted from `st_column`.
+    ///
+    /// The `row_ptr` is a pointer to `row`.
+    fn st_column_changed(&mut self, row: &ProductValue, row_ptr: RowPointer) -> Result<()> {
         let target_table_id = TableId::deserialize(ValueDeserializer::from_ref(&row.elements[0]))
             .expect("first field in `st_column` should decode to a `TableId`");
+        let target_col_id = ColId::deserialize(ValueDeserializer::from_ref(&row.elements[1]))
+            .expect("second field in `st_column` should decode to a `ColId`");
 
         // We're replaying and we don't have unique constraints yet.
         // Due to replay handling all inserts first and deletes after,
         // when processing `st_column` insert/deletes,
-        // we may end up with duplicate definitions for the same `col_pos`.
-        // We're interested in the last definition, as it is mot recent.
-        // To obtain that, we must first reverse, dedup, and then reverse again.
-        // A smarter implementation would avoid the double reversal,
-        // but this is not hot code, so we don't bother optimizing.
-        let mut columns = read_st_column_for_table(self, target_table_id)?;
-        columns.reverse();
-        columns.dedup_by_key(|col| col.col_pos);
-        columns.reverse();
+        // we may end up with two definitions for the same `col_pos`.
+        // Of those two, we're interested in the one we just inserted
+        // and not the other one, as it is being replaced.
+        let columns = iter_st_column_for_table(self, &target_table_id.into())?
+            .filter_map(|row_ref| {
+                StColumnRow::try_from(row_ref)
+                    .map(|c| (c.col_pos != target_col_id || row_ref.pointer() == row_ptr).then(|| c.into()))
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         // Update the columns and layout of the the in-memory table.
         if let Some(table) = self.tables.get_mut(&target_table_id) {
