@@ -97,7 +97,7 @@ public partial record CustomTaggedEnum
 [SpacetimeDB.Table]
 public partial class PrivateTable { }
 
-[SpacetimeDB.Table]
+[SpacetimeDB.Table(Public=true)]
 public partial struct PublicTable
 {
     [SpacetimeDB.AutoInc]
