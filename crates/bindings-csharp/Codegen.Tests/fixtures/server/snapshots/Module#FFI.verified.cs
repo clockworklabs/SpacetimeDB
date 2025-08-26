@@ -690,7 +690,7 @@ namespace SpacetimeDB
                     ],
                     Schedule: null,
                     TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Public
                 );
 
             public ulong Count =>
