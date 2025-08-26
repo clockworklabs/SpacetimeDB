@@ -79,7 +79,6 @@ class BaseQuickstart(Smoketest):
 
     def _publish(self) -> Path:
         base_path = Path(self.enterClassContext(tempfile.TemporaryDirectory()))
-
         server_path = base_path / "server"
         self.project_path = server_path
         self.config_path = server_path / "config.toml"
@@ -92,6 +91,7 @@ class BaseQuickstart(Smoketest):
         """Generate the server code from the quickstart documentation."""
         logging.info(f"Generating server code {self.lang}: {server_path}...")
         self.spacetime("init", "--lang", self.lang, server_path, capture_stderr=True)
+        shutil.copy2(STDB_DIR / "rust-toolchain.toml", server_path)
         # Replay the quickstart guide steps
         _write_file(server_path / self.server_file, _parse_quickstart(self.server_doc, self.lang))
         self.server_postprocess(server_path)
@@ -166,7 +166,7 @@ fn user_input_direct(ctx: &DbConnection) {
                 capture_stderr=True)
 
     def sdk_setup(self, path: Path):
-        sdk_rust_path = (STDB_DIR / "crates/sdk").absolute()
+        sdk_rust_path = (STDB_DIR / "sdks/rust").absolute()
         sdk_rust_toml_escaped = str(sdk_rust_path).replace('\\', '\\\\\\\\')  # double escape for re.sub + toml
         sdk_rust_toml = f'spacetimedb-sdk = {{ path = "{sdk_rust_toml_escaped}" }}\nlog = "0.4"\nhex = "0.4"\n'
         _append_to_file(path / "Cargo.toml", sdk_rust_toml)
