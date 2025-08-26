@@ -29,7 +29,7 @@ use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
-use spacetimedb_sats::layout::{AlgebraicTypeLayout, PrimitiveType, RowTypeLayout, Size};
+use spacetimedb_sats::layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
@@ -262,12 +262,31 @@ pub enum ReadViaBsatnError {
 }
 
 #[derive(Error, Debug)]
-#[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`")]
+#[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
 pub struct ChangeColumnsError {
     table_id: TableId,
     table_name: Box<str>,
     old: Vec<ColumnSchema>,
     new: Vec<ColumnSchema>,
+    reason: ChangeColumnsErrorReason,
+}
+
+#[derive(Error, Debug)]
+pub enum ChangeColumnsErrorReason {
+    #[error("Layout of schedule table's at column changed from {old:?} to {new:?}")]
+    ScheduleAtColumnChanged {
+        index: usize,
+        old: AlgebraicTypeLayout,
+        new: AlgebraicTypeLayout,
+    },
+    #[error("Layout of schedule table's id column changed from {old:?} to {new:?}")]
+    ScheduleIdColumnChanged {
+        index: usize,
+        old: AlgebraicTypeLayout,
+        new: AlgebraicTypeLayout,
+    },
+    #[error(transparent)]
+    IncompatibleRowLayout(#[from] IncompatibleTypeLayoutError),
 }
 
 /// Computes the parts of a table definition, that are row type dependent, from the row type.
@@ -299,33 +318,50 @@ impl Table {
         &mut self,
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<Vec<ColumnSchema>, ChangeColumnsError> {
+        /// Validate that the old row type layout can be changed to the new.
         fn validate(
             this: &Table,
             new_row_layout: &RowTypeLayout,
             column_schemas: &[ColumnSchema],
         ) -> Result<(), ChangeColumnsError> {
-            // Validate that the old row type layout can be changed to the new.
             let schema = this.get_schema();
             let row_layout = this.row_layout();
 
-            // Require that a scheduler table doesn't change the `id` and `at` fields.
-            let schedule_compat = schema.schedule.as_ref().zip(schema.pk()).is_none_or(|(schedule, pk)| {
-                let at_col = schedule.at_column.idx();
-                let id_col = pk.col_pos.idx();
-                row_layout[at_col] == new_row_layout[at_col] && row_layout[id_col] == new_row_layout[id_col]
-            });
-
-            // The `row_layout` must also be compatible with the new.
-            if schedule_compat && row_layout.is_compatible_with(new_row_layout) {
-                return Ok(());
-            }
-
-            Err(ChangeColumnsError {
+            let make_err = |reason| ChangeColumnsError {
                 table_id: schema.table_id,
                 table_name: schema.table_name.clone(),
                 old: schema.columns().to_vec(),
                 new: column_schemas.to_vec(),
-            })
+                reason,
+            };
+
+            // Require that a scheduler table doesn't change the `id` and `at` fields.
+            if let Some((schedule, pk)) = schema.schedule.as_ref().zip(schema.pk()) {
+                let at_col = schedule.at_column.idx();
+                if row_layout[at_col] != new_row_layout[at_col] {
+                    return Err(make_err(ChangeColumnsErrorReason::ScheduleAtColumnChanged {
+                        index: at_col,
+                        old: row_layout[at_col].clone(),
+                        new: new_row_layout[at_col].clone(),
+                    }));
+                }
+
+                let id_col = pk.col_pos.idx();
+                if row_layout[id_col] != new_row_layout[id_col] {
+                    return Err(make_err(ChangeColumnsErrorReason::ScheduleIdColumnChanged {
+                        index: id_col,
+                        old: row_layout[id_col].clone(),
+                        new: new_row_layout[id_col].clone(),
+                    }));
+                }
+            }
+
+            // The `row_layout` must also be compatible with the new.
+            if let Err(reason) = row_layout.is_compatible_with(new_row_layout) {
+                return Err(make_err(reason.into()));
+            }
+
+            Ok(())
         }
 
         unsafe { self.change_columns_to_unchecked(column_schemas, validate) }
