@@ -79,7 +79,7 @@ pub enum TableError {
     #[error(transparent)]
     ReadColTypeError(#[from] read_column::TypeError),
     #[error(transparent)]
-    ChangeColumnsError(#[from] table::ChangeColumnsError),
+    ChangeColumnsError(#[from] Box<table::ChangeColumnsError>),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]

@@ -189,7 +189,7 @@ impl AlgebraicTypeLayout {
     pub const String: Self = Self::VarLen(VarLenType::String);
 
     /// Can `self` be changed compatibly to `new`?
-    fn is_compatible_with(&self, new: &Self) -> Result<(), IncompatibleTypeLayoutError> {
+    fn is_compatible_with(&self, new: &Self) -> Result<(), Box<IncompatibleTypeLayoutError>> {
         match (self, new) {
             (Self::Sum(old), Self::Sum(new)) => old.is_compatible_with(new),
             (Self::Product(old), Self::Product(new)) => old.view().is_compatible_with(new.view()),
@@ -197,10 +197,10 @@ impl AlgebraicTypeLayout {
                 if old == new {
                     Ok(())
                 } else {
-                    Err(IncompatibleTypeLayoutError::DifferentPrimitiveTypes {
+                    Err(Box::new(IncompatibleTypeLayoutError::DifferentPrimitiveTypes {
                         old: old.algebraic_type(),
                         new: new.algebraic_type(),
-                    })
+                    }))
                 }
             }
             (Self::VarLen(VarLenType::Array(old)), Self::VarLen(VarLenType::Array(new))) => {
@@ -210,18 +210,19 @@ impl AlgebraicTypeLayout {
                 // and that doesn't need to be fast right now.
                 let old = AlgebraicTypeLayout::from(old.elem_ty.deref().clone());
                 let new = AlgebraicTypeLayout::from(new.elem_ty.deref().clone());
-                old.is_compatible_with(&new)
-                    .map_err(|err| IncompatibleTypeLayoutError::IncompatibleArrayElements {
+                old.is_compatible_with(&new).map_err(|err| {
+                    Box::new(IncompatibleTypeLayoutError::IncompatibleArrayElements {
                         old: old.algebraic_type(),
                         new: new.algebraic_type(),
-                        err: Box::new(err),
+                        err,
                     })
+                })
             }
             (Self::VarLen(VarLenType::String), Self::VarLen(VarLenType::String)) => Ok(()),
-            _ => Err(IncompatibleTypeLayoutError::DifferentKind {
+            _ => Err(Box::new(IncompatibleTypeLayoutError::DifferentKind {
                 old: self.algebraic_type(),
                 new: new.algebraic_type(),
-            }),
+            })),
         }
     }
 }
@@ -293,12 +294,12 @@ impl RowTypeLayout {
     /// Can `self` be changed compatibly to `new`?
     ///
     /// If the types are incompatible, returns the incompatible sub-part and the reason.
-    pub fn is_compatible_with(&self, new: &RowTypeLayout) -> Result<(), IncompatibleTypeLayoutError> {
+    pub fn is_compatible_with(&self, new: &RowTypeLayout) -> Result<(), Box<IncompatibleTypeLayoutError>> {
         if self.layout != new.layout {
-            return Err(IncompatibleTypeLayoutError::LayoutsNotEqual {
+            return Err(Box::new(IncompatibleTypeLayoutError::LayoutsNotEqual {
                 old: self.layout,
                 new: self.layout,
-            });
+            }));
         }
         self.product().is_compatible_with(new.product())
     }
@@ -370,19 +371,19 @@ impl ProductTypeLayoutView<'_> {
     /// Can `self` be changed compatibly to `new`?
     // TODO(error-reporting): Use `spacetimedb_data_structures::ErrorStream` to combine multiple errors
     // rather than short-circuiting on the first.
-    fn is_compatible_with(self, new: Self) -> Result<(), IncompatibleTypeLayoutError> {
+    fn is_compatible_with(self, new: Self) -> Result<(), Box<IncompatibleTypeLayoutError>> {
         if self.elements.len() != new.elements.len() {
-            return Err(IncompatibleTypeLayoutError::DifferentElementCounts {
+            return Err(Box::new(IncompatibleTypeLayoutError::DifferentElementCounts {
                 old: self.product_type(),
                 new: new.product_type(),
-            });
+            }));
         }
         for (index, (old, new)) in self.elements.iter().zip(new.elements.iter()).enumerate() {
             if let Err(err) = old.ty.is_compatible_with(&new.ty) {
-                return Err(IncompatibleTypeLayoutError::IncompatibleProductElements {
+                return Err(Box::new(IncompatibleTypeLayoutError::IncompatibleProductElements {
                     index,
-                    err: Box::new(err),
-                });
+                    err,
+                }));
             }
         }
         Ok(())
@@ -816,19 +817,19 @@ impl SumTypeLayout {
     /// In the case of sums, the old variants need only be a prefix of the new.
     // TODO(error-reporting): Use `spacetimedb_data_structures::ErrorStream` to combine multiple errors
     // rather than short-circuiting on the first.
-    fn is_compatible_with(&self, new: &SumTypeLayout) -> Result<(), IncompatibleTypeLayoutError> {
+    fn is_compatible_with(&self, new: &SumTypeLayout) -> Result<(), Box<IncompatibleTypeLayoutError>> {
         if self.variants.len() > new.variants.len() {
-            return Err(IncompatibleTypeLayoutError::RemovedVariants {
+            return Err(Box::new(IncompatibleTypeLayoutError::RemovedVariants {
                 old: self.sum_type(),
                 new: new.sum_type(),
-            });
+            }));
         }
         for (index, (old, new)) in self.variants.iter().zip(self.variants.iter()).enumerate() {
             if let Err(err) = old.ty.is_compatible_with(&new.ty) {
-                return Err(IncompatibleTypeLayoutError::IncompatibleSumVariants {
+                return Err(Box::new(IncompatibleTypeLayoutError::IncompatibleSumVariants {
                     index,
-                    err: Box::new(err),
-                });
+                    err,
+                }));
             }
         }
         Ok(())

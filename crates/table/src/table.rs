@@ -317,7 +317,7 @@ impl Table {
     pub fn change_columns_to(
         &mut self,
         column_schemas: Vec<ColumnSchema>,
-    ) -> Result<Vec<ColumnSchema>, ChangeColumnsError> {
+    ) -> Result<Vec<ColumnSchema>, Box<ChangeColumnsError>> {
         /// Validate that the old row type layout can be changed to the new.
         // TODO(error-reporting): Use `spacetimedb_data_structures::ErrorStream` to combine multiple errors
         // rather than short-circuiting on the first.
@@ -325,16 +325,18 @@ impl Table {
             this: &Table,
             new_row_layout: &RowTypeLayout,
             column_schemas: &[ColumnSchema],
-        ) -> Result<(), ChangeColumnsError> {
+        ) -> Result<(), Box<ChangeColumnsError>> {
             let schema = this.get_schema();
             let row_layout = this.row_layout();
 
-            let make_err = |reason| ChangeColumnsError {
-                table_id: schema.table_id,
-                table_name: schema.table_name.clone(),
-                old: schema.columns().to_vec(),
-                new: column_schemas.to_vec(),
-                reason,
+            let make_err = |reason| {
+                Box::new(ChangeColumnsError {
+                    table_id: schema.table_id,
+                    table_name: schema.table_name.clone(),
+                    old: schema.columns().to_vec(),
+                    new: column_schemas.to_vec(),
+                    reason,
+                })
             };
 
             // Require that a scheduler table doesn't change the `id` and `at` fields.
@@ -360,7 +362,7 @@ impl Table {
 
             // The `row_layout` must also be compatible with the new.
             if let Err(reason) = row_layout.is_compatible_with(new_row_layout) {
-                return Err(make_err(reason.into()));
+                return Err(make_err((*reason).into()));
             }
 
             Ok(())
