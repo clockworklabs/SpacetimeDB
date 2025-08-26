@@ -2051,7 +2051,7 @@ pub mod tests_utils {
     pub fn expect_query_with_auth<T: TableSchemaView + StateView>(tx: &T, sql: &str, auth: AuthCtx, expect: Expect) {
         let schema = SchemaViewer::new(tx, &auth);
 
-        check_query(&schema, ExplainOptions::default(), &auth, sql, expect)
+        check_query(&schema, ExplainOptions::default(), &auth, sql, expect).unwrap();
     }
 
     /// [`Expect`] the query `Explain` output, using `AuthCtx::for_testing`.
@@ -2064,7 +2064,7 @@ pub mod tests_utils {
         let auth = AuthCtx::for_testing();
         let schema = SchemaViewer::new(tx, &auth);
 
-        check_sub(&schema, ExplainOptions::default(), &auth, sql, expect)
+        check_sub(&schema, ExplainOptions::default(), &auth, sql, expect).unwrap()
     }
 }
 
