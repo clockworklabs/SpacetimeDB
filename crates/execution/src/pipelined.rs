@@ -186,6 +186,7 @@ impl PipelinedProject {
 pub enum PipelinedExecutor {
     TableScan(PipelinedScan),
     IxScan(PipelinedIxScan),
+    IxScansAnd(PipelinedIxScanAnd),
     IxJoin(PipelinedIxJoin),
     IxDeltaScan(PipelinedIxDeltaScan),
     IxDeltaJoin(PipelinedIxDeltaJoin),
@@ -205,6 +206,12 @@ impl From<PhysicalPlan> for PipelinedExecutor {
             }),
             PhysicalPlan::IxScan(scan @ IxScan { delta: None, .. }, _) => Self::IxScan(scan.into()),
             PhysicalPlan::IxScan(scan, _) => Self::IxDeltaScan(scan.into()),
+            PhysicalPlan::IxScansAnd(scans) => {
+                // Apply the filter to each scan to form an intersection
+                Self::IxScansAnd(PipelinedIxScanAnd {
+                    scans: scans.into_iter().map(PipelinedExecutor::from).collect(),
+                })
+            }
             PhysicalPlan::IxJoin(
                 IxJoin {
                     lhs,
@@ -292,7 +299,7 @@ impl PipelinedExecutor {
                 lhs.visit(f);
                 rhs.visit(f);
             }
-            Self::TableScan(..) | Self::IxScan(..) | Self::IxDeltaScan(..) => {}
+            Self::TableScan(..) | Self::IxScan(..) | Self::IxDeltaScan(..) | Self::IxScansAnd(..) => {}
         }
     }
 
@@ -301,6 +308,7 @@ impl PipelinedExecutor {
         match self {
             Self::TableScan(scan) => scan.is_empty(tx),
             Self::IxScan(scan) => scan.is_empty(tx),
+            Self::IxScansAnd(scan) => scan.is_empty(tx),
             Self::IxDeltaScan(scan) => scan.is_empty(tx),
             Self::IxJoin(join) => join.is_empty(tx),
             Self::IxDeltaJoin(join) => join.is_empty(tx),
@@ -320,6 +328,7 @@ impl PipelinedExecutor {
         match self {
             Self::TableScan(scan) => scan.execute(tx, metrics, f),
             Self::IxScan(scan) => scan.execute(tx, metrics, f),
+            Self::IxScansAnd(scan) => scan.execute(tx, metrics, f),
             Self::IxDeltaScan(scan) => scan.execute(tx, metrics, f),
             Self::IxJoin(join) => join.execute(tx, metrics, f),
             Self::IxDeltaJoin(join) => join.execute(tx, metrics, f),
@@ -567,6 +576,7 @@ pub struct PipelinedIxScan {
     pub table_id: TableId,
     /// The index id
     pub index_id: IndexId,
+    pub index_is_multi_column: bool,
     pub limit: Option<u64>,
     /// An equality prefix for multi-column scans
     pub prefix: Vec<AlgebraicValue>,
@@ -578,6 +588,12 @@ pub struct PipelinedIxScan {
 
 impl From<IxScan> for PipelinedIxScan {
     fn from(scan: IxScan) -> Self {
+        let index_is_multi_column = scan
+            .schema
+            .indexes
+            .iter()
+            .find(|i| i.index_id == scan.index_id)
+            .is_some_and(|index| index.index_algorithm.columns().iter().count() > 1);
         match scan {
             IxScan {
                 schema,
@@ -589,6 +605,7 @@ impl From<IxScan> for PipelinedIxScan {
             } => Self {
                 table_id: schema.table_id,
                 index_id,
+                index_is_multi_column,
                 limit,
                 prefix: prefix.into_iter().map(|(_, v)| v).collect(),
                 lower: Bound::Included(v.clone()),
@@ -604,6 +621,7 @@ impl From<IxScan> for PipelinedIxScan {
             } => Self {
                 table_id: schema.table_id,
                 index_id,
+                index_is_multi_column,
                 limit,
                 prefix: prefix.into_iter().map(|(_, v)| v).collect(),
                 lower,
@@ -672,7 +690,7 @@ impl PipelinedIxScan {
             f(t)
         };
         match self.prefix.as_slice() {
-            [] => {
+            [] if !self.index_is_multi_column => {
                 for ptr in single_col_limit_scan(self.limit.map(|n| n as usize))?
                     .map(Row::Ptr)
                     .map(Tuple::Row)
@@ -691,6 +709,66 @@ impl PipelinedIxScan {
         }
         metrics.index_seeks += 1;
         metrics.rows_scanned += n;
+        Ok(())
+    }
+}
+
+/// A pipelined executor for scanning multiple indexes
+#[derive(Debug)]
+pub struct PipelinedIxScanAnd {
+    scans: Vec<PipelinedExecutor>,
+}
+
+impl PipelinedIxScanAnd {
+    /// Does this operation contain an empty scan?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        self.scans.iter().all(|scan| scan.is_empty(tx))
+    }
+
+    /// Executes the pipelined index scans, producing tuples when all
+    pub fn execute<'a, Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &'a Tx,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+    ) -> Result<()> {
+        let scans = match self.scans.as_slice() {
+            [] => return Ok(()), // No scans to execute
+            [scan] => {
+                // Single scan, execute directly
+                return scan.execute(tx, metrics, f);
+            }
+            scans => scans,
+        };
+
+        // Execute first scan and materialize all rows
+        let mut first_rows = HashSet::new();
+        scans[0].execute(tx, metrics, &mut |t| {
+            first_rows.insert(t);
+            Ok(())
+        })?;
+
+        // Intersect with remaining scans
+        for scan in &scans[1..] {
+            let mut current_rows = HashSet::new();
+            scan.execute(tx, metrics, &mut |t| {
+                if first_rows.contains(&t) {
+                    current_rows.insert(t);
+                }
+                Ok(())
+            })?;
+            first_rows = current_rows;
+            if first_rows.is_empty() {
+                break;
+            }
+        }
+
+        // Emit results
+        for t in first_rows {
+            metrics.rows_scanned += 1;
+            f(t)?;
+        }
+
         Ok(())
     }
 }
