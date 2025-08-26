@@ -4,23 +4,27 @@ import logging
 
 
 class AddTableAutoMigration(Smoketest):
-    MODULE_CODE = """
+    MODULE_CODE_INIT = """
 use spacetimedb::{log, ReducerContext, Table, SpacetimeType};
+use PersonKind::*;
 
 #[spacetimedb::table(name = person, public)]
 pub struct Person {
     name: String,
+    kind: PersonKind,
 }
 
 #[spacetimedb::reducer]
-pub fn add_person(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name });
+pub fn add_person(ctx: &ReducerContext, name: String, kind: String) {
+    let kind = kind_from_string(kind);
+    ctx.db.person().insert(Person { name, kind });
 }
 
 #[spacetimedb::reducer]
 pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
-        log::info!("{}: {}", prefix, person.name);
+        let kind = kind_to_string(person.kind);
+        log::info!("{prefix}: {} - {kind}", person.name);
     }
 }
 
@@ -41,9 +45,45 @@ pub struct Vector2 {
 const PERSON_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM person");
 """
 
+    MODULE_CODE = MODULE_CODE_INIT + """
+#[derive(SpacetimeType, Clone, Copy, PartialEq, Eq)]
+pub enum PersonKind {
+    Student,
+}
+
+fn kind_from_string(_: String) -> PersonKind {
+    Student
+}
+
+fn kind_to_string(Student: PersonKind) -> &'static str {
+    "Student"
+}
+"""
+
     MODULE_CODE_UPDATED = (
-        MODULE_CODE
+        MODULE_CODE_INIT
         + """
+#[derive(SpacetimeType, Clone, Copy, PartialEq, Eq)]
+pub enum PersonKind {
+    Student,
+    Professor,
+}
+
+fn kind_from_string(kind: String) -> PersonKind {
+    match &*kind {
+        "Student" => Student,
+        "Professor" => Professor,
+        _ => panic!(),
+    }
+}
+
+fn kind_to_string(kind: PersonKind) -> &'static str {
+    match kind {
+        Student => "Student",
+        Professor => "Professor",
+    }
+}
+
 #[spacetimedb::table(name = book, public)]
 pub struct Book {
     isbn: String,
@@ -89,14 +129,14 @@ const BOOK_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FRO
         logging.info("Initial publish complete")
         # initial module code is already published by test framework
 
-        self.call("add_person", "Robert")
-        self.call("add_person", "Julie")
-        self.call("add_person", "Samantha")
+        self.call("add_person", "Robert", "Student")
+        self.call("add_person", "Julie", "Student")
+        self.call("add_person", "Samantha", "Student")
         self.call("print_persons", "BEFORE")
         logs = self.logs(100)
-        self.assertIn("BEFORE: Samantha", logs)
-        self.assertIn("BEFORE: Julie", logs)
-        self.assertIn("BEFORE: Robert", logs)
+        self.assertIn("BEFORE: Samantha - Student", logs)
+        self.assertIn("BEFORE: Julie - Student", logs)
+        self.assertIn("BEFORE: Robert - Student", logs)
 
         logging.info(
             "Initial operations complete, updating module without clear",
@@ -120,16 +160,16 @@ const BOOK_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FRO
 
         self.logs(100)
 
-        self.call("add_person", "Husserl")
+        self.call("add_person", "Husserl", "Professor")
         self.call("add_book", "1234567890")
         self.call("print_persons", "AFTER_PERSON")
         self.call("print_books", "AFTER_BOOK")
 
         logs = self.logs(100)
-        self.assertIn("AFTER_PERSON: Samantha", logs)
-        self.assertIn("AFTER_PERSON: Julie", logs)
-        self.assertIn("AFTER_PERSON: Robert", logs)
-        self.assertIn("AFTER_PERSON: Husserl", logs)
+        self.assertIn("AFTER_PERSON: Samantha - Student", logs)
+        self.assertIn("AFTER_PERSON: Julie - Student", logs)
+        self.assertIn("AFTER_PERSON: Robert - Student", logs)
+        self.assertIn("AFTER_PERSON: Husserl - Professor", logs)
         self.assertIn("AFTER_BOOK: 1234567890", logs)
 
 
