@@ -31,7 +31,7 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from '@clockworklabs/spacetimedb-sdk';
 
 export type IdentityDisconnected = {};
 
@@ -40,21 +40,23 @@ export type IdentityDisconnected = {};
  */
 export namespace IdentityDisconnected {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.createProductType([
-    ]);
+    return AlgebraicType.createProductType([]);
   }
 
-  export function serialize(writer: BinaryWriter, value: IdentityDisconnected): void {
+  export function serialize(
+    writer: BinaryWriter,
+    value: IdentityDisconnected
+  ): void {
     IdentityDisconnected.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): IdentityDisconnected {
-    return IdentityDisconnected.getTypeScriptAlgebraicType().deserialize(reader);
+    return IdentityDisconnected.getTypeScriptAlgebraicType().deserialize(
+      reader
+    );
   }
-
 }
-

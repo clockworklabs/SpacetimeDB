@@ -31,11 +31,11 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from '@clockworklabs/spacetimedb-sdk';
 export type Message = {
-  sender: Identity,
-  sent: Timestamp,
-  text: string,
+  sender: Identity;
+  sent: Timestamp;
+  text: string;
 };
 
 /**
@@ -43,14 +43,14 @@ export type Message = {
  */
 export namespace Message {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("sender", AlgebraicType.createIdentityType()),
-      new ProductTypeElement("sent", AlgebraicType.createTimestampType()),
-      new ProductTypeElement("text", AlgebraicType.createStringType()),
+      new ProductTypeElement('sender', AlgebraicType.createIdentityType()),
+      new ProductTypeElement('sent', AlgebraicType.createTimestampType()),
+      new ProductTypeElement('text', AlgebraicType.createStringType()),
     ]);
   }
 
@@ -61,7 +61,4 @@ export namespace Message {
   export function deserialize(reader: BinaryReader): Message {
     return Message.getTypeScriptAlgebraicType().deserialize(reader);
   }
-
 }
-
-
