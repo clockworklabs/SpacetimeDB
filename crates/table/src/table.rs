@@ -261,6 +261,13 @@ pub enum ReadViaBsatnError {
     DecodeError(#[from] DecodeError),
 }
 
+/// Error that can occur when attempting to [`Table::change_columns_to`] a different row type.
+///
+/// This will usually be [`Box`]ed, as it's large enough to trigger
+/// [Clippy's `result_large_err` lint](https://rust-lang.github.io/rust-clippy/master/index.html#result_large_err).
+///
+/// Seeing this error represents a bug in SpacetimeDB, as incompatible column-type-changing migrations
+/// are supposed to be detected by the checks in [`spacetimedb_schema::auto_migrate`].
 #[derive(Error, Debug)]
 #[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
 pub struct ChangeColumnsError {
@@ -271,6 +278,8 @@ pub struct ChangeColumnsError {
     reason: ChangeColumnsErrorReason,
 }
 
+/// More specific reason that a [`Table::change_columns_to`] resulted in a [`ChangeColumnsError`],
+/// contained in that error alongside the table metadata and new and old schemas.
 #[derive(Error, Debug)]
 pub enum ChangeColumnsErrorReason {
     #[error("Layout of schedule table's at column changed from {old:?} to {new:?}")]

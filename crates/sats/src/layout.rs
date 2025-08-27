@@ -189,6 +189,8 @@ impl AlgebraicTypeLayout {
     pub const String: Self = Self::VarLen(VarLenType::String);
 
     /// Can `self` be changed compatibly to `new`?
+    ///
+    /// See comment on [`IncompatibleTypeLayoutError`] about [`Box`]ing the error return.
     fn is_compatible_with(&self, new: &Self) -> Result<(), Box<IncompatibleTypeLayoutError>> {
         match (self, new) {
             (Self::Sum(old), Self::Sum(new)) => old.is_compatible_with(new),
@@ -294,6 +296,7 @@ impl RowTypeLayout {
     /// Can `self` be changed compatibly to `new`?
     ///
     /// If the types are incompatible, returns the incompatible sub-part and the reason.
+    /// See comment on [`IncompatibleTypeLayoutError`] about [`Box`]ing the error return.
     pub fn is_compatible_with(&self, new: &RowTypeLayout) -> Result<(), Box<IncompatibleTypeLayoutError>> {
         if self.layout != new.layout {
             return Err(Box::new(IncompatibleTypeLayoutError::LayoutsNotEqual {
@@ -305,6 +308,12 @@ impl RowTypeLayout {
     }
 }
 
+/// Reason why two [`RowTypeLayout`]s are incompatible for an auto-migration.
+///
+/// Reported by [`RowTypeLayout::is_compatible_with`] and friends.
+/// These methods are expected to return `Ok(())` except in the case of internal SpacetimeDB bugs,
+/// as migrations are validated by `spacetimedb_schema::auto_migrate` before executing,
+/// so we will [`Box`] these errors to keep the returned [`Result`] small and the happy path fast.
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum IncompatibleTypeLayoutError {
     #[error("Layout of new type {new:?} does not match layout of old type {old:?}")]
@@ -369,6 +378,8 @@ impl HasLayout for ProductTypeLayoutView<'_> {
 
 impl ProductTypeLayoutView<'_> {
     /// Can `self` be changed compatibly to `new`?
+    ///
+    /// See comment on [`IncompatibleTypeLayoutError`] about [`Box`]ing the error return.
     // TODO(error-reporting): Use `spacetimedb_data_structures::ErrorStream` to combine multiple errors
     // rather than short-circuiting on the first.
     // This is low priority because we've (at least theoretically) already passed through
@@ -819,6 +830,8 @@ impl SumTypeLayout {
     /// Can `self` be changed compatibly to `new`?
     ///
     /// In the case of sums, the old variants need only be a prefix of the new.
+    ///
+    /// See comment on [`IncompatibleTypeLayoutError`] about [`Box`]ing the error return.
     // TODO(error-reporting): Use `spacetimedb_data_structures::ErrorStream` to combine multiple errors
     // rather than short-circuiting on the first.
     // This is low priority because we've (at least theoretically) already passed through
