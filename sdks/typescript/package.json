@@ -12,7 +12,8 @@
     "ci:version": "changeset version",
     "format": "prettier --write .",
     "lint": "prettier . --check",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "generate": "pnpm --filter ./examples/quickstart-chat generate && pnpm --filter ./packages/sdks generate && pnpm --filter ./packages/test-app generate"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.0",
