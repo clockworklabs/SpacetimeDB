@@ -371,6 +371,10 @@ impl ProductTypeLayoutView<'_> {
     /// Can `self` be changed compatibly to `new`?
     // TODO(error-reporting): Use `spacetimedb_data_structures::ErrorStream` to combine multiple errors
     // rather than short-circuiting on the first.
+    // This is low priority because we've (at least theoretically) already passed through
+    // `spacetimedb_schema::auto_migrate::ensure_old_ty_upgradable_to_new` to get here,
+    // and that method has proper pretty error reporting with `ErrorStream`.
+    // The error here is for internal debugging.
     fn is_compatible_with(self, new: Self) -> Result<(), Box<IncompatibleTypeLayoutError>> {
         if self.elements.len() != new.elements.len() {
             return Err(Box::new(IncompatibleTypeLayoutError::DifferentElementCounts {
@@ -817,6 +821,10 @@ impl SumTypeLayout {
     /// In the case of sums, the old variants need only be a prefix of the new.
     // TODO(error-reporting): Use `spacetimedb_data_structures::ErrorStream` to combine multiple errors
     // rather than short-circuiting on the first.
+    // This is low priority because we've (at least theoretically) already passed through
+    // `spacetimedb_schema::auto_migrate::ensure_old_ty_upgradable_to_new` to get here,
+    // and that method has proper pretty error reporting with `ErrorStream`.
+    // The error here is for internal debugging.
     fn is_compatible_with(&self, new: &SumTypeLayout) -> Result<(), Box<IncompatibleTypeLayoutError>> {
         if self.variants.len() > new.variants.len() {
             return Err(Box::new(IncompatibleTypeLayoutError::RemovedVariants {
