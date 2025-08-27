@@ -79,6 +79,7 @@ pub enum TableError {
     #[error(transparent)]
     ReadColTypeError(#[from] read_column::TypeError),
     #[error(transparent)]
+    // Error here is `Box`ed to avoid triggering https://rust-lang.github.io/rust-clippy/master/index.html#result_large_err .
     ChangeColumnsError(#[from] Box<table::ChangeColumnsError>),
 }
 
