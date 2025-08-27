@@ -1,12 +1,12 @@
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::sql::parser::RowLevelExpr;
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::{HashMap, IntMap};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
-use spacetimedb_primitives::{ColSet, TableId};
+use spacetimedb_primitives::{ColId, ColSet, TableId};
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::TableDef;
 use spacetimedb_schema::schema::{IndexSchema, Schema, SequenceSchema, TableSchema};
@@ -246,6 +246,21 @@ fn auto_migrate_database(
                 log!(logger, "Removing-row level security `{sql_rls}`");
                 stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
+<<<<<<< Updated upstream
+=======
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddColumns(table_name) => {
+                let table_def = plan.new.stored_in_table_def(table_name).expect("table must exist");
+                let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
+                let table_schema = TableSchema::from_module_def(plan.new, table_def, (), TableId::SENTINEL);
+                let default_values: IntMap<ColId, AlgebraicValue> = table_def
+                    .columns
+                    .iter()
+                    .filter_map(|col_def| col_def.default_value.as_ref().map(|v| (col_def.col_id, v.clone())))
+                    .collect();
+                stdb.migrate_table(tx, table_id, table_schema, &default_values)?;
+            }
+            _ => anyhow::bail!("migration step not implemented: {step:?}"),
+>>>>>>> Stashed changes
         }
     }
 

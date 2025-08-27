@@ -5871,6 +5871,7 @@ dependencies = [
  "derive_more",
  "either",
  "pretty_assertions",
+ "spacetimedb-data-structures",
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-primitives",

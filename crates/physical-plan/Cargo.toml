@@ -12,6 +12,7 @@ derive_more.workspace = true
 either.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
+spacetimedb-data-structures.workspace = true
 spacetimedb-schema.workspace = true
 spacetimedb-expr.workspace = true
 spacetimedb-sql-parser.workspace = true

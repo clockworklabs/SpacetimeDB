@@ -21,10 +21,13 @@ use crate::{
         ST_SEQUENCE_ID, ST_TABLE_ID,
     },
 };
+use anyhow::ensure;
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
+use itertools::Either;
 use smallvec::SmallVec;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
 use spacetimedb_lib::{
@@ -46,6 +49,7 @@ use spacetimedb_schema::schema::{
 use spacetimedb_table::{
     blob_store::BlobStore,
     indexes::{RowPointer, SquashedOffset},
+    page_pool::PagePool,
     static_assert_size,
     table::{
         BlobNumBytes, DuplicateError, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex,
@@ -54,6 +58,7 @@ use spacetimedb_table::{
     table_index::TableIndex,
 };
 use std::{
+    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -320,6 +325,13 @@ impl MutTxId {
     }
 
     pub fn drop_table(&mut self, table_id: TableId) -> Result<()> {
+        let commit_table = self.drop_table_internal(table_id)?;
+        self.push_schema_change(PendingSchemaChange::TableRemoved(table_id, commit_table));
+
+        Ok(())
+    }
+
+    fn drop_table_internal(&mut self, table_id: TableId) -> Result<Table> {
         let schema = &*self.schema_for_table(table_id)?;
 
         for row in &schema.indexes {
@@ -349,14 +361,11 @@ impl MutTxId {
         // Delete the table and its rows and indexes from memory.
         self.tx_state.insert_tables.remove(&table_id);
         self.tx_state.delete_tables.remove(&table_id);
-        let commit_table = self
+        Ok(self
             .committed_state_write_lock
             .tables
             .remove(&table_id)
-            .expect("there should be a schema in the committed state if we reach here");
-        self.push_schema_change(PendingSchemaChange::TableRemoved(table_id, commit_table));
-
-        Ok(())
+            .expect("there should be a schema in the committed state if we reach here"))
     }
 
     // TODO(centril): remove this. It doesn't seem to be used by anything.
@@ -422,6 +431,37 @@ impl MutTxId {
     }
 }
 
+struct ColumnMapping {
+    /// Mapping from new column positions to old column positions.
+    /// If a column was added, it will not be present in the mapping.
+    new_to_old: Vec<Either<ColId, AlgebraicValue>>,
+}
+
+impl ColumnMapping {
+    pub fn transform_row_into(&self, old_row: &ProductValue, buffer: &mut Vec<AlgebraicValue>) -> ProductValue {
+        buffer.clear();
+        buffer.reserve(self.new_to_old.len());
+
+        for mapping in &self.new_to_old {
+            match mapping {
+                Either::Left(old_col_id) => {
+                    let field = old_row
+                        .get_field(old_col_id.idx(), None)
+                        .expect("Invalid ColId in mapping");
+                    buffer.push(field.clone());
+                }
+                Either::Right(default_value) => {
+                    buffer.push(default_value.clone());
+                }
+            }
+        }
+
+        ProductValue {
+            elements: buffer.clone().into(), // copies from buffer
+        }
+    }
+}
+
 impl MutTxId {
     /// Set the table access of `table_id` to `access`.
     pub(crate) fn alter_table_access(&mut self, table_id: TableId, access: StAccess) -> Result<()> {
@@ -475,6 +515,119 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Alters a table's row type with an incompatible layout by recreating the table.
+    /// This method handles cases where the layout changes require a complete table recreation.
+    ///
+    /// # Arguments
+    /// * `table_id` - The ID of the table to alter
+    /// * `column_schemas` - The new column schemas to apply
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or error during the operation
+    ///
+    /// # Process
+    /// 1. Validates the new column schemas
+    /// 2. Backs up existing table data from both committed and tx state
+    /// 3. Drops the existing table internally (preserves data for migration)
+    /// 4. Creates a new table with the updated schema
+    /// 5. Migrates data with proper column mapping and type conversion
+    /// 6. Handles proper cleanup of pending schema changes
+    pub(crate) fn migrate_table(
+        &mut self,
+        table_id: TableId,
+        mut new_schema: TableSchema,
+        default_values: &IntMap<ColId, AlgebraicValue>,
+    ) -> Result<()> {
+        let current_schema = self.schema_for_table(table_id)?;
+
+        let mapping = Self::validate_table_migration_schema(&new_schema, &current_schema, default_values)?;
+        let table_name = current_schema.table_name.clone();
+
+        log::trace!(
+            "TABLE ALTERING (incompatible layout): {}, table_id: {}",
+            table_name,
+            table_id
+        );
+
+        // It's important to drop existing table first before creating new.
+        // Due to unique constraints on table name in `st_table`
+        let old_committed_table = self.drop_table_internal(table_id)?;
+
+        //  new_schema.table_id = TableId::SENTINEL;
+        let new_table_id = self.create_table(new_schema)?;
+
+        let commit_bs = &self.committed_state_write_lock.blob_store;
+        let rows = old_committed_table
+            .scan_rows(commit_bs)
+            .map(|row| row.to_product_value())
+            .map(|pv| mapping.transform_row_into(&pv, &mut Vec::new()));
+
+        let (mut new_table, tx_bs) = self.tx_state.get_table_and_blob_store(new_table_id).expect("yo");
+        rows.for_each(|row| {
+            new_table.insert(&self.committed_state_write_lock.page_pool, tx_bs, &row);
+        });
+
+        //let seq_id = new_table.sequence_triggers_for(blob_store, row)
+        //self.sequence_state_lock.get_sequence_mut(seq_id)
+
+        // 10. Record the table removal in pending changes for proper cleanup
+        self.push_schema_change(PendingSchemaChange::TableRemoved(table_id, old_committed_table));
+        self.push_schema_change(PendingSchemaChange::TableAdded(table_id));
+        log::trace!(
+            "TABLE ALTERED (incompatible layout): {}, table_id: {}",
+            table_name,
+            table_id
+        );
+        Ok(())
+    }
+
+    fn validate_table_migration_schema(
+        new_schema: &TableSchema,
+        old_schema: &TableSchema,
+        default_values: &IntMap<ColId, AlgebraicValue>,
+    ) -> anyhow::Result<ColumnMapping> {
+        // Ensure table names match
+        if new_schema.table_name != old_schema.table_name {
+            return Err(anyhow::anyhow!(
+                "Table name cannot be changed during migration. Old: {}, New: {}",
+                old_schema.table_name,
+                new_schema.table_name
+            ));
+        }
+
+        // Build mapping from old column names -> old ColId
+        let old_col_name_to_col_id: HashMap<Box<str>, ColId> = old_schema
+            .columns()
+            .iter()
+            .map(|col| (col.col_name.clone(), col.col_pos))
+            .collect();
+
+        let mut new_to_old = Vec::with_capacity(new_schema.columns().len());
+
+        // For each column in the new schema:
+        // - If it existed before, map to old ColId
+        // - If it's new, fetch its default value
+        for new_col in new_schema.columns() {
+            if let Some(&old_col_id) = old_col_name_to_col_id.get(&new_col.col_name) {
+                // Existing column → map to old ColId
+                new_to_old.push(Either::Left(old_col_id));
+            } else {
+                // New column → must have default value
+                let col_id = new_col.col_pos;
+                let default_value = default_values.get(&col_id).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "New column '{}' (id: {}) must have a default value during migration",
+                        new_col.col_name,
+                        col_id
+                    )
+                })?;
+
+                new_to_old.push(Either::Right(default_value.clone()));
+            }
+        }
+
+        Ok(ColumnMapping { new_to_old })
+    }
     /// Create an index.
     ///
     /// Requires:

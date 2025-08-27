@@ -1193,9 +1193,10 @@ pub struct PhysicalCtx<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{collections::HashMap, sync::Arc};
 
     use pretty_assertions::assert_eq;
+    use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_expr::{
         check::{SchemaView, TypingResult},
         expr::ProjectName,

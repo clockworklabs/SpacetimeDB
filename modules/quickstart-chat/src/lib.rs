@@ -11,7 +11,9 @@ pub struct User {
 #[spacetimedb::table(name = message, public)]
 pub struct Message {
     sender: Identity,
-    sent: Timestamp,
+    #[auto_inc]
+    id: u32,
+    #[unique]
     text: String,
 }
 
@@ -53,12 +55,29 @@ pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     let text = validate_message(text)?;
     ctx.db.message().insert(Message {
         sender: ctx.sender,
+        id: 0, // Auto-incremented by the database
         text,
-        sent: ctx.timestamp,
     });
     Ok(())
 }
 
+#[spacetimedb::reducer]
+pub fn update_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
+    let text = validate_message(text)?;
+    let message = ctx
+        .db
+        .message()
+        .iter()
+        .find(|m| m.id == 1)
+        .expect("Message with id 1 should exist");
+    ctx.db.message().delete(message);
+    ctx.db.message().insert(Message {
+        sender: ctx.sender,
+        id: 0,
+        text,
+    });
+    Ok(())
+}
 #[spacetimedb::reducer(init)]
 // Called when the module is initially published
 pub fn init(_ctx: &ReducerContext) {}

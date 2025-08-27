@@ -7,6 +7,7 @@ use crate::system_tables::{
     ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
 };
 use core::ops::RangeBounds;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};

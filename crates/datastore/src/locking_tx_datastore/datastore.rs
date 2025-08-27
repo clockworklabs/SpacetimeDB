@@ -27,12 +27,12 @@ use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
@@ -312,6 +312,16 @@ impl Locking {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<()> {
         tx.alter_table_row_type(table_id, column_schemas)
+    }
+
+    pub fn migrate_table_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        schema: TableSchema,
+        default_values: &IntMap<ColId, AlgebraicValue>,
+    ) -> Result<()> {
+        tx.migrate_table(table_id, schema, default_values)
     }
 }
 
@@ -1160,6 +1170,8 @@ mod tests {
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
+    use spacetimedb_data_structures::map::IntMap;
+    use spacetimedb_execution::dml::MutDatastore as _;
     use spacetimedb_execution::Datastore;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
@@ -1523,7 +1535,7 @@ mod tests {
                 SequenceRow { id: seq_start, table, col_pos: 0, name: "Foo_id_seq", start: 1 }
             ]),
             None,
-            None
+            None,
         )
     }
 
@@ -3293,6 +3305,147 @@ mod tests {
             .next()
             .unwrap();
         assert_eq!(row_ref.read_col::<u64>(0).unwrap(), id);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_row_type_without_layout() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // Setup the initial table.
+        let mut tx = begin_mut_tx(&datastore);
+        let sum_original = AlgebraicType::sum([("ba", AlgebraicType::U16)]);
+        let columns = [
+            ColumnSchema::for_test(0, "a", AlgebraicType::U64),
+            ColumnSchema::for_test(1, "b", sum_original.clone()),
+        ];
+        let indices = [
+            IndexSchema::for_test("index_a", BTreeAlgorithm::from(0)),
+            IndexSchema::for_test("index_b", BTreeAlgorithm::from(1)),
+        ];
+        let seq = SequenceRow {
+            id: SequenceId::SENTINEL.into(),
+            table: 0,
+            col_pos: 0,
+            name: "Foo_id_seq",
+            start: 5,
+        };
+        let schema = user_public_table(columns, indices.clone(), [], map_array([seq]), None, None);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let columns_original = tx.get_schema(table_id).unwrap().columns.to_vec();
+        let mut columns = columns_original.clone();
+        let row = ProductValue {
+            elements: [AlgebraicValue::U64(0), AlgebraicValue::sum(0, AlgebraicValue::U16(1))].into(),
+        };
+        tx.insert_product_value(table_id, &row);
+        let row = ProductValue {
+            elements: [AlgebraicValue::U64(0), AlgebraicValue::sum(0, AlgebraicValue::U16(1))].into(),
+        };
+        tx.insert_product_value(table_id, &row);
+        commit(&datastore, tx)?;
+
+        //Change the `b` column, adding a variant.
+        let vars_ref = &mut columns[1].col_type.as_sum_mut().unwrap().variants;
+        let mut vars = Vec::from(mem::take(vars_ref));
+        vars.push(SumTypeVariant::new_named(AlgebraicType::U128, "bb"));
+        *vars_ref = vars.into();
+        columns.push(ColumnSchema::for_test(2, "c", AlgebraicType::U8));
+        let defaults = IntMap::from_iter([(2.into(), AlgebraicValue::U8(42))]);
+        let seq = SequenceRow {
+            id: SequenceId::SENTINEL.into(),
+            table: 0,
+            col_pos: 0,
+            name: "Foo_id_seq",
+            start: 5,
+        };
+
+        let schema = user_public_table(columns, indices, [], map_array([seq]), None, None);
+
+        // Change the columns in datastore and roll back.
+        let mut tx = begin_mut_tx(&datastore);
+        datastore.migrate_table_mut_tx(&mut tx, table_id, schema, &defaults)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+
+        let new_table_id = tx.table_id_from_name("Foo")?.unwrap();
+        assert_ne!(new_table_id, table_id, "new table id after migration should not match");
+
+        let row = ProductValue {
+            elements: [
+                AlgebraicValue::U64(0),
+                AlgebraicValue::sum(0, AlgebraicValue::U16(1)),
+                AlgebraicValue::U64(0),
+            ]
+            .into(),
+        };
+        tx.insert_product_value(new_table_id, &row).unwrap();
+        let row = ProductValue {
+            elements: [
+                AlgebraicValue::U64(0),
+                AlgebraicValue::sum(0, AlgebraicValue::U16(1)),
+                AlgebraicValue::U64(0),
+            ]
+            .into(),
+        };
+        tx.insert_product_value(new_table_id, &row).unwrap();
+        commit(&datastore, tx)?;
+        let mut tx = begin_mut_tx(&datastore);
+        let rows = tx.table_scan(new_table_id).unwrap().map(|row| row.to_product_value());
+        for row in rows {
+            println!("value {:?}", row);
+        }
+
+        // assert_eq!(
+        //     tx.pending_schema_changes(),
+        //     [PendingSchemaChange::TableAlterRowType(
+        //         table_id,
+        //         columns_original.clone()
+        //     )]
+        // );
+        // assert_eq!(tx.get_schema(table_id).unwrap().columns, columns.clone());
+        // let _ = datastore.rollback_mut_tx(tx);
+
+        // // Assert no change to the schema type and index keys.
+        // let mut tx = begin_mut_tx(&datastore);
+        // assert_eq!(tx.get_schema(table_id).unwrap().columns, columns_original);
+        // let index_key_types = |tx: &MutTxId| {
+        //     tx.table(table_id)
+        //         .unwrap()
+        //         .indexes
+        //         .values()
+        //         .map(|i| i.key_type.clone())
+        //         .collect::<Vec<_>>()
+        // };
+        // assert_eq!(index_key_types(&tx), [AlgebraicType::U64, sum_original]);
+
+        // // Alter successfully this time and insert a row.
+        // datastore.alter_table_row_type_with_incompatible_layout_mut_tx(&mut tx, table_id, columns.clone())?;
+        // let expected_row_type = columns_to_row_type(&columns);
+        // let schema = tx.get_schema(table_id).unwrap();
+        // assert_eq!(schema.columns, columns);
+        // assert_eq!(schema.get_row_type(), &expected_row_type);
+        // let sum_val = SumValue::new(1, 42u8);
+        // let id = 24u64;
+        // let (_, row_ref) = insert(&datastore, &mut tx, table_id, &product![id, sum_val.clone()])?;
+        // assert_eq!(row_ref.row_layout(), &RowTypeLayout::from(expected_row_type));
+        // assert_eq!(
+        //     index_key_types(&tx),
+        //     [
+        //         AlgebraicType::U64,
+        //         AlgebraicType::sum([("ba", AlgebraicType::U16), ("bb", AlgebraicType::U8)])
+        //     ]
+        // );
+        // commit(&datastore, tx)?;
+
+        // // Check that we can successfully scan using the new schema type post commit.
+        // let tx = begin_tx(&datastore);
+        // let row_ref = datastore
+        //     .iter_by_col_eq_tx(&tx, table_id, 1, &sum_val.into())?
+        //     .next()
+        //     .unwrap();
+        // assert_eq!(row_ref.read_col::<u64>(0).unwrap(), id);
 
         Ok(())
     }

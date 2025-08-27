@@ -80,6 +80,9 @@ pub enum TableError {
     ReadColTypeError(#[from] read_column::TypeError),
     #[error(transparent)]
     ChangeColumnsError(#[from] table::ChangeColumnsError),
+
+    #[error(transparent)]
+    TableMigrationError(#[from] anyhow::Error),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
