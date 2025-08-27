@@ -400,7 +400,7 @@ impl CommittedState {
         // Columns in `st_column` are not in general sorted by their `col_pos`,
         // though they will happen to be for tables which have never undergone migrations
         // because their initial insertion order matches their `col_pos` order.
-        columns.sort_by_key(|col: &ColumnSchema| col.col_pos.idx());
+        columns.sort_by_key(|col: &ColumnSchema| col.col_pos);
 
         // Update the columns and layout of the the in-memory table.
         if let Some(table) = self.tables.get_mut(&target_table_id) {
