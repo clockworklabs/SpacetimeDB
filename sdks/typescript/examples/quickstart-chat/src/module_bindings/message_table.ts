@@ -31,9 +31,14 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
-import { Message } from "./message_type";
-import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+} from '@clockworklabs/spacetimedb-sdk';
+import { Message } from './message_type';
+import {
+  type EventContext,
+  type Reducer,
+  RemoteReducers,
+  RemoteTables,
+} from '.';
 
 /**
  * Table handle for the table `message`.
@@ -62,17 +67,17 @@ export class MessageTableHandle {
 
   onInsert = (cb: (ctx: EventContext, row: Message) => void) => {
     return this.tableCache.onInsert(cb);
-  }
+  };
 
   removeOnInsert = (cb: (ctx: EventContext, row: Message) => void) => {
     return this.tableCache.removeOnInsert(cb);
-  }
+  };
 
   onDelete = (cb: (ctx: EventContext, row: Message) => void) => {
     return this.tableCache.onDelete(cb);
-  }
+  };
 
   removeOnDelete = (cb: (ctx: EventContext, row: Message) => void) => {
     return this.tableCache.removeOnDelete(cb);
-  }
+  };
 }
