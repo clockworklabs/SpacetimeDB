@@ -328,9 +328,8 @@ impl Table {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<Vec<ColumnSchema>, Box<ChangeColumnsError>> {
         /// Validate that the old row type layout can be changed to the new.
-        // TODO(error-reporting): Use `spacetimedb_data_structures::ErrorStream` to combine multiple errors
-        // rather than short-circuiting on the first.
-        // This is low priority because we've (at least theoretically) already passed through
+        // Intentionally fail fast rather than combining errors with [`spacetimedb_data_structures::error_stream`]
+        // because we've (at least theoretically) already passed through
         // `spacetimedb_schema::auto_migrate::ensure_old_ty_upgradable_to_new` to get here,
         // and that method has proper pretty error reporting with `ErrorStream`.
         // The error here is for internal debugging.
