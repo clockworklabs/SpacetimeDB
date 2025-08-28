@@ -4,3 +4,4 @@ packages:
   - 'sdks/typescript/packages/sdk'
   - 'sdks/typescript/packages/test-app'
   - 'sdks/typescript/examples/quickstart-chat'
+  - 'docs'

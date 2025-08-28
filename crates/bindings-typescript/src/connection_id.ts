@@ -4,21 +4,17 @@ import { hexStringToU128, u128ToHexString, u128ToUint8Array } from './utils';
  * A unique identifier for a client connected to a database.
  */
 export class ConnectionId {
-  data: bigint;
-
-  get __connection_id__(): bigint {
-    return this.data;
-  }
+  __connection_id__: bigint;
 
   /**
    * Creates a new `ConnectionId`.
    */
   constructor(data: bigint) {
-    this.data = data;
+    this.__connection_id__ = data;
   }
 
   isZero(): boolean {
-    return this.data === BigInt(0);
+    return this.__connection_id__ === BigInt(0);
   }
 
   static nullIfZero(addr: ConnectionId): ConnectionId | null {
@@ -44,21 +40,21 @@ export class ConnectionId {
    * Compare two connection IDs for equality.
    */
   isEqual(other: ConnectionId): boolean {
-    return this.data == other.data;
+    return this.__connection_id__ == other.__connection_id__;
   }
 
   /**
    * Print the connection ID as a hexadecimal string.
    */
   toHexString(): string {
-    return u128ToHexString(this.data);
+    return u128ToHexString(this.__connection_id__);
   }
 
   /**
    * Convert the connection ID to a Uint8Array.
    */
   toUint8Array(): Uint8Array {
-    return u128ToUint8Array(this.data);
+    return u128ToUint8Array(this.__connection_id__);
   }
 
   /**

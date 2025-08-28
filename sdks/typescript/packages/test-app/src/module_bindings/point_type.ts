@@ -31,10 +31,10 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-} from '@clockworklabs/spacetimedb-sdk';
+} from "@clockworklabs/spacetimedb-sdk";
 export type Point = {
-  x: number;
-  y: number;
+  x: number,
+  y: number,
 };
 export default Point;
 
@@ -43,9 +43,9 @@ export default Point;
  */
 export namespace Point {
   /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
@@ -69,4 +69,7 @@ export namespace Point {
       Point.getTypeScriptAlgebraicType()
     );
   }
+
 }
+
+
