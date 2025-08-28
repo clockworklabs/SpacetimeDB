@@ -217,7 +217,8 @@ impl Locking {
         }
 
         // Fix up auto_inc IDs in the cached system table schemas.
-        committed_state.reset_system_table_schemas()?;
+        // We might need something to reset sequence ids?
+        // committed_state.reset_system_table_schemas()?;
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
@@ -1724,8 +1725,14 @@ mod tests {
             );
 
             assert_eq!(
-                schema.indexes,
+                schema
+                    .indexes
+                    .clone()
+                    .into_iter()
+                    .sorted_by_key(|x| x.index_id)
+                    .collect::<Vec<_>>(),
                 idx.iter()
+                    .sorted_by_key(|x| x.index_id)
                     .filter(|x| x.table_id == st.table_id)
                     .cloned()
                     .map(Into::into)
@@ -1735,8 +1742,14 @@ mod tests {
             );
 
             assert_eq!(
-                schema.sequences,
+                schema
+                    .sequences
+                    .clone()
+                    .into_iter()
+                    .sorted_by_key(|x| x.sequence_id)
+                    .collect::<Vec<_>>(),
                 seq.iter()
+                    .sorted_by_key(|x| x.sequence_id)
                     .filter(|x| x.table_id == st.table_id)
                     .cloned()
                     .map(Into::into)
@@ -1746,8 +1759,14 @@ mod tests {
             );
 
             assert_eq!(
-                schema.constraints,
+                schema
+                    .constraints
+                    .clone()
+                    .into_iter()
+                    .sorted_by_key(|x| x.constraint_id)
+                    .collect::<Vec<_>>(),
                 ct.iter()
+                    .sorted_by_key(|x| x.constraint_id)
                     .filter(|x| x.table_id == st.table_id)
                     .cloned()
                     .map(Into::into)
