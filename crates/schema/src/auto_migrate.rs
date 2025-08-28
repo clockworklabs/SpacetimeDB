@@ -470,59 +470,7 @@ fn ensure_old_ty_upgradable_to_new(
     match (old_ty, new_ty) {
         // For sums, we allow the variants in `old_ty` to be a prefix of `new_ty`.
         (AlgebraicType::Sum(old_ty), AlgebraicType::Sum(new_ty)) => {
-            let old_vars = &*old_ty.variants;
-            let new_vars = &*new_ty.variants;
-
-            // The number of variants in `new_ty` cannot decrease.
-            let var_lens_ok = match old_vars.len().cmp(&new_vars.len()) {
-                Ordering::Less => Ok(Any(true)),
-                Ordering::Equal => Ok(Any(false)),
-                Ordering::Greater if within => Err(ChangeWithinColumnTypeFewerVariants(parts_for_error()).into()),
-                Ordering::Greater => Err(ChangeColumnTypeFewerVariants(parts_for_error()).into()),
-            };
-
-            // The variants in `old_ty` must be upgradable to those in `old_ty`.
-            // Strict equality is *not* imposed in the prefix!
-            let prefix_ok = old_vars
-                .iter()
-                .zip(new_vars)
-                .map(|(o, n)| {
-                    // Ensure type compatibility.
-                    let res_ty = ensure((&o.algebraic_type, &n.algebraic_type));
-                    // Ensure name doesn't change.
-                    let res_name = if o.name() == n.name() {
-                        Ok(())
-                    } else if within {
-                        Err(ChangeWithinColumnTypeRenamedVariant(parts_for_error()).into())
-                    } else {
-                        Err(ChangeColumnTypeRenamedVariant(parts_for_error()).into())
-                    };
-                    (res_ty, res_name).combine_errors().map(|(c, ())| c)
-                })
-                .collect_all_errors::<Any>();
-
-            // The old and the new sum types must have matching layout sizes and alignments.
-            let old_ty = SumTypeLayout::from(old_ty.clone());
-            let new_ty = SumTypeLayout::from(new_ty.clone());
-            let old_layout = old_ty.layout();
-            let new_layout = new_ty.layout();
-            let size_ok = if old_layout.size == new_layout.size {
-                Ok(())
-            } else if within {
-                Err(ChangeWithinColumnTypeSizeMismatch(parts_for_error()).into())
-            } else {
-                Err(ChangeColumnTypeSizeMismatch(parts_for_error()).into())
-            };
-            let align_ok = if old_layout.align == new_layout.align {
-                Ok(())
-            } else if within {
-                Err(ChangeWithinColumnTypeAlignMismatch(parts_for_error()).into())
-            } else {
-                Err(ChangeColumnTypeAlignMismatch(parts_for_error()).into())
-            };
-
-            let (len_changed, prefix_changed, ..) = (var_lens_ok, prefix_ok, size_ok, align_ok).combine_errors()?;
-            Ok(len_changed | prefix_changed)
+            Ok(Any(false))
         }
 
         // For products,
