@@ -32,7 +32,10 @@ use spacetimedb_lib::{
 use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema};
+use spacetimedb_schema::{
+    def::IndexAlgorithm,
+    schema::{ColumnSchema, TableSchema},
+};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -386,13 +389,18 @@ impl CommittedState {
         // we may end up with two definitions for the same `col_pos`.
         // Of those two, we're interested in the one we just inserted
         // and not the other one, as it is being replaced.
-        let columns = iter_st_column_for_table(self, &target_table_id.into())?
+        let mut columns = iter_st_column_for_table(self, &target_table_id.into())?
             .filter_map(|row_ref| {
                 StColumnRow::try_from(row_ref)
                     .map(|c| (c.col_pos != target_col_id || row_ref.pointer() == row_ptr).then(|| c.into()))
                     .transpose()
             })
             .collect::<Result<Vec<_>>>()?;
+
+        // Columns in `st_column` are not in general sorted by their `col_pos`,
+        // though they will happen to be for tables which have never undergone migrations
+        // because their initial insertion order matches their `col_pos` order.
+        columns.sort_by_key(|col: &ColumnSchema| col.col_pos);
 
         // Update the columns and layout of the the in-memory table.
         if let Some(table) = self.tables.get_mut(&target_table_id) {
