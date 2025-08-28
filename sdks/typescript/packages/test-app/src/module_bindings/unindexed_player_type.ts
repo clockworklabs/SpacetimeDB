@@ -52,7 +52,6 @@ export namespace UnindexedPlayer {
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-<<<<<<< HEAD
         { name: 'ownerId', algebraicType: AlgebraicType.String },
         { name: 'name', algebraicType: AlgebraicType.String },
         {
@@ -79,21 +78,6 @@ export namespace UnindexedPlayer {
       reader,
       UnindexedPlayer.getTypeScriptAlgebraicType()
     );
-=======
-        { name: "ownerId", algebraicType: AlgebraicType.String},
-        { name: "name", algebraicType: AlgebraicType.String},
-        { name: "location", algebraicType: __Point.getTypeScriptAlgebraicType()},
-      ]
-    });
-  }
-
-  export function serialize(writer: BinaryWriter, value: UnindexedPlayer): void {
-    AlgebraicType.serializeValue(writer, UnindexedPlayer.getTypeScriptAlgebraicType(), value);
-  }
-
-  export function deserialize(reader: BinaryReader): UnindexedPlayer {
-    return AlgebraicType.deserializeValue(reader, UnindexedPlayer.getTypeScriptAlgebraicType());
->>>>>>> 41e4bf0ef (Testing fixes)
   }
 
 }

@@ -49,20 +49,13 @@ export namespace User {
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-<<<<<<< HEAD
         { name: 'identity', algebraicType: AlgebraicType.createIdentityType() },
         { name: 'username', algebraicType: AlgebraicType.String },
       ],
-=======
-        { name: "identity", algebraicType: AlgebraicType.createIdentityType()},
-        { name: "username", algebraicType: AlgebraicType.String},
-      ]
->>>>>>> 41e4bf0ef (Testing fixes)
     });
   }
 
   export function serialize(writer: BinaryWriter, value: User): void {
-<<<<<<< HEAD
     AlgebraicType.serializeValue(
       writer,
       User.getTypeScriptAlgebraicType(),
@@ -75,13 +68,6 @@ export namespace User {
       reader,
       User.getTypeScriptAlgebraicType()
     );
-=======
-    AlgebraicType.serializeValue(writer, User.getTypeScriptAlgebraicType(), value);
-  }
-
-  export function deserialize(reader: BinaryReader): User {
-    return AlgebraicType.deserializeValue(reader, User.getTypeScriptAlgebraicType());
->>>>>>> 41e4bf0ef (Testing fixes)
   }
 
 }

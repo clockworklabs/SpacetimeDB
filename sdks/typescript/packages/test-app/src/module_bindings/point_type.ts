@@ -49,20 +49,13 @@ export namespace Point {
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.Product({
       elements: [
-<<<<<<< HEAD
         { name: 'x', algebraicType: AlgebraicType.U16 },
         { name: 'y', algebraicType: AlgebraicType.U16 },
       ],
-=======
-        { name: "x", algebraicType: AlgebraicType.U16},
-        { name: "y", algebraicType: AlgebraicType.U16},
-      ]
->>>>>>> 41e4bf0ef (Testing fixes)
     });
   }
 
   export function serialize(writer: BinaryWriter, value: Point): void {
-<<<<<<< HEAD
     AlgebraicType.serializeValue(
       writer,
       Point.getTypeScriptAlgebraicType(),
@@ -75,13 +68,6 @@ export namespace Point {
       reader,
       Point.getTypeScriptAlgebraicType()
     );
-=======
-    AlgebraicType.serializeValue(writer, Point.getTypeScriptAlgebraicType(), value);
-  }
-
-  export function deserialize(reader: BinaryReader): Point {
-    return AlgebraicType.deserializeValue(reader, Point.getTypeScriptAlgebraicType());
->>>>>>> 41e4bf0ef (Testing fixes)
   }
 
 }
