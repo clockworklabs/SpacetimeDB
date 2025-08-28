@@ -373,7 +373,7 @@ impl Table {
             }
 
             // The `row_layout` must also be compatible with the new.
-            if let Err(reason) = row_layout.is_compatible_with(new_row_layout) {
+            if let Err(reason) = row_layout.ensure_compatible_with(new_row_layout) {
                 return Err(make_err((*reason).into()));
             }
 
