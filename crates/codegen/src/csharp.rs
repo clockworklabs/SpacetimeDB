@@ -1,5 +1,5 @@
 // Note: the generated code depends on APIs and interfaces from crates/bindings-csharp/BSATN.Runtime.
-use super::util::fmt_fn;
+use super::util::{fmt_fn, print_cli_version_comment};
 
 use std::fmt::{self, Write};
 use std::ops::Deref;
@@ -708,13 +708,18 @@ impl Lang for Csharp<'_> {
     }
 
     fn generate_globals(&self, module: &ModuleDef) -> Vec<(String, String)> {
-        let mut output = CsharpAutogen::new(
+        let mut writer = CodeIndenter::new(String::new(), INDENT);
+        // We add the information about the cli version only to the globals file,
+        // to avoid adding a diff to the other files.
+        print_cli_version_comment(&mut writer);
+        let mut output = CsharpAutogen::new_with_writer(
             self.namespace,
             &[
                 "SpacetimeDB.ClientApi",
                 "System.Collections.Generic",
                 "System.Runtime.Serialization",
             ],
+            Some(writer),
         );
 
         writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
@@ -945,7 +950,10 @@ impl std::ops::DerefMut for CsharpAutogen {
 
 impl CsharpAutogen {
     pub fn new(namespace: &str, extra_usings: &[&str]) -> Self {
-        let mut output = CodeIndenter::new(String::new(), INDENT);
+        Self::new_with_writer(namespace, extra_usings, None)
+    }
+    pub fn new_with_writer(namespace: &str, extra_usings: &[&str], writer: Option<CodeIndenter<String>>) -> Self {
+        let mut output = writer.unwrap_or(CodeIndenter::new(String::new(), INDENT));
 
         print_auto_generated_file_comment(&mut output);
 

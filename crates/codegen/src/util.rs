@@ -53,8 +53,7 @@ const AUTO_GENERATED_FILE_COMMENT: &[&str] = &[
     "",
 ];
 
-pub(super) fn print_auto_generated_file_comment(output: &mut Indenter) {
-    print_lines(output, AUTO_GENERATED_FILE_COMMENT);
+pub(super) fn print_cli_version_comment(output: &mut Indenter) {
     writeln!(
         output,
         "// This was generated using spacetimedb cli version {} (commit {}).",
@@ -62,6 +61,10 @@ pub(super) fn print_auto_generated_file_comment(output: &mut Indenter) {
         version::GIT_HASH
     );
     writeln!(output);
+}
+
+pub(super) fn print_auto_generated_file_comment(output: &mut Indenter) {
+    print_lines(output, AUTO_GENERATED_FILE_COMMENT);
 }
 
 pub(super) fn type_ref_name(module: &ModuleDef, typeref: AlgebraicTypeRef) -> String {

@@ -1,5 +1,5 @@
 use super::code_indenter::{CodeIndenter, Indenter};
-use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
+use super::util::{collect_case, iter_reducers, print_cli_version_comment, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment};
 use convert_case::{Case, Casing};
@@ -495,6 +495,7 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
+        print_cli_version_comment(out);
         print_file_header(out);
 
         out.newline();
