@@ -1,5 +1,7 @@
 use crate::indent_scope;
-use crate::util::{is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols};
+use crate::util::{
+    is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols, print_cli_version_comment,
+};
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
 
@@ -270,6 +272,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
+        print_cli_version_comment(out);
         print_file_header(out);
 
         out.newline();
