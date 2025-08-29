@@ -3,16 +3,15 @@
 use super::module_common::{build_common_module_from_raw, ModuleCommon};
 use super::module_host::{CallReducerParams, DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime};
 use super::UpdateDatabaseResult;
-use crate::host::v8::error::{exception_already_thrown, ExceptionThrown, Throwable};
-use crate::host::v8::ser::serialize_to_js;
 use crate::host::wasm_common::module_host_actor::InstanceCommon;
 use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
 use anyhow::anyhow;
 use de::deserialize_js;
-use error::catch_exception;
+use error::{catch_exception, exception_already_thrown, ExcResult, Throwable};
 use from_value::cast;
 use key_cache::get_or_create_key_cache;
+use ser::serialize_to_js;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef};
@@ -147,12 +146,21 @@ impl ModuleInstance for JsInstance {
 fn get_global_property<'scope>(
     scope: &mut HandleScope<'scope>,
     key: Local<'scope, v8::String>,
-) -> Result<Local<'scope, Value>, ExceptionThrown> {
+) -> ExcResult<Local<'scope, Value>> {
     scope
         .get_current_context()
         .global(scope)
         .get(scope, key.into())
         .ok_or_else(exception_already_thrown)
+}
+
+fn call_free_fun<'scope>(
+    scope: &mut HandleScope<'scope>,
+    fun: Local<'scope, Function>,
+    args: &[Local<'scope, Value>],
+) -> ExcResult<Local<'scope, Value>> {
+    let receiver = v8::undefined(scope).into();
+    fun.call(scope, receiver, args).ok_or_else(exception_already_thrown)
 }
 
 // Calls the `__call_reducer__` function on the global proxy object.
@@ -183,8 +191,7 @@ fn call_call_reducer(
             cast!(scope, object, Function, "function export for `__call_reducer__`").map_err(|e| e.throw(scope))?;
 
         // Call the function.
-        let receiver = v8::undefined(scope).into();
-        let ret = fun.call(scope, receiver, args).ok_or_else(exception_already_thrown)?;
+        let ret = call_free_fun(scope, fun, args)?;
 
         // Deserialize the user result.
         let user_res = deserialize_js(scope, ret)?;
@@ -207,8 +214,7 @@ fn call_describe_module(scope: &mut HandleScope<'_>) -> anyhow::Result<RawModule
             cast!(scope, object, Function, "function export for `__describe_module__`").map_err(|e| e.throw(scope))?;
 
         // Call the function.
-        let receiver = v8::undefined(scope).into();
-        let raw_mod_js = fun.call(scope, receiver, &[]).ok_or_else(exception_already_thrown)?;
+        let raw_mod_js = call_free_fun(scope, fun, &[])?;
 
         // Deserialize the raw module.
         let raw_mod: RawModuleDef = deserialize_js(scope, raw_mod_js)?;
