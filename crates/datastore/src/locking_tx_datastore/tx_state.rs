@@ -95,8 +95,6 @@ pub enum PendingSchemaChange {
     /// If adding this index caused the pointer map to be removed,
     /// it will be present here.
     IndexAdded(TableId, IndexId, Option<PointerMap>),
-    /// The [`Table`] with [`TableId`] was removed.
-    TableRemoved(TableId, Table),
     /// The table with [`TableId`] was added.
     TableAdded(TableId),
     /// The access of the table with [`TableId`] was changed.

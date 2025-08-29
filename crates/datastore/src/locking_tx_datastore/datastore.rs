@@ -675,6 +675,7 @@ pub struct TxMetrics {
     exec_metrics: ExecutionMetrics,
 }
 
+#[derive(Default)]
 struct TableStats {
     /// The number of rows in the table after this transaction.
     ///
@@ -715,16 +716,16 @@ impl TxMetrics {
                 let mut table_stats =
                     <HashMap<_, _, _> as HashCollectionExt>::with_capacity(tx_data.num_tables_affected());
                 for (table_id, _) in tx_data.table_ids_and_names() {
-                    let table = committed_state
-                        .get_table(table_id)
-                        .expect("should have a table in committed state for one in tx data");
                     table_stats.insert(
                         table_id,
-                        TableStats {
-                            row_count: table.row_count,
-                            bytes_occupied_overestimate: table.bytes_occupied_overestimate(),
-                            num_indices: table.num_indices(),
-                        },
+                        committed_state
+                            .get_table(table_id)
+                            .map(|table| TableStats {
+                                row_count: table.row_count,
+                                bytes_occupied_overestimate: table.bytes_occupied_overestimate(),
+                                num_indices: table.num_indices(),
+                            })
+                            .unwrap_or_default(),
                     );
                 }
                 table_stats
@@ -3082,9 +3083,7 @@ mod tests {
                 PendingSchemaChange::SequenceRemoved(..),
                 PendingSchemaChange::ConstraintRemoved(..),
                 PendingSchemaChange::ConstraintRemoved(..),
-                PendingSchemaChange::TableRemoved(removed_table_id, _)
             ]
-                if *removed_table_id == table_id
         );
         let _ = datastore.rollback_mut_tx(tx);
 
@@ -3096,7 +3095,17 @@ mod tests {
             "Table should still exist",
         );
         assert_eq!(all_rows(&datastore, &tx, table_id), [row]);
+        let _ = datastore.rollback_mut_tx(tx);
 
+        let mut tx = begin_mut_tx(&datastore);
+        assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
+        commit(&datastore, tx)?;
+
+        let tx = begin_mut_tx(&datastore);
+        assert!(
+            !datastore.table_id_exists_mut_tx(&tx, &table_id),
+            "Table should be removed",
+        );
         Ok(())
     }
 

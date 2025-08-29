@@ -44,6 +44,7 @@ use spacetimedb_table::{
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use thin_vec::ThinVec;
 
 /// Contains the live, in-memory snapshot of a database. This structure
 /// is exposed in order to support tools wanting to process the commit
@@ -593,12 +594,23 @@ impl CommittedState {
     pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
 
+        // This transaction may have dropped tables.
+        // After applying `merge_apply_deletes` and `merge_apply_inserts`,
+        // any tables no longer referenced by `st_table` should be
+        // removed from the committed state.
+        let mut tables_to_drop = ThinVec::<TableId>::new();
+
         // First, apply deletes. This will free up space in the committed tables.
-        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables);
+        self.merge_apply_deletes(&mut tx_data, &mut tables_to_drop, tx_state.delete_tables);
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
-        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
+        self.merge_apply_inserts(
+            &mut tx_data,
+            &mut tables_to_drop,
+            tx_state.insert_tables,
+            tx_state.blob_store,
+        );
 
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
@@ -607,10 +619,19 @@ impl CommittedState {
             self.next_tx_offset += 1;
         }
 
+        for table_id in tables_to_drop {
+            self.tables.remove(&table_id);
+        }
+
         tx_data
     }
 
-    fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, DeleteTable>) {
+    fn merge_apply_deletes(
+        &mut self,
+        tx_data: &mut TxData,
+        tables_to_drop: &mut ThinVec<TableId>,
+        delete_tables: BTreeMap<TableId, DeleteTable>,
+    ) {
         for (table_id, row_ptrs) in delete_tables {
             if let (Some(table), blob_store, _) = self.get_table_and_blob_store_mut(table_id) {
                 let mut deletes = Vec::with_capacity(row_ptrs.len());
@@ -626,6 +647,14 @@ impl CommittedState {
                     let pv = table
                         .delete(blob_store, row_ptr, |row| row.to_product_value())
                         .expect("Delete for non-existent row!");
+
+                    if table_id == ST_TABLE_ID {
+                        let st_table_row =
+                            StTableRow::deserialize(ValueDeserializer::from_ref(&AlgebraicValue::Product(pv.clone())))
+                                .expect("st_table row should deserialize");
+                        tables_to_drop.push(st_table_row.table_id);
+                    }
+
                     deletes.push(pv);
                 }
 
@@ -642,6 +671,7 @@ impl CommittedState {
     fn merge_apply_inserts(
         &mut self,
         tx_data: &mut TxData,
+        tables_to_drop: &mut ThinVec<TableId>,
         insert_tables: BTreeMap<TableId, Table>,
         tx_blob_store: impl BlobStore,
     ) {
@@ -664,6 +694,15 @@ impl CommittedState {
                 commit_table
                     .insert(page_pool, commit_blob_store, &pv)
                     .expect("Failed to insert when merging commit");
+
+                // If we inserted a row back into `st_table`,
+                // it means transaction only updates a row and do not drop the table.
+                if table_id == ST_TABLE_ID {
+                    let st_table_row =
+                        StTableRow::deserialize(ValueDeserializer::from_ref(&AlgebraicValue::Product(pv.clone())))
+                            .expect("st_table row should deserialize");
+                    tables_to_drop.retain(|&id| id != st_table_row.table_id);
+                }
 
                 inserts.push(pv);
             }
@@ -716,13 +755,6 @@ impl CommittedState {
                 table.delete_index(&self.blob_store, index_id, pointer_map);
                 table.with_mut_schema(|s| s.remove_index(index_id));
                 self.index_id_map.remove(&index_id);
-            }
-            // A table was removed. Add it back.
-            TableRemoved(table_id, table) => {
-                // We don't need to deal with sub-components.
-                // That is, we don't need to add back indices and such.
-                // Instead, there will be separate pending schema changes like `IndexRemoved`.
-                self.tables.insert(table_id, table);
             }
             // A table was added. Remove it.
             TableAdded(table_id) => {

@@ -352,15 +352,14 @@ impl MutTxId {
             )?;
         }
 
+        // Delete all rows in the table.
+        let ptrs: Vec<_> = self.iter(table_id)?.map(|row| row.pointer()).collect();
+        for ptr in ptrs {
+            self.delete(table_id, ptr)?;
+        }
+
         // Delete the table and its rows and indexes from memory.
         self.tx_state.insert_tables.remove(&table_id);
-        self.tx_state.delete_tables.remove(&table_id);
-        let commit_table = self
-            .committed_state_write_lock
-            .tables
-            .remove(&table_id)
-            .expect("there should be a schema in the committed state if we reach here");
-        self.push_schema_change(PendingSchemaChange::TableRemoved(table_id, commit_table));
 
         Ok(())
     }
