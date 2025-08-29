@@ -92,7 +92,7 @@ macro_rules! serialize_primitive {
 /// However, the values of existing properties may be modified,
 /// which can be useful if the module wants to modify a property
 /// and then send the object back.
-fn seal_object(scope: &mut HandleScope<'_>, object: &Object) -> Result<(), ExceptionThrown> {
+fn seal_object(scope: &mut HandleScope<'_>, object: &Object) -> ExcResult<()> {
     let _ = object
         .set_integrity_level(scope, IntegrityLevel::Sealed)
         .ok_or_else(exception_already_thrown)?;
