@@ -1,0 +1,37 @@
+---
+source: crates/schema/src/auto_migrate.rs
+expression: "plan.pretty_print(true).expect(\"should pretty print\")"
+---
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Database Migration Plan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+▸ Removed index Apples_id_name_idx_btree on [id, name] of table Apples
+▸ Removed unique constraint Apples_id_key on [id] of table Apples
+▸ Removed auto-increment constraint Apples_id_seq on column id of table Apples
+▸ Removed schedule for table Deliveries_sched calling reducer check_deliveries
+▸ Removed row level security policy:
+    `SELECT * FROM Apples`
+▸ Changed columns for table Apples
+▸ Changed columns for table Deliveries
+▸ Created column in table Bananas
+    + freshness: U32 (default: U32(
+    5,
+))
+▸ Created user table: Oranges (public)
+    Columns:
+        • id: U32
+    Unique constraints:
+        • Oranges_id_key on [id]
+    Indexes:
+        • Oranges_id_idx_btree on [id]
+    Auto-increment constraints:
+        • Oranges_id_seq on id
+
+▸ Created index Apples_id_count_idx_btree on [id, count] of table Apples
+▸ Created auto-increment constraint Bananas_id_seq on column id of table Bananas
+▸ Created schedule for table Inspections_sched calling reducer perform_inspection
+▸ Created row level security policy:
+    `SELECT * FROM Bananas`
+▸ Changed access for table Bananas (public → private)
+!!! Warning: All clients will be disconnected due to breaking schema changes

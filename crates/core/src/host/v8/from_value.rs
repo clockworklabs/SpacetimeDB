@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use crate::host::v8::error::ExceptionValue;
+
 use super::error::{IntoException as _, TypeError, ValueResult};
 use bytemuck::{AnyBitPattern, NoUninit};
 use spacetimedb_sats::{i256, u256};
@@ -8,14 +10,17 @@ use v8::{BigInt, Boolean, HandleScope, Int32, Local, Number, Uint32, Value};
 /// Types that a v8 [`Value`] can be converted into.
 pub(super) trait FromValue: Sized {
     /// Converts `val` in `scope` to `Self` if possible.
-    fn from_value<'s>(val: Local<'_, Value>, scope: &mut HandleScope<'s>) -> ValueResult<'s, Self>;
+    fn from_value<'scope>(val: Local<'_, Value>, scope: &mut HandleScope<'scope>) -> ValueResult<'scope, Self>;
 }
 
 /// Provides a [`FromValue`] implementation.
 macro_rules! impl_from_value {
     ($ty:ty, ($val:ident, $scope:ident) => $logic:expr) => {
         impl FromValue for $ty {
-            fn from_value<'s>($val: Local<'_, Value>, $scope: &mut HandleScope<'s>) -> ValueResult<'s, Self> {
+            fn from_value<'scope>(
+                $val: Local<'_, Value>,
+                $scope: &mut HandleScope<'scope>,
+            ) -> ValueResult<'scope, Self> {
                 $logic
             }
         }
@@ -23,13 +28,13 @@ macro_rules! impl_from_value {
 }
 
 /// Tries to cast `Value` into `T` or raises a JS exception as a returned `Err` value.
-fn try_cast<'a, 'b, T>(
-    scope: &mut HandleScope<'a>,
-    val: Local<'b, Value>,
+pub(super) fn try_cast<'scope_a, 'scope_b, T>(
+    scope: &mut HandleScope<'scope_a>,
+    val: Local<'scope_b, Value>,
     on_err: impl FnOnce(&str) -> String,
-) -> ValueResult<'a, Local<'b, T>>
+) -> ValueResult<'scope_a, Local<'scope_b, T>>
 where
-    Local<'b, T>: TryFrom<Local<'b, Value>>,
+    Local<'scope_b, T>: TryFrom<Local<'scope_b, Value>>,
 {
     val.try_cast::<T>()
         .map_err(|_| TypeError(on_err(val.type_repr())).into_exception(scope))
@@ -38,20 +43,20 @@ where
 /// Tries to cast `Value` into `T` or raises a JS exception as a returned `Err` value.
 macro_rules! cast {
     ($scope:expr, $val:expr, $js_ty:ty, $expected:literal $(, $args:expr)* $(,)?) => {{
-        try_cast::<$js_ty>($scope, $val, |got| format!(concat!("Expected ", $expected, ", got {__got}"), $($args,)* __got = got))
+        $crate::host::v8::from_value::try_cast::<$js_ty>($scope, $val, |got| format!(concat!("Expected ", $expected, ", got {__got}"), $($args,)* __got = got))
     }};
 }
 pub(super) use cast;
 
 /// Returns a JS exception value indicating that a value overflowed
 /// when converting to the type `rust_ty`.
-fn value_overflowed<'s>(rust_ty: &str, scope: &mut HandleScope<'s>) -> Local<'s, Value> {
+fn value_overflowed<'scope>(rust_ty: &str, scope: &mut HandleScope<'scope>) -> ExceptionValue<'scope> {
     TypeError(format!("Value overflowed `{rust_ty}`")).into_exception(scope)
 }
 
 /// Returns a JS exception value indicating that a value underflowed
 /// when converting to the type `rust_ty`.
-fn value_underflowed<'s>(rust_ty: &str, scope: &mut HandleScope<'s>) -> Local<'s, Value> {
+fn value_underflowed<'scope>(rust_ty: &str, scope: &mut HandleScope<'scope>) -> ExceptionValue<'scope> {
     TypeError(format!("Value underflowed `{rust_ty}`")).into_exception(scope)
 }
 
@@ -113,11 +118,11 @@ int64_from_value!(i64, i64_value);
 /// - `rust_ty` is the target type as a string, for errors.
 /// - `scope` for any JS exceptions that need to be raised.
 /// - `bigint` is the integer to convert.
-fn bigint_to_bytes<'s, const N: usize, const W: usize, const UNSIGNED: bool>(
+fn bigint_to_bytes<'scope, const N: usize, const W: usize, const UNSIGNED: bool>(
     rust_ty: &str,
-    scope: &mut HandleScope<'s>,
+    scope: &mut HandleScope<'scope>,
     bigint: &BigInt,
-) -> ValueResult<'s, (bool, [u8; N])>
+) -> ValueResult<'scope, (bool, [u8; N])>
 where
     [[u8; 8]; W]: NoUninit,
     [u8; N]: AnyBitPattern,

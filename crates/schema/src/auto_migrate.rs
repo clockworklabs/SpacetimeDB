@@ -1,6 +1,7 @@
 use core::{cmp::Ordering, ops::BitOr};
 
 use crate::{def::*, error::PrettyAlgebraicType, identifier::Identifier};
+use formatter::format_plan;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
     map::HashSet,
@@ -13,6 +14,9 @@ use spacetimedb_sats::{
     layout::{HasLayout, SumTypeLayout},
     WithTypespace,
 };
+use termcolor_formatter::{ColorScheme, TermColorFormatter};
+mod formatter;
+mod termcolor_formatter;
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
@@ -21,6 +25,12 @@ pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 pub enum MigratePlan<'def> {
     Manual(ManualMigratePlan<'def>),
     Auto(AutoMigratePlan<'def>),
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum PrettyPrintStyle {
+    AnsiColor,
+    NoColor,
 }
 
 impl<'def> MigratePlan<'def> {
@@ -37,6 +47,28 @@ impl<'def> MigratePlan<'def> {
         match self {
             MigratePlan::Manual(plan) => plan.new,
             MigratePlan::Auto(plan) => plan.new,
+        }
+    }
+
+    pub fn pretty_print(&self, style: PrettyPrintStyle) -> anyhow::Result<String> {
+        use PrettyPrintStyle::*;
+
+        match self {
+            MigratePlan::Manual(_) => {
+                anyhow::bail!("Manual migration plans are not yet supported for pretty printing.")
+            }
+
+            MigratePlan::Auto(plan) => match style {
+                NoColor => {
+                    let mut fmt = TermColorFormatter::new(ColorScheme::default(), termcolor::ColorChoice::Never);
+                    format_plan(&mut fmt, plan).map(|_| fmt.to_string())
+                }
+                AnsiColor => {
+                    let mut fmt = TermColorFormatter::new(ColorScheme::default(), termcolor::ColorChoice::AlwaysAnsi);
+                    format_plan(&mut fmt, plan).map(|_| fmt.to_string())
+                }
+            }
+            .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}")),
         }
     }
 }
@@ -109,6 +141,17 @@ pub enum AutoMigrateStep<'def> {
     ///
     /// This should be done before any new indices are added.
     ChangeColumns(<TableDef as ModuleDefLookup>::Key<'def>),
+    /// Add columns to a table, in a layout-INCOMPATIBLE way.
+    ///
+    /// This is a destructive operation that requires first running a `DisconnectAllUsers`.
+    ///
+    /// The added columns are guaranteed to be contiguous
+    /// and at the end of the table.
+    /// They are also guaranteed to have default values set.
+    ///
+    /// When this step is present,
+    /// no `ChangeColumns` steps will be, for the same table.
+    AddColumns(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Add a table, including all indexes, constraints, and sequences.
     /// There will NOT be separate steps in the plan for adding indexes, constraints, and sequences.
@@ -124,6 +167,9 @@ pub enum AutoMigrateStep<'def> {
 
     /// Change the access of a table.
     ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
+
+    /// Disconnect all users connected to the module.
+    DisconnectAllUsers,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -137,7 +183,7 @@ pub struct ChangeColumnTypeParts {
 /// Something that might prevent an automatic migration.
 #[derive(thiserror::Error, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AutoMigrateError {
-    #[error("Adding a column {column} to table {table} requires a manual migration")]
+    #[error("Adding a column {column} to table {table} requires a default value annotation")]
     AddColumn { table: Identifier, column: Identifier },
 
     #[error("Removing a column {column} from table {table} requires a manual migration")]
@@ -386,11 +432,18 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     })
     .map(|col_diff| -> Result<_> {
         match col_diff {
-            Diff::Add { new } => Err(AutoMigrateError::AddColumn {
-                table: new.table_name.clone(),
-                column: new.name.clone(),
+            Diff::Add { new } => {
+                if new.default_value.is_some() {
+                    // `row_type_changed`, `columns_added`
+                    Ok(ProductMonoid(Any(false), Any(true)))
+                } else {
+                    Err(AutoMigrateError::AddColumn {
+                        table: new.table_name.clone(),
+                        column: new.name.clone(),
+                    }
+                    .into())
+                }
             }
-            .into()),
             Diff::Remove { old } => Err(AutoMigrateError::RemoveColumn {
                 table: old.table_name.clone(),
                 column: old.name.clone(),
@@ -408,6 +461,10 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 
                 // Note that the diff algorithm relies on `ModuleDefLookup` for `ColumnDef`,
                 // which looks up columns by NAME, NOT position: precisely to allow this step to work!
+
+                // Note: We reject changes to positions. This means that, if a column was present in the old version of the table,
+                // it must be in the same place in the new version of the table.
+                // This guarantees that any added columns live at the end of the table.
                 let positions_ok = if old.col_id == new.col_id {
                     Ok(())
                 } else {
@@ -417,15 +474,29 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                     .into())
                 };
 
-                (types_ok, positions_ok).combine_errors().map(|(x, _)| x)
+                (types_ok, positions_ok)
+                    .combine_errors()
+                    // row_type_changed, column_added
+                    .map(|(x, _)| ProductMonoid(x, Any(false)))
             }
         }
     })
-    .collect_all_errors::<Any>();
+    .collect_all_errors::<ProductMonoid<Any, Any>>();
 
-    let ((), Any(row_type_changed)) = (type_ok, columns_ok).combine_errors()?;
+    let ((), ProductMonoid(Any(row_type_changed), Any(columns_added))) = (type_ok, columns_ok).combine_errors()?;
 
-    if row_type_changed {
+    // If we're adding a column, we'll rewrite the whole table.
+    // That makes any `ChangeColumns` moot, so we can skip it.
+    if columns_added {
+        if !plan
+            .steps
+            .iter()
+            .any(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers))
+        {
+            plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
+        }
+        plan.steps.push(AutoMigrateStep::AddColumns(key));
+    } else if row_type_changed {
         plan.steps.push(AutoMigrateStep::ChangeColumns(key));
     }
 
@@ -433,6 +504,7 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 }
 
 /// An "any" monoid with `false` as identity and `|` as the operator.
+#[derive(Default)]
 struct Any(bool);
 
 impl FromIterator<Any> for Any {
@@ -445,6 +517,26 @@ impl BitOr for Any {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self::Output {
         Self(self.0 | rhs.0)
+    }
+}
+
+/// A monoid that allows running two `Any`s in parallel.
+#[derive(Default)]
+struct ProductMonoid<M1, M2>(M1, M2);
+
+impl<M1: BitOr<Output = M1>, M2: BitOr<Output = M2>> BitOr for ProductMonoid<M1, M2> {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0, self.1 | rhs.1)
+    }
+}
+
+impl<M1: BitOr<Output = M1> + Default, M2: BitOr<Output = M2> + Default> FromIterator<ProductMonoid<M1, M2>>
+    for ProductMonoid<M1, M2>
+{
+    fn from_iter<T: IntoIterator<Item = ProductMonoid<M1, M2>>>(iter: T) -> Self {
+        iter.into_iter().reduce(|p1, p2| p1 | p2).unwrap_or_default()
     }
 }
 
@@ -700,26 +792,25 @@ mod tests {
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::{
         db::raw_def::{v9::btree, *},
-        AlgebraicType, ProductType, ScheduleAt,
+        AlgebraicType, AlgebraicValue, ProductType, ScheduleAt,
     };
     use spacetimedb_primitives::ColId;
     use v9::{RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
 
-    #[test]
-    fn successful_auto_migration() {
-        let mut old_builder = RawModuleDefV9Builder::new();
-        let old_schedule_at = old_builder.add_type::<ScheduleAt>();
-        let old_sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64)]);
-        let old_sum_refty = old_builder.add_algebraic_type([], "sum", old_sum_ty, true);
-        old_builder
+    fn initial_module_def() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        let schedule_at = builder.add_type::<ScheduleAt>();
+        let sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64)]);
+        let sum_refty = builder.add_algebraic_type([], "sum", sum_ty, true);
+        builder
             .build_table_with_new_type(
                 "Apples",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
                     ("count", AlgebraicType::U16),
-                    ("sum", old_sum_refty.into()),
+                    ("sum", sum_refty.into()),
                 ]),
                 true,
             )
@@ -729,7 +820,7 @@ mod tests {
             .with_index(btree([0, 1]), "id_name_index")
             .finish();
 
-        old_builder
+        builder
             .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([
@@ -742,13 +833,13 @@ mod tests {
             .with_access(TableAccess::Public)
             .finish();
 
-        let old_deliveries_type = old_builder
+        let deliveries_type = builder
             .build_table_with_new_type(
                 "Deliveries",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
-                    ("scheduled_at", old_schedule_at.clone()),
-                    ("sum", AlgebraicType::array(old_sum_refty.into())),
+                    ("scheduled_at", schedule_at.clone()),
+                    ("sum", AlgebraicType::array(sum_refty.into())),
                 ]),
                 true,
             )
@@ -756,18 +847,18 @@ mod tests {
             .with_index_no_accessor_name(btree(0))
             .with_schedule("check_deliveries", 1)
             .finish();
-        old_builder.add_reducer(
+        builder.add_reducer(
             "check_deliveries",
-            ProductType::from([("a", AlgebraicType::Ref(old_deliveries_type))]),
+            ProductType::from([("a", AlgebraicType::Ref(deliveries_type))]),
             None,
         );
 
-        old_builder
+        builder
             .build_table_with_new_type(
                 "Inspections",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
-                    ("scheduled_at", old_schedule_at.clone()),
+                    ("scheduled_at", schedule_at.clone()),
                 ]),
                 true,
             )
@@ -775,26 +866,28 @@ mod tests {
             .with_index_no_accessor_name(btree(0))
             .finish();
 
-        old_builder.add_row_level_security("SELECT * FROM Apples");
+        builder.add_row_level_security("SELECT * FROM Apples");
 
-        let old_def: ModuleDef = old_builder
+        builder
             .finish()
             .try_into()
-            .expect("old_def should be a valid database definition");
+            .expect("old_def should be a valid database definition")
+    }
 
-        let mut new_builder = RawModuleDefV9Builder::new();
-        let _ = new_builder.add_type::<u32>(); // reposition ScheduleAt in the typespace, should have no effect.
-        let new_schedule_at = new_builder.add_type::<ScheduleAt>();
-        let new_sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64), ("v2", AlgebraicType::Bool)]);
-        let new_sum_refty = new_builder.add_algebraic_type([], "sum", new_sum_ty, true);
-        new_builder
+    fn updated_module_def() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        let _ = builder.add_type::<u32>(); // reposition ScheduleAt in the typespace, should have no effect.
+        let schedule_at = builder.add_type::<ScheduleAt>();
+        let sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64), ("v2", AlgebraicType::Bool)]);
+        let sum_refty = builder.add_algebraic_type([], "sum", sum_ty, true);
+        builder
             .build_table_with_new_type(
                 "Apples",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
                     ("count", AlgebraicType::U16),
-                    ("sum", new_sum_refty.into()),
+                    ("sum", sum_refty.into()),
                 ]),
                 true,
             )
@@ -806,29 +899,31 @@ mod tests {
             .with_index(btree([0, 2]), "id_count_index")
             .finish();
 
-        new_builder
+        builder
             .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
                     ("count", AlgebraicType::U16),
+                    ("freshness", AlgebraicType::U32), // added column!
                 ]),
                 true,
             )
             // add column sequence
             .with_column_sequence(0)
+            .with_default_column_value(3, AlgebraicValue::U32(5))
             // change access
             .with_access(TableAccess::Private)
             .finish();
 
-        let new_deliveries_type = new_builder
+        let deliveries_type = builder
             .build_table_with_new_type(
                 "Deliveries",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
-                    ("scheduled_at", new_schedule_at.clone()),
-                    ("sum", AlgebraicType::array(new_sum_refty.into())),
+                    ("scheduled_at", schedule_at.clone()),
+                    ("sum", AlgebraicType::array(sum_refty.into())),
                 ]),
                 true,
             )
@@ -837,18 +932,18 @@ mod tests {
             // remove schedule def
             .finish();
 
-        new_builder.add_reducer(
+        builder.add_reducer(
             "check_deliveries",
-            ProductType::from([("a", AlgebraicType::Ref(new_deliveries_type))]),
+            ProductType::from([("a", AlgebraicType::Ref(deliveries_type))]),
             None,
         );
 
-        let new_inspections_type = new_builder
+        let new_inspections_type = builder
             .build_table_with_new_type(
                 "Inspections",
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
-                    ("scheduled_at", new_schedule_at.clone()),
+                    ("scheduled_at", schedule_at.clone()),
                 ]),
                 true,
             )
@@ -859,14 +954,14 @@ mod tests {
             .finish();
 
         // add reducer.
-        new_builder.add_reducer(
+        builder.add_reducer(
             "perform_inspection",
             ProductType::from([("a", AlgebraicType::Ref(new_inspections_type))]),
             None,
         );
 
         // Add new table
-        new_builder
+        builder
             .build_table_with_new_type("Oranges", ProductType::from([("id", AlgebraicType::U32)]), true)
             .with_index(btree(0), "id_index")
             .with_column_sequence(0)
@@ -874,13 +969,18 @@ mod tests {
             .with_primary_key(0)
             .finish();
 
-        new_builder.add_row_level_security("SELECT * FROM Bananas");
+        builder.add_row_level_security("SELECT * FROM Bananas");
 
-        let new_def: ModuleDef = new_builder
+        builder
             .finish()
             .try_into()
-            .expect("new_def should be a valid database definition");
+            .expect("new_def should be a valid database definition")
+    }
 
+    #[test]
+    fn successful_auto_migration() {
+        let old_def = initial_module_def();
+        let new_def = updated_module_def();
         let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
 
         let apples = expect_identifier("Apples");
@@ -963,6 +1063,11 @@ mod tests {
             steps.contains(&AutoMigrateStep::ChangeColumns(&deliveries)),
             "{steps:?}"
         );
+
+        assert!(steps.contains(&AutoMigrateStep::DisconnectAllUsers), "{steps:?}");
+        assert!(steps.contains(&AutoMigrateStep::AddColumns(&bananas)), "{steps:?}");
+        // Column is changed but it will not reflect in steps due to `AutoMigrateStep::AddColumns`
+        assert!(!steps.contains(&AutoMigrateStep::ChangeColumns(&bananas)), "{steps:?}");
     }
 
     #[test]
@@ -1066,7 +1171,7 @@ mod tests {
                     ("sum1", new_sum1_refty.into()),
                     ("prod1", new_prod1_refty.into()),
                     // remove count
-                    ("weight", AlgebraicType::U16), // add weight
+                    ("weight", AlgebraicType::U16), // add weight; we don't set a default, which makes this an error.
                 ]),
                 true,
             )
@@ -1107,6 +1212,7 @@ mod tests {
 
         expect_error_matching!(
             result,
+            // This is an error because we didn't set a default value.
             AutoMigrateError::AddColumn {
                 table,
                 column
@@ -1323,5 +1429,49 @@ mod tests {
         // and are determined by their columns and table name. So it's impossible to create a unique constraint with the same name
         // but different columns from an old one.
         // We've left the check in, just in case this changes in the future.
+    }
+    #[test]
+    fn print_empty_to_populated_schema_migration() {
+        // Start with completely empty schema
+        let old_builder = RawModuleDefV9Builder::new();
+        let old_def: ModuleDef = old_builder
+            .finish()
+            .try_into()
+            .expect("old_def should be a valid database definition");
+
+        let new_def = initial_module_def();
+        let plan = ponder_migrate(&old_def, &new_def).expect("auto migration should succeed");
+
+        insta::assert_snapshot!(
+            "empty_to_populated_migration",
+            plan.pretty_print(PrettyPrintStyle::AnsiColor)
+                .expect("should pretty print")
+        );
+    }
+
+    #[test]
+    fn print_supervised_migration() {
+        let old_def = initial_module_def();
+        let new_def = updated_module_def();
+        let plan = ponder_migrate(&old_def, &new_def).expect("auto migration should succeed");
+
+        insta::assert_snapshot!(
+            "updated pretty print",
+            plan.pretty_print(PrettyPrintStyle::AnsiColor)
+                .expect("should pretty print")
+        );
+    }
+
+    #[test]
+    fn no_color_print_supervised_migration() {
+        let old_def = initial_module_def();
+        let new_def = updated_module_def();
+        let plan = ponder_migrate(&old_def, &new_def).expect("auto migration should succeed");
+
+        insta::assert_snapshot!(
+            "updated pretty print no color",
+            plan.pretty_print(PrettyPrintStyle::NoColor)
+                .expect("should pretty print")
+        );
     }
 }
