@@ -480,7 +480,7 @@ pub struct PublishDatabaseQueryParams {
     /// via the `/database/:name_or_identity/pre-publish POST` route.
     /// This is a safeguard to require explicit approval for updates which will break clients.
     token: Option<spacetimedb_lib::Hash>,
-    policy: Option<MigrationPolicy>,
+    policy: MigrationPolicy,
 }
 
 use std::env;
@@ -563,7 +563,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         }
     };
 
-    let policy: SchemaMigrationPolicy = match policy.unwrap_or(MigrationPolicy::Compatible) {
+    let policy: SchemaMigrationPolicy = match policy {
         MigrationPolicy::BreakClients => {
             if let Some(token) = token {
                 Ok(SchemaMigrationPolicy::BreakClients(token))
@@ -654,10 +654,11 @@ pub struct PrintPlanParams {
 
 #[derive(serde::Deserialize)]
 pub struct PrintPlanQueryParams {
-    style: Option<PrettyPrintStyle>,
+    #[serde(default)]
+    style: PrettyPrintStyle,
 }
 
-pub async fn print_migration_plan<S: NodeDelegate + ControlStateDelegate>(
+pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PrintPlanParams { name_or_identity }): Path<PrintPlanParams>,
     Query(PrintPlanQueryParams { style }): Query<PrintPlanQueryParams>,
@@ -666,12 +667,10 @@ pub async fn print_migration_plan<S: NodeDelegate + ControlStateDelegate>(
 ) -> axum::response::Result<axum::Json<PrintPlanResult>> {
     // User should not be able to print migration plans for a database that they do not own
     let database_identity = resolve_and_authenticate(&ctx, &name_or_identity, &auth).await?;
-    let style = style
-        .map(|s| match s {
-            PrettyPrintStyle::NoColor => AutoMigratePrettyPrintStyle::NoColor,
-            PrettyPrintStyle::AnsiColor => AutoMigratePrettyPrintStyle::AnsiColor,
-        })
-        .unwrap();
+    let style = match style {
+        PrettyPrintStyle::NoColor => AutoMigratePrettyPrintStyle::NoColor,
+        PrettyPrintStyle::AnsiColor => AutoMigratePrettyPrintStyle::AnsiColor,
+    };
 
     let migrate_plan = ctx
         .migrate_plan(
@@ -912,8 +911,8 @@ pub struct DatabaseRoutes<S> {
     pub logs_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
     pub sql_post: MethodRouter<S>,
-    /// POST: /database/print-plan/:name_or_identity/sql
-    pub print_migration_plan: MethodRouter<S>,
+    /// POST: /database/pre-publish/:name_or_identity/sql
+    pub pre_publish: MethodRouter<S>,
     /// GET: /database/: name_or_identity/unstable/timestamp
     pub timestamp_get: MethodRouter<S>,
 }
@@ -938,7 +937,7 @@ where
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
-            print_migration_plan: post(print_migration_plan::<S>),
+            pre_publish: post(pre_publish::<S>),
             timestamp_get: get(get_timestamp::<S>),
         }
     }
@@ -966,7 +965,7 @@ where
 
         axum::Router::new()
             .route("/", self.root_post)
-            .route("/print-plan/:name_or_identity", self.print_migration_plan)
+            .route("/pre-publish/:name_or_identity", self.pre_publish)
             .nest("/:name_or_identity", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
     }

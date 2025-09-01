@@ -85,12 +85,13 @@ impl<'def> MigratePlan<'def> {
 }
 
 /// A migration policy that determines whether a module update is allowed to break client compatibility.
-///
-/// `Compatible` requires migration to maintain backward compatibility.
-/// `BreakingChange` allows breaking changes but requires a valid `MigrationToken`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MigrationPolicy {
+    /// Migration must maintain backward compatibility with existing clients.
     Compatible,
+    /// To use this, a valid [`MigrationToken`] must be provided.
+    /// The token is issued through the pre-publish API (see the `client-api` crate)
+    /// and proves that the publisher explicitly acknowledged the breaking change.
     BreakClients(spacetimedb_lib::Hash),
 }
 
@@ -152,6 +153,12 @@ pub enum MigrationPolicyError {
     ClientBreakingChangeDisallowed,
 }
 
+/// A token acknowledging a breaking migration.
+///
+/// Note: This token is only intended as a UX safeguard, not as a security measure.
+/// No secret is used in its generation, which means anyone can reproduce it given
+/// the inputs. That is acceptable for our purposes since it only signals user intent,
+/// not authorization.
 pub struct MigrationToken {
     pub database_identity: Identity,
     pub old_module_hash: spacetimedb_lib::Hash,

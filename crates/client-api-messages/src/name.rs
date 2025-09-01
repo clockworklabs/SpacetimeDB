@@ -106,14 +106,16 @@ pub enum PublishResult {
     PermissionDenied { name: DatabaseName },
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Default)]
 pub enum MigrationPolicy {
+    #[default]
     Compatible,
     BreakClients,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Default)]
 pub enum PrettyPrintStyle {
+    #[default]
     AnsiColor,
     NoColor,
 }
