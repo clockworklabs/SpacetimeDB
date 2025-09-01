@@ -713,7 +713,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
     .map(axum::Json)
 }
 
-/// Resolves the `NameOrIdentity` to a database identity and checks if the
+/// Resolves the [`NameOrIdentity`] to a database identity and checks if the
 /// `auth` identity owns the database.
 async fn resolve_and_authenticate<S: ControlStateDelegate>(
     ctx: &S,
