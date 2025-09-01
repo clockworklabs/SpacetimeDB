@@ -474,10 +474,9 @@ pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
     num_replicas: Option<usize>,
-    /// `Hash` of `MigrationToken` to be checked if `MigrationPolicy::BreakClients` is set.
+    /// [`Hash`] of [`MigrationToken`]` to be checked if `MigrationPolicy::BreakClients` is set.
     ///
-    /// Users obtain such a hash from [`print_migration_plan`]
-    /// via the `/database/:name_or_identity/pre-publish POST` route.
+    /// Users obtain such a hash via the `/database/:name_or_identity/pre-publish POST` route.
     /// This is a safeguard to require explicit approval for updates which will break clients.
     token: Option<spacetimedb_lib::Hash>,
     policy: MigrationPolicy,
@@ -911,7 +910,7 @@ pub struct DatabaseRoutes<S> {
     pub logs_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
     pub sql_post: MethodRouter<S>,
-    /// POST: /database/pre-publish/:name_or_identity/sql
+    /// POST: /database/:name_or_identity/pre-publish
     pub pre_publish: MethodRouter<S>,
     /// GET: /database/: name_or_identity/unstable/timestamp
     pub timestamp_get: MethodRouter<S>,
@@ -961,11 +960,11 @@ where
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
-            .route("/unstable/timestamp", self.timestamp_get);
+            .route("/unstable/timestamp", self.timestamp_get)
+            .route("/pre-publish", self.pre_publish);
 
         axum::Router::new()
             .route("/", self.root_post)
-            .route("/pre-publish/:name_or_identity", self.pre_publish)
             .nest("/:name_or_identity", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
     }
