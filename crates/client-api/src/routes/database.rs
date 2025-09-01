@@ -731,7 +731,7 @@ async fn resolve_and_authenticate<S: ControlStateDelegate>(
 
     if database.owner_identity != auth.identity {
         return Err((
-            StatusCode::BAD_REQUEST,
+            StatusCode::UNAUTHORIZED,
             format!(
                 "Identity does not own database, expected: {} got: {}",
                 database.owner_identity.to_hex(),
