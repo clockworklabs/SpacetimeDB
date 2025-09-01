@@ -474,7 +474,12 @@ pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
     num_replicas: Option<usize>,
-    // `Hash` of `MigrationToken` to be checked if `MigrationPolicy::BreakClients` is set.
+    /// `Hash` of `MigrationToken` to be checked if `MigrationPolicy::BreakClients` is set.
+    ///
+    /// Users obtain such a hash from [`print_migration_plan`]
+    /// via the `/database/:name_or_identity/pre-publish POST` route.
+    /// This is a safeguard to require explicit approval for updates which will break clients.
+
     token: Option<spacetimedb_lib::Hash>,
     policy: Option<MigrationPolicy>,
 }
