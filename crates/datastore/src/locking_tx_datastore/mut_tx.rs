@@ -326,6 +326,8 @@ impl MutTxId {
     }
 
     pub fn drop_table(&mut self, table_id: TableId) -> Result<()> {
+        self.clear_table(table_id)?;
+
         let schema = &*self.schema_for_table(table_id)?;
 
         for row in &schema.indexes {
@@ -352,8 +354,10 @@ impl MutTxId {
             )?;
         }
 
-        // Delete the table and its rows and indexes from memory.
+        // Delete the table from memory, both in the tx an committed states.
         self.tx_state.insert_tables.remove(&table_id);
+        // No need to keep the delete tables.
+        // By seeing `PendingSchemaChange::TableRemoved`, `merge` knows that all rows were deleted.
         self.tx_state.delete_tables.remove(&table_id);
         let commit_table = self
             .committed_state_write_lock
