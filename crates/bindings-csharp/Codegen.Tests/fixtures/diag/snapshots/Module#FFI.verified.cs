@@ -44,13 +44,13 @@ namespace SpacetimeDB
             {
                 if (row.AutoIncField == default)
                 {
-                    row.AutoIncField = global::TestAutoIncNotInteger.BSATN.AutoIncField.Read(
+                    row.AutoIncField = global::TestAutoIncNotInteger.BSATN.AutoIncFieldRW.Read(
                         reader
                     );
                 }
                 if (row.IdentityField == default)
                 {
-                    row.IdentityField = global::TestAutoIncNotInteger.BSATN.IdentityField.Read(
+                    row.IdentityField = global::TestAutoIncNotInteger.BSATN.IdentityFieldRW.Read(
                         reader
                     );
                 }
@@ -859,14 +859,14 @@ static class ModuleRegistration
 
     class DummyScheduledReducer : SpacetimeDB.Internal.IReducer
     {
-        private static readonly TestScheduleIssues.BSATN table = new();
+        private static readonly TestScheduleIssues.BSATN tableRW = new();
 
         public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 nameof(DummyScheduledReducer),
-                [new(nameof(table), table.GetAlgebraicType(registrar))],
+                [new("table", tableRW.GetAlgebraicType(registrar))],
                 null
             );
 
@@ -874,7 +874,7 @@ static class ModuleRegistration
         {
             TestScheduleIssues.DummyScheduledReducer(
                 (SpacetimeDB.ReducerContext)ctx,
-                table.Read(reader)
+                tableRW.Read(reader)
             );
         }
     }

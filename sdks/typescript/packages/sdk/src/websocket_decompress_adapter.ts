@@ -37,6 +37,10 @@ export class WebsocketDecompressAdapter {
     this.onerror?.(msg);
   }
 
+  #handleOnClose(msg: any) {
+    this.onclose?.(msg);
+  }
+
   send(msg: any): void {
     this.#ws.send(msg);
   }
@@ -53,7 +57,7 @@ export class WebsocketDecompressAdapter {
 
     ws.onmessage = this.#handleOnMessage.bind(this);
     ws.onerror = this.#handleOnError.bind(this);
-    ws.onclose = this.#handleOnError.bind(this);
+    ws.onclose = this.#handleOnClose.bind(this);
     ws.onopen = this.#handleOnOpen.bind(this);
 
     ws.binaryType = 'arraybuffer';

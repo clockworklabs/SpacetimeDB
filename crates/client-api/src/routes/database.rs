@@ -479,7 +479,6 @@ pub struct PublishDatabaseQueryParams {
     /// Users obtain such a hash from [`print_migration_plan`]
     /// via the `/database/:name_or_identity/pre-publish POST` route.
     /// This is a safeguard to require explicit approval for updates which will break clients.
-
     token: Option<spacetimedb_lib::Hash>,
     policy: Option<MigrationPolicy>,
 }
@@ -672,7 +671,7 @@ pub async fn print_migration_plan<S: NodeDelegate + ControlStateDelegate>(
             PrettyPrintStyle::NoColor => AutoMigratePrettyPrintStyle::NoColor,
             PrettyPrintStyle::AnsiColor => AutoMigratePrettyPrintStyle::AnsiColor,
         })
-        .unwrap_or_default();
+        .unwrap();
 
     let migrate_plan = ctx
         .migrate_plan(

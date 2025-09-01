@@ -5944,7 +5944,6 @@ name = "spacetimedb-schema"
 version = "1.3.0"
 dependencies = [
  "anyhow",
- "colored",
  "derive_more",
  "enum-as-inner",
  "enum-map",
@@ -5955,7 +5954,6 @@ dependencies = [
  "lazy_static",
  "petgraph",
  "proptest",
- "regex",
  "serde_json",
  "serial_test",
  "smallvec",
@@ -5965,6 +5963,7 @@ dependencies = [
  "spacetimedb-sats",
  "spacetimedb-sql-parser",
  "spacetimedb-testing",
+ "termcolor",
  "thiserror 1.0.69",
  "unicode-ident",
  "unicode-normalization",

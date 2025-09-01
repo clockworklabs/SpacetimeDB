@@ -10,7 +10,7 @@ public static partial class Module
         public string? Name;
         public bool Online;
     }
-    
+
     [Table(Name = "message", Public = true)]
     public partial class Message
     {
@@ -18,20 +18,19 @@ public static partial class Module
         public Timestamp Sent;
         public string Text = "";
     }
-    
+
     [Reducer]
     public static void SetName(ReducerContext ctx, string name)
     {
         name = ValidateName(name);
 
-        var user = ctx.Db.user.Identity.Find(ctx.Sender);
-        if (user is not null)
+        if (ctx.Db.user.Identity.Find(ctx.Sender) is User user)
         {
             user.Name = name;
             ctx.Db.user.Identity.Update(user);
         }
     }
-    
+
     /// Takes a name and checks if it's acceptable as a user's name.
     private static string ValidateName(string name)
     {
@@ -41,7 +40,7 @@ public static partial class Module
         }
         return name;
     }
-    
+
     [Reducer]
     public static void SendMessage(ReducerContext ctx, string text)
     {
@@ -56,7 +55,7 @@ public static partial class Module
             }
         );
     }
-    
+
     /// Takes a message's text and checks if it's acceptable to send.
     private static string ValidateMessage(string text)
     {
@@ -66,14 +65,13 @@ public static partial class Module
         }
         return text;
     }
-    
+
     [Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
         Log.Info($"Connect {ctx.Sender}");
-        var user = ctx.Db.user.Identity.Find(ctx.Sender);
 
-        if (user is not null)
+        if (ctx.Db.user.Identity.Find(ctx.Sender) is User user)
         {
             // If this is a returning user, i.e., we already have a `User` with this `Identity`,
             // set `Online: true`, but leave `Name` and `Identity` unchanged.
@@ -94,13 +92,11 @@ public static partial class Module
             );
         }
     }
-    
+
     [Reducer(ReducerKind.ClientDisconnected)]
     public static void ClientDisconnected(ReducerContext ctx)
     {
-        var user = ctx.Db.user.Identity.Find(ctx.Sender);
-
-        if (user is not null)
+        if (ctx.Db.user.Identity.Find(ctx.Sender) is User user)
         {
             // This user should exist, so set `Online: false`.
             user.Online = false;

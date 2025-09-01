@@ -1,7 +1,6 @@
 use core::{cmp::Ordering, ops::BitOr};
 
 use crate::{def::*, error::PrettyAlgebraicType, identifier::Identifier};
-use ansi_formatter::{AnsiFormatter, ColorScheme};
 use formatter::format_plan;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
@@ -15,11 +14,11 @@ use spacetimedb_sats::{
     layout::{HasLayout, SumTypeLayout},
     WithTypespace,
 };
+use termcolor_formatter::{ColorScheme, TermColorFormatter};
 use thiserror::Error;
-mod ansi_formatter;
 mod formatter;
-mod plain_formatter;
-pub use formatter::PrettyPrintStyle;
+mod termcolor_formatter;
+
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
 /// A plan for a migration.
@@ -27,6 +26,12 @@ pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 pub enum MigratePlan<'def> {
     Manual(ManualMigratePlan<'def>),
     Auto(AutoMigratePlan<'def>),
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum PrettyPrintStyle {
+    AnsiColor,
+    NoColor,
 }
 
 impl<'def> MigratePlan<'def> {
@@ -66,11 +71,11 @@ impl<'def> MigratePlan<'def> {
 
             MigratePlan::Auto(plan) => match style {
                 NoColor => {
-                    let mut fmt = plain_formatter::PlainFormatter::new(1024);
+                    let mut fmt = TermColorFormatter::new(ColorScheme::default(), termcolor::ColorChoice::Never);
                     format_plan(&mut fmt, plan).map(|_| fmt.to_string())
                 }
                 AnsiColor => {
-                    let mut fmt = AnsiFormatter::new(1024, ColorScheme::default());
+                    let mut fmt = TermColorFormatter::new(ColorScheme::default(), termcolor::ColorChoice::AlwaysAnsi);
                     format_plan(&mut fmt, plan).map(|_| fmt.to_string())
                 }
             }
@@ -239,10 +244,12 @@ pub enum AutoMigrateStep<'def> {
     ///
     /// This is a destructive operation that requires first running a `DisconnectAllUsers`.
     ///
-    /// The added columns are guaranteed to be contiguous and at the end of the table. They are also
-    /// guaranteed to have default values set.
+    /// The added columns are guaranteed to be contiguous
+    /// and at the end of the table.
+    /// They are also guaranteed to have default values set.
     ///
-    /// This suppresses any `ChangeColumns` steps for the same table.
+    /// When this step is present,
+    /// no `ChangeColumns` steps will be, for the same table.
     AddColumns(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Add a table, including all indexes, constraints, and sequences.
@@ -526,7 +533,7 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
         match col_diff {
             Diff::Add { new } => {
                 if new.default_value.is_some() {
-                    // row_type_changed, columns_added
+                    // `row_type_changed`, `columns_added`
                     Ok(ProductMonoid(Any(false), Any(true)))
                 } else {
                     Err(AutoMigrateError::AddColumn {
@@ -577,6 +584,8 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 
     let ((), ProductMonoid(Any(row_type_changed), Any(columns_added))) = (type_ok, columns_ok).combine_errors()?;
 
+    // If we're adding a column, we'll rewrite the whole table.
+    // That makes any `ChangeColumns` moot, so we can skip it.
     if columns_added {
         if !plan
             .steps
@@ -1002,7 +1011,7 @@ mod tests {
             )
             // add column sequence
             .with_column_sequence(0)
-            .with_default_column_value(3, AlgebraicValue::U32(5)) // we need a new
+            .with_default_column_value(3, AlgebraicValue::U32(5))
             // change access
             .with_access(TableAccess::Private)
             .finish();
@@ -1156,6 +1165,8 @@ mod tests {
 
         assert!(steps.contains(&AutoMigrateStep::DisconnectAllUsers), "{steps:?}");
         assert!(steps.contains(&AutoMigrateStep::AddColumns(&bananas)), "{steps:?}");
+        // Column is changed but it will not reflect in steps due to `AutoMigrateStep::AddColumns`
+        assert!(!steps.contains(&AutoMigrateStep::ChangeColumns(&bananas)), "{steps:?}");
     }
 
     #[test]
