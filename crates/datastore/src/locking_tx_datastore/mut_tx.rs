@@ -1865,6 +1865,26 @@ impl MutTxId {
             row_pointer,
         )
     }
+
+    // Clears the table for `table_id`, removing all rows.
+    pub fn clear_table(&mut self, table_id: TableId) -> Result<usize> {
+        // Get the commit table.
+        let (commit_table, commit_bs, ..) = self.committed_state_write_lock.get_table_and_blob_store(table_id)?;
+
+        // Get the insert table and delete all rows from it.
+        let (tx_table, tx_blob_store, delete_table) = self
+            .tx_state
+            .get_table_and_blob_store_or_create_from(table_id, commit_table);
+        let mut rows_removed = tx_table.clear(tx_blob_store);
+
+        // Mark every table in the committed state as deleted.
+        for row in commit_table.scan_rows(commit_bs) {
+            delete_table.insert(row.pointer());
+            rows_removed += 1;
+        }
+
+        Ok(rows_removed)
+    }
 }
 
 pub(super) fn delete(
