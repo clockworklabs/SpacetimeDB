@@ -1,3 +1,5 @@
+use crate::blob_store::NullBlobStore;
+
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::{write_row_to_pages, write_row_to_pages_bsatn, Error},
@@ -1259,7 +1261,7 @@ impl Table {
 
     /// Clears this table, removing all present rows from it.
     pub fn clear(&mut self, blob_store: &mut dyn BlobStore) -> usize {
-        let ptrs = self.scan_rows(blob_store).map(|row| row.pointer()).collect::<Vec<_>>();
+        let ptrs = self.scan_all_row_ptrs();
         let len = ptrs.len();
         for ptr in ptrs {
             // SAFETY: `ptr` came rom `self.scan_rows(...)`, so it's present.
@@ -1376,6 +1378,13 @@ impl Table {
             table: self,
             blob_store,
         }
+    }
+
+    /// Returns a list of all present row pointers.
+    pub fn scan_all_row_ptrs(&self) -> Vec<RowPointer> {
+        let mut ptrs = Vec::with_capacity(self.row_count as usize);
+        ptrs.extend(self.scan_rows(&NullBlobStore).map(|row| row.pointer()));
+        ptrs
     }
 
     /// Returns this table combined with the index for [`IndexId`], if any.

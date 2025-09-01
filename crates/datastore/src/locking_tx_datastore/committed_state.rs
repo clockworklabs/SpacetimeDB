@@ -44,6 +44,7 @@ use spacetimedb_table::{
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use thin_vec::ThinVec;
 
 /// Contains the live, in-memory snapshot of a database. This structure
 /// is exposed in order to support tools wanting to process the commit
@@ -594,7 +595,7 @@ impl CommittedState {
         let mut tx_data = TxData::default();
 
         // First, apply deletes. This will free up space in the committed tables.
-        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables);
+        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables, tx_state.pending_schema_changes);
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
@@ -610,31 +611,66 @@ impl CommittedState {
         tx_data
     }
 
-    fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, DeleteTable>) {
+    fn merge_apply_deletes(
+        &mut self,
+        tx_data: &mut TxData,
+        delete_tables: BTreeMap<TableId, DeleteTable>,
+        pending_schema_changes: ThinVec<PendingSchemaChange>,
+    ) {
+        fn delete_rows(
+            tx_data: &mut TxData,
+            table_id: TableId,
+            table: &mut Table,
+            blob_store: &mut dyn BlobStore,
+            row_ptrs_len: usize,
+            row_ptrs: impl Iterator<Item = RowPointer>,
+        ) {
+            let mut deletes = Vec::with_capacity(row_ptrs_len);
+
+            // Note: we maintain the invariant that the delete_tables
+            // holds only committed rows which should be deleted,
+            // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
+            // so no need to check before applying the deletes.
+            for row_ptr in row_ptrs {
+                debug_assert!(row_ptr.squashed_offset().is_committed_state());
+
+                // TODO: re-write `TxData` to remove `ProductValue`s
+                let pv = table
+                    .delete(blob_store, row_ptr, |row| row.to_product_value())
+                    .expect("Delete for non-existent row!");
+                deletes.push(pv);
+            }
+
+            if !deletes.is_empty() {
+                let table_name = &*table.get_schema().table_name;
+                // TODO(centril): Pass this along to record truncated tables.
+                let _truncated = table.row_count == 0;
+                tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
+            }
+        }
+
         for (table_id, row_ptrs) in delete_tables {
             if let (Some(table), blob_store, _) = self.get_table_and_blob_store_mut(table_id) {
-                let mut deletes = Vec::with_capacity(row_ptrs.len());
-
-                // Note: we maintain the invariant that the delete_tables
-                // holds only committed rows which should be deleted,
-                // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
-                // so no need to check before applying the deletes.
-                for row_ptr in row_ptrs.iter() {
-                    debug_assert!(row_ptr.squashed_offset().is_committed_state());
-
-                    // TODO: re-write `TxData` to remove `ProductValue`s
-                    let pv = table
-                        .delete(blob_store, row_ptr, |row| row.to_product_value())
-                        .expect("Delete for non-existent row!");
-                    deletes.push(pv);
-                }
-
-                if !deletes.is_empty() {
-                    let table_name = &*table.get_schema().table_name;
-                    tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
-                }
+                delete_rows(tx_data, table_id, table, blob_store, row_ptrs.len(), row_ptrs.iter());
             } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {table_id:?}... huh?");
+            }
+        }
+
+        // Delete all tables marked for deletion.
+        // The order here does not matter as once a `table_id` has been dropped
+        // it will never be re-created.
+        for change in pending_schema_changes {
+            if let PendingSchemaChange::TableRemoved(table_id, mut table) = change {
+                let row_ptrs = table.scan_all_row_ptrs();
+                delete_rows(
+                    tx_data,
+                    table_id,
+                    &mut table,
+                    &mut self.blob_store,
+                    row_ptrs.len(),
+                    row_ptrs.into_iter(),
+                );
             }
         }
     }
