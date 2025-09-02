@@ -177,7 +177,7 @@ pub struct SqlResult {
     /// The offset of the SQL operation's transaction.
     ///
     /// Used to determine visibility of the transaction wrt the durability
-    /// requirements requestest by the caller.
+    /// requirements requested by the caller.
     pub tx_offset: TransactionOffset,
     pub rows: Vec<ProductValue>,
     /// These metrics will be reported via `report_tx_metrics`.
