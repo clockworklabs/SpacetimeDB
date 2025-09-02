@@ -12,30 +12,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type AddPlayer = {
@@ -46,26 +42,26 @@ export default AddPlayer;
 /**
  * A namespace for generated helper functions.
  */
-export namespace AddPlayer {
+export const AddPlayer = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.String},
+        { name: "name", algebraicType: __AlgebraicTypeValue.String},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: AddPlayer): void {
-    AlgebraicType.serializeValue(writer, AddPlayer.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: AddPlayer): void {
+    __AlgebraicTypeValue.serializeValue(writer, AddPlayer.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): AddPlayer {
-    return AlgebraicType.deserializeValue(reader, AddPlayer.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): AddPlayer {
+    return __AlgebraicTypeValue.deserializeValue(reader, AddPlayer.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -80,30 +76,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type AddPrivate = {
@@ -114,26 +106,26 @@ export default AddPrivate;
 /**
  * A namespace for generated helper functions.
  */
-export namespace AddPrivate {
+export const AddPrivate = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.String},
+        { name: "name", algebraicType: __AlgebraicTypeValue.String},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: AddPrivate): void {
-    AlgebraicType.serializeValue(writer, AddPrivate.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: AddPrivate): void {
+    __AlgebraicTypeValue.serializeValue(writer, AddPrivate.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): AddPrivate {
-    return AlgebraicType.deserializeValue(reader, AddPrivate.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): AddPrivate {
+    return __AlgebraicTypeValue.deserializeValue(reader, AddPrivate.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -148,30 +140,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type Add = {
@@ -183,27 +171,27 @@ export default Add;
 /**
  * A namespace for generated helper functions.
  */
-export namespace Add {
+export const Add = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.String},
-        { name: "age", algebraicType: AlgebraicType.U8},
+        { name: "name", algebraicType: __AlgebraicTypeValue.String},
+        { name: "age", algebraicType: __AlgebraicTypeValue.U8},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: Add): void {
-    AlgebraicType.serializeValue(writer, Add.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: Add): void {
+    __AlgebraicTypeValue.serializeValue(writer, Add.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): Add {
-    return AlgebraicType.deserializeValue(reader, Add.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): Add {
+    return __AlgebraicTypeValue.deserializeValue(reader, Add.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -218,30 +206,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type AssertCallerIdentityIsModuleIdentity = {};
@@ -250,25 +234,25 @@ export default AssertCallerIdentityIsModuleIdentity;
 /**
  * A namespace for generated helper functions.
  */
-export namespace AssertCallerIdentityIsModuleIdentity {
+export const AssertCallerIdentityIsModuleIdentity = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: AssertCallerIdentityIsModuleIdentity): void {
-    AlgebraicType.serializeValue(writer, AssertCallerIdentityIsModuleIdentity.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: AssertCallerIdentityIsModuleIdentity): void {
+    __AlgebraicTypeValue.serializeValue(writer, AssertCallerIdentityIsModuleIdentity.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): AssertCallerIdentityIsModuleIdentity {
-    return AlgebraicType.deserializeValue(reader, AssertCallerIdentityIsModuleIdentity.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): AssertCallerIdentityIsModuleIdentity {
+    return __AlgebraicTypeValue.deserializeValue(reader, AssertCallerIdentityIsModuleIdentity.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -283,31 +267,28 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+
 export type Baz = {
   field: string,
 };
@@ -316,26 +297,26 @@ export default Baz;
 /**
  * A namespace for generated helper functions.
  */
-export namespace Baz {
+export const Baz = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "field", algebraicType: AlgebraicType.String},
+        { name: "field", algebraicType: __AlgebraicTypeValue.String},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: Baz): void {
-    AlgebraicType.serializeValue(writer, Baz.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: Baz): void {
+    __AlgebraicTypeValue.serializeValue(writer, Baz.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): Baz {
-    return AlgebraicType.deserializeValue(reader, Baz.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): Baz {
+    return __AlgebraicTypeValue.deserializeValue(reader, Baz.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -351,30 +332,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type ClientConnected = {};
@@ -383,25 +360,25 @@ export default ClientConnected;
 /**
  * A namespace for generated helper functions.
  */
-export namespace ClientConnected {
+export const ClientConnected = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: ClientConnected): void {
-    AlgebraicType.serializeValue(writer, ClientConnected.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: ClientConnected): void {
+    __AlgebraicTypeValue.serializeValue(writer, ClientConnected.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): ClientConnected {
-    return AlgebraicType.deserializeValue(reader, ClientConnected.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): ClientConnected {
+    return __AlgebraicTypeValue.deserializeValue(reader, ClientConnected.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -416,30 +393,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type DeletePlayer = {
@@ -450,26 +423,26 @@ export default DeletePlayer;
 /**
  * A namespace for generated helper functions.
  */
-export namespace DeletePlayer {
+export const DeletePlayer = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "id", algebraicType: AlgebraicType.U64},
+        { name: "id", algebraicType: __AlgebraicTypeValue.U64},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: DeletePlayer): void {
-    AlgebraicType.serializeValue(writer, DeletePlayer.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: DeletePlayer): void {
+    __AlgebraicTypeValue.serializeValue(writer, DeletePlayer.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): DeletePlayer {
-    return AlgebraicType.deserializeValue(reader, DeletePlayer.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): DeletePlayer {
+    return __AlgebraicTypeValue.deserializeValue(reader, DeletePlayer.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -484,30 +457,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type DeletePlayersByName = {
@@ -518,26 +487,26 @@ export default DeletePlayersByName;
 /**
  * A namespace for generated helper functions.
  */
-export namespace DeletePlayersByName {
+export const DeletePlayersByName = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.String},
+        { name: "name", algebraicType: __AlgebraicTypeValue.String},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: DeletePlayersByName): void {
-    AlgebraicType.serializeValue(writer, DeletePlayersByName.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: DeletePlayersByName): void {
+    __AlgebraicTypeValue.serializeValue(writer, DeletePlayersByName.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): DeletePlayersByName {
-    return AlgebraicType.deserializeValue(reader, DeletePlayersByName.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): DeletePlayersByName {
+    return __AlgebraicTypeValue.deserializeValue(reader, DeletePlayersByName.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -552,84 +521,109 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
-import { Baz as __Baz } from "./baz_type";
+import { Baz } from "./baz_type";
 
-// These are the generated variant types for each variant of the tagged union.
-// One type is generated per variant and will be used in the `value` field of
-// the tagged union.
-// NOTE: These are generated in a separate namespace because TypeScript
-// interprets `Foo` in the statement `const x: Foo.Variant = ...` as the type `Foo` instead of
-// the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
-// type. e.g. `const x: FooVariants.Variant`
-export namespace FoobarVariants {
-  export type Baz = { tag: "Baz", value: __Baz };
-  export type Bar = { tag: "Bar" };
-  export type Har = { tag: "Har", value: number };
-}
-
-// A namespace for generated variants and helper functions.
-export namespace Foobar {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  export const Baz = (value: __Baz): Foobar => ({ tag: "Baz", value });
-  export const Bar: { tag: "Bar" } = { tag: "Bar" };
-  export const Har = (value: number): Foobar => ({ tag: "Har", value });
-
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Sum({
-      variants: [
-        { name: "Baz", algebraicType: __Baz.getTypeScriptAlgebraicType() },
-        { name: "Bar", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "Har", algebraicType: AlgebraicType.U32 },
-      ]
-    });
-  }
-
-  export function serialize(writer: BinaryWriter, value: Foobar): void {
-      AlgebraicType.serializeValue(writer, Foobar.getTypeScriptAlgebraicType(), value);
-  }
-
-  export function deserialize(reader: BinaryReader): Foobar {
-      return AlgebraicType.deserializeValue(reader, Foobar.getTypeScriptAlgebraicType());
-  }
-
-}
+import * as FoobarVariants from './foobar_variants'
 
 // The tagged union or sum type for the algebraic type `Foobar`.
 export type Foobar = FoobarVariants.Baz |
   FoobarVariants.Bar |
   FoobarVariants.Har;
 
+// A value with helper functions to construct the type.
+export const Foobar = {
+  // Helper functions for constructing each variant of the tagged union.
+  // ```
+  // const foo = Foo.A(42);
+  // assert!(foo.tag === "A");
+  // assert!(foo.value === 42);
+  // ```
+  Baz: (value: Baz): Foobar => ({ tag: "Baz", value }),
+  Bar: { tag: "Bar" } as const,
+  Har: (value: number): Foobar => ({ tag: "Har", value }),
+
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Sum({
+      variants: [
+        { name: "Baz", algebraicType: Baz.getTypeScriptAlgebraicType() },
+        { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+        { name: "Har", algebraicType: __AlgebraicTypeValue.U32 },
+      ]
+    });
+  },
+
+  serialize(writer: __BinaryWriter, value: Foobar): void {
+      __AlgebraicTypeValue.serializeValue(writer, Foobar.getTypeScriptAlgebraicType(), value);
+  },
+
+  deserialize(reader: __BinaryReader): Foobar {
+      return __AlgebraicTypeValue.deserializeValue(reader, Foobar.getTypeScriptAlgebraicType());
+  },
+
+}
+
 export default Foobar;
+
+'''
+"foobar_variants.ts" = '''
+// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+VERSION_COMMENT
+
+/* eslint-disable */
+/* tslint:disable */
+// @ts-nocheck
+import {
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+} from "@clockworklabs/spacetimedb-sdk";
+import { Baz } from "./baz_type";
+
+import Foobar from './foobar_type'
+
+export type Baz = { tag: "Baz", value: Baz };
+export type Bar = { tag: "Bar" };
+export type Har = { tag: "Har", value: number };
 
 '''
 "has_special_stuff_table.ts" = '''
@@ -642,30 +636,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { HasSpecialStuff } from "./has_special_stuff_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -681,9 +671,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.hasSpecialStuff.on_insert(...)`.
  */
 export class HasSpecialStuffTableHandle {
-  tableCache: TableCache<HasSpecialStuff>;
+  tableCache: __TableCache<HasSpecialStuff>;
 
-  constructor(tableCache: TableCache<HasSpecialStuff>) {
+  constructor(tableCache: __TableCache<HasSpecialStuff>) {
     this.tableCache = tableCache;
   }
 
@@ -722,61 +712,58 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+
 export type HasSpecialStuff = {
-  identity: Identity,
-  connectionId: ConnectionId,
+  identity: __Identity,
+  connectionId: __ConnectionId,
 };
 export default HasSpecialStuff;
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace HasSpecialStuff {
+export const HasSpecialStuff = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "identity", algebraicType: AlgebraicType.createIdentityType()},
-        { name: "connectionId", algebraicType: AlgebraicType.createConnectionIdType()},
+        { name: "identity", algebraicType: __AlgebraicTypeValue.createIdentityType()},
+        { name: "connectionId", algebraicType: __AlgebraicTypeValue.createConnectionIdType()},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: HasSpecialStuff): void {
-    AlgebraicType.serializeValue(writer, HasSpecialStuff.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: HasSpecialStuff): void {
+    __AlgebraicTypeValue.serializeValue(writer, HasSpecialStuff.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): HasSpecialStuff {
-    return AlgebraicType.deserializeValue(reader, HasSpecialStuff.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): HasSpecialStuff {
+    return __AlgebraicTypeValue.deserializeValue(reader, HasSpecialStuff.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -792,30 +779,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 // Import and reexport all reducer arg types
@@ -920,7 +903,7 @@ const REMOTE_MODULE = {
       primaryKey: "identity",
       primaryKeyInfo: {
         colName: "identity",
-        colType: (Player.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
+        colType: (Player.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product).value.elements[0].algebraicType,
       },
     },
     person: {
@@ -929,7 +912,7 @@ const REMOTE_MODULE = {
       primaryKey: "id",
       primaryKeyInfo: {
         colName: "id",
-        colType: (Person.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
+        colType: (Person.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product).value.elements[0].algebraicType,
       },
     },
     pk_multi_identity: {
@@ -938,7 +921,7 @@ const REMOTE_MODULE = {
       primaryKey: "id",
       primaryKeyInfo: {
         colName: "id",
-        colType: (PkMultiIdentity.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
+        colType: (PkMultiIdentity.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product).value.elements[0].algebraicType,
       },
     },
     player: {
@@ -947,7 +930,7 @@ const REMOTE_MODULE = {
       primaryKey: "identity",
       primaryKeyInfo: {
         colName: "identity",
-        colType: (Player.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
+        colType: (Player.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product).value.elements[0].algebraicType,
       },
     },
     points: {
@@ -964,7 +947,7 @@ const REMOTE_MODULE = {
       primaryKey: "scheduledId",
       primaryKeyInfo: {
         colName: "scheduledId",
-        colType: (RepeatingTestArg.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
+        colType: (RepeatingTestArg.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product).value.elements[0].algebraicType,
       },
     },
     test_a: {
@@ -981,7 +964,7 @@ const REMOTE_MODULE = {
       primaryKey: "id",
       primaryKeyInfo: {
         colName: "id",
-        colType: (TestE.getTypeScriptAlgebraicType() as ProductType).value.elements[0].algebraicType,
+        colType: (TestE.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product).value.elements[0].algebraicType,
       },
     },
     test_f: {
@@ -1057,16 +1040,16 @@ const REMOTE_MODULE = {
   // all we do is build a TypeScript object which we could have done inside the
   // SDK, but if in the future we wanted to create a class this would be
   // necessary because classes have methods, so we'll keep it.
-  eventContextConstructor: (imp: DbConnectionImpl, event: Event<Reducer>) => {
+  eventContextConstructor: (imp: __DbConnectionImpl, event: __Event<Reducer>) => {
     return {
       ...(imp as DbConnection),
       event
     }
   },
-  dbViewConstructor: (imp: DbConnectionImpl) => {
+  dbViewConstructor: (imp: __DbConnectionImpl) => {
     return new RemoteTables(imp);
   },
-  reducersConstructor: (imp: DbConnectionImpl, setReducerFlags: SetReducerFlags) => {
+  reducersConstructor: (imp: __DbConnectionImpl, setReducerFlags: SetReducerFlags) => {
     return new RemoteReducers(imp, setReducerFlags);
   },
   setReducerFlagsConstructor: () => {
@@ -1093,11 +1076,11 @@ export type Reducer = never
 ;
 
 export class RemoteReducers {
-  constructor(private connection: DbConnectionImpl, private setCallReducerFlags: SetReducerFlags) {}
+  constructor(private connection: __DbConnectionImpl, private setCallReducerFlags: __SetReducerFlags) {}
 
   add(name: string, age: number) {
     const __args = { name, age };
-    let __writer = new BinaryWriter(1024);
+    let __writer = new __BinaryWriter(1024);
     Add.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("add", __argsBuffer, this.setCallReducerFlags.addFlags);
@@ -1113,7 +1096,7 @@ export class RemoteReducers {
 
   addPlayer(name: string) {
     const __args = { name };
-    let __writer = new BinaryWriter(1024);
+    let __writer = new __BinaryWriter(1024);
     AddPlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("add_player", __argsBuffer, this.setCallReducerFlags.addPlayerFlags);
@@ -1129,7 +1112,7 @@ export class RemoteReducers {
 
   addPrivate(name: string) {
     const __args = { name };
-    let __writer = new BinaryWriter(1024);
+    let __writer = new __BinaryWriter(1024);
     AddPrivate.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("add_private", __argsBuffer, this.setCallReducerFlags.addPrivateFlags);
@@ -1165,7 +1148,7 @@ export class RemoteReducers {
 
   deletePlayer(id: bigint) {
     const __args = { id };
-    let __writer = new BinaryWriter(1024);
+    let __writer = new __BinaryWriter(1024);
     DeletePlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("delete_player", __argsBuffer, this.setCallReducerFlags.deletePlayerFlags);
@@ -1181,7 +1164,7 @@ export class RemoteReducers {
 
   deletePlayersByName(name: string) {
     const __args = { name };
-    let __writer = new BinaryWriter(1024);
+    let __writer = new __BinaryWriter(1024);
     DeletePlayersByName.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("delete_players_by_name", __argsBuffer, this.setCallReducerFlags.deletePlayersByNameFlags);
@@ -1197,7 +1180,7 @@ export class RemoteReducers {
 
   listOverAge(age: number) {
     const __args = { age };
-    let __writer = new BinaryWriter(1024);
+    let __writer = new __BinaryWriter(1024);
     ListOverAge.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("list_over_age", __argsBuffer, this.setCallReducerFlags.listOverAgeFlags);
@@ -1237,7 +1220,7 @@ export class RemoteReducers {
 
   repeatingTest(arg: RepeatingTestArg) {
     const __args = { arg };
-    let __writer = new BinaryWriter(1024);
+    let __writer = new __BinaryWriter(1024);
     RepeatingTest.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("repeating_test", __argsBuffer, this.setCallReducerFlags.repeatingTestFlags);
@@ -1265,7 +1248,7 @@ export class RemoteReducers {
 
   test(arg: TestA, arg2: TestB, arg3: NamespaceTestC, arg4: NamespaceTestF) {
     const __args = { arg, arg2, arg3, arg4 };
-    let __writer = new BinaryWriter(1024);
+    let __writer = new __BinaryWriter(1024);
     Test.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("test", __argsBuffer, this.setCallReducerFlags.testFlags);
@@ -1294,75 +1277,75 @@ export class RemoteReducers {
 }
 
 export class SetReducerFlags {
-  addFlags: CallReducerFlags = 'FullUpdate';
-  add(flags: CallReducerFlags) {
+  addFlags: __CallReducerFlags = 'FullUpdate';
+  add(flags: __CallReducerFlags) {
     this.addFlags = flags;
   }
 
-  addPlayerFlags: CallReducerFlags = 'FullUpdate';
-  addPlayer(flags: CallReducerFlags) {
+  addPlayerFlags: __CallReducerFlags = 'FullUpdate';
+  addPlayer(flags: __CallReducerFlags) {
     this.addPlayerFlags = flags;
   }
 
-  addPrivateFlags: CallReducerFlags = 'FullUpdate';
-  addPrivate(flags: CallReducerFlags) {
+  addPrivateFlags: __CallReducerFlags = 'FullUpdate';
+  addPrivate(flags: __CallReducerFlags) {
     this.addPrivateFlags = flags;
   }
 
-  assertCallerIdentityIsModuleIdentityFlags: CallReducerFlags = 'FullUpdate';
-  assertCallerIdentityIsModuleIdentity(flags: CallReducerFlags) {
+  assertCallerIdentityIsModuleIdentityFlags: __CallReducerFlags = 'FullUpdate';
+  assertCallerIdentityIsModuleIdentity(flags: __CallReducerFlags) {
     this.assertCallerIdentityIsModuleIdentityFlags = flags;
   }
 
-  deletePlayerFlags: CallReducerFlags = 'FullUpdate';
-  deletePlayer(flags: CallReducerFlags) {
+  deletePlayerFlags: __CallReducerFlags = 'FullUpdate';
+  deletePlayer(flags: __CallReducerFlags) {
     this.deletePlayerFlags = flags;
   }
 
-  deletePlayersByNameFlags: CallReducerFlags = 'FullUpdate';
-  deletePlayersByName(flags: CallReducerFlags) {
+  deletePlayersByNameFlags: __CallReducerFlags = 'FullUpdate';
+  deletePlayersByName(flags: __CallReducerFlags) {
     this.deletePlayersByNameFlags = flags;
   }
 
-  listOverAgeFlags: CallReducerFlags = 'FullUpdate';
-  listOverAge(flags: CallReducerFlags) {
+  listOverAgeFlags: __CallReducerFlags = 'FullUpdate';
+  listOverAge(flags: __CallReducerFlags) {
     this.listOverAgeFlags = flags;
   }
 
-  logModuleIdentityFlags: CallReducerFlags = 'FullUpdate';
-  logModuleIdentity(flags: CallReducerFlags) {
+  logModuleIdentityFlags: __CallReducerFlags = 'FullUpdate';
+  logModuleIdentity(flags: __CallReducerFlags) {
     this.logModuleIdentityFlags = flags;
   }
 
-  queryPrivateFlags: CallReducerFlags = 'FullUpdate';
-  queryPrivate(flags: CallReducerFlags) {
+  queryPrivateFlags: __CallReducerFlags = 'FullUpdate';
+  queryPrivate(flags: __CallReducerFlags) {
     this.queryPrivateFlags = flags;
   }
 
-  repeatingTestFlags: CallReducerFlags = 'FullUpdate';
-  repeatingTest(flags: CallReducerFlags) {
+  repeatingTestFlags: __CallReducerFlags = 'FullUpdate';
+  repeatingTest(flags: __CallReducerFlags) {
     this.repeatingTestFlags = flags;
   }
 
-  sayHelloFlags: CallReducerFlags = 'FullUpdate';
-  sayHello(flags: CallReducerFlags) {
+  sayHelloFlags: __CallReducerFlags = 'FullUpdate';
+  sayHello(flags: __CallReducerFlags) {
     this.sayHelloFlags = flags;
   }
 
-  testFlags: CallReducerFlags = 'FullUpdate';
-  test(flags: CallReducerFlags) {
+  testFlags: __CallReducerFlags = 'FullUpdate';
+  test(flags: __CallReducerFlags) {
     this.testFlags = flags;
   }
 
-  testBtreeIndexArgsFlags: CallReducerFlags = 'FullUpdate';
-  testBtreeIndexArgs(flags: CallReducerFlags) {
+  testBtreeIndexArgsFlags: __CallReducerFlags = 'FullUpdate';
+  testBtreeIndexArgs(flags: __CallReducerFlags) {
     this.testBtreeIndexArgsFlags = flags;
   }
 
 }
 
 export class RemoteTables {
-  constructor(private connection: DbConnectionImpl) {}
+  constructor(private connection: __DbConnectionImpl) {}
 
   get hasSpecialStuff(): HasSpecialStuffTableHandle {
     return new HasSpecialStuffTableHandle(this.connection.clientCache.getOrCreateTable<HasSpecialStuff>(REMOTE_MODULE.tables.has_special_stuff));
@@ -1413,21 +1396,21 @@ export class RemoteTables {
   }
 }
 
-export class SubscriptionBuilder extends SubscriptionBuilderImpl<RemoteTables, RemoteReducers, SetReducerFlags> { }
+export class SubscriptionBuilder extends __SubscriptionBuilderImpl<RemoteTables, RemoteReducers, SetReducerFlags> { }
 
-export class DbConnection extends DbConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags> {
-  static builder = (): DbConnectionBuilder<DbConnection, ErrorContext, SubscriptionEventContext> => {
-    return new DbConnectionBuilder<DbConnection, ErrorContext, SubscriptionEventContext>(REMOTE_MODULE, (imp: DbConnectionImpl) => imp as DbConnection);
+export class DbConnection extends __DbConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags> {
+  static builder = (): __DbConnectionBuilder<DbConnection, ErrorContext, SubscriptionEventContext> => {
+    return new __DbConnectionBuilder<DbConnection, ErrorContext, SubscriptionEventContext>(REMOTE_MODULE, (imp: __DbConnectionImpl) => imp as DbConnection);
   }
   subscriptionBuilder = (): SubscriptionBuilder => {
     return new SubscriptionBuilder(this);
   }
 }
 
-export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;
-export type ReducerEventContext = ReducerEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;
-export type SubscriptionEventContext = SubscriptionEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;
-export type ErrorContext = ErrorContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;
+export type EventContext = __EventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;
+export type ReducerEventContext = __ReducerEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;
+export type SubscriptionEventContext = __SubscriptionEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;
+export type ErrorContext = __ErrorContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;
 '''
 "list_over_age_reducer.ts" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
@@ -1439,30 +1422,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type ListOverAge = {
@@ -1473,26 +1452,26 @@ export default ListOverAge;
 /**
  * A namespace for generated helper functions.
  */
-export namespace ListOverAge {
+export const ListOverAge = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "age", algebraicType: AlgebraicType.U8},
+        { name: "age", algebraicType: __AlgebraicTypeValue.U8},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: ListOverAge): void {
-    AlgebraicType.serializeValue(writer, ListOverAge.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: ListOverAge): void {
+    __AlgebraicTypeValue.serializeValue(writer, ListOverAge.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): ListOverAge {
-    return AlgebraicType.deserializeValue(reader, ListOverAge.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): ListOverAge {
+    return __AlgebraicTypeValue.deserializeValue(reader, ListOverAge.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -1507,30 +1486,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type LogModuleIdentity = {};
@@ -1539,25 +1514,25 @@ export default LogModuleIdentity;
 /**
  * A namespace for generated helper functions.
  */
-export namespace LogModuleIdentity {
+export const LogModuleIdentity = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: LogModuleIdentity): void {
-    AlgebraicType.serializeValue(writer, LogModuleIdentity.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: LogModuleIdentity): void {
+    __AlgebraicTypeValue.serializeValue(writer, LogModuleIdentity.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): LogModuleIdentity {
-    return AlgebraicType.deserializeValue(reader, LogModuleIdentity.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): LogModuleIdentity {
+    return __AlgebraicTypeValue.deserializeValue(reader, LogModuleIdentity.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -1572,30 +1547,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Player } from "./player_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -1611,9 +1582,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.loggedOutPlayer.on_insert(...)`.
  */
 export class LoggedOutPlayerTableHandle {
-  tableCache: TableCache<Player>;
+  tableCache: __TableCache<Player>;
 
-  constructor(tableCache: TableCache<Player>) {
+  constructor(tableCache: __TableCache<Player>) {
     this.tableCache = tableCache;
   }
 
@@ -1638,9 +1609,9 @@ export class LoggedOutPlayerTableHandle {
   identity = {
     // Find the subscribed row whose `identity` column value is equal to `col_val`,
     // if such a row is present in the client cache.
-    find: (col_val: Identity): Player | undefined => {
+    find: (col_val: __Identity): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.identity, col_val)) {
+        if (__deepEqual(row.identity, col_val)) {
           return row;
         }
       }
@@ -1662,7 +1633,7 @@ export class LoggedOutPlayerTableHandle {
     // if such a row is present in the client cache.
     find: (col_val: bigint): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.playerId, col_val)) {
+        if (__deepEqual(row.playerId, col_val)) {
           return row;
         }
       }
@@ -1684,7 +1655,7 @@ export class LoggedOutPlayerTableHandle {
     // if such a row is present in the client cache.
     find: (col_val: string): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.name, col_val)) {
+        if (__deepEqual(row.name, col_val)) {
           return row;
         }
       }
@@ -1726,78 +1697,101 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
-// These are the generated variant types for each variant of the tagged union.
-// One type is generated per variant and will be used in the `value` field of
-// the tagged union.
-// NOTE: These are generated in a separate namespace because TypeScript
-// interprets `Foo` in the statement `const x: Foo.Variant = ...` as the type `Foo` instead of
-// the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
-// type. e.g. `const x: FooVariants.Variant`
-export namespace NamespaceTestCVariants {
-  export type Foo = { tag: "Foo" };
-  export type Bar = { tag: "Bar" };
-}
+import * as NamespaceTestCVariants from './namespace_test_c_variants'
 
-// A namespace for generated variants and helper functions.
-export namespace NamespaceTestC {
+// The tagged union or sum type for the algebraic type `NamespaceTestC`.
+export type NamespaceTestC = NamespaceTestCVariants.Foo |
+  NamespaceTestCVariants.Bar;
+
+// A value with helper functions to construct the type.
+export const NamespaceTestC = {
   // Helper functions for constructing each variant of the tagged union.
   // ```
   // const foo = Foo.A(42);
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const Foo: { tag: "Foo" } = { tag: "Foo" };
-  export const Bar: { tag: "Bar" } = { tag: "Bar" };
+  Foo: { tag: "Foo" } as const,
+  Bar: { tag: "Bar" } as const,
 
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Sum({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Sum({
       variants: [
-        { name: "Foo", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "Bar", algebraicType: AlgebraicType.Product({ elements: [] }) },
+        { name: "Foo", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+        { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: NamespaceTestC): void {
-      AlgebraicType.serializeValue(writer, NamespaceTestC.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: NamespaceTestC): void {
+      __AlgebraicTypeValue.serializeValue(writer, NamespaceTestC.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): NamespaceTestC {
-      return AlgebraicType.deserializeValue(reader, NamespaceTestC.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): NamespaceTestC {
+      return __AlgebraicTypeValue.deserializeValue(reader, NamespaceTestC.getTypeScriptAlgebraicType());
+  },
 
 }
 
-// The tagged union or sum type for the algebraic type `NamespaceTestC`.
-export type NamespaceTestC = NamespaceTestCVariants.Foo |
-  NamespaceTestCVariants.Bar;
-
 export default NamespaceTestC;
+
+'''
+"namespace_test_c_variants.ts" = '''
+// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+VERSION_COMMENT
+
+/* eslint-disable */
+/* tslint:disable */
+// @ts-nocheck
+import {
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+} from "@clockworklabs/spacetimedb-sdk";
+import NamespaceTestC from './namespace_test_c_type'
+
+export type Foo = { tag: "Foo" };
+export type Bar = { tag: "Bar" };
 
 '''
 "namespace_test_f_type.ts" = '''
@@ -1810,82 +1804,105 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
-// These are the generated variant types for each variant of the tagged union.
-// One type is generated per variant and will be used in the `value` field of
-// the tagged union.
-// NOTE: These are generated in a separate namespace because TypeScript
-// interprets `Foo` in the statement `const x: Foo.Variant = ...` as the type `Foo` instead of
-// the namespace `Foo` which includes types within it. Therefore we generate the `FooVariants`
-// type. e.g. `const x: FooVariants.Variant`
-export namespace NamespaceTestFVariants {
-  export type Foo = { tag: "Foo" };
-  export type Bar = { tag: "Bar" };
-  export type Baz = { tag: "Baz", value: string };
-}
-
-// A namespace for generated variants and helper functions.
-export namespace NamespaceTestF {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  export const Foo: { tag: "Foo" } = { tag: "Foo" };
-  export const Bar: { tag: "Bar" } = { tag: "Bar" };
-  export const Baz = (value: string): NamespaceTestF => ({ tag: "Baz", value });
-
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Sum({
-      variants: [
-        { name: "Foo", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "Bar", algebraicType: AlgebraicType.Product({ elements: [] }) },
-        { name: "Baz", algebraicType: AlgebraicType.String },
-      ]
-    });
-  }
-
-  export function serialize(writer: BinaryWriter, value: NamespaceTestF): void {
-      AlgebraicType.serializeValue(writer, NamespaceTestF.getTypeScriptAlgebraicType(), value);
-  }
-
-  export function deserialize(reader: BinaryReader): NamespaceTestF {
-      return AlgebraicType.deserializeValue(reader, NamespaceTestF.getTypeScriptAlgebraicType());
-  }
-
-}
+import * as NamespaceTestFVariants from './namespace_test_f_variants'
 
 // The tagged union or sum type for the algebraic type `NamespaceTestF`.
 export type NamespaceTestF = NamespaceTestFVariants.Foo |
   NamespaceTestFVariants.Bar |
   NamespaceTestFVariants.Baz;
 
+// A value with helper functions to construct the type.
+export const NamespaceTestF = {
+  // Helper functions for constructing each variant of the tagged union.
+  // ```
+  // const foo = Foo.A(42);
+  // assert!(foo.tag === "A");
+  // assert!(foo.value === 42);
+  // ```
+  Foo: { tag: "Foo" } as const,
+  Bar: { tag: "Bar" } as const,
+  Baz: (value: string): NamespaceTestF => ({ tag: "Baz", value }),
+
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Sum({
+      variants: [
+        { name: "Foo", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+        { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+        { name: "Baz", algebraicType: __AlgebraicTypeValue.String },
+      ]
+    });
+  },
+
+  serialize(writer: __BinaryWriter, value: NamespaceTestF): void {
+      __AlgebraicTypeValue.serializeValue(writer, NamespaceTestF.getTypeScriptAlgebraicType(), value);
+  },
+
+  deserialize(reader: __BinaryReader): NamespaceTestF {
+      return __AlgebraicTypeValue.deserializeValue(reader, NamespaceTestF.getTypeScriptAlgebraicType());
+  },
+
+}
+
 export default NamespaceTestF;
+
+'''
+"namespace_test_f_variants.ts" = '''
+// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+VERSION_COMMENT
+
+/* eslint-disable */
+/* tslint:disable */
+// @ts-nocheck
+import {
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+} from "@clockworklabs/spacetimedb-sdk";
+import NamespaceTestF from './namespace_test_f_type'
+
+export type Foo = { tag: "Foo" };
+export type Bar = { tag: "Bar" };
+export type Baz = { tag: "Baz", value: string };
 
 '''
 "person_table.ts" = '''
@@ -1898,30 +1915,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Person } from "./person_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -1937,9 +1950,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.person.on_insert(...)`.
  */
 export class PersonTableHandle {
-  tableCache: TableCache<Person>;
+  tableCache: __TableCache<Person>;
 
-  constructor(tableCache: TableCache<Person>) {
+  constructor(tableCache: __TableCache<Person>) {
     this.tableCache = tableCache;
   }
 
@@ -1966,7 +1979,7 @@ export class PersonTableHandle {
     // if such a row is present in the client cache.
     find: (col_val: number): Person | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.id, col_val)) {
+        if (__deepEqual(row.id, col_val)) {
           return row;
         }
       }
@@ -2008,31 +2021,28 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+
 export type Person = {
   id: number,
   name: string,
@@ -2043,28 +2053,28 @@ export default Person;
 /**
  * A namespace for generated helper functions.
  */
-export namespace Person {
+export const Person = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "id", algebraicType: AlgebraicType.U32},
-        { name: "name", algebraicType: AlgebraicType.String},
-        { name: "age", algebraicType: AlgebraicType.U8},
+        { name: "id", algebraicType: __AlgebraicTypeValue.U32},
+        { name: "name", algebraicType: __AlgebraicTypeValue.String},
+        { name: "age", algebraicType: __AlgebraicTypeValue.U8},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: Person): void {
-    AlgebraicType.serializeValue(writer, Person.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: Person): void {
+    __AlgebraicTypeValue.serializeValue(writer, Person.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): Person {
-    return AlgebraicType.deserializeValue(reader, Person.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): Person {
+    return __AlgebraicTypeValue.deserializeValue(reader, Person.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -2080,30 +2090,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { PkMultiIdentity } from "./pk_multi_identity_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2119,9 +2125,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.pkMultiIdentity.on_insert(...)`.
  */
 export class PkMultiIdentityTableHandle {
-  tableCache: TableCache<PkMultiIdentity>;
+  tableCache: __TableCache<PkMultiIdentity>;
 
-  constructor(tableCache: TableCache<PkMultiIdentity>) {
+  constructor(tableCache: __TableCache<PkMultiIdentity>) {
     this.tableCache = tableCache;
   }
 
@@ -2148,7 +2154,7 @@ export class PkMultiIdentityTableHandle {
     // if such a row is present in the client cache.
     find: (col_val: number): PkMultiIdentity | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.id, col_val)) {
+        if (__deepEqual(row.id, col_val)) {
           return row;
         }
       }
@@ -2170,7 +2176,7 @@ export class PkMultiIdentityTableHandle {
     // if such a row is present in the client cache.
     find: (col_val: number): PkMultiIdentity | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.other, col_val)) {
+        if (__deepEqual(row.other, col_val)) {
           return row;
         }
       }
@@ -2212,31 +2218,28 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+
 export type PkMultiIdentity = {
   id: number,
   other: number,
@@ -2246,27 +2249,27 @@ export default PkMultiIdentity;
 /**
  * A namespace for generated helper functions.
  */
-export namespace PkMultiIdentity {
+export const PkMultiIdentity = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "id", algebraicType: AlgebraicType.U32},
-        { name: "other", algebraicType: AlgebraicType.U32},
+        { name: "id", algebraicType: __AlgebraicTypeValue.U32},
+        { name: "other", algebraicType: __AlgebraicTypeValue.U32},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: PkMultiIdentity): void {
-    AlgebraicType.serializeValue(writer, PkMultiIdentity.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: PkMultiIdentity): void {
+    __AlgebraicTypeValue.serializeValue(writer, PkMultiIdentity.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): PkMultiIdentity {
-    return AlgebraicType.deserializeValue(reader, PkMultiIdentity.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): PkMultiIdentity {
+    return __AlgebraicTypeValue.deserializeValue(reader, PkMultiIdentity.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -2282,30 +2285,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Player } from "./player_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2321,9 +2320,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.player.on_insert(...)`.
  */
 export class PlayerTableHandle {
-  tableCache: TableCache<Player>;
+  tableCache: __TableCache<Player>;
 
-  constructor(tableCache: TableCache<Player>) {
+  constructor(tableCache: __TableCache<Player>) {
     this.tableCache = tableCache;
   }
 
@@ -2348,9 +2347,9 @@ export class PlayerTableHandle {
   identity = {
     // Find the subscribed row whose `identity` column value is equal to `col_val`,
     // if such a row is present in the client cache.
-    find: (col_val: Identity): Player | undefined => {
+    find: (col_val: __Identity): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.identity, col_val)) {
+        if (__deepEqual(row.identity, col_val)) {
           return row;
         }
       }
@@ -2372,7 +2371,7 @@ export class PlayerTableHandle {
     // if such a row is present in the client cache.
     find: (col_val: bigint): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.playerId, col_val)) {
+        if (__deepEqual(row.playerId, col_val)) {
           return row;
         }
       }
@@ -2394,7 +2393,7 @@ export class PlayerTableHandle {
     // if such a row is present in the client cache.
     find: (col_val: string): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.name, col_val)) {
+        if (__deepEqual(row.name, col_val)) {
           return row;
         }
       }
@@ -2436,33 +2435,30 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+
 export type Player = {
-  identity: Identity,
+  identity: __Identity,
   playerId: bigint,
   name: string,
 };
@@ -2471,28 +2467,28 @@ export default Player;
 /**
  * A namespace for generated helper functions.
  */
-export namespace Player {
+export const Player = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "identity", algebraicType: AlgebraicType.createIdentityType()},
-        { name: "playerId", algebraicType: AlgebraicType.U64},
-        { name: "name", algebraicType: AlgebraicType.String},
+        { name: "identity", algebraicType: __AlgebraicTypeValue.createIdentityType()},
+        { name: "playerId", algebraicType: __AlgebraicTypeValue.U64},
+        { name: "name", algebraicType: __AlgebraicTypeValue.String},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: Player): void {
-    AlgebraicType.serializeValue(writer, Player.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: Player): void {
+    __AlgebraicTypeValue.serializeValue(writer, Player.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): Player {
-    return AlgebraicType.deserializeValue(reader, Player.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): Player {
+    return __AlgebraicTypeValue.deserializeValue(reader, Player.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -2508,31 +2504,28 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+
 export type Point = {
   x: bigint,
   y: bigint,
@@ -2542,27 +2535,27 @@ export default Point;
 /**
  * A namespace for generated helper functions.
  */
-export namespace Point {
+export const Point = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "x", algebraicType: AlgebraicType.I64},
-        { name: "y", algebraicType: AlgebraicType.I64},
+        { name: "x", algebraicType: __AlgebraicTypeValue.I64},
+        { name: "y", algebraicType: __AlgebraicTypeValue.I64},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: Point): void {
-    AlgebraicType.serializeValue(writer, Point.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: Point): void {
+    __AlgebraicTypeValue.serializeValue(writer, Point.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): Point {
-    return AlgebraicType.deserializeValue(reader, Point.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): Point {
+    return __AlgebraicTypeValue.deserializeValue(reader, Point.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -2578,30 +2571,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Point } from "./point_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2617,9 +2606,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.points.on_insert(...)`.
  */
 export class PointsTableHandle {
-  tableCache: TableCache<Point>;
+  tableCache: __TableCache<Point>;
 
-  constructor(tableCache: TableCache<Point>) {
+  constructor(tableCache: __TableCache<Point>) {
     this.tableCache = tableCache;
   }
 
@@ -2658,30 +2647,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { PrivateTable } from "./private_table_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2697,9 +2682,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.privateTable.on_insert(...)`.
  */
 export class PrivateTableTableHandle {
-  tableCache: TableCache<PrivateTable>;
+  tableCache: __TableCache<PrivateTable>;
 
-  constructor(tableCache: TableCache<PrivateTable>) {
+  constructor(tableCache: __TableCache<PrivateTable>) {
     this.tableCache = tableCache;
   }
 
@@ -2738,31 +2723,28 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+
 export type PrivateTable = {
   name: string,
 };
@@ -2771,26 +2753,26 @@ export default PrivateTable;
 /**
  * A namespace for generated helper functions.
  */
-export namespace PrivateTable {
+export const PrivateTable = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "name", algebraicType: AlgebraicType.String},
+        { name: "name", algebraicType: __AlgebraicTypeValue.String},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: PrivateTable): void {
-    AlgebraicType.serializeValue(writer, PrivateTable.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: PrivateTable): void {
+    __AlgebraicTypeValue.serializeValue(writer, PrivateTable.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): PrivateTable {
-    return AlgebraicType.deserializeValue(reader, PrivateTable.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): PrivateTable {
+    return __AlgebraicTypeValue.deserializeValue(reader, PrivateTable.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -2806,30 +2788,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type QueryPrivate = {};
@@ -2838,25 +2816,25 @@ export default QueryPrivate;
 /**
  * A namespace for generated helper functions.
  */
-export namespace QueryPrivate {
+export const QueryPrivate = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: QueryPrivate): void {
-    AlgebraicType.serializeValue(writer, QueryPrivate.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: QueryPrivate): void {
+    __AlgebraicTypeValue.serializeValue(writer, QueryPrivate.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): QueryPrivate {
-    return AlgebraicType.deserializeValue(reader, QueryPrivate.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): QueryPrivate {
+    return __AlgebraicTypeValue.deserializeValue(reader, QueryPrivate.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -2871,30 +2849,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { RepeatingTestArg } from "./repeating_test_arg_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2910,9 +2884,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.repeatingTestArg.on_insert(...)`.
  */
 export class RepeatingTestArgTableHandle {
-  tableCache: TableCache<RepeatingTestArg>;
+  tableCache: __TableCache<RepeatingTestArg>;
 
-  constructor(tableCache: TableCache<RepeatingTestArg>) {
+  constructor(tableCache: __TableCache<RepeatingTestArg>) {
     this.tableCache = tableCache;
   }
 
@@ -2939,7 +2913,7 @@ export class RepeatingTestArgTableHandle {
     // if such a row is present in the client cache.
     find: (col_val: bigint): RepeatingTestArg | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.scheduledId, col_val)) {
+        if (__deepEqual(row.scheduledId, col_val)) {
           return row;
         }
       }
@@ -2981,63 +2955,60 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+
 export type RepeatingTestArg = {
   scheduledId: bigint,
-  scheduledAt: { tag: "Interval", value: TimeDuration } | { tag: "Time", value: Timestamp },
-  prevTime: Timestamp,
+  scheduledAt: { tag: "Interval", value: __TimeDuration } | { tag: "Time", value: __Timestamp },
+  prevTime: __Timestamp,
 };
 export default RepeatingTestArg;
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace RepeatingTestArg {
+export const RepeatingTestArg = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "scheduledId", algebraicType: AlgebraicType.U64},
-        { name: "scheduledAt", algebraicType: AlgebraicType.createScheduleAtType()},
-        { name: "prevTime", algebraicType: AlgebraicType.createTimestampType()},
+        { name: "scheduledId", algebraicType: __AlgebraicTypeValue.U64},
+        { name: "scheduledAt", algebraicType: __AlgebraicTypeValue.createScheduleAtType()},
+        { name: "prevTime", algebraicType: __AlgebraicTypeValue.createTimestampType()},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: RepeatingTestArg): void {
-    AlgebraicType.serializeValue(writer, RepeatingTestArg.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: RepeatingTestArg): void {
+    __AlgebraicTypeValue.serializeValue(writer, RepeatingTestArg.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): RepeatingTestArg {
-    return AlgebraicType.deserializeValue(reader, RepeatingTestArg.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): RepeatingTestArg {
+    return __AlgebraicTypeValue.deserializeValue(reader, RepeatingTestArg.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -3053,62 +3024,58 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
-import { RepeatingTestArg as __RepeatingTestArg } from "./repeating_test_arg_type";
+import { RepeatingTestArg } from "./repeating_test_arg_type";
 
 export type RepeatingTest = {
-  arg: __RepeatingTestArg,
+  arg: RepeatingTestArg,
 };
 export default RepeatingTest;
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace RepeatingTest {
+export const RepeatingTest = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "arg", algebraicType: __RepeatingTestArg.getTypeScriptAlgebraicType()},
+        { name: "arg", algebraicType: RepeatingTestArg.getTypeScriptAlgebraicType()},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: RepeatingTest): void {
-    AlgebraicType.serializeValue(writer, RepeatingTest.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: RepeatingTest): void {
+    __AlgebraicTypeValue.serializeValue(writer, RepeatingTest.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): RepeatingTest {
-    return AlgebraicType.deserializeValue(reader, RepeatingTest.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): RepeatingTest {
+    return __AlgebraicTypeValue.deserializeValue(reader, RepeatingTest.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -3123,30 +3090,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type SayHello = {};
@@ -3155,25 +3118,25 @@ export default SayHello;
 /**
  * A namespace for generated helper functions.
  */
-export namespace SayHello {
+export const SayHello = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: SayHello): void {
-    AlgebraicType.serializeValue(writer, SayHello.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: SayHello): void {
+    __AlgebraicTypeValue.serializeValue(writer, SayHello.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): SayHello {
-    return AlgebraicType.deserializeValue(reader, SayHello.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): SayHello {
+    return __AlgebraicTypeValue.deserializeValue(reader, SayHello.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -3188,30 +3151,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestA } from "./test_a_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -3227,9 +3186,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.testA.on_insert(...)`.
  */
 export class TestATableHandle {
-  tableCache: TableCache<TestA>;
+  tableCache: __TableCache<TestA>;
 
-  constructor(tableCache: TableCache<TestA>) {
+  constructor(tableCache: __TableCache<TestA>) {
     this.tableCache = tableCache;
   }
 
@@ -3268,31 +3227,28 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+
 export type TestA = {
   x: number,
   y: number,
@@ -3303,28 +3259,28 @@ export default TestA;
 /**
  * A namespace for generated helper functions.
  */
-export namespace TestA {
+export const TestA = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "x", algebraicType: AlgebraicType.U32},
-        { name: "y", algebraicType: AlgebraicType.U32},
-        { name: "z", algebraicType: AlgebraicType.String},
+        { name: "x", algebraicType: __AlgebraicTypeValue.U32},
+        { name: "y", algebraicType: __AlgebraicTypeValue.U32},
+        { name: "z", algebraicType: __AlgebraicTypeValue.String},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: TestA): void {
-    AlgebraicType.serializeValue(writer, TestA.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: TestA): void {
+    __AlgebraicTypeValue.serializeValue(writer, TestA.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): TestA {
-    return AlgebraicType.deserializeValue(reader, TestA.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): TestA {
+    return __AlgebraicTypeValue.deserializeValue(reader, TestA.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -3340,31 +3296,28 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+
 export type TestB = {
   foo: string,
 };
@@ -3373,26 +3326,26 @@ export default TestB;
 /**
  * A namespace for generated helper functions.
  */
-export namespace TestB {
+export const TestB = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "foo", algebraicType: AlgebraicType.String},
+        { name: "foo", algebraicType: __AlgebraicTypeValue.String},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: TestB): void {
-    AlgebraicType.serializeValue(writer, TestB.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: TestB): void {
+    __AlgebraicTypeValue.serializeValue(writer, TestB.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): TestB {
-    return AlgebraicType.deserializeValue(reader, TestB.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): TestB {
+    return __AlgebraicTypeValue.deserializeValue(reader, TestB.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -3408,30 +3361,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type TestBtreeIndexArgs = {};
@@ -3440,25 +3389,25 @@ export default TestBtreeIndexArgs;
 /**
  * A namespace for generated helper functions.
  */
-export namespace TestBtreeIndexArgs {
+export const TestBtreeIndexArgs = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: TestBtreeIndexArgs): void {
-    AlgebraicType.serializeValue(writer, TestBtreeIndexArgs.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: TestBtreeIndexArgs): void {
+    __AlgebraicTypeValue.serializeValue(writer, TestBtreeIndexArgs.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): TestBtreeIndexArgs {
-    return AlgebraicType.deserializeValue(reader, TestBtreeIndexArgs.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): TestBtreeIndexArgs {
+    return __AlgebraicTypeValue.deserializeValue(reader, TestBtreeIndexArgs.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -3473,33 +3422,29 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestD } from "./test_d_type";
-import { NamespaceTestC as __NamespaceTestC } from "./namespace_test_c_type";
+import { NamespaceTestC } from "./namespace_test_c_type";
 
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 
@@ -3514,9 +3459,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.testD.on_insert(...)`.
  */
 export class TestDTableHandle {
-  tableCache: TableCache<TestD>;
+  tableCache: __TableCache<TestD>;
 
-  constructor(tableCache: TableCache<TestD>) {
+  constructor(tableCache: __TableCache<TestD>) {
     this.tableCache = tableCache;
   }
 
@@ -3555,61 +3500,58 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
-import { NamespaceTestC as __NamespaceTestC } from "./namespace_test_c_type";
+import { NamespaceTestC } from "./namespace_test_c_type";
+
 
 export type TestD = {
-  testC: __NamespaceTestC | undefined,
+  testC: NamespaceTestC | undefined,
 };
 export default TestD;
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace TestD {
+export const TestD = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "testC", algebraicType: AlgebraicType.createOptionType(__NamespaceTestC.getTypeScriptAlgebraicType())},
+        { name: "testC", algebraicType: __AlgebraicTypeValue.createOptionType(NamespaceTestC.getTypeScriptAlgebraicType())},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: TestD): void {
-    AlgebraicType.serializeValue(writer, TestD.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: TestD): void {
+    __AlgebraicTypeValue.serializeValue(writer, TestD.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): TestD {
-    return AlgebraicType.deserializeValue(reader, TestD.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): TestD {
+    return __AlgebraicTypeValue.deserializeValue(reader, TestD.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -3625,30 +3567,26 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestE } from "./test_e_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -3664,9 +3602,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.testE.on_insert(...)`.
  */
 export class TestETableHandle {
-  tableCache: TableCache<TestE>;
+  tableCache: __TableCache<TestE>;
 
-  constructor(tableCache: TableCache<TestE>) {
+  constructor(tableCache: __TableCache<TestE>) {
     this.tableCache = tableCache;
   }
 
@@ -3693,7 +3631,7 @@ export class TestETableHandle {
     // if such a row is present in the client cache.
     find: (col_val: bigint): TestE | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.id, col_val)) {
+        if (__deepEqual(row.id, col_val)) {
           return row;
         }
       }
@@ -3735,31 +3673,28 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
+
 export type TestE = {
   id: bigint,
   name: string,
@@ -3769,27 +3704,27 @@ export default TestE;
 /**
  * A namespace for generated helper functions.
  */
-export namespace TestE {
+export const TestE = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "id", algebraicType: AlgebraicType.U64},
-        { name: "name", algebraicType: AlgebraicType.String},
+        { name: "id", algebraicType: __AlgebraicTypeValue.U64},
+        { name: "name", algebraicType: __AlgebraicTypeValue.String},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: TestE): void {
-    AlgebraicType.serializeValue(writer, TestE.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: TestE): void {
+    __AlgebraicTypeValue.serializeValue(writer, TestE.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): TestE {
-    return AlgebraicType.deserializeValue(reader, TestE.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): TestE {
+    return __AlgebraicTypeValue.deserializeValue(reader, TestE.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -3805,33 +3740,29 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestFoobar } from "./test_foobar_type";
-import { Foobar as __Foobar } from "./foobar_type";
+import { Foobar } from "./foobar_type";
 
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 
@@ -3846,9 +3777,9 @@ import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".
  * like `ctx.db.testF.on_insert(...)`.
  */
 export class TestFTableHandle {
-  tableCache: TableCache<TestFoobar>;
+  tableCache: __TableCache<TestFoobar>;
 
-  constructor(tableCache: TableCache<TestFoobar>) {
+  constructor(tableCache: __TableCache<TestFoobar>) {
     this.tableCache = tableCache;
   }
 
@@ -3887,61 +3818,58 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
-import { Foobar as __Foobar } from "./foobar_type";
+import { Foobar } from "./foobar_type";
+
 
 export type TestFoobar = {
-  field: __Foobar,
+  field: Foobar,
 };
 export default TestFoobar;
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace TestFoobar {
+export const TestFoobar = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "field", algebraicType: __Foobar.getTypeScriptAlgebraicType()},
+        { name: "field", algebraicType: Foobar.getTypeScriptAlgebraicType()},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: TestFoobar): void {
-    AlgebraicType.serializeValue(writer, TestFoobar.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: TestFoobar): void {
+    __AlgebraicTypeValue.serializeValue(writer, TestFoobar.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): TestFoobar {
-    return AlgebraicType.deserializeValue(reader, TestFoobar.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): TestFoobar {
+    return __AlgebraicTypeValue.deserializeValue(reader, TestFoobar.getTypeScriptAlgebraicType());
+  },
 
 }
 
@@ -3957,71 +3885,67 @@ VERSION_COMMENT
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  SubscriptionBuilderImpl,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
-  type CallReducerFlags,
-  type DbContext,
-  type ErrorContextInterface,
-  type Event,
-  type EventContextInterface,
-  type ReducerEventContextInterface,
-  type SubscriptionEventContextInterface,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 
-import { TestA as __TestA } from "./test_a_type";
-import { TestB as __TestB } from "./test_b_type";
-import { NamespaceTestC as __NamespaceTestC } from "./namespace_test_c_type";
-import { NamespaceTestF as __NamespaceTestF } from "./namespace_test_f_type";
+import { TestA } from "./test_a_type";
+import { TestB } from "./test_b_type";
+import { NamespaceTestC } from "./namespace_test_c_type";
+import { NamespaceTestF } from "./namespace_test_f_type";
 
 export type Test = {
-  arg: __TestA,
-  arg2: __TestB,
-  arg3: __NamespaceTestC,
-  arg4: __NamespaceTestF,
+  arg: TestA,
+  arg2: TestB,
+  arg3: NamespaceTestC,
+  arg4: NamespaceTestF,
 };
 export default Test;
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace Test {
+export const Test = {
   /**
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.Product({
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
       elements: [
-        { name: "arg", algebraicType: __TestA.getTypeScriptAlgebraicType()},
-        { name: "arg2", algebraicType: __TestB.getTypeScriptAlgebraicType()},
-        { name: "arg3", algebraicType: __NamespaceTestC.getTypeScriptAlgebraicType()},
-        { name: "arg4", algebraicType: __NamespaceTestF.getTypeScriptAlgebraicType()},
+        { name: "arg", algebraicType: TestA.getTypeScriptAlgebraicType()},
+        { name: "arg2", algebraicType: TestB.getTypeScriptAlgebraicType()},
+        { name: "arg3", algebraicType: NamespaceTestC.getTypeScriptAlgebraicType()},
+        { name: "arg4", algebraicType: NamespaceTestF.getTypeScriptAlgebraicType()},
       ]
     });
-  }
+  },
 
-  export function serialize(writer: BinaryWriter, value: Test): void {
-    AlgebraicType.serializeValue(writer, Test.getTypeScriptAlgebraicType(), value);
-  }
+  serialize(writer: __BinaryWriter, value: Test): void {
+    __AlgebraicTypeValue.serializeValue(writer, Test.getTypeScriptAlgebraicType(), value);
+  },
 
-  export function deserialize(reader: BinaryReader): Test {
-    return AlgebraicType.deserializeValue(reader, Test.getTypeScriptAlgebraicType());
-  }
+  deserialize(reader: __BinaryReader): Test {
+    return __AlgebraicTypeValue.deserializeValue(reader, Test.getTypeScriptAlgebraicType());
+  },
 
 }
 
