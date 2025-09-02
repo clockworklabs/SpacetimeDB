@@ -315,19 +315,35 @@ impl CommittedState {
         Ok(())
     }
 
-    pub(super) fn replay_delete_by_rel(&mut self, table_id: TableId, row: &ProductValue) -> Result<()> {
+    pub(super) fn replay_truncate(&mut self, table_id: TableId) -> Result<()> {
+        // (1) Table dropped? Avoid an error and just ignore the row instead.
+        if self.table_dropped.contains(&table_id) {
+            return Ok(());
+        }
+
         // Get the table for mutation.
-        let table = match self.tables.get_mut(&table_id) {
-            Some(t) => t,
-            // (1) If it was dropped, avoid an error and just ignore the row instead.
-            None if self.table_dropped.contains(&table_id) => return Ok(()),
-            None => return Err(TableError::IdNotFoundState(table_id).into()),
-        };
+        let (table, blob_store, ..) = self.get_table_and_blob_store_mut(table_id)?;
+
+        // We do not need to consider a truncation of `st_table` itself,
+        // as if that happens, the database is bricked.
+
+        table.clear(blob_store);
+
+        Ok(())
+    }
+
+    pub(super) fn replay_delete_by_rel(&mut self, table_id: TableId, row: &ProductValue) -> Result<()> {
+        // (1) Table dropped? Avoid an error and just ignore the row instead.
+        if self.table_dropped.contains(&table_id) {
+            return Ok(());
+        }
+
+        // Get the table for mutation.
+        let (table, blob_store, _, page_pool) = self.get_table_and_blob_store_mut(table_id)?;
 
         // Delete the row.
-        let blob_store = &mut self.blob_store;
         table
-            .delete_equal_row(&self.page_pool, blob_store, row)
+            .delete_equal_row(page_pool, blob_store, row)
             .map_err(TableError::Bflatn)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
 
@@ -461,9 +477,9 @@ impl CommittedState {
         for index_row in rows {
             let index_id = index_row.index_id;
             let table_id = index_row.table_id;
-            let (Some(table), blob_store, index_id_map) = self.get_table_and_blob_store_mut(table_id) else {
-                panic!("Cannot create index for table which doesn't exist in committed state");
-            };
+            let (table, blob_store, index_id_map, _) = self
+                .get_table_and_blob_store_mut(table_id)
+                .expect("index should exist in committed state; cannot create it");
             let algo: IndexAlgorithm = index_row.index_algorithm.into();
             let columns: ColSet = algo.columns().into();
             let is_unique = unique_constraints.contains(&(table_id, columns));
@@ -564,8 +580,7 @@ impl CommittedState {
             "Cannot get TX_STATE RowPointer from CommittedState.",
         );
         let table = self
-            .tables
-            .get(&table_id)
+            .get_table(table_id)
             .expect("Attempt to get COMMITTED_STATE row from table not present in tables.");
         // TODO(perf, deep-integration): Use `get_row_ref_unchecked`.
         table.get_row_ref(&self.blob_store, row_ptr).unwrap()
@@ -645,17 +660,18 @@ impl CommittedState {
 
             if !deletes.is_empty() {
                 let table_name = &*table.get_schema().table_name;
-                // TODO(centril): Pass this along to record truncated tables.
-                let _truncated = table.row_count == 0;
-                tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
+                let truncated = table.row_count == 0;
+                tx_data.set_deletes_for_table(table_id, table_name, deletes.into(), truncated);
             }
         }
 
         for (table_id, row_ptrs) in delete_tables {
-            if let (Some(table), blob_store, _) = self.get_table_and_blob_store_mut(table_id) {
-                delete_rows(tx_data, table_id, table, blob_store, row_ptrs.len(), row_ptrs.iter());
-            } else if !row_ptrs.is_empty() {
-                panic!("Deletion for non-existent table {table_id:?}... huh?");
+            match self.get_table_and_blob_store_mut(table_id) {
+                Ok((table, blob_store, ..)) => {
+                    delete_rows(tx_data, table_id, table, blob_store, row_ptrs.len(), row_ptrs.iter())
+                }
+                Err(_) if !row_ptrs.is_empty() => panic!("Deletion for non-existent table {table_id:?}... huh?"),
+                Err(_) => {}
             }
         }
 
@@ -835,12 +851,21 @@ impl CommittedState {
     pub(super) fn get_table_and_blob_store_mut(
         &mut self,
         table_id: TableId,
-    ) -> (Option<&mut Table>, &mut dyn BlobStore, &mut IndexIdMap) {
-        (
-            self.tables.get_mut(&table_id),
+    ) -> Result<(&mut Table, &mut dyn BlobStore, &mut IndexIdMap, &PagePool)> {
+        // NOTE(centril): `TableError` is a fairly large type.
+        // Not making this lazy made `TableError::drop` show up in perf.
+        // TODO(centril): Box all the errors.
+        #[allow(clippy::unnecessary_lazy_evaluations)]
+        let table = self
+            .tables
+            .get_mut(&table_id)
+            .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
+        Ok((
+            table,
             &mut self.blob_store as &mut dyn BlobStore,
             &mut self.index_id_map,
-        )
+            &self.page_pool,
+        ))
     }
 
     fn make_table(schema: Arc<TableSchema>) -> Table {

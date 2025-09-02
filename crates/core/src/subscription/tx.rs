@@ -76,9 +76,10 @@ impl DeltaTableIndexes {
             indexes
         }
 
+        let deletes = data.deletes().map(|(table_id, _, rows)| (table_id, rows));
         Self {
             inserts: build_indexes_for_rows(tx, meta, data.inserts()),
-            deletes: build_indexes_for_rows(tx, meta, data.deletes()),
+            deletes: build_indexes_for_rows(tx, meta, deletes),
         }
     }
 }
@@ -133,8 +134,8 @@ impl DeltaStore for DeltaTx<'_> {
         self.data
             .and_then(|data| {
                 data.inserts()
-                    .find(|(id, _)| **id == table_id)
-                    .map(|(_, rows)| rows.len())
+                    .find(|(id, ..)| **id == table_id)
+                    .map(|(.., rows)| rows.len())
             })
             .unwrap_or_default()
     }
@@ -143,8 +144,8 @@ impl DeltaStore for DeltaTx<'_> {
         self.data
             .and_then(|data| {
                 data.deletes()
-                    .find(|(id, _)| **id == table_id)
-                    .map(|(_, rows)| rows.len())
+                    .find(|(id, ..)| **id == table_id)
+                    .map(|(.., rows)| rows.len())
             })
             .unwrap_or_default()
     }
@@ -152,16 +153,16 @@ impl DeltaStore for DeltaTx<'_> {
     fn inserts_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
         self.data.and_then(|data| {
             data.inserts()
-                .find(|(id, _)| **id == table_id)
-                .map(|(_, rows)| rows.iter())
+                .find(|(id, ..)| **id == table_id)
+                .map(|(.., rows)| rows.iter())
         })
     }
 
     fn deletes_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
         self.data.and_then(|data| {
             data.deletes()
-                .find(|(id, _)| **id == table_id)
-                .map(|(_, rows)| rows.iter())
+                .find(|(id, ..)| **id == table_id)
+                .map(|(.., rows)| rows.iter())
         })
     }
 
