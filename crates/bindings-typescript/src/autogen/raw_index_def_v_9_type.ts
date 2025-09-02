@@ -35,10 +35,8 @@ export type RawIndexDefV9 = {
   accessorName: string | undefined;
   algorithm: RawIndexAlgorithm;
 };
-export default RawIndexDefV9;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawIndexDefV9 = {
   /**
@@ -83,3 +81,5 @@ export const RawIndexDefV9 = {
     );
   },
 };
+
+export default RawIndexDefV9;

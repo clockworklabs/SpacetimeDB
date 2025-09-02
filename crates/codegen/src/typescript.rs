@@ -746,14 +746,10 @@ fn define_body_for_product(
         writeln!(out, "}};");
     }
 
-    writeln!(out, "export default {name};");
-
-    out.newline();
-
     writeln!(
         out,
         "/**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */"
     );
     writeln!(out, "export const {name} = {{");
@@ -783,6 +779,10 @@ fn define_body_for_product(
 
     out.dedent(1);
     writeln!(out, "}}");
+
+    out.newline();
+
+    writeln!(out, "export default {name};");
 
     out.newline();
 }
@@ -965,6 +965,8 @@ fn define_body_for_sum(
     out.newline();
 
     writeln!(out, "export default {name};");
+
+    out.newline();
 }
 
 fn type_ref_module_name(module: &ModuleDef, type_ref: AlgebraicTypeRef) -> String {

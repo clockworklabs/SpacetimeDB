@@ -28,46 +28,10 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { QueryId } from './query_id_type';
+import { DatabaseUpdate } from './database_update_type';
 
-export type Unsubscribe = {
-  requestId: number;
-  queryId: QueryId;
-};
-/**
- * An object for generated helper functions.
- */
-export const Unsubscribe = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
-        {
-          name: 'queryId',
-          algebraicType: QueryId.getTypeScriptAlgebraicType(),
-        },
-      ],
-    });
-  },
+import UpdateStatus from './update_status_type';
 
-  serialize(writer: __BinaryWriter, value: Unsubscribe): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      Unsubscribe.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): Unsubscribe {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      Unsubscribe.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default Unsubscribe;
+export type Committed = { tag: 'Committed'; value: DatabaseUpdate };
+export type Failed = { tag: 'Failed'; value: string };
+export type OutOfEnergy = { tag: 'OutOfEnergy' };

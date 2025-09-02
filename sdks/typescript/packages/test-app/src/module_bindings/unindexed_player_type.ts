@@ -35,10 +35,8 @@ export type UnindexedPlayer = {
   name: string;
   location: Point;
 };
-export default UnindexedPlayer;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const UnindexedPlayer = {
   /**
@@ -70,3 +68,5 @@ export const UnindexedPlayer = {
     );
   },
 };
+
+export default UnindexedPlayer;

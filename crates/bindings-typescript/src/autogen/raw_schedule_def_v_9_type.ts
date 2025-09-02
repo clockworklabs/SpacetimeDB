@@ -34,10 +34,8 @@ export type RawScheduleDefV9 = {
   reducerName: string;
   scheduledAtColumn: number;
 };
-export default RawScheduleDefV9;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawScheduleDefV9 = {
   /**
@@ -74,3 +72,5 @@ export const RawScheduleDefV9 = {
     );
   },
 };
+
+export default RawScheduleDefV9;

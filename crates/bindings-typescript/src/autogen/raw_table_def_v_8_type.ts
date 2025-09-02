@@ -43,10 +43,8 @@ export type RawTableDefV8 = {
   tableAccess: string;
   scheduled: string | undefined;
 };
-export default RawTableDefV8;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawTableDefV8 = {
   /**
@@ -108,3 +106,5 @@ export const RawTableDefV8 = {
     );
   },
 };
+
+export default RawTableDefV8;

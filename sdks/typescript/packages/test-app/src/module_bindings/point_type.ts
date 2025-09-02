@@ -33,10 +33,8 @@ export type Point = {
   x: number;
   y: number;
 };
-export default Point;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const Point = {
   /**
@@ -67,3 +65,5 @@ export const Point = {
     );
   },
 };
+
+export default Point;

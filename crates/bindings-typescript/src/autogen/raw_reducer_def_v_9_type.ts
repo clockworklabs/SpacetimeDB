@@ -36,10 +36,8 @@ export type RawReducerDefV9 = {
   params: ProductType;
   lifecycle: Lifecycle | undefined;
 };
-export default RawReducerDefV9;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawReducerDefV9 = {
   /**
@@ -79,3 +77,5 @@ export const RawReducerDefV9 = {
     );
   },
 };
+
+export default RawReducerDefV9;

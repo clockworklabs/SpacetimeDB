@@ -34,10 +34,8 @@ export type SumTypeVariant = {
   name: string | undefined;
   algebraicType: AlgebraicType;
 };
-export default SumTypeVariant;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const SumTypeVariant = {
   /**
@@ -76,3 +74,5 @@ export const SumTypeVariant = {
     );
   },
 };
+
+export default SumTypeVariant;

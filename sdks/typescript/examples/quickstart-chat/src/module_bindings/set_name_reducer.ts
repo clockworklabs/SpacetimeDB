@@ -32,10 +32,8 @@ import {
 export type SetName = {
   name: string;
 };
-export default SetName;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const SetName = {
   /**
@@ -63,3 +61,5 @@ export const SetName = {
     );
   },
 };
+
+export default SetName;

@@ -39,10 +39,8 @@ export type RawModuleDefV8 = {
   reducers: ReducerDef[];
   miscExports: MiscModuleExport[];
 };
-export default RawModuleDefV8;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawModuleDefV8 = {
   /**
@@ -93,3 +91,5 @@ export const RawModuleDefV8 = {
     );
   },
 };
+
+export default RawModuleDefV8;

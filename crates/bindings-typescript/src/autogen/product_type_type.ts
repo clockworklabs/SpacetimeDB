@@ -33,10 +33,8 @@ import { ProductTypeElement } from './product_type_element_type';
 export type ProductType = {
   elements: ProductTypeElement[];
 };
-export default ProductType;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const ProductType = {
   /**
@@ -71,3 +69,5 @@ export const ProductType = {
     );
   },
 };
+
+export default ProductType;

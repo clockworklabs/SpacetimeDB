@@ -32,10 +32,8 @@ import {
 export type RawUniqueConstraintDataV9 = {
   columns: number[];
 };
-export default RawUniqueConstraintDataV9;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawUniqueConstraintDataV9 = {
   /**
@@ -68,3 +66,5 @@ export const RawUniqueConstraintDataV9 = {
     );
   },
 };
+
+export default RawUniqueConstraintDataV9;

@@ -38,10 +38,8 @@ export type RawSequenceDefV8 = {
   maxValue: bigint | undefined;
   allocated: bigint;
 };
-export default RawSequenceDefV8;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawSequenceDefV8 = {
   /**
@@ -92,3 +90,5 @@ export const RawSequenceDefV8 = {
     );
   },
 };
+
+export default RawSequenceDefV8;

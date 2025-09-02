@@ -32,10 +32,8 @@ import {
 export type SendMessage = {
   text: string;
 };
-export default SendMessage;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const SendMessage = {
   /**
@@ -63,3 +61,5 @@ export const SendMessage = {
     );
   },
 };
+
+export default SendMessage;

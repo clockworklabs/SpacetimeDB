@@ -34,10 +34,8 @@ export type RawColumnDefV8 = {
   colName: string;
   colType: AlgebraicType;
 };
-export default RawColumnDefV8;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawColumnDefV8 = {
   /**
@@ -71,3 +69,5 @@ export const RawColumnDefV8 = {
     );
   },
 };
+
+export default RawColumnDefV8;

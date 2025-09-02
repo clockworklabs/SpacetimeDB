@@ -33,10 +33,8 @@ import { SumTypeVariant } from './sum_type_variant_type';
 export type SumType = {
   variants: SumTypeVariant[];
 };
-export default SumType;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const SumType = {
   /**
@@ -71,3 +69,5 @@ export const SumType = {
     );
   },
 };
+
+export default SumType;

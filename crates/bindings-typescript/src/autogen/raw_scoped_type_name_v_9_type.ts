@@ -33,10 +33,8 @@ export type RawScopedTypeNameV9 = {
   scope: string[];
   name: string;
 };
-export default RawScopedTypeNameV9;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawScopedTypeNameV9 = {
   /**
@@ -72,3 +70,5 @@ export const RawScopedTypeNameV9 = {
     );
   },
 };
+
+export default RawScopedTypeNameV9;

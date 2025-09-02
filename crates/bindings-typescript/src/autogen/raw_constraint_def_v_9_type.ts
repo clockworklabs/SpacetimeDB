@@ -34,10 +34,8 @@ export type RawConstraintDefV9 = {
   name: string | undefined;
   data: RawConstraintDataV9;
 };
-export default RawConstraintDefV9;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawConstraintDefV9 = {
   /**
@@ -76,3 +74,5 @@ export const RawConstraintDefV9 = {
     );
   },
 };
+
+export default RawConstraintDefV9;

@@ -32,10 +32,8 @@ import {
 export type RawRowLevelSecurityDefV9 = {
   sql: string;
 };
-export default RawRowLevelSecurityDefV9;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawRowLevelSecurityDefV9 = {
   /**
@@ -63,3 +61,5 @@ export const RawRowLevelSecurityDefV9 = {
     );
   },
 };
+
+export default RawRowLevelSecurityDefV9;

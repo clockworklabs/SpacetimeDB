@@ -34,10 +34,8 @@ export type Message = {
   sent: __Timestamp;
   text: string;
 };
-export default Message;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const Message = {
   /**
@@ -75,3 +73,5 @@ export const Message = {
     );
   },
 };
+
+export default Message;

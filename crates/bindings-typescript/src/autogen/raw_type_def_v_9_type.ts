@@ -35,10 +35,8 @@ export type RawTypeDefV9 = {
   ty: number;
   customOrdering: boolean;
 };
-export default RawTypeDefV9;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawTypeDefV9 = {
   /**
@@ -73,3 +71,5 @@ export const RawTypeDefV9 = {
     );
   },
 };
+
+export default RawTypeDefV9;

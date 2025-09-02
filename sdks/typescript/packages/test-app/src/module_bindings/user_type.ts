@@ -33,10 +33,8 @@ export type User = {
   identity: __Identity;
   username: string;
 };
-export default User;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const User = {
   /**
@@ -70,3 +68,5 @@ export const User = {
     );
   },
 };
+
+export default User;

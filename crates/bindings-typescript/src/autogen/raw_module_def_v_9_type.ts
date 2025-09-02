@@ -43,10 +43,8 @@ export type RawModuleDefV9 = {
   miscExports: RawMiscModuleExportV9[];
   rowLevelSecurity: RawRowLevelSecurityDefV9[];
 };
-export default RawModuleDefV9;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawModuleDefV9 = {
   /**
@@ -109,3 +107,5 @@ export const RawModuleDefV9 = {
     );
   },
 };
+
+export default RawModuleDefV9;

@@ -30,10 +30,8 @@ import {
 } from '@clockworklabs/spacetimedb-sdk';
 
 export type IdentityDisconnected = {};
-export default IdentityDisconnected;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const IdentityDisconnected = {
   /**
@@ -61,3 +59,5 @@ export const IdentityDisconnected = {
     );
   },
 };
+
+export default IdentityDisconnected;

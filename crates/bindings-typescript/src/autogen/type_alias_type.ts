@@ -33,10 +33,8 @@ export type TypeAlias = {
   name: string;
   ty: number;
 };
-export default TypeAlias;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const TypeAlias = {
   /**
@@ -67,3 +65,5 @@ export const TypeAlias = {
     );
   },
 };
+
+export default TypeAlias;

@@ -34,10 +34,8 @@ export type TableDesc = {
   schema: RawTableDefV8;
   data: number;
 };
-export default TableDesc;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const TableDesc = {
   /**
@@ -71,3 +69,5 @@ export const TableDesc = {
     );
   },
 };
+
+export default TableDesc;

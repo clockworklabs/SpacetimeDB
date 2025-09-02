@@ -34,10 +34,8 @@ export type ReducerDef = {
   name: string;
   args: ProductTypeElement[];
 };
-export default ReducerDef;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const ReducerDef = {
   /**
@@ -73,3 +71,5 @@ export const ReducerDef = {
     );
   },
 };
+
+export default ReducerDef;

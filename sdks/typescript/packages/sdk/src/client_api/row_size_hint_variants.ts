@@ -28,46 +28,7 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { QueryId } from './query_id_type';
+import RowSizeHint from './row_size_hint_type';
 
-export type Unsubscribe = {
-  requestId: number;
-  queryId: QueryId;
-};
-/**
- * An object for generated helper functions.
- */
-export const Unsubscribe = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
-        {
-          name: 'queryId',
-          algebraicType: QueryId.getTypeScriptAlgebraicType(),
-        },
-      ],
-    });
-  },
-
-  serialize(writer: __BinaryWriter, value: Unsubscribe): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      Unsubscribe.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): Unsubscribe {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      Unsubscribe.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default Unsubscribe;
+export type FixedSize = { tag: 'FixedSize'; value: number };
+export type RowOffsets = { tag: 'RowOffsets'; value: bigint[] };

@@ -34,10 +34,8 @@ export type User = {
   name: string | undefined;
   online: boolean;
 };
-export default User;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const User = {
   /**
@@ -77,3 +75,5 @@ export const User = {
     );
   },
 };
+
+export default User;

@@ -36,10 +36,8 @@ export type RawIndexDefV8 = {
   indexType: IndexType;
   columns: number[];
 };
-export default RawIndexDefV8;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawIndexDefV8 = {
   /**
@@ -78,3 +76,5 @@ export const RawIndexDefV8 = {
     );
   },
 };
+
+export default RawIndexDefV8;

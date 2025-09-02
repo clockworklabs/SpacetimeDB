@@ -34,10 +34,8 @@ export type ProductTypeElement = {
   name: string | undefined;
   algebraicType: AlgebraicType;
 };
-export default ProductTypeElement;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const ProductTypeElement = {
   /**
@@ -76,3 +74,5 @@ export const ProductTypeElement = {
     );
   },
 };
+
+export default ProductTypeElement;

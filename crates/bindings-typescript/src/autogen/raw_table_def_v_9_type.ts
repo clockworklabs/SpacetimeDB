@@ -46,10 +46,8 @@ export type RawTableDefV9 = {
   tableType: TableType;
   tableAccess: TableAccess;
 };
-export default RawTableDefV9;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawTableDefV9 = {
   /**
@@ -116,3 +114,5 @@ export const RawTableDefV9 = {
     );
   },
 };
+
+export default RawTableDefV9;

@@ -34,10 +34,8 @@ export type RawConstraintDefV8 = {
   constraints: number;
   columns: number[];
 };
-export default RawConstraintDefV8;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawConstraintDefV8 = {
   /**
@@ -72,3 +70,5 @@ export const RawConstraintDefV8 = {
     );
   },
 };
+
+export default RawConstraintDefV8;

@@ -34,10 +34,8 @@ export type RawColumnDefaultValueV9 = {
   colId: number;
   value: Uint8Array;
 };
-export default RawColumnDefaultValueV9;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const RawColumnDefaultValueV9 = {
   /**
@@ -72,3 +70,5 @@ export const RawColumnDefaultValueV9 = {
     );
   },
 };
+
+export default RawColumnDefaultValueV9;

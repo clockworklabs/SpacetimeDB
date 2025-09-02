@@ -35,10 +35,8 @@ export type CreatePlayer = {
   name: string;
   location: Point;
 };
-export default CreatePlayer;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const CreatePlayer = {
   /**
@@ -69,3 +67,5 @@ export const CreatePlayer = {
     );
   },
 };
+
+export default CreatePlayer;

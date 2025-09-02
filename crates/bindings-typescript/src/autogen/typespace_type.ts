@@ -33,10 +33,8 @@ import { AlgebraicType } from './algebraic_type_type';
 export type Typespace = {
   types: AlgebraicType[];
 };
-export default Typespace;
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
 export const Typespace = {
   /**
@@ -71,3 +69,5 @@ export const Typespace = {
     );
   },
 };
+
+export default Typespace;
