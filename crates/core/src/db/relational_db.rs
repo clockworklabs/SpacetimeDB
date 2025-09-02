@@ -23,7 +23,7 @@ use spacetimedb_datastore::system_tables::StModuleRow;
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
-    UpdateFlags,
+    TxTableTruncated, UpdateFlags,
 };
 use spacetimedb_datastore::{
     locking_tx_datastore::{
@@ -873,10 +873,16 @@ impl RelationalDB {
                 .collect();
             let deletes: Box<_> = tx_data
                 .deletes()
-                .map(|(table_id, rowdata)| Ops {
+                .filter(|(_, truncated, _)| *truncated == TxTableTruncated::No)
+                .map(|(table_id, _, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
                 })
+                .collect();
+            let truncates: Box<_> = tx_data
+                .deletes()
+                .filter(|(_, truncated, _)| *truncated == TxTableTruncated::Yes)
+                .map(|(table_id, ..)| *table_id)
                 .collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
@@ -887,7 +893,7 @@ impl RelationalDB {
                 mutations: Some(Mutations {
                     inserts,
                     deletes,
-                    truncates: [].into(),
+                    truncates,
                 }),
             };
 
