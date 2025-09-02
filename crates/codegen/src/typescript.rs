@@ -1,4 +1,7 @@
-use crate::util::{is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols};
+use crate::util::{
+    is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols,
+    print_auto_generated_version_comment,
+};
 use crate::{indent_scope, OutputFile};
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
@@ -33,7 +36,7 @@ impl Lang for TypeScript {
             let mut output = CodeIndenter::new(String::new(), INDENT);
             let out = &mut output;
 
-            print_file_header(out);
+            print_file_header(out, false);
             gen_and_print_imports(module, out, &product.elements, &[typ.ty], None);
             writeln!(out);
             define_body_for_product(module, out, &type_name, &product.elements);
@@ -48,7 +51,7 @@ impl Lang for TypeScript {
             let mut output = CodeIndenter::new(String::new(), INDENT);
             let out = &mut output;
 
-            print_file_header(out);
+            print_file_header(out, false);
             // Note that the current type is not included in dont_import below.
             gen_and_print_imports(module, out, variants, &[], Some("Type"));
             writeln!(out);
@@ -64,7 +67,7 @@ impl Lang for TypeScript {
             let mut output = CodeIndenter::new(String::new(), INDENT);
             let out = &mut output;
 
-            print_file_header(out);
+            print_file_header(out, false);
             gen_and_print_imports(module, out, variants, &[typ.ty], None);
             writeln!(
                 out,
@@ -113,7 +116,7 @@ impl Lang for TypeScript {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
-        print_file_header(out);
+        print_file_header(out, false);
 
         let type_ref = table.product_type_ref;
         let row_type = type_ref_name(module, type_ref);
@@ -280,7 +283,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
-        print_file_header(out);
+        print_file_header(out, false);
 
         out.newline();
 
@@ -307,7 +310,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
-        print_file_header(out);
+        print_file_header(out, true);
 
         out.newline();
 
@@ -697,8 +700,11 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
     writeln!(out, "}} from \"@clockworklabs/spacetimedb-sdk\";");
 }
 
-fn print_file_header(output: &mut Indenter) {
+fn print_file_header(output: &mut Indenter, include_version: bool) {
     print_auto_generated_file_comment(output);
+    if include_version {
+        print_auto_generated_version_comment(output);
+    }
     print_lint_suppression(output);
     print_spacetimedb_imports(output);
 }
