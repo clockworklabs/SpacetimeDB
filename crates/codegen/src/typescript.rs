@@ -1192,7 +1192,10 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports, suffi
         let module_name = type_ref_module_name(module, typeref);
         let type_name = type_ref_name(module, typeref);
         if let Some(suffix) = suffix {
-            writeln!(out, "import {{ {type_name} as {type_name}{suffix} }} from \"./{module_name}\";");
+            writeln!(
+                out,
+                "import {{ {type_name} as {type_name}{suffix} }} from \"./{module_name}\";"
+            );
         } else {
             writeln!(out, "import {{ {type_name} }} from \"./{module_name}\";");
         }
