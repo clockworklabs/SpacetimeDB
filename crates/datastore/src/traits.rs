@@ -174,7 +174,9 @@ pub struct TxData {
     /// The inserted rows per table.
     inserts: BTreeMap<TableId, Arc<[ProductValue]>>,
     /// The deleted rows per table.
-    deletes: BTreeMap<TableId, Arc<[ProductValue]>>,
+    ///
+    /// Also stores per table whether it has been truncated.
+    deletes: BTreeMap<TableId, TxDeleteEntry>,
     /// Map of all `TableId`s in both `inserts` and `deletes` to their
     /// corresponding table name.
     tables: IntMap<TableId, String>,
@@ -184,6 +186,24 @@ pub struct TxData {
     /// but `Some` does not necessarily imply that either is non-empty.
     tx_offset: Option<u64>,
     // TODO: Store an `Arc<String>` or equivalent instead.
+}
+
+/// A record of a list of deletes for and potential truncation of a table,
+/// within a transaction.
+pub struct TxDeleteEntry {
+    /// Were all rows previously in the table deleted within this transaction?
+    truncated: TxTableTruncated,
+    /// The deleted rows of the table.
+    rows: Arc<[ProductValue]>,
+}
+
+/// Whether a table was truncated in a transaction.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum TxTableTruncated {
+    /// It was truncated.
+    Yes,
+    /// It was not truncated.
+    No,
 }
 
 impl TxData {
@@ -208,8 +228,22 @@ impl TxData {
     }
 
     /// Set `rows` as the deleted rows for `(table_id, table_name)`.
-    pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
-        self.deletes.insert(table_id, rows);
+    ///
+    /// When `truncated` is set, the table has been emptied in this transaction.
+    pub fn set_deletes_for_table(
+        &mut self,
+        table_id: TableId,
+        table_name: &str,
+        rows: Arc<[ProductValue]>,
+        truncated: bool,
+    ) {
+        let truncated = if truncated {
+            TxTableTruncated::Yes
+        } else {
+            TxTableTruncated::No
+        };
+        let entry = TxDeleteEntry { truncated, rows };
+        self.deletes.insert(table_id, entry);
         self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
     }
 
@@ -238,13 +272,15 @@ impl TxData {
     }
 
     /// Obtain an iterator over the deleted rows per table.
-    pub fn deletes(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
-        self.deletes.iter()
+    pub fn deletes(&self) -> impl Iterator<Item = (&TableId, TxTableTruncated, &Arc<[ProductValue]>)> + '_ {
+        self.deletes
+            .iter()
+            .map(|(table_id, entry)| (table_id, entry.truncated, &entry.rows))
     }
 
     /// Get the `i`th deleted row for `table_id` if it exists
     pub fn get_ith_delete(&self, table_id: TableId, i: usize) -> Option<&ProductValue> {
-        self.deletes.get(&table_id).and_then(|rows| rows.get(i))
+        self.deletes.get(&table_id).and_then(|entry| entry.rows.get(i))
     }
 
     /// Obtain an iterator over the inserted rows per table.
@@ -252,12 +288,12 @@ impl TxData {
     /// If you don't need access to the table name, [`Self::deletes`] is
     /// slightly more efficient.
     pub fn deletes_with_table_name(&self) -> impl Iterator<Item = (&TableId, &str, &Arc<[ProductValue]>)> + '_ {
-        self.deletes.iter().map(|(table_id, rows)| {
+        self.deletes.iter().map(|(table_id, entry)| {
             let table_name = self
                 .tables
                 .get(table_id)
                 .expect("invalid `TxData`: partial table name mapping");
-            (table_id, table_name.as_str(), rows)
+            (table_id, table_name.as_str(), &entry.rows)
         })
     }
 
@@ -266,7 +302,7 @@ impl TxData {
     /// This is used to determine if a transaction should be written to disk.
     pub fn has_rows_or_connect_disconnect(&self, reducer_context: Option<&ReducerContext>) -> bool {
         self.inserts().any(|(_, inserted_rows)| !inserted_rows.is_empty())
-            || self.deletes().any(|(_, deleted_rows)| !deleted_rows.is_empty())
+            || self.deletes().any(|(.., deleted_rows)| !deleted_rows.is_empty())
             || matches!(
                 reducer_context.map(|rcx| rcx.name.strip_prefix("__identity_")),
                 Some(Some("connected__" | "disconnected__"))
