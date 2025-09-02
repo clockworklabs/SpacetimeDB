@@ -1881,7 +1881,7 @@ impl MutTxId {
             .get_table_and_blob_store_or_create_from(table_id, commit_table);
         let mut rows_removed = tx_table.clear(tx_blob_store);
 
-        // Mark every table in the committed state as deleted.
+        // Mark every row in the committed state as deleted.
         for row in commit_table.scan_rows(commit_bs) {
             delete_table.insert(row.pointer());
             rows_removed += 1;
