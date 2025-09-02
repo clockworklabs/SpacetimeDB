@@ -1,6 +1,12 @@
-import { AlgebraicType, ProductTypeElement, ScheduleAt, SumTypeVariant, type AlgebraicTypeVariants } from "..";
-import type __AlgebraicType from "../autogen/algebraic_type_type";
-import type { Prettify } from "./type_util";
+import {
+  AlgebraicType,
+  ProductTypeElement,
+  ScheduleAt,
+  SumTypeVariant,
+  type AlgebraicTypeVariants,
+} from '..';
+import type __AlgebraicType from '../autogen/algebraic_type_type';
+import type { Prettify } from './type_util';
 
 /**
  * A set of methods for building a column definition. Type builders extend this
@@ -12,35 +18,59 @@ interface IntoColumnBuilder<Type, SpacetimeType extends AlgebraicType> {
    * Specify the index type for this column
    * @param algorithm The index algorithm to use
    */
-  index<M extends ColumnMetadata = DefaultMetadata, N extends IndexTypes = "btree">(
+  index<
+    M extends ColumnMetadata = DefaultMetadata,
+    N extends IndexTypes = 'btree',
+  >(
     algorithm?: N
-  ): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "indexType"> & { indexType: N }>>;
+  ): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'indexType'> & { indexType: N }>
+  >;
 
   /**
    * Specify this column as the primary key
    */
-  primaryKey<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isPrimaryKey"> & { isPrimaryKey: true }>>;
+  primaryKey<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isPrimaryKey'> & { isPrimaryKey: true }>
+  >;
 
   /**
    * Specify this column as unique
    */
-  unique<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isUnique"> & { isUnique: true }>>;
+  unique<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isUnique'> & { isUnique: true }>
+  >;
 
   /**
    * Specify this column as auto-incrementing
    */
-  autoInc<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isAutoIncrement"> & { isAutoIncrement: true }>>;
+  autoInc<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isAutoIncrement'> & { isAutoIncrement: true }>
+  >;
 
   /**
    * Specify this column as a schedule-at field
    */
-  scheduleAt<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isScheduleAt"> & { isScheduleAt: true }>>;
+  scheduleAt<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isScheduleAt'> & { isScheduleAt: true }>
+  >;
 }
 
 /**
  * Helper type to extract the TypeScript type from a TypeBuilder
  */
-type InferTypeOfTypeBuilder<T> = T extends TypeBuilder<infer U, any> ? U : never;
+type InferTypeOfTypeBuilder<T> =
+  T extends TypeBuilder<infer U, any> ? U : never;
 
 /**
  * Helper type to extract the TypeScript type from a TypeBuilder
@@ -50,7 +80,19 @@ export type Infer<T> = InferTypeOfTypeBuilder<T>;
 /**
  * Helper type to extract the type of a row from an object.
  */
-type InferTypeOfRow<T> = T extends Record<string, ColumnBuilder<infer U, any, any> | TypeBuilder<infer U, any>> ? { [K in keyof T]: T[K] extends ColumnBuilder<infer V, any, any> ? V : T[K] extends TypeBuilder<infer V, any> ? V : never } : never;
+type InferTypeOfRow<T> =
+  T extends Record<
+    string,
+    ColumnBuilder<infer U, any, any> | TypeBuilder<infer U, any>
+  >
+    ? {
+        [K in keyof T]: T[K] extends ColumnBuilder<infer V, any, any>
+          ? V
+          : T[K] extends TypeBuilder<infer V, any>
+            ? V
+            : never;
+      }
+    : never;
 
 /**
  * Type which represents a valid argument to the ProductColumnBuilder
@@ -60,7 +102,10 @@ type ElementsObj = Record<string, TypeBuilder<any, any>>;
 /**
  * Type which converts the elements of ElementsObj to a ProductType elements array
  */
-type ElementsArrayFromElementsObj<Obj extends ElementsObj> = { name: keyof Obj & string; algebraicType: Obj[keyof Obj & string]["spacetimeType"] }[];
+type ElementsArrayFromElementsObj<Obj extends ElementsObj> = {
+  name: keyof Obj & string;
+  algebraicType: Obj[keyof Obj & string]['spacetimeType'];
+}[];
 
 /**
  * A type which converts the elements of ElementsObj to a TypeScript object type.
@@ -70,7 +115,7 @@ type ElementsArrayFromElementsObj<Obj extends ElementsObj> = { name: keyof Obj &
  * e.g. { a: I32TypeBuilder, b: StringBuilder } -> { a: number, b: string }
  */
 type TypeScriptTypeFromElementsObj<Elements extends ElementsObj> = {
-  [K in keyof Elements]: InferTypeOfTypeBuilder<Elements[K]>
+  [K in keyof Elements]: InferTypeOfTypeBuilder<Elements[K]>;
 };
 
 type VariantsObj = Record<string, TypeBuilder<any, any>>;
@@ -83,25 +128,30 @@ type VariantsObj = Record<string, TypeBuilder<any, any>>;
  * e.g. { A: I32TypeBuilder, B: StringBuilder } -> { tag: "A", value: number } | { tag: "B", value: string }
  */
 type TypeScriptTypeFromVariantsObj<Variants extends VariantsObj> = {
-  [K in keyof Variants]: { tag: K; value: InferTypeOfTypeBuilder<Variants[K]> }
+  [K in keyof Variants]: { tag: K; value: InferTypeOfTypeBuilder<Variants[K]> };
 }[keyof Variants];
 
 /**
  * Type which converts the elements of VariantsObj to a SumType variants array
  */
-type VariantsArrayFromVariantsObj<Obj extends VariantsObj> = { name: keyof Obj & string; algebraicType: Obj[keyof Obj & string]["spacetimeType"] }[];
+type VariantsArrayFromVariantsObj<Obj extends VariantsObj> = {
+  name: keyof Obj & string;
+  algebraicType: Obj[keyof Obj & string]['spacetimeType'];
+}[];
 
 /**
  * A generic type builder that captures both the TypeScript type
  * and the corresponding `AlgebraicType`.
  */
-export class TypeBuilder<Type, SpacetimeType extends AlgebraicType> implements IntoColumnBuilder<Type, SpacetimeType> {
+export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
+  implements IntoColumnBuilder<Type, SpacetimeType>
+{
   /**
    * The TypeScript phantom type. This is not stored at runtime,
    * but is visible to the compiler
    */
   readonly type!: Type;
- 
+
   /**
    * TypeScript phantom type representing the type of the particular
    * AlgebraicType stored in {@link algebraicType}.
@@ -127,52 +177,95 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType> implements I
    * Specify the index type for this column
    * @param algorithm The index algorithm to use
    */
-  index<M extends ColumnMetadata = DefaultMetadata, N extends IndexTypes = "btree">(
+  index<
+    M extends ColumnMetadata = DefaultMetadata,
+    N extends IndexTypes = 'btree',
+  >(
     algorithm?: N
-  ): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "indexType"> & { indexType: N }>> {
-    return new ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "indexType"> & { indexType: N }>>(this, {
+  ): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'indexType'> & { indexType: N }>
+  > {
+    return new ColumnBuilder<
+      Type,
+      SpacetimeType,
+      Prettify<Omit<M, 'indexType'> & { indexType: N }>
+    >(this, {
       ...defaultMetadata,
-      indexType: algorithm
+      indexType: algorithm,
     });
   }
 
   /**
    * Specify this column as the primary key
    */
-  primaryKey<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isPrimaryKey"> & { isPrimaryKey: true }>> {
-    return new ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isPrimaryKey"> & { isPrimaryKey: true }>>(this, {
+  primaryKey<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isPrimaryKey'> & { isPrimaryKey: true }>
+  > {
+    return new ColumnBuilder<
+      Type,
+      SpacetimeType,
+      Prettify<Omit<M, 'isPrimaryKey'> & { isPrimaryKey: true }>
+    >(this, {
       ...defaultMetadata,
-      isPrimaryKey: true
+      isPrimaryKey: true,
     });
   }
 
   /**
    * Specify this column as unique
    */
-  unique<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isUnique"> & { isUnique: true }>> {
-    return new ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isUnique"> & { isUnique: true }>>(this, {
+  unique<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isUnique'> & { isUnique: true }>
+  > {
+    return new ColumnBuilder<
+      Type,
+      SpacetimeType,
+      Prettify<Omit<M, 'isUnique'> & { isUnique: true }>
+    >(this, {
       ...defaultMetadata,
-      isUnique: true
+      isUnique: true,
     });
   }
 
   /**
    * Specify this column as auto-incrementing
    */
-  autoInc<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isAutoIncrement"> & { isAutoIncrement: true }>> {
-    return new ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isAutoIncrement"> & { isAutoIncrement: true }>>(this, {
+  autoInc<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isAutoIncrement'> & { isAutoIncrement: true }>
+  > {
+    return new ColumnBuilder<
+      Type,
+      SpacetimeType,
+      Prettify<Omit<M, 'isAutoIncrement'> & { isAutoIncrement: true }>
+    >(this, {
       ...defaultMetadata,
-      isAutoIncrement: true
+      isAutoIncrement: true,
     });
   }
 
   /**
    * Specify this column as a schedule-at field
    */
-  scheduleAt<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isScheduleAt"> & { isScheduleAt: true }>> {
-    return new ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isScheduleAt"> & { isScheduleAt: true }>>(this, {
+  scheduleAt<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isScheduleAt'> & { isScheduleAt: true }>
+  > {
+    return new ColumnBuilder<
+      Type,
+      SpacetimeType,
+      Prettify<Omit<M, 'isScheduleAt'> & { isScheduleAt: true }>
+    >(this, {
       ...defaultMetadata,
-      isScheduleAt: true
+      isScheduleAt: true,
     });
   }
 }
@@ -197,22 +290,34 @@ export class U64Builder extends TypeBuilder<bigint, AlgebraicTypeVariants.U64> {
     super(AlgebraicType.U64);
   }
 }
-export class U128Builder extends TypeBuilder<bigint, AlgebraicTypeVariants.U128> {
+export class U128Builder extends TypeBuilder<
+  bigint,
+  AlgebraicTypeVariants.U128
+> {
   constructor() {
     super(AlgebraicType.U128);
   }
 }
-export class U256Builder extends TypeBuilder<bigint, AlgebraicTypeVariants.U256> {
+export class U256Builder extends TypeBuilder<
+  bigint,
+  AlgebraicTypeVariants.U256
+> {
   constructor() {
     super(AlgebraicType.U256);
   }
 }
-export class I128Builder extends TypeBuilder<bigint, AlgebraicTypeVariants.I128> {
+export class I128Builder extends TypeBuilder<
+  bigint,
+  AlgebraicTypeVariants.I128
+> {
   constructor() {
     super(AlgebraicType.I128);
   }
 }
-export class I256Builder extends TypeBuilder<bigint, AlgebraicTypeVariants.I256> {
+export class I256Builder extends TypeBuilder<
+  bigint,
+  AlgebraicTypeVariants.I256
+> {
   constructor() {
     super(AlgebraicType.I256);
   }
@@ -227,12 +332,18 @@ export class F64Builder extends TypeBuilder<number, AlgebraicTypeVariants.F64> {
     super(AlgebraicType.F64);
   }
 }
-export class BoolBuilder extends TypeBuilder<boolean, AlgebraicTypeVariants.Bool> {
+export class BoolBuilder extends TypeBuilder<
+  boolean,
+  AlgebraicTypeVariants.Bool
+> {
   constructor() {
     super(AlgebraicType.Bool);
   }
 }
-export class StringBuilder extends TypeBuilder<string, AlgebraicTypeVariants.String> {
+export class StringBuilder extends TypeBuilder<
+  string,
+  AlgebraicTypeVariants.String
+> {
   constructor() {
     super(AlgebraicType.String);
   }
@@ -257,7 +368,12 @@ export class I64Builder extends TypeBuilder<bigint, AlgebraicTypeVariants.I64> {
     super(AlgebraicType.I64);
   }
 }
-export class ArrayBuilder<Element extends TypeBuilder<any, any>> extends TypeBuilder<Array<Element["type"]>, { tag: "Array", value: Element["spacetimeType"] }> {
+export class ArrayBuilder<
+  Element extends TypeBuilder<any, any>,
+> extends TypeBuilder<
+  Array<Element['type']>,
+  { tag: 'Array'; value: Element['spacetimeType'] }
+> {
   /**
    * The phantom element type of the array for TypeScript
    */
@@ -267,7 +383,13 @@ export class ArrayBuilder<Element extends TypeBuilder<any, any>> extends TypeBui
     super(AlgebraicType.Array(element.algebraicType));
   }
 }
-export class ProductBuilder<Elements extends ElementsObj> extends TypeBuilder<TypeScriptTypeFromElementsObj<Elements>, { tag: "Product", value: { elements: ElementsArrayFromElementsObj<Elements> } }> {
+export class ProductBuilder<Elements extends ElementsObj> extends TypeBuilder<
+  TypeScriptTypeFromElementsObj<Elements>,
+  {
+    tag: 'Product';
+    value: { elements: ElementsArrayFromElementsObj<Elements> };
+  }
+> {
   /**
    * The phantom element types of the product for TypeScript
    */
@@ -275,54 +397,101 @@ export class ProductBuilder<Elements extends ElementsObj> extends TypeBuilder<Ty
 
   constructor(elements: Elements) {
     function elementsArrayFromElementsObj<Obj extends ElementsObj>(obj: Obj) {
-      return Object.entries(obj).map(([name, { algebraicType }]) => ({ name, algebraicType }));
+      return Object.entries(obj).map(([name, { algebraicType }]) => ({
+        name,
+        algebraicType,
+      }));
     }
-    super(AlgebraicType.Product({
-      elements: elementsArrayFromElementsObj(elements)
-    }));
+    super(
+      AlgebraicType.Product({
+        elements: elementsArrayFromElementsObj(elements),
+      })
+    );
   }
 }
-export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<TypeScriptTypeFromVariantsObj<Variants>, { tag: "Sum", value: { variants: VariantsArrayFromVariantsObj<Variants> } }> {
+export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
+  TypeScriptTypeFromVariantsObj<Variants>,
+  { tag: 'Sum'; value: { variants: VariantsArrayFromVariantsObj<Variants> } }
+> {
   /**
    * The phantom variant types of the sum for TypeScript
    */
   readonly variants!: Variants;
 
   constructor(variants: Variants) {
-    function variantsArrayFromVariantsObj<Variants extends VariantsObj>(variants: Variants): SumTypeVariant[] {
-      return Object.entries(variants).map(([name, { algebraicType }]) => ({ name, algebraicType }));
+    function variantsArrayFromVariantsObj<Variants extends VariantsObj>(
+      variants: Variants
+    ): SumTypeVariant[] {
+      return Object.entries(variants).map(([name, { algebraicType }]) => ({
+        name,
+        algebraicType,
+      }));
     }
-    super(AlgebraicType.Sum({
-      variants: variantsArrayFromVariantsObj(variants)
-    }));
+    super(
+      AlgebraicType.Sum({
+        variants: variantsArrayFromVariantsObj(variants),
+      })
+    );
   }
 }
 
-export interface U8ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.U8> { }
-export interface U16ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.U16> { }
-export interface U32ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.U32> { }
-export interface U64ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.U64> { }
-export interface U128ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.U128> { }
-export interface U256ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.U256> { }
-export interface I8ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.I8> { }
-export interface I16ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.I16> { }
-export interface I32ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.I32> { }
-export interface I64ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.I64> { }
-export interface I128ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.I128> { }
-export interface I256ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.I256> { }
-export interface F32ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.F32> { }
-export interface F64ColumnBuilder extends ColumnBuilder<number, AlgebraicTypeVariants.F64> { }
-export interface BoolColumnBuilder extends ColumnBuilder<boolean, AlgebraicTypeVariants.Bool> { }
-export interface StringColumnBuilder extends ColumnBuilder<string, AlgebraicTypeVariants.String> { }
-export interface ArrayColumnBuilder<Element extends TypeBuilder<any, any>> extends ColumnBuilder<Array<Element["type"]>, { tag: "Array", value: Element["spacetimeType"] }> { }
-export interface ProductColumnBuilder<Elements extends Array<{ name: string, algebraicType: AlgebraicType }>> extends ColumnBuilder<{ [K in Elements[number]['name']]: any }, { tag: "Product", value: { elements: Elements } }> { }
-export interface SumColumnBuilder<Variants extends Array<{ name: string, algebraicType: AlgebraicType }>> extends ColumnBuilder<{ [K in Variants[number]['name']]: { tag: K; value: any } }[Variants[number]['name']], { tag: "Sum", value: { variants: Variants } }> { }
+export interface U8ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.U8> {}
+export interface U16ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.U16> {}
+export interface U32ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.U32> {}
+export interface U64ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.U64> {}
+export interface U128ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.U128> {}
+export interface U256ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.U256> {}
+export interface I8ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.I8> {}
+export interface I16ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.I16> {}
+export interface I32ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.I32> {}
+export interface I64ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.I64> {}
+export interface I128ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.I128> {}
+export interface I256ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.I256> {}
+export interface F32ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.F32> {}
+export interface F64ColumnBuilder
+  extends ColumnBuilder<number, AlgebraicTypeVariants.F64> {}
+export interface BoolColumnBuilder
+  extends ColumnBuilder<boolean, AlgebraicTypeVariants.Bool> {}
+export interface StringColumnBuilder
+  extends ColumnBuilder<string, AlgebraicTypeVariants.String> {}
+export interface ArrayColumnBuilder<Element extends TypeBuilder<any, any>>
+  extends ColumnBuilder<
+    Array<Element['type']>,
+    { tag: 'Array'; value: Element['spacetimeType'] }
+  > {}
+export interface ProductColumnBuilder<
+  Elements extends Array<{ name: string; algebraicType: AlgebraicType }>,
+> extends ColumnBuilder<
+    { [K in Elements[number]['name']]: any },
+    { tag: 'Product'; value: { elements: Elements } }
+  > {}
+export interface SumColumnBuilder<
+  Variants extends Array<{ name: string; algebraicType: AlgebraicType }>,
+> extends ColumnBuilder<
+    {
+      [K in Variants[number]['name']]: { tag: K; value: any };
+    }[Variants[number]['name']],
+    { tag: 'Sum'; value: { variants: Variants } }
+  > {}
 
 /**
  * The type of index types that can be applied to a column.
  * `undefined` is the default
  */
-type IndexTypes = "btree" | "hash" | undefined;
+type IndexTypes = 'btree' | 'hash' | undefined;
 
 /**
  * Metadata describing column constraints and index type
@@ -354,7 +523,7 @@ const defaultMetadata: DefaultMetadata = {
   isUnique: false,
   isAutoIncrement: false,
   isScheduleAt: false,
-  indexType: undefined
+  indexType: undefined,
 };
 
 /**
@@ -367,12 +536,16 @@ const defaultMetadata: DefaultMetadata = {
 export class ColumnBuilder<
   Type,
   SpacetimeType extends AlgebraicType,
-  M extends ColumnMetadata = DefaultMetadata
-> implements IntoColumnBuilder<Type, SpacetimeType> {
+  M extends ColumnMetadata = DefaultMetadata,
+> implements IntoColumnBuilder<Type, SpacetimeType>
+{
   typeBuilder: TypeBuilder<Type, SpacetimeType>;
   columnMetadata: ColumnMetadata;
 
-  constructor(typeBuilder: TypeBuilder<Type, SpacetimeType>, metadata?: ColumnMetadata) {
+  constructor(
+    typeBuilder: TypeBuilder<Type, SpacetimeType>,
+    metadata?: ColumnMetadata
+  ) {
     this.typeBuilder = typeBuilder;
     this.columnMetadata = defaultMetadata;
   }
@@ -381,68 +554,93 @@ export class ColumnBuilder<
    * Specify the index type for this column
    * @param algorithm The index algorithm to use
    */
-  index<N extends IndexTypes = "btree">(
+  index<N extends IndexTypes = 'btree'>(
     algorithm?: N
-  ): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "indexType"> & { indexType: N }>> {
-    return new ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "indexType"> & { indexType: N }>>(
-      this.typeBuilder,
-      {
-        ...this.columnMetadata,
-        indexType: algorithm
-      }
-    );
+  ): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'indexType'> & { indexType: N }>
+  > {
+    return new ColumnBuilder<
+      Type,
+      SpacetimeType,
+      Prettify<Omit<M, 'indexType'> & { indexType: N }>
+    >(this.typeBuilder, {
+      ...this.columnMetadata,
+      indexType: algorithm,
+    });
   }
 
   /**
    * Specify this column as the primary key
    */
-  primaryKey(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isPrimaryKey"> & { isPrimaryKey: true }>> {
-    return new ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isPrimaryKey"> & { isPrimaryKey: true }>>(
-      this.typeBuilder,
-      {
-        ...this.columnMetadata,
-        isPrimaryKey: true
-      }
-    );
+  primaryKey(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isPrimaryKey'> & { isPrimaryKey: true }>
+  > {
+    return new ColumnBuilder<
+      Type,
+      SpacetimeType,
+      Prettify<Omit<M, 'isPrimaryKey'> & { isPrimaryKey: true }>
+    >(this.typeBuilder, {
+      ...this.columnMetadata,
+      isPrimaryKey: true,
+    });
   }
 
   /**
    * Specify this column as unique
    */
-  unique(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isUnique"> & { isUnique: true }>> {
-    return new ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isUnique"> & { isUnique: true }>>(
-      this.typeBuilder,
-      {
-        ...this.columnMetadata,
-        isUnique: true
-      }
-    );
+  unique(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isUnique'> & { isUnique: true }>
+  > {
+    return new ColumnBuilder<
+      Type,
+      SpacetimeType,
+      Prettify<Omit<M, 'isUnique'> & { isUnique: true }>
+    >(this.typeBuilder, {
+      ...this.columnMetadata,
+      isUnique: true,
+    });
   }
 
   /**
    * Specify this column as auto-incrementing
    */
-  autoInc(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isAutoIncrement"> & { isAutoIncrement: true }>> {
-    return new ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isAutoIncrement"> & { isAutoIncrement: true }>>(
-      this.typeBuilder,
-      {
-        ...this.columnMetadata,
-        isAutoIncrement: true
-      }
-    );
+  autoInc(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isAutoIncrement'> & { isAutoIncrement: true }>
+  > {
+    return new ColumnBuilder<
+      Type,
+      SpacetimeType,
+      Prettify<Omit<M, 'isAutoIncrement'> & { isAutoIncrement: true }>
+    >(this.typeBuilder, {
+      ...this.columnMetadata,
+      isAutoIncrement: true,
+    });
   }
 
   /**
    * Specify this column as a schedule-at field
    */
-  scheduleAt(): ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isScheduleAt"> & { isScheduleAt: true }>> {
-    return new ColumnBuilder<Type, SpacetimeType, Prettify<Omit<M, "isScheduleAt"> & { isScheduleAt: true }>>(
-      this.typeBuilder,
-      {
-        ...this.columnMetadata,
-        isScheduleAt: true
-      }
-    );
+  scheduleAt(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Prettify<Omit<M, 'isScheduleAt'> & { isScheduleAt: true }>
+  > {
+    return new ColumnBuilder<
+      Type,
+      SpacetimeType,
+      Prettify<Omit<M, 'isScheduleAt'> & { isScheduleAt: true }>
+    >(this.typeBuilder, {
+      ...this.columnMetadata,
+      isScheduleAt: true,
+    });
   }
 }
 
@@ -591,9 +789,7 @@ const t = {
    * values must be {@link TypeBuilder}s.
    * @returns A new ObjectBuilder instance
    */
-  object<Obj extends ElementsObj>(
-    obj: Obj
-  ): ProductBuilder<Obj> {
+  object<Obj extends ElementsObj>(obj: Obj): ProductBuilder<Obj> {
     return new ProductBuilder<Obj>(obj);
   },
 
@@ -603,7 +799,9 @@ const t = {
    * @param element The element type of the array, which must be a `TypeBuilder`.
    * @returns A new ArrayBuilder instance
    */
-  array<Element extends TypeBuilder<any, any>>(e: Element): ArrayBuilder<Element> {
+  array<Element extends TypeBuilder<any, any>>(
+    e: Element
+  ): ArrayBuilder<Element> {
     return new ArrayBuilder<Element>(e);
   },
 
@@ -614,9 +812,7 @@ const t = {
    * types must be `TypeBuilder`s.
    * @returns A new EnumBuilder instance
    */
-  enum<Obj extends VariantsObj>(
-    obj: Obj
-  ): SumBuilder<Obj> {
+  enum<Obj extends VariantsObj>(obj: Obj): SumBuilder<Obj> {
     return new SumBuilder<Obj>(obj);
   },
 
@@ -624,12 +820,23 @@ const t = {
    * This is a special helper function for conveniently creating {@link ScheduleAt} type columns.
    * @returns A new ColumnBuilder instance with the {@link ScheduleAt} type.
    */
-  scheduleAt: (): ColumnBuilder<ScheduleAt, ReturnType<typeof ScheduleAt.getAlgebraicType>, Omit<ColumnMetadata, "isScheduleAt"> & { isScheduleAt: true }> => {
-    return new ColumnBuilder<ScheduleAt, ReturnType<typeof ScheduleAt.getAlgebraicType>, Omit<ColumnMetadata, "isScheduleAt"> & { isScheduleAt: true }>(
-      new TypeBuilder<ScheduleAt, ReturnType<typeof ScheduleAt.getAlgebraicType>>(ScheduleAt.getAlgebraicType()),
+  scheduleAt: (): ColumnBuilder<
+    ScheduleAt,
+    ReturnType<typeof ScheduleAt.getAlgebraicType>,
+    Omit<ColumnMetadata, 'isScheduleAt'> & { isScheduleAt: true }
+  > => {
+    return new ColumnBuilder<
+      ScheduleAt,
+      ReturnType<typeof ScheduleAt.getAlgebraicType>,
+      Omit<ColumnMetadata, 'isScheduleAt'> & { isScheduleAt: true }
+    >(
+      new TypeBuilder<
+        ScheduleAt,
+        ReturnType<typeof ScheduleAt.getAlgebraicType>
+      >(ScheduleAt.getAlgebraicType()),
       {
         ...defaultMetadata,
-        isScheduleAt: true
+        isScheduleAt: true,
       }
     );
   },
@@ -638,32 +845,32 @@ export default t;
 
 // @typescript-eslint/no-unused-vars
 namespace tests {
-  type MustBeNever<T> = [T] extends [never] 
-    ? true 
-    : ["Error: Type must be never", T];
+  type MustBeNever<T> = [T] extends [never]
+    ? true
+    : ['Error: Type must be never', T];
 
   // Test type inference on a row
   // i.e. a Record<string, TypeBuilder | ColumnBuilder> type
   const row = {
     foo: t.string(),
     bar: t.i32().primaryKey(),
-    idx: t.i64().index("btree").unique()
+    idx: t.i64().index('btree').unique(),
   };
   type Row = InferTypeOfRow<typeof row>;
   const _row: Row = {
-    foo: "hello",
+    foo: 'hello',
     bar: 42,
-    idx: 100n
+    idx: 100n,
   };
 
   // Test that a row must not allow non-TypeBuilder or ColumnBuilder values
   const row2 = {
     foo: {
       // bar is not a TypeBuilder or ColumnBuilder, so this should fail
-      bar: t.string()
+      bar: t.string(),
     },
     bar: t.i32().primaryKey(),
-    idx: t.i64().index("btree").unique()
+    idx: t.i64().index('btree').unique(),
   };
   type Row2 = InferTypeOfRow<typeof row2>;
   type _ = MustBeNever<Row2>;
@@ -673,35 +880,55 @@ namespace tests {
     x: t.i32(),
     y: t.f64(),
     z: t.object({
-      foo: t.string()
-    })
+      foo: t.string(),
+    }),
   });
   type Point = InferTypeOfTypeBuilder<typeof point>;
   const _point: Point = {
     x: 1.0,
     y: 2.0,
     z: {
-      foo: "bar"
-     }
+      foo: 'bar',
+    },
   };
 
   // Test type inference on an enum
   const e = t.enum({
     A: t.string(),
-    B: t.number()
+    B: t.number(),
   });
   type E = InferTypeOfTypeBuilder<typeof e>;
-  const _e: E = { tag: "A", value: "hello" };
-  const _e2: E = { tag: "B", value: 42 };
+  const _e: E = { tag: 'A', value: 'hello' };
+  const _e2: E = { tag: 'B', value: 42 };
 
   // Test that the type of a row includes the correct ColumnBuilder types
   const _row3: {
     foo: TypeBuilder<string, AlgebraicTypeVariants.String>;
-    bar: ColumnBuilder<number, AlgebraicTypeVariants.I32, { isPrimaryKey: true; isUnique: false; isAutoIncrement: false; isScheduleAt: false; indexType: undefined; }>;
-    idx: ColumnBuilder<bigint, AlgebraicTypeVariants.I64, { isPrimaryKey: false; isUnique: true; isAutoIncrement: false; isScheduleAt: false; indexType: "btree"; }>;
+    bar: ColumnBuilder<
+      number,
+      AlgebraicTypeVariants.I32,
+      {
+        isPrimaryKey: true;
+        isUnique: false;
+        isAutoIncrement: false;
+        isScheduleAt: false;
+        indexType: undefined;
+      }
+    >;
+    idx: ColumnBuilder<
+      bigint,
+      AlgebraicTypeVariants.I64,
+      {
+        isPrimaryKey: false;
+        isUnique: true;
+        isAutoIncrement: false;
+        isScheduleAt: false;
+        indexType: 'btree';
+      }
+    >;
   } = {
     foo: t.string(),
     bar: t.i32().primaryKey(),
-    idx: t.i64().index("btree").unique()
+    idx: t.i64().index('btree').unique(),
   };
 }

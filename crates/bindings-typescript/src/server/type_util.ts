@@ -1,4 +1,3 @@
-
 /**
  * Utility to make TS show cleaner types by flattening intersections.
  */
