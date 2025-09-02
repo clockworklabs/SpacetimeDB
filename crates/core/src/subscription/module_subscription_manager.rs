@@ -1395,7 +1395,7 @@ impl BroadcastQueue {
     ) -> Result<(), BroadcastError> {
         self.0.send(SendWorkerMessage::SendMessage {
             recipient,
-            tx_offset: tx_offset.map(Into::into),
+            tx_offset,
             message: message.into(),
         })?;
         Ok(())

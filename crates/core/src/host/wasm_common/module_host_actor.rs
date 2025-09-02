@@ -485,13 +485,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             request_id,
             timer,
         };
-        let (_tx_offset, event, _) = match self
+        let event = match self
             .info
             .subscriptions
             .commit_and_broadcast_event(client, event, tx)
             .unwrap()
         {
-            Ok(ev) => ev,
+            Ok(res) => res.event,
             Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
         };
 

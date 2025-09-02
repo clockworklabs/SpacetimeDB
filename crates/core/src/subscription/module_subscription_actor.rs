@@ -129,6 +129,16 @@ impl SubscriptionMetrics {
     }
 }
 
+/// Inner result type of [`ModuleSubscriptions::commit_and_broadcast_event`].
+pub type CommitAndBroadcastEventResult = Result<CommitAndBroadcastEventSuccess, WriteConflict>;
+
+/// `Ok` side of a [`CommitAndBroadcastEventResult`].
+pub struct CommitAndBroadcastEventSuccess {
+    pub tx_offset: TransactionOffset,
+    pub event: Arc<ModuleEvent>,
+    pub metrics: ExecutionMetrics,
+}
+
 type AssertTxFn = Arc<dyn Fn(&Tx)>;
 type SubscriptionUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
 type FullSubscriptionUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
@@ -852,7 +862,7 @@ impl ModuleSubscriptions {
         caller: Option<Arc<ClientConnectionSender>>,
         mut event: ModuleEvent,
         tx: MutTx,
-    ) -> Result<Result<(TransactionOffset, Arc<ModuleEvent>, ExecutionMetrics), WriteConflict>, DBError> {
+    ) -> Result<CommitAndBroadcastEventResult, DBError> {
         let database_identity = self.relational_db.database_identity();
         let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Update);
 
@@ -927,7 +937,11 @@ impl ModuleSubscriptions {
         // Merge in the subscription evaluation metrics.
         read_tx.metrics.merge(update_metrics);
 
-        Ok(Ok((extra_tx_offset, event, update_metrics)))
+        Ok(Ok(CommitAndBroadcastEventSuccess {
+            tx_offset: extra_tx_offset,
+            event,
+            metrics: update_metrics,
+        }))
     }
 
     fn begin_tx(&self, workload: Workload) -> (ScopeGuard<TxId, impl FnOnce(TxId) + '_>, TransactionOffset) {
@@ -1290,10 +1304,10 @@ mod tests {
             db.insert(&mut tx, table_id, &bsatn::to_vec(&row)?)?;
         }
 
-        let Ok(Ok((_, _, metrics))) = subs.commit_and_broadcast_event(None, module_event(), tx) else {
+        let Ok(Ok(success)) = subs.commit_and_broadcast_event(None, module_event(), tx) else {
             panic!("Encountered an error in `commit_and_broadcast_event`");
         };
-        Ok(metrics)
+        Ok(success.metrics)
     }
 
     #[test]

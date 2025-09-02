@@ -307,8 +307,8 @@ pub fn run(
                 Err(WriteConflict) => {
                     todo!("See module_host_actor::call_reducer_with_tx")
                 }
-                Ok((tx_offset, _, _)) => Ok(SqlResult {
-                    tx_offset,
+                Ok(res) => Ok(SqlResult {
+                    tx_offset: res.tx_offset,
                     rows: vec![],
                     metrics,
                 }),
