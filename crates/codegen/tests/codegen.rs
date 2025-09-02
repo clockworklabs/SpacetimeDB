@@ -17,7 +17,7 @@ macro_rules! declare_tests {
             let module = compiled_module();
             let outfiles = generate(&module, &$lang)
                 .into_iter()
-                .map(|f| (f.filename, f.content))
+                .map(|f| (f.filename, f.code))
                 .collect::<HashMap<_, _>>();
             let mut settings = insta::Settings::clone_current();
             settings.set_sort_maps(true);
