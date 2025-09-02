@@ -479,6 +479,7 @@ pub struct PublishDatabaseQueryParams {
     /// Users obtain such a hash via the `/database/:name_or_identity/pre-publish POST` route.
     /// This is a safeguard to require explicit approval for updates which will break clients.
     token: Option<spacetimedb_lib::Hash>,
+    #[serde(default)]
     policy: MigrationPolicy,
 }
 
