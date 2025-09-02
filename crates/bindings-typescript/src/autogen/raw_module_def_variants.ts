@@ -28,48 +28,10 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { ProductTypeElement } from './product_type_element_type';
+import { RawModuleDefV8 } from './raw_module_def_v_8_type';
+import { RawModuleDefV9 } from './raw_module_def_v_9_type';
 
-export type ReducerDef = {
-  name: string;
-  args: ProductTypeElement[];
-};
-export default ReducerDef;
+import RawModuleDef from './raw_module_def_type';
 
-/**
- * A namespace for generated helper functions.
- */
-export const ReducerDef = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'name', algebraicType: __AlgebraicTypeValue.String },
-        {
-          name: 'args',
-          algebraicType: __AlgebraicTypeValue.Array(
-            ProductTypeElement.getTypeScriptAlgebraicType()
-          ),
-        },
-      ],
-    });
-  },
-
-  serialize(writer: __BinaryWriter, value: ReducerDef): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      ReducerDef.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): ReducerDef {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      ReducerDef.getTypeScriptAlgebraicType()
-    );
-  },
-};
+export type V8BackCompat = { tag: 'V8BackCompat'; value: RawModuleDefV8 };
+export type V9 = { tag: 'V9'; value: RawModuleDefV9 };

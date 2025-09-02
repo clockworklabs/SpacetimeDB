@@ -28,23 +28,18 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { Typespace } from './typespace_type';
-import { TableDesc } from './table_desc_type';
-import { ReducerDef } from './reducer_def_type';
-import { MiscModuleExport } from './misc_module_export_type';
 
-export type RawModuleDefV8 = {
-  typespace: Typespace;
-  tables: TableDesc[];
-  reducers: ReducerDef[];
-  miscExports: MiscModuleExport[];
+export type RawColumnDefaultValueV9 = {
+  table: string;
+  colId: number;
+  value: Uint8Array;
 };
-export default RawModuleDefV8;
+export default RawColumnDefaultValueV9;
 
 /**
  * A namespace for generated helper functions.
  */
-export const RawModuleDefV8 = {
+export const RawColumnDefaultValueV9 = {
   /**
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
@@ -52,44 +47,28 @@ export const RawModuleDefV8 = {
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
     return __AlgebraicTypeValue.Product({
       elements: [
+        { name: 'table', algebraicType: __AlgebraicTypeValue.String },
+        { name: 'colId', algebraicType: __AlgebraicTypeValue.U16 },
         {
-          name: 'typespace',
-          algebraicType: Typespace.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'tables',
-          algebraicType: __AlgebraicTypeValue.Array(
-            TableDesc.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'reducers',
-          algebraicType: __AlgebraicTypeValue.Array(
-            ReducerDef.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'miscExports',
-          algebraicType: __AlgebraicTypeValue.Array(
-            MiscModuleExport.getTypeScriptAlgebraicType()
-          ),
+          name: 'value',
+          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
         },
       ],
     });
   },
 
-  serialize(writer: __BinaryWriter, value: RawModuleDefV8): void {
+  serialize(writer: __BinaryWriter, value: RawColumnDefaultValueV9): void {
     __AlgebraicTypeValue.serializeValue(
       writer,
-      RawModuleDefV8.getTypeScriptAlgebraicType(),
+      RawColumnDefaultValueV9.getTypeScriptAlgebraicType(),
       value
     );
   },
 
-  deserialize(reader: __BinaryReader): RawModuleDefV8 {
+  deserialize(reader: __BinaryReader): RawColumnDefaultValueV9 {
     return __AlgebraicTypeValue.deserializeValue(
       reader,
-      RawModuleDefV8.getTypeScriptAlgebraicType()
+      RawColumnDefaultValueV9.getTypeScriptAlgebraicType()
     );
   },
 };

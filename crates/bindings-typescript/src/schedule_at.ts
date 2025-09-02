@@ -1,7 +1,9 @@
 import { AlgebraicType } from './algebraic_type';
 
-export namespace ScheduleAt {
-  export function getAlgebraicType(): AlgebraicType {
+export const ScheduleAt: {
+  getAlgebraicType(): AlgebraicType;
+} = {
+  getAlgebraicType(): AlgebraicType {
     return AlgebraicType.Sum({
       variants: [
         {
@@ -11,25 +13,25 @@ export namespace ScheduleAt {
         { name: 'Time', algebraicType: AlgebraicType.createTimestampType() },
       ],
     });
-  }
+  },
+};
 
-  export type Interval = {
-    tag: 'Interval';
-    value: { __time_duration_micros__: BigInt };
-  };
-  export const Interval = (value: BigInt): Interval => ({
-    tag: 'Interval',
-    value: { __time_duration_micros__: value },
-  });
-  export type Time = {
-    tag: 'Time';
-    value: { __timestamp_micros_since_unix_epoch__: BigInt };
-  };
-  export const Time = (value: BigInt): Time => ({
-    tag: 'Time',
-    value: { __timestamp_micros_since_unix_epoch__: value },
-  });
-}
+export type Interval = {
+  tag: 'Interval';
+  value: { __time_duration_micros__: bigint };
+};
+export const Interval = (value: bigint): Interval => ({
+  tag: 'Interval',
+  value: { __time_duration_micros__: value },
+});
+export type Time = {
+  tag: 'Time';
+  value: { __timestamp_micros_since_unix_epoch__: bigint };
+};
+export const Time = (value: bigint): Time => ({
+  tag: 'Time',
+  value: { __timestamp_micros_since_unix_epoch__: value },
+});
 
-export type ScheduleAt = ScheduleAt.Interval | ScheduleAt.Time;
+export type ScheduleAt = Interval | Time;
 export default ScheduleAt;

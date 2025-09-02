@@ -28,48 +28,7 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { ProductTypeElement } from './product_type_element_type';
+import TableType from './table_type_type';
 
-export type ReducerDef = {
-  name: string;
-  args: ProductTypeElement[];
-};
-export default ReducerDef;
-
-/**
- * A namespace for generated helper functions.
- */
-export const ReducerDef = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'name', algebraicType: __AlgebraicTypeValue.String },
-        {
-          name: 'args',
-          algebraicType: __AlgebraicTypeValue.Array(
-            ProductTypeElement.getTypeScriptAlgebraicType()
-          ),
-        },
-      ],
-    });
-  },
-
-  serialize(writer: __BinaryWriter, value: ReducerDef): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      ReducerDef.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): ReducerDef {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      ReducerDef.getTypeScriptAlgebraicType()
-    );
-  },
-};
+export type System = { tag: 'System' };
+export type User = { tag: 'User' };

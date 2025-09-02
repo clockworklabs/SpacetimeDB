@@ -5,7 +5,7 @@ use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::Set;
 use fs_err as fs;
-use spacetimedb_codegen::{generate, Csharp, Lang, Rust, TypeScript, AUTO_GENERATED_PREFIX};
+use spacetimedb_codegen::{generate, Csharp, Lang, OutputFile, Rust, TypeScript, AUTO_GENERATED_PREFIX};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{sats, RawModuleDef};
 use spacetimedb_schema;
@@ -145,8 +145,8 @@ pub async fn exec_ex(
         Language::TypeScript => &TypeScript,
     };
 
-    for (fname, code) in generate(&module, gen_lang) {
-        let fname = Path::new(&fname);
+    for OutputFile { filename, code } in generate(&module, gen_lang) {
+        let fname = Path::new(&filename);
         // If a generator asks for a file in a subdirectory, create the subdirectory first.
         if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
             fs::create_dir_all(out_dir.join(parent))?;

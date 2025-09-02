@@ -28,48 +28,28 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { ProductTypeElement } from './product_type_element_type';
+import { SumType } from './sum_type_type';
+import { ProductType } from './product_type_type';
 
-export type ReducerDef = {
-  name: string;
-  args: ProductTypeElement[];
-};
-export default ReducerDef;
+import AlgebraicType from './algebraic_type_type';
 
-/**
- * A namespace for generated helper functions.
- */
-export const ReducerDef = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'name', algebraicType: __AlgebraicTypeValue.String },
-        {
-          name: 'args',
-          algebraicType: __AlgebraicTypeValue.Array(
-            ProductTypeElement.getTypeScriptAlgebraicType()
-          ),
-        },
-      ],
-    });
-  },
-
-  serialize(writer: __BinaryWriter, value: ReducerDef): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      ReducerDef.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): ReducerDef {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      ReducerDef.getTypeScriptAlgebraicType()
-    );
-  },
-};
+export type Ref = { tag: 'Ref'; value: number };
+export type Sum = { tag: 'Sum'; value: SumType };
+export type Product = { tag: 'Product'; value: ProductType };
+export type Array = { tag: 'Array'; value: AlgebraicType };
+export type String = { tag: 'String' };
+export type Bool = { tag: 'Bool' };
+export type I8 = { tag: 'I8' };
+export type U8 = { tag: 'U8' };
+export type I16 = { tag: 'I16' };
+export type U16 = { tag: 'U16' };
+export type I32 = { tag: 'I32' };
+export type U32 = { tag: 'U32' };
+export type I64 = { tag: 'I64' };
+export type U64 = { tag: 'U64' };
+export type I128 = { tag: 'I128' };
+export type U128 = { tag: 'U128' };
+export type I256 = { tag: 'I256' };
+export type U256 = { tag: 'U256' };
+export type F32 = { tag: 'F32' };
+export type F64 = { tag: 'F64' };

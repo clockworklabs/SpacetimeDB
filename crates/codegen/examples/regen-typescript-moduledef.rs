@@ -3,7 +3,7 @@
 
 use fs_err as fs;
 use regex::Regex;
-use spacetimedb_codegen::{generate, typescript};
+use spacetimedb_codegen::{generate, typescript, OutputFile};
 use spacetimedb_lib::{RawModuleDef, RawModuleDefV8};
 use spacetimedb_schema::def::ModuleDef;
 use std::path::Path;
@@ -34,13 +34,12 @@ fn main() -> anyhow::Result<()> {
     let module: ModuleDef = module.try_into()?;
     generate(&module, &typescript::TypeScript)
         .into_iter()
-        .try_for_each(|(filename, code)| {
+        .try_for_each(|OutputFile { filename, code }| {
             // Skip the index.ts since we don't need it.
             if filename == "index.ts" {
                 return Ok(());
             }
             let code = regex_replace!(&code, r"@clockworklabs/spacetimedb-sdk", "../index");
-            let code = &code.replace("AlgebraicType as __AlgebraicType", "__AlgebraicType");
             fs::write(dir.join(filename), code.as_bytes())
         })?;
 
