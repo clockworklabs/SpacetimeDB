@@ -51,7 +51,7 @@ This document contains the help content for the `spacetime` command-line program
 * `generate` — Generate client files for a spacetime module.
 * `list` — Lists the databases attached to an identity. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `login` — Manage your login to the SpacetimeDB CLI
-* `logout` — 
+* `logout` —
 * `init` — Initializes a new spacetime project. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `build` — Builds a spacetime module.
 * `server` — Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
@@ -540,6 +540,7 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 * `-t`, `--timeout <TIMEOUT>` — The timeout, in seconds, after which to disconnect and stop receiving subscription messages. If `-n` is specified, it will stop after whichever
                      one comes first.
 * `--print-initial-update` — Print the initial update for the queries.
+* `--confirmed` — Instruct the server to deliver only updates of confirmed transactions
 * `--anonymous` — Perform this action with an anonymous identity
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
