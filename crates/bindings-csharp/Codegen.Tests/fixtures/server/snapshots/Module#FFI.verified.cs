@@ -408,7 +408,7 @@ namespace SpacetimeDB
             {
                 if (row.Foo == default)
                 {
-                    row.Foo = global::MultiTableRow.BSATN.Foo.Read(reader);
+                    row.Foo = global::MultiTableRow.BSATN.FooRW.Read(reader);
                 }
                 return row;
             }
@@ -530,7 +530,7 @@ namespace SpacetimeDB
             {
                 if (row.Foo == default)
                 {
-                    row.Foo = global::MultiTableRow.BSATN.Foo.Read(reader);
+                    row.Foo = global::MultiTableRow.BSATN.FooRW.Read(reader);
                 }
                 return row;
             }
@@ -652,7 +652,7 @@ namespace SpacetimeDB
             {
                 if (row.Id == default)
                 {
-                    row.Id = global::PublicTable.BSATN.Id.Read(reader);
+                    row.Id = global::PublicTable.BSATN.IdRW.Read(reader);
                 }
                 return row;
             }
@@ -690,7 +690,7 @@ namespace SpacetimeDB
                     ],
                     Schedule: null,
                     TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Public
                 );
 
             public ulong Count =>
@@ -870,7 +870,7 @@ namespace SpacetimeDB
             {
                 if (row.ScheduledId == default)
                 {
-                    row.ScheduledId = global::Timers.SendMessageTimer.BSATN.ScheduledId.Read(
+                    row.ScheduledId = global::Timers.SendMessageTimer.BSATN.ScheduledIdRW.Read(
                         reader
                     );
                 }
@@ -998,89 +998,80 @@ static class ModuleRegistration
 
     class InsertData : SpacetimeDB.Internal.IReducer
     {
-        private static readonly PublicTable.BSATN data = new();
+        private static readonly PublicTable.BSATN dataRW = new();
 
         public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new(nameof(InsertData), [new(nameof(data), data.GetAlgebraicType(registrar))], null);
+        ) => new(nameof(InsertData), [new("data", dataRW.GetAlgebraicType(registrar))], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
-            Reducers.InsertData((SpacetimeDB.ReducerContext)ctx, data.Read(reader));
+            Reducers.InsertData((SpacetimeDB.ReducerContext)ctx, dataRW.Read(reader));
         }
     }
 
     class InsertData2 : SpacetimeDB.Internal.IReducer
     {
-        private static readonly PublicTable.BSATN data = new();
+        private static readonly PublicTable.BSATN dataRW = new();
 
         public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new(nameof(InsertData2), [new(nameof(data), data.GetAlgebraicType(registrar))], null);
+        ) => new(nameof(InsertData2), [new("data", dataRW.GetAlgebraicType(registrar))], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Test.NestingNamespaces.AndClasses.InsertData2(
                 (SpacetimeDB.ReducerContext)ctx,
-                data.Read(reader)
+                dataRW.Read(reader)
             );
         }
     }
 
     class InsertMultiData : SpacetimeDB.Internal.IReducer
     {
-        private static readonly MultiTableRow.BSATN data = new();
+        private static readonly MultiTableRow.BSATN dataRW = new();
 
         public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) =>
-            new(
-                nameof(InsertMultiData),
-                [new(nameof(data), data.GetAlgebraicType(registrar))],
-                null
-            );
+        ) => new(nameof(InsertMultiData), [new("data", dataRW.GetAlgebraicType(registrar))], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
-            MultiTableRow.InsertMultiData((SpacetimeDB.ReducerContext)ctx, data.Read(reader));
+            MultiTableRow.InsertMultiData((SpacetimeDB.ReducerContext)ctx, dataRW.Read(reader));
         }
     }
 
     class ScheduleImmediate : SpacetimeDB.Internal.IReducer
     {
-        private static readonly PublicTable.BSATN data = new();
+        private static readonly PublicTable.BSATN dataRW = new();
 
         public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
-            new(
-                nameof(ScheduleImmediate),
-                [new(nameof(data), data.GetAlgebraicType(registrar))],
-                null
-            );
+            new(nameof(ScheduleImmediate), [new("data", dataRW.GetAlgebraicType(registrar))], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
-            Reducers.ScheduleImmediate((SpacetimeDB.ReducerContext)ctx, data.Read(reader));
+            Reducers.ScheduleImmediate((SpacetimeDB.ReducerContext)ctx, dataRW.Read(reader));
         }
     }
 
     class SendScheduledMessage : SpacetimeDB.Internal.IReducer
     {
-        private static readonly Timers.SendMessageTimer.BSATN arg = new();
+        private static readonly Timers.SendMessageTimer.BSATN argRW = new();
 
         public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 nameof(SendScheduledMessage),
-                [new(nameof(arg), arg.GetAlgebraicType(registrar))],
+                [new("arg", argRW.GetAlgebraicType(registrar))],
                 null
             );
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
-            Timers.SendScheduledMessage((SpacetimeDB.ReducerContext)ctx, arg.Read(reader));
+            Timers.SendScheduledMessage((SpacetimeDB.ReducerContext)ctx, argRW.Read(reader));
         }
     }
 

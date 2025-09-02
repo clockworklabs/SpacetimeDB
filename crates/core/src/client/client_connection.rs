@@ -29,6 +29,7 @@ use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
+use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
@@ -330,7 +331,6 @@ impl ClientConnectionSender {
 pub struct ClientConnection {
     sender: Arc<ClientConnectionSender>,
     pub replica_id: u64,
-    pub module: ModuleHost,
     module_rx: watch::Receiver<ModuleHost>,
 }
 
@@ -504,6 +504,41 @@ impl<T> Drop for MeteredReceiver<T> {
     }
 }
 
+/// Wraps the transmitting end of a channel with a gauge for tracking the size of the channel.
+pub struct MeteredSender<T> {
+    inner: mpsc::Sender<T>,
+    gauge: Option<IntGauge>,
+}
+
+impl<T> MeteredSender<T> {
+    pub fn new(inner: mpsc::Sender<T>) -> Self {
+        Self { inner, gauge: None }
+    }
+
+    pub fn with_gauge(inner: mpsc::Sender<T>, gauge: IntGauge) -> Self {
+        Self {
+            inner,
+            gauge: Some(gauge),
+        }
+    }
+
+    pub async fn send(&mut self, value: T) -> Result<(), SendError<T>> {
+        self.inner.send(value).await?;
+        if let Some(gauge) = &self.gauge {
+            gauge.inc();
+        }
+        Ok(())
+    }
+
+    pub fn try_send(&mut self, value: T) -> Result<(), TrySendError<T>> {
+        self.inner.try_send(value)?;
+        if let Some(gauge) = &self.gauge {
+            gauge.inc();
+        }
+        Ok(())
+    }
+}
+
 // if a client racks up this many messages in the queue without ACK'ing
 // anything, we boot 'em.
 const CLIENT_CHANNEL_CAPACITY: usize = 16 * KB;
@@ -602,7 +637,6 @@ impl ClientConnection {
         let this = Self {
             sender,
             replica_id,
-            module,
             module_rx,
         };
 
@@ -617,19 +651,31 @@ impl ClientConnection {
         id: ClientActorId,
         config: ClientConfig,
         replica_id: u64,
-        mut module_rx: watch::Receiver<ModuleHost>,
+        module_rx: watch::Receiver<ModuleHost>,
     ) -> Self {
-        let module = module_rx.borrow_and_update().clone();
         Self {
             sender: Arc::new(ClientConnectionSender::dummy(id, config)),
             replica_id,
-            module,
             module_rx,
         }
     }
 
     pub fn sender(&self) -> Arc<ClientConnectionSender> {
         self.sender.clone()
+    }
+
+    /// Get the [`ModuleHost`] for this connection.
+    ///
+    /// Note that modules can be hotswapped, in which case the returned handle
+    /// becomes invalid (i.e. all calls on it will result in an error).
+    /// Callers should thus drop the value as soon as they are done, and obtain
+    /// a fresh one when needed.
+    ///
+    /// While this [`ClientConnection`] is active, [`Self::watch_module_host`]
+    /// should be polled in the background, and the connection closed if and
+    /// when it returns an error.
+    pub fn module(&self) -> ModuleHost {
+        self.module_rx.borrow().clone()
     }
 
     #[inline]
@@ -641,13 +687,26 @@ impl ClientConnection {
         message_handlers::handle(self, message.into(), timer)
     }
 
+    /// Waits until the [`ModuleHost`] of this [`ClientConnection`] instance
+    /// exits, in which case `Err` containing [`NoSuchModule`] is returned.
+    ///
+    /// Should be polled while this [`ClientConnection`] is active, so as to be
+    /// able to shut down the connection gracefully if and when the module
+    /// exits.
+    ///
+    /// Note that this borrows `self` mutably, so may require cloning the
+    /// [`ClientConnection`] instance. The module is shared, however, so all
+    /// clones will observe a swapped module.
     pub async fn watch_module_host(&mut self) -> Result<(), NoSuchModule> {
-        match self.module_rx.changed().await {
-            Ok(()) => {
-                self.module = self.module_rx.borrow_and_update().clone();
-                Ok(())
+        loop {
+            // First check if the module exited between creating the client
+            // connection and calling `watch_module_host`...
+            if self.module_rx.changed().await.is_err() {
+                return Err(NoSuchModule);
             }
-            Err(_) => Err(NoSuchModule),
+            // ...then mark the current module as seen, so the next iteration
+            // of the loop waits until the module changes or exits.
+            self.module_rx.mark_unchanged();
         }
     }
 
@@ -666,7 +725,7 @@ impl ClientConnection {
             CallReducerFlags::NoSuccessNotify => None,
         };
 
-        self.module
+        self.module()
             .call_reducer(
                 self.id.identity,
                 Some(self.id.connection_id),
@@ -685,9 +744,9 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        self.module
+        self.module()
             .on_module_thread("subscribe_single", move || {
-                me.module
+                me.module()
                     .subscriptions()
                     .add_single_subscription(me.sender, subscription, timer, None)
             })
@@ -697,7 +756,7 @@ impl ClientConnection {
     pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         asyncify(move || {
-            me.module
+            me.module()
                 .subscriptions()
                 .remove_single_subscription(me.sender, request, timer)
         })
@@ -710,9 +769,9 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        self.module
+        self.module()
             .on_module_thread("subscribe_multi", move || {
-                me.module
+                me.module()
                     .subscriptions()
                     .add_multi_subscription(me.sender, request, timer, None)
             })
@@ -725,9 +784,9 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        self.module
+        self.module()
             .on_module_thread("unsubscribe_multi", move || {
-                me.module
+                me.module()
                     .subscriptions()
                     .remove_multi_subscription(me.sender, request, timer)
             })
@@ -737,7 +796,7 @@ impl ClientConnection {
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
         let me = self.clone();
         asyncify(move || {
-            me.module
+            me.module()
                 .subscriptions()
                 .add_legacy_subscriber(me.sender, subscription, timer, None)
         })
@@ -750,7 +809,7 @@ impl ClientConnection {
         message_id: &[u8],
         timer: Instant,
     ) -> Result<(), anyhow::Error> {
-        self.module
+        self.module()
             .one_off_query::<JsonFormat>(
                 self.id.identity,
                 query.to_owned(),
@@ -768,7 +827,7 @@ impl ClientConnection {
         message_id: &[u8],
         timer: Instant,
     ) -> Result<(), anyhow::Error> {
-        self.module
+        self.module()
             .one_off_query::<BsatnFormat>(
                 self.id.identity,
                 query.to_owned(),
@@ -781,6 +840,6 @@ impl ClientConnection {
     }
 
     pub async fn disconnect(self) {
-        self.module.disconnect_client(self.id).await
+        self.module().disconnect_client(self.id).await
     }
 }

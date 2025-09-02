@@ -26,7 +26,7 @@ use spacetimedb::client::messages::{
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
-    MessageHandleError, MeteredReceiver, Protocol,
+    MessageHandleError, MeteredReceiver, MeteredSender, Protocol,
 };
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
@@ -304,7 +304,7 @@ pub struct WebSocketOptions {
     ///
     /// If this number is exceeded, the client is disconnected.
     ///
-    /// Default: 2048
+    /// Default: 16384
     #[serde(default = "WebSocketOptions::default_incoming_queue_length")]
     pub incoming_queue_length: NonZeroUsize,
 }
@@ -319,7 +319,7 @@ impl WebSocketOptions {
     const DEFAULT_PING_INTERVAL: Duration = Duration::from_secs(15);
     const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
     const DEFAULT_CLOSE_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(250);
-    const DEFAULT_INCOMING_QUEUE_LENGTH: NonZeroUsize = NonZeroUsize::new(2048).expect("2048 > 0, qed");
+    const DEFAULT_INCOMING_QUEUE_LENGTH: NonZeroUsize = NonZeroUsize::new(16384).expect("16384 > 0, qed");
 
     const DEFAULT: Self = Self {
         ping_interval: Self::DEFAULT_PING_INTERVAL,
@@ -367,7 +367,7 @@ async fn ws_client_actor_inner(
     ws: WebSocketStream,
     sendrx: ClientConnectionReceiver,
 ) {
-    let database = client.module.info().database_identity;
+    let database = client.module().info().database_identity;
     let client_id = client.id;
     let client_closed_metric = WORKER_METRICS.ws_clients_closed_connection.with_label_values(&database);
     let state = Arc::new(ActorState::new(database, client_id, config));
@@ -684,7 +684,10 @@ async fn ws_recv_task<MessageHandler>(
 ) where
     MessageHandler: Future<Output = Result<(), MessageHandleError>>,
 {
-    let recv_queue = ws_recv_queue(state.clone(), unordered_tx.clone(), ws);
+    let recv_queue_gauge = WORKER_METRICS
+        .total_incoming_queue_length
+        .with_label_values(&state.database);
+    let recv_queue = ws_recv_queue(state.clone(), unordered_tx.clone(), recv_queue_gauge, ws);
     let recv_loop = pin!(ws_recv_loop(state.clone(), idle_tx, recv_queue));
     let recv_handler = ws_client_message_handler(state.clone(), client_closed_metric, recv_loop);
     pin_mut!(recv_handler);
@@ -824,6 +827,7 @@ fn ws_recv_loop(
 fn ws_recv_queue(
     state: Arc<ActorState>,
     unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
+    recv_queue_gauge: IntGauge,
     mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin + Send + 'static,
 ) -> impl Stream<Item = Result<WsMessage, WsError>> {
     const CLOSE: UnorderedWsMessage = UnorderedWsMessage::Close(CloseFrame {
@@ -834,15 +838,13 @@ fn ws_recv_queue(
         log::warn!("client {client_id} sent message after close or error");
     };
 
-    let (tx, rx) = mpsc::channel(state.config.incoming_queue_length.get());
-    let rx = MeteredReceiverStream {
-        inner: MeteredReceiver::with_gauge(
-            rx,
-            WORKER_METRICS
-                .total_incoming_queue_length
-                .with_label_values(&state.database),
-        ),
-    };
+    let max_incoming_queue_length = state.config.incoming_queue_length.get();
+
+    let (tx, rx) = mpsc::channel(max_incoming_queue_length);
+
+    let mut tx = MeteredSender::with_gauge(tx, recv_queue_gauge.clone());
+    let rx = MeteredReceiver::with_gauge(rx, recv_queue_gauge);
+    let rx = MeteredReceiverStream { inner: rx };
 
     tokio::spawn(async move {
         while let Some(item) = ws.next().await {
@@ -850,6 +852,8 @@ fn ws_recv_queue(
                 match e {
                     // If the queue is full, disconnect the client.
                     mpsc::error::TrySendError::Full(item) => {
+                        let client_id = state.client_id;
+                        log::warn!("Client {client_id} exceeded incoming_queue_length limit of {max_incoming_queue_length} requests");
                         // If we can't send close (send task already terminated):
                         //
                         // - Let downstream handlers know that we're closing,
@@ -1722,8 +1726,14 @@ mod tests {
         let (unordered_tx, mut unordered_rx) = mpsc::unbounded_channel();
         let input = stream::iter((0..20).map(|i| Ok(WsMessage::text(format!("message {i}")))));
 
-        let received = ws_recv_queue(state, unordered_tx, input).collect::<Vec<_>>().await;
+        let metric = IntGauge::new("bleep", "unhelpful").unwrap();
+        let received = ws_recv_queue(state, unordered_tx, metric.clone(), input)
+            .collect::<Vec<_>>()
+            .await;
+
         assert_matches!(unordered_rx.recv().await, Some(UnorderedWsMessage::Close(_)));
+        // Queue length metric should be zero
+        assert_eq!(metric.get(), 0);
         // Should have received all of the input.
         assert_eq!(received.len(), 20);
     }
@@ -1738,10 +1748,14 @@ mod tests {
         let (unordered_tx, _) = mpsc::unbounded_channel();
         let input = stream::iter((0..20).map(|i| Ok(WsMessage::text(format!("message {i}")))));
 
-        let received = ws_recv_queue(state.clone(), unordered_tx, input)
+        let metric = IntGauge::new("bleep", "unhelpful").unwrap();
+        let received = ws_recv_queue(state.clone(), unordered_tx, metric.clone(), input)
             .collect::<Vec<_>>()
             .await;
+
         assert!(state.closed());
+        // Queue length metric should be zero
+        assert_eq!(metric.get(), 0);
         // Should have received up to capacity.
         assert_eq!(received.len(), 10);
     }

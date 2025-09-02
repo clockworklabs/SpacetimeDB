@@ -3285,7 +3285,13 @@ mod tests {
                 AlgebraicType::sum([("ba", AlgebraicType::U16), ("bb", AlgebraicType::U8)])
             ]
         );
-        commit(&datastore, tx)?;
+        let tx_data = commit(&datastore, tx)?;
+        // Ensure the change has been persisted in the commitlog.
+        let to_product = |col: &ColumnSchema| value_serialize(&StColumnRow::from(col.clone())).into_product().unwrap();
+        let (_, inserts) = tx_data.inserts().find(|(id, _)| **id == ST_COLUMN_ID).unwrap();
+        assert_eq!(&**inserts, [to_product(&columns[1])].as_slice());
+        let (_, deletes) = tx_data.deletes().find(|(id, _)| **id == ST_COLUMN_ID).unwrap();
+        assert_eq!(&**deletes, [to_product(&columns_original[1])].as_slice());
 
         // Check that we can successfully scan using the new schema type post commit.
         let tx = begin_tx(&datastore);
