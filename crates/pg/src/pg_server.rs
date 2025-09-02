@@ -35,7 +35,7 @@ use spacetimedb_lib::version::spacetimedb_lib_version;
 use spacetimedb_lib::{Identity, ProductValue};
 use thiserror::Error;
 use tokio::net::TcpListener;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{Mutex, Notify};
 
 #[derive(Error, Debug)]
 pub(crate) enum PgError {
@@ -364,7 +364,7 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 }
 
 pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + 'static>(
-    mut shutdown: watch::Receiver<()>,
+    shutdown: Arc<Notify>,
     ctx: Arc<T>,
     tcp: TcpListener,
 ) {
@@ -391,7 +391,7 @@ pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + Node
                     }
                 }
             }
-            _ = shutdown.changed() => {
+            _ = shutdown.notified() => {
                 log::info!("PG: Shutting down PostgreSQL server.");
                 break;
             }

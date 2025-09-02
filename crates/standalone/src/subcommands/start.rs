@@ -185,15 +185,16 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let pg_server_addr = format!("{}:5432", listen_addr.split(':').next().unwrap());
     let tcp_pg = TcpListener::bind(pg_server_addr).await?;
 
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(());
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let shutdown_notify = notify.clone();
     tokio::select! {
-        _ = pg_server::start_pg(shutdown_rx.clone(), ctx, tcp_pg) => {},
-        _ = axum::serve(tcp, service).with_graceful_shutdown(async move {
-            shutdown_rx.changed().await.ok();
+        _ = pg_server::start_pg(notify.clone(), ctx, tcp_pg) => {},
+        _ = axum::serve(tcp, service).with_graceful_shutdown(async move  {
+            shutdown_notify.notified().await;
         }) => {},
         _ = tokio::signal::ctrl_c() => {
             println!("Shutting down servers...");
-            let _ = shutdown_tx.send(()); // Notify all tasks
+            notify.notify_waiters(); // Notify all tasks
         }
     }
 

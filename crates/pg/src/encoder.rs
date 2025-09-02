@@ -250,8 +250,7 @@ mod tests {
         let row = run(schema.clone(), value.clone()).await;
         assert_eq!(row, "\0\0\0\u{b}{\"Gray\": 1}\0\0\0\u{15}{\"some\": {\"Gray\": 2}}");
 
-        // Now a product with a nested option
-        // {x: {"Gray": 1}, y: "a"}, {some: {x: {"Gray": 2}, y: "b"}}
+        // Now nested product
         let product = AlgebraicType::product([
             ProductTypeElement::new(AlgebraicType::Product(schema), Some("x".into())),
             ProductTypeElement::new(AlgebraicType::String, Some("y".into())),
