@@ -3065,7 +3065,7 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
 
         // Insert a row and commit.
-        let row = random_row();
+        let row: ProductValue = random_row();
         insert(&datastore, &mut tx, table_id, &row)?;
         commit(&datastore, tx)?;
 
@@ -3088,22 +3088,30 @@ mod tests {
         let _ = datastore.rollback_mut_tx(tx);
 
         // Ensure the table still exists in the next transaction.
-        let tx = begin_mut_tx(&datastore);
+        let mut tx = begin_mut_tx(&datastore);
         assert_eq!(tx.pending_schema_changes(), []);
         assert!(
             datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should still exist",
         );
-        assert_eq!(all_rows(&datastore, &tx, table_id), [row]);
-        let _ = datastore.rollback_mut_tx(tx);
+        assert_eq!(all_rows(&datastore, &tx, table_id), [row.clone()]);
 
-        let mut tx = begin_mut_tx(&datastore);
+        // Now drop the table again and commit.
         assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
-        commit(&datastore, tx)?;
+        let tx_data = commit(&datastore, tx)?;
+        let (_, deleted) = tx_data
+            .deletes()
+            .find(|(id, _)| **id == table_id)
+            .expect("should have deleted rows for `table_id`");
+        assert_eq!(&**deleted, [row]);
 
-        let tx = begin_mut_tx(&datastore);
+        // In the next transaction, the table doesn't exist.
         assert!(
-            !datastore.table_id_exists_mut_tx(&tx, &table_id),
+            !datastore.table_id_exists_mut_tx(&begin_mut_tx(&datastore), &table_id),
+            "Table should be removed",
+        );
+        assert!(
+            !datastore.table_id_exists_tx(&begin_tx(&datastore), &table_id),
             "Table should be removed",
         );
 
