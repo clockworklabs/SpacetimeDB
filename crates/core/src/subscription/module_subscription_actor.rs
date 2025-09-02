@@ -690,7 +690,7 @@ impl ModuleSubscriptions {
             send_err_msg,
             None
         );
-        let (tx, tx_offset) = self.guard_tx(tx, None, None, None);
+        let (tx, tx_offset) = self.guard_tx(tx, <_>::default());
 
         // We minimize locking so that other clients can add subscriptions concurrently.
         // We are protected from race conditions with broadcasts, because we have the db lock,
@@ -782,7 +782,7 @@ impl ModuleSubscriptions {
             num_queries,
             &subscription_metrics,
         )?;
-        let (tx, tx_offset) = self.guard_tx(tx, None, None, None);
+        let (tx, tx_offset) = self.guard_tx(tx, <_>::default());
 
         check_row_limit(
             &queries,
@@ -898,9 +898,7 @@ impl ModuleSubscriptions {
         let (extra_tx_offset_sender, extra_tx_offset) = oneshot::channel();
         let (mut read_tx, tx_offset) = self.guard_tx(
             read_tx,
-            Some(extra_tx_offset_sender),
-            tx_data.clone(),
-            Some(tx_metrics_mut),
+            GuardTxOptions::full(extra_tx_offset_sender, tx_data.clone(), tx_metrics_mut),
         );
         // Create the delta transaction we'll use to eval updates against.
         let delta_read_tx = tx_data
@@ -944,16 +942,35 @@ impl ModuleSubscriptions {
         }))
     }
 
+    /// Helper that starts a new read transaction, and guards it using
+    /// [`Self::guard_tx`] with the default configuration.
     fn begin_tx(&self, workload: Workload) -> (ScopeGuard<TxId, impl FnOnce(TxId) + '_>, TransactionOffset) {
-        self.guard_tx(self.relational_db.begin_tx(workload), None, None, None)
+        self.guard_tx(self.relational_db.begin_tx(workload), <_>::default())
     }
 
+    /// Helper wrapping `tx` in a scopegard, with a configurable drop fn.
+    ///
+    /// By default, `tx` is released when the returned [`ScopeGuard`] is dropped,
+    /// and reports the transaction metrics via [`RelationalDB::report_tx_metrics`].
+    /// The `tx_data` and `tx_metrics_mut` parameters are passed to the metrics
+    /// reporting method as-is; they can be used to report additional metrics
+    /// about a previous mutable transaction that was downgraded to `tx` after
+    /// committing.
+    ///
+    /// The method returns a [`ScopeGuard`] along with a [`TransactionOffset`].
+    /// When the transaction commits, its transaction offset is sent to the
+    /// latter (a [`oneshot::Receiver`]).
+    /// If another receiver of the transaction offset is needed, its sending
+    /// side can be passed in as `extra_tx_offset_sender`. It will be sent the
+    /// offset as well.
     fn guard_tx(
         &self,
         tx: TxId,
-        extra_tx_offset_sender: Option<oneshot::Sender<TxOffset>>,
-        tx_data: Option<Arc<TxData>>,
-        tx_metrics_mut: Option<TxMetrics>,
+        GuardTxOptions {
+            extra_tx_offset_sender,
+            tx_data,
+            tx_metrics_mut,
+        }: GuardTxOptions,
     ) -> (ScopeGuard<TxId, impl FnOnce(TxId) + '_>, TransactionOffset) {
         let (offset_tx, offset_rx) = oneshot::channel();
         let guard = scopeguard::guard(tx, |tx| {
@@ -967,6 +984,31 @@ impl ModuleSubscriptions {
         });
 
         (guard, offset_rx)
+    }
+}
+
+/// Extra parameters for [`ModuleSubscriptions::guard_tx`].
+#[derive(Default)]
+struct GuardTxOptions {
+    /// Sender for an extra [`oneshot::Receiver`] for the transaction offset.
+    extra_tx_offset_sender: Option<oneshot::Sender<TxOffset>>,
+    /// [`TxData`] of a preceding mutable transaction.
+    tx_data: Option<Arc<TxData>>,
+    /// [`TxMetrics`] of a preceding mutable transaction.
+    tx_metrics_mut: Option<TxMetrics>,
+}
+
+impl GuardTxOptions {
+    fn full(
+        extra_tx_offset_sender: oneshot::Sender<TxOffset>,
+        tx_data: Option<Arc<TxData>>,
+        tx_metrics_mut: TxMetrics,
+    ) -> Self {
+        Self {
+            extra_tx_offset_sender: extra_tx_offset_sender.into(),
+            tx_data,
+            tx_metrics_mut: tx_metrics_mut.into(),
+        }
     }
 }
 
