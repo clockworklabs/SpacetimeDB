@@ -28,53 +28,51 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { InitialSubscription } from './initial_subscription_type';
-import { TransactionUpdate } from './transaction_update_type';
-import { TransactionUpdateLight } from './transaction_update_light_type';
-import { IdentityToken } from './identity_token_type';
-import { OneOffQueryResponse } from './one_off_query_response_type';
-import { SubscribeApplied } from './subscribe_applied_type';
-import { UnsubscribeApplied } from './unsubscribe_applied_type';
-import { SubscriptionError } from './subscription_error_type';
-import { SubscribeMultiApplied } from './subscribe_multi_applied_type';
-import { UnsubscribeMultiApplied } from './unsubscribe_multi_applied_type';
-
-import ServerMessage from './server_message_type';
+import { InitialSubscription as InitialSubscriptionType } from './initial_subscription_type';
+import { TransactionUpdate as TransactionUpdateType } from './transaction_update_type';
+import { TransactionUpdateLight as TransactionUpdateLightType } from './transaction_update_light_type';
+import { IdentityToken as IdentityTokenType } from './identity_token_type';
+import { OneOffQueryResponse as OneOffQueryResponseType } from './one_off_query_response_type';
+import { SubscribeApplied as SubscribeAppliedType } from './subscribe_applied_type';
+import { UnsubscribeApplied as UnsubscribeAppliedType } from './unsubscribe_applied_type';
+import { SubscriptionError as SubscriptionErrorType } from './subscription_error_type';
+import { SubscribeMultiApplied as SubscribeMultiAppliedType } from './subscribe_multi_applied_type';
+import { UnsubscribeMultiApplied as UnsubscribeMultiAppliedType } from './unsubscribe_multi_applied_type';
 
 export type InitialSubscription = {
   tag: 'InitialSubscription';
-  value: InitialSubscription;
+  value: InitialSubscriptionType;
 };
 export type TransactionUpdate = {
   tag: 'TransactionUpdate';
-  value: TransactionUpdate;
+  value: TransactionUpdateType;
 };
 export type TransactionUpdateLight = {
   tag: 'TransactionUpdateLight';
-  value: TransactionUpdateLight;
+  value: TransactionUpdateLightType;
 };
-export type IdentityToken = { tag: 'IdentityToken'; value: IdentityToken };
+export type IdentityToken = { tag: 'IdentityToken'; value: IdentityTokenType };
 export type OneOffQueryResponse = {
   tag: 'OneOffQueryResponse';
-  value: OneOffQueryResponse;
+  value: OneOffQueryResponseType;
 };
 export type SubscribeApplied = {
   tag: 'SubscribeApplied';
-  value: SubscribeApplied;
+  value: SubscribeAppliedType;
 };
 export type UnsubscribeApplied = {
   tag: 'UnsubscribeApplied';
-  value: UnsubscribeApplied;
+  value: UnsubscribeAppliedType;
 };
 export type SubscriptionError = {
   tag: 'SubscriptionError';
-  value: SubscriptionError;
+  value: SubscriptionErrorType;
 };
 export type SubscribeMultiApplied = {
   tag: 'SubscribeMultiApplied';
-  value: SubscribeMultiApplied;
+  value: SubscribeMultiAppliedType;
 };
 export type UnsubscribeMultiApplied = {
   tag: 'UnsubscribeMultiApplied';
-  value: UnsubscribeMultiApplied;
+  value: UnsubscribeMultiAppliedType;
 };

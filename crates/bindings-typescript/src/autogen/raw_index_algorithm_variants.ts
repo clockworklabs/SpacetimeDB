@@ -28,7 +28,6 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import RawIndexAlgorithm from './raw_index_algorithm_type';
 
 export type BTree = { tag: 'BTree'; value: number[] };
 export type Hash = { tag: 'Hash'; value: number[] };

@@ -28,7 +28,6 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import Lifecycle from './lifecycle_type';
 
 export type Init = { tag: 'Init' };
 export type OnConnect = { tag: 'OnConnect' };

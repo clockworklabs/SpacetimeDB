@@ -28,11 +28,9 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { RawColumnDefaultValueV9 } from './raw_column_default_value_v_9_type';
-
-import RawMiscModuleExportV9 from './raw_misc_module_export_v_9_type';
+import { RawColumnDefaultValueV9 as RawColumnDefaultValueV9Type } from './raw_column_default_value_v_9_type';
 
 export type ColumnDefaultValue = {
   tag: 'ColumnDefaultValue';
-  value: RawColumnDefaultValueV9;
+  value: RawColumnDefaultValueV9Type;
 };

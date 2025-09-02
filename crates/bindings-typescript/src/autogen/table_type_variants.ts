@@ -28,7 +28,6 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import TableType from './table_type_type';
 
 export type System = { tag: 'System' };
 export type User = { tag: 'User' };

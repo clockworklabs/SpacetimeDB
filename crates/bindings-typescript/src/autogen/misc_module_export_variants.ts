@@ -28,8 +28,6 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { TypeAlias } from './type_alias_type';
+import { TypeAlias as TypeAliasType } from './type_alias_type';
 
-import MiscModuleExport from './misc_module_export_type';
-
-export type TypeAlias = { tag: 'TypeAlias'; value: TypeAlias };
+export type TypeAlias = { tag: 'TypeAlias'; value: TypeAliasType };

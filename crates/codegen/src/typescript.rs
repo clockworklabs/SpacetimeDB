@@ -34,7 +34,7 @@ impl Lang for TypeScript {
             let out = &mut output;
 
             print_file_header(out);
-            gen_and_print_imports(module, out, &product.elements, &[typ.ty]);
+            gen_and_print_imports(module, out, &product.elements, &[typ.ty], None);
             writeln!(out);
             define_body_for_product(module, out, &type_name, &product.elements);
             out.newline();
@@ -49,9 +49,8 @@ impl Lang for TypeScript {
             let out = &mut output;
 
             print_file_header(out);
-            gen_and_print_imports(module, out, variants, &[typ.ty]);
-            // Import the current type in case of recursive sum types
-            writeln!(out, "import {} from './{}'", type_name, type_module_name(&typ.name));
+            // Note that the current type is not included in dont_import below.
+            gen_and_print_imports(module, out, variants, &[], Some("Type"));
             writeln!(out);
             write_variant_types(module, out, variants);
             out.newline();
@@ -66,7 +65,7 @@ impl Lang for TypeScript {
             let out = &mut output;
 
             print_file_header(out);
-            gen_and_print_imports(module, out, variants, &[typ.ty]);
+            gen_and_print_imports(module, out, variants, &[typ.ty], None);
             writeln!(
                 out,
                 "import * as {}Variants from './{}'",
@@ -132,6 +131,7 @@ impl Lang for TypeScript {
             out,
             &product_def.elements,
             &[], // No need to skip any imports; we're not defining a type, so there's no chance of circular imports.
+            None,
         );
 
         writeln!(
@@ -290,6 +290,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
             &reducer.params_for_generate.elements,
             // No need to skip any imports; we're not emitting a type that other modules can import.
             &[],
+            None,
         );
 
         let args_type = reducer_args_type_name(&reducer.name);
@@ -501,7 +502,7 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
             arg_name_list += &arg_name;
             arg_list += &arg_name;
             arg_list += ": ";
-            write_type(module, &mut arg_list, arg_ty, None).unwrap();
+            write_type(module, &mut arg_list, arg_ty, None, None).unwrap();
             arg_list += ", ";
             arg_name_list += ", ";
         }
@@ -806,7 +807,7 @@ fn write_arglist_no_delimiters(
         };
 
         write!(out, "{name}: ")?;
-        write_type(module, out, ty, Some(""))?;
+        write_type(module, out, ty, None, None)?;
         writeln!(out, ",")?;
     }
 
@@ -827,25 +828,25 @@ fn write_sum_variant_type(module: &ModuleDef, out: &mut Indenter, ident: &Identi
 
     // If the contained type is not the unit type, write the tag and the value.
     // ```
-    // { tag: "Bar", value: Bar }
+    // { tag: "Bar", value: BarType }
     // { tag: "Bar", value: number }
     // { tag: "Bar", value: string }
     // ```
     // Note you could alternatively do:
     // ```
-    // { tag: "Bar" } & Bar
+    // { tag: "Bar" } & BarType
     // ```
     // for non-primitive types but that doesn't extend to primitives.
     // Another alternative would be to name the value field the same as the tag field, but lowercased
     // ```
-    // { tag: "Bar", bar: Bar }
+    // { tag: "Bar", bar: BarType }
     // { tag: "Bar", bar: number }
     // { tag: "Bar", bar: string }
     // ```
     // but this is a departure from our previous convention and is not much different.
     if !matches!(ty, AlgebraicTypeUse::Unit) {
         write!(out, ", value: ");
-        write_type(module, out, ty, Some("")).unwrap();
+        write_type(module, out, ty, None, Some("Type")).unwrap();
     }
 
     writeln!(out, " }};");
@@ -878,7 +879,7 @@ fn write_variant_constructors(
         }
         let variant_name = ident.deref().to_case(Case::Pascal);
         write!(out, "{variant_name}: (value: ");
-        write_type(module, out, ty, Some("")).unwrap();
+        write_type(module, out, ty, None, None).unwrap();
         writeln!(out, "): {name} => ({{ tag: \"{variant_name}\", value }}),");
     }
 }
@@ -1008,7 +1009,7 @@ fn reducer_function_name(reducer: &ReducerDef) -> String {
 
 pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     let mut s = String::new();
-    write_type(module, &mut s, ty, None).unwrap();
+    write_type(module, &mut s, ty, None, None).unwrap();
     s
 }
 
@@ -1040,6 +1041,7 @@ pub fn write_type<W: Write>(
     out: &mut W,
     ty: &AlgebraicTypeUse,
     ref_prefix: Option<&str>,
+    ref_suffix: Option<&str>,
 ) -> fmt::Result {
     match ty {
         AlgebraicTypeUse::Unit => write!(out, "void")?,
@@ -1053,7 +1055,7 @@ pub fn write_type<W: Write>(
             "{{ tag: \"Interval\", value: __TimeDuration }} | {{ tag: \"Time\", value: __Timestamp }}"
         )?,
         AlgebraicTypeUse::Option(inner_ty) => {
-            write_type(module, out, inner_ty, ref_prefix)?;
+            write_type(module, out, inner_ty, ref_prefix, ref_suffix)?;
             write!(out, " | undefined")?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
@@ -1083,7 +1085,7 @@ pub fn write_type<W: Write>(
             if needs_parens {
                 write!(out, "(")?;
             }
-            write_type(module, out, elem_ty, ref_prefix)?;
+            write_type(module, out, elem_ty, ref_prefix, ref_suffix)?;
             if needs_parens {
                 write!(out, ")")?;
             }
@@ -1094,6 +1096,9 @@ pub fn write_type<W: Write>(
                 write!(out, "{prefix}")?;
             }
             write!(out, "{}", type_ref_name(module, *r))?;
+            if let Some(suffix) = ref_suffix {
+                write!(out, "{suffix}")?;
+            }
         }
     }
     Ok(())
@@ -1182,11 +1187,15 @@ fn convert_product_type<'a>(
 }
 
 /// Print imports for each of the `imports`.
-fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports) {
+fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports, suffix: Option<&str>) {
     for typeref in imports {
         let module_name = type_ref_module_name(module, typeref);
         let type_name = type_ref_name(module, typeref);
-        writeln!(out, "import {{ {type_name} }} from \"./{module_name}\";");
+        if let Some(suffix) = suffix {
+            writeln!(out, "import {{ {type_name} as {type_name}{suffix} }} from \"./{module_name}\";");
+        } else {
+            writeln!(out, "import {{ {type_name} }} from \"./{module_name}\";");
+        }
     }
 }
 
@@ -1200,6 +1209,7 @@ fn gen_and_print_imports(
     out: &mut Indenter,
     roots: &[(Identifier, AlgebraicTypeUse)],
     dont_import: &[AlgebraicTypeRef],
+    suffix: Option<&str>,
 ) {
     let mut imports = BTreeSet::new();
 
@@ -1213,7 +1223,7 @@ fn gen_and_print_imports(
     }
     let len = imports.len();
 
-    print_imports(module, out, imports);
+    print_imports(module, out, imports, suffix);
 
     if len > 0 {
         out.newline();

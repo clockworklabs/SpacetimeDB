@@ -28,10 +28,8 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { QueryUpdate } from './query_update_type';
+import { QueryUpdate as QueryUpdateType } from './query_update_type';
 
-import CompressableQueryUpdate from './compressable_query_update_type';
-
-export type Uncompressed = { tag: 'Uncompressed'; value: QueryUpdate };
+export type Uncompressed = { tag: 'Uncompressed'; value: QueryUpdateType };
 export type Brotli = { tag: 'Brotli'; value: Uint8Array };
 export type Gzip = { tag: 'Gzip'; value: Uint8Array };

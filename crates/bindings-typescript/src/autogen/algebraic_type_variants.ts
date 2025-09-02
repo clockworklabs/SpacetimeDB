@@ -28,15 +28,14 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { SumType } from './sum_type_type';
-import { ProductType } from './product_type_type';
-
-import AlgebraicType from './algebraic_type_type';
+import { AlgebraicType as AlgebraicTypeType } from './algebraic_type_type';
+import { SumType as SumTypeType } from './sum_type_type';
+import { ProductType as ProductTypeType } from './product_type_type';
 
 export type Ref = { tag: 'Ref'; value: number };
-export type Sum = { tag: 'Sum'; value: SumType };
-export type Product = { tag: 'Product'; value: ProductType };
-export type Array = { tag: 'Array'; value: AlgebraicType };
+export type Sum = { tag: 'Sum'; value: SumTypeType };
+export type Product = { tag: 'Product'; value: ProductTypeType };
+export type Array = { tag: 'Array'; value: AlgebraicTypeType };
 export type String = { tag: 'String' };
 export type Bool = { tag: 'Bool' };
 export type I8 = { tag: 'I8' };

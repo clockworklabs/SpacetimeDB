@@ -28,7 +28,6 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import TableAccess from './table_access_type';
 
 export type Public = { tag: 'Public' };
 export type Private = { tag: 'Private' };

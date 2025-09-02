@@ -28,10 +28,8 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { DatabaseUpdate } from './database_update_type';
+import { DatabaseUpdate as DatabaseUpdateType } from './database_update_type';
 
-import UpdateStatus from './update_status_type';
-
-export type Committed = { tag: 'Committed'; value: DatabaseUpdate };
+export type Committed = { tag: 'Committed'; value: DatabaseUpdateType };
 export type Failed = { tag: 'Failed'; value: string };
 export type OutOfEnergy = { tag: 'OutOfEnergy' };

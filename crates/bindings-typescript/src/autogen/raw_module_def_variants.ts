@@ -28,10 +28,8 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { RawModuleDefV8 } from './raw_module_def_v_8_type';
-import { RawModuleDefV9 } from './raw_module_def_v_9_type';
+import { RawModuleDefV8 as RawModuleDefV8Type } from './raw_module_def_v_8_type';
+import { RawModuleDefV9 as RawModuleDefV9Type } from './raw_module_def_v_9_type';
 
-import RawModuleDef from './raw_module_def_type';
-
-export type V8BackCompat = { tag: 'V8BackCompat'; value: RawModuleDefV8 };
-export type V9 = { tag: 'V9'; value: RawModuleDefV9 };
+export type V8BackCompat = { tag: 'V8BackCompat'; value: RawModuleDefV8Type };
+export type V9 = { tag: 'V9'; value: RawModuleDefV9Type };

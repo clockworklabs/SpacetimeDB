@@ -28,26 +28,27 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { CallReducer } from './call_reducer_type';
-import { Subscribe } from './subscribe_type';
-import { OneOffQuery } from './one_off_query_type';
-import { SubscribeSingle } from './subscribe_single_type';
-import { SubscribeMulti } from './subscribe_multi_type';
-import { Unsubscribe } from './unsubscribe_type';
-import { UnsubscribeMulti } from './unsubscribe_multi_type';
+import { CallReducer as CallReducerType } from './call_reducer_type';
+import { Subscribe as SubscribeType } from './subscribe_type';
+import { OneOffQuery as OneOffQueryType } from './one_off_query_type';
+import { SubscribeSingle as SubscribeSingleType } from './subscribe_single_type';
+import { SubscribeMulti as SubscribeMultiType } from './subscribe_multi_type';
+import { Unsubscribe as UnsubscribeType } from './unsubscribe_type';
+import { UnsubscribeMulti as UnsubscribeMultiType } from './unsubscribe_multi_type';
 
-import ClientMessage from './client_message_type';
-
-export type CallReducer = { tag: 'CallReducer'; value: CallReducer };
-export type Subscribe = { tag: 'Subscribe'; value: Subscribe };
-export type OneOffQuery = { tag: 'OneOffQuery'; value: OneOffQuery };
+export type CallReducer = { tag: 'CallReducer'; value: CallReducerType };
+export type Subscribe = { tag: 'Subscribe'; value: SubscribeType };
+export type OneOffQuery = { tag: 'OneOffQuery'; value: OneOffQueryType };
 export type SubscribeSingle = {
   tag: 'SubscribeSingle';
-  value: SubscribeSingle;
+  value: SubscribeSingleType;
 };
-export type SubscribeMulti = { tag: 'SubscribeMulti'; value: SubscribeMulti };
-export type Unsubscribe = { tag: 'Unsubscribe'; value: Unsubscribe };
+export type SubscribeMulti = {
+  tag: 'SubscribeMulti';
+  value: SubscribeMultiType;
+};
+export type Unsubscribe = { tag: 'Unsubscribe'; value: UnsubscribeType };
 export type UnsubscribeMulti = {
   tag: 'UnsubscribeMulti';
-  value: UnsubscribeMulti;
+  value: UnsubscribeMultiType;
 };

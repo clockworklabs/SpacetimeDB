@@ -28,8 +28,6 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { RawUniqueConstraintDataV9 } from './raw_unique_constraint_data_v_9_type';
+import { RawUniqueConstraintDataV9 as RawUniqueConstraintDataV9Type } from './raw_unique_constraint_data_v_9_type';
 
-import RawConstraintDataV9 from './raw_constraint_data_v_9_type';
-
-export type Unique = { tag: 'Unique'; value: RawUniqueConstraintDataV9 };
+export type Unique = { tag: 'Unique'; value: RawUniqueConstraintDataV9Type };

@@ -28,7 +28,6 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import RowSizeHint from './row_size_hint_type';
 
 export type FixedSize = { tag: 'FixedSize'; value: number };
 export type RowOffsets = { tag: 'RowOffsets'; value: bigint[] };
