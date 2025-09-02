@@ -552,6 +552,10 @@ impl<T> SenderWithGauge<T> {
 /// [`SendWorkerMessage`]s are sent while holding the database lock, i.e.
 /// without committing the transaction. When the transaction commits, the
 /// message sender is expected to send the transaction offset along this channel.
+///
+/// NOTE: If the send end is dropped before sending the offset, the
+/// [`SendWorker`] will assume that the message sender was cancelled, and exit
+/// itself.
 pub type TransactionOffset = oneshot::Receiver<TxOffset>;
 
 /// Message sent by the [`SubscriptionManager`] to the [`SendWorker`].
@@ -1117,7 +1121,7 @@ impl SubscriptionManager {
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn eval_updates_sequential(
         &self,
-        (tx, tx_offset): (&DeltaTx, impl Into<TransactionOffset>),
+        (tx, tx_offset): (&DeltaTx, TransactionOffset),
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
     ) -> ExecutionMetrics {
@@ -1284,7 +1288,7 @@ impl SubscriptionManager {
         // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
         self.send_worker_queue
             .send(SendWorkerMessage::Broadcast {
-                tx_offset: tx_offset.into(),
+                tx_offset,
                 queries: ComputedQueries {
                     updates,
                     errs,
@@ -1459,6 +1463,7 @@ impl SendWorker {
                     }
                     Some(tx_offset) => {
                         let Ok(tx_offset) = tx_offset.await else {
+                            tracing::error!("tx offset sender dropped, exiting send worker");
                             return;
                         };
                         let _ = recipient.send_message(Some(tx_offset), message);
@@ -1469,6 +1474,7 @@ impl SendWorker {
                 }
                 SendWorkerMessage::Broadcast { tx_offset, queries } => {
                     let Ok(tx_offset) = tx_offset.await else {
+                        tracing::error!("tx offset sender dropped, exiting send worker");
                         return;
                     };
                     self.send_one_computed_queries(tx_offset, queries);
