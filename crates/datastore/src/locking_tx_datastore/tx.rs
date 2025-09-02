@@ -90,10 +90,11 @@ impl TxId {
     /// allowing new mutable transactions to start if this was the last read-only transaction.
     ///
     /// Returns:
+    /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
     pub(super) fn release(self) -> (TxOffset, TxMetrics, String) {
-        let tx_offset = self.committed_state_shared_lock.next_tx_offset;
+        let tx_offset = self.committed_state_shared_lock.next_tx_offset.saturating_sub(1);
         let tx_metrics = TxMetrics::new(
             &self.ctx,
             self.timer,

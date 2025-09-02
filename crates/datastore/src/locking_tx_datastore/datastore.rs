@@ -355,6 +355,7 @@ impl Tx for Locking {
     /// allowing new mutable transactions to start if this was the last read-only transaction.
     ///
     /// Returns:
+    /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
     fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String) {

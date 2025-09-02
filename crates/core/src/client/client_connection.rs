@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
+use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
@@ -32,6 +33,7 @@ use spacetimedb_lib::Identity;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
+use tracing::debug;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum Protocol {
@@ -87,7 +89,7 @@ impl ClientConfig {
 ///
 // TODO: Consider a different name, "ClientUpdate" is used elsewhere already.
 #[derive(Debug)]
-pub struct ClientUpdate {
+struct ClientUpdate {
     /// Transaction offset at which `message` was computed.
     ///
     /// This is only `Some` if `message` is a query result.
@@ -100,6 +102,29 @@ pub struct ClientUpdate {
     pub message: SerializableMessage,
 }
 
+#[derive(From)]
+enum DurableOffsetSupply {
+    Module(watch::Receiver<ModuleHost>),
+    Database(Arc<RelationalDB>),
+}
+
+impl DurableOffsetSupply {
+    fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
+        match self {
+            Self::Module(rx) => {
+                let module = if rx.has_changed().map_err(|_| NoSuchModule)? {
+                    rx.borrow_and_update()
+                } else {
+                    rx.borrow()
+                };
+
+                Ok(module.replica_ctx().relational_db.durable_tx_offset())
+            }
+            Self::Database(db) => Ok(db.durable_tx_offset()),
+        }
+    }
+}
+
 /// Receiving end of [`ClientConnectionSender`].
 ///
 /// The [`ClientConnection`] actor reads messages from this channel and sends
@@ -110,7 +135,7 @@ pub struct ClientUpdate {
 pub struct ClientConnectionReceiver {
     confirmed_reads: bool,
     channel: MeteredReceiver<ClientUpdate>,
-    module: watch::Receiver<ModuleHost>,
+    offset_supply: DurableOffsetSupply,
 }
 
 impl ClientConnectionReceiver {
@@ -144,8 +169,9 @@ impl ClientConnectionReceiver {
         }
 
         if let Some(tx_offset) = tx_offset {
-            match self.durable_tx_offset().await {
+            match self.offset_supply.durable_offset() {
                 Ok(Some(mut durable)) => {
+                    debug!("waiting for offset {tx_offset} to become durable");
                     durable.wait_for(tx_offset).await.ok()?;
                 }
                 // Database shut down or crashed.
@@ -155,6 +181,7 @@ impl ClientConnectionReceiver {
             }
         }
 
+        debug!("returning durable message");
         Some(message)
     }
 
@@ -168,22 +195,6 @@ impl ClientConnectionReceiver {
     /// messages, preventing the internal buffer from filling up.
     pub fn close(&mut self) {
         self.channel.close();
-    }
-
-    /// Check whether the module has been updated or shut down, and return
-    /// its [`DurableOffset`].
-    ///
-    /// Returns `Err(NoSuchModule)` if the module has exited.
-    /// Returns `Some(None)` if the module is live but configured without durability.
-    /// Otherwise, returns `Some(DurableOffset)`.
-    async fn durable_tx_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
-        let module = if self.module.has_changed().map_err(|_| NoSuchModule)? {
-            self.module.borrow_and_update()
-        } else {
-            self.module.borrow()
-        };
-
-        Ok(module.replica_ctx().relational_db.durable_tx_offset())
     }
 }
 
@@ -239,6 +250,17 @@ impl ClientConnectionMetrics {
     }
 }
 
+pub struct DummyClientConnectionReceiver {
+    channel: MeteredReceiver<ClientUpdate>,
+}
+
+impl DummyClientConnectionReceiver {
+    pub async fn recv(&mut self) -> Option<SerializableMessage> {
+        let update = self.channel.recv().await?;
+        Some(update.message)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ClientSendError {
     #[error("client disconnected")]
@@ -248,7 +270,7 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
-    pub fn dummy_with_channel(id: ClientActorId, config: ClientConfig) -> (Self, MeteredReceiver<ClientUpdate>) {
+    pub fn dummy_with_channel(id: ClientActorId, config: ClientConfig) -> (Self, DummyClientConnectionReceiver) {
         let (sendtx, rx) = mpsc::channel(1);
         // just make something up, it doesn't need to be attached to a real task
         let abort_handle = match tokio::runtime::Handle::try_current() {
@@ -256,7 +278,9 @@ impl ClientConnectionSender {
             Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
         };
 
-        let rx = MeteredReceiver::new(rx);
+        let receiver = DummyClientConnectionReceiver {
+            channel: MeteredReceiver::new(rx),
+        };
         let cancelled = AtomicBool::new(false);
         let sender = Self {
             id,
@@ -266,11 +290,41 @@ impl ClientConnectionSender {
             cancelled,
             metrics: None,
         };
-        (sender, rx)
+        (sender, receiver)
     }
 
     pub fn dummy(id: ClientActorId, config: ClientConfig) -> Self {
         Self::dummy_with_channel(id, config).0
+    }
+
+    pub fn dummy_with_database(
+        id: ClientActorId,
+        config: ClientConfig,
+        db: Arc<RelationalDB>,
+    ) -> (Self, ClientConnectionReceiver) {
+        let (sendtx, rx) = mpsc::channel(1);
+        // just make something up, it doesn't need to be attached to a real task
+        let abort_handle = match tokio::runtime::Handle::try_current() {
+            Ok(h) => h.spawn(async {}).abort_handle(),
+            Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
+        };
+
+        let receiver = ClientConnectionReceiver {
+            confirmed_reads: config.confirmed_reads,
+            channel: MeteredReceiver::new(rx),
+            offset_supply: db.into(),
+        };
+        let cancelled = AtomicBool::new(false);
+        let sender = Self {
+            id,
+            config,
+            sendtx,
+            abort_handle,
+            cancelled,
+            metrics: None,
+        };
+
+        (sender, receiver)
     }
 
     pub fn is_cancelled(&self) -> bool {
@@ -623,7 +677,7 @@ impl ClientConnection {
         let receiver = ClientConnectionReceiver {
             confirmed_reads: config.confirmed_reads,
             channel: MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone()),
-            module: module_rx.clone(),
+            offset_supply: module_rx.clone().into(),
         };
 
         let sender = Arc::new(ClientConnectionSender {

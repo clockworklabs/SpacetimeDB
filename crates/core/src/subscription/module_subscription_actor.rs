@@ -1022,12 +1022,13 @@ mod tests {
         SubscriptionUpdateMessage, TransactionUpdateMessage,
     };
     use crate::client::{
-        ClientActorId, ClientConfig, ClientConnectionSender, ClientName, ClientUpdate, MeteredReceiver, Protocol,
+        ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, ClientName,
+        DummyClientConnectionReceiver, Protocol,
     };
     use crate::db::relational_db::tests_utils::{
-        begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
+        begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TempReplicaDir, TestDB,
     };
-    use crate::db::relational_db::RelationalDB;
+    use crate::db::relational_db::{RelationalDB, Txdata};
     use crate::error::DBError;
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::messages::websocket as ws;
@@ -1043,7 +1044,9 @@ mod tests {
         CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
         TableUpdate, Unsubscribe, UnsubscribeMulti,
     };
+    use spacetimedb_commitlog::{commitlog, repo};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
+    use spacetimedb_durability::{Durability, EmptyHistory, TxOffset};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
@@ -1053,9 +1056,13 @@ mod tests {
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::product;
+    use std::future::Future;
+    use std::sync::RwLock;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc::{self};
+    use tokio::sync::watch;
+    use tokio::time::sleep;
 
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
@@ -1081,10 +1088,86 @@ mod tests {
         Ok(())
     }
 
+    /// A [`Durability`] for which the durable offset is marked manually.
+    struct ManualDurability {
+        commitlog: Arc<RwLock<commitlog::Generic<repo::Memory, Txdata>>>,
+        durable_offset: watch::Sender<Option<TxOffset>>,
+    }
+
+    impl ManualDurability {
+        #[allow(unused)]
+        fn mark_durable_at(&self, offset: TxOffset) {
+            assert!(
+                self.committed_offset().is_some_and(|committed| committed >= offset),
+                "given offset is not in the commitlog"
+            );
+            self.durable_offset.send_modify(|val| {
+                val.replace(offset);
+            });
+        }
+
+        fn mark_durable(&self) {
+            if let Some(offset) = self.committed_offset() {
+                self.durable_offset.send_modify(|val| {
+                    val.replace(offset);
+                });
+            }
+        }
+
+        fn committed_offset(&self) -> Option<TxOffset> {
+            self.commitlog.read().unwrap().max_committed_offset()
+        }
+    }
+
+    impl Durability for ManualDurability {
+        type TxData = Txdata;
+
+        fn append_tx(&self, tx: Self::TxData) {
+            let mut commitlog = self.commitlog.write().unwrap();
+            if let Err(tx) = commitlog.append(tx) {
+                commitlog.commit().expect("error flushing commitlog");
+                commitlog.append(tx).expect("should be able to append after flush");
+            }
+            commitlog.commit().expect("error flushing commitlog");
+        }
+
+        fn durable_tx_offset(&self) -> spacetimedb_durability::DurableOffset {
+            self.durable_offset.subscribe().into()
+        }
+    }
+
+    impl Default for ManualDurability {
+        fn default() -> Self {
+            let (durable_offset, ..) = watch::channel(None);
+            Self {
+                commitlog: Arc::new(RwLock::new(
+                    commitlog::Generic::open(repo::Memory::new(), <_>::default()).unwrap(),
+                )),
+                durable_offset,
+            }
+        }
+    }
+
     /// An in-memory `RelationalDB` for testing
     fn relational_db() -> anyhow::Result<Arc<RelationalDB>> {
         let TestDB { db, .. } = TestDB::in_memory()?;
         Ok(Arc::new(db))
+    }
+
+    /// An in-memory `RelationalDB` with `ManualDurability`.
+    fn relational_db_with_manual_durability() -> anyhow::Result<(Arc<RelationalDB>, Arc<ManualDurability>)> {
+        let dir = TempReplicaDir::new()?;
+        let durability = Arc::new(ManualDurability::default());
+        let db = TestDB::open_db(
+            &dir,
+            EmptyHistory::new(),
+            Some((durability.clone(), Arc::new(|| Ok(0)))),
+            None,
+            None,
+            0,
+        )?;
+
+        Ok((Arc::new(db), durability))
     }
 
     /// A [SubscribeSingle] message for testing
@@ -1163,8 +1246,8 @@ mod tests {
     fn client_connection_with_compression(
         client_id: ClientActorId,
         compression: Compression,
-    ) -> (Arc<ClientConnectionSender>, MeteredReceiver<ClientUpdate>) {
-        let (sender, rx) = ClientConnectionSender::dummy_with_channel(
+    ) -> (Arc<ClientConnectionSender>, DummyClientConnectionReceiver) {
+        let (sender, receiver) = ClientConnectionSender::dummy_with_channel(
             client_id,
             ClientConfig {
                 protocol: Protocol::Binary,
@@ -1173,12 +1256,32 @@ mod tests {
                 confirmed_reads: false,
             },
         );
-        (Arc::new(sender), rx)
+
+        (Arc::new(sender), receiver)
     }
 
     /// Instantiate a client connection
-    fn client_connection(client_id: ClientActorId) -> (Arc<ClientConnectionSender>, MeteredReceiver<ClientUpdate>) {
+    fn client_connection(client_id: ClientActorId) -> (Arc<ClientConnectionSender>, DummyClientConnectionReceiver) {
         client_connection_with_compression(client_id, Compression::None)
+    }
+
+    fn client_connection_with_db(
+        client_id: ClientActorId,
+        db: Arc<RelationalDB>,
+        confirmed_reads: bool,
+    ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
+        let (sender, receiver) = ClientConnectionSender::dummy_with_database(
+            client_id,
+            ClientConfig {
+                protocol: Protocol::Binary,
+                compression: Compression::None,
+                tx_update_full: true,
+                confirmed_reads,
+            },
+            db,
+        );
+
+        (Arc::new(sender), receiver)
     }
 
     /// Insert rules into the RLS system table
@@ -1251,25 +1354,21 @@ mod tests {
 
     /// Pull a message from receiver and assert that it is a `TxUpdate` with the expected rows
     async fn assert_tx_update_for_table(
-        rx: &mut MeteredReceiver<ClientUpdate>,
+        rx: impl Future<Output = Option<SerializableMessage>>,
         table_id: TableId,
         schema: &ProductType,
         inserts: impl IntoIterator<Item = ProductValue>,
         deletes: impl IntoIterator<Item = ProductValue>,
     ) {
-        match rx.recv().await {
-            Some(ClientUpdate {
-                tx_offset: _,
-                message:
-                    SerializableMessage::TxUpdate(TransactionUpdateMessage {
-                        database_update:
-                            SubscriptionUpdateMessage {
-                                database_update: FormatSwitch::Bsatn(ws::DatabaseUpdate { mut tables }),
-                                ..
-                            },
+        match rx.await {
+            Some(SerializableMessage::TxUpdate(TransactionUpdateMessage {
+                database_update:
+                    SubscriptionUpdateMessage {
+                        database_update: FormatSwitch::Bsatn(ws::DatabaseUpdate { mut tables }),
                         ..
-                    }),
-            }) => {
+                    },
+                ..
+            })) => {
                 // Assume an update for only one table
                 assert_eq!(tables.len(), 1);
 
@@ -1391,15 +1490,11 @@ mod tests {
         Ok(())
     }
 
-    fn check_subscription_err(sql: &str, result: Option<ClientUpdate>) {
-        if let Some(ClientUpdate {
-            tx_offset: _,
-            message:
-                SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::Error(SubscriptionError { message, .. }),
-                    ..
-                }),
-        }) = result
+    fn check_subscription_err(sql: &str, result: Option<SerializableMessage>) {
+        if let Some(SerializableMessage::Subscription(SubscriptionMessage {
+            result: SubscriptionResult::Error(SubscriptionError { message, .. }),
+            ..
+        })) = result
         {
             assert!(
                 message.contains(sql),
@@ -1480,13 +1575,10 @@ mod tests {
         // The initial subscription should succeed
         assert!(matches!(
             rx.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::Subscribe(..),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Subscribe(..),
+                ..
+            }))
         ));
 
         // Remove the index from `id`
@@ -1539,13 +1631,10 @@ mod tests {
         // The initial subscription should succeed
         assert!(matches!(
             rx.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(..),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(..),
+                ..
+            }))
         ));
 
         // Remove the index from `id`
@@ -1591,13 +1680,10 @@ mod tests {
         // The initial subscription should succeed
         assert!(matches!(
             rx.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::Subscribe(..),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Subscribe(..),
+                ..
+            }))
         ));
 
         // Remove the index from `s`
@@ -1663,17 +1749,11 @@ mod tests {
         // Wait for both subscriptions
         assert!(matches!(
             rx_for_a.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(_)
-            })
+            Some(SerializableMessage::Subscription(_))
         ));
         assert!(matches!(
             rx_for_b.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(_)
-            })
+            Some(SerializableMessage::Subscription(_))
         ));
 
         // Insert two identities - one for each caller - into the table
@@ -1689,8 +1769,8 @@ mod tests {
         let schema = ProductType::from([AlgebraicType::identity()]);
 
         // Both clients should only receive their identities and not the other's.
-        assert_tx_update_for_table(&mut rx_for_a, table_id, &schema, [product![id_for_a]], []).await;
-        assert_tx_update_for_table(&mut rx_for_b, table_id, &schema, [product![id_for_b]], []).await;
+        assert_tx_update_for_table(rx_for_a.recv(), table_id, &schema, [product![id_for_a]], []).await;
+        assert_tx_update_for_table(rx_for_b.recv(), table_id, &schema, [product![id_for_b]], []).await;
         Ok(())
     }
 
@@ -1739,17 +1819,11 @@ mod tests {
         // Wait for both subscriptions
         assert!(matches!(
             rx_for_a.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(_)
-            })
+            Some(SerializableMessage::Subscription(_))
         ));
         assert!(matches!(
             rx_for_b.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(_)
-            })
+            Some(SerializableMessage::Subscription(_))
         ));
 
         // Insert a row into `u` for client "a".
@@ -1769,8 +1843,8 @@ mod tests {
         let schema = ProductType::from([AlgebraicType::identity()]);
 
         // Both clients should only receive their identities and not the other's.
-        assert_tx_update_for_table(&mut rx_for_a, w_id, &schema, [product![id_for_a]], []).await;
-        assert_tx_update_for_table(&mut rx_for_b, w_id, &schema, [product![id_for_b]], []).await;
+        assert_tx_update_for_table(rx_for_a.recv(), w_id, &schema, [product![id_for_a]], []).await;
+        assert_tx_update_for_table(rx_for_b.recv(), w_id, &schema, [product![id_for_b]], []).await;
         Ok(())
     }
 
@@ -1799,23 +1873,17 @@ mod tests {
         // Wait for both subscriptions
         assert_matches!(
             rx_for_a.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
         );
         assert_matches!(
             rx_for_b.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
         );
 
         let schema = ProductType::from([AlgebraicType::identity()]);
@@ -1835,7 +1903,7 @@ mod tests {
         )?;
 
         assert_tx_update_for_table(
-            &mut rx_for_a,
+            rx_for_a.recv(),
             table_id,
             &schema,
             // The owner should receive both identities
@@ -1845,7 +1913,7 @@ mod tests {
         .await;
 
         assert_tx_update_for_table(
-            &mut rx_for_b,
+            rx_for_b.recv(),
             table_id,
             &schema,
             // Client `b` should only receive its identity
@@ -1874,13 +1942,7 @@ mod tests {
         subscribe_multi(&subs, &["select * from t where x = 0"], tx, &mut 0)?;
 
         // Wait to receive the initial subscription message
-        assert!(matches!(
-            rx.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(_)
-            })
-        ));
+        assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
 
         // Insert a row that does not match the query
         let mut tx = begin_mut_tx(&db);
@@ -1904,7 +1966,7 @@ mod tests {
 
         // If the server sends empty updates, this assertion will fail,
         // because we will receive one for the first transaction.
-        assert_tx_update_for_table(&mut rx, t_id, &schema, [product![0_u8]], []).await;
+        assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8]], []).await;
         Ok(())
     }
 
@@ -1938,17 +2000,13 @@ mod tests {
 
         // Assert the table updates within this message are all be uncompressed
         match rx.recv().await {
-            Some(ClientUpdate {
-                tx_offset: _,
-                message:
-                    SerializableMessage::Subscription(SubscriptionMessage {
-                        result:
-                            SubscriptionResult::SubscribeMulti(SubscriptionData {
-                                data: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
-                            }),
-                        ..
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result:
+                    SubscriptionResult::SubscribeMulti(SubscriptionData {
+                        data: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
                     }),
-            }) => {
+                ..
+            })) => {
                 assert!(tables.iter().all(|TableUpdate { updates, .. }| updates
                     .iter()
                     .all(|query_update| matches!(query_update, CompressableQueryUpdate::Uncompressed(_)))));
@@ -1975,13 +2033,7 @@ mod tests {
         subscribe_multi(&subs, &["select * from t"], tx, &mut 0)?;
 
         // Wait to receive the initial subscription message
-        assert_matches!(
-            rx.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(_)
-            })
-        );
+        assert_matches!(rx.recv().await, Some(SerializableMessage::Subscription(_)));
 
         let schema = ProductType::from([AlgebraicType::U8, AlgebraicType::U8]);
 
@@ -1997,17 +2049,17 @@ mod tests {
         )?;
 
         // Client should receive insert
-        assert_tx_update_for_table(&mut rx, t_id, &schema, [product![0_u8, 1_u8]], []).await;
+        assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 1_u8]], []).await;
 
         run(&db, "UPDATE t SET y=2 WHERE x=0", auth, Some(&subs), &mut vec![])?;
 
         // Client should receive update
-        assert_tx_update_for_table(&mut rx, t_id, &schema, [product![0_u8, 2_u8]], [product![0_u8, 1_u8]]).await;
+        assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 2_u8]], [product![0_u8, 1_u8]]).await;
 
         run(&db, "DELETE FROM t WHERE x=0", auth, Some(&subs), &mut vec![])?;
 
         // Client should receive delete
-        assert_tx_update_for_table(&mut rx, t_id, &schema, [], [product![0_u8, 2_u8]]).await;
+        assert_tx_update_for_table(rx.recv(), t_id, &schema, [], [product![0_u8, 2_u8]]).await;
         Ok(())
     }
 
@@ -2034,13 +2086,7 @@ mod tests {
         subscribe_multi(&subs, &["select * from t"], tx, &mut 0)?;
 
         // Wait to receive the initial subscription message
-        assert!(matches!(
-            rx.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(_)
-            })
-        ));
+        assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
 
         // Insert a lot of rows into `t`.
         // We want to insert enough to cross any threshold there might be for compression.
@@ -2048,18 +2094,14 @@ mod tests {
 
         // Assert the table updates within this message are all be uncompressed
         match rx.recv().await {
-            Some(ClientUpdate {
-                tx_offset: _,
-                message:
-                    SerializableMessage::TxUpdate(TransactionUpdateMessage {
-                        database_update:
-                            SubscriptionUpdateMessage {
-                                database_update: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
-                                ..
-                            },
+            Some(SerializableMessage::TxUpdate(TransactionUpdateMessage {
+                database_update:
+                    SubscriptionUpdateMessage {
+                        database_update: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
                         ..
-                    }),
-            }) => {
+                    },
+                ..
+            })) => {
                 assert!(tables.iter().all(|TableUpdate { updates, .. }| updates
                     .iter()
                     .all(|query_update| matches!(query_update, CompressableQueryUpdate::Uncompressed(_)))));
@@ -2094,13 +2136,7 @@ mod tests {
 
             subscribe_multi(&subs, queries, sender, &mut 0)?;
 
-            assert!(matches!(
-                rx.recv().await,
-                Some(ClientUpdate {
-                    tx_offset: _,
-                    message: SerializableMessage::Subscription(_)
-                })
-            ));
+            assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
 
             // Insert two matching player rows
             commit_tx(
@@ -2119,7 +2155,7 @@ mod tests {
 
             // We should receive both matching player rows
             assert_tx_update_for_table(
-                &mut rx,
+                rx.recv(),
                 p_id,
                 &schema,
                 [product![1_u64, true], product![2_u64, true]],
@@ -2137,7 +2173,7 @@ mod tests {
 
             // We should receive an update for it because it is still matching
             assert_tx_update_for_table(
-                &mut rx,
+                rx.recv(),
                 p_id,
                 &schema,
                 [product![2_u64, false]],
@@ -2155,7 +2191,7 @@ mod tests {
 
             // We should receive an update for it because it is still matching
             assert_tx_update_for_table(
-                &mut rx,
+                rx.recv(),
                 p_id,
                 &schema,
                 [product![2_u64, true]],
@@ -2261,23 +2297,17 @@ mod tests {
         // Wait for both subscriptions
         assert!(matches!(
             rx_for_a.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
         ));
         assert!(matches!(
             rx_for_b.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
         ));
 
         // Modify a single row in `v`
@@ -2296,7 +2326,7 @@ mod tests {
         let metrics = commit_tx(&db, &subs, [], [(v_id, product![2u64, 6u64, 6u64])])?;
 
         assert_tx_update_for_table(
-            &mut rx_for_a,
+            rx_for_a.recv(),
             u_id,
             &ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]),
             [product![2u64, 3u64, 3u64]],
@@ -2317,7 +2347,7 @@ mod tests {
         )?;
 
         assert_tx_update_for_table(
-            &mut rx_for_b,
+            rx_for_b.recv(),
             u_id,
             &ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]),
             [product![1u64, 2u64, 3u64]],
@@ -2404,19 +2434,16 @@ mod tests {
 
         assert_matches!(
             rx.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
         );
 
         // Insert a new row into `u` that joins with `x = 1`
         let metrics = commit_tx(&db, &subs, [], [(u_id, product![1u64, 2u64, 3u64])])?;
 
-        assert_tx_update_for_table(&mut rx, u_id, &schema, [product![1u64, 2u64, 3u64]], []).await;
+        assert_tx_update_for_table(rx.recv(), u_id, &schema, [product![1u64, 2u64, 3u64]], []).await;
 
         // We should only have evaluated a single query
         assert_eq!(metrics.delta_queries_evaluated, 1);
@@ -2443,7 +2470,7 @@ mod tests {
         )?;
 
         // Results in a no-op
-        assert_tx_update_for_table(&mut rx, u_id, &schema, [], []).await;
+        assert_tx_update_for_table(rx.recv(), u_id, &schema, [], []).await;
 
         // We should have evaluated queries for `x = 1` and `x = 2`
         assert_eq!(metrics.delta_queries_evaluated, 2);
@@ -2458,7 +2485,7 @@ mod tests {
             [(v_id, product![3u64, 4u64, 3u64]), (u_id, product![3u64, 4u64, 5u64])],
         )?;
 
-        assert_tx_update_for_table(&mut rx, u_id, &schema, [product![3u64, 4u64, 5u64]], []).await;
+        assert_tx_update_for_table(rx.recv(), u_id, &schema, [product![3u64, 4u64, 5u64]], []).await;
 
         // We should have evaluated queries for `x = 3` and `x = 4`
         assert_eq!(metrics.delta_queries_evaluated, 2);
@@ -2472,7 +2499,7 @@ mod tests {
             [(v_id, product![3u64, 0u64, 3u64])],
         )?;
 
-        assert_tx_update_for_table(&mut rx, u_id, &schema, [], [product![3u64, 4u64, 5u64]]).await;
+        assert_tx_update_for_table(rx.recv(), u_id, &schema, [], [product![3u64, 4u64, 5u64]]).await;
 
         // We should only have evaluated the query for `x = 4`
         assert_eq!(metrics.delta_queries_evaluated, 1);
@@ -2551,30 +2578,24 @@ mod tests {
         // Wait for both subscriptions
         assert_matches!(
             rx_for_a.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
         );
         assert_matches!(
             rx_for_b.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
         );
 
         // Insert a new row into `u`
         commit_tx(&db, &subs, [], [(u_id, product![1u64, 0u64, 0u64])])?;
 
         assert_tx_update_for_table(
-            &mut rx_for_a,
+            rx_for_a.recv(),
             u_id,
             &ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]),
             [product![1u64, 0u64, 0u64]],
@@ -2583,7 +2604,7 @@ mod tests {
         .await;
 
         assert_tx_update_for_table(
-            &mut rx_for_b,
+            rx_for_b.recv(),
             u_id,
             &ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]),
             [product![1u64, 0u64, 0u64]],
@@ -2649,43 +2670,34 @@ mod tests {
         // Wait for both subscriptions
         assert_matches!(
             rx_for_a.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
         );
         assert_matches!(
             rx_for_b.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
         );
 
         unsubscribe_multi(&subs, tx_for_b, query_ids)?;
 
         assert_matches!(
             rx_for_b.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::UnsubscribeMulti(_),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::UnsubscribeMulti(_),
+                ..
+            }))
         );
 
         // Insert a new row into `u`
         let metrics = commit_tx(&db, &subs, [], [(u_id, product![1u64, 0u64, 0u64])])?;
 
         assert_tx_update_for_table(
-            &mut rx_for_a,
+            rx_for_a.recv(),
             u_id,
             &ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]),
             [product![1u64, 0u64, 0u64]],
@@ -2746,13 +2758,10 @@ mod tests {
 
         assert_matches!(
             rx.recv().await,
-            Some(ClientUpdate {
-                tx_offset: _,
-                message: SerializableMessage::Subscription(SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                })
-            })
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
         );
 
         assert_eq!(metrics.rows_scanned, 0);
@@ -2840,5 +2849,76 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_confirmed_reads() -> anyhow::Result<()> {
+        let (db, durability) = relational_db_with_manual_durability()?;
+
+        let (tx_for_confirmed, mut rx_for_confirmed) =
+            client_connection_with_db(client_id_from_u8(1), db.clone(), true);
+        let (tx_for_unconfirmed, mut rx_for_unconfirmed) =
+            client_connection_with_db(client_id_from_u8(2), db.clone(), false);
+
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+        let table = db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
+
+        // Subscribe both clients.
+        subscribe_multi(&subs, &["select * from t"], tx_for_confirmed, &mut 0)?;
+        subscribe_multi(&subs, &["select * from t"], tx_for_unconfirmed, &mut 0)?;
+
+        assert_matches!(
+            rx_for_unconfirmed.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+        assert_after_durable(&durability, async {
+            assert_matches!(
+                rx_for_confirmed.recv().await,
+                Some(SerializableMessage::Subscription(SubscriptionMessage {
+                    result: SubscriptionResult::SubscribeMulti(_),
+                    ..
+                }))
+            );
+        })
+        .await;
+
+        // Insert a row.
+        let mut tx = begin_mut_tx(&db);
+        db.insert(&mut tx, table, &bsatn::to_vec(&product![1_u8])?)?;
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        let schema = ProductType::from([AlgebraicType::U8]);
+
+        // Unconfirmed client should have received the row.
+        assert_tx_update_for_table(rx_for_unconfirmed.recv(), table, &schema, [product![1_u8]], []).await;
+        // Confirmed client should receive the row after the tx becomes durable.
+        assert_after_durable(
+            &durability,
+            assert_tx_update_for_table(rx_for_confirmed.recv(), table, &schema, [product![1_u8]], []),
+        )
+        .await;
+
+        Ok(())
+    }
+
+    async fn assert_after_durable(durability: &ManualDurability, f: impl Future) {
+        let (elapsed, ..) = tokio::join!(
+            async {
+                let start = Instant::now();
+                f.await;
+                start.elapsed()
+            },
+            async {
+                sleep(Duration::from_millis(100)).await;
+                durability.mark_durable();
+            }
+        );
+        assert!(elapsed.as_millis() >= 100);
     }
 }
