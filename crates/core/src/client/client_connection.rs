@@ -110,8 +110,7 @@ pub struct ClientUpdate {
 pub struct ClientConnectionReceiver {
     confirmed_reads: bool,
     channel: MeteredReceiver<ClientUpdate>,
-    module: ModuleHost,
-    module_rx: watch::Receiver<ModuleHost>,
+    module: watch::Receiver<ModuleHost>,
 }
 
 impl ClientConnectionReceiver {
@@ -178,11 +177,13 @@ impl ClientConnectionReceiver {
     /// Returns `Some(None)` if the module is live but configured without durability.
     /// Otherwise, returns `Some(DurableOffset)`.
     async fn durable_tx_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
-        if self.module_rx.has_changed().map_err(|_| NoSuchModule)? {
-            self.module = self.module_rx.borrow_and_update().clone();
-        }
+        let module = if self.module.has_changed().map_err(|_| NoSuchModule)? {
+            self.module.borrow_and_update()
+        } else {
+            self.module.borrow()
+        };
 
-        Ok(self.module.replica_ctx().relational_db.durable_tx_offset())
+        Ok(module.replica_ctx().relational_db.durable_tx_offset())
     }
 }
 
@@ -622,8 +623,7 @@ impl ClientConnection {
         let receiver = ClientConnectionReceiver {
             confirmed_reads: config.confirmed_reads,
             channel: MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone()),
-            module: module.clone(),
-            module_rx: module_rx.clone(),
+            module: module_rx.clone(),
         };
 
         let sender = Arc::new(ClientConnectionSender {
