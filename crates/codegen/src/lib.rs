@@ -5,11 +5,13 @@ mod code_indenter;
 pub mod csharp;
 pub mod rust;
 pub mod typescript;
+pub mod unrealcpp;
 mod util;
 
 pub use self::csharp::Csharp;
 pub use self::rust::Rust;
 pub use self::typescript::TypeScript;
+pub use self::unrealcpp::UnrealCpp;
 pub use util::AUTO_GENERATED_PREFIX;
 
 pub fn generate(module: &ModuleDef, lang: &dyn Lang) -> Vec<(String, String)> {

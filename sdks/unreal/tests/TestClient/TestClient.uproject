@@ -1,0 +1,26 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.6",
+	"Category": "",
+	"Description": "",
+	"Modules": [
+		{
+			"Name": "TestClient",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "ModelingToolsEditorMode",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		}
+	],
+		"_Note": "Plugin path is hardcoded. Make sure to point to your SpacetimeDB plugin roots directory, exact location.",
+		"AdditionalPluginDirectories": [
+			"E:/Projects/ClockworkLabs/SpacetimeDB-unreal/crates/sdk-unreal/src"
+	]
+}
