@@ -1,6 +1,8 @@
 use bytes::Bytes;
 use prometheus::IntGauge;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
+use spacetimedb_lib::de::DeserializeSeed;
+use spacetimedb_primitives::ProcedureId;
 use spacetimedb_schema::auto_migrate::ponder_migrate;
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,10 +13,13 @@ use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerpri
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
-    CallReducerParams, DatabaseUpdate, DynModule, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
-    ModuleInstance,
+    CallProcedureParams, CallReducerParams, DatabaseUpdate, DynModule, EventStatus, Module, ModuleEvent,
+    ModuleFunctionCall, ModuleInfo, ModuleInstance,
 };
-use crate::host::{ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
+use crate::host::{
+    ProcedureCallError, ProcedureCallResult, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
+    UpdateDatabaseResult,
+};
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
@@ -58,6 +63,10 @@ pub trait WasmInstance: Send + Sync + 'static {
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> ExecuteResult<Self::Trap>;
 
     fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap);
+
+    fn print_trap(trap: &Self::Trap) -> String;
+
+    fn call_procedure(&mut self, op: ProcedureOp<'_>, budget: ReducerBudget) -> ProcedureExecuteResult<Self::Trap>;
 }
 
 pub struct EnergyStats {
@@ -66,9 +75,28 @@ pub struct EnergyStats {
     pub remaining: ReducerBudget,
 }
 
+impl EnergyStats {
+    pub const ZERO: Self = Self {
+        used: EnergyQuanta::ZERO,
+        wasmtime_fuel_used: 0,
+        remaining: ReducerBudget::ZERO,
+    };
+}
+
 pub struct ExecutionTimings {
     pub total_duration: Duration,
     pub wasm_instance_env_call_times: CallTimes,
+}
+
+impl ExecutionTimings {
+    /// Not a `const` because there doesn't seem to be any way to `const` construct an `enum_map::EnumMap`,
+    /// which `CallTimes` uses.
+    pub fn zero() -> Self {
+        Self {
+            total_duration: Duration::ZERO,
+            wasm_instance_env_call_times: CallTimes::new(),
+        }
+    }
 }
 
 pub struct ExecuteResult<E> {
@@ -76,6 +104,15 @@ pub struct ExecuteResult<E> {
     pub timings: ExecutionTimings,
     pub memory_allocation: usize,
     pub call_result: Result<Result<(), Box<str>>, E>,
+}
+
+pub struct ProcedureExecuteResult<E> {
+    #[allow(unused)]
+    pub energy: EnergyStats,
+    #[allow(unused)]
+    pub timings: ExecutionTimings,
+    pub memory_allocation: usize,
+    pub call_result: Result<Bytes, E>,
 }
 
 pub(crate) struct WasmModuleHostActor<T: WasmModule> {
@@ -284,6 +321,98 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
         crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(tx, params))
+    }
+
+    fn call_procedure(&mut self, params: CallProcedureParams) -> Result<ProcedureCallResult, ProcedureCallError> {
+        let CallProcedureParams {
+            timestamp,
+            caller_identity,
+            caller_connection_id,
+            timer,
+            procedure_id,
+            args,
+        } = params;
+
+        // We've already validated by this point that the procedure exists,
+        // so it's fine to use the panicking `procedure_by_id`.
+        let procedure_def = self.info.module_def.procedure_by_id(procedure_id);
+        let procedure_name = &procedure_def.name;
+
+        // TODO(observability): Add tracing spans, energy, metrics?
+        // These will require further thinking once we implement procedure suspend/resume,
+        // and so are not worth doing yet.
+
+        let op = ProcedureOp {
+            id: procedure_id,
+            name: procedure_name,
+            caller_identity,
+            caller_connection_id,
+            timestamp,
+            arg_bytes: args.get_bsatn().clone(),
+        };
+
+        let energy_fingerprint = ReducerFingerprint {
+            module_hash: self.info.module_hash,
+            module_identity: self.info.owner_identity,
+            caller_identity,
+            reducer_name: &procedure_name,
+        };
+
+        // TODO: replace with call to separate function `procedure_budget`.
+        let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
+
+        let result = self.instance.call_procedure(op, budget);
+
+        let ProcedureExecuteResult {
+            memory_allocation,
+            call_result,
+            // TODO: Do something with timing and energy.
+            ..
+        } = result;
+
+        if self.allocated_memory != memory_allocation {
+            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
+            self.allocated_memory = memory_allocation;
+        }
+
+        match call_result {
+            Err(err) => {
+                T::log_traceback("procedure", procedure_name, &err);
+
+                WORKER_METRICS
+                    .wasm_instance_errors
+                    .with_label_values(
+                        &caller_identity,
+                        &self.info.module_hash,
+                        &caller_connection_id,
+                        procedure_name,
+                    )
+                    .inc();
+
+                self.trapped = true;
+
+                // if energy.remaining.get() == 0 {
+                //     return Err(ProcedureCallError::OutOfEnergy);
+                // } else
+                {
+                    return Err(ProcedureCallError::InternalError(T::print_trap(&err)));
+                }
+            }
+            Ok(return_val) => {
+                // TODO: deserialize return_val at its appropriate type, which you get out of the procedure def,
+                // then return it in `Ok`.
+                let return_type = &procedure_def.return_type;
+                let seed = spacetimedb_sats::WithTypespace::new(self.info.module_def.typespace(), return_type);
+                let return_val = seed
+                    .deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
+                    .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))?;
+                Ok(ProcedureCallResult {
+                    return_val,
+                    execution_duration: timer.map(|timer| timer.elapsed()).unwrap_or_default(),
+                    start_timestamp: timestamp,
+                })
+            }
+        }
     }
 }
 
@@ -539,4 +668,14 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
             arg_bsatn: arg_bytes.clone(),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct ProcedureOp<'a> {
+    pub id: ProcedureId,
+    pub name: &'a str,
+    pub caller_identity: Identity,
+    pub caller_connection_id: ConnectionId,
+    pub timestamp: Timestamp,
+    pub arg_bytes: Bytes,
 }

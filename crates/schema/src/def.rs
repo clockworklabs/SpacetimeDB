@@ -1003,6 +1003,18 @@ pub struct ProcedureDef {
     ///
     /// This `ProductType` need not be registered in the module's `TypespaceForGenerate`.
     pub params_for_generate: ProductTypeDef,
+
+    /// The return type of the procedure.
+    ///
+    /// If this is a non-special compound type, it should be registered in the module's `Typespace`
+    /// and indirected through an [`AlgebraicType::Ref`].
+    pub return_type: AlgebraicType,
+
+    /// The return type of the procedure.
+    ///
+    /// If this is a non-special compound type, it should be registered in the module's `TypespaceForGenerate`
+    /// and indirected through an [`AlgebraicTypeUse::Ref`].
+    pub return_type_for_generate: AlgebraicTypeUse,
 }
 
 impl From<ProcedureDef> for RawProcedureDefV9 {
@@ -1010,6 +1022,7 @@ impl From<ProcedureDef> for RawProcedureDefV9 {
         RawProcedureDefV9 {
             name: val.name.into(),
             params: val.params,
+            return_type: val.return_type,
         }
     }
 }

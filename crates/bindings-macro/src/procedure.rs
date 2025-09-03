@@ -67,7 +67,7 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
     let generated_describe_function = quote! {
         #[export_name = #register_describer_symbol]
         pub extern "C" fn __register_describer() {
-            spacetimedb::rt::register_procedure::<_, #func_name>(#func_name)
+            spacetimedb::rt::register_procedure::<_, _, #func_name>(#func_name)
         }
     };
 

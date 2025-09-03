@@ -20,15 +20,14 @@ use http::StatusCode;
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::{
-    ClientConnectedError, ProcedureCallError, ProcedureOutcome, ReducerArgs, ReducerCallError, ReducerOutcome,
-    UpdateDatabaseResult,
+    ClientConnectedError, ProcedureCallError, ReducerArgs, ReducerCallError, ReducerOutcome, UpdateDatabaseResult,
 };
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PublishOp, PublishResult};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{sats, Timestamp};
+use spacetimedb_lib::{sats, AlgebraicValue, Timestamp};
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
@@ -216,7 +215,6 @@ async fn procedure<S: ControlStateDelegate + NodeDelegate>(
             log::error!("Could not find database: {}", db_identity.to_hex());
             NO_SUCH_DATABASE
         })?;
-    let owner_identity = database.owner_identity;
 
     let leader = worker_ctx
         .leader(database.id)
@@ -252,8 +250,10 @@ async fn procedure<S: ControlStateDelegate + NodeDelegate>(
                     log::debug!("Attempt to call non-existent procedure {procedure}");
                     StatusCode::NOT_FOUND
                 }
+                ProcedureCallError::OutOfEnergy => StatusCode::PAYMENT_REQUIRED,
+                ProcedureCallError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             };
-            log::debug!("Error while invoking procedure {e:#}");
+            log::error!("Error while invoking procedure {e:#}");
             Err((status_code, format!("{:#}", anyhow::anyhow!(e))))
         }
     };
@@ -268,7 +268,7 @@ async fn procedure<S: ControlStateDelegate + NodeDelegate>(
             // Procedures don't assign a special meaning to error returns, unlike reducers,
             // as there's no transaction for them to automatically abort.
             // Instead, we just pass on their return value with the OK status so long as we successfully invoked the procedure.
-            let (status, body) = procedure_outcome_response(owner_identity, &procedure, result.outcome);
+            let (status, body) = procedure_outcome_response(result.return_val);
             Ok((
                 status,
                 TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
@@ -279,24 +279,11 @@ async fn procedure<S: ControlStateDelegate + NodeDelegate>(
     }
 }
 
-fn procedure_outcome_response(
-    owner_identity: Identity,
-    procedure: &str,
-    outcome: ProcedureOutcome,
-) -> (StatusCode, axum::response::Response) {
-    match outcome {
-        ProcedureOutcome::Returned(val) => (
-            StatusCode::OK,
-            axum::Json(sats::serde::SerdeWrapper(val)).into_response(),
-        ),
-        ProcedureOutcome::BudgetExceeded => {
-            log::warn!("Node's energy budget exceeded for identity: {owner_identity} while executing {procedure}");
-            (
-                StatusCode::PAYMENT_REQUIRED,
-                "Module energy budget exhausted".into_response(),
-            )
-        }
-    }
+fn procedure_outcome_response(return_val: AlgebraicValue) -> (StatusCode, axum::response::Response) {
+    (
+        StatusCode::OK,
+        axum::Json(sats::serde::SerdeWrapper(return_val)).into_response(),
+    )
 }
 
 #[derive(Deserialize)]

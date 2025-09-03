@@ -1,4 +1,4 @@
-use super::module_host::CallReducerParams;
+use super::module_host::{CallProcedureParams, CallReducerParams};
 use crate::{
     host::{
         module_common::{build_common_module_from_raw, ModuleCommon},
@@ -125,6 +125,13 @@ impl ModuleInstance for JsInstance {
     }
 
     fn call_reducer(&mut self, _tx: Option<MutTxId>, _params: CallReducerParams) -> super::ReducerCallResult {
+        todo!()
+    }
+
+    fn call_procedure(
+        &mut self,
+        _params: CallProcedureParams,
+    ) -> Result<super::ProcedureCallResult, super::ProcedureCallError> {
         todo!()
     }
 }

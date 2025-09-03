@@ -171,7 +171,7 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a reducer call is beginning.
-    pub fn start_reducer(&mut self, ts: Timestamp) {
+    pub fn start_funcall(&mut self, ts: Timestamp) {
         self.start_time = ts;
     }
 

@@ -31,15 +31,17 @@ pub fn invoke_reducer<'a, A: Args<'a>>(
 }
 
 /// Invoke `procedure`
-pub fn invoke_procedure<'a, A: Args<'a>>(
-    procedure: impl Procedure<'a, A>,
+pub fn invoke_procedure<'a, A: Args<'a>, Ret: IntoProcedureResult>(
+    procedure: impl Procedure<'a, A, Ret>,
     mut ctx: ProcedureContext,
     args: &'a [u8],
 ) -> ProcedureResult {
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
-    procedure.invoke(&mut ctx, args)
+    let ret = procedure.invoke(&mut ctx, args);
+
+    ret.into_result()
 }
 
 /// Marker supertrait for [`Reducer`] and [`Procedure`],
@@ -77,12 +79,12 @@ pub trait ReducerInfo: ExportFunctionInfo {
     label = "this procedure signature is not valid",
     note = "",
     note = "procedure signatures must match the following pattern:",
-    note = "    `Fn(&mut ProcedureContext, [T1, ...]) [-> Result<(), impl Display>]`",
+    note = "    `Fn(&mut ProcedureContext, [T1, ...]) [-> Tn]`",
     note = "where each `Ti` implements `SpacetimeType`.",
     note = ""
 )]
-pub trait Procedure<'de, A: Args<'de>>: ExportFunction<'de, A> {
-    fn invoke(&self, ctx: &mut ProcedureContext, args: A) -> ProcedureResult;
+pub trait Procedure<'de, A: Args<'de>, Ret: IntoProcedureResult>: ExportFunction<'de, A> {
+    fn invoke(&self, ctx: &mut ProcedureContext, args: A) -> Ret;
 }
 
 /// A trait for types that can *describe* a procedure.
@@ -116,7 +118,7 @@ pub trait Args<'de>: Sized {
     /// Serialize the arguments in `self` into the sequence `prod` according to the type `S`.
     fn serialize_seq_product<S: SerializeSeqProduct>(&self, prod: &mut S) -> Result<(), S::Error>;
 
-    /// Returns the schema for this reducer or procedure provided a `typespace`.
+    /// Returns the arguments schema [`ProductType`] for this reducer or procedure, provided a `typespace`.
     fn schema<I: ExportFunctionInfo>(typespace: &mut impl TypespaceBuilder) -> ProductType;
 }
 
@@ -143,15 +145,17 @@ impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
     }
 }
 
-pub trait IntoProcedureResult {
-    fn into_result(self) -> ProcedureResult;
-}
-
-impl<T: IntoReducerResult> IntoProcedureResult for T {
-    fn into_result(self) -> ProcedureResult {
-        IntoReducerResult::into_result(self)
+#[diagnostic::on_unimplemented(
+    message = "The procdure return type `{Self}` does not implement `SpacetimeType`",
+    note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
+)]
+pub trait IntoProcedureResult: SpacetimeType + Serialize {
+    #[inline]
+    fn into_result(&self) -> ProcedureResult {
+        bsatn::to_vec(&self).expect("Failed to serialize procedure result")
     }
 }
+impl<T: SpacetimeType + Serialize> IntoProcedureResult for T {}
 
 #[diagnostic::on_unimplemented(
     message = "the first argument of a reducer must be `&ReducerContext`",
@@ -347,15 +351,15 @@ macro_rules! impl_reducer_and_procedure {
             }
         }
 
-        impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Procedure<'de, ($($T,)*)> for Func
+        impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Procedure<'de, ($($T,)*), Ret> for Func
             where
             Func: Fn(&mut ProcedureContext, $($T),*) -> Ret,
-            Ret: IntoProcedureResult
+            Ret: IntoProcedureResult,
         {
             #[allow(non_snake_case)]
-            fn invoke(&self, ctx: &mut ProcedureContext, args: ($($T,)*)) -> ProcedureResult {
+            fn invoke(&self, ctx: &mut ProcedureContext, args: ($($T,)*)) -> Ret {
                 let ($($T,)*) = args;
-                self(ctx, $($T),*).into_result()
+                self(ctx, $($T),*)
             }
         }
     };
@@ -462,10 +466,16 @@ pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>)
     })
 }
 
-pub fn register_procedure<'a, A: Args<'a>, I: ProcedureInfo>(_: impl Procedure<'a, A>) {
+pub fn register_procedure<'a, A, Ret, I>(_: impl Procedure<'a, A, Ret>)
+where
+    A: Args<'a>,
+    Ret: SpacetimeType + Serialize,
+    I: ProcedureInfo,
+{
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
-        module.inner.add_procedure(I::NAME, params);
+        let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
+        module.inner.add_procedure(I::NAME, params, ret_ty);
         module.procedures.push(I::INVOKE);
     })
 }
@@ -665,12 +675,12 @@ fn convert_err_to_errno(res: Result<(), Box<str>>, out: BytesSink) -> i16 {
 /// The contents of the buffer are the BSATN-encoding of the arguments to the reducer.
 /// In the case of empty arguments, `args` will be 0, that is, invalid.
 ///
-/// The `error` is a `BytesSink`, registered on the host side,
+/// The `result_sink` is a `BytesSink`, registered on the host side,
 /// which can be written to with `bytes_sink_write`.
-/// When `error` is written to,
-/// it is expected that `HOST_CALL_FAILURE` is returned.
-/// Otherwise, `0` should be returned, i.e., the reducer completed successfully.
-/// Note that in the future, more failure codes could be supported.
+/// Procedures are expected to always write to this sink
+/// the BSATN-serialized bytes of a value of the procedure's return type.
+///
+/// Procedures always return the error 0. All other return values are reserved.
 #[no_mangle]
 extern "C" fn __call_procedure__(
     id: usize,
@@ -682,7 +692,7 @@ extern "C" fn __call_procedure__(
     conn_id_1: u64,
     timestamp: u64,
     args: BytesSource,
-    error: BytesSink,
+    result_sink: BytesSink,
 ) -> i16 {
     // Piece together `sender_i` into an `Identity`.
     let sender = reconstruct_sender_identity(sender_0, sender_1, sender_2, sender_3);
@@ -706,8 +716,11 @@ extern "C" fn __call_procedure__(
     // Deserialize the args and pass them to the actual procedure.
     let res = with_read_args(args, |args| procedures[id](ctx, args));
 
-    // Convert the actual procedure's result into a format we can transmit across the WASM boundary to the host.
-    convert_err_to_errno(res, error)
+    // Write the result bytes to the `result_sink`.
+    write_to_sink(result_sink, &res);
+
+    // Return 0 for no error. Procedures always either trap or return 0.
+    0
 }
 
 /// Run `logic` with `args` read from the host into a `&[u8]`.

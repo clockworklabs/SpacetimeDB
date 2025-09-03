@@ -607,19 +607,19 @@ impl ProcedureResultMessage {
     pub fn from_result(res: &Result<ProcedureCallResult, ProcedureCallError>, request_id: RequestId) -> Self {
         let (status, timestamp, execution_duration) = match res {
             Ok(ProcedureCallResult {
-                outcome,
+                return_val,
                 execution_duration,
                 start_timestamp,
             }) => (
-                match outcome {
-                    crate::host::ProcedureOutcome::Returned(val) => ProcedureStatus::Returned(val.clone()),
-                    crate::host::ProcedureOutcome::BudgetExceeded => ProcedureStatus::OutOfEnergy,
-                },
+                ProcedureStatus::Returned(return_val.clone()),
                 *start_timestamp,
                 TimeDuration::from(*execution_duration),
             ),
             Err(err) => (
-                ProcedureStatus::InternalError(format!("{err}")),
+                match err {
+                    ProcedureCallError::OutOfEnergy => ProcedureStatus::OutOfEnergy,
+                    _ => ProcedureStatus::InternalError(format!("{err}")),
+                },
                 Timestamp::UNIX_EPOCH,
                 TimeDuration::ZERO,
             ),

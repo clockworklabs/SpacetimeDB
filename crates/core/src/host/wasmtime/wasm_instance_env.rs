@@ -47,9 +47,9 @@ pub(super) struct WasmInstanceEnv {
     /// always be `Some`.
     mem: Option<Mem>,
 
-    /// The arguments being passed to a reducer
+    /// The arguments being passed to a reducer or procedure
     /// that it can read via [`Self::bytes_source_read`].
-    call_reducer_args: Option<(bytes::Bytes, usize)>,
+    funcall_args: Option<(bytes::Bytes, usize)>,
 
     /// The standard sink used for [`Self::bytes_sink_write`].
     standard_bytes_sink: Option<Vec<u8>>,
@@ -60,8 +60,8 @@ pub(super) struct WasmInstanceEnv {
     /// Track time spent in module-defined spans.
     timing_spans: TimingSpanSet,
 
-    /// The point in time the last reducer call started at.
-    reducer_start: Instant,
+    /// The point in time the last, or current, reducer or procedure call started at.
+    funcall_start: Instant,
 
     /// Track time spent in all wasm instance env calls (aka syscall time).
     ///
@@ -69,14 +69,14 @@ pub(super) struct WasmInstanceEnv {
     /// to this tracker.
     call_times: CallTimes,
 
-    /// The last, including current, reducer to be executed by this environment.
-    reducer_name: String,
+    /// The last, or current, reducer or procedure to be executed by this environment.
+    funcall_name: String,
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
     chunk_pool: ChunkPool,
 }
 
-const CALL_REDUCER_ARGS_SOURCE: u32 = 1;
+const FUNCALL_ARGS_SOURCE: u32 = 1;
 const STANDARD_BYTES_SINK: u32 = 1;
 
 type WasmResult<T> = Result<T, WasmError>;
@@ -87,17 +87,17 @@ type RtResult<T> = anyhow::Result<T>;
 impl WasmInstanceEnv {
     /// Create a new `WasmEnstanceEnv` from the given `InstanceEnv`.
     pub fn new(instance_env: InstanceEnv) -> Self {
-        let reducer_start = Instant::now();
+        let funcall_start = Instant::now();
         Self {
             instance_env,
             mem: None,
-            call_reducer_args: None,
+            funcall_args: None,
             standard_bytes_sink: None,
             iters: Default::default(),
             timing_spans: Default::default(),
-            reducer_start,
+            funcall_start,
             call_times: CallTimes::new(),
-            reducer_name: String::from("<initializing>"),
+            funcall_name: String::from("<initializing>"),
             chunk_pool: <_>::default(),
         }
     }
@@ -140,44 +140,50 @@ impl WasmInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    pub fn start_reducer(&mut self, name: &str, args: bytes::Bytes, ts: Timestamp) -> (u32, u32) {
+    pub fn start_funcall(&mut self, name: &str, args: bytes::Bytes, ts: Timestamp) -> (u32, u32) {
+        // Create the output sink.
+        // Reducers which fail will write their error message here.
+        // Procedures will write their result here.
         let errors = self.setup_standard_bytes_sink();
 
         // Pass an invalid source when the reducer args were empty.
         // This allows the module to avoid allocating and make a system call in those cases.
-        self.call_reducer_args = (!args.is_empty()).then_some((args, 0));
-        let args = if self.call_reducer_args.is_some() {
-            CALL_REDUCER_ARGS_SOURCE
+        self.funcall_args = (!args.is_empty()).then_some((args, 0));
+        let args = if self.funcall_args.is_some() {
+            FUNCALL_ARGS_SOURCE
         } else {
             0
         };
 
-        self.reducer_start = Instant::now();
-        name.clone_into(&mut self.reducer_name);
-        self.instance_env.start_reducer(ts);
+        self.funcall_start = Instant::now();
+        name.clone_into(&mut self.funcall_name);
+        self.instance_env.start_funcall(ts);
 
         (args, errors)
     }
 
-    /// Returns the name of the most recent reducer to be run in this environment.
-    pub fn reducer_name(&self) -> &str {
-        &self.reducer_name
+    /// Returns the name of the most recent reducer or procedure to be run in this environment.
+    pub fn funcall_name(&self) -> &str {
+        &self.funcall_name
     }
 
-    /// Returns the name of the most recent reducer to be run in this environment.
-    pub fn reducer_start(&self) -> Instant {
-        self.reducer_start
+    /// Returns the start time of the current or most recent reducer or procedure to be run in this environment.
+    pub fn funcall_start(&self) -> Instant {
+        self.funcall_start
     }
 
-    /// Signal to this `WasmInstanceEnv` that a reducer call is over.
-    /// This resets all of the state associated to a single reducer call,
-    /// and returns instrumentation records.
-    pub fn finish_reducer(&mut self) -> (ExecutionTimings, Vec<u8>) {
+    /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is over.
+    ///
+    /// Returns time measurements which can be recorded as metrics,
+    /// and the errors written by the WASM code to hte standard error sink.
+    ///
+    /// This resets the call times and clears the arguments source and error sink.
+    pub fn finish_funcall(&mut self) -> (ExecutionTimings, Vec<u8>) {
         // For the moment,
         // we only explicitly clear the source/sink buffers and the "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
 
-        let total_duration = self.reducer_start.elapsed();
+        let total_duration = self.funcall_start.elapsed();
 
         // Taking the call times record also resets timings to 0s for the next call.
         let wasm_instance_env_call_times = self.call_times.take();
@@ -187,7 +193,7 @@ impl WasmInstanceEnv {
             wasm_instance_env_call_times,
         };
 
-        self.call_reducer_args = None;
+        self.funcall_args = None;
         (timings, self.take_standard_bytes_sink())
     }
 
@@ -1023,10 +1029,7 @@ impl WasmInstanceEnv {
             let (mem, env) = Self::mem_env(caller);
 
             // Retrieve the reducer args if available and requested, or error.
-            let Some((reducer_args, cursor)) = env
-                .call_reducer_args
-                .as_mut()
-                .filter(|_| source == CALL_REDUCER_ARGS_SOURCE)
+            let Some((funcall_args, cursor)) = env.funcall_args.as_mut().filter(|_| source == FUNCALL_ARGS_SOURCE)
             else {
                 return Ok(errno::NO_SUCH_BYTES.get().into());
             };
@@ -1039,7 +1042,7 @@ impl WasmInstanceEnv {
 
             // Derive the portion that we can read and what remains,
             // based on what is left to read and the capacity.
-            let left_to_read = &reducer_args[*cursor..];
+            let left_to_read = &funcall_args[*cursor..];
             let can_read_len = buffer_len.min(left_to_read.len());
             let (can_read, remainder) = left_to_read.split_at(can_read_len);
             // Copy to the `buffer` and write written bytes count to `buffer_len`.
@@ -1048,7 +1051,7 @@ impl WasmInstanceEnv {
 
             // Destroy the source if exhausted, or advance `cursor`.
             if remainder.is_empty() {
-                env.call_reducer_args = None;
+                env.funcall_args = None;
                 Ok(-1i32)
             } else {
                 *cursor += can_read_len;

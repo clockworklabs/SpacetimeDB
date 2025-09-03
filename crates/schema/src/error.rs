@@ -186,6 +186,8 @@ pub enum TypeLocation<'a> {
         position: usize,
         arg_name: Option<Cow<'a, str>>,
     },
+    /// A procedure return type.
+    ProcedureReturn { procedure_name: Cow<'a, str> },
     /// A type in the typespace.
     InTypespace {
         /// The reference to the type within the typespace.
@@ -214,6 +216,9 @@ impl TypeLocation<'_> {
                 procedure_name: procedure_name.to_string().into(),
                 position,
                 arg_name: arg_name.map(|s| s.to_string().into()),
+            },
+            Self::ProcedureReturn { procedure_name } => TypeLocation::ProcedureReturn {
+                procedure_name: procedure_name.to_string().into(),
             },
             // needed to convince rustc this is allowed.
             TypeLocation::InTypespace { ref_ } => TypeLocation::InTypespace { ref_ },
@@ -245,6 +250,9 @@ impl fmt::Display for TypeLocation<'_> {
                     write!(f, " (`{arg_name}`)")?;
                 }
                 Ok(())
+            }
+            TypeLocation::ProcedureReturn { procedure_name } => {
+                write!(f, "procedure `{procedure_name}` return value")
             }
             TypeLocation::InTypespace { ref_ } => {
                 write!(f, "typespace ref `{ref_}`")

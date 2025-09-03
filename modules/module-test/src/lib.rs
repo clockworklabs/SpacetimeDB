@@ -441,6 +441,20 @@ fn this_is_a_procedure(_ctx: &mut ProcedureContext) {
     panic!("nah")
 }
 
+#[derive(SpacetimeType)]
+pub struct MyProcedureResult {
+    foo: String,
+    bar: i32,
+}
+
+#[spacetimedb::procedure]
+fn this_procedure_returns_something(ctx: &mut ProcedureContext) -> MyProcedureResult {
+    MyProcedureResult {
+        foo: format!("The time is {}", ctx.timestamp),
+        bar: 100,
+    }
+}
+
 #[spacetimedb::table(
     name = scheduled_procedure_arg,
     scheduled(scheduled_procedure)

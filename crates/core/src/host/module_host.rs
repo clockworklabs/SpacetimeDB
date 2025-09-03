@@ -42,12 +42,12 @@ use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_primitives::TableId;
+use spacetimedb_primitives::{ProcedureId, TableId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::AutoMigrateError;
-use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
-use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
+use spacetimedb_schema::def::deserialize::{ProcedureArgsDeserializeSeed, ReducerArgsDeserializeSeed};
+use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
 use std::fmt;
@@ -341,6 +341,8 @@ pub trait ModuleInstance: Send + 'static {
     ) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
+
+    fn call_procedure(&mut self, params: CallProcedureParams) -> Result<ProcedureCallResult, ProcedureCallError>;
 }
 
 /// Creates the table for `table_def` in `stdb`.
@@ -439,8 +441,19 @@ pub struct CallReducerParams {
     pub args: ArgsTuple,
 }
 
+pub struct CallProcedureParams {
+    pub timestamp: Timestamp,
+    pub caller_identity: Identity,
+    pub caller_connection_id: ConnectionId,
+    pub timer: Option<Instant>,
+    pub procedure_id: ProcedureId,
+    pub args: ArgsTuple,
+}
+
 // TODO: figure out how we want to handle traps. maybe it should just not return to the LendingPool and
 //       let the get_instance logic handle it?
+// UPDATE(pgoldman 2025-08-18): LendingPool is gone, but we will need some way to have a pool of WASM instances
+//                              to make procedure await work.
 struct AutoReplacingModuleInstance<T: Module> {
     inst: T::Instance,
     module: Arc<T>,
@@ -469,6 +482,11 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     }
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
         let ret = self.inst.call_reducer(tx, params);
+        self.check_trap();
+        ret
+    }
+    fn call_procedure(&mut self, params: CallProcedureParams) -> Result<ProcedureCallResult, ProcedureCallError> {
+        let ret = self.inst.call_procedure(params);
         self.check_trap();
         ret
     }
@@ -542,6 +560,10 @@ pub enum ProcedureCallError {
     NoSuchModule(#[from] NoSuchModule),
     #[error("no such procedure")]
     NoSuchProcedure,
+    #[error("Procedure terminated due to insufficient budget")]
+    OutOfEnergy,
+    #[error("The WASM instance encountered a fatal error: {0}")]
+    InternalError(String),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -1014,7 +1036,66 @@ impl ModuleHost {
         procedure_name: &str,
         args: ReducerArgs,
     ) -> Result<ProcedureCallResult, ProcedureCallError> {
-        todo!()
+        let res = async {
+            let (procedure_id, procedure_def) = self
+                .info
+                .module_def
+                .procedure_full(procedure_name)
+                .ok_or(ProcedureCallError::NoSuchProcedure)?;
+            self.call_procedure_inner(
+                caller_identity,
+                caller_connection_id,
+                timer,
+                procedure_id,
+                procedure_def,
+                args,
+            )
+            .await
+        }
+        .await;
+
+        let log_message = match &res {
+            Err(ProcedureCallError::NoSuchProcedure) => Some(format!(
+                "External attempt to call nonexistent procedure \"{procedure_name}\" failed. Have you run `spacetime generate` recently?"
+            )),
+            Err(ProcedureCallError::Args(_)) => Some(format!(
+                "External attempt to call procedure \"{procedure_name}\" failed, invalid arguments.\n\
+                 This is likely due to a mismatched client schema, have you run `spacetime generate` recently?"
+            )),
+            _ => None,
+        };
+
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, &log_message)
+        }
+
+        res
+    }
+
+    async fn call_procedure_inner(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        timer: Option<Instant>,
+        procedure_id: ProcedureId,
+        procedure_def: &ProcedureDef,
+        args: ReducerArgs,
+    ) -> Result<ProcedureCallResult, ProcedureCallError> {
+        let procedure_seed = ProcedureArgsDeserializeSeed(self.info.module_def.typespace().with_type(procedure_def));
+        let args = args.into_tuple_for_procedure(procedure_seed)?;
+        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
+
+        self.call(&procedure_def.name, move |inst| {
+            inst.call_procedure(CallProcedureParams {
+                timestamp: Timestamp::now(),
+                caller_identity,
+                caller_connection_id,
+                timer,
+                procedure_id,
+                args,
+            })
+        })
+        .await?
     }
 
     // Scheduled reducers require a different function here to call their reducer

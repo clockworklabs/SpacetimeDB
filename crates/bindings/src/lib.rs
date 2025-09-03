@@ -45,7 +45,7 @@ pub use table::{AutoIncOverflow, RangedIndex, Table, TryInsertError, UniqueColum
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
 
-pub type ProcedureResult = ReducerResult;
+pub type ProcedureResult = Vec<u8>;
 
 pub use spacetimedb_bindings_macro::duration;
 

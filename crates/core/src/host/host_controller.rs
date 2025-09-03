@@ -175,15 +175,9 @@ impl From<&EventStatus> for ReducerOutcome {
 
 #[derive(Clone, Debug)]
 pub struct ProcedureCallResult {
-    pub outcome: ProcedureOutcome,
+    pub return_val: AlgebraicValue,
     pub execution_duration: Duration,
     pub start_timestamp: Timestamp,
-}
-
-#[derive(Clone, Debug)]
-pub enum ProcedureOutcome {
-    Returned(AlgebraicValue),
-    BudgetExceeded,
 }
 
 impl HostController {

@@ -376,19 +376,31 @@ impl ModuleValidator<'_> {
     }
 
     fn validate_procedure_def(&mut self, procedure_def: RawProcedureDefV9) -> Result<ProcedureDef> {
-        let RawProcedureDefV9 { name, params } = procedure_def;
+        let RawProcedureDefV9 {
+            name,
+            params,
+            return_type,
+        } = procedure_def;
 
         let params_for_generate = self.params_for_generate(&params, |position, arg_name| TypeLocation::ProcedureArg {
-            procedure_name: (&*name).into(),
+            procedure_name: Cow::Borrowed(&name),
             position,
             arg_name,
         });
+
+        let return_type_for_generate = self.validate_for_type_use(
+            &TypeLocation::ProcedureReturn {
+                procedure_name: Cow::Borrowed(&name),
+            },
+            &return_type,
+        );
 
         // Procedures share the "function namespace" with reducers.
         // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
         let name = identifier(name);
 
-        let (name, params_for_generate) = (name, params_for_generate).combine_errors()?;
+        let (name, params_for_generate, return_type_for_generate) =
+            (name, params_for_generate, return_type_for_generate).combine_errors()?;
 
         Ok(ProcedureDef {
             name,
@@ -397,6 +409,8 @@ impl ModuleValidator<'_> {
                 elements: params_for_generate,
                 recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
             },
+            return_type,
+            return_type_for_generate,
         })
     }
 

@@ -6,9 +6,8 @@ use enum_map::Enum;
 use once_cell::sync::OnceCell;
 use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::serde::SeedWrapper;
-use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::ProductValue;
-use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
+use spacetimedb_schema::def::deserialize::{ArgsSeed, ProcedureArgsDeserializeSeed, ReducerArgsDeserializeSeed};
 
 mod disk_storage;
 mod host_controller;
@@ -26,7 +25,7 @@ mod wasm_common;
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
     extract_schema, DurabilityProvider, ExternalDurability, ExternalStorage, HostController, ProcedureCallResult,
-    ProcedureOutcome, ProgramStorage, ReducerCallResult, ReducerOutcome, StartSnapshotWatcher,
+    ProgramStorage, ReducerCallResult, ReducerOutcome, StartSnapshotWatcher,
 };
 pub use module_host::{
     ClientConnectedError, ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult,
@@ -44,13 +43,22 @@ pub enum ReducerArgs {
 }
 
 impl ReducerArgs {
+    fn into_tuple_for_procedure(
+        self,
+        seed: ProcedureArgsDeserializeSeed,
+    ) -> Result<ArgsTuple, InvalidProcedureArguments> {
+        self._into_tuple(seed).map_err(|err| InvalidProcedureArguments {
+            err,
+            procedure: (*seed.inner_def().name).into(),
+        })
+    }
     fn into_tuple(self, seed: ReducerArgsDeserializeSeed) -> Result<ArgsTuple, InvalidReducerArguments> {
         self._into_tuple(seed).map_err(|err| InvalidReducerArguments {
             err,
-            reducer: (*seed.reducer_def().name).into(),
+            reducer: (*seed.inner_def().name).into(),
         })
     }
-    fn _into_tuple(self, seed: ReducerArgsDeserializeSeed) -> anyhow::Result<ArgsTuple> {
+    fn _into_tuple(self, seed: impl ArgsSeed) -> anyhow::Result<ArgsTuple> {
         Ok(match self {
             ReducerArgs::Json(json) => ArgsTuple {
                 tuple: from_json_seed(&json, SeedWrapper(seed))?,
@@ -63,10 +71,7 @@ impl ReducerArgs {
                 json: OnceCell::new(),
             },
             ReducerArgs::Nullary => {
-                anyhow::ensure!(
-                    seed.reducer_def().params.elements.is_empty(),
-                    "failed to typecheck args"
-                );
+                anyhow::ensure!(seed.params().elements.is_empty(), "failed to typecheck args");
                 ArgsTuple::nullary()
             }
         })

@@ -469,6 +469,12 @@ pub struct RawProcedureDefV9 {
     /// The types and optional names of the parameters, in order.
     /// This `ProductType` need not be registered in the typespace.
     pub params: ProductType,
+
+    /// The type of the return value.
+    ///
+    /// If this is a user-defined product or sum type,
+    /// it should be registered in the typespace and indirected through an [`AlgebraicType::Ref`].
+    pub return_type: AlgebraicType,
 }
 
 /// A builder for a [`RawModuleDefV9`].
@@ -648,13 +654,23 @@ impl RawModuleDefV9Builder {
     /// Accepts a `ProductType` of arguments.
     /// The arguments `ProductType` need not be registered in the typespace.
     ///
+    /// Also accepts an `AlgebraicType` return type.
+    /// If this is a user-defined product or sum type,
+    /// it should be registered in the typespace and indirected through an `AlgebraicType::Ref`.
+    ///
     /// The `&mut ProcedureContext` first argument to the procedure should not be included in the `params`.
-    pub fn add_procedure(&mut self, name: impl Into<RawIdentifier>, params: spacetimedb_sats::ProductType) {
+    pub fn add_procedure(
+        &mut self,
+        name: impl Into<RawIdentifier>,
+        params: spacetimedb_sats::ProductType,
+        return_type: spacetimedb_sats::AlgebraicType,
+    ) {
         self.module
             .misc_exports
             .push(RawMiscModuleExportV9::Procedure(RawProcedureDefV9 {
                 name: name.into(),
                 params,
+                return_type,
             }))
     }
 
