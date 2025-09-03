@@ -2493,14 +2493,20 @@ mod tests {
             timer: None,
         });
 
-        let (offset_tx, offset_rx) = oneshot::channel();
-        let tx = scopeguard::guard(db.begin_tx(Workload::Update), |tx| {
-            let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
-            let _ = offset_tx.send(tx_offset);
-            db.report_read_tx_metrics(reducer, tx_metrics);
-        });
-        let delta_tx = DeltaTx::from(&*tx);
-        subscriptions.eval_updates_sequential((&delta_tx, offset_rx), event, Some(Arc::new(client0)));
+        // This block ensures that the transaction is released before waiting
+        // for a message to appear on `rx`.
+        // The message won't be sent until the transaction offset is known,
+        // and it is known when the transaction commits.
+        {
+            let (offset_tx, offset_rx) = oneshot::channel();
+            let tx = scopeguard::guard(db.begin_tx(Workload::Update), |tx| {
+                let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
+                let _ = offset_tx.send(tx_offset);
+                db.report_read_tx_metrics(reducer, tx_metrics);
+            });
+            let delta_tx = DeltaTx::from(&*tx);
+            subscriptions.eval_updates_sequential((&delta_tx, offset_rx), event, Some(Arc::new(client0)));
+        }
 
         runtime.block_on(async move {
             tokio::time::timeout(Duration::from_millis(20), async move {

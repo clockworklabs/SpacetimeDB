@@ -1093,7 +1093,18 @@ async fn ws_send_loop(
 
             maybe_message = messages.recv(), if !closed => {
                 let Some(message) = maybe_message else {
-                    break;
+                    // The message sender was dropped, even though no close
+                    // handshake is in progress. This should not normally happen,
+                    // but initiating close seems like the correct thing to do.
+                    log::warn!("message sender dropped without close handshake");
+                    if let Err(e) = ws.send(WsMessage::Close(None)).await {
+                        log::warn!("error sending close frame: {e:#}");
+                        break;
+                    }
+                    state.close();
+                    // Continue so that `ws_client_actor` keeps waiting for an
+                    // acknowledgement from the client.
+                    continue;
                 };
                 log::trace!("sending outgoing message");
                 let (msg_alloc, res) = send_message(
