@@ -1036,6 +1036,7 @@ mod tests {
     use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
+    use core::fmt;
     use hashbrown::HashMap;
     use itertools::Itertools;
     use pretty_assertions::assert_matches;
@@ -1057,12 +1058,13 @@ mod tests {
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::product;
     use std::future::Future;
+    use std::pin::pin;
     use std::sync::RwLock;
+    use std::task::Poll;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc::{self};
     use tokio::sync::watch;
-    use tokio::time::sleep;
 
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
@@ -1428,6 +1430,22 @@ mod tests {
             Some(msg) => panic!("expected a TxUpdate, but got {msg:#?}"),
             None => panic!("The receiver closed due to an error"),
         }
+    }
+
+    /// Assert that the future `f` completes only after `durability` is marked
+    /// durable.
+    ///
+    /// Namely:
+    ///
+    /// - assert that polling `f` once returns [`Poll::Pending`]
+    /// - call `durability.mark_durable()`
+    /// - assert that polling `f` returns [`Poll::Ready`].
+    ///
+    async fn assert_after_durable(durability: &ManualDurability, f: impl Future<Output: fmt::Debug>) {
+        let mut g = pin!(f);
+        assert_matches!(futures::poll!(&mut g), Poll::Pending);
+        durability.mark_durable();
+        assert_matches!(futures::poll!(g), Poll::Ready(_));
     }
 
     /// Commit a set of row updates and broadcast to subscribers
@@ -2905,20 +2923,5 @@ mod tests {
         .await;
 
         Ok(())
-    }
-
-    async fn assert_after_durable(durability: &ManualDurability, f: impl Future) {
-        let (elapsed, ..) = tokio::join!(
-            async {
-                let start = Instant::now();
-                f.await;
-                start.elapsed()
-            },
-            async {
-                sleep(Duration::from_millis(100)).await;
-                durability.mark_durable();
-            }
-        );
-        assert!(elapsed.as_millis() >= 100);
     }
 }
