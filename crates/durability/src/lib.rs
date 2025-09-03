@@ -55,7 +55,9 @@ impl DurableOffset {
 
     /// Wait for `offset` to become durable, i.e.
     ///
+    /// ```ignore
     ///     self.get().unwrap().is_some_and(|durable| durable >= offset)
+    /// ```
     ///
     /// Returns the actual durable offset at which above condition evaluated to
     /// `true`, or an `Err` if the durability is no longer live.
