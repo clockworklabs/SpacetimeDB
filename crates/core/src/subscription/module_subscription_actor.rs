@@ -1022,8 +1022,7 @@ mod tests {
         SubscriptionUpdateMessage, TransactionUpdateMessage,
     };
     use crate::client::{
-        ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, ClientName,
-        DummyClientConnectionReceiver, Protocol,
+        ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, ClientName, Protocol,
     };
     use crate::db::relational_db::tests_utils::{
         begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TempReplicaDir, TestDB,
@@ -1073,7 +1072,7 @@ mod tests {
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
         let config = ClientConfig::for_test();
-        let sender = Arc::new(ClientConnectionSender::dummy(client, config));
+        let sender = Arc::new(ClientConnectionSender::dummy(client, config, (*db).clone()));
         let send_worker_queue = spawn_send_worker(None);
         let module_subscriptions = ModuleSubscriptions::new(
             db.clone(),
@@ -1244,46 +1243,57 @@ mod tests {
         }
     }
 
+    fn client_connection_with_config(
+        client_id: ClientActorId,
+        db: &RelationalDB,
+        config: ClientConfig,
+    ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
+        let (sender, receiver) = ClientConnectionSender::dummy_with_channel(client_id, config, db.clone());
+        (Arc::new(sender), receiver)
+    }
+
     /// Instantiate a client connection with compression
     fn client_connection_with_compression(
         client_id: ClientActorId,
+        db: &RelationalDB,
         compression: Compression,
-    ) -> (Arc<ClientConnectionSender>, DummyClientConnectionReceiver) {
-        let (sender, receiver) = ClientConnectionSender::dummy_with_channel(
+    ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
+        client_connection_with_config(
             client_id,
+            db,
             ClientConfig {
                 protocol: Protocol::Binary,
                 compression,
                 tx_update_full: true,
                 confirmed_reads: false,
             },
-        );
-
-        (Arc::new(sender), receiver)
+        )
     }
 
     /// Instantiate a client connection
-    fn client_connection(client_id: ClientActorId) -> (Arc<ClientConnectionSender>, DummyClientConnectionReceiver) {
-        client_connection_with_compression(client_id, Compression::None)
+    fn client_connection(
+        client_id: ClientActorId,
+        db: &RelationalDB,
+    ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
+        client_connection_with_compression(client_id, db, Compression::None)
     }
 
-    fn client_connection_with_db(
+    /// Instantiate a client connection with confirmed reads turned on or off.
+    fn client_connection_with_confirmed_reads(
         client_id: ClientActorId,
-        db: Arc<RelationalDB>,
+        db: &RelationalDB,
         confirmed_reads: bool,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
-        let (sender, receiver) = ClientConnectionSender::dummy_with_database(
+        client_connection_with_config(
             client_id,
+            db,
             ClientConfig {
                 protocol: Protocol::Binary,
                 compression: Compression::None,
                 tx_update_full: true,
                 confirmed_reads,
             },
-            db,
-        );
-
-        (Arc::new(sender), receiver)
+        )
     }
 
     /// Insert rules into the RLS system table
@@ -1471,10 +1481,11 @@ mod tests {
 
     #[test]
     fn test_subscribe_metrics() -> anyhow::Result<()> {
-        let client_id = client_id_from_u8(1);
-        let (sender, _) = client_connection(client_id);
-
         let db = relational_db()?;
+
+        let client_id = client_id_from_u8(1);
+        let (sender, _) = client_connection(client_id, &db);
+
         let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(db.clone());
 
         // Create a table `t` with index on `id`
@@ -1526,10 +1537,11 @@ mod tests {
     /// Test that clients receive error messages on subscribe
     #[tokio::test]
     async fn subscribe_single_error() -> anyhow::Result<()> {
-        let client_id = client_id_from_u8(1);
-        let (tx, mut rx) = client_connection(client_id);
-
         let db = relational_db()?;
+
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id, &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
@@ -1546,10 +1558,11 @@ mod tests {
     /// Test that clients receive error messages on subscribe
     #[tokio::test]
     async fn subscribe_multi_error() -> anyhow::Result<()> {
-        let client_id = client_id_from_u8(1);
-        let (tx, mut rx) = client_connection(client_id);
-
         let db = relational_db()?;
+
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id, &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
@@ -1566,10 +1579,11 @@ mod tests {
     /// Test that clients receive error messages on unsubscribe
     #[tokio::test]
     async fn unsubscribe_single_error() -> anyhow::Result<()> {
-        let client_id = client_id_from_u8(1);
-        let (tx, mut rx) = client_connection(client_id);
-
         let db = relational_db()?;
+
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id, &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create a table `t` with an index on `id`
@@ -1620,10 +1634,11 @@ mod tests {
     /// Needs a multi-threaded tokio runtime so that the module subscription worker can run in parallel.
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn unsubscribe_multi_error() -> anyhow::Result<()> {
-        let client_id = client_id_from_u8(1);
-        let (tx, mut rx) = client_connection(client_id);
-
         let db = relational_db()?;
+
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id, &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create a table `t` with an index on `id`
@@ -1674,10 +1689,11 @@ mod tests {
     /// Test that clients receive error messages on tx updates
     #[tokio::test]
     async fn tx_update_error() -> anyhow::Result<()> {
-        let client_id = client_id_from_u8(1);
-        let (tx, mut rx) = client_connection(client_id);
-
         let db = relational_db()?;
+
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id, &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create two tables `t` and `s` with indexes on their `id` columns
@@ -1729,6 +1745,8 @@ mod tests {
     /// Test that two clients can subscribe to a parameterized query and get the correct rows.
     #[tokio::test]
     async fn test_parameterized_subscription() -> anyhow::Result<()> {
+        let db = relational_db()?;
+
         // Create identities for two different clients
         let id_for_a = identity_from_u8(1);
         let id_for_b = identity_from_u8(2);
@@ -1737,10 +1755,9 @@ mod tests {
         let client_id_for_b = client_id_from_u8(2);
 
         // Establish a connection for each client
-        let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a);
-        let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b);
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a, &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b, &db);
 
-        let db = relational_db()?;
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("identity", AlgebraicType::identity())];
@@ -1795,6 +1812,8 @@ mod tests {
     /// Test that two clients can subscribe to a table with RLS rules and get the correct rows
     #[tokio::test]
     async fn test_rls_subscription() -> anyhow::Result<()> {
+        let db = relational_db()?;
+
         // Create identities for two different clients
         let id_for_a = identity_from_u8(1);
         let id_for_b = identity_from_u8(2);
@@ -1803,10 +1822,9 @@ mod tests {
         let client_id_for_b = client_id_from_u8(2);
 
         // Establish a connection for each client
-        let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a);
-        let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b);
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a, &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b, &db);
 
-        let db = relational_db()?;
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("id", AlgebraicType::identity())];
@@ -1869,11 +1887,12 @@ mod tests {
     /// Test that a client and the database owner can subscribe to the same query
     #[tokio::test]
     async fn test_rls_for_owner() -> anyhow::Result<()> {
-        // Establish a connection for owner and client
-        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(0));
-        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(1));
-
         let db = relational_db()?;
+
+        // Establish a connection for owner and client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(0), &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(1), &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create table `t`
@@ -1946,10 +1965,11 @@ mod tests {
     /// Test that we do not send empty updates to clients
     #[tokio::test]
     async fn test_no_empty_updates() -> anyhow::Result<()> {
-        // Establish a client connection
-        let (tx, mut rx) = client_connection(client_id_from_u8(1));
-
         let db = relational_db()?;
+
+        // Establish a client connection
+        let (tx, mut rx) = client_connection(client_id_from_u8(1), &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("x", AlgebraicType::U8)];
@@ -1995,10 +2015,11 @@ mod tests {
     /// Needs a multi-threaded tokio runtime so that the module subscription worker can run in parallel.
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_no_compression_for_subscribe() -> anyhow::Result<()> {
-        // Establish a client connection with compression
-        let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), Compression::Brotli);
-
         let db = relational_db()?;
+
+        // Establish a client connection with compression
+        let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), &db, Compression::Brotli);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
@@ -2039,10 +2060,11 @@ mod tests {
     /// Test that we receive subscription updates for DML
     #[tokio::test]
     async fn test_updates_for_dml() -> anyhow::Result<()> {
-        // Establish a client connection
-        let (tx, mut rx) = client_connection(client_id_from_u8(1));
-
         let db = relational_db()?;
+
+        // Establish a client connection
+        let (tx, mut rx) = client_connection(client_id_from_u8(1), &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
         let schema = [("x", AlgebraicType::U8), ("y", AlgebraicType::U8)];
         let t_id = db.create_table_for_test("t", &schema, &[])?;
@@ -2086,10 +2108,11 @@ mod tests {
     /// but we don't care about that for this test.
     #[tokio::test]
     async fn test_no_compression_for_update() -> anyhow::Result<()> {
-        // Establish a client connection with compression
-        let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), Compression::Brotli);
-
         let db = relational_db()?;
+
+        // Establish a client connection with compression
+        let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), &db, Compression::Brotli);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
@@ -2136,10 +2159,11 @@ mod tests {
     #[tokio::test]
     async fn test_update_for_join() -> anyhow::Result<()> {
         async fn test_subscription_updates(queries: &[&'static str]) -> anyhow::Result<()> {
-            // Establish a client connection
-            let (sender, mut rx) = client_connection(client_id_from_u8(1));
-
             let db = relational_db()?;
+
+            // Establish a client connection
+            let (sender, mut rx) = client_connection(client_id_from_u8(1), &db);
+
             let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
             let p_schema = [("id", AlgebraicType::U64), ("signed_in", AlgebraicType::Bool)];
@@ -2249,11 +2273,12 @@ mod tests {
     /// Needs a multi-threaded tokio runtime so that the module subscription worker can run in parallel.
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_query_pruning() -> anyhow::Result<()> {
-        // Establish a connection for each client
-        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1));
-        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2));
-
         let db = relational_db()?;
+
+        // Establish a connection for each client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1), &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2), &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let u_id = db.create_table_for_test(
@@ -2390,9 +2415,10 @@ mod tests {
     /// Test that we do not evaluate queries that we know will not match row updates
     #[tokio::test]
     async fn test_join_pruning() -> anyhow::Result<()> {
-        let (tx, mut rx) = client_connection(client_id_from_u8(1));
-
         let db = relational_db()?;
+
+        let (tx, mut rx) = client_connection(client_id_from_u8(1), &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let u_id = db.create_table_for_test_with_the_works(
@@ -2543,11 +2569,12 @@ mod tests {
     /// Test that one client subscribing does not affect another
     #[tokio::test]
     async fn test_subscribe_distinct_queries_same_plan() -> anyhow::Result<()> {
-        // Establish a connection for each client
-        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1));
-        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2));
-
         let db = relational_db()?;
+
+        // Establish a connection for each client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1), &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2), &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let u_id = db.create_table_for_test_with_the_works(
@@ -2636,11 +2663,12 @@ mod tests {
     /// Test that one client unsubscribing does not affect another
     #[tokio::test]
     async fn test_unsubscribe_distinct_queries_same_plan() -> anyhow::Result<()> {
-        // Establish a connection for each client
-        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1));
-        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2));
-
         let db = relational_db()?;
+
+        // Establish a connection for each client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1), &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2), &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let u_id = db.create_table_for_test_with_the_works(
@@ -2747,10 +2775,11 @@ mod tests {
     /// Needs a multi-threaded tokio runtime so that the module subscription worker can run in parallel.
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_query_pruning_for_empty_tables() -> anyhow::Result<()> {
-        // Establish a client connection
-        let (tx, mut rx) = client_connection(client_id_from_u8(1));
-
         let db = relational_db()?;
+
+        // Establish a client connection
+        let (tx, mut rx) = client_connection(client_id_from_u8(1), &db);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = &[("id", AlgebraicType::U64), ("a", AlgebraicType::U64)];
@@ -2874,9 +2903,9 @@ mod tests {
         let (db, durability) = relational_db_with_manual_durability()?;
 
         let (tx_for_confirmed, mut rx_for_confirmed) =
-            client_connection_with_db(client_id_from_u8(1), db.clone(), true);
+            client_connection_with_confirmed_reads(client_id_from_u8(1), &db, true);
         let (tx_for_unconfirmed, mut rx_for_unconfirmed) =
-            client_connection_with_db(client_id_from_u8(2), db.clone(), false);
+            client_connection_with_confirmed_reads(client_id_from_u8(2), &db, false);
 
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
         let table = db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;

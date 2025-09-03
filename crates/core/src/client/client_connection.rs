@@ -102,26 +102,39 @@ struct ClientUpdate {
     pub message: SerializableMessage,
 }
 
-#[derive(From)]
-enum DurableOffsetSupply {
-    Module(watch::Receiver<ModuleHost>),
-    Database(Arc<RelationalDB>),
+/// Types with access to the [`DurableOffset`] of a database.
+///
+/// Provided implementors are [`watch::Receiver<ModuleHost>`] and [`RelationalDB`].
+///
+/// The latter is mostly useful for tests, where no managed [`ModuleHost`] is
+/// available, while the former supports module hotswapping.
+pub trait DurableOffsetSupply: Send {
+    /// Obtain the current [`DurableOffset`] handle.
+    ///
+    /// Returns:
+    ///
+    /// - `Err(NoSuchModule)` if the database was shut down
+    /// - `Ok(None)` if the database is configured without durability
+    /// - `Ok(DurableOffset)` otherwise
+    ///
+    fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule>;
 }
 
-impl DurableOffsetSupply {
+impl DurableOffsetSupply for watch::Receiver<ModuleHost> {
     fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
-        match self {
-            Self::Module(rx) => {
-                let module = if rx.has_changed().map_err(|_| NoSuchModule)? {
-                    rx.borrow_and_update()
-                } else {
-                    rx.borrow()
-                };
+        let module = if self.has_changed().map_err(|_| NoSuchModule)? {
+            self.borrow_and_update()
+        } else {
+            self.borrow()
+        };
 
-                Ok(module.replica_ctx().relational_db.durable_tx_offset())
-            }
-            Self::Database(db) => Ok(db.durable_tx_offset()),
-        }
+        Ok(module.replica_ctx().relational_db.durable_tx_offset())
+    }
+}
+
+impl DurableOffsetSupply for RelationalDB {
+    fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
+        Ok(self.durable_tx_offset())
     }
 }
 
@@ -135,7 +148,7 @@ impl DurableOffsetSupply {
 pub struct ClientConnectionReceiver {
     confirmed_reads: bool,
     channel: MeteredReceiver<ClientUpdate>,
-    offset_supply: DurableOffsetSupply,
+    offset_supply: Box<dyn DurableOffsetSupply>,
 }
 
 impl ClientConnectionReceiver {
@@ -250,17 +263,6 @@ impl ClientConnectionMetrics {
     }
 }
 
-pub struct DummyClientConnectionReceiver {
-    channel: MeteredReceiver<ClientUpdate>,
-}
-
-impl DummyClientConnectionReceiver {
-    pub async fn recv(&mut self) -> Option<SerializableMessage> {
-        let update = self.channel.recv().await?;
-        Some(update.message)
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum ClientSendError {
     #[error("client disconnected")]
@@ -270,37 +272,10 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
-    pub fn dummy_with_channel(id: ClientActorId, config: ClientConfig) -> (Self, DummyClientConnectionReceiver) {
-        let (sendtx, rx) = mpsc::channel(1);
-        // just make something up, it doesn't need to be attached to a real task
-        let abort_handle = match tokio::runtime::Handle::try_current() {
-            Ok(h) => h.spawn(async {}).abort_handle(),
-            Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
-        };
-
-        let receiver = DummyClientConnectionReceiver {
-            channel: MeteredReceiver::new(rx),
-        };
-        let cancelled = AtomicBool::new(false);
-        let sender = Self {
-            id,
-            config,
-            sendtx,
-            abort_handle,
-            cancelled,
-            metrics: None,
-        };
-        (sender, receiver)
-    }
-
-    pub fn dummy(id: ClientActorId, config: ClientConfig) -> Self {
-        Self::dummy_with_channel(id, config).0
-    }
-
-    pub fn dummy_with_database(
+    pub fn dummy_with_channel(
         id: ClientActorId,
         config: ClientConfig,
-        db: Arc<RelationalDB>,
+        offset_supply: impl DurableOffsetSupply + 'static,
     ) -> (Self, ClientConnectionReceiver) {
         let (sendtx, rx) = mpsc::channel(1);
         // just make something up, it doesn't need to be attached to a real task
@@ -312,7 +287,7 @@ impl ClientConnectionSender {
         let receiver = ClientConnectionReceiver {
             confirmed_reads: config.confirmed_reads,
             channel: MeteredReceiver::new(rx),
-            offset_supply: db.into(),
+            offset_supply: Box::new(offset_supply),
         };
         let cancelled = AtomicBool::new(false);
         let sender = Self {
@@ -323,8 +298,11 @@ impl ClientConnectionSender {
             cancelled,
             metrics: None,
         };
-
         (sender, receiver)
+    }
+
+    pub fn dummy(id: ClientActorId, config: ClientConfig, offset_supply: impl DurableOffsetSupply + 'static) -> Self {
+        Self::dummy_with_channel(id, config, offset_supply).0
     }
 
     pub fn is_cancelled(&self) -> bool {
@@ -677,7 +655,7 @@ impl ClientConnection {
         let receiver = ClientConnectionReceiver {
             confirmed_reads: config.confirmed_reads,
             channel: MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone()),
-            offset_supply: module_rx.clone().into(),
+            offset_supply: Box::new(module_rx.clone()),
         };
 
         let sender = Arc::new(ClientConnectionSender {
@@ -708,7 +686,7 @@ impl ClientConnection {
         module_rx: watch::Receiver<ModuleHost>,
     ) -> Self {
         Self {
-            sender: Arc::new(ClientConnectionSender::dummy(id, config)),
+            sender: Arc::new(ClientConnectionSender::dummy(id, config, module_rx.clone())),
             replica_id,
             module_rx,
         }

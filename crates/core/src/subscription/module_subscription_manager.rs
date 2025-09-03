@@ -1615,6 +1615,7 @@ fn send_to_client(
     tx_offset: Option<TxOffset>,
     message: impl Into<SerializableMessage>,
 ) {
+    tracing::debug!(client = %client.id, tx_offset, "send_to_client");
     if let Err(e) = client.send_message(tx_offset, message) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }
@@ -1668,7 +1669,7 @@ mod tests {
         (Identity::ZERO, ConnectionId::from_u128(connection_id))
     }
 
-    fn client(connection_id: u128) -> ClientConnectionSender {
+    fn client(connection_id: u128, db: &RelationalDB) -> ClientConnectionSender {
         let (identity, connection_id) = id(connection_id);
         ClientConnectionSender::dummy(
             ClientActorId {
@@ -1677,6 +1678,7 @@ mod tests {
                 name: ClientName(0),
             },
             ClientConfig::for_test(),
+            db.clone(),
         )
     }
 
@@ -1690,7 +1692,7 @@ mod tests {
         let hash = plan.hash();
 
         let id = id(0);
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -1714,7 +1716,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -1737,7 +1739,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -1763,7 +1765,7 @@ mod tests {
         let sql = "select * from T";
         let plan = compile_plan(&db, sql)?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -1788,7 +1790,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -1817,7 +1819,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -1854,7 +1856,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let clients = (0..3).map(|i| Arc::new(client(i))).collect::<Vec<_>>();
+        let clients = (0..3).map(|i| Arc::new(client(i, &db))).collect::<Vec<_>>();
 
         // All of the clients are using the same query id.
         let query_id: ClientQueryId = QueryId::new(1);
@@ -1895,7 +1897,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let clients = (0..3).map(|i| Arc::new(client(i))).collect::<Vec<_>>();
+        let clients = (0..3).map(|i| Arc::new(client(i, &db))).collect::<Vec<_>>();
 
         // All of the clients are using the same query id.
         let query_id: ClientQueryId = QueryId::new(1);
@@ -1946,7 +1948,7 @@ mod tests {
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -1991,7 +1993,7 @@ mod tests {
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2035,7 +2037,7 @@ mod tests {
 
         let table_id = create_table(&db, "t")?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2108,7 +2110,7 @@ mod tests {
 
         let table_id = create_table(&db, "t")?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2178,7 +2180,7 @@ mod tests {
         let t_id = db.create_table_for_test("t", &schema, &[0.into()])?;
         let s_id = db.create_table_for_test("s", &schema, &[0.into()])?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2250,7 +2252,7 @@ mod tests {
         let sql = "select * from T";
         let plan = compile_plan(&db, sql)?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -2275,7 +2277,7 @@ mod tests {
         let sql = "select * from T";
         let plan = compile_plan(&db, sql)?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -2303,7 +2305,7 @@ mod tests {
         let hash = plan.hash();
 
         let id = id(0);
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2329,7 +2331,7 @@ mod tests {
         let hash = plan.hash();
 
         let id = id(0);
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2361,10 +2363,10 @@ mod tests {
         let hash = plan.hash();
 
         let id0 = id(0);
-        let client0 = Arc::new(client(0));
+        let client0 = Arc::new(client(0, &db));
 
         let id1 = id(1);
-        let client1 = Arc::new(client(1));
+        let client1 = Arc::new(client(1, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2409,10 +2411,10 @@ mod tests {
         let hash_select1 = plan_select1.hash();
 
         let id0 = id(0);
-        let client0 = Arc::new(client(0));
+        let client0 = Arc::new(client(0, &db));
 
         let id1 = id(1);
-        let client1 = Arc::new(client(1));
+        let client1 = Arc::new(client(1, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2471,7 +2473,7 @@ mod tests {
         let id0 = Identity::ZERO;
         let client0 = ClientActorId::for_test(id0);
         let config = ClientConfig::for_test();
-        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, config);
+        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, config, (*db).clone());
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
