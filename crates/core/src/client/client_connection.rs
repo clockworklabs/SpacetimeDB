@@ -331,7 +331,12 @@ impl ClientConnectionSender {
             Err(mpsc::error::TrySendError::Full(_)) => {
                 // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
                 // the channel, so forcibly kick the client
-                tracing::warn!(identity = %self.id.identity, connection_id = %self.id.connection_id, "client channel capacity exceeded");
+                tracing::warn!(
+                    identity = %self.id.identity,
+                    connection_id = %self.id.connection_id,
+                    confirmed_reads = self.config.confirmed_reads,
+                    "client channel capacity exceeded"
+                );
                 self.abort_handle.abort();
                 self.cancelled.store(true, Ordering::Relaxed);
                 return Err(ClientSendError::Cancelled);
