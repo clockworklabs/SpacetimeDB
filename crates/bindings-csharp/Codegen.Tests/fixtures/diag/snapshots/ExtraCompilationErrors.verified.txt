@@ -116,7 +116,7 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
   },
   {/*
     {
-        internal static readonly TRW Field = new();
+        internal static readonly TRW FieldRW = new();
                                  ^^^
 
 */

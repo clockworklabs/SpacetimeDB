@@ -9,7 +9,7 @@ use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::TableDef;
-use spacetimedb_schema::schema::{IndexSchema, Schema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
 use std::sync::Arc;
 
 /// The logger used for by [`update_database`] and friends.
@@ -222,8 +222,14 @@ fn auto_migrate_database(
                 );
                 stdb.drop_sequence(tx, sequence_schema.sequence_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumns(_table_name) => {
-                anyhow::bail!("Unsupported: Changing column types");
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumns(table_name) => {
+                let table_def = plan.new.stored_in_table_def(table_name).unwrap();
+                let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
+
+                log!(logger, "Changing columns of table `{}`", table_name);
+
+                stdb.alter_table_row_type(tx, table_id, column_schemas)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
                 let table_def = plan.new.stored_in_table_def(table_name).unwrap();

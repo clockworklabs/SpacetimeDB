@@ -120,8 +120,7 @@ public static void SetName(ReducerContext ctx, string name)
 {
     name = ValidateName(name);
 
-    var user = ctx.Db.user.Identity.Find(ctx.Sender);
-    if (user is not null)
+    if (ctx.Db.user.Identity.Find(ctx.Sender) is User user)
     {
         user.Name = name;
         ctx.Db.user.Identity.Update(user);
@@ -208,9 +207,8 @@ In `server/Lib.cs`, add the definition of the connect reducer to the `Module` cl
 public static void ClientConnected(ReducerContext ctx)
 {
     Log.Info($"Connect {ctx.Sender}");
-    var user = ctx.Db.user.Identity.Find(ctx.Sender);
-
-    if (user is not null)
+    
+    if (ctx.Db.user.Identity.Find(ctx.Sender) is User user)
     {
         // If this is a returning user, i.e., we already have a `User` with this `Identity`,
         // set `Online: true`, but leave `Name` and `Identity` unchanged.
@@ -241,9 +239,7 @@ Add the following code after the `OnConnect` handler:
 [Reducer(ReducerKind.ClientDisconnected)]
 public static void ClientDisconnected(ReducerContext ctx)
 {
-    var user = ctx.Db.user.Identity.Find(ctx.Sender);
-
-    if (user is not null)
+    if (ctx.Db.user.Identity.Find(ctx.Sender) is User user)
     {
         // This user should exist, so set `Online: false`.
         user.Online = false;
