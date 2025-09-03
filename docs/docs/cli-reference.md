@@ -51,7 +51,7 @@ This document contains the help content for the `spacetime` command-line program
 * `generate` — Generate client files for a spacetime module.
 * `list` — Lists the databases attached to an identity. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `login` — Manage your login to the SpacetimeDB CLI
-* `logout` —
+* `logout` — 
 * `init` — Initializes a new spacetime project. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `build` — Builds a spacetime module.
 * `server` — Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
