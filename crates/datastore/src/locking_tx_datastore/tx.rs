@@ -94,6 +94,12 @@ impl TxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
     pub(super) fn release(self) -> (TxOffset, TxMetrics, String) {
+        // A read tx doesn't consume `next_tx_offset`, so subtract one to obtain
+        // the offset that was visible to the transaction.
+        // Note that technically the tx could have run against an empty database,
+        // in which case we'd wrongly return zero (a non-existent transaction).
+        // This doesn not happen in practice, however, as [RelationalDB::set_initialized]
+        // creates a transaction.
         let tx_offset = self.committed_state_shared_lock.next_tx_offset.saturating_sub(1);
         let tx_metrics = TxMetrics::new(
             &self.ctx,

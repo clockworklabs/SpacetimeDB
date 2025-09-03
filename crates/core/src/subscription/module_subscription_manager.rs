@@ -549,6 +549,9 @@ impl<T> SenderWithGauge<T> {
     }
 }
 
+/// The offset used to control visibility of the message if the client has
+/// requested confirmed reads.
+///
 /// [`SendWorkerMessage`]s are sent while holding the database lock, i.e.
 /// without committing the transaction. When the transaction commits, the
 /// message sender is expected to send the transaction offset along this channel.
