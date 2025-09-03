@@ -4,9 +4,9 @@
   "packageManager": "pnpm@9.7.0",
   "engines": { "node": ">=18.0.0", "pnpm": ">=9.0.0" },
   "scripts": {
-    "format": "pnpm -r run format",
-    "lint": "pnpm -r run lint",
-    "build": "pnpm -r run build",
+    "format": "pnpm --filter ./crates/bindings-typescript run format && pnpm --filter ./sdks/typescript run format",
+    "lint": "pnpm --filter ./crates/bindings-typescript run lint && pnpm --filter ./sdks/typescript run lint",
+    "build": "pnpm --filter ./crates/bindings-typescript run build && pnpm --filter ./sdks/typescript run build",
     "test": "pnpm --filter ./crates/bindings-typescript run test && pnpm --filter ./sdks/typescript run test",
     "generate": "pnpm --filter ./crates/bindings-typescript run generate && pnpm --filter ./sdks/typescript run generate",
     "clean": "pnpm -r exec rimraf dist .tsbuildinfo coverage"
