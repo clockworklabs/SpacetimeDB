@@ -69,7 +69,7 @@ export class ConnectionId {
   }
 
   static fromStringOrNull(str: string): ConnectionId | null {
-    let addr = ConnectionId.fromString(str);
+    const addr = ConnectionId.fromString(str);
     if (addr.isZero()) {
       return null;
     } else {

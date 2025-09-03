@@ -2,6 +2,7 @@ use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment};
+use crate::OutputFile;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
@@ -21,23 +22,7 @@ const INDENT: &str = "    ";
 pub struct Rust;
 
 impl Lang for Rust {
-    fn table_filename(
-        &self,
-        _module: &spacetimedb_schema::def::ModuleDef,
-        table: &spacetimedb_schema::def::TableDef,
-    ) -> String {
-        table_module_name(&table.name) + ".rs"
-    }
-
-    fn type_filename(&self, type_name: &ScopedTypeName) -> String {
-        type_module_name(type_name) + ".rs"
-    }
-
-    fn reducer_filename(&self, reducer_name: &Identifier) -> String {
-        reducer_module_name(reducer_name) + ".rs"
-    }
-
-    fn generate_type(&self, module: &ModuleDef, typ: &TypeDef) -> String {
+    fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
         let type_name = collect_case(Case::Pascal, typ.name.name_segments());
 
         let mut output = CodeIndenter::new(String::new(), INDENT);
@@ -78,9 +63,12 @@ impl __sdk::InModule for {type_name} {{
 ",
         );
 
-        output.into_inner()
+        vec![OutputFile {
+            filename: type_module_name(&typ.name) + ".rs",
+            code: output.into_inner(),
+        }]
     }
-    fn generate_table(&self, module: &ModuleDef, table: &TableDef) -> String {
+    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
         let schema = TableSchema::from_module_def(module, table, (), 0.into())
             .validated()
             .expect("Failed to generate table due to validation errors");
@@ -301,9 +289,12 @@ pub(super) fn parse_table_update(
 
         // TODO: expose non-unique indices.
 
-        output.into_inner()
+        OutputFile {
+            filename: table_module_name(&table.name) + ".rs",
+            code: output.into_inner(),
+        }
     }
-    fn generate_reducer(&self, module: &ModuleDef, reducer: &ReducerDef) -> String {
+    fn generate_reducer_file(&self, module: &ModuleDef, reducer: &ReducerDef) -> OutputFile {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -488,10 +479,13 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
 "
         );
 
-        output.into_inner()
+        OutputFile {
+            filename: reducer_module_name(&reducer.name) + ".rs",
+            code: output.into_inner(),
+        }
     }
 
-    fn generate_globals(&self, module: &ModuleDef) -> Vec<(String, String)> {
+    fn generate_globals_file(&self, module: &ModuleDef) -> OutputFile {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -534,7 +528,10 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
         // This includes a method for initializing the tables in the client cache.
         print_impl_spacetime_module(module, out);
 
-        vec![("mod.rs".to_string(), (output.into_inner()))]
+        OutputFile {
+            filename: "mod.rs".to_string(),
+            code: output.into_inner(),
+        }
     }
 }
 

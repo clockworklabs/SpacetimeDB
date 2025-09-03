@@ -1,0 +1,62 @@
+{
+  "name": "spacetimedb",
+  "version": "0.0.1",
+  "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
+  "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
+  "bugs": {
+    "url": "https://github.com/clockworklabs/SpacetimeDB/issues"
+  },
+  "source": "src/index.ts",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "source": "./src/index.ts",
+      "development": "./src/index.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md",
+    "LICENSE.txt"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clockworklabs/SpacetimeDB.git"
+  },
+  "license": "ISC",
+  "author": "Clockwork Labs",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "compile": "pnpm run build",
+    "format": "prettier --write .",
+    "lint": "eslint . && prettier . --check",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "generate": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/autogen"
+  },
+  "dependencies": {
+    "@zxing/text-encoding": "^0.9.0",
+    "base64-js": "^1.5.1",
+    "prettier": "^3.3.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/parser": "^8.18.2",
+    "eslint": "^9.33.0",
+    "globals": "^15.14.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.18.2",
+    "vite": "^7.1.3",
+    "vitest": "^3.2.4"
+  }
+}

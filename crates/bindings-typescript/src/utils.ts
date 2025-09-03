@@ -31,7 +31,7 @@ export function deepEqual(obj1: any, obj2: any): boolean {
   if (keys1.length !== keys2.length) return false;
 
   // Check all keys and compare values recursively
-  for (let key of keys1) {
+  for (const key of keys1) {
     if (!keys2.includes(key) || !deepEqual(obj1[key], obj2[key])) {
       return false;
     }
@@ -64,8 +64,10 @@ export function hexStringToUint8Array(str: string): Uint8Array {
   if (str.startsWith('0x')) {
     str = str.slice(2);
   }
-  let matches = str.match(/.{1,2}/g) || [];
-  let data = Uint8Array.from(matches.map((byte: string) => parseInt(byte, 16)));
+  const matches = str.match(/.{1,2}/g) || [];
+  const data = Uint8Array.from(
+    matches.map((byte: string) => parseInt(byte, 16))
+  );
   if (data.length != 32) {
     return new Uint8Array(0);
   }
@@ -81,7 +83,7 @@ export function hexStringToU256(str: string): bigint {
 }
 
 export function u128ToUint8Array(data: bigint): Uint8Array {
-  let writer = new BinaryWriter(16);
+  const writer = new BinaryWriter(16);
   writer.writeU128(data);
   return writer.getBuffer();
 }
@@ -91,7 +93,7 @@ export function u128ToHexString(data: bigint): string {
 }
 
 export function u256ToUint8Array(data: bigint): Uint8Array {
-  let writer = new BinaryWriter(32);
+  const writer = new BinaryWriter(32);
   writer.writeU256(data);
   return writer.getBuffer();
 }
