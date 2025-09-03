@@ -30,7 +30,7 @@ use spacetimedb_fs_utils::{
     lockfile::{Lockfile, LockfileError},
 };
 use spacetimedb_lib::Identity;
-use spacetimedb_paths::server::{SnapshotDirPath, SnapshotFilePath, SnapshotsPath};
+use spacetimedb_paths::server::{ArchivedSnapshotDirPath, SnapshotDirPath, SnapshotFilePath, SnapshotsPath};
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{bsatn, de::Deserialize, ser::Serialize};
@@ -40,6 +40,7 @@ use spacetimedb_table::{
     page_pool::PagePool,
     table::Table,
 };
+use std::fs;
 use std::{
     collections::BTreeMap,
     collections::HashMap,
@@ -144,6 +145,9 @@ pub const SNAPSHOT_FILE_EXT: &str = "snapshot_bsatn";
 
 /// File extension of snapshots which have been marked invalid by [`SnapshotRepository::invalidate_newer_snapshots`].
 pub const INVALID_SNAPSHOT_DIR_EXT: &str = "invalid_snapshot";
+
+/// File extension of snapshots which have been archived
+pub const ARCHIVED_SNAPSHOT_EXT: &str = "archived_snapshot";
 
 #[derive(Clone, Serialize, Deserialize)]
 /// The hash and refcount of a single blob in the blob store.
@@ -888,6 +892,27 @@ impl SnapshotRepository {
                     Some(offset)
                 }
             }))
+    }
+
+    /// Return an interator of [`ArchivedSnapshotDirPath`] for all the archived snapshot directories on disk
+    pub fn all_archived_snapshots(&self) -> Result<impl Iterator<Item = ArchivedSnapshotDirPath>, SnapshotError> {
+        Ok(self
+            .root
+            // Item = Result<DirEntry>
+            .read_dir()?
+            // Item = DirEntry
+            .filter_map(Result::ok)
+            // Item = PathBuf
+            .map(|dirent| dirent.path())
+            // Ignore entries not shaped like snapshot directories.
+            .filter(|path| path.extension() == Some(OsStr::new(ARCHIVED_SNAPSHOT_EXT)))
+            // Item = ArchivedSnapshotDirPath
+            .map(ArchivedSnapshotDirPath::from_path_unchecked))
+    }
+
+    /// Delete an archived snapshot from disk
+    pub fn remove_archived_snapshot(path: &ArchivedSnapshotDirPath) -> Result<(), SnapshotError> {
+        fs::remove_dir_all(path).map_err(SnapshotError::Io)
     }
 
     /// Return the `TxOffset` of the highest-offset complete snapshot in the repository.
