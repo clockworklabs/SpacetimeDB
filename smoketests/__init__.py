@@ -118,6 +118,17 @@ def extract_fields(cmd_output, field_name):
             out.append(val)
     return out
 
+def parse_sql_result(res: str) -> list[dict]:
+    """Parse tabular output from an SQL query into a list of dicts."""
+    lines = res.splitlines()
+    headers = lines[0].split('|') if '|' in lines[0] else [lines[0]]
+    headers = [header.strip() for header in headers]
+    rows = []
+    for row in lines[2:]:
+        cols = [col.strip() for col in row.split('|')]
+        rows.append(dict(zip(headers, cols)))
+    return rows
+
 def extract_field(cmd_output, field_name):
     field, = extract_fields(cmd_output, field_name)
     return field
@@ -232,11 +243,20 @@ class Smoketest(unittest.TestCase):
     def new_identity(self):
         new_identity(self.__class__.config_path)
 
-    def subscribe(self, *queries, n):
+    def subscribe(self, *queries, n, confirmed = False):
         self._check_published()
         assert isinstance(n, int)
 
-        args = [SPACETIME_BIN, "--config-path", str(self.config_path),"subscribe", self.database_identity, "-t", "600", "-n", str(n), "--print-initial-update", "--", *queries]
+        args = [
+            SPACETIME_BIN,
+            "--config-path", str(self.config_path),
+            "subscribe", self.database_identity,
+            "-t", "600",
+            "-n", str(n),
+            "--print-initial-update",
+            "--confirmed" if confirmed else "",
+            "--", *queries
+        ]
         fake_args = ["spacetime", *args[1:]]
         log_cmd(fake_args)
 
