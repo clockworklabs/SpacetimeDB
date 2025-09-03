@@ -7,8 +7,8 @@
     "format": "pnpm -r run format",
     "lint": "pnpm -r run lint",
     "build": "pnpm -r run build",
-    "test": "pnpm -r run test",
-    "generate": "pnpm -r run generate --if-present",
+    "test": "pnpm --filter ./crates/bindings-typescript run test && pnpm --filter ./sdks/typescript run test",
+    "generate": "pnpm --filter ./crates/bindings-typescript run generate && pnpm --filter ./sdks/typescript run generate",
     "clean": "pnpm -r exec rimraf dist .tsbuildinfo coverage"
   },
   "devDependencies": {
