@@ -33,7 +33,7 @@ use spacetimedb_lib::Identity;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
-use tracing::debug;
+use tracing::trace;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum Protocol {
@@ -184,7 +184,7 @@ impl ClientConnectionReceiver {
         if let Some(tx_offset) = tx_offset {
             match self.offset_supply.durable_offset() {
                 Ok(Some(mut durable)) => {
-                    debug!("waiting for offset {tx_offset} to become durable");
+                    trace!("waiting for offset {tx_offset} to become durable");
                     durable.wait_for(tx_offset).await.ok()?;
                 }
                 // Database shut down or crashed.
@@ -194,7 +194,7 @@ impl ClientConnectionReceiver {
             }
         }
 
-        debug!("returning durable message");
+        trace!("returning durable message");
         Some(message)
     }
 
@@ -277,7 +277,7 @@ impl ClientConnectionSender {
         config: ClientConfig,
         offset_supply: impl DurableOffsetSupply + 'static,
     ) -> (Self, ClientConnectionReceiver) {
-        let (sendtx, rx) = mpsc::channel(1);
+        let (sendtx, rx) = mpsc::channel(CLIENT_CHANNEL_CAPACITY_TEST);
         // just make something up, it doesn't need to be attached to a real task
         let abort_handle = match tokio::runtime::Handle::try_current() {
             Ok(h) => h.spawn(async {}).abort_handle(),
@@ -575,6 +575,9 @@ impl<T> MeteredSender<T> {
 // if a client racks up this many messages in the queue without ACK'ing
 // anything, we boot 'em.
 const CLIENT_CHANNEL_CAPACITY: usize = 16 * KB;
+// use a smaller value for tests
+const CLIENT_CHANNEL_CAPACITY_TEST: usize = 8;
+
 const KB: usize = 1024;
 
 /// Value returned by [`ClientConnection::call_client_connected_maybe_reject`]

@@ -922,9 +922,7 @@ impl ModuleSubscriptions {
                         database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
                     };
 
-                    let _ = self
-                        .broadcast_queue
-                        .send_client_message(client, Some(tx_offset), message);
+                    let _ = self.broadcast_queue.send_client_message(client, None, message);
                 } else {
                     log::trace!("Reducer failed but there is no client to send the failure to!")
                 }
@@ -975,6 +973,7 @@ impl ModuleSubscriptions {
         let (offset_tx, offset_rx) = oneshot::channel();
         let guard = scopeguard::guard(tx, |tx| {
             let (tx_offset, tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            log::trace!("read tx released with offset {tx_offset}");
             let _ = offset_tx.send(tx_offset);
             if let Some(extra) = extra_tx_offset_sender {
                 let _ = extra.send(tx_offset);
@@ -2909,6 +2908,7 @@ mod tests {
 
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
         let table = db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
+        let schema = ProductType::from([AlgebraicType::U8]);
 
         // Subscribe both clients.
         subscribe_multi(&subs, &["select * from t"], tx_for_confirmed, &mut 0)?;
@@ -2939,16 +2939,19 @@ mod tests {
             subs.commit_and_broadcast_event(None, module_event(), tx),
             Ok(Ok(_))
         ));
+        // Insert another row, using SQL.
+        let auth = AuthCtx::new(identity_from_u8(0), identity_from_u8(0));
+        run(&db, "INSERT INTO t (x) VALUES (2)", auth, Some(&subs), &mut vec![])?;
 
-        let schema = ProductType::from([AlgebraicType::U8]);
-
-        // Unconfirmed client should have received the row.
+        // Unconfirmed client should have received both rows.
         assert_tx_update_for_table(rx_for_unconfirmed.recv(), table, &schema, [product![1_u8]], []).await;
-        // Confirmed client should receive the row after the tx becomes durable.
-        assert_after_durable(
-            &durability,
-            assert_tx_update_for_table(rx_for_confirmed.recv(), table, &schema, [product![1_u8]], []),
-        )
+        assert_tx_update_for_table(rx_for_unconfirmed.recv(), table, &schema, [product![2_u8]], []).await;
+
+        // Confirmed client should receive the rows after the tx becomes durable.
+        assert_after_durable(&durability, async {
+            assert_tx_update_for_table(rx_for_confirmed.recv(), table, &schema, [product![1_u8]], []).await;
+            assert_tx_update_for_table(rx_for_confirmed.recv(), table, &schema, [product![2_u8]], []).await
+        })
         .await;
 
         Ok(())
