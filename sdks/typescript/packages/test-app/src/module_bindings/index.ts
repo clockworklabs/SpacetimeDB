@@ -125,7 +125,7 @@ export type Reducer = never | { name: 'CreatePlayer'; args: CreatePlayer };
 export class RemoteReducers {
   constructor(
     private connection: __DbConnectionImpl,
-    private setCallReducerFlags: __SetReducerFlags
+    private setCallReducerFlags: SetReducerFlags
   ) {}
 
   createPlayer(name: string, location: Point) {

@@ -139,7 +139,7 @@ export type Reducer = never;
 export class RemoteReducers {
   constructor(
     private connection: __DbConnectionImpl,
-    private setCallReducerFlags: __SetReducerFlags
+    private setCallReducerFlags: SetReducerFlags
   ) {}
 }
 

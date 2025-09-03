@@ -131,7 +131,7 @@ export type Reducer =
 export class RemoteReducers {
   constructor(
     private connection: __DbConnectionImpl,
-    private setCallReducerFlags: __SetReducerFlags
+    private setCallReducerFlags: SetReducerFlags
   ) {}
 
   onIdentityConnected(callback: (ctx: ReducerEventContext) => void) {

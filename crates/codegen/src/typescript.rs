@@ -487,7 +487,7 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
     out.indent(1);
     writeln!(
         out,
-        "constructor(private connection: __DbConnectionImpl, private setCallReducerFlags: __SetReducerFlags) {{}}"
+        "constructor(private connection: __DbConnectionImpl, private setCallReducerFlags: SetReducerFlags) {{}}"
     );
     out.newline();
 

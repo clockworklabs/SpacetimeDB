@@ -1076,7 +1076,7 @@ export type Reducer = never
 ;
 
 export class RemoteReducers {
-  constructor(private connection: __DbConnectionImpl, private setCallReducerFlags: __SetReducerFlags) {}
+  constructor(private connection: __DbConnectionImpl, private setCallReducerFlags: SetReducerFlags) {}
 
   add(name: string, age: number) {
     const __args = { name, age };
