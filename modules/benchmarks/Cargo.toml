@@ -13,3 +13,4 @@ crate-type = ["cdylib"]
 spacetimedb = { path = "../../crates/bindings" }
 
 anyhow.workspace = true
+fake.workspace = true
