@@ -254,9 +254,11 @@ class Smoketest(unittest.TestCase):
             "-t", "600",
             "-n", str(n),
             "--print-initial-update",
-            "--confirmed" if confirmed else "",
-            "--", *queries
         ]
+        if confirmed:
+            args.append("--confirmed")
+        args.extend(["--", *queries])
+
         fake_args = ["spacetime", *args[1:]]
         log_cmd(fake_args)
 
