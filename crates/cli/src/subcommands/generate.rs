@@ -5,7 +5,7 @@ use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::Set;
 use fs_err as fs;
-use spacetimedb_codegen::{generate, Csharp, Lang, Rust, TypeScript, AUTO_GENERATED_PREFIX};
+use spacetimedb_codegen::{generate, Csharp, Lang, Rust, TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{sats, RawModuleDef};
 use spacetimedb_schema;
@@ -25,7 +25,7 @@ use std::io::Read;
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
-        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH>]")
+        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH>] For UnrealCpp: use --module-name <module_name> --uproject-dir <DIR> instead of --out-dir")
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
@@ -57,10 +57,19 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("out_dir")
                 .value_parser(clap::value_parser!(PathBuf))
-                .required(true)
                 .long("out-dir")
                 .short('o')
-                .help("The system path (absolute or relative) to the generate output directory"),
+                .help("The system path (absolute or relative) to the generate output directory")
+                .required_if_eq("lang", "rust")
+                .required_if_eq("lang", "csharp")
+                .required_if_eq("lang", "typescript"),
+        )
+        .arg(
+            Arg::new("uproject_dir")
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("uproject-dir")
+                .help("Path to the Unreal project directory (only used with --lang unrealcpp)")
+                .required_if_eq("lang", "unrealcpp")
         )
         .arg(
             Arg::new("namespace")
@@ -68,6 +77,12 @@ pub fn cli() -> clap::Command {
                 .long("namespace")
                 .help("The namespace that should be used"),
         )
+        .arg(
+            Arg::new("module_name")
+                .long("module-name")
+                .help("The module name that should be used for DLL export macros (required for lang unrealcpp)")
+                .required_if_eq("lang", "unrealcpp")
+        )        
         .arg(
             Arg::new("lang")
                 .required(true)
@@ -86,6 +101,11 @@ pub fn cli() -> clap::Command {
         )
         .arg(common_args::yes())
         .after_help("Run `spacetime help publish` for more detailed information.")
+        .group(
+            clap::ArgGroup::new("output_dir")
+                .args(["out_dir", "uproject_dir"])
+                .required(true)
+        )        
 }
 
 pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -101,15 +121,20 @@ pub async fn exec_ex(
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
     let json_module = args.get_many::<PathBuf>("json_module");
-    let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
     let lang = *args.get_one::<Language>("lang").unwrap();
     let namespace = args.get_one::<String>("namespace").unwrap();
+    let module_name = args.get_one::<String>("module_name");
     let force = args.get_flag("force");
     let build_options = args.get_one::<String>("build_options").unwrap();
 
     if args.value_source("namespace") == Some(ValueSource::CommandLine) && lang != Language::Csharp {
         return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
     }
+
+    let out_dir = args
+        .get_one::<PathBuf>("out_dir")
+        .or_else(|| args.get_one::<PathBuf>("uproject_dir"))
+        .unwrap();
 
     let module: ModuleDef = if let Some(mut json_module) = json_module {
         let DeserializeWrapper::<RawModuleDef>(module) = if let Some(path) = json_module.next() {
@@ -136,10 +161,18 @@ pub async fn exec_ex(
     let mut paths = BTreeSet::new();
 
     let csharp_lang;
+    let unreal_cpp_lang;
     let gen_lang = match lang {
         Language::Csharp => {
             csharp_lang = Csharp { namespace };
             &csharp_lang as &dyn Lang
+        }
+        Language::UnrealCpp => {
+            unreal_cpp_lang = UnrealCpp {
+                module_name: module_name.as_ref().unwrap(),
+                uproject_dir: out_dir,
+            };
+            &unreal_cpp_lang as &dyn Lang
         }
         Language::Rust => &Rust,
         Language::TypeScript => &TypeScript,
@@ -156,9 +189,15 @@ pub async fn exec_ex(
         paths.insert(path);
     }
 
+    // For Unreal, we want to clean up just the module directory, not the entire uproject directory tree. 
+    let cleanup_root = match lang {
+        Language::UnrealCpp => out_dir.join("Source").join(module_name.as_ref().unwrap()),
+        _ => out_dir.clone(),
+    };
+
     // TODO: We should probably just delete all generated files before we generate any, rather than selectively deleting some afterward.
     let mut auto_generated_buf: [u8; AUTO_GENERATED_PREFIX.len()] = [0; AUTO_GENERATED_PREFIX.len()];
-    let files_to_delete = walkdir::WalkDir::new(out_dir)
+    let files_to_delete = walkdir::WalkDir::new(&cleanup_root)
         .into_iter()
         .map(|entry_result| {
             let entry = entry_result?;
@@ -213,17 +252,19 @@ pub enum Language {
     Csharp,
     TypeScript,
     Rust,
+    UnrealCpp,
 }
 
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::TypeScript, Self::Rust]
+        &[Self::Csharp, Self::TypeScript, Self::Rust, Self::UnrealCpp]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {
             Self::Csharp => clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"]),
             Self::TypeScript => clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"]),
             Self::Rust => clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"]),
+            Self::UnrealCpp => PossibleValue::new("unrealcpp").aliases(["uecpp", "ue5cpp", "unreal"]),
         })
     }
 }
@@ -235,7 +276,10 @@ impl Language {
             Language::Csharp => dotnet_format(generated_files)?,
             Language::TypeScript => {
                 // TODO: implement formatting.
-            }
+            },
+            Language::UnrealCpp => {
+                // TODO: implement formatting.
+            }            
         }
 
         Ok(())

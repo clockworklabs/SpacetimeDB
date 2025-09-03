@@ -70,6 +70,7 @@ pub struct Test {
     module_name: String,
 
     /// An arbitrary path to the client project.
+    /// For unrealcpp this should be the .uproject root directory.
     client_project: String,
 
     /// A language suitable for the `spacetime generate` CLI command.
@@ -79,6 +80,10 @@ pub struct Test {
     ///
     /// Usually `src/module_bindings`
     generate_subdir: String,
+
+    /// Unreal-specific: the target Unreal module name for codegen (e.g., "TestClient").
+    /// Required when `generate_language == "unrealcpp"`. Ignored otherwise.
+    unreal_module_name: Option<String>,
 
     /// A shell command to compile the client project.
     ///
@@ -107,12 +112,27 @@ impl Test {
 
         let wasm_file = compile_module(&self.module_name);
 
+        // Determine if this is the Unreal SDK
+        let is_unreal = self.generate_language.eq_ignore_ascii_case("unrealcpp");
+
+        // For Unreal: require unreal_module_name and treat client_project as --uproject-dir
+        let unreal_module_name_ref = if is_unreal {
+            Some(
+                self.unreal_module_name
+                    .as_deref()
+                    .expect("unrealcpp requires `unreal_module_name` to be set on Test"),
+            )
+        } else {
+            None
+        };
+
         generate_bindings(
-            paths,
+            &paths,
             &self.generate_language,
             &wasm_file,
             &self.client_project,
             &self.generate_subdir,
+            unreal_module_name_ref,
         );
 
         compile_client(&self.compile_command, &self.client_project);
@@ -143,16 +163,32 @@ fn random_module_name() -> String {
 }
 
 macro_rules! memoized {
+    // Unit arm: no clone, silence unused key.
+    (|$key:ident: $key_ty:ty| -> () $body:block) => {{
+        static MEMOIZED: Mutex<Option<HashMap<$key_ty, ()>>> = Mutex::new(None);
+        {
+            let mut map = MEMOIZED.lock().unwrap(); // guard lives for the whole block
+            map.get_or_insert_default().entry($key).or_insert_with_key(|__k| {
+                let $key = __k;
+                let _ = &$key;
+                $body
+            });
+        }
+    }};
+
+    // Value arm: clone while guard is still alive.
     (|$key:ident: $key_ty:ty| -> $value_ty:ty $body:block) => {{
         static MEMOIZED: Mutex<Option<HashMap<$key_ty, $value_ty>>> = Mutex::new(None);
-
-        MEMOIZED
-            .lock()
-            .unwrap()
-            .get_or_insert_default()
-            .entry($key)
-            .or_insert_with_key(|$key| -> $value_ty { $body })
-            .clone()
+        let cloned = {
+            let mut map = MEMOIZED.lock().unwrap(); // guard lives for the whole block
+            let v = map.get_or_insert_default().entry($key).or_insert_with_key(|__k| {
+                let $key = __k;
+                let _ = &$key;
+                $body
+            });
+            v.clone()
+        };
+        cloned
     }};
 }
 
@@ -223,33 +259,73 @@ fn generate_bindings(
     paths: &SpacetimePaths,
     language: &str,
     wasm_file: &str,
-    client_project: &str,
-    generate_subdir: &str,
+    client_project: &str,  // For non-Unreal: base out dir. For Unreal: .uproject root dir instead.
+    generate_subdir: &str, // Ignored for Unreal.
+    module_name: Option<&str>, // Required for Unreal: the Unreal module to generate into.
 ) {
+    let is_unreal = language.eq_ignore_ascii_case("unrealcpp");
     let generate_dir = format!("{client_project}/{generate_subdir}");
 
-    memoized!(|generate_dir: String| -> () {
-        create_dir_all(generate_dir).expect("Error creating generate subdir");
-        invoke_cli(
-            paths,
-            &[
-                "generate",
-                "--lang",
-                language,
-                "--bin-path",
-                wasm_file,
-                "--out-dir",
-                generate_dir,
-            ],
-        );
-    })
+    // Memoize on the *actual* output target to avoid redundant runs.
+    let memo_key = if is_unreal {
+        format!("unreal::{client_project}::{:?}", module_name)
+    } else {
+        format!("generic::{generate_dir}")
+    };
+
+    memoized!(|memo_key: String| -> () {
+        if !is_unreal {
+            create_dir_all(&generate_dir).unwrap();
+        }
+
+        let mut args: Vec<&str> = vec!["generate", "--lang", language];
+
+        // Prefer --project-path/--bin-path behavior you already have; here we show --bin-path.
+        // If you dynamically choose between them elsewhere, keep that logic and just insert the Unreal flags.
+        args.extend_from_slice(&["--bin-path", wasm_file]);
+
+        if is_unreal {
+            let module = module_name.expect("unrealcpp requires --module-name");
+            args.extend_from_slice(&["--module-name", module]);
+            args.extend_from_slice(&["--uproject-dir", client_project]);
+        } else {
+            args.extend_from_slice(&["--out-dir", &generate_dir]);
+        }
+
+        invoke_cli(paths, &args);
+    });
 }
 
-fn split_command_string(command: &str) -> (&str, Vec<&str>) {
-    let mut iter = command.split(' ');
+fn split_command_string(command: &str) -> (String, Vec<String>) {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut quote_char = '\0';
+
+    for c in command.chars() {
+        match c {
+            '"' | '\'' if !in_quotes => {
+                in_quotes = true;
+                quote_char = c;
+            }
+            '"' | '\'' if in_quotes && c == quote_char => {
+                in_quotes = false;
+            }
+            ' ' if !in_quotes => {
+                if !current.is_empty() {
+                    parts.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+
+    let mut iter = parts.into_iter();
     let exe = iter.next().expect("Command should have at least a program name");
-    let args = iter.collect();
-    (exe, args)
+    (exe, iter.collect())
 }
 
 // Note: this function is memoized to ensure we only compile each client once.
@@ -298,7 +374,8 @@ pub struct TestBuilder {
     module_name: Option<String>,
     client_project: Option<String>,
     generate_language: Option<String>,
-    generate_subdir: Option<String>,
+    generate_subdir: Option<String>,    // Ignored for unrealcpp
+    unreal_module_name: Option<String>, // Required for unrealcpp
     compile_command: Option<String>,
     run_command: Option<String>,
 }
@@ -339,6 +416,14 @@ impl TestBuilder {
         }
     }
 
+    // Unreal-only: names the Unreal module into which bindings are generated.
+    pub fn with_unreal_module(self, unreal_module_name: impl Into<String>) -> Self {
+        TestBuilder {
+            unreal_module_name: Some(unreal_module_name.into()),
+            ..self
+        }
+    }
+
     pub fn with_compile_command(self, compile_command: impl Into<String>) -> Self {
         TestBuilder {
             compile_command: Some(compile_command.into()),
@@ -354,6 +439,30 @@ impl TestBuilder {
     }
 
     pub fn build(self) -> Test {
+        let generate_language = self
+            .generate_language
+            .expect("Supply a client language using TestBuilder::with_language");
+        let is_unreal = generate_language.eq_ignore_ascii_case("unrealcpp");
+
+        // For non-Unreal: require generate_subdir as before.
+        // For Unreal: ignore generate_subdir entirely, but still populate with a harmless placeholder.
+        let generate_subdir = if is_unreal {
+            String::from("_unreal_ignored_")
+        } else {
+            self.generate_subdir
+                .expect("Supply a module_bindings subdirectory using TestBuilder::with_bindings_dir")
+        };
+
+        // For Unreal: require unreal_module_name.
+        let unreal_module_name = if is_unreal {
+            Some(
+                self.unreal_module_name
+                    .expect("Supply Unreal module using TestBuilder::with_unreal_module for unrealcpp"),
+            )
+        } else {
+            None
+        };
+
         Test {
             name: self.name.expect("Supply a test name using TestBuilder::with_name"),
             module_name: self
@@ -362,12 +471,9 @@ impl TestBuilder {
             client_project: self
                 .client_project
                 .expect("Supply a client project directory using TestBuilder::with_client"),
-            generate_language: self
-                .generate_language
-                .expect("Supply a client language using TestBuilder::with_language"),
-            generate_subdir: self
-                .generate_subdir
-                .expect("Supply a module_bindings subdirectory using TestBuilder::with_bindings_dir"),
+            generate_language,
+            generate_subdir,
+            unreal_module_name,
             compile_command: self
                 .compile_command
                 .expect("Supply a compile command using TestBuilder::with_compile_command"),
