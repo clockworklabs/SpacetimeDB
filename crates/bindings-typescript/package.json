@@ -35,7 +35,6 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "compile": "pnpm run build",
     "format": "prettier --write .",
     "lint": "eslint . && prettier . --check",
     "test": "vitest run",

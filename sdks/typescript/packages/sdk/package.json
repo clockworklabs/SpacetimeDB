@@ -24,7 +24,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "compile": "tsup",
+    "build": "tsup",
     "format": "prettier --write .",
     "lint": "prettier . --check",
     "test": "vitest run",
