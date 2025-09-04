@@ -148,10 +148,24 @@ impl DurableOffsetSupply for RelationalDB {
 pub struct ClientConnectionReceiver {
     confirmed_reads: bool,
     channel: MeteredReceiver<ClientUpdate>,
+    current: Option<ClientUpdate>,
     offset_supply: Box<dyn DurableOffsetSupply>,
 }
 
 impl ClientConnectionReceiver {
+    fn new(
+        confirmed_reads: bool,
+        channel: MeteredReceiver<ClientUpdate>,
+        offset_supply: impl DurableOffsetSupply + 'static,
+    ) -> Self {
+        Self {
+            confirmed_reads,
+            channel,
+            current: None,
+            offset_supply: Box::new(offset_supply),
+        }
+    }
+
     /// Receive the next message from this channel.
     ///
     /// If this method returns `None`, the channel is closed and no more messages
@@ -173,10 +187,23 @@ impl ClientConnectionReceiver {
     /// If the database is shut down while waiting for the durable offset,
     /// `None` is returned. In this case, no more messages can ever be received
     /// from the channel.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe, as long as `self` is not dropped.
+    ///
+    /// If `recv` is used in a [`tokio::select!`] statement, it may get
+    /// cancelled while waiting for the durable offset to catch up. At this
+    /// point, it has already received a value from the underlying channel.
+    /// This value is stored internally, so calling `recv` again will not lose
+    /// data.
     //
     // TODO: Can we make a cancel-safe `recv_many` with confirmed reads semantics?
     pub async fn recv(&mut self) -> Option<SerializableMessage> {
-        let ClientUpdate { tx_offset, message } = self.channel.recv().await?;
+        let ClientUpdate { tx_offset, message } = match self.current.take() {
+            None => self.channel.recv().await?,
+            Some(update) => update,
+        };
         if !self.confirmed_reads {
             return Some(message);
         }
@@ -184,6 +211,12 @@ impl ClientConnectionReceiver {
         if let Some(tx_offset) = tx_offset {
             match self.offset_supply.durable_offset() {
                 Ok(Some(mut durable)) => {
+                    // Store the current update in case we get cancelled while
+                    // waiting for the durable offset.
+                    self.current = Some(ClientUpdate {
+                        tx_offset: Some(tx_offset),
+                        message,
+                    });
                     trace!("waiting for offset {tx_offset} to become durable");
                     durable
                         .wait_for(tx_offset)
@@ -192,16 +225,16 @@ impl ClientConnectionReceiver {
                             warn!("database went away while waiting for durable offset");
                         })
                         .ok()?;
+                    self.current.take().map(|update| update.message)
                 }
                 // Database shut down or crashed.
-                Err(NoSuchModule) => return None,
+                Err(NoSuchModule) => None,
                 // In-memory database.
-                Ok(None) => return Some(message),
+                Ok(None) => Some(message),
             }
+        } else {
+            Some(message)
         }
-
-        trace!("returning durable message");
-        Some(message)
     }
 
     /// Close the receiver without dropping it.
@@ -290,11 +323,7 @@ impl ClientConnectionSender {
             Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
         };
 
-        let receiver = ClientConnectionReceiver {
-            confirmed_reads: config.confirmed_reads,
-            channel: MeteredReceiver::new(rx),
-            offset_supply: Box::new(offset_supply),
-        };
+        let receiver = ClientConnectionReceiver::new(config.confirmed_reads, MeteredReceiver::new(rx), offset_supply);
         let cancelled = AtomicBool::new(false);
         let sender = Self {
             id,
@@ -666,11 +695,11 @@ impl ClientConnection {
         .abort_handle();
 
         let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
-        let receiver = ClientConnectionReceiver {
-            confirmed_reads: config.confirmed_reads,
-            channel: MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone()),
-            offset_supply: Box::new(module_rx.clone()),
-        };
+        let receiver = ClientConnectionReceiver::new(
+            config.confirmed_reads,
+            MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone()),
+            module_rx.clone(),
+        );
 
         let sender = Arc::new(ClientConnectionSender {
             id,
@@ -1109,5 +1138,16 @@ mod tests {
             sender.send_message(Some(tx_offset), empty_tx_update()).unwrap();
             assert_received_update(receiver.recv()).await;
         }
+    }
+
+    #[tokio::test]
+    async fn client_connection_receiver_cancel_safety() {
+        let offset = FakeDurableOffset::new();
+        let (sender, mut receiver) = client_with_confirmed_reads(offset.clone());
+
+        sender.send_message(Some(3), empty_tx_update()).unwrap();
+        assert_pending(&mut pin!(receiver.recv())).await;
+        offset.mark_durable_at(3);
+        assert_received_update(receiver.recv()).await;
     }
 }
