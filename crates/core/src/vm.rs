@@ -893,7 +893,7 @@ pub(crate) mod tests {
             start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
             min_value: 1,
             max_value: i128::MAX,
-            allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
+            allocated: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
         }
         .into();
         check_catalog(&db, ST_SEQUENCE_NAME, st_sequence_row, q, schema);

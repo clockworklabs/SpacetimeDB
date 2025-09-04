@@ -840,8 +840,9 @@ fn get_next_sequence_value(
         let mut seq_row = StSequenceRow::try_from(old_seq_row_ref)?;
 
         let sequence = get_sequence_mut(seq_state, seq_id)?;
-        seq_row.allocated = sequence.nth_value(SEQUENCE_ALLOCATION_STEP as usize);
-        sequence.set_allocation(seq_row.allocated);
+        let new_allocated = sequence.allocate_steps(SEQUENCE_ALLOCATION_STEP as usize);
+        seq_row.allocated = new_allocated;
+        // sequence.set_allocation(seq_row.allocated);
         seq_row
     };
 
@@ -896,7 +897,7 @@ impl MutTxId {
             sequence_name: seq.sequence_name,
             table_id,
             col_pos: seq.col_pos,
-            allocated: seq.allocated,
+            allocated: seq.start,
             increment: seq.increment,
             start: seq.start,
             min_value: seq.min_value,
@@ -910,7 +911,7 @@ impl MutTxId {
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         // This won't clone-write when creating a table but likely to otherwise.
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_sequence(schema.clone()));
-        self.sequence_state_lock.insert(Sequence::new(schema));
+        self.sequence_state_lock.insert(Sequence::new(schema, None));
         self.push_schema_change(PendingSchemaChange::SequenceAdded(table_id, seq_id));
 
         log::trace!("SEQUENCE CREATED: id = {seq_id}");

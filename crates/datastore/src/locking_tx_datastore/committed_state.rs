@@ -251,7 +251,12 @@ impl CommittedState {
                 min_value: seq.min_value,
                 max_value: seq.max_value,
                 start: seq.start,
-                allocated: seq.allocated,
+                // allocated: seq.start,
+                // Logically, this should be the same as `seq.start`, but this is set to match
+                // allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
+                allocated: seq.start,
+                // This could also be 0, but this is set to make the historical version.
+                // allocated: (ST_RESERVED_SEQUENCE_RANGE + 1) as i128,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_SEQUENCES.
@@ -260,6 +265,32 @@ impl CommittedState {
             with_label_values(ST_SEQUENCE_ID, ST_SEQUENCE_NAME).inc();
         }
 
+        // This is purely a sanity check to ensure that we are setting the ids correctly.
+        self.assert_system_table_schemas_match()?;
+        Ok(())
+    }
+
+    pub(super) fn assert_system_table_schemas_match(&self) -> Result<()> {
+        for schema in system_tables() {
+            let table_id = schema.table_id;
+            let in_memory = self
+                .tables
+                .get(&table_id)
+                .ok_or(TableError::IdNotFoundState(table_id))?
+                .schema
+                .clone();
+            let mut in_st_tables = self.schema_for_table_raw(table_id)?;
+            // We normalize so that the orders will match when checking for equality.
+            in_st_tables.normalize();
+
+            if *in_memory != in_st_tables {
+                return Err(anyhow!(
+                    "System table schema mismatch for table id {table_id}. Expected: {schema:?}, found: {:?}",
+                    in_memory
+                )
+                .into());
+            }
+        }
         Ok(())
     }
 
@@ -340,16 +371,12 @@ impl CommittedState {
         Ok(())
     }
 
-    pub(super) fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
+    pub(super) fn build_sequence_state(&mut self) -> Result<SequencesState> {
+        let mut sequence_state = SequencesState::default();
         let st_sequences = self.tables.get(&ST_SEQUENCE_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
             let sequence = StSequenceRow::try_from(row_ref)?;
-            let mut seq = Sequence::new(sequence.into());
-
-            // Now we need to recover the last allocation value.
-            if seq.value < seq.allocated() + 1 {
-                seq.value = seq.allocated() + 1;
-            }
+            let seq = Sequence::new(sequence.clone().into(), Some(sequence.allocated));
 
             // Clobber any existing in-memory `Sequence`.
             // Such a value may exist because, when replaying without a snapshot,
@@ -364,7 +391,7 @@ impl CommittedState {
             // will correctly reflect the state after creating user tables.
             sequence_state.insert(seq);
         }
-        Ok(())
+        Ok(sequence_state)
     }
 
     pub(super) fn build_indexes(&mut self) -> Result<()> {

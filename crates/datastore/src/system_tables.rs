@@ -74,6 +74,8 @@ pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
 /// Reserved range of sequence values used for system tables.
 ///
 /// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE + 1`.
+/// Because off-by-one errors are common, our code should assume that user created
+/// tables may actually start at `ST_RESERVED_SEQUENCE_RANGE`.
 ///
 /// The range applies to all sequences allocated by system tables, i.e. table-,
 /// sequence-, index-, and constraint-ids.
@@ -492,7 +494,7 @@ fn st_schema(name: &str, id: TableId) -> TableSchema {
                 )
             });
         sequence.start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
-        sequence.allocated = ST_RESERVED_SEQUENCE_RANGE as i128;
+        // sequence.allocated = ST_RESERVED_SEQUENCE_RANGE as i128;
     }
     if let Some(sch) = result.schedule {
         panic!(
@@ -500,6 +502,7 @@ fn st_schema(name: &str, id: TableId) -> TableSchema {
             result.table_name
         );
     }
+    result.normalize();
     // Note, if we ever added system tables with schedules, we would need to set their IDs here too.
     result
 }
@@ -775,9 +778,13 @@ pub struct StSequenceRow {
     pub table_id: TableId,
     pub col_pos: ColId,
     pub increment: i128,
+    // The original starting value of this sequence.
+    // This is actually not useful, since allocated tells us where to start generating new values.
     pub start: i128,
     pub min_value: i128,
     pub max_value: i128,
+    // Allocated is a lower bound on the next value of the sequence.
+    // This exists so that we don't need to update this row every time we allocate a value from the sequence.
     pub allocated: i128,
 }
 
@@ -805,7 +812,6 @@ impl From<StSequenceRow> for SequenceSchema {
             increment: sequence.increment,
             min_value: sequence.min_value,
             max_value: sequence.max_value,
-            allocated: sequence.allocated,
         }
     }
 }
@@ -1357,19 +1363,19 @@ mod tests {
         }
 
         assert!(
-            num_tables <= ST_RESERVED_SEQUENCE_RANGE,
+            num_tables < ST_RESERVED_SEQUENCE_RANGE,
             "number of system tables exceeds reserved sequence range"
         );
         assert!(
-            num_indexes <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            num_indexes < ST_RESERVED_SEQUENCE_RANGE as usize,
             "number of system indexes exceeds reserved sequence range"
         );
         assert!(
-            num_constraints <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            num_constraints < ST_RESERVED_SEQUENCE_RANGE as usize,
             "number of system constraints exceeds reserved sequence range"
         );
         assert!(
-            num_sequences <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            num_sequences < ST_RESERVED_SEQUENCE_RANGE as usize,
             "number of system sequences exceeds reserved sequence range"
         );
     }

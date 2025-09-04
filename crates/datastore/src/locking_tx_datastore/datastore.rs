@@ -111,7 +111,13 @@ impl Locking {
         commit_state.bootstrap_system_tables(database_identity)?;
         // The database tables are now initialized with the correct data.
         // Now we have to build our in memory structures.
-        commit_state.build_sequence_state(&mut datastore.sequence_state.lock())?;
+        {
+            let sequence_state = commit_state.build_sequence_state()?;
+            // Reset our sequence state so that they start in the right places.
+            *datastore.sequence_state.lock() = sequence_state;
+        }
+        // commit_state.build_sequence_state(&mut datastore.sequence_state.lock())?;
+
         // We don't want to build indexes here; we'll build those later,
         // in `rebuild_state_after_replay`.
         // We actively do not want indexes to exist during replay,
@@ -128,14 +134,14 @@ impl Locking {
     /// There may eventually be better way to do this, but this will have to do for now.
     pub fn rebuild_state_after_replay(&self) -> Result<()> {
         let mut committed_state = self.committed_state.write_arc();
-        let mut sequence_state = self.sequence_state.lock();
         // `build_missing_tables` must be called before indexes.
         // Honestly this should maybe just be one big procedure.
         // See John Carmack's philosophy on this.
         committed_state.reschema_tables()?;
         committed_state.build_missing_tables()?;
         committed_state.build_indexes()?;
-        committed_state.build_sequence_state(&mut sequence_state)?;
+        // Figure out where to pick up for each sequence.
+        *self.sequence_state.lock() = committed_state.build_sequence_state()?;
         Ok(())
     }
 
@@ -160,8 +166,6 @@ impl Locking {
     /// - Populate those tables with all rows in `snapshot`.
     /// - Construct a [`HashMapBlobStore`] containing all the large blobs referenced by `snapshot`,
     ///   with reference counts specified in `snapshot`.
-    /// - Do [`CommittedState::reset_system_table_schemas`] to fix-up auto_inc IDs in the system tables,
-    ///   to ensure those schemas match what [`Self::bootstrap`] would install.
     /// - Notably, **do not** construct indexes or sequences.
     ///   This should be done by [`Self::rebuild_state_after_replay`],
     ///   after replaying the suffix of the commitlog.
@@ -218,7 +222,14 @@ impl Locking {
 
         // Fix up auto_inc IDs in the cached system table schemas.
         // We might need something to reset sequence ids?
-        // committed_state.reset_system_table_schemas()?;
+
+        committed_state.assert_system_table_schemas_match()?;
+        {
+            let sequence_state = committed_state.build_sequence_state()?;
+            // Reset our sequence state so that they start in the right places.
+            *datastore.sequence_state.lock() = sequence_state;
+        }
+        // committed_state.build_sequence_state(&mut datastore.sequence_state.lock())?;
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
@@ -1179,6 +1190,7 @@ mod tests {
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.
+    /// Note that databases created before version 1.3? Started with an id one greater than this.
     const FIRST_NON_SYSTEM_ID: u32 = ST_RESERVED_SEQUENCE_RANGE + 1;
 
     /// Utility to query the system tables and return their concrete table row
@@ -1370,7 +1382,7 @@ mod tests {
                 start: value.start,
                 min_value: 1,
                 max_value: i128::MAX,
-                allocated: 0,
+                allocated: value.start,
             }
         }
     }
@@ -1386,7 +1398,6 @@ mod tests {
                 start: value.start,
                 min_value: 1,
                 max_value: i128::MAX,
-                allocated: 0,
             }
         }
     }
@@ -1493,7 +1504,6 @@ mod tests {
             increment: 1,
             min_value: 1,
             max_value: i128::MAX,
-            allocated: 0,
         };
         user_public_table(
             map_array(basic_table_schema_cols()),
@@ -1675,7 +1685,7 @@ mod tests {
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
             IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
         ]));
-        let start = FIRST_NON_SYSTEM_ID as i128;
+        let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
         assert_eq!(query.scan_st_sequences()?, map_array_fn(
             [
@@ -1686,7 +1696,7 @@ mod tests {
                 SequenceRow { id: 4, table: ST_SCHEDULED_ID.into(), col_pos: 0, name: "st_scheduled_schedule_id_seq", start },
             ],
             |row| StSequenceRow {
-                allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
+                allocated: start,
                 ..StSequenceRow::from(row)
             }
         ));
@@ -2280,7 +2290,6 @@ mod tests {
             increment: 1,
             min_value: 1,
             max_value: i128::MAX,
-            allocated: 0,
         };
         let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
         assert_matches!(
