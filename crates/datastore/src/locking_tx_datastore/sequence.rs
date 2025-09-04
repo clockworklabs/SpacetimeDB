@@ -11,28 +11,20 @@ pub struct Sequence {
     // The next value to be returned by this sequence.
     value: i128,
     // The number we have persisted as a lower bound for the next restart.
+    // This is the first value to be returned after a restart, so when we
+    // reach this value, the user needs to call allocate_steps and update
+    // the corresponding system table row.
     allocated: i128,
 }
 
 impl MemoryUsage for Sequence {
     fn heap_usage(&self) -> usize {
         // MEMUSE: intentionally ignoring schema
-        //let Self { schema: _, value } = self;
         self.value.heap_usage()
     }
 }
 
 impl Sequence {
-    /*
-    pub(super) fn new(schema: SequenceSchema) -> Self {
-        Self {
-            value: schema.start,
-            schema,
-        }
-    }
-
-     */
-
     pub(super) fn new(schema: SequenceSchema, previous_allocation: Option<i128>) -> Self {
         if let Some(prev) = previous_allocation {
             if prev < schema.min_value || prev > schema.max_value {
@@ -135,10 +127,6 @@ impl Sequence {
     /// 6. incr = 1 allocated = 10, value = 10
     /// 7. next_value() -> 11
     fn needs_allocation(&self) -> bool {
-        // In order to yield a value, it must be strictly less than the allocation amount,
-        // because on restart we will begin at the allocation amount.
-        // self.value >= self.schema.allocated
-        // It would be nice to have a >=
         // On restart we are allowed to begin at the allocation amount, so we stop before we
         // reach it. It is important that the allocated value is one that would be returned
         // by the sequence, so we can use equality here. Otherwise, to handle wrapping sequences
@@ -147,8 +135,11 @@ impl Sequence {
         self.value == self.allocated
     }
 
-    // Allocate the next `steps` values in the sequence. This returns the new allocated value to be,
-    // used on restart, which should be written to the corresponding system table row.
+    /// Allocate up to `steps` new values in the sequence. This returns the new allocated value,
+    /// which should be written to the corresponding system table row, so that we start generating
+    /// at that value on the next restart.
+    /// This may allocate fewer steps if it is possible to fully loop around the sequence in that
+    /// many steps.
     pub(super) fn allocate_steps(&mut self, steps: usize) -> i128 {
         if !self.needs_allocation() {
             // No allocation needed, return the current allocation.

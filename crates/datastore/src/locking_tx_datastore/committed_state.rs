@@ -251,12 +251,7 @@ impl CommittedState {
                 min_value: seq.min_value,
                 max_value: seq.max_value,
                 start: seq.start,
-                // allocated: seq.start,
-                // Logically, this should be the same as `seq.start`, but this is set to match
-                // allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
                 allocated: seq.start,
-                // This could also be 0, but this is set to make the historical version.
-                // allocated: (ST_RESERVED_SEQUENCE_RANGE + 1) as i128,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_SEQUENCES.
@@ -371,6 +366,8 @@ impl CommittedState {
         Ok(())
     }
 
+    /// Builds the in-memory state of sequences from `st_sequence` system table.
+    /// The tables store the lasted allocated value, which tells us where to start generating.
     pub(super) fn build_sequence_state(&mut self) -> Result<SequencesState> {
         let mut sequence_state = SequencesState::default();
         let st_sequences = self.tables.get(&ST_SEQUENCE_ID).unwrap();

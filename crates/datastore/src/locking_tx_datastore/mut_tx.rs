@@ -842,7 +842,6 @@ fn get_next_sequence_value(
         let sequence = get_sequence_mut(seq_state, seq_id)?;
         let new_allocated = sequence.allocate_steps(SEQUENCE_ALLOCATION_STEP as usize);
         seq_row.allocated = new_allocated;
-        // sequence.set_allocation(seq_row.allocated);
         seq_row
     };
 

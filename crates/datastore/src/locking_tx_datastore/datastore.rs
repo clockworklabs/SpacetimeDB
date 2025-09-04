@@ -116,7 +116,6 @@ impl Locking {
             // Reset our sequence state so that they start in the right places.
             *datastore.sequence_state.lock() = sequence_state;
         }
-        // commit_state.build_sequence_state(&mut datastore.sequence_state.lock())?;
 
         // We don't want to build indexes here; we'll build those later,
         // in `rebuild_state_after_replay`.
@@ -224,12 +223,14 @@ impl Locking {
         // We might need something to reset sequence ids?
 
         committed_state.assert_system_table_schemas_match()?;
+        // Set the sequence state. In practice we will end up doing this again after replaying
+        // the commit log, but we do it here too just to avoid having an incorrectly restored
+        // snapshot.
         {
             let sequence_state = committed_state.build_sequence_state()?;
             // Reset our sequence state so that they start in the right places.
             *datastore.sequence_state.lock() = sequence_state;
         }
-        // committed_state.build_sequence_state(&mut datastore.sequence_state.lock())?;
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
@@ -1190,7 +1191,6 @@ mod tests {
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.
-    /// Note that databases created before version 1.3? Started with an id one greater than this.
     const FIRST_NON_SYSTEM_ID: u32 = ST_RESERVED_SEQUENCE_RANGE + 1;
 
     /// Utility to query the system tables and return their concrete table row
