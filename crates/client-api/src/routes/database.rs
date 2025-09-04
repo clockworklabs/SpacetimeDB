@@ -542,7 +542,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     // so, unless you are the owner, this will fail.
 
     let (database_identity, db_name) = match &name_or_identity {
-        Some(noa) => match noa.try_resolve(&ctx).await? {
+        Some(noa) => match noa.try_resolve(&ctx).await.map_err(log_and_500)? {
             Ok(resolved) => (resolved, noa.name()),
             Err(name) => {
                 // `name_or_identity` was a `NameOrIdentity::Name`, but no record

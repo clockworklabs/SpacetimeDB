@@ -468,7 +468,7 @@ dependencies = [
  "bitflags 2.9.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "lazy_static",
  "lazycell",
  "log",
@@ -3325,9 +3325,9 @@ dependencies = [
 
 [[package]]
 name = "md5"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
+checksum = "ae960838283323069879657ca3de837e9f7bbb4c7bf6ea7f1b290d5e9476d2e0"
 
 [[package]]
 name = "memchr"
@@ -3921,9 +3921,9 @@ dependencies = [
 
 [[package]]
 name = "pgwire"
-version = "0.28.0"
+version = "0.32.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c84e671791f3a354f265e55e400be8bb4b6262c1ec04fac4289e710ccf22ab43"
+checksum = "ddf403a6ee31cf7f2217b2bd8447cb13dbb6c268d7e81501bc78a4d3daafd294"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
@@ -3935,8 +3935,9 @@ dependencies = [
  "lazy-regex",
  "md5",
  "postgres-types",
- "rand 0.8.5",
+ "rand 0.9.1",
  "rust_decimal",
+ "rustls-pki-types",
  "thiserror 2.0.12",
  "tokio",
  "tokio-rustls",

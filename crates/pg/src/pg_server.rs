@@ -12,11 +12,10 @@ use pgwire::api::auth::{
     finish_authentication, save_startup_parameters_to_metadata, DefaultServerParameterProvider, LoginInfo,
     StartupHandler,
 };
-use pgwire::api::copy::NoopCopyHandler;
 use pgwire::api::portal::Format;
-use pgwire::api::query::{PlaceholderExtendedQueryHandler, SimpleQueryHandler};
+use pgwire::api::query::SimpleQueryHandler;
 use pgwire::api::results::{DataRowEncoder, FieldInfo, QueryResponse, Response, Tag};
-use pgwire::api::{ClientInfo, NoopErrorHandler, METADATA_DATABASE};
+use pgwire::api::{ClientInfo, METADATA_DATABASE};
 use pgwire::api::{PgWireConnectionState, PgWireServerHandlers};
 use pgwire::error::{ErrorInfo, PgWireError, PgWireResult};
 use pgwire::messages::data::DataRow;
@@ -145,12 +144,12 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
 }
 
 struct PgSpacetimeDB<T> {
-    ctx: Arc<T>,
+    ctx: T,
     cached: Mutex<Option<Metadata>>,
     parameter_provider: DefaultServerParameterProvider,
 }
 
-impl<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate> PgSpacetimeDB<T> {
+impl<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone> PgSpacetimeDB<T> {
     async fn exe_sql<'a>(&self, query: String) -> PgWireResult<Vec<Response<'a>>> {
         let params = self.cached.lock().await.clone().unwrap();
         let db = SqlParams {
@@ -283,13 +282,11 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 self.cached.lock().await.clone_from(&Some(metadata));
                 finish_authentication(client, &self.parameter_provider).await?;
             }
-            PgWireFrontendMessage::SslRequest(ssl) => {
-                if ssl.is_some() {
-                    let err = PgError::SSLNotSupported;
-                    log::error!("{err}");
-                    let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), err.to_string());
-                    return close_client(client, err).await;
-                }
+            PgWireFrontendMessage::SslRequest(_) => {
+                let err = PgError::SSLNotSupported;
+                log::error!("{err}");
+                let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), err.to_string());
+                return close_client(client, err).await;
             }
             // The other messages are for features not supported by SpacetimeDB, that are rejected by the parser.
             _ => {
@@ -301,10 +298,10 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 }
 
 #[async_trait]
-impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate> SimpleQueryHandler
+impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone> SimpleQueryHandler
     for PgSpacetimeDB<T>
 {
-    async fn do_query<'a, C>(&self, _client: &mut C, query: &'a str) -> PgWireResult<Vec<Response<'a>>>
+    async fn do_query<'a, C>(&self, _client: &mut C, query: &str) -> PgWireResult<Vec<Response<'a>>>
     where
         C: ClientInfo + Unpin + Send + Sync,
     {
@@ -313,12 +310,12 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 }
 
 #[derive(Clone)]
-struct PgSpacetimeDBFactory<T> {
+pub struct PgSpacetimeDBFactory<T> {
     handler: Arc<PgSpacetimeDB<T>>,
 }
 
 impl<T> PgSpacetimeDBFactory<T> {
-    pub fn new(ctx: Arc<T>) -> Self {
+    pub fn new(ctx: T) -> Self {
         let mut parameter_provider = DefaultServerParameterProvider::default();
         parameter_provider.server_version = format!("spacetime {}", spacetimedb_lib_version());
 
@@ -333,39 +330,23 @@ impl<T> PgSpacetimeDBFactory<T> {
     }
 }
 
-impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate> PgWireServerHandlers
+impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone> PgWireServerHandlers
     for PgSpacetimeDBFactory<T>
 {
-    type StartupHandler = PgSpacetimeDB<T>;
-    type SimpleQueryHandler = PgSpacetimeDB<T>;
-    type ExtendedQueryHandler = PlaceholderExtendedQueryHandler;
-    type CopyHandler = NoopCopyHandler;
-    type ErrorHandler = NoopErrorHandler;
-
-    fn simple_query_handler(&self) -> Arc<Self::SimpleQueryHandler> {
+    fn simple_query_handler(&self) -> Arc<impl SimpleQueryHandler> {
         self.handler.clone()
     }
 
-    fn extended_query_handler(&self) -> Arc<Self::ExtendedQueryHandler> {
-        Arc::new(PlaceholderExtendedQueryHandler)
-    }
+    // TODO: fn extended_query_handler(&self) -> Arc<impl ExtendedQueryHandler> {}
 
-    fn startup_handler(&self) -> Arc<Self::StartupHandler> {
+    fn startup_handler(&self) -> Arc<impl StartupHandler> {
         self.handler.clone()
-    }
-
-    fn copy_handler(&self) -> Arc<Self::CopyHandler> {
-        Arc::new(NoopCopyHandler)
-    }
-
-    fn error_handler(&self) -> Arc<Self::ErrorHandler> {
-        Arc::new(NoopErrorHandler)
     }
 }
 
-pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + 'static>(
+pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone + 'static>(
     shutdown: Arc<Notify>,
-    ctx: Arc<T>,
+    ctx: T,
     tcp: TcpListener,
 ) {
     let factory = Arc::new(PgSpacetimeDBFactory::new(ctx));
