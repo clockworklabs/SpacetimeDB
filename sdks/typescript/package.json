@@ -6,14 +6,14 @@
     "pnpm": ">=9.0.0"
   },
   "scripts": {
-    "build": "cd packages/sdk && pnpm build",
     "changeset": "changeset",
     "ci:release": "changeset publish",
     "ci:version": "changeset version",
     "format": "prettier --write .",
     "lint": "prettier . --check",
-    "test": "pnpm -r --filter \"./packages/*\" run test",
-    "generate": "pnpm -r --filter \"./packages/*\" run generate"
+    "build": "pnpm -r --filter \"./packages/*\" run build && pnpm -r --filter \"./examples/**\" run build",
+    "test": "pnpm -r --filter \"./packages/*\" run test && pnpm -r --filter \"./examples/**\" run test",
+    "generate": "pnpm -r --filter \"./packages/*\" run generate && pnpm -r --filter \"./examples/**\" run generate"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.0",
