@@ -115,7 +115,7 @@ pub trait DurableOffsetSupply: Send {
     ///
     /// - `Err(NoSuchModule)` if the database was shut down
     /// - `Ok(None)` if the database is configured without durability
-    /// - `Ok(DurableOffset)` otherwise
+    /// - `Ok(Some(DurableOffset))` otherwise
     ///
     fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule>;
 }
@@ -887,5 +887,227 @@ impl ClientConnection {
 
     pub async fn disconnect(self) {
         self.module().disconnect_client(self.id).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::fmt;
+    use std::pin::pin;
+
+    use pretty_assertions::assert_matches;
+
+    use super::*;
+    use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
+
+    #[derive(Clone)]
+    struct FakeDurableOffset {
+        channel: watch::Sender<Option<TxOffset>>,
+        closed: Arc<AtomicBool>,
+    }
+
+    impl DurableOffsetSupply for FakeDurableOffset {
+        fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
+            if self.closed.load(Ordering::Acquire) {
+                Err(NoSuchModule)
+            } else {
+                Ok(Some(self.channel.subscribe().into()))
+            }
+        }
+    }
+
+    impl FakeDurableOffset {
+        fn new() -> Self {
+            let (tx, _) = watch::channel(None);
+            Self {
+                channel: tx,
+                closed: <_>::default(),
+            }
+        }
+
+        fn mark_durable_at(&self, offset: TxOffset) {
+            self.channel.send_modify(|val| {
+                val.replace(offset);
+            })
+        }
+
+        fn close(&self) {
+            self.closed.store(true, Ordering::Release);
+        }
+    }
+
+    /// [DurableOffsetSupply] that only stores the receiver side of a watch
+    /// channel initialized to some value.
+    ///
+    /// Calling `wait_for` will succeed while the provided value is smaller than
+    /// or equal to the stored value, but report the channel as closed once it
+    /// attempts to wait for a new value.
+    struct DisconnectedDurableOffset {
+        receiver: watch::Receiver<Option<TxOffset>>,
+    }
+
+    impl DisconnectedDurableOffset {
+        fn new(offset: TxOffset) -> Self {
+            let (_, rx) = watch::channel(Some(offset));
+            Self { receiver: rx }
+        }
+    }
+
+    impl DurableOffsetSupply for DisconnectedDurableOffset {
+        fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
+            Ok(Some(self.receiver.clone().into()))
+        }
+    }
+
+    /// [DurableOffsetSupply] that always returns `Ok(None)`.
+    struct NoneDurableOffset;
+
+    impl DurableOffsetSupply for NoneDurableOffset {
+        fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
+            Ok(None)
+        }
+    }
+
+    fn empty_tx_update() -> TransactionUpdateMessage {
+        TransactionUpdateMessage {
+            event: None,
+            database_update: SubscriptionUpdateMessage::default_for_protocol(Protocol::Binary, None),
+        }
+    }
+
+    async fn assert_received_update(f: impl Future<Output = Option<SerializableMessage>>) {
+        assert_matches!(f.await, Some(SerializableMessage::TxUpdate(_)));
+    }
+
+    async fn assert_receiver_closed(f: impl Future<Output = Option<SerializableMessage>>) {
+        assert_matches!(f.await, None);
+    }
+
+    async fn assert_pending(f: &mut (impl Future<Output: fmt::Debug> + Unpin)) {
+        assert_matches!(futures::poll!(f), Poll::Pending);
+    }
+
+    fn default_client(
+        offset_supply: impl DurableOffsetSupply + 'static,
+    ) -> (ClientConnectionSender, ClientConnectionReceiver) {
+        ClientConnectionSender::dummy_with_channel(
+            ClientActorId::for_test(Identity::ZERO),
+            ClientConfig {
+                confirmed_reads: false,
+                ..ClientConfig::for_test()
+            },
+            offset_supply,
+        )
+    }
+
+    fn client_with_confirmed_reads(
+        offset_supply: impl DurableOffsetSupply + 'static,
+    ) -> (ClientConnectionSender, ClientConnectionReceiver) {
+        ClientConnectionSender::dummy_with_channel(
+            ClientActorId::for_test(Identity::ZERO),
+            ClientConfig {
+                confirmed_reads: true,
+                ..ClientConfig::for_test()
+            },
+            offset_supply,
+        )
+    }
+
+    #[tokio::test]
+    async fn client_connection_receiver_waits_for_durable_offset() {
+        let offset = FakeDurableOffset::new();
+        let (sender, mut receiver) = client_with_confirmed_reads(offset.clone());
+
+        for tx_offset in 0..10 {
+            sender.send_message(Some(tx_offset), empty_tx_update()).unwrap();
+            let mut recv = pin!(receiver.recv());
+            assert_pending(&mut recv).await;
+            offset.mark_durable_at(tx_offset);
+            assert_received_update(recv).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn client_connection_receiver_immediately_yields_message_if_already_durable() {
+        let offset = FakeDurableOffset::new();
+        let (sender, mut receiver) = client_with_confirmed_reads(offset.clone());
+
+        for tx_offset in 0..10 {
+            offset.mark_durable_at(tx_offset);
+            sender.send_message(Some(tx_offset), empty_tx_update()).unwrap();
+            assert_received_update(receiver.recv()).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn client_connection_receiver_ends_if_durable_offset_closed() {
+        let offset = FakeDurableOffset::new();
+        let (sender, mut receiver) = client_with_confirmed_reads(offset.clone());
+
+        offset.close();
+        sender.send_message(Some(42), empty_tx_update()).unwrap();
+        assert_receiver_closed(receiver.recv()).await;
+    }
+
+    #[tokio::test]
+    async fn client_connection_receiver_ends_if_durable_offset_dropped() {
+        const INITIAL_OFFSET: TxOffset = 1;
+        let offset = DisconnectedDurableOffset::new(INITIAL_OFFSET);
+        let (sender, mut receiver) = client_with_confirmed_reads(offset);
+
+        for tx_offset in 0..=(INITIAL_OFFSET + 1) {
+            sender.send_message(Some(tx_offset), empty_tx_update()).unwrap();
+            if tx_offset <= INITIAL_OFFSET {
+                assert_received_update(receiver.recv()).await;
+            } else {
+                assert_receiver_closed(receiver.recv()).await;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn client_connection_receiver_immediately_yields_message_if_sent_without_offset() {
+        let offset = FakeDurableOffset::new();
+        let (sender, mut receiver) = client_with_confirmed_reads(offset.clone());
+
+        for _ in 0..10 {
+            sender.send_message(None, empty_tx_update()).unwrap();
+            assert_received_update(receiver.recv()).await;
+        }
+
+        offset.mark_durable_at(5);
+
+        for _ in 0..10 {
+            sender.send_message(None, empty_tx_update()).unwrap();
+            assert_received_update(receiver.recv()).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn client_connection_receiver_immediately_yields_message_for_client_without_confirmed_reads() {
+        let offset = FakeDurableOffset::new();
+        let (sender, mut receiver) = default_client(offset.clone());
+
+        for tx_offset in 0..10 {
+            sender.send_message(Some(tx_offset), empty_tx_update()).unwrap();
+            assert_received_update(receiver.recv()).await;
+        }
+
+        offset.mark_durable_at(10);
+
+        for tx_offset in 0..10 {
+            sender.send_message(Some(tx_offset), empty_tx_update()).unwrap();
+            assert_received_update(receiver.recv()).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn client_connection_receiver_immediately_yields_message_without_durability() {
+        let (sender, mut receiver) = client_with_confirmed_reads(NoneDurableOffset);
+
+        for tx_offset in 0..10 {
+            sender.send_message(Some(tx_offset), empty_tx_update()).unwrap();
+            assert_received_update(receiver.recv()).await;
+        }
     }
 }
