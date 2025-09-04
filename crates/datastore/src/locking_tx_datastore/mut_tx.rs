@@ -1204,6 +1204,19 @@ impl MutTxId {
         );
         let reducer = self.ctx.into_reducer_name();
 
+        // If the transaction didn't consume an offset (i.e. it was empty),
+        // report the previous offset.
+        //
+        // Note that technically the tx could have run against an empty database,
+        // in which case we'd wrongly return zero (a non-existent transaction).
+        // This doesn not happen in practice, however, as [RelationalDB::set_initialized]
+        // creates a transaction.
+        let tx_offset = if tx_offset == self.committed_state_write_lock.next_tx_offset {
+            tx_offset.saturating_sub(1)
+        } else {
+            tx_offset
+        };
+
         (tx_offset, tx_data, tx_metrics, reducer)
     }
 
