@@ -33,7 +33,7 @@ use spacetimedb_lib::Identity;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
-use tracing::trace;
+use tracing::{trace, warn};
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum Protocol {
@@ -185,7 +185,13 @@ impl ClientConnectionReceiver {
             match self.offset_supply.durable_offset() {
                 Ok(Some(mut durable)) => {
                     trace!("waiting for offset {tx_offset} to become durable");
-                    durable.wait_for(tx_offset).await.ok()?;
+                    durable
+                        .wait_for(tx_offset)
+                        .await
+                        .inspect_err(|_| {
+                            warn!("database went away while waiting for durable offset");
+                        })
+                        .ok()?;
                 }
                 // Database shut down or crashed.
                 Err(NoSuchModule) => return None,
