@@ -143,7 +143,8 @@ impl Lang for TypeScript {
         );
 
         // Mark potentially unused types
-        writeln!(out,
+        writeln!(
+            out,
             "declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];"
         );
 
@@ -1209,10 +1210,7 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports, suffi
                 "import {{ {type_name} as {type_name}{suffix} }} from \"./{module_name}\";"
             );
             writeln!(out, "// Mark import as potentially unused");
-            writeln!(
-                out,
-                "declare type __keep_{type_name}{suffix} = {type_name}{suffix};"
-            );
+            writeln!(out, "declare type __keep_{type_name}{suffix} = {type_name}{suffix};");
         } else {
             writeln!(out, "import {{ {type_name} }} from \"./{module_name}\";");
             writeln!(out, "// Mark import as potentially unused");

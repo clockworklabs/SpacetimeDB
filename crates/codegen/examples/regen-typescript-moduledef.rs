@@ -46,8 +46,16 @@ fn main() -> anyhow::Result<()> {
             let code = regex_replace!(&code, r"type ErrorContextInterface as __ErrorContextInterface,", r"");
             let code = regex_replace!(&code, r"type Event as __Event,", r"");
             let code = regex_replace!(&code, r"type EventContextInterface as __EventContextInterface,", r"");
-            let code = regex_replace!(&code, r"type ReducerEventContextInterface as __ReducerEventContextInterface,", r"");
-            let code = regex_replace!(&code, r"type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,", r"");
+            let code = regex_replace!(
+                &code,
+                r"type ReducerEventContextInterface as __ReducerEventContextInterface,",
+                r""
+            );
+            let code = regex_replace!(
+                &code,
+                r"type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,",
+                r""
+            );
             let code = regex_replace!(&code, r"DbConnectionBuilder as __DbConnectionBuilder,", r"");
             let code = regex_replace!(&code, r"DbConnectionImpl as __DbConnectionImpl,", r"");
             let code = regex_replace!(&code, r"SubscriptionBuilderImpl as __SubscriptionBuilderImpl,", r"");
