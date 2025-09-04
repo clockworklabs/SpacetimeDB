@@ -142,15 +142,9 @@ impl Lang for TypeScript {
             "import {{ type EventContext, type Reducer, RemoteReducers, RemoteTables }} from \".\";"
         );
 
-        // Mark potentially unused imports
-        writeln!(
-            out,
-            "void RemoteReducers; void RemoteTables;"
-        );
-
         // Mark potentially unused types
-        writeln!(out, 
-            "declare type __keep = [EventContext, Reducer];"
+        writeln!(out,
+            "declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];"
         );
 
         let table_name = table.name.deref();
@@ -1217,12 +1211,12 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports, suffi
             writeln!(out, "// Mark import as potentially unused");
             writeln!(
                 out,
-                "void {type_name}{suffix};"
+                "declare type __keep_{type_name}{suffix} = {type_name}{suffix};"
             );
         } else {
             writeln!(out, "import {{ {type_name} }} from \"./{module_name}\";");
             writeln!(out, "// Mark import as potentially unused");
-            writeln!(out, "void {type_name};");
+            writeln!(out, "declare type __keep_{type_name} = {type_name};");
         }
     }
 }
