@@ -270,11 +270,7 @@ class Smoketest(unittest.TestCase):
         # and **not raise any exceptions to the caller**.
         return ReturnThread(run).join
 
-    # Make an HTTP call with `method` to `path`.
-    #
-    # If the response is 200, return the body.
-    # Otherwise, throw an `Exception` constructed with two arguments, the response object and the body.
-    def api_call(self, method, path, body = None, headers = {}):
+    def get_server_address(self):
         with open(self.config_path, "rb") as f:
             config = tomllib.load(f)
             token = config['spacetimedb_token']
@@ -284,24 +280,35 @@ class Smoketest(unittest.TestCase):
                 raise Exception(f"Unable to find server in config with nickname {server_name}")
             host = server_config['host']
             protocol = server_config['protocol']
-            conn = None
-            if protocol == "http":
-                conn = http.client.HTTPConnection(host)
-            elif protocol == "https":
-                conn = http.client.HTTPSConnection(host)
-            else:
-                raise Exception(f"Unknown protocol: {protocol}")
-            auth = {"Authorization": f'Bearer {token}'}
-            headers.update(auth)
-            log_cmd([method, path])
-            conn.request(method, path, body, headers)
-            resp = conn.getresponse()
-            body = resp.read()
-            logging.debug(f"{resp.status} {body}")
-            if resp.status != 200:
-                raise Exception(resp, body)
-            return body
 
+            return dict(host=host, protocol=protocol, token=token)
+
+    # Make an HTTP call with `method` to `path`.
+    #
+    # If the response is 200, return the body.
+    # Otherwise, throw an `Exception` constructed with two arguments, the response object and the body.
+    def api_call(self, method, path, body=None, headers={}):
+        server = self.get_server_address()
+        host = server["host"]
+        protocol = server["protocol"]
+        token = server["token"]
+        conn = None
+        if protocol == "http":
+            conn = http.client.HTTPConnection(host)
+        elif protocol == "https":
+            conn = http.client.HTTPSConnection(host)
+        else:
+            raise Exception(f"Unknown protocol: {protocol}")
+        auth = {"Authorization": f'Bearer {token}'}
+        headers.update(auth)
+        log_cmd([method, path])
+        conn.request(method, path, body, headers)
+        resp = conn.getresponse()
+        body = resp.read()
+        logging.debug(f"{resp.status} {body}")
+        if resp.status != 200:
+            raise Exception(resp, body)
+        return body
 
     @classmethod
     def write_module_code(cls, module_code):
