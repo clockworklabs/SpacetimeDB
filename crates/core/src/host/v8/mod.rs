@@ -3,20 +3,25 @@
 use super::module_common::{build_common_module_from_raw, ModuleCommon};
 use super::module_host::{CallReducerParams, DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime};
 use super::UpdateDatabaseResult;
-use crate::host::wasm_common::module_host_actor::InstanceCommon;
+use crate::host::wasm_common::instrumentation::CallTimes;
+use crate::host::wasm_common::module_host_actor::{
+    EnergyStats, ExecuteResult, ExecutionTimings, InstanceCommon, ReducerOp,
+};
 use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
 use anyhow::anyhow;
+use core::time::Duration;
 use de::deserialize_js;
 use error::{catch_exception, exception_already_thrown, ExcResult, Throwable};
 use from_value::cast;
 use key_cache::get_or_create_key_cache;
 use ser::serialize_to_js;
+use spacetimedb_client_api_messages::energy::{EnergyQuanta, ReducerBudget};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef};
 use std::sync::{Arc, LazyLock};
-use v8::{Function, HandleScope, Local, Value};
+use v8::{Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, Local, Value};
 
 mod de;
 mod error;
@@ -110,7 +115,7 @@ impl Module for JsModule {
     }
 
     fn info(&self) -> Arc<ModuleInfo> {
-        todo!()
+        self.common.info().clone()
     }
 
     fn create_instance(&self) -> Self::Instance {
@@ -137,8 +142,42 @@ impl ModuleInstance for JsInstance {
         self.common.update_database(replica_ctx, program, old_module_info)
     }
 
-    fn call_reducer(&mut self, _tx: Option<MutTxId>, _params: CallReducerParams) -> super::ReducerCallResult {
-        todo!()
+    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
+        // TODO(centril): snapshots, module->host calls
+        let mut isolate = Isolate::new(<_>::default());
+        let scope = &mut HandleScope::new(&mut isolate);
+        let context = Context::new(scope, ContextOptions::default());
+        let scope = &mut ContextScope::new(scope, context);
+
+        self.common.call_reducer_with_tx(
+            &self.replica_ctx.clone(),
+            tx,
+            params,
+            // TODO(centril): logging.
+            |_ty, _fun, _err| {},
+            |tx, op, _budget| {
+                let call_result = call_call_reducer_from_op(scope, op);
+                // TODO(centril): energy metrering.
+                let energy = EnergyStats {
+                    used: EnergyQuanta::ZERO,
+                    wasmtime_fuel_used: 0,
+                    remaining: ReducerBudget::ZERO,
+                };
+                // TODO(centril): timings.
+                let timings = ExecutionTimings {
+                    total_duration: Duration::ZERO,
+                    wasm_instance_env_call_times: CallTimes::new(),
+                };
+                let exec_result = ExecuteResult {
+                    energy,
+                    timings,
+                    // TODO(centril): memory allocation.
+                    memory_allocation: 0,
+                    call_result,
+                };
+                (tx, exec_result)
+            },
+        )
     }
 }
 
@@ -163,13 +202,25 @@ fn call_free_fun<'scope>(
     fun.call(scope, receiver, args).ok_or_else(exception_already_thrown)
 }
 
+// Calls the `__call_reducer__` function on the global proxy object using `op`.
+fn call_call_reducer_from_op(scope: &mut HandleScope<'_>, op: ReducerOp<'_>) -> anyhow::Result<Result<(), Box<str>>> {
+    call_call_reducer(
+        scope,
+        op.id.into(),
+        op.caller_identity,
+        op.caller_connection_id,
+        op.timestamp.to_micros_since_unix_epoch(),
+        op.args,
+    )
+}
+
 // Calls the `__call_reducer__` function on the global proxy object.
 fn call_call_reducer(
     scope: &mut HandleScope<'_>,
     reducer_id: u32,
     sender: &Identity,
     conn_id: &ConnectionId,
-    timestamp: u64,
+    timestamp: i64,
     reducer_args: &ArgsTuple,
 ) -> anyhow::Result<Result<(), Box<str>>> {
     // Get a cached version of the `__call_reducer__` property.
