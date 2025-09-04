@@ -28,7 +28,7 @@ jobs:
           node-version: 18.x
           cache: 'pnpm'
 
-      - run: pnpm compile
+      - run: pnpm build
 
       - name: Create Release Pull Request or Publish
         id: changesets

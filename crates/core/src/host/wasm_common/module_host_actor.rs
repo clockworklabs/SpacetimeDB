@@ -234,7 +234,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
-    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+    ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.instance.instance_env().replica_ctx;
         self.common.update_database(replica_ctx, program, old_module_info)
     }
@@ -263,17 +263,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
-struct InstanceCommon {
+pub(crate) struct InstanceCommon {
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
     allocated_memory: usize,
     metric_wasm_memory_bytes: IntGauge,
-    trapped: bool,
+    pub(crate) trapped: bool,
 }
 
 impl InstanceCommon {
     #[tracing::instrument(level = "trace", skip_all)]
-    fn update_database(
+    pub(crate) fn update_database(
         &mut self,
         replica_ctx: &ReplicaContext,
         program: Program,
