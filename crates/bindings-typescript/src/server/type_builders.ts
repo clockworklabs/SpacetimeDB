@@ -1,11 +1,9 @@
 import {
   AlgebraicType,
-  ProductTypeElement,
   ScheduleAt,
   SumTypeVariant,
   type AlgebraicTypeVariants,
 } from '..';
-import type __AlgebraicType from '../autogen/algebraic_type_type';
 import type { Prettify } from './type_util';
 
 /**
@@ -81,10 +79,7 @@ export type Infer<T> = InferTypeOfTypeBuilder<T>;
  * Helper type to extract the type of a row from an object.
  */
 type InferTypeOfRow<T> =
-  T extends Record<
-    string,
-    ColumnBuilder<infer U, any, any> | TypeBuilder<infer U, any>
-  >
+  T extends Record<string, ColumnBuilder<any, any, any> | TypeBuilder<any, any>>
     ? {
         [K in keyof T]: T[K] extends ColumnBuilder<infer V, any, any>
           ? V
@@ -435,57 +430,64 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
   }
 }
 
-export interface U8ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.U8> {}
-export interface U16ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.U16> {}
-export interface U32ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.U32> {}
-export interface U64ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.U64> {}
-export interface U128ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.U128> {}
-export interface U256ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.U256> {}
-export interface I8ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.I8> {}
-export interface I16ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.I16> {}
-export interface I32ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.I32> {}
-export interface I64ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.I64> {}
-export interface I128ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.I128> {}
-export interface I256ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.I256> {}
-export interface F32ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.F32> {}
-export interface F64ColumnBuilder
-  extends ColumnBuilder<number, AlgebraicTypeVariants.F64> {}
-export interface BoolColumnBuilder
-  extends ColumnBuilder<boolean, AlgebraicTypeVariants.Bool> {}
-export interface StringColumnBuilder
-  extends ColumnBuilder<string, AlgebraicTypeVariants.String> {}
-export interface ArrayColumnBuilder<Element extends TypeBuilder<any, any>>
-  extends ColumnBuilder<
-    Array<Element['type']>,
-    { tag: 'Array'; value: Element['spacetimeType'] }
-  > {}
-export interface ProductColumnBuilder<
+export type U8ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<number, AlgebraicTypeVariants.U8, M>;
+export type U16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<number, AlgebraicTypeVariants.U16, M>;
+export type U32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<number, AlgebraicTypeVariants.U32, M>;
+export type U64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<bigint, AlgebraicTypeVariants.U64, M>;
+export type U128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<bigint, AlgebraicTypeVariants.U128, M>;
+export type U256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<bigint, AlgebraicTypeVariants.U256, M>;
+export type I8ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<number, AlgebraicTypeVariants.I8, M>;
+export type I16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<number, AlgebraicTypeVariants.I16, M>;
+export type I32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<number, AlgebraicTypeVariants.I32, M>;
+export type I64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<bigint, AlgebraicTypeVariants.I64, M>;
+export type I128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<bigint, AlgebraicTypeVariants.I128, M>;
+export type I256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<bigint, AlgebraicTypeVariants.I256, M>;
+export type F32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<number, AlgebraicTypeVariants.F32, M>;
+export type F64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<number, AlgebraicTypeVariants.F64, M>;
+export type BoolColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<boolean, AlgebraicTypeVariants.Bool, M>;
+export type StringColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
+  ColumnBuilder<string, AlgebraicTypeVariants.String, M>;
+export type ArrayColumnBuilder<
+  Element extends TypeBuilder<any, any>,
+  M extends ColumnMetadata = DefaultMetadata,
+> = ColumnBuilder<
+  Array<Element['type']>,
+  { tag: 'Array'; value: Element['spacetimeType'] },
+  M
+>;
+export type ProductColumnBuilder<
   Elements extends Array<{ name: string; algebraicType: AlgebraicType }>,
-> extends ColumnBuilder<
-    { [K in Elements[number]['name']]: any },
-    { tag: 'Product'; value: { elements: Elements } }
-  > {}
-export interface SumColumnBuilder<
+  M extends ColumnMetadata = DefaultMetadata,
+> = ColumnBuilder<
+  { [K in Elements[number]['name']]: any },
+  { tag: 'Product'; value: { elements: Elements } },
+  M
+>;
+export type SumColumnBuilder<
   Variants extends Array<{ name: string; algebraicType: AlgebraicType }>,
-> extends ColumnBuilder<
-    {
-      [K in Variants[number]['name']]: { tag: K; value: any };
-    }[Variants[number]['name']],
-    { tag: 'Sum'; value: { variants: Variants } }
-  > {}
+  M extends ColumnMetadata = DefaultMetadata,
+> = ColumnBuilder<
+  {
+    [K in Variants[number]['name']]: { tag: K; value: any };
+  }[Variants[number]['name']],
+  { tag: 'Sum'; value: { variants: Variants } },
+  M
+>;
 
 /**
  * The type of index types that can be applied to a column.
@@ -547,7 +549,7 @@ export class ColumnBuilder<
     metadata?: ColumnMetadata
   ) {
     this.typeBuilder = typeBuilder;
-    this.columnMetadata = defaultMetadata;
+    this.columnMetadata = metadata ?? defaultMetadata;
   }
 
   /**
@@ -843,92 +845,91 @@ const t = {
 } as const;
 export default t;
 
-// @typescript-eslint/no-unused-vars
-namespace tests {
-  type MustBeNever<T> = [T] extends [never]
-    ? true
-    : ['Error: Type must be never', T];
+type MustBeNever<T> = [T] extends [never]
+  ? true
+  : ['Error: Type must be never', T];
 
-  // Test type inference on a row
-  // i.e. a Record<string, TypeBuilder | ColumnBuilder> type
-  const row = {
+// Test type inference on a row
+// i.e. a Record<string, TypeBuilder | ColumnBuilder> type
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const row = {
+  foo: t.string(),
+  bar: t.i32().primaryKey(),
+  idx: t.i64().index('btree').unique(),
+};
+type Row = InferTypeOfRow<typeof row>;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _row: Row = {
+  foo: 'hello',
+  bar: 42,
+  idx: 100n,
+};
+
+// Test that a row must not allow non-TypeBuilder or ColumnBuilder values
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const row2 = {
+  foo: {
+    // bar is not a TypeBuilder or ColumnBuilder, so this should fail
+    bar: t.string(),
+  },
+  bar: t.i32().primaryKey(),
+  idx: t.i64().index('btree').unique(),
+};
+type Row2 = InferTypeOfRow<typeof row2>;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _ = MustBeNever<Row2>;
+
+// Test type inference on a type with a nested object
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const point = t.object({
+  x: t.i32(),
+  y: t.f64(),
+  z: t.object({
     foo: t.string(),
-    bar: t.i32().primaryKey(),
-    idx: t.i64().index('btree').unique(),
-  };
-  type Row = InferTypeOfRow<typeof row>;
-  const _row: Row = {
-    foo: 'hello',
-    bar: 42,
-    idx: 100n,
-  };
+  }),
+});
+type Point = InferTypeOfTypeBuilder<typeof point>;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _point: Point = {
+  x: 1.0,
+  y: 2.0,
+  z: {
+    foo: 'bar',
+  },
+};
 
-  // Test that a row must not allow non-TypeBuilder or ColumnBuilder values
-  const row2 = {
-    foo: {
-      // bar is not a TypeBuilder or ColumnBuilder, so this should fail
-      bar: t.string(),
-    },
-    bar: t.i32().primaryKey(),
-    idx: t.i64().index('btree').unique(),
-  };
-  type Row2 = InferTypeOfRow<typeof row2>;
-  type _ = MustBeNever<Row2>;
+// Test type inference on an enum
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const e = t.enum({
+  A: t.string(),
+  B: t.number(),
+});
+type E = InferTypeOfTypeBuilder<typeof e>;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _e: E = { tag: 'A', value: 'hello' };
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _e2: E = { tag: 'B', value: 42 };
 
-  // Test type inference on a type with a nested object
-  const point = t.object({
-    x: t.i32(),
-    y: t.f64(),
-    z: t.object({
-      foo: t.string(),
-    }),
-  });
-  type Point = InferTypeOfTypeBuilder<typeof point>;
-  const _point: Point = {
-    x: 1.0,
-    y: 2.0,
-    z: {
-      foo: 'bar',
-    },
-  };
-
-  // Test type inference on an enum
-  const e = t.enum({
-    A: t.string(),
-    B: t.number(),
-  });
-  type E = InferTypeOfTypeBuilder<typeof e>;
-  const _e: E = { tag: 'A', value: 'hello' };
-  const _e2: E = { tag: 'B', value: 42 };
-
-  // Test that the type of a row includes the correct ColumnBuilder types
-  const _row3: {
-    foo: TypeBuilder<string, AlgebraicTypeVariants.String>;
-    bar: ColumnBuilder<
-      number,
-      AlgebraicTypeVariants.I32,
-      {
-        isPrimaryKey: true;
-        isUnique: false;
-        isAutoIncrement: false;
-        isScheduleAt: false;
-        indexType: undefined;
-      }
-    >;
-    idx: ColumnBuilder<
-      bigint,
-      AlgebraicTypeVariants.I64,
-      {
-        isPrimaryKey: false;
-        isUnique: true;
-        isAutoIncrement: false;
-        isScheduleAt: false;
-        indexType: 'btree';
-      }
-    >;
-  } = {
-    foo: t.string(),
-    bar: t.i32().primaryKey(),
-    idx: t.i64().index('btree').unique(),
-  };
-}
+// Test that the type of a row includes the correct ColumnBuilder types
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _row3: {
+  foo: TypeBuilder<string, AlgebraicTypeVariants.String>;
+  bar: I32ColumnBuilder<{
+    isPrimaryKey: true;
+    isUnique: false;
+    isAutoIncrement: false;
+    isScheduleAt: false;
+    indexType: undefined;
+  }>;
+  idx: I64ColumnBuilder<{
+    isPrimaryKey: false;
+    isUnique: true;
+    isAutoIncrement: false;
+    isScheduleAt: false;
+    indexType: 'btree';
+  }>;
+} = {
+  foo: t.string(),
+  bar: t.i32().primaryKey(),
+  idx: t.i64().index('btree').unique(),
+};
