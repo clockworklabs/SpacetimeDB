@@ -65,13 +65,7 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
         )
-        .arg(
-            Arg::new("confirmed")
-                .required(false)
-                .long("confirmed")
-                .action(ArgAction::SetTrue)
-                .help("Instruct the server to deliver only updates of confirmed transactions"),
-        )
+        .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::yes())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))

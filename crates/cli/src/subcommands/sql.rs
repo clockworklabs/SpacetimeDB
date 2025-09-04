@@ -34,13 +34,7 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("query")
                 .help("Instead of using a query, run an interactive command prompt for `SQL` expressions"),
         )
-        .arg(
-            Arg::new("confirmed")
-                .required(false)
-                .long("confirmed")
-                .action(ArgAction::SetTrue)
-                .help("Instruct the server to deliver only updates of confirmed transactions"),
-        )
+        .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
