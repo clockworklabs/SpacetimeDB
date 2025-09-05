@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_schema::auto_migrate::ponder_migrate;
@@ -16,7 +15,7 @@ use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, DynModule, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
     ModuleInstance,
 };
-use crate::host::{ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
+use crate::host::{ArgsTuple, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
@@ -234,7 +233,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
-    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+    ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.instance.instance_env().replica_ctx;
         self.common.update_database(replica_ctx, program, old_module_info)
     }
@@ -263,17 +262,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
-struct InstanceCommon {
+pub(crate) struct InstanceCommon {
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
     allocated_memory: usize,
     metric_wasm_memory_bytes: IntGauge,
-    trapped: bool,
+    pub(crate) trapped: bool,
 }
 
 impl InstanceCommon {
     #[tracing::instrument(level = "trace", skip_all)]
-    fn update_database(
+    pub(crate) fn update_database(
         &mut self,
         replica_ctx: &ReplicaContext,
         program: Program,
@@ -333,7 +332,7 @@ impl InstanceCommon {
     /// The method also performs various measurements and records energy usage,
     /// as well as broadcasting a [`ModuleEvent`] containing information about
     /// the outcome of the call.
-    fn call_reducer_with_tx(
+    pub(crate) fn call_reducer_with_tx(
         &mut self,
         replica_ctx: &ReplicaContext,
         tx: Option<MutTxId>,
@@ -379,7 +378,7 @@ impl InstanceCommon {
             caller_identity: &caller_identity,
             caller_connection_id: &caller_connection_id,
             timestamp,
-            arg_bytes: args.get_bsatn().clone(),
+            args: &args,
         };
 
         let workload = Workload::Reducer(ReducerContext::from(op.clone()));
@@ -626,8 +625,8 @@ pub struct ReducerOp<'a> {
     pub caller_identity: &'a Identity,
     pub caller_connection_id: &'a ConnectionId,
     pub timestamp: Timestamp,
-    /// The BSATN-serialized arguments passed to the reducer.
-    pub arg_bytes: Bytes,
+    /// The arguments passed to the reducer.
+    pub args: &'a ArgsTuple,
 }
 
 impl From<ReducerOp<'_>> for execution_context::ReducerContext {
@@ -638,7 +637,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
             caller_identity,
             caller_connection_id,
             timestamp,
-            arg_bytes,
+            args,
         }: ReducerOp<'_>,
     ) -> Self {
         Self {
@@ -646,7 +645,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
             caller_identity: *caller_identity,
             caller_connection_id: *caller_connection_id,
             timestamp,
-            arg_bsatn: arg_bytes.clone(),
+            arg_bsatn: args.get_bsatn().clone(),
         }
     }
 }

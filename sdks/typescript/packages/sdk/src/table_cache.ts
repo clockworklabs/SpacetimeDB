@@ -6,7 +6,7 @@ import {
   type EventContextInterface,
 } from './db_connection_impl.ts';
 import { stdbLogger } from './logger.ts';
-import type { ComparablePrimitive } from './algebraic_type.ts';
+import type { ComparablePrimitive } from 'spacetimedb';
 
 export type Operation = {
   type: 'insert' | 'delete';

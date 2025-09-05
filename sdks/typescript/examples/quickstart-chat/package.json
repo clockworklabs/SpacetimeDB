@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "format": "prettier --write .",
+    "lint": "eslint . && prettier . --check",
     "preview": "vite preview",
-    "test": "vitest",
-    "spacetime:generate-bindings": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path server",
+    "test": "vitest run",
+    "generate": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-cli generate --lang typescript --out-dir src/module_bindings --project-path ../../../../modules/quickstart-chat && prettier --write src/module_bindings",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path server",
     "spacetime:publish:local": "spacetime publish chat --project-path server --server local",
     "spacetime:publish": "spacetime publish chat --project-path server --server testnet"
   },
@@ -26,14 +28,16 @@
     "@types/jest": "^29.5.14",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^5.0.1",
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.16",
     "globals": "^15.14.0",
     "jsdom": "^26.0.0",
+    "prettier": "^3.3.3",
     "typescript": "~5.6.2",
     "typescript-eslint": "^8.18.2",
-    "vite": "^6.0.5"
+    "vite": "^7.1.3",
+    "vitest": "2.1.9"
   }
 }
