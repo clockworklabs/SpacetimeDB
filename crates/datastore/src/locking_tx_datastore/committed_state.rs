@@ -15,15 +15,14 @@ use crate::{
         system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
         StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
         ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME,
-        ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX,
-        ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID,
-        ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
+        ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID,
+        ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID,
+        ST_VAR_IDX,
     },
     traits::TxData,
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
-use itertools::Itertools;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
@@ -132,23 +131,6 @@ impl StateView for CommittedState {
     }
 }
 
-/// Swallow `Err(TableError::Duplicate(_))`, which signals a set-semantic collision,
-/// and convert it into `Ok(())`.
-///
-/// This necessarily drops any `Ok` payload, since a `Duplicate` will not hold that payload.
-///
-/// Used because the datastore's external APIs (as in, those that face the rest of SpacetimeDB)
-/// treat duplicate insertion as a silent no-op,
-/// whereas `Table` and friends treat it as an error.
-fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) -> Result<()> {
-    match res {
-        Ok(_) => Ok(()),
-        Err(InsertError::Duplicate(_)) => Ok(()),
-        Err(InsertError::Bflatn(e)) => Err(e.into()),
-        Err(InsertError::IndexError(e)) => Err(IndexError::from(e).into()),
-    }
-}
-
 impl CommittedState {
     pub(super) fn new(page_pool: PagePool) -> Self {
         Self {
@@ -192,8 +174,7 @@ impl CommittedState {
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_TABLES.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_tables.insert(pool, blob_store, &row))?;
+            st_tables.insert(pool, blob_store, &row)?;
         }
 
         // Insert the columns into `st_columns`
@@ -208,8 +189,7 @@ impl CommittedState {
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_COLUMNS.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_columns.insert(pool, blob_store, &row))?;
+            st_columns.insert(pool, blob_store, &row)?;
             // Increment row count for st_columns.
             with_label_values(ST_COLUMN_ID, ST_COLUMN_NAME).inc();
         }
@@ -219,26 +199,16 @@ impl CommittedState {
         // Insert constraints into `st_constraints`
         let (st_constraints, blob_store, pool) =
             self.get_table_and_blob_store_or_create(ST_CONSTRAINT_ID, &schemas[ST_CONSTRAINT_IDX]);
-        for (i, constraint) in ref_schemas
-            .iter()
-            .flat_map(|x| &x.constraints)
-            .sorted_by_key(|x| (x.table_id, x.data.unique_columns()))
-            .cloned()
-            .enumerate()
-        {
-            // Start sequence from 1,
-            // to avoid any confusion with 0 as the autoinc sentinel value.
-            let constraint_id = (i + 1).into();
+        for constraint in ref_schemas.iter().flat_map(|x| &x.constraints) {
             let row = StConstraintRow {
-                constraint_id,
-                constraint_name: constraint.constraint_name,
+                constraint_id: constraint.constraint_id,
+                constraint_name: constraint.constraint_name.clone(),
                 table_id: constraint.table_id,
-                constraint_data: constraint.data.into(),
+                constraint_data: constraint.data.clone().into(),
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_CONSTRAINTS.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_constraints.insert(pool, blob_store, &row))?;
+            st_constraints.insert(pool, blob_store, &row)?;
             // Increment row count for st_constraints.
             with_label_values(ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME).inc();
         }
@@ -246,21 +216,12 @@ impl CommittedState {
         // Insert the indexes into `st_indexes`
         let (st_indexes, blob_store, pool) =
             self.get_table_and_blob_store_or_create(ST_INDEX_ID, &schemas[ST_INDEX_IDX]);
-        for (i, mut index) in ref_schemas
-            .iter()
-            .flat_map(|x| &x.indexes)
-            .sorted_by_key(|x| (x.table_id, x.index_algorithm.columns()))
-            .cloned()
-            .enumerate()
-        {
-            // Start sequence from 1,
-            // to avoid any confusion with 0 as the autoinc sentinel value.
-            index.index_id = (i + 1).into();
-            let row: StIndexRow = index.into();
+
+        for index in ref_schemas.iter().flat_map(|x| &x.indexes) {
+            let row: StIndexRow = index.clone().into();
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_INDEXES.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_indexes.insert(pool, blob_store, &row))?;
+            st_indexes.insert(pool, blob_store, &row)?;
             // Increment row count for st_indexes.
             with_label_values(ST_INDEX_ID, ST_INDEX_NAME).inc();
         }
@@ -277,59 +238,59 @@ impl CommittedState {
 
         self.create_table(ST_ROW_LEVEL_SECURITY_ID, schemas[ST_ROW_LEVEL_SECURITY_IDX].clone());
 
-        // IMPORTANT: It is crucial that the `st_sequences` table is created last
-
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
             self.get_table_and_blob_store_or_create(ST_SEQUENCE_ID, &schemas[ST_SEQUENCE_IDX]);
-        // We create sequences last to get right the starting number
-        // so, we don't sort here
-        for (i, col) in ref_schemas.iter().flat_map(|x| &x.sequences).enumerate() {
-            // Start sequence from 1,
-            // to avoid any confusion with 0 as the autoinc sentinel value.
-            let sequence_id = (i + 1).into();
+        for seq in ref_schemas.iter().flat_map(|x| &x.sequences) {
             let row = StSequenceRow {
-                sequence_id,
-                sequence_name: col.sequence_name.clone(),
-                table_id: col.table_id,
-                col_pos: col.col_pos,
-                increment: col.increment,
-                min_value: col.min_value,
-                max_value: col.max_value,
-                // All sequences for system tables start from the reserved
-                // range + 1.
-                // Logically, we thus have used up the default pre-allocation
-                // and must allocate again on the next increment.
-                start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
-                allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
+                sequence_id: seq.sequence_id,
+                sequence_name: seq.sequence_name.clone(),
+                table_id: seq.table_id,
+                col_pos: seq.col_pos,
+                increment: seq.increment,
+                min_value: seq.min_value,
+                max_value: seq.max_value,
+                start: seq.start,
+                // In practice, this means we will actually start at start - 1, since `allocated`
+                // overrides start, but we keep these fields set this way to match databases
+                // that were bootstrapped before 1.4 and don't have a snapshot.
+                // This is covered with the test:
+                //   db::relational_db::tests::load_1_2_quickstart_without_snapshot_test
+                allocated: seq.start - 1,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_SEQUENCES.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_sequences.insert(pool, blob_store, &row))?;
+            st_sequences.insert(pool, blob_store, &row)?;
             // Increment row count for st_sequences
             with_label_values(ST_SEQUENCE_ID, ST_SEQUENCE_NAME).inc();
         }
 
-        self.reset_system_table_schemas()?;
-
+        // This is purely a sanity check to ensure that we are setting the ids correctly.
+        self.assert_system_table_schemas_match()?;
         Ok(())
     }
 
-    /// Compute the system table schemas from the system tables,
-    /// and store those schemas in the in-memory [`Table`] structures.
-    ///
-    /// Necessary during bootstrap because system tables include auto_inc IDs
-    /// for objects like indexes and constraints
-    /// which are computed at insert-time,
-    /// and therefore not included in the hardcoded schemas.
-    pub(super) fn reset_system_table_schemas(&mut self) -> Result<()> {
-        // Re-read the schema with the correct ids...
+    pub(super) fn assert_system_table_schemas_match(&self) -> Result<()> {
         for schema in system_tables() {
-            self.tables.get_mut(&schema.table_id).unwrap().schema =
-                Arc::new(self.schema_for_table_raw(schema.table_id)?);
-        }
+            let table_id = schema.table_id;
+            let in_memory = self
+                .tables
+                .get(&table_id)
+                .ok_or(TableError::IdNotFoundState(table_id))?
+                .schema
+                .clone();
+            let mut in_st_tables = self.schema_for_table_raw(table_id)?;
+            // We normalize so that the orders will match when checking for equality.
+            in_st_tables.normalize();
 
+            if *in_memory != in_st_tables {
+                return Err(anyhow!(
+                    "System table schema mismatch for table id {table_id}. Expected: {schema:?}, found: {:?}",
+                    in_memory
+                )
+                .into());
+            }
+        }
         Ok(())
     }
 
@@ -410,16 +371,14 @@ impl CommittedState {
         Ok(())
     }
 
-    pub(super) fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
+    /// Builds the in-memory state of sequences from `st_sequence` system table.
+    /// The tables store the lasted allocated value, which tells us where to start generating.
+    pub(super) fn build_sequence_state(&mut self) -> Result<SequencesState> {
+        let mut sequence_state = SequencesState::default();
         let st_sequences = self.tables.get(&ST_SEQUENCE_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
             let sequence = StSequenceRow::try_from(row_ref)?;
-            let mut seq = Sequence::new(sequence.into());
-
-            // Now we need to recover the last allocation value.
-            if seq.value < seq.allocated() + 1 {
-                seq.value = seq.allocated() + 1;
-            }
+            let seq = Sequence::new(sequence.clone().into(), Some(sequence.allocated));
 
             // Clobber any existing in-memory `Sequence`.
             // Such a value may exist because, when replaying without a snapshot,
@@ -434,7 +393,7 @@ impl CommittedState {
             // will correctly reflect the state after creating user tables.
             sequence_state.insert(seq);
         }
-        Ok(())
+        Ok(sequence_state)
     }
 
     pub(super) fn build_indexes(&mut self) -> Result<()> {

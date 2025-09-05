@@ -153,6 +153,7 @@ pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
 reqwest.workspace = true
+fs_extra.workspace = true
 
 [lints]
 workspace = true

@@ -32,6 +32,7 @@ use spacetimedb_schema::schema::{
 };
 use spacetimedb_table::table::RowRef;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::str::FromStr;
 use strum::Display;
 use v9::{RawModuleDefV9Builder, TableType};
@@ -72,7 +73,8 @@ pub(crate) const ST_VAR_NAME: &str = "st_var";
 pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
 /// Reserved range of sequence values used for system tables.
 ///
-/// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE + 1`.
+/// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE`.
+/// Versions before 1.4 started at one more that number.
 ///
 /// The range applies to all sequences allocated by system tables, i.e. table-,
 /// sequence-, index-, and constraint-ids.
@@ -109,8 +111,6 @@ pub fn system_tables() -> [TableSchema; 10] {
         st_var_schema(),
         st_scheduled_schema(),
         st_row_level_security_schema(),
-        // Is important this is always last, so the starting sequence for each
-        // system table is correct.
         st_sequence_schema(),
     ]
 }
@@ -149,7 +149,6 @@ pub(crate) const ST_CLIENT_IDX: usize = 5;
 pub(crate) const ST_VAR_IDX: usize = 6;
 pub(crate) const ST_SCHEDULED_IDX: usize = 7;
 pub(crate) const ST_ROW_LEVEL_SECURITY_IDX: usize = 8;
-// Must be the last index in the array.
 pub(crate) const ST_SEQUENCE_IDX: usize = 9;
 
 macro_rules! st_fields_enum {
@@ -400,13 +399,110 @@ lazy_static::lazy_static! {
     static ref SYSTEM_MODULE_DEF: ModuleDef = system_module_def();
 }
 
+lazy_static::lazy_static! {
+// We enumerate the constraints used by system tables here, so that we can assign them stable IDs.
+// When adding a new index, we just need to make sure we are incrementing the last ID used.
+    pub static ref CONSTRAINT_IDS: HashMap<&'static str, ConstraintId> = {
+        let mut m = HashMap::new();
+        m.insert("st_table_table_id_key", ConstraintId(1));
+        m.insert("st_table_table_name_key", ConstraintId(2));
+        m.insert("st_column_table_id_col_pos_key", ConstraintId(3));
+        m.insert("st_sequence_sequence_id_key", ConstraintId(4));
+        m.insert("st_index_index_id_key", ConstraintId(5));
+        m.insert("st_constraint_constraint_id_key", ConstraintId(6));
+        m.insert("st_client_identity_connection_id_key", ConstraintId(7));
+        m.insert("st_var_name_key", ConstraintId(8));
+        m.insert("st_scheduled_schedule_id_key", ConstraintId(9));
+        m.insert("st_scheduled_table_id_key", ConstraintId(10));
+        m.insert("st_row_level_security_sql_key", ConstraintId(11));
+        m
+    };
+}
+
+lazy_static::lazy_static! {
+// We enumerate the indexes used by system tables here, so that we can assign them stable IDs.
+// When adding a new index, we just need to make sure we are incrementing the last ID used.
+    pub static ref INDEX_IDS: HashMap<&'static str, IndexId> = {
+        let mut m = HashMap::new();
+        m.insert("st_table_table_id_idx_btree", IndexId(1));
+        m.insert("st_table_table_name_idx_btree", IndexId(2));
+        m.insert("st_column_table_id_col_pos_idx_btree", IndexId(3));
+        m.insert("st_sequence_sequence_id_idx_btree", IndexId(4));
+        m.insert("st_index_index_id_idx_btree", IndexId(5));
+        m.insert("st_constraint_constraint_id_idx_btree", IndexId(6));
+        m.insert("st_client_identity_connection_id_idx_btree", IndexId(7));
+        m.insert("st_var_name_idx_btree", IndexId(8));
+        m.insert("st_scheduled_schedule_id_idx_btree", IndexId(9));
+        m.insert("st_scheduled_table_id_idx_btree", IndexId(10));
+        m.insert("st_row_level_security_table_id_idx_btree", IndexId(11));
+        m.insert("st_row_level_security_sql_idx_btree", IndexId(12));
+        m
+    };
+}
+
+// We enumerate of the sequences used by system tables here, so that we can assign them stable IDs.
+// When adding a new sequence, we just need to make sure we are incrementing the last ID used.
+lazy_static::lazy_static! {
+    pub static ref SEQUENCE_IDS: HashMap<&'static str, SequenceId> = {
+        let mut m = HashMap::new();
+        m.insert("st_table_table_id_seq", SequenceId(1));
+        m.insert("st_index_index_id_seq", SequenceId(2));
+        m.insert("st_constraint_constraint_id_seq", SequenceId(3));
+        m.insert("st_scheduled_schedule_id_seq", SequenceId(4));
+        m.insert("st_sequence_sequence_id_seq", SequenceId(5));
+        m
+    };
+}
+
 fn st_schema(name: &str, id: TableId) -> TableSchema {
-    let result = TableSchema::from_module_def(
+    let mut result = TableSchema::from_module_def(
         &SYSTEM_MODULE_DEF,
         SYSTEM_MODULE_DEF.table(name).expect("missing system table definition"),
         (),
         id,
     );
+    // The result we get will have sentinel ids filled in the constraints, indexes, and sequences.
+    // We replace them here with stable values in the reserved range.
+    for index in &mut result.indexes {
+        index.index_id = INDEX_IDS.get(&index.index_name[..]).copied().unwrap_or_else(|| {
+            panic!(
+                "missing system table index id for index {} of table {}",
+                index.index_name, result.table_name
+            )
+        });
+    }
+    for constraint in &mut result.constraints {
+        constraint.constraint_id = CONSTRAINT_IDS
+            .get(&constraint.constraint_name[..])
+            .copied()
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing system table constraint id for constraint {} of table {}",
+                    constraint.constraint_name, result.table_name
+                )
+            });
+    }
+    for sequence in &mut result.sequences {
+        sequence.sequence_id = SEQUENCE_IDS
+            .get(&sequence.sequence_name[..])
+            .copied()
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing system table sequence id for sequence {} of table {}",
+                    sequence.sequence_name, result.table_name
+                )
+            });
+        sequence.start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
+        // sequence.allocated = ST_RESERVED_SEQUENCE_RANGE as i128;
+    }
+    if let Some(sch) = result.schedule {
+        panic!(
+            "system tables cannot have schedules, but table {}: {sch:?}",
+            result.table_name
+        );
+    }
+    result.normalize();
+    // Note, if we ever added system tables with schedules, we would need to set their IDs here too.
     result
 }
 
@@ -681,9 +777,13 @@ pub struct StSequenceRow {
     pub table_id: TableId,
     pub col_pos: ColId,
     pub increment: i128,
+    // The original starting value of this sequence.
+    // This is actually not useful, since allocated tells us where to start generating new values.
     pub start: i128,
     pub min_value: i128,
     pub max_value: i128,
+    // Allocated is a lower bound on the next value of the sequence.
+    // This exists so that we don't need to update this row every time we allocate a value from the sequence.
     pub allocated: i128,
 }
 
@@ -711,7 +811,6 @@ impl From<StSequenceRow> for SequenceSchema {
             increment: sequence.increment,
             min_value: sequence.min_value,
             max_value: sequence.max_value,
-            allocated: sequence.allocated,
         }
     }
 }
@@ -1144,6 +1243,111 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_index_ids_are_unique() {
+        let mut ids = std::collections::HashSet::new();
+        for table in system_tables() {
+            for index in table.indexes.iter() {
+                assert!(
+                    ids.insert(index.index_id),
+                    "duplicate index id {:?} for index {}",
+                    index.index_id,
+                    index.index_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_index_ids_are_valid() {
+        for table in system_tables() {
+            for index in table.indexes.iter() {
+                assert!(
+                    index.index_id.0 < ST_RESERVED_SEQUENCE_RANGE,
+                    "index id {:?} for index {} is too large for reserved range",
+                    index.index_id,
+                    index.index_name
+                );
+                assert_ne!(
+                    index.index_id,
+                    IndexId::SENTINEL,
+                    "index {} has the sentinel id",
+                    index.index_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_constraint_ids_are_valid() {
+        for table in system_tables() {
+            for constraint in table.constraints.iter() {
+                assert!(
+                    constraint.constraint_id.0 < ST_RESERVED_SEQUENCE_RANGE,
+                    "id {:?} for constraint {} is too large for reserved range",
+                    constraint.constraint_id,
+                    constraint.constraint_name
+                );
+                assert_ne!(
+                    constraint.constraint_id,
+                    ConstraintId::SENTINEL,
+                    "constraint {} has the sentinel id",
+                    constraint.constraint_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_constraint_ids_are_unique() {
+        let mut ids = std::collections::HashSet::new();
+        for table in system_tables() {
+            for constraint in table.constraints.iter() {
+                assert!(
+                    ids.insert(constraint.constraint_id),
+                    "duplicate id {:?} for constraint {}",
+                    constraint.constraint_id,
+                    constraint.constraint_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_sequence_ids_are_valid() {
+        for table in system_tables() {
+            for sequence in table.sequences.iter() {
+                assert!(
+                    sequence.sequence_id.0 < ST_RESERVED_SEQUENCE_RANGE,
+                    "id {:?} for sequence {} is too large for reserved range",
+                    sequence.sequence_id,
+                    sequence.sequence_name
+                );
+                assert_ne!(
+                    sequence.sequence_id,
+                    SequenceId::SENTINEL,
+                    "sequence {} has the sentinel id",
+                    sequence.sequence_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_sequence_ids_are_unique() {
+        let mut ids = std::collections::HashSet::new();
+        for table in system_tables() {
+            for sequence in table.sequences.iter() {
+                assert!(
+                    ids.insert(sequence.sequence_id),
+                    "duplicate id {:?} for sequence {}",
+                    sequence.sequence_id,
+                    sequence.sequence_name
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_sequences_within_reserved_range() {
         let mut num_tables = 0;
         let mut num_indexes = 0;
@@ -1158,19 +1362,19 @@ mod tests {
         }
 
         assert!(
-            num_tables <= ST_RESERVED_SEQUENCE_RANGE,
+            num_tables < ST_RESERVED_SEQUENCE_RANGE,
             "number of system tables exceeds reserved sequence range"
         );
         assert!(
-            num_indexes <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            num_indexes < ST_RESERVED_SEQUENCE_RANGE as usize,
             "number of system indexes exceeds reserved sequence range"
         );
         assert!(
-            num_constraints <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            num_constraints < ST_RESERVED_SEQUENCE_RANGE as usize,
             "number of system constraints exceeds reserved sequence range"
         );
         assert!(
-            num_sequences <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            num_sequences < ST_RESERVED_SEQUENCE_RANGE as usize,
             "number of system sequences exceeds reserved sequence range"
         );
     }

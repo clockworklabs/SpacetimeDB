@@ -850,14 +850,12 @@ pub struct SequenceSchema {
     pub col_pos: ColId,
     /// The increment value for the sequence.
     pub increment: i128,
-    /// The starting value for the sequence.
+    /// The initial value to be returned by this sequence.
     pub start: i128,
     /// The minimum value for the sequence.
     pub min_value: i128,
     /// The maximum value for the sequence.
     pub max_value: i128,
-    /// How many values have already been allocated for the sequence.
-    pub allocated: i128,
 }
 
 impl Schema for SequenceSchema {
@@ -877,7 +875,7 @@ impl Schema for SequenceSchema {
             start: def.start.unwrap_or(1),
             min_value: def.min_value.unwrap_or(1),
             max_value: def.max_value.unwrap_or(i128::MAX),
-            allocated: 0, // TODO: information not available in the `Def`s anymore, which is correct, but this may need to be overridden later.
+            // allocated: 0, // TODO: information not available in the `Def`s anymore, which is correct, but this may need to be overridden later.
         }
     }
 
