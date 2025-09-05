@@ -112,6 +112,13 @@ impl<K: MemoryUsage + Eq + core::hash::Hash, V: MemoryUsage, S: core::hash::Buil
     }
 }
 
+#[cfg(feature = "hashbrown")]
+impl<K: MemoryUsage + Eq + core::hash::Hash, S: core::hash::BuildHasher> MemoryUsage for hashbrown::HashSet<K, S> {
+    fn heap_usage(&self) -> usize {
+        self.allocation_size() + self.iter().map(|k| k.heap_usage()).sum::<usize>()
+    }
+}
+
 impl<K: MemoryUsage, V: MemoryUsage> MemoryUsage for std::collections::BTreeMap<K, V> {
     fn heap_usage(&self) -> usize {
         // NB: this is best-effort, since we don't have a `capacity()` method on `BTreeMap`.
