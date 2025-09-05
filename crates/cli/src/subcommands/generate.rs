@@ -82,7 +82,7 @@ pub fn cli() -> clap::Command {
                 .long("module-name")
                 .help("The module name that should be used for DLL export macros (required for lang unrealcpp)")
                 .required_if_eq("lang", "unrealcpp")
-        )        
+        )
         .arg(
             Arg::new("lang")
                 .required(true)
@@ -105,7 +105,7 @@ pub fn cli() -> clap::Command {
             clap::ArgGroup::new("output_dir")
                 .args(["out_dir", "uproject_dir"])
                 .required(true)
-        )        
+        )
 }
 
 pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -189,7 +189,7 @@ pub async fn exec_ex(
         paths.insert(path);
     }
 
-    // For Unreal, we want to clean up just the module directory, not the entire uproject directory tree. 
+    // For Unreal, we want to clean up just the module directory, not the entire uproject directory tree.
     let cleanup_root = match lang {
         Language::UnrealCpp => out_dir.join("Source").join(module_name.as_ref().unwrap()),
         _ => out_dir.clone(),
@@ -276,10 +276,10 @@ impl Language {
             Language::Csharp => dotnet_format(generated_files)?,
             Language::TypeScript => {
                 // TODO: implement formatting.
-            },
+            }
             Language::UnrealCpp => {
                 // TODO: implement formatting.
-            }            
+            }
         }
 
         Ok(())

@@ -1,14 +1,13 @@
+use serial_test::serial;
 use spacetimedb_testing::sdk::Test;
 use std::env;
 use std::path::{Path, PathBuf};
-use serial_test::serial;
 
 const MODULE: &str = "sdk-test"; // Spacetime module name in SpacetimeDB/modules
 const UNREAL_MODULE: &str = "TestClient"; // Unreal C++ module target for codegen
 const CLIENT_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/TestClient");
 const UPROJECT_FILE: &str = "TestClient.uproject";
 const LANGUAGE: &str = "unrealcpp"; // Language for SpacetimeDB codegen
-
 
 /// Panics if the file does not exist
 fn assert_existing_file<P: AsRef<Path>>(label: &str, path: P) {
@@ -46,7 +45,7 @@ fn ue_build_script() -> String {
     let path = if cfg!(target_os = "windows") {
         root.join("Engine/Build/BatchFiles/Build.bat")
     } else {
-        root.join("Engine/Build/BatchFiles/Build.sh")
+        root.join("Engine/Build/BatchFiles/Linux/Build.sh")
     };
     normalize_path(path)
 }
@@ -61,39 +60,36 @@ fn ue_root() -> PathBuf {
 }
 
 fn make_test(test_name: &str) -> Test {
-
     let build_script = ue_build_script();
     let editor_exe = ue_editor_exe();
 
     assert_existing_file("Unreal build script", &build_script);
     assert_existing_file("Unreal Editor executable", &editor_exe);
 
-
     let client_root = normalize_path(PathBuf::from(CLIENT_ROOT));
     let uproject_path = normalize_path(PathBuf::from(format!("{}/{}", client_root, UPROJECT_FILE)));
     assert_existing_file("uproject", &uproject_path);
 
-
     // Headless compile (no cook)
     let compile_command = if cfg!(target_os = "windows") {
-    format!(
-        "\"{}\" {}Editor Win64 Development \"{}\" -waitmutex -skipbuildengine",
-        build_script, UNREAL_MODULE, uproject_path
-    )
-} else {
-    format!(
-        "\"{}\" {}Editor Linux Development \"{}\" -skipbuildengine",
-        build_script, UNREAL_MODULE, uproject_path
-    )
-};
+        format!(
+            "\"{}\" {}Editor Win64 Development \"{}\" -waitmutex -skipbuildengine",
+            build_script, UNREAL_MODULE, uproject_path
+        )
+    } else {
+        format!(
+            "\"{}\" {}Editor Linux Development \"{}\" -skipbuildengine",
+            build_script, UNREAL_MODULE, uproject_path
+        )
+    };
 
     // Run automation test
     let run_command = format!(
-    "\"{}\" \"{}\" -NullRHI -Unattended -NoSound -nop4 -NoSplash -ExecCmds=\"Automation RunTests {}; Quit\"",
-    editor_exe,
-    uproject_path,
-    format!("SpacetimeDB.TestClient.{test_name}")
-);
+        "\"{}\" \"{}\" -NullRHI -Unattended -NoSound -nop4 -NoSplash -ExecCmds=\"Automation RunTests {}; Quit\"",
+        editor_exe,
+        uproject_path,
+        format!("SpacetimeDB.TestClient.{test_name}")
+    );
 
     println!("------------------");
     println!("with_name: {}", test_name);
@@ -119,8 +115,6 @@ fn make_test(test_name: &str) -> Test {
         .build()
 }
 
-
-
 // Below shows examples on how to use the serial and parallel attributes for tests
 
 //#[test]
@@ -135,7 +129,6 @@ fn make_test(test_name: &str) -> Test {
 //  // Do things
 //}
 
-
 //#[test]
 //#[parallel]
 //fn test_parallel_another() {
@@ -143,63 +136,63 @@ fn make_test(test_name: &str) -> Test {
 //}
 
 //48 tests → 6 groups → 8 per group (where possible)
-//Gouping added for performace 
+//Gouping added for performace
 // ---------------- GROUP 1 ----------------
 
- #[test]
- #[serial(Group1)]
- fn insert_primitive() {
-     make_test("InsertPrimitiveTest").run();
- }
+#[test]
+#[serial(Group1)]
+fn insert_primitive() {
+    make_test("InsertPrimitiveTest").run();
+}
 
- #[test]
- #[serial(Group1)]
- fn subscribe_and_cancel() {
-     make_test("SubscribeAndCancelTest").run();
- }
+#[test]
+#[serial(Group1)]
+fn subscribe_and_cancel() {
+    make_test("SubscribeAndCancelTest").run();
+}
 
- #[test]
- #[serial(Group1)]
- fn subscribe_and_unsubscribe() {
-     make_test("SubscribeAndUnsubscribeTest").run();
- }
+#[test]
+#[serial(Group1)]
+fn subscribe_and_unsubscribe() {
+    make_test("SubscribeAndUnsubscribeTest").run();
+}
 
- #[test]
- #[serial(Group1)]
- fn subscription_error_smoke_test() {
-     make_test("SubscriptionErrorSmokeTest").run();
- }
+#[test]
+#[serial(Group1)]
+fn subscription_error_smoke_test() {
+    make_test("SubscriptionErrorSmokeTest").run();
+}
 
- #[test]
- #[serial(Group1)]
- fn delete_primitive() {
-     make_test("DeletePrimitiveTest").run();
- }
+#[test]
+#[serial(Group1)]
+fn delete_primitive() {
+    make_test("DeletePrimitiveTest").run();
+}
 
- #[test]
- #[serial(Group1)]
- fn update_primitive() {
-     make_test("UpdatePrimitiveTest").run();
- }
+#[test]
+#[serial(Group1)]
+fn update_primitive() {
+    make_test("UpdatePrimitiveTest").run();
+}
 
- #[test]
- #[serial(Group1)]
- fn insert_identity() {
-     make_test("InsertIdentityTest").run();
- }
+#[test]
+#[serial(Group1)]
+fn insert_identity() {
+    make_test("InsertIdentityTest").run();
+}
 
- #[test]
- #[serial(Group1)]
- fn insert_caller_identity() {
-     make_test("InsertCallerIdentityTest").run();
- }
+#[test]
+#[serial(Group1)]
+fn insert_caller_identity() {
+    make_test("InsertCallerIdentityTest").run();
+}
 
 // ---------------- GROUP 2 ----------------
- #[test]
- #[serial(Group2)]
- fn delete_identity() {
-     make_test("DeleteIdentityTest").run();
- }
+#[test]
+#[serial(Group2)]
+fn delete_identity() {
+    make_test("DeleteIdentityTest").run();
+}
 
 #[test]
 #[serial(Group2)]
@@ -207,78 +200,78 @@ fn update_identity() {
     make_test("UpdateIdentityTest").run();
 }
 
- #[test]
- #[serial(Group2)]
- fn insert_connection_id() {
-     make_test("InsertConnectionIdTest").run();
- }
+#[test]
+#[serial(Group2)]
+fn insert_connection_id() {
+    make_test("InsertConnectionIdTest").run();
+}
 
- #[test]
- #[serial(Group2)]
- fn insert_caller_connection_id() {
-     make_test("InsertCallerConnectionIdTest").run();
- }
+#[test]
+#[serial(Group2)]
+fn insert_caller_connection_id() {
+    make_test("InsertCallerConnectionIdTest").run();
+}
 
- #[test]
- #[serial(Group2)]
- fn delete_connection_id() {
-     make_test("DeleteConnectionIdTest").run();
- }
+#[test]
+#[serial(Group2)]
+fn delete_connection_id() {
+    make_test("DeleteConnectionIdTest").run();
+}
 
- #[test]
- #[serial(Group2)]
- fn update_connection_id() {
-     make_test("UpdateConnectionIdTest").run();
- }
+#[test]
+#[serial(Group2)]
+fn update_connection_id() {
+    make_test("UpdateConnectionIdTest").run();
+}
 
- #[test]
- #[serial(Group2)]
- fn insert_timestamp() {
-     make_test("InsertTimestampTest").run();
- }
+#[test]
+#[serial(Group2)]
+fn insert_timestamp() {
+    make_test("InsertTimestampTest").run();
+}
 
- #[test]
- #[serial(Group2)]
- fn insert_call_timestamp() {
-     make_test("InsertCallTimestampTest").run();
- }
+#[test]
+#[serial(Group2)]
+fn insert_call_timestamp() {
+    make_test("InsertCallTimestampTest").run();
+}
 
 // ---------------- GROUP 3 ----------------
- #[test]
- #[serial(Group3)]
- fn on_reducer() {
-     make_test("OnReducerTest").run();
- }
+#[test]
+#[serial(Group3)]
+fn on_reducer() {
+    make_test("OnReducerTest").run();
+}
 
- #[test]
- #[serial(Group3)]
- fn fail_reducer() {
-     make_test("FailReducerTest").run();
- }
+#[test]
+#[serial(Group3)]
+fn fail_reducer() {
+    make_test("FailReducerTest").run();
+}
 
- #[test]
- #[serial(Group3)]
- fn insert_vec() {
-     make_test("InsertVecTest").run();
- }
+#[test]
+#[serial(Group3)]
+fn insert_vec() {
+    make_test("InsertVecTest").run();
+}
 
- #[test]
- #[serial(Group3)]
- fn insert_option_some() {
-     make_test("InsertOptionSomeTest").run();
- }
+#[test]
+#[serial(Group3)]
+fn insert_option_some() {
+    make_test("InsertOptionSomeTest").run();
+}
 
- #[test]
- #[serial(Group3)]
- fn insert_option_none() {
-     make_test("InsertOptionNoneTest").run();
- }
+#[test]
+#[serial(Group3)]
+fn insert_option_none() {
+    make_test("InsertOptionNoneTest").run();
+}
 
- #[test]
- #[serial(Group3)]
- fn insert_struct() {
-     make_test("InsertStructTest").run();
- }
+#[test]
+#[serial(Group3)]
+fn insert_struct() {
+    make_test("InsertStructTest").run();
+}
 
 #[test]
 #[serial(Group3)]
@@ -293,24 +286,24 @@ fn insert_enum_with_payload() {
 }
 
 // ---------------- GROUP 4 ----------------
- #[test]
- #[serial(Group4)]
- fn insert_delete_large_table() {
-     make_test("InsertDeleteLargeTableTest").run();
- }
+#[test]
+#[serial(Group4)]
+fn insert_delete_large_table() {
+    make_test("InsertDeleteLargeTableTest").run();
+}
 
- #[test]
- #[serial(Group4)]
- fn insert_primitives_as_strings() {
-     make_test("InsertPrimitivesAsStringsTest").run();
- }
+#[test]
+#[serial(Group4)]
+fn insert_primitives_as_strings() {
+    make_test("InsertPrimitivesAsStringsTest").run();
+}
 
- #[test]
- #[serial(Group4)]
- fn reauth() {
-     make_test("ReauthPart1Test").run();
-     make_test("ReauthPart2Test").run();
- }
+#[test]
+#[serial(Group4)]
+fn reauth() {
+    make_test("ReauthPart1Test").run();
+    make_test("ReauthPart2Test").run();
+}
 
 #[test]
 #[should_panic]
@@ -325,11 +318,11 @@ fn caller_always_notified() {
     make_test("CallerAlwaysNotifiedTest").run();
 }
 
- #[test]
- #[serial(Group4)]
- fn subscribe_all_select_star() {
-     make_test("SubscribeAllSelectStarTest").run();
- }
+#[test]
+#[serial(Group4)]
+fn subscribe_all_select_star() {
+    make_test("SubscribeAllSelectStarTest").run();
+}
 
 // ---------------- GROUP 5 ----------------
 #[test]
@@ -338,17 +331,17 @@ fn row_deduplication() {
     make_test("RowDeduplicationTest").run();
 }
 
- #[test]
- #[serial(Group5)]
- fn row_deduplication_join_r_and_s() {
-     make_test("RowDeduplicationJoinRAndSTest").run();
- }
+#[test]
+#[serial(Group5)]
+fn row_deduplication_join_r_and_s() {
+    make_test("RowDeduplicationJoinRAndSTest").run();
+}
 
- #[test]
- #[serial(Group5)]
- fn row_deduplication_r_join_s_and_r_joint() {
-     make_test("RowDeduplicationRJoinSAndRJoinTTest").run();
- }
+#[test]
+#[serial(Group5)]
+fn row_deduplication_r_join_s_and_r_joint() {
+    make_test("RowDeduplicationRJoinSAndRJoinTTest").run();
+}
 
 #[test]
 #[serial(Group5)]
@@ -356,17 +349,17 @@ fn test_lhs_join_update() {
     make_test("LhsJoinUpdateTest").run();
 }
 
- #[test]
- #[serial(Group5)]
- fn test_lhs_join_update_disjoint_queries() {
-     make_test("LhsJoinUpdateDisjointQueriesTest").run();
- }
+#[test]
+#[serial(Group5)]
+fn test_lhs_join_update_disjoint_queries() {
+    make_test("LhsJoinUpdateDisjointQueriesTest").run();
+}
 
- #[test]
- #[serial(Group5)]
- fn test_intra_query_bag_semantics_for_join() {
-     make_test("IntraQueryBagSemanticsForJoinTest").run();
- }
+#[test]
+#[serial(Group5)]
+fn test_intra_query_bag_semantics_for_join() {
+    make_test("IntraQueryBagSemanticsForJoinTest").run();
+}
 
 // ---------------- GROUP 6 ----------------
 #[test]
@@ -375,17 +368,17 @@ fn test_parameterized_subscription() {
     make_test("ParameterizedSubscriptionTest").run();
 }
 
- #[test]
- #[serial(Group6)]
- fn test_rls_subscription() {
-     make_test("RlsSubscriptionTest").run();
- }
+#[test]
+#[serial(Group6)]
+fn test_rls_subscription() {
+    make_test("RlsSubscriptionTest").run();
+}
 
- #[test]
- #[serial(Group6)]
- fn pk_simple_enum() {
-     make_test("PkSimpleEnumTest").run();
- }
+#[test]
+#[serial(Group6)]
+fn pk_simple_enum() {
+    make_test("PkSimpleEnumTest").run();
+}
 
 #[test]
 #[serial(Group6)]
@@ -393,8 +386,8 @@ fn indexed_simple_enum() {
     make_test("IndexedSimpleEnumTest").run();
 }
 
- #[test]
- #[serial(Group6)]
- fn overlapping_subscriptions() {
-     make_test("OverlappingSubscriptionsTest").run();
- }
+#[test]
+#[serial(Group6)]
+fn overlapping_subscriptions() {
+    make_test("OverlappingSubscriptionsTest").run();
+}

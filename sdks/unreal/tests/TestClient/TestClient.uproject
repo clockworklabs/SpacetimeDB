@@ -19,8 +19,7 @@
 			]
 		}
 	],
-		"_Note": "Plugin path is hardcoded. Make sure to point to your SpacetimeDB plugin roots directory, exact location.",
 		"AdditionalPluginDirectories": [
-			"E:/Projects/ClockworkLabs/SpacetimeDB-unreal/crates/sdk-unreal/src"
+			"../../src"
 	]
 }
