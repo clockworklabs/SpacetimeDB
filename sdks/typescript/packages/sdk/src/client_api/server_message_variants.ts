@@ -3,11 +3,11 @@
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -27,15 +27,35 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
 import { InitialSubscription as InitialSubscriptionType } from './initial_subscription_type';
+// Mark import as potentially unused
+declare type __keep_InitialSubscriptionType = InitialSubscriptionType;
 import { TransactionUpdate as TransactionUpdateType } from './transaction_update_type';
+// Mark import as potentially unused
+declare type __keep_TransactionUpdateType = TransactionUpdateType;
 import { TransactionUpdateLight as TransactionUpdateLightType } from './transaction_update_light_type';
+// Mark import as potentially unused
+declare type __keep_TransactionUpdateLightType = TransactionUpdateLightType;
 import { IdentityToken as IdentityTokenType } from './identity_token_type';
+// Mark import as potentially unused
+declare type __keep_IdentityTokenType = IdentityTokenType;
 import { OneOffQueryResponse as OneOffQueryResponseType } from './one_off_query_response_type';
+// Mark import as potentially unused
+declare type __keep_OneOffQueryResponseType = OneOffQueryResponseType;
 import { SubscribeApplied as SubscribeAppliedType } from './subscribe_applied_type';
+// Mark import as potentially unused
+declare type __keep_SubscribeAppliedType = SubscribeAppliedType;
 import { UnsubscribeApplied as UnsubscribeAppliedType } from './unsubscribe_applied_type';
+// Mark import as potentially unused
+declare type __keep_UnsubscribeAppliedType = UnsubscribeAppliedType;
 import { SubscriptionError as SubscriptionErrorType } from './subscription_error_type';
+// Mark import as potentially unused
+declare type __keep_SubscriptionErrorType = SubscriptionErrorType;
 import { SubscribeMultiApplied as SubscribeMultiAppliedType } from './subscribe_multi_applied_type';
+// Mark import as potentially unused
+declare type __keep_SubscribeMultiAppliedType = SubscribeMultiAppliedType;
 import { UnsubscribeMultiApplied as UnsubscribeMultiAppliedType } from './unsubscribe_multi_applied_type';
+// Mark import as potentially unused
+declare type __keep_UnsubscribeMultiAppliedType = UnsubscribeMultiAppliedType;
 
 export type InitialSubscription = {
   tag: 'InitialSubscription';

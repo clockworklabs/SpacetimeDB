@@ -3,11 +3,11 @@
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -27,8 +27,14 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
 import { UpdateStatus } from './update_status_type';
+// Mark import as potentially unused
+declare type __keep_UpdateStatus = UpdateStatus;
 import { ReducerCallInfo } from './reducer_call_info_type';
+// Mark import as potentially unused
+declare type __keep_ReducerCallInfo = ReducerCallInfo;
 import { EnergyQuanta } from './energy_quanta_type';
+// Mark import as potentially unused
+declare type __keep_EnergyQuanta = EnergyQuanta;
 
 export type TransactionUpdate = {
   status: UpdateStatus;

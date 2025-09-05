@@ -3,11 +3,11 @@
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -27,6 +27,8 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
 import { OneOffTable } from './one_off_table_type';
+// Mark import as potentially unused
+declare type __keep_OneOffTable = OneOffTable;
 
 export type OneOffQueryResponse = {
   messageId: Uint8Array;

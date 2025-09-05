@@ -8,11 +8,11 @@ expression: outfiles
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -70,11 +70,11 @@ export default AddPlayer;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -132,11 +132,11 @@ export default AddPrivate;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -196,11 +196,11 @@ export default Add;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -255,11 +255,11 @@ export default AssertCallerIdentityIsModuleIdentity;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -318,11 +318,11 @@ export default Baz;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -377,11 +377,11 @@ export default ClientConnected;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -439,11 +439,11 @@ export default DeletePlayer;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -501,11 +501,11 @@ export default DeletePlayersByName;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -525,6 +525,8 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Baz } from "./baz_type";
+// Mark import as potentially unused
+declare type __keep_Baz = Baz;
 
 import * as FoobarVariants from './foobar_variants'
 
@@ -575,11 +577,11 @@ export default Foobar;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -599,6 +601,8 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Baz as BazType } from "./baz_type";
+// Mark import as potentially unused
+declare type __keep_BazType = BazType;
 
 
 export type Baz = { tag: "Baz", value: BazType };
@@ -612,11 +616,11 @@ export type Har = { tag: "Har", value: number };
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -637,6 +641,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { HasSpecialStuff } from "./has_special_stuff_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `has_special_stuff`.
@@ -686,11 +691,11 @@ export class HasSpecialStuffTableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -753,11 +758,11 @@ VERSION_COMMENT
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -1057,7 +1062,7 @@ export class RemoteReducers {
   add(name: string, age: number) {
     const __args = { name, age };
     let __writer = new __BinaryWriter(1024);
-    Add.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    Add.serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("add", __argsBuffer, this.setCallReducerFlags.addFlags);
   }
@@ -1073,7 +1078,7 @@ export class RemoteReducers {
   addPlayer(name: string) {
     const __args = { name };
     let __writer = new __BinaryWriter(1024);
-    AddPlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    AddPlayer.serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("add_player", __argsBuffer, this.setCallReducerFlags.addPlayerFlags);
   }
@@ -1089,7 +1094,7 @@ export class RemoteReducers {
   addPrivate(name: string) {
     const __args = { name };
     let __writer = new __BinaryWriter(1024);
-    AddPrivate.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    AddPrivate.serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("add_private", __argsBuffer, this.setCallReducerFlags.addPrivateFlags);
   }
@@ -1125,7 +1130,7 @@ export class RemoteReducers {
   deletePlayer(id: bigint) {
     const __args = { id };
     let __writer = new __BinaryWriter(1024);
-    DeletePlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    DeletePlayer.serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("delete_player", __argsBuffer, this.setCallReducerFlags.deletePlayerFlags);
   }
@@ -1141,7 +1146,7 @@ export class RemoteReducers {
   deletePlayersByName(name: string) {
     const __args = { name };
     let __writer = new __BinaryWriter(1024);
-    DeletePlayersByName.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    DeletePlayersByName.serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("delete_players_by_name", __argsBuffer, this.setCallReducerFlags.deletePlayersByNameFlags);
   }
@@ -1157,7 +1162,7 @@ export class RemoteReducers {
   listOverAge(age: number) {
     const __args = { age };
     let __writer = new __BinaryWriter(1024);
-    ListOverAge.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    ListOverAge.serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("list_over_age", __argsBuffer, this.setCallReducerFlags.listOverAgeFlags);
   }
@@ -1197,7 +1202,7 @@ export class RemoteReducers {
   repeatingTest(arg: RepeatingTestArg) {
     const __args = { arg };
     let __writer = new __BinaryWriter(1024);
-    RepeatingTest.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    RepeatingTest.serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("repeating_test", __argsBuffer, this.setCallReducerFlags.repeatingTestFlags);
   }
@@ -1225,7 +1230,7 @@ export class RemoteReducers {
   test(arg: TestA, arg2: TestB, arg3: NamespaceTestC, arg4: NamespaceTestF) {
     const __args = { arg, arg2, arg3, arg4 };
     let __writer = new __BinaryWriter(1024);
-    Test.getTypeScriptAlgebraicType().serialize(__writer, __args);
+    Test.serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("test", __argsBuffer, this.setCallReducerFlags.testFlags);
   }
@@ -1324,51 +1329,63 @@ export class RemoteTables {
   constructor(private connection: __DbConnectionImpl) {}
 
   get hasSpecialStuff(): HasSpecialStuffTableHandle {
-    return new HasSpecialStuffTableHandle(this.connection.clientCache.getOrCreateTable<HasSpecialStuff>(REMOTE_MODULE.tables.has_special_stuff));
+    // clientCache is a private property
+    return new HasSpecialStuffTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<HasSpecialStuff>(REMOTE_MODULE.tables.has_special_stuff));
   }
 
   get loggedOutPlayer(): LoggedOutPlayerTableHandle {
-    return new LoggedOutPlayerTableHandle(this.connection.clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.logged_out_player));
+    // clientCache is a private property
+    return new LoggedOutPlayerTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.logged_out_player));
   }
 
   get person(): PersonTableHandle {
-    return new PersonTableHandle(this.connection.clientCache.getOrCreateTable<Person>(REMOTE_MODULE.tables.person));
+    // clientCache is a private property
+    return new PersonTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Person>(REMOTE_MODULE.tables.person));
   }
 
   get pkMultiIdentity(): PkMultiIdentityTableHandle {
-    return new PkMultiIdentityTableHandle(this.connection.clientCache.getOrCreateTable<PkMultiIdentity>(REMOTE_MODULE.tables.pk_multi_identity));
+    // clientCache is a private property
+    return new PkMultiIdentityTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<PkMultiIdentity>(REMOTE_MODULE.tables.pk_multi_identity));
   }
 
   get player(): PlayerTableHandle {
-    return new PlayerTableHandle(this.connection.clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.player));
+    // clientCache is a private property
+    return new PlayerTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.player));
   }
 
   get points(): PointsTableHandle {
-    return new PointsTableHandle(this.connection.clientCache.getOrCreateTable<Point>(REMOTE_MODULE.tables.points));
+    // clientCache is a private property
+    return new PointsTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Point>(REMOTE_MODULE.tables.points));
   }
 
   get privateTable(): PrivateTableTableHandle {
-    return new PrivateTableTableHandle(this.connection.clientCache.getOrCreateTable<PrivateTable>(REMOTE_MODULE.tables.private_table));
+    // clientCache is a private property
+    return new PrivateTableTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<PrivateTable>(REMOTE_MODULE.tables.private_table));
   }
 
   get repeatingTestArg(): RepeatingTestArgTableHandle {
-    return new RepeatingTestArgTableHandle(this.connection.clientCache.getOrCreateTable<RepeatingTestArg>(REMOTE_MODULE.tables.repeating_test_arg));
+    // clientCache is a private property
+    return new RepeatingTestArgTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<RepeatingTestArg>(REMOTE_MODULE.tables.repeating_test_arg));
   }
 
   get testA(): TestATableHandle {
-    return new TestATableHandle(this.connection.clientCache.getOrCreateTable<TestA>(REMOTE_MODULE.tables.test_a));
+    // clientCache is a private property
+    return new TestATableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestA>(REMOTE_MODULE.tables.test_a));
   }
 
   get testD(): TestDTableHandle {
-    return new TestDTableHandle(this.connection.clientCache.getOrCreateTable<TestD>(REMOTE_MODULE.tables.test_d));
+    // clientCache is a private property
+    return new TestDTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestD>(REMOTE_MODULE.tables.test_d));
   }
 
   get testE(): TestETableHandle {
-    return new TestETableHandle(this.connection.clientCache.getOrCreateTable<TestE>(REMOTE_MODULE.tables.test_e));
+    // clientCache is a private property
+    return new TestETableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestE>(REMOTE_MODULE.tables.test_e));
   }
 
   get testF(): TestFTableHandle {
-    return new TestFTableHandle(this.connection.clientCache.getOrCreateTable<TestFoobar>(REMOTE_MODULE.tables.test_f));
+    // clientCache is a private property
+    return new TestFTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestFoobar>(REMOTE_MODULE.tables.test_f));
   }
 }
 
@@ -1394,11 +1411,11 @@ export type ErrorContext = __ErrorContextInterface<RemoteTables, RemoteReducers,
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -1456,11 +1473,11 @@ export default ListOverAge;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -1515,11 +1532,11 @@ export default LogModuleIdentity;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -1540,6 +1557,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { Player } from "./player_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `logged_out_player`.
@@ -1663,11 +1681,11 @@ export class LoggedOutPlayerTableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -1732,11 +1750,11 @@ export default NamespaceTestC;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -1766,11 +1784,11 @@ export type Bar = { tag: "Bar" };
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -1838,11 +1856,11 @@ export default NamespaceTestF;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -1873,11 +1891,11 @@ export type Baz = { tag: "Baz", value: string };
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -1898,6 +1916,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { Person } from "./person_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `person`.
@@ -1977,11 +1996,11 @@ export class PersonTableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2044,11 +2063,11 @@ export default Person;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2069,6 +2088,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { PkMultiIdentity } from "./pk_multi_identity_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `pk_multi_identity`.
@@ -2170,11 +2190,11 @@ export class PkMultiIdentityTableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2235,11 +2255,11 @@ export default PkMultiIdentity;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2260,6 +2280,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { Player } from "./player_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `player`.
@@ -2383,11 +2404,11 @@ export class PlayerTableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2450,11 +2471,11 @@ export default Player;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2515,11 +2536,11 @@ export default Point;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2540,6 +2561,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { Point } from "./point_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `points`.
@@ -2589,11 +2611,11 @@ export class PointsTableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2614,6 +2636,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { PrivateTable } from "./private_table_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `private_table`.
@@ -2663,11 +2686,11 @@ export class PrivateTableTableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2726,11 +2749,11 @@ export default PrivateTable;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2785,11 +2808,11 @@ export default QueryPrivate;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2810,6 +2833,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { RepeatingTestArg } from "./repeating_test_arg_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `repeating_test_arg`.
@@ -2889,11 +2913,11 @@ export class RepeatingTestArgTableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2956,11 +2980,11 @@ export default RepeatingTestArg;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -2981,6 +3005,8 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 
 import { RepeatingTestArg } from "./repeating_test_arg_type";
+// Mark import as potentially unused
+declare type __keep_RepeatingTestArg = RepeatingTestArg;
 
 export type RepeatingTest = {
   arg: RepeatingTestArg,
@@ -3020,11 +3046,11 @@ export default RepeatingTest;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3079,11 +3105,11 @@ export default SayHello;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3104,6 +3130,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestA } from "./test_a_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `test_a`.
@@ -3153,11 +3180,11 @@ export class TestATableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3220,11 +3247,11 @@ export default TestA;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3283,11 +3310,11 @@ export default TestB;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3342,11 +3369,11 @@ export default TestBtreeIndexArgs;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3367,8 +3394,11 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestD } from "./test_d_type";
 import { NamespaceTestC } from "./namespace_test_c_type";
+// Mark import as potentially unused
+declare type __keep_NamespaceTestC = NamespaceTestC;
 
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `test_d`.
@@ -3418,11 +3448,11 @@ export class TestDTableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3442,6 +3472,8 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { NamespaceTestC } from "./namespace_test_c_type";
+// Mark import as potentially unused
+declare type __keep_NamespaceTestC = NamespaceTestC;
 
 
 export type TestD = {
@@ -3483,11 +3515,11 @@ export default TestD;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3508,6 +3540,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestE } from "./test_e_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `test_e`.
@@ -3587,11 +3620,11 @@ export class TestETableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3652,11 +3685,11 @@ export default TestE;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3677,8 +3710,11 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestFoobar } from "./test_foobar_type";
 import { Foobar } from "./foobar_type";
+// Mark import as potentially unused
+declare type __keep_Foobar = Foobar;
 
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
  * Table handle for the table `test_f`.
@@ -3728,11 +3764,11 @@ export class TestFTableHandle {
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3752,6 +3788,8 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Foobar } from "./foobar_type";
+// Mark import as potentially unused
+declare type __keep_Foobar = Foobar;
 
 
 export type TestFoobar = {
@@ -3793,11 +3831,11 @@ export default TestFoobar;
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -3818,9 +3856,17 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 
 import { TestA } from "./test_a_type";
+// Mark import as potentially unused
+declare type __keep_TestA = TestA;
 import { TestB } from "./test_b_type";
+// Mark import as potentially unused
+declare type __keep_TestB = TestB;
 import { NamespaceTestC } from "./namespace_test_c_type";
+// Mark import as potentially unused
+declare type __keep_NamespaceTestC = NamespaceTestC;
 import { NamespaceTestF } from "./namespace_test_f_type";
+// Mark import as potentially unused
+declare type __keep_NamespaceTestF = NamespaceTestF;
 
 export type Test = {
   arg: TestA,

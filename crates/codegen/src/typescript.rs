@@ -142,6 +142,12 @@ impl Lang for TypeScript {
             "import {{ type EventContext, type Reducer, RemoteReducers, RemoteTables }} from \".\";"
         );
 
+        // Mark potentially unused types
+        writeln!(
+            out,
+            "declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];"
+        );
+
         let table_name = table.name.deref();
         let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
         let table_handle = table_name_pascalcase.clone() + "TableHandle";
@@ -532,7 +538,7 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
                     writeln!(out, "let __writer = new __BinaryWriter(1024);");
                     writeln!(
                         out,
-                        "{reducer_variant}.getTypeScriptAlgebraicType().serialize(__writer, __args);"
+                        "{reducer_variant}.serialize(__writer, __args);"
                     );
                     writeln!(out, "let __argsBuffer = __writer.getBuffer();");
                     writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer, this.setCallReducerFlags.{reducer_function_name}Flags);");
@@ -606,9 +612,10 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
         let row_type = type_ref_name(module, type_ref);
         writeln!(out, "get {table_name_camelcase}(): {table_handle} {{");
         out.with_indent(|out| {
+            writeln!(out, "// clientCache is a private property");
             writeln!(
                 out,
-                "return new {table_handle}(this.connection.clientCache.getOrCreateTable<{row_type}>(REMOTE_MODULE.tables.{table_name}));"
+                "return new {table_handle}((this.connection as unknown as {{ clientCache: __ClientCache }}).clientCache.getOrCreateTable<{row_type}>(REMOTE_MODULE.tables.{table_name}));"
             );
         });
         writeln!(out, "}}");
@@ -673,6 +680,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "AlgebraicType as __AlgebraicTypeValue",
         "type AlgebraicTypeVariants as __AlgebraicTypeVariants",
         "Identity as __Identity",
+        "ClientCache as __ClientCache",
         "ConnectionId as __ConnectionId",
         "Timestamp as __Timestamp",
         "TimeDuration as __TimeDuration",
@@ -712,7 +720,6 @@ fn print_file_header(output: &mut Indenter, include_version: bool) {
 fn print_lint_suppression(output: &mut Indenter) {
     writeln!(output, "/* eslint-disable */");
     writeln!(output, "/* tslint:disable */");
-    writeln!(output, "// @ts-nocheck");
 }
 
 fn write_get_algebraic_type_for_product(
@@ -1202,8 +1209,12 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports, suffi
                 out,
                 "import {{ {type_name} as {type_name}{suffix} }} from \"./{module_name}\";"
             );
+            writeln!(out, "// Mark import as potentially unused");
+            writeln!(out, "declare type __keep_{type_name}{suffix} = {type_name}{suffix};");
         } else {
             writeln!(out, "import {{ {type_name} }} from \"./{module_name}\";");
+            writeln!(out, "// Mark import as potentially unused");
+            writeln!(out, "declare type __keep_{type_name} = {type_name};");
         }
     }
 }

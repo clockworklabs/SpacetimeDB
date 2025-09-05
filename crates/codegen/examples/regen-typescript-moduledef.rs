@@ -40,6 +40,27 @@ fn main() -> anyhow::Result<()> {
                 return Ok(());
             }
             let code = regex_replace!(&code, r"@clockworklabs/spacetimedb-sdk", "../index");
+
+            // Elide types which are related to client-side only things
+            let code = regex_replace!(&code, r"type CallReducerFlags as __CallReducerFlags,", r"");
+            let code = regex_replace!(&code, r"type ErrorContextInterface as __ErrorContextInterface,", r"");
+            let code = regex_replace!(&code, r"type Event as __Event,", r"");
+            let code = regex_replace!(&code, r"type EventContextInterface as __EventContextInterface,", r"");
+            let code = regex_replace!(
+                &code,
+                r"type ReducerEventContextInterface as __ReducerEventContextInterface,",
+                r""
+            );
+            let code = regex_replace!(
+                &code,
+                r"type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,",
+                r""
+            );
+            let code = regex_replace!(&code, r"DbConnectionBuilder as __DbConnectionBuilder,", r"");
+            let code = regex_replace!(&code, r"DbConnectionImpl as __DbConnectionImpl,", r"");
+            let code = regex_replace!(&code, r"SubscriptionBuilderImpl as __SubscriptionBuilderImpl,", r"");
+            let code = regex_replace!(&code, r"TableCache as __TableCache,", r"");
+            let code = regex_replace!(&code, r"ClientCache as __ClientCache,", r"");
             fs::write(dir.join(filename), code.as_bytes())
         })?;
 

@@ -3,30 +3,21 @@
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
   ConnectionId as __ConnectionId,
-  DbConnectionBuilder as __DbConnectionBuilder,
-  DbConnectionImpl as __DbConnectionImpl,
   Identity as __Identity,
-  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
   TimeDuration as __TimeDuration,
   Timestamp as __Timestamp,
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
-  type ErrorContextInterface as __ErrorContextInterface,
-  type Event as __Event,
-  type EventContextInterface as __EventContextInterface,
-  type ReducerEventContextInterface as __ReducerEventContextInterface,
-  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
 import { RawColumnDefaultValueV9 } from './raw_column_default_value_v_9_type';
+// Mark import as potentially unused
+declare type __keep_RawColumnDefaultValueV9 = RawColumnDefaultValueV9;
 
 import * as RawMiscModuleExportV9Variants from './raw_misc_module_export_v_9_variants';
 
