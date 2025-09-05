@@ -8,9 +8,9 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::execution_context::ExecutionContext;
 use crate::execution_context::Workload;
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
+use crate::{error::DatastoreError, execution_context::ExecutionContext};
 use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
@@ -24,7 +24,9 @@ use crate::{
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
+use itertools::Itertools;
 use smallvec::SmallVec;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
 use spacetimedb_lib::{
@@ -491,6 +493,115 @@ impl MutTxId {
         self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
 
         Ok(())
+    }
+
+    /// Change the row type of the table identified by `table_id`.
+    ///
+    /// This is an incompatible change that requires a new table to be created.
+    /// The existing rows are copied over to the new table,
+    /// with `default_values` appended to each row.
+    ///
+    /// `column_schemas` must contain all the old columns in same order as before,
+    /// followed by the new columns to be added.
+    /// All new columns must have a default value in `default_values`.
+    ///
+    /// After calling this method, Table referred by `table_id` is dropped,
+    /// and a new table is created with the same name but a new `table_id`.
+    /// The new `table_id` is returned.
+    pub(crate) fn add_columns_to_table(
+        &mut self,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+        default_values: IntMap<ColId, AlgebraicValue>,
+    ) -> Result<TableId> {
+        let ((tx_table, ..), _) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table
+            .validate_add_columns_schema(&column_schemas, &default_values)
+            .map_err(TableError::from)?;
+
+        // Intentionally using `schema_for_table_raw` instead of `schema_for_table`.
+        //
+        // Rationale:
+        // - `schema_for_table_raw` queries system tables directly, ensuring the
+        //   most up-to-date schema.
+        // - `schema_for_table` relies on an in-memory cache, which may not reflect
+        //   the latest sequence updates and can therefore return stale schemas.
+        let original_table_schema = self.schema_for_table_raw(table_id)?;
+
+        // Default values must be for a sequence of contiguous column IDs,
+        // beginning immediately after the last column ID in the existing schema.
+        // This has been checked inside `Table::validate_add_columns_schema`
+        let default_values: Vec<AlgebraicValue> = default_values
+            .into_iter()
+            .sorted_by_key(|(col_id, _)| *col_id)
+            .map(|(_, val)| val)
+            .collect();
+
+        log::debug!(
+            "TABLE ALTERING (incompatible layout): {}, table_id: {}",
+            original_table_schema.table_name,
+            table_id
+        );
+
+        // Drop existing table first due to unique constraints on table name in `st_table`
+        self.drop_table(table_id)?;
+        let original_commit_table = match self.tx_state.pending_schema_changes.pop() {
+            Some(PendingSchemaChange::TableRemoved(tid, table)) if tid == table_id => table,
+            _ => {
+                return Err(DatastoreError::Other(anyhow::anyhow!(
+                    "Expected last pending schema change to be dropping table {table_id}"
+                )))
+            }
+        };
+
+        // Update existing (dropped) table schema with provided columns, reset Ids.
+        let mut updated_table_schema = original_table_schema;
+        updated_table_schema.columns = column_schemas;
+        updated_table_schema.reset();
+        let new_table_id = self.create_table_and_bump_seq(updated_table_schema)?;
+
+        // Populate rows with default values for new columns
+        let committed_blob_store = &self.committed_state_write_lock.blob_store;
+        let migrated_rows = original_commit_table
+            .scan_rows(committed_blob_store)
+            .map(|table_row| table_row.to_product_value())
+            .map(|mut product_value| {
+                let mut row_elements = product_value.elements.to_vec();
+                row_elements.extend(default_values.iter().cloned());
+                product_value.elements = row_elements.into();
+                product_value
+            });
+
+        let (new_table, tx_blob_store) = self
+            .tx_state
+            .get_table_and_blob_store(new_table_id)
+            .ok_or(TableError::IdNotFoundState(new_table_id))?;
+
+        for migrated_row in migrated_rows {
+            new_table.insert(&self.committed_state_write_lock.page_pool, tx_blob_store, &migrated_row)?;
+        }
+
+        self.push_schema_change(PendingSchemaChange::TableRemoved(table_id, original_commit_table));
+        self.push_schema_change(PendingSchemaChange::TableAdded(new_table_id));
+
+        Ok(new_table_id)
+    }
+
+    fn create_table_and_bump_seq(&mut self, table_schema: TableSchema) -> Result<TableId> {
+        let table_id = self.create_table(table_schema.clone())?;
+        let table_schema = self.schema_for_table(table_id)?;
+
+        // Bump each sequence value so that the next generated value requires
+        // a fresh allocation.
+        for seq_id in table_schema.sequences.iter().map(|s| s.sequence_id) {
+            let seq = self
+                .sequence_state_lock
+                .get_sequence_mut(seq_id)
+                .expect("sequence just created");
+            seq.value = seq.allocated() + 1;
+        }
+
+        Ok(table_id)
     }
 
     /// Create an index.

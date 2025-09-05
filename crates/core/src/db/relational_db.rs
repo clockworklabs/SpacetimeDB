@@ -10,6 +10,7 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
@@ -1050,6 +1051,18 @@ impl RelationalDB {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<(), DBError> {
         Ok(self.inner.alter_table_row_type_mut_tx(tx, table_id, column_schemas)?)
+    }
+
+    pub(crate) fn add_columns_to_table(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+        default_values: IntMap<ColId, AlgebraicValue>,
+    ) -> Result<TableId, DBError> {
+        Ok(self
+            .inner
+            .add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)?)
     }
 
     /// Reports the `TxMetrics`s passed.
