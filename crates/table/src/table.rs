@@ -303,9 +303,9 @@ pub enum ChangeColumnsErrorReason {
 
 /// Error that can occur when attempting to [`Table::validate_add_columns_schema`].
 ///
-/// Like [`ChangeColumnsError`], this should never normally be seen at runtime. 
-/// Any such error indicates a **bug in SpacetimeDB**, since incompatible 
-/// "add column" migrations should be caught earlier by the checks in 
+/// Like [`ChangeColumnsError`], this should never normally be seen at runtime.
+/// Any such error indicates a **bug in SpacetimeDB**, since incompatible
+/// "add column" migrations should be caught earlier by the checks in
 /// [`spacetimedb_schema::auto_migrate`].
 #[derive(Error, Debug)]
 #[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
