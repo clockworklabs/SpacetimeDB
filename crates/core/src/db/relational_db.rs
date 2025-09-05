@@ -2096,6 +2096,7 @@ mod tests {
     #![allow(clippy::disallowed_macros)]
 
     use std::cell::RefCell;
+    use std::fs;
     use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::rc::Rc;
@@ -3331,6 +3332,24 @@ mod tests {
         let tempdir = copy_fixture_dir(&data_dir);
 
         let dir = ReplicaDir::from_path_unchecked(tempdir.path().join("replicas/22000001"));
+        // println statements are here just to debug in CI.
+        println!("Directories in tempdir:");
+        for entry in fs::read_dir(tempdir.path())? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+            if metadata.is_dir() {
+                println!("{}", entry.path().display());
+            }
+        }
+
+        println!("Directories in replica dir:");
+        for entry in fs::read_dir(dir.clone().0)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+            if metadata.is_dir() {
+                println!("{}", entry.path().display());
+            }
+        }
 
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
         // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
