@@ -1,7 +1,9 @@
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
-use crate::util::{iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment};
+use crate::util::{
+    iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment, print_auto_generated_version_comment,
+};
 use crate::OutputFile;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
@@ -28,7 +30,7 @@ impl Lang for Rust {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
-        print_file_header(out);
+        print_file_header(out, false);
         out.newline();
 
         match &module.typespace_for_generate()[typ.ty] {
@@ -78,7 +80,7 @@ impl __sdk::InModule for {type_name} {{
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
-        print_file_header(out);
+        print_file_header(out, false);
 
         let row_type = type_ref_name(module, type_ref);
         let row_type_module = type_ref_module_name(module, type_ref);
@@ -298,7 +300,7 @@ pub(super) fn parse_table_update(
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
-        print_file_header(out);
+        print_file_header(out, false);
 
         out.newline();
 
@@ -489,7 +491,7 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
-        print_file_header(out);
+        print_file_header(out, true);
 
         out.newline();
 
@@ -600,8 +602,11 @@ fn print_spacetimedb_imports(output: &mut Indenter) {
     print_lines(output, SPACETIMEDB_IMPORTS);
 }
 
-fn print_file_header(output: &mut Indenter) {
+fn print_file_header(output: &mut Indenter, include_version: bool) {
     print_auto_generated_file_comment(output);
+    if include_version {
+        print_auto_generated_version_comment(output);
+    }
     writeln!(output, "{ALLOW_LINTS}");
     print_spacetimedb_imports(output);
 }

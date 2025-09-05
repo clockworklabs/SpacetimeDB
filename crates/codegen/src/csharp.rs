@@ -8,7 +8,7 @@ use super::code_indenter::CodeIndenter;
 use super::Lang;
 use crate::util::{
     collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_tables, print_auto_generated_file_comment,
-    type_ref_name,
+    print_auto_generated_version_comment, type_ref_name,
 };
 use crate::{indent_scope, OutputFile};
 use convert_case::{Case, Casing};
@@ -442,6 +442,7 @@ impl Lang for Csharp<'_> {
                 "System.Collections.Generic",
                 "System.Runtime.Serialization",
             ],
+            false,
         );
 
         writeln!(output, "public sealed partial class RemoteTables");
@@ -587,6 +588,7 @@ impl Lang for Csharp<'_> {
                 "System.Collections.Generic",
                 "System.Runtime.Serialization",
             ],
+            false,
         );
 
         writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
@@ -713,6 +715,7 @@ impl Lang for Csharp<'_> {
                 "System.Collections.Generic",
                 "System.Runtime.Serialization",
             ],
+            true, // print the version in the globals file
         );
 
         writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
@@ -945,10 +948,13 @@ impl std::ops::DerefMut for CsharpAutogen {
 }
 
 impl CsharpAutogen {
-    pub fn new(namespace: &str, extra_usings: &[&str]) -> Self {
+    pub fn new(namespace: &str, extra_usings: &[&str], include_version: bool) -> Self {
         let mut output = CodeIndenter::new(String::new(), INDENT);
 
         print_auto_generated_file_comment(&mut output);
+        if include_version {
+            print_auto_generated_version_comment(&mut output);
+        }
 
         writeln!(output, "#nullable enable");
         writeln!(output);
@@ -984,7 +990,7 @@ impl CsharpAutogen {
 }
 
 fn autogen_csharp_sum(module: &ModuleDef, sum_type_name: String, sum_type: &SumTypeDef, namespace: &str) -> String {
-    let mut output = CsharpAutogen::new(namespace, &[]);
+    let mut output = CsharpAutogen::new(namespace, &[], false);
 
     writeln!(output, "[SpacetimeDB.Type]");
     write!(
@@ -1021,7 +1027,7 @@ fn autogen_csharp_sum(module: &ModuleDef, sum_type_name: String, sum_type: &SumT
 }
 
 fn autogen_csharp_plain_enum(enum_type_name: String, enum_type: &PlainEnumTypeDef, namespace: &str) -> String {
-    let mut output = CsharpAutogen::new(namespace, &[]);
+    let mut output = CsharpAutogen::new(namespace, &[], false);
 
     writeln!(output, "[SpacetimeDB.Type]");
     writeln!(output, "public enum {enum_type_name}");
@@ -1038,6 +1044,7 @@ fn autogen_csharp_tuple(module: &ModuleDef, name: String, tuple: &ProductTypeDef
     let mut output = CsharpAutogen::new(
         namespace,
         &["System.Collections.Generic", "System.Runtime.Serialization"],
+        false,
     );
 
     autogen_csharp_product_common(module, &mut output, name, tuple, "", |_| {});
