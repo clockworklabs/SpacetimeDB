@@ -3,11 +3,11 @@
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -27,12 +27,26 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
 import { CallReducer as CallReducerType } from './call_reducer_type';
+// Mark import as potentially unused
+declare type __keep_CallReducerType = CallReducerType;
 import { Subscribe as SubscribeType } from './subscribe_type';
+// Mark import as potentially unused
+declare type __keep_SubscribeType = SubscribeType;
 import { OneOffQuery as OneOffQueryType } from './one_off_query_type';
+// Mark import as potentially unused
+declare type __keep_OneOffQueryType = OneOffQueryType;
 import { SubscribeSingle as SubscribeSingleType } from './subscribe_single_type';
+// Mark import as potentially unused
+declare type __keep_SubscribeSingleType = SubscribeSingleType;
 import { SubscribeMulti as SubscribeMultiType } from './subscribe_multi_type';
+// Mark import as potentially unused
+declare type __keep_SubscribeMultiType = SubscribeMultiType;
 import { Unsubscribe as UnsubscribeType } from './unsubscribe_type';
+// Mark import as potentially unused
+declare type __keep_UnsubscribeType = UnsubscribeType;
 import { UnsubscribeMulti as UnsubscribeMultiType } from './unsubscribe_multi_type';
+// Mark import as potentially unused
+declare type __keep_UnsubscribeMultiType = UnsubscribeMultiType;
 
 export type CallReducer = { tag: 'CallReducer'; value: CallReducerType };
 export type Subscribe = { tag: 'Subscribe'; value: SubscribeType };

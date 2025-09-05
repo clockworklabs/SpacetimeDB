@@ -3,11 +3,11 @@
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -27,15 +27,35 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
 import { InitialSubscription } from './initial_subscription_type';
+// Mark import as potentially unused
+declare type __keep_InitialSubscription = InitialSubscription;
 import { TransactionUpdate } from './transaction_update_type';
+// Mark import as potentially unused
+declare type __keep_TransactionUpdate = TransactionUpdate;
 import { TransactionUpdateLight } from './transaction_update_light_type';
+// Mark import as potentially unused
+declare type __keep_TransactionUpdateLight = TransactionUpdateLight;
 import { IdentityToken } from './identity_token_type';
+// Mark import as potentially unused
+declare type __keep_IdentityToken = IdentityToken;
 import { OneOffQueryResponse } from './one_off_query_response_type';
+// Mark import as potentially unused
+declare type __keep_OneOffQueryResponse = OneOffQueryResponse;
 import { SubscribeApplied } from './subscribe_applied_type';
+// Mark import as potentially unused
+declare type __keep_SubscribeApplied = SubscribeApplied;
 import { UnsubscribeApplied } from './unsubscribe_applied_type';
+// Mark import as potentially unused
+declare type __keep_UnsubscribeApplied = UnsubscribeApplied;
 import { SubscriptionError } from './subscription_error_type';
+// Mark import as potentially unused
+declare type __keep_SubscriptionError = SubscriptionError;
 import { SubscribeMultiApplied } from './subscribe_multi_applied_type';
+// Mark import as potentially unused
+declare type __keep_SubscribeMultiApplied = SubscribeMultiApplied;
 import { UnsubscribeMultiApplied } from './unsubscribe_multi_applied_type';
+// Mark import as potentially unused
+declare type __keep_UnsubscribeMultiApplied = UnsubscribeMultiApplied;
 
 import * as ServerMessageVariants from './server_message_variants';
 

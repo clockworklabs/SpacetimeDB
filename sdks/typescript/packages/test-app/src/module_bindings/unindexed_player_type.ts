@@ -3,11 +3,11 @@
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -27,6 +27,8 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '@clockworklabs/spacetimedb-sdk';
 import { Point } from './point_type';
+// Mark import as potentially unused
+declare type __keep_Point = Point;
 
 export type UnindexedPlayer = {
   ownerId: string;

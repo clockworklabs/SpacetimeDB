@@ -3,11 +3,11 @@
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
@@ -27,12 +27,26 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
 import { CallReducer } from './call_reducer_type';
+// Mark import as potentially unused
+declare type __keep_CallReducer = CallReducer;
 import { Subscribe } from './subscribe_type';
+// Mark import as potentially unused
+declare type __keep_Subscribe = Subscribe;
 import { OneOffQuery } from './one_off_query_type';
+// Mark import as potentially unused
+declare type __keep_OneOffQuery = OneOffQuery;
 import { SubscribeSingle } from './subscribe_single_type';
+// Mark import as potentially unused
+declare type __keep_SubscribeSingle = SubscribeSingle;
 import { SubscribeMulti } from './subscribe_multi_type';
+// Mark import as potentially unused
+declare type __keep_SubscribeMulti = SubscribeMulti;
 import { Unsubscribe } from './unsubscribe_type';
+// Mark import as potentially unused
+declare type __keep_Unsubscribe = Unsubscribe;
 import { UnsubscribeMulti } from './unsubscribe_multi_type';
+// Mark import as potentially unused
+declare type __keep_UnsubscribeMulti = UnsubscribeMulti;
 
 import * as ClientMessageVariants from './client_message_variants';
 

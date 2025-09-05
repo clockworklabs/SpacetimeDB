@@ -3,35 +3,36 @@
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
   ConnectionId as __ConnectionId,
-  DbConnectionBuilder as __DbConnectionBuilder,
-  DbConnectionImpl as __DbConnectionImpl,
   Identity as __Identity,
-  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
   TimeDuration as __TimeDuration,
   Timestamp as __Timestamp,
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
-  type ErrorContextInterface as __ErrorContextInterface,
-  type Event as __Event,
-  type EventContextInterface as __EventContextInterface,
-  type ReducerEventContextInterface as __ReducerEventContextInterface,
-  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
 import { RawIndexDefV9 } from './raw_index_def_v_9_type';
+// Mark import as potentially unused
+declare type __keep_RawIndexDefV9 = RawIndexDefV9;
 import { RawConstraintDefV9 } from './raw_constraint_def_v_9_type';
+// Mark import as potentially unused
+declare type __keep_RawConstraintDefV9 = RawConstraintDefV9;
 import { RawSequenceDefV9 } from './raw_sequence_def_v_9_type';
+// Mark import as potentially unused
+declare type __keep_RawSequenceDefV9 = RawSequenceDefV9;
 import { RawScheduleDefV9 } from './raw_schedule_def_v_9_type';
+// Mark import as potentially unused
+declare type __keep_RawScheduleDefV9 = RawScheduleDefV9;
 import { TableType } from './table_type_type';
+// Mark import as potentially unused
+declare type __keep_TableType = TableType;
 import { TableAccess } from './table_access_type';
+// Mark import as potentially unused
+declare type __keep_TableAccess = TableAccess;
 
 export type RawTableDefV9 = {
   name: string;
