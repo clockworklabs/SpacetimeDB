@@ -5,61 +5,67 @@
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  CallReducerFlags,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  DbContext,
-  ErrorContextInterface,
-  Event,
-  EventContextInterface,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  ReducerEventContextInterface,
-  SubscriptionBuilderImpl,
-  SubscriptionEventContextInterface,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { BsatnRowList as __BsatnRowList } from './bsatn_row_list_type';
+import { BsatnRowList } from './bsatn_row_list_type';
 
 export type OneOffTable = {
   tableName: string;
-  rows: __BsatnRowList;
+  rows: BsatnRowList;
 };
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
-export namespace OneOffTable {
+export const OneOffTable = {
   /**
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.createProductType([
-      new ProductTypeElement('tableName', AlgebraicType.createStringType()),
-      new ProductTypeElement(
-        'rows',
-        __BsatnRowList.getTypeScriptAlgebraicType()
-      ),
-    ]);
-  }
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
+      elements: [
+        { name: 'tableName', algebraicType: __AlgebraicTypeValue.String },
+        {
+          name: 'rows',
+          algebraicType: BsatnRowList.getTypeScriptAlgebraicType(),
+        },
+      ],
+    });
+  },
 
-  export function serialize(writer: BinaryWriter, value: OneOffTable): void {
-    OneOffTable.getTypeScriptAlgebraicType().serialize(writer, value);
-  }
+  serialize(writer: __BinaryWriter, value: OneOffTable): void {
+    __AlgebraicTypeValue.serializeValue(
+      writer,
+      OneOffTable.getTypeScriptAlgebraicType(),
+      value
+    );
+  },
 
-  export function deserialize(reader: BinaryReader): OneOffTable {
-    return OneOffTable.getTypeScriptAlgebraicType().deserialize(reader);
-  }
-}
+  deserialize(reader: __BinaryReader): OneOffTable {
+    return __AlgebraicTypeValue.deserializeValue(
+      reader,
+      OneOffTable.getTypeScriptAlgebraicType()
+    );
+  },
+};
+
+export default OneOffTable;

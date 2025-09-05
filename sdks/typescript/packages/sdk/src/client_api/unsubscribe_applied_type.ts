@@ -5,72 +5,78 @@
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  CallReducerFlags,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  DbContext,
-  ErrorContextInterface,
-  Event,
-  EventContextInterface,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  ReducerEventContextInterface,
-  SubscriptionBuilderImpl,
-  SubscriptionEventContextInterface,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { QueryId as __QueryId } from './query_id_type';
-import { SubscribeRows as __SubscribeRows } from './subscribe_rows_type';
+import { QueryId } from './query_id_type';
+import { SubscribeRows } from './subscribe_rows_type';
 
 export type UnsubscribeApplied = {
   requestId: number;
   totalHostExecutionDurationMicros: bigint;
-  queryId: __QueryId;
-  rows: __SubscribeRows;
+  queryId: QueryId;
+  rows: SubscribeRows;
 };
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
-export namespace UnsubscribeApplied {
+export const UnsubscribeApplied = {
   /**
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.createProductType([
-      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
-      new ProductTypeElement(
-        'totalHostExecutionDurationMicros',
-        AlgebraicType.createU64Type()
-      ),
-      new ProductTypeElement('queryId', __QueryId.getTypeScriptAlgebraicType()),
-      new ProductTypeElement(
-        'rows',
-        __SubscribeRows.getTypeScriptAlgebraicType()
-      ),
-    ]);
-  }
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
+      elements: [
+        { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
+        {
+          name: 'totalHostExecutionDurationMicros',
+          algebraicType: __AlgebraicTypeValue.U64,
+        },
+        {
+          name: 'queryId',
+          algebraicType: QueryId.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'rows',
+          algebraicType: SubscribeRows.getTypeScriptAlgebraicType(),
+        },
+      ],
+    });
+  },
 
-  export function serialize(
-    writer: BinaryWriter,
-    value: UnsubscribeApplied
-  ): void {
-    UnsubscribeApplied.getTypeScriptAlgebraicType().serialize(writer, value);
-  }
+  serialize(writer: __BinaryWriter, value: UnsubscribeApplied): void {
+    __AlgebraicTypeValue.serializeValue(
+      writer,
+      UnsubscribeApplied.getTypeScriptAlgebraicType(),
+      value
+    );
+  },
 
-  export function deserialize(reader: BinaryReader): UnsubscribeApplied {
-    return UnsubscribeApplied.getTypeScriptAlgebraicType().deserialize(reader);
-  }
-}
+  deserialize(reader: __BinaryReader): UnsubscribeApplied {
+    return __AlgebraicTypeValue.deserializeValue(
+      reader,
+      UnsubscribeApplied.getTypeScriptAlgebraicType()
+    );
+  },
+};
+
+export default UnsubscribeApplied;

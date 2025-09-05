@@ -5,98 +5,91 @@
 /* tslint:disable */
 // @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  CallReducerFlags,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  DbContext,
-  ErrorContextInterface,
-  Event,
-  EventContextInterface,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  ReducerEventContextInterface,
-  SubscriptionBuilderImpl,
-  SubscriptionEventContextInterface,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { QueryUpdate as __QueryUpdate } from './query_update_type';
+import { QueryUpdate } from './query_update_type';
 
-// A namespace for generated variants and helper functions.
-export namespace CompressableQueryUpdate {
-  // These are the generated variant types for each variant of the tagged union.
-  // One type is generated per variant and will be used in the `value` field of
-  // the tagged union.
-  export type Uncompressed = { tag: 'Uncompressed'; value: __QueryUpdate };
-  export type Brotli = { tag: 'Brotli'; value: Uint8Array };
-  export type Gzip = { tag: 'Gzip'; value: Uint8Array };
+import * as CompressableQueryUpdateVariants from './compressable_query_update_variants';
 
+// The tagged union or sum type for the algebraic type `CompressableQueryUpdate`.
+export type CompressableQueryUpdate =
+  | CompressableQueryUpdateVariants.Uncompressed
+  | CompressableQueryUpdateVariants.Brotli
+  | CompressableQueryUpdateVariants.Gzip;
+
+// A value with helper functions to construct the type.
+export const CompressableQueryUpdate = {
   // Helper functions for constructing each variant of the tagged union.
   // ```
   // const foo = Foo.A(42);
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const Uncompressed = (
-    value: __QueryUpdate
-  ): CompressableQueryUpdate => ({ tag: 'Uncompressed', value });
-  export const Brotli = (value: Uint8Array): CompressableQueryUpdate => ({
+  Uncompressed: (value: QueryUpdate): CompressableQueryUpdate => ({
+    tag: 'Uncompressed',
+    value,
+  }),
+  Brotli: (value: Uint8Array): CompressableQueryUpdate => ({
     tag: 'Brotli',
     value,
-  });
-  export const Gzip = (value: Uint8Array): CompressableQueryUpdate => ({
+  }),
+  Gzip: (value: Uint8Array): CompressableQueryUpdate => ({
     tag: 'Gzip',
     value,
-  });
+  }),
 
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.createSumType([
-      new SumTypeVariant(
-        'Uncompressed',
-        __QueryUpdate.getTypeScriptAlgebraicType()
-      ),
-      new SumTypeVariant(
-        'Brotli',
-        AlgebraicType.createArrayType(AlgebraicType.createU8Type())
-      ),
-      new SumTypeVariant(
-        'Gzip',
-        AlgebraicType.createArrayType(AlgebraicType.createU8Type())
-      ),
-    ]);
-  }
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Sum({
+      variants: [
+        {
+          name: 'Uncompressed',
+          algebraicType: QueryUpdate.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'Brotli',
+          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
+        },
+        {
+          name: 'Gzip',
+          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
+        },
+      ],
+    });
+  },
 
-  export function serialize(
-    writer: BinaryWriter,
-    value: CompressableQueryUpdate
-  ): void {
-    CompressableQueryUpdate.getTypeScriptAlgebraicType().serialize(
+  serialize(writer: __BinaryWriter, value: CompressableQueryUpdate): void {
+    __AlgebraicTypeValue.serializeValue(
       writer,
+      CompressableQueryUpdate.getTypeScriptAlgebraicType(),
       value
     );
-  }
+  },
 
-  export function deserialize(reader: BinaryReader): CompressableQueryUpdate {
-    return CompressableQueryUpdate.getTypeScriptAlgebraicType().deserialize(
-      reader
+  deserialize(reader: __BinaryReader): CompressableQueryUpdate {
+    return __AlgebraicTypeValue.deserializeValue(
+      reader,
+      CompressableQueryUpdate.getTypeScriptAlgebraicType()
     );
-  }
-}
-
-// The tagged union or sum type for the algebraic type `CompressableQueryUpdate`.
-export type CompressableQueryUpdate =
-  | CompressableQueryUpdate.Uncompressed
-  | CompressableQueryUpdate.Brotli
-  | CompressableQueryUpdate.Gzip;
+  },
+};
 
 export default CompressableQueryUpdate;

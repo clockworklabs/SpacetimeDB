@@ -189,11 +189,22 @@ impl AlgebraicTypeLayout {
     pub const String: Self = Self::VarLen(VarLenType::String);
 
     /// Can `self` be changed compatibly to `new`?
-    fn is_compatible_with(&self, new: &Self) -> bool {
+    ///
+    /// See comment on [`IncompatibleTypeLayoutError`] about [`Box`]ing the error return.
+    fn ensure_compatible_with(&self, new: &Self) -> Result<(), Box<IncompatibleTypeLayoutError>> {
         match (self, new) {
-            (Self::Sum(old), Self::Sum(new)) => old.is_compatible_with(new),
-            (Self::Product(old), Self::Product(new)) => old.view().is_compatible_with(new.view()),
-            (Self::Primitive(old), Self::Primitive(new)) => old == new,
+            (Self::Sum(old), Self::Sum(new)) => old.ensure_compatible_with(new),
+            (Self::Product(old), Self::Product(new)) => old.view().ensure_compatible_with(new.view()),
+            (Self::Primitive(old), Self::Primitive(new)) => {
+                if old == new {
+                    Ok(())
+                } else {
+                    Err(Box::new(IncompatibleTypeLayoutError::DifferentPrimitiveTypes {
+                        old: old.algebraic_type(),
+                        new: new.algebraic_type(),
+                    }))
+                }
+            }
             (Self::VarLen(VarLenType::Array(old)), Self::VarLen(VarLenType::Array(new))) => {
                 // NOTE(perf, centril): This might clone and heap allocate,
                 // but we don't care to avoid that and optimize right now,
@@ -201,10 +212,19 @@ impl AlgebraicTypeLayout {
                 // and that doesn't need to be fast right now.
                 let old = AlgebraicTypeLayout::from(old.elem_ty.deref().clone());
                 let new = AlgebraicTypeLayout::from(new.elem_ty.deref().clone());
-                old.is_compatible_with(&new)
+                old.ensure_compatible_with(&new).map_err(|err| {
+                    Box::new(IncompatibleTypeLayoutError::IncompatibleArrayElements {
+                        old: old.algebraic_type(),
+                        new: new.algebraic_type(),
+                        err,
+                    })
+                })
             }
-            (Self::VarLen(VarLenType::String), Self::VarLen(VarLenType::String)) => true,
-            _ => false,
+            (Self::VarLen(VarLenType::String), Self::VarLen(VarLenType::String)) => Ok(()),
+            _ => Err(Box::new(IncompatibleTypeLayoutError::DifferentKind {
+                old: self.algebraic_type(),
+                new: new.algebraic_type(),
+            })),
         }
     }
 }
@@ -274,9 +294,58 @@ impl RowTypeLayout {
     }
 
     /// Can `self` be changed compatibly to `new`?
-    pub fn is_compatible_with(&self, new: &RowTypeLayout) -> bool {
-        self.layout == new.layout && self.product().is_compatible_with(new.product())
+    ///
+    /// If the types are incompatible, returns the incompatible sub-part and the reason.
+    /// See comment on [`IncompatibleTypeLayoutError`] about [`Box`]ing the error return.
+    pub fn ensure_compatible_with(&self, new: &RowTypeLayout) -> Result<(), Box<IncompatibleTypeLayoutError>> {
+        if self.layout != new.layout {
+            return Err(Box::new(IncompatibleTypeLayoutError::LayoutsNotEqual {
+                old: self.layout,
+                new: self.layout,
+            }));
+        }
+        self.product().ensure_compatible_with(new.product())
     }
+}
+
+/// Reason why two [`RowTypeLayout`]s are incompatible for an auto-migration.
+///
+/// Reported by [`RowTypeLayout::ensure_compatible_with`] and friends.
+/// These methods are expected to return `Ok(())` except in the case of internal SpacetimeDB bugs,
+/// as migrations are validated by `spacetimedb_schema::auto_migrate` before executing,
+/// so we will [`Box`] these errors to keep the returned [`Result`] small and the happy path fast.
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum IncompatibleTypeLayoutError {
+    #[error("Layout of new type {new:?} does not match layout of old type {old:?}")]
+    LayoutsNotEqual { old: Layout, new: Layout },
+    #[error("Product type elements at index {index} are incompatible: {err}")]
+    IncompatibleProductElements {
+        index: usize,
+        err: Box<IncompatibleTypeLayoutError>,
+    },
+    #[error("Sum type elements in variant {index} are incompatible: {err}")]
+    IncompatibleSumVariants {
+        index: usize,
+        err: Box<IncompatibleTypeLayoutError>,
+    },
+    #[error("New product type {new:?} has {} elements while old product type {old:?} has {} elements", .new.elements.len(), .old.elements.len())]
+    DifferentElementCounts { old: ProductType, new: ProductType },
+    #[error("New sum type {new:?} has {} variants, which is fewer than old sum type {old:?} with {} variants", .new.variants.len(), .old.variants.len())]
+    RemovedVariants { old: SumType, new: SumType },
+    #[error("New primitive type {new:?} is not the same as old primitive type {old:?}")]
+    DifferentPrimitiveTypes { old: AlgebraicType, new: AlgebraicType },
+    #[error("New array element type {new:?} is incompatible with old array element type {old:?}: {err}")]
+    IncompatibleArrayElements {
+        new: AlgebraicType,
+        old: AlgebraicType,
+        err: Box<IncompatibleTypeLayoutError>,
+    },
+    #[error("New type {new:?} is not the same kind (sum, product, primitive, etc.) as old type {old:?}")]
+    DifferentKind { old: AlgebraicType, new: AlgebraicType },
+}
+
+pub enum IncompatibleTypeReason {
+    LayoutsNotEqual,
 }
 
 impl HasLayout for RowTypeLayout {
@@ -309,13 +378,29 @@ impl HasLayout for ProductTypeLayoutView<'_> {
 
 impl ProductTypeLayoutView<'_> {
     /// Can `self` be changed compatibly to `new`?
-    fn is_compatible_with(self, new: Self) -> bool {
-        self.elements.len() == new.elements.len()
-            && self
-                .elements
-                .iter()
-                .zip(new.elements.iter())
-                .all(|(old, new)| old.ty.is_compatible_with(&new.ty))
+    ///
+    /// See comment on [`IncompatibleTypeLayoutError`] about [`Box`]ing the error return.
+    // Intentionally fail fast rather than combining errors with [`spacetimedb_data_structures::error_stream`]
+    // because we've (at least theoretically) already passed through
+    // `spacetimedb_schema::auto_migrate::ensure_old_ty_upgradable_to_new` to get here,
+    // and that method has proper pretty error reporting with `ErrorStream`.
+    // The error here is for internal debugging.
+    fn ensure_compatible_with(self, new: Self) -> Result<(), Box<IncompatibleTypeLayoutError>> {
+        if self.elements.len() != new.elements.len() {
+            return Err(Box::new(IncompatibleTypeLayoutError::DifferentElementCounts {
+                old: self.product_type(),
+                new: new.product_type(),
+            }));
+        }
+        for (index, (old, new)) in self.elements.iter().zip(new.elements.iter()).enumerate() {
+            if let Err(err) = old.ty.ensure_compatible_with(&new.ty) {
+                return Err(Box::new(IncompatibleTypeLayoutError::IncompatibleProductElements {
+                    index,
+                    err,
+                }));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -744,13 +829,29 @@ impl SumTypeLayout {
     /// Can `self` be changed compatibly to `new`?
     ///
     /// In the case of sums, the old variants need only be a prefix of the new.
-    fn is_compatible_with(&self, new: &SumTypeLayout) -> bool {
-        self.variants.len() <= new.variants.len()
-            && self
-                .variants
-                .iter()
-                .zip(self.variants.iter())
-                .all(|(old, new)| old.ty.is_compatible_with(&new.ty))
+    ///
+    /// See comment on [`IncompatibleTypeLayoutError`] about [`Box`]ing the error return.
+    // Intentionally fail fast rather than combining errors with [`spacetimedb_data_structures::error_stream`]
+    // because we've (at least theoretically) already passed through
+    // `spacetimedb_schema::auto_migrate::ensure_old_ty_upgradable_to_new` to get here,
+    // and that method has proper pretty error reporting with `ErrorStream`.
+    // The error here is for internal debugging.
+    fn ensure_compatible_with(&self, new: &SumTypeLayout) -> Result<(), Box<IncompatibleTypeLayoutError>> {
+        if self.variants.len() > new.variants.len() {
+            return Err(Box::new(IncompatibleTypeLayoutError::RemovedVariants {
+                old: self.sum_type(),
+                new: new.sum_type(),
+            }));
+        }
+        for (index, (old, new)) in self.variants.iter().zip(self.variants.iter()).enumerate() {
+            if let Err(err) = old.ty.ensure_compatible_with(&new.ty) {
+                return Err(Box::new(IncompatibleTypeLayoutError::IncompatibleSumVariants {
+                    index,
+                    err,
+                }));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1120,13 +1221,13 @@ mod test {
     }
 
     #[test]
-    fn infinite_recursion_in_is_compatible_with_with_array_type() {
+    fn infinite_recursion_in_ensure_compatible_with_with_array_type() {
         let ty = AlgebraicTypeLayout::from(AlgebraicType::array(AlgebraicType::U64));
         // This would previously cause an infinite recursion / stack overflow
         // due the setup where `AlgebraicTypeLayout::VarLen(Array(x))` stored
         // `x = Box::new(AlgebraicType::Array(elem_ty))`.
-        // The method `AlgebraicTypeLayout::is_compatible_with` was not setup to handle that.
+        // The method `AlgebraicTypeLayout::ensure_compatible_with` was not setup to handle that.
         // To avoid such bugs in the future, `x` is now `elem_ty` instead.
-        assert!(ty.is_compatible_with(&ty));
+        assert!(ty.ensure_compatible_with(&ty).is_ok());
     }
 }

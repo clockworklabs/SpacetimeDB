@@ -81,7 +81,6 @@ class BaseQuickstart(Smoketest):
         base_path = Path(self.enterClassContext(tempfile.TemporaryDirectory()))
         server_path = base_path / "server"
         self.project_path = server_path
-        self.config_path = server_path / "config.toml"
 
         self.generate_server(server_path)
         self.publish_module(f"quickstart-chat-{self.lang}", capture_stderr=True, clear=True)
@@ -125,6 +124,10 @@ class BaseQuickstart(Smoketest):
         for src, dst in self.replacements.items():
             main = main.replace(src, dst)
         main += "\n" + self.extra_code
+        server = self.get_server_address()
+        host = server["host"]
+        protocol = server["protocol"]
+        main = main.replace("http://localhost:3000", f"{protocol}://{host}")
         _write_file(client_path / self.client_file, main)
 
         self.check("", client_path, self.connected_str)
@@ -142,9 +145,11 @@ class Rust(BaseQuickstart):
     run_cmd = ["cargo", "run"]
     build_cmd = ["cargo", "build"]
 
-    # Replace the interactive user input to allow direct testing
     replacements = {
-        "user_input_loop(&ctx)": "user_input_direct(&ctx)"
+        # Replace the interactive user input to allow direct testing
+        "user_input_loop(&ctx)": "user_input_direct(&ctx)",
+        # Don't cache the token, because it will cause the test to fail if we run against a non-default server (because  we don't cache the corresponding signing keypair)
+        ".with_token(creds_store()": "//.with_token(creds_store()"
     }
     extra_code = """
 fn user_input_direct(ctx: &DbConnection) {
@@ -194,6 +199,8 @@ class CSharp(BaseQuickstart):
         "InputLoop();": "UserInputDirect();",
         ".OnConnect(OnConnected)": ".OnConnect(OnConnectedSignal)",
         ".OnConnectError(OnConnectError)": ".OnConnectError(OnConnectErrorSignal)",
+        # Don't cache the token, because it will cause the test to fail if we run against a non-default server (because  we don't cache the corresponding signing keypair)
+        ".WithToken(AuthToken.Token)": "//.WithToken(AuthToken.Token)",
         "Main();": ""  # To put the main function at the end so it can see the new functions
     }
     # So we can wait for the connection to be established...
