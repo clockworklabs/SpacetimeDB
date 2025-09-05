@@ -1,5 +1,11 @@
-import { t, type AlgebraicTypeVariants } from "..";
-import type { I32ColumnBuilder, I64ColumnBuilder, InferTypeOfRow, InferTypeOfTypeBuilder, TypeBuilder } from "./type_builders";
+import { t, type AlgebraicTypeVariants } from '..';
+import type {
+  I32ColumnBuilder,
+  I64ColumnBuilder,
+  InferTypeOfRow,
+  InferTypeOfTypeBuilder,
+  TypeBuilder,
+} from './type_builders';
 
 type MustBeNever<T> = [T] extends [never]
   ? true
