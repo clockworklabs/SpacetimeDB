@@ -10,6 +10,12 @@ import type { Prettify } from './type_util';
  * A set of methods for building a column definition. Type builders extend this
  * interface so that they can be converted to column builders by calling
  * one of the methods that returns a column builder.
+ *
+ * Notably, `scheduleAt` is not part of this interface even though it is part
+ * of the metadata for a column because it specifies both the type of the
+ * column and the metadata as well. Therefore, it should not be possible to
+ * convert a normal type into a `ScheduleAt` column. You should instead use
+ * {@link t.scheduleAt} to create a column with the `ScheduleAt` type directly.
  */
 interface IntoColumnBuilder<Type, SpacetimeType extends AlgebraicType> {
   /**
@@ -52,15 +58,6 @@ interface IntoColumnBuilder<Type, SpacetimeType extends AlgebraicType> {
     Type,
     SpacetimeType,
     Prettify<Omit<M, 'isAutoIncrement'> & { isAutoIncrement: true }>
-  >;
-
-  /**
-   * Specify this column as a schedule-at field
-   */
-  scheduleAt<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isScheduleAt'> & { isScheduleAt: true }>
   >;
 }
 
@@ -624,24 +621,6 @@ export class ColumnBuilder<
     >(this.typeBuilder, {
       ...this.columnMetadata,
       isAutoIncrement: true,
-    });
-  }
-
-  /**
-   * Specify this column as a schedule-at field
-   */
-  scheduleAt(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isScheduleAt'> & { isScheduleAt: true }>
-  > {
-    return new ColumnBuilder<
-      Type,
-      SpacetimeType,
-      Prettify<Omit<M, 'isScheduleAt'> & { isScheduleAt: true }>
-    >(this.typeBuilder, {
-      ...this.columnMetadata,
-      isScheduleAt: true,
     });
   }
 }
