@@ -1,3 +1,4 @@
+use spacetimedb_pg::pg_server;
 use std::sync::Arc;
 
 use crate::{StandaloneEnv, StandaloneOptions};
@@ -176,12 +177,27 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
-    let service = router(&ctx, db_routes, extra).with_state(ctx);
+    let service = router(&ctx, db_routes, extra).with_state(ctx.clone());
 
     let tcp = TcpListener::bind(listen_addr).await?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
-    log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
-    axum::serve(tcp, service).await?;
+    log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
+    let pg_server_addr = format!("{}:5432", listen_addr.split(':').next().unwrap());
+    let tcp_pg = TcpListener::bind(pg_server_addr).await?;
+
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let shutdown_notify = notify.clone();
+    tokio::select! {
+        _ = pg_server::start_pg(notify.clone(), ctx, tcp_pg) => {},
+        _ = axum::serve(tcp, service).with_graceful_shutdown(async move  {
+            shutdown_notify.notified().await;
+        }) => {},
+        _ = tokio::signal::ctrl_c() => {
+            println!("Shutting down servers...");
+            notify.notify_waiters(); // Notify all tasks
+        }
+    }
+
     Ok(())
 }
 
