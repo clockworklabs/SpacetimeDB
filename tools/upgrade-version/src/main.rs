@@ -12,10 +12,10 @@ use std::path::PathBuf;
 fn process_license_file(path: &str, version: &str) {
     let file = fs::read_to_string(path).unwrap();
 
-    let version_re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([\d\.]+)$").unwrap();
+    let version_re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([\d\.]+)\r?$").unwrap();
     let file = version_re.replace_all(&file, |caps: &regex::Captures| format!("{}{}", &caps[1], version));
 
-    let date_re = Regex::new(r"(?m)^Change Date:\s+\d{4}-\d{2}-\d{2}$").unwrap();
+    let date_re = Regex::new(r"(?m)^Change Date:\s+\d{4}-\d{2}-\d{2}\r?$").unwrap();
     let new_date = Local::now()
         .with_year(Local::now().year() + 5)
         .unwrap()
