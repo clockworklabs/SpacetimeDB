@@ -1,0 +1,4 @@
+{"level":"Info","ts":1755532669152418,"filename":"spacetimedb","message":"Creating table `message`"}
+{"level":"Info","ts":1755532669152813,"filename":"spacetimedb","message":"Creating table `user`"}
+{"level":"Info","ts":1755532669155699,"filename":"spacetimedb","message":"Invoking `init` reducer"}
+{"level":"Info","ts":1755532669158503,"filename":"spacetimedb","message":"Database initialized"}
