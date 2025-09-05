@@ -648,20 +648,20 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 }
 
 #[derive(serde::Deserialize)]
-pub struct PrintPlanParams {
+pub struct PrePublishParams {
     name_or_identity: NameOrIdentity,
 }
 
 #[derive(serde::Deserialize)]
-pub struct PrintPlanQueryParams {
+pub struct PrePublishQueryParams {
     #[serde(default)]
     style: PrettyPrintStyle,
 }
 
 pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(PrintPlanParams { name_or_identity }): Path<PrintPlanParams>,
-    Query(PrintPlanQueryParams { style }): Query<PrintPlanQueryParams>,
+    Path(PrePublishParams { name_or_identity }): Path<PrePublishParams>,
+    Query(PrePublishQueryParams { style }): Query<PrePublishQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PrintPlanResult>> {
