@@ -11,9 +11,9 @@
     "ci:version": "changeset version",
     "format": "prettier --write .",
     "lint": "prettier . --check",
-    "build": "pnpm -r --filter \"./packages/**\" run build && pnpm -r --filter \"./examples/**\" run build",
-    "test": "pnpm -r --filter \"./packages/**\" run test && pnpm -r --filter \"./examples/**\" run test",
-    "generate": "pnpm -r --filter \"./packages/**\" run generate && pnpm -r --filter \"./examples/**\" run generate"
+    "build": "pnpm --filter ./packages/sdk run build && pnpm --filter ./packages/test-app run build && pnpm --filter ./examples/quickstart-chat run build",
+    "test": "pnpm --filter ./packages/sdk run test && pnpm --filter ./packages/test-app run test && pnpm --filter ./examples/quickstart-chat run test",
+    "generate": "pnpm --filter ./packages/sdk run generate && pnpm --filter ./packages/test-app run generate && pnpm --filter ./examples/quickstart-chat run generate"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.0",
