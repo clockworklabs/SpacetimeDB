@@ -92,7 +92,7 @@ impl de::Error for Error<'_> {
 }
 
 /// Returns a scratch buffer to fill when deserializing strings.
-fn scratch_buf<const N: usize>() -> [MaybeUninit<u8>; N] {
+pub(super) fn scratch_buf<const N: usize>() -> [MaybeUninit<u8>; N] {
     [const { MaybeUninit::uninit() }; N]
 }
 

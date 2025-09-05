@@ -22,7 +22,7 @@ impl IntoJsString for String {
 ///
 /// Newtyped for additional type safety and to track JS exceptions in the type system.
 #[derive(Debug)]
-pub(super) struct ExceptionValue<'scope>(Local<'scope, Value>);
+pub(super) struct ExceptionValue<'scope>(pub Local<'scope, Value>);
 
 /// Error types that can convert into JS exception values.
 pub(super) trait IntoException<'scope> {
