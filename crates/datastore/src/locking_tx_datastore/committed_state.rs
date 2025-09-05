@@ -24,7 +24,7 @@ use crate::{
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
 use itertools::Itertools;
-use spacetimedb_data_structures::map::{HashSet, IntMap};
+use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
 use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
     Identity,
@@ -66,6 +66,11 @@ pub struct CommittedState {
     /// Pages are shared between all modules running on a particular host,
     /// not allocated per-module.
     pub(super) page_pool: PagePool,
+    /// Whether the table was dropped during replay.
+    /// TODO(centril): Only used during bootstrap and is otherwise unused.
+    /// We should split `CommittedState` into two types
+    /// where one, e.g., `ReplayCommittedState`, has this field.
+    table_dropped: IntSet<TableId>,
 }
 
 impl MemoryUsage for CommittedState {
@@ -76,9 +81,14 @@ impl MemoryUsage for CommittedState {
             blob_store,
             index_id_map,
             page_pool: _,
+            table_dropped,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
-        next_tx_offset.heap_usage() + tables.heap_usage() + blob_store.heap_usage() + index_id_map.heap_usage()
+        next_tx_offset.heap_usage()
+            + tables.heap_usage()
+            + blob_store.heap_usage()
+            + index_id_map.heap_usage()
+            + table_dropped.heap_usage()
     }
 }
 
@@ -157,6 +167,7 @@ impl CommittedState {
             tables: <_>::default(),
             blob_store: <_>::default(),
             index_id_map: <_>::default(),
+            table_dropped: <_>::default(),
             page_pool,
         }
     }
@@ -334,16 +345,29 @@ impl CommittedState {
         Ok(())
     }
 
-    pub(super) fn replay_delete_by_rel(&mut self, table_id: TableId, rel: &ProductValue) -> Result<()> {
-        let table = self
-            .tables
-            .get_mut(&table_id)
-            .ok_or(TableError::IdNotFoundState(table_id))?;
+    pub(super) fn replay_delete_by_rel(&mut self, table_id: TableId, row: &ProductValue) -> Result<()> {
+        // Get the table for mutation.
+        // If it was dropped, avoid an error and just ignore the row instead.
+        let table = match self.tables.get_mut(&table_id) {
+            Some(t) => t,
+            None if self.table_dropped.contains(&table_id) => return Ok(()),
+            None => return Err(TableError::IdNotFoundState(table_id).into()),
+        };
+
+        // Delete the row.
         let blob_store = &mut self.blob_store;
         table
-            .delete_equal_row(&self.page_pool, blob_store, rel)
+            .delete_equal_row(&self.page_pool, blob_store, row)
             .map_err(TableError::Bflatn)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
+
+        if table_id == ST_TABLE_ID {
+            // A row was removed from `st_table`, so a table was dropped.
+            // Remove that table from the in-memory structures.
+            self.tables
+                .remove(&Self::read_table_id(row))
+                .expect("table to remove should exist");
+        }
 
         Ok(())
     }
@@ -379,8 +403,7 @@ impl CommittedState {
     ///
     /// The `row_ptr` is a pointer to `row`.
     fn st_column_changed(&mut self, row: &ProductValue, row_ptr: RowPointer) -> Result<()> {
-        let target_table_id = TableId::deserialize(ValueDeserializer::from_ref(&row.elements[0]))
-            .expect("first field in `st_column` should decode to a `TableId`");
+        let target_table_id = Self::read_table_id(row);
         let target_col_id = ColId::deserialize(ValueDeserializer::from_ref(&row.elements[1]))
             .expect("second field in `st_column` should decode to a `ColId`");
 
@@ -409,6 +432,12 @@ impl CommittedState {
         }
 
         Ok(())
+    }
+
+    /// Assuming that a `TableId` is stored as the first field in `row`, read it.
+    fn read_table_id(row: &ProductValue) -> TableId {
+        TableId::deserialize(ValueDeserializer::from_ref(&row.elements[0]))
+            .expect("first field in `st_column` should decode to a `TableId`")
     }
 
     pub(super) fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
