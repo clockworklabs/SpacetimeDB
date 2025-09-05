@@ -63,6 +63,10 @@ pub struct Node {
     ///
     /// If `None`, the node is not currently live.
     pub advertise_addr: Option<String>,
+    /// The address this node is running its postgres API at.
+    ///
+    /// If `None`, the node is not currently live.
+    pub pg_addr: Option<String>,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeStatus {
