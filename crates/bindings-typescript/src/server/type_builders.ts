@@ -242,24 +242,6 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
       isAutoIncrement: true,
     });
   }
-
-  /**
-   * Specify this column as a schedule-at field
-   */
-  scheduleAt<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isScheduleAt'> & { isScheduleAt: true }>
-  > {
-    return new ColumnBuilder<
-      Type,
-      SpacetimeType,
-      Prettify<Omit<M, 'isScheduleAt'> & { isScheduleAt: true }>
-    >(this, {
-      ...defaultMetadata,
-      isScheduleAt: true,
-    });
-  }
 }
 
 export class U8Builder extends TypeBuilder<number, AlgebraicTypeVariants.U8> {
