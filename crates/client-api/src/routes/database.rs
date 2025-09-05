@@ -382,12 +382,17 @@ pub struct SqlParams {
 }
 
 #[derive(Deserialize)]
-pub struct SqlQueryParams {}
+pub struct SqlQueryParams {
+    /// If `true`, return the query result only after its transaction offset
+    /// is confirmed to be durable.
+    #[serde(default)]
+    confirmed: bool,
+}
 
 pub async fn sql<S>(
     State(worker_ctx): State<S>,
     Path(SqlParams { name_or_identity }): Path<SqlParams>,
-    Query(SqlQueryParams {}): Query<SqlQueryParams>,
+    Query(SqlQueryParams { confirmed }): Query<SqlQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: String,
 ) -> axum::response::Result<impl IntoResponse>
@@ -410,7 +415,7 @@ where
         .await
         .map_err(log_and_500)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    let json = host.exec_sql(auth, database, body).await?;
+    let json = host.exec_sql(auth, database, confirmed, body).await?;
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
 

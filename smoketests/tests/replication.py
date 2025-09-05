@@ -1,4 +1,4 @@
-from .. import COMPOSE_FILE, Smoketest, requires_docker, spacetime
+from .. import COMPOSE_FILE, Smoketest, requires_docker, spacetime, parse_sql_result
 from ..docker import DockerManager
 
 import time
@@ -17,17 +17,6 @@ def retry(func: Callable, max_retries: int = 3, retry_delay: int = 2):
             else:
                 print("Max retries reached. Skipping the exception.")
                 return False
-
-def parse_sql_result(res: str) -> list[dict]:
-    """Parse tabular output from an SQL query into a list of dicts."""
-    lines = res.splitlines()
-    headers = lines[0].split('|') if '|' in lines[0] else [lines[0]]
-    headers = [header.strip() for header in headers]
-    rows = []
-    for row in lines[2:]:
-        cols = [col.strip() for col in row.split('|')]
-        rows.append(dict(zip(headers, cols)))
-    return rows
 
 def int_vals(rows: list[dict]) -> list[dict]:
     """For all dicts in list, cast all values in dict to int."""

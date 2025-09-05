@@ -306,7 +306,7 @@ impl InstanceCommon {
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(()) => {
-                if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+                if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
                     stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                 }
                 system_logger.info("Database updated");
@@ -612,7 +612,7 @@ fn commit_and_broadcast_event(
         .commit_and_broadcast_event(client, event, tx)
         .unwrap()
     {
-        Ok((event, _)) => event,
+        Ok(res) => res.event,
         Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
     }
 }
