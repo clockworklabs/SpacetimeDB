@@ -27,12 +27,12 @@ use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
@@ -312,6 +312,16 @@ impl Locking {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<()> {
         tx.alter_table_row_type(table_id, column_schemas)
+    }
+
+    pub fn add_columns_to_table_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+        defaults: IntMap<ColId, AlgebraicValue>,
+    ) -> Result<TableId> {
+        tx.add_columns_to_table(table_id, column_schemas, defaults)
     }
 }
 
@@ -1159,6 +1169,8 @@ mod tests {
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
+    use spacetimedb_data_structures::map::IntMap;
+    use spacetimedb_execution::dml::MutDatastore as _;
     use spacetimedb_execution::Datastore;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
@@ -3320,8 +3332,138 @@ mod tests {
 
         Ok(())
     }
-
     // TODO: Add the following tests
     // - Create a tx that inserts 2000 rows with an auto_inc column
     // - Create a tx that inserts 2000 rows with an auto_inc column and then rolls back
+
+    #[test]
+    fn test_add_columns_to_table() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        let mut tx = begin_mut_tx(&datastore);
+
+        let initial_sum_type = AlgebraicType::sum([("ba", AlgebraicType::U16)]);
+        let initial_columns = [
+            ColumnSchema::for_test(0, "a", AlgebraicType::U64),
+            ColumnSchema::for_test(1, "b", initial_sum_type.clone()),
+        ];
+
+        let initial_indices = [
+            IndexSchema::for_test("index_a", BTreeAlgorithm::from(0)),
+            IndexSchema::for_test("index_b", BTreeAlgorithm::from(1)),
+        ];
+
+        let sequence = SequenceRow {
+            id: SequenceId::SENTINEL.into(),
+            table: 0,
+            col_pos: 0,
+            name: "Foo_id_seq",
+            start: 5,
+        };
+
+        let schema = user_public_table(
+            initial_columns,
+            initial_indices.clone(),
+            [],
+            map_array([sequence]),
+            None,
+            None,
+        );
+
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+
+        let columns_original = tx.get_schema(table_id).unwrap().columns.to_vec();
+
+        // Insert initial rows
+        let initial_row = ProductValue {
+            elements: [AlgebraicValue::U64(0), AlgebraicValue::sum(0, AlgebraicValue::U16(1))].into(),
+        };
+        tx.insert_product_value(table_id, &initial_row).unwrap();
+        tx.insert_product_value(table_id, &initial_row).unwrap();
+
+        commit(&datastore, tx)?;
+
+        // Alter Table: Add Variant and Column
+        let mut new_columns = columns_original.clone();
+        new_columns.push(ColumnSchema::for_test(2, "c", AlgebraicType::U8));
+        let defaults = IntMap::from_iter([(2.into(), AlgebraicValue::U8(42))]);
+
+        let mut tx = begin_mut_tx(&datastore);
+        let new_table_id = datastore.add_columns_to_table_mut_tx(&mut tx, table_id, new_columns.clone(), defaults)?;
+        let tx_data = commit(&datastore, tx)?;
+
+        assert_ne!(
+            new_table_id, table_id,
+            "New table ID after migration should differ from old one"
+        );
+
+        //  Validate Commitlog Changes
+        let (_, deletes) = tx_data
+            .deletes()
+            .find(|(id, _)| **id == table_id)
+            .expect("Expected delete log for original table");
+
+        let deleted_rows = [
+            product![AlgebraicValue::U64(5), AlgebraicValue::sum(0, AlgebraicValue::U16(1))],
+            product![AlgebraicValue::U64(6), AlgebraicValue::sum(0, AlgebraicValue::U16(1))],
+        ];
+
+        assert_eq!(
+            &**deletes, &deleted_rows,
+            "Unexpected delete entries after altering the table"
+        );
+
+        let inserted_rows = [
+            product![
+                AlgebraicValue::U64(5),
+                AlgebraicValue::sum(0, AlgebraicValue::U16(1)),
+                AlgebraicValue::U8(42)
+            ],
+            product![
+                AlgebraicValue::U64(6),
+                AlgebraicValue::sum(0, AlgebraicValue::U16(1)),
+                AlgebraicValue::U8(42)
+            ],
+        ];
+
+        let (_, inserts) = tx_data
+            .inserts()
+            .find(|(id, _)| **id == new_table_id)
+            .expect("Expected insert log for new table");
+
+        assert_eq!(
+            &**inserts, &inserted_rows,
+            "Unexpected insert entries after altering the table"
+        );
+
+        // Insert Rows into Altered Table
+        let mut tx = begin_mut_tx(&datastore);
+
+        let new_row = ProductValue {
+            elements: [
+                AlgebraicValue::U64(0),
+                AlgebraicValue::sum(0, AlgebraicValue::U16(1)),
+                AlgebraicValue::U8(0),
+            ]
+            .into(),
+        };
+
+        tx.insert_product_value(new_table_id, &new_row).unwrap();
+        commit(&datastore, tx)?;
+
+        // test for auto_inc feields
+        let tx = begin_mut_tx(&datastore);
+        let rows = tx.table_scan(new_table_id).unwrap().map(|row| row.to_product_value());
+
+        let mut last_row_auto_inc = 0;
+        for row in rows {
+            let auto_inc_col = row.get_field(0, None)?;
+            if let AlgebraicValue::U64(val) = auto_inc_col {
+                assert!(val > &last_row_auto_inc, "Auto-increment value did not increase");
+                last_row_auto_inc = *val;
+            }
+        }
+
+        Ok(())
+    }
 }
