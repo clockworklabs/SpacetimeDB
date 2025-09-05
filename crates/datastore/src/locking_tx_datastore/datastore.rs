@@ -1098,8 +1098,8 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
             .replay_delete_by_rel(table_id, &row)
             .with_context(|| {
                 format!(
-                    "Error deleting row {:?} during transaction {:?} playback",
-                    row, self.committed_state.next_tx_offset
+                    "Error deleting row {:?} from table {:?} during transaction {:?} playback",
+                    row, table_name, self.committed_state.next_tx_offset
                 )
             })?;
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
@@ -1191,7 +1191,8 @@ mod tests {
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.
-    const FIRST_NON_SYSTEM_ID: u32 = ST_RESERVED_SEQUENCE_RANGE + 1;
+    /// N.B. This used to be one higher (before 1.4) because of how we treated `allocated`.
+    const FIRST_NON_SYSTEM_ID: u32 = ST_RESERVED_SEQUENCE_RANGE;
 
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
@@ -1696,7 +1697,7 @@ mod tests {
                 SequenceRow { id: 4, table: ST_SCHEDULED_ID.into(), col_pos: 0, name: "st_scheduled_schedule_id_seq", start },
             ],
             |row| StSequenceRow {
-                allocated: start,
+                allocated: start - 1,
                 ..StSequenceRow::from(row)
             }
         ));
@@ -1931,7 +1932,7 @@ mod tests {
         verify_schemas_consistent(&mut tx, table_id);
 
         let expected_indexes = [IndexRow {
-            id: ST_RESERVED_SEQUENCE_RANGE + dropped_indexes + 1,
+            id: FIRST_NON_SYSTEM_ID + dropped_indexes,
             table: FIRST_NON_SYSTEM_ID,
             col: col_list![0],
             name: "Foo_id_idx_btree",

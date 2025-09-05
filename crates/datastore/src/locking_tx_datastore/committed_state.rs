@@ -251,7 +251,12 @@ impl CommittedState {
                 min_value: seq.min_value,
                 max_value: seq.max_value,
                 start: seq.start,
-                allocated: seq.start,
+                // In practice, this means we will actually start at start - 1, since `allocated`
+                // overrides start, but we keep these fields set this way to match databases
+                // that were bootstrapped before 1.4 and don't have a snapshot.
+                // This is covered with the test:
+                //   db::relational_db::tests::load_1_2_quickstart_without_snapshot_test
+                allocated: seq.start - 1,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_SEQUENCES.

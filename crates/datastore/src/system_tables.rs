@@ -73,9 +73,8 @@ pub(crate) const ST_VAR_NAME: &str = "st_var";
 pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
 /// Reserved range of sequence values used for system tables.
 ///
-/// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE + 1`.
-/// Because off-by-one errors are common, our code should assume that user created
-/// tables may actually start at `ST_RESERVED_SEQUENCE_RANGE`.
+/// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE`.
+/// Versions before 1.4 started at one more that number.
 ///
 /// The range applies to all sequences allocated by system tables, i.e. table-,
 /// sequence-, index-, and constraint-ids.
