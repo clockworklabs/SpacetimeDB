@@ -3325,17 +3325,6 @@ mod tests {
 
         tempdir
     }
-    fn print_recursive(path: &Path) -> std::io::Result<()> {
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let path = entry.path();
-            println!("{}", path.display());
-            if path.is_dir() {
-                print_recursive(&path)?;
-            }
-        }
-        Ok(())
-    }
 
     /// Load a v1.2 database, verify that the expected tables are present, and we can add a table.
     fn load_1_2_data(use_snapshot: bool) -> ResultTest<()> {
@@ -3343,12 +3332,6 @@ mod tests {
         let tempdir = copy_fixture_dir(&data_dir);
 
         let dir = ReplicaDir::from_path_unchecked(tempdir.path().join("replicas/22000001"));
-        // println statements are here just to debug in CI.
-        println!("Directories in tempdir:");
-        print_recursive(tempdir.path())?;
-
-        println!("Directories in replica dir:");
-        print_recursive(&dir.clone().0)?;
 
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
         // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
