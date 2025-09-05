@@ -1,9 +1,10 @@
-from .. import COMPOSE_FILE, Smoketest, requires_docker, spacetime
-from ..docker import DockerManager
-
 import time
-from typing import Callable
 import unittest
+from typing import Callable
+import json
+
+from .. import COMPOSE_FILE, Smoketest, requires_docker, spacetime, parse_sql_result
+from ..docker import DockerManager
 
 def retry(func: Callable, max_retries: int = 3, retry_delay: int = 2):
     """Retry a function on failure with delay."""
@@ -17,17 +18,6 @@ def retry(func: Callable, max_retries: int = 3, retry_delay: int = 2):
             else:
                 print("Max retries reached. Skipping the exception.")
                 return False
-
-def parse_sql_result(res: str) -> list[dict]:
-    """Parse tabular output from an SQL query into a list of dicts."""
-    lines = res.splitlines()
-    headers = lines[0].split('|') if '|' in lines[0] else [lines[0]]
-    headers = [header.strip() for header in headers]
-    rows = []
-    for row in lines[2:]:
-        cols = [col.strip() for col in row.split('|')]
-        rows.append(dict(zip(headers, cols)))
-    return rows
 
 def int_vals(rows: list[dict]) -> list[dict]:
     """For all dicts in list, cast all values in dict to int."""
@@ -123,6 +113,18 @@ where replication_state.database_id={database_id} \
         # Wait for at least one tick to ensure buffers are flushed.
         # TODO: Replace with confirmed read.
         time.sleep(0.6)
+
+    def wait_counter_value(self, id, value, max_attempts=10, delay=1):
+        """Wait for the value for `id` in the counter table to reach `value`"""
+
+        for _ in range(max_attempts):
+            rows = self.sql(f"select * from counter where id={id}")
+            if len(rows) >= 1 and int(rows[0]['value']) >= value:
+                return
+            else:
+                time.sleep(delay)
+
+        raise ValueError(f"Counter {id} below {value}")
 
 
     def fail_leader(self, action='kill'):
@@ -250,6 +252,9 @@ fn send_message(ctx: &ReducerContext, text: String) {
 
     def collect_counter_rows(self):
         return int_vals(self.cluster.sql("select * from counter"))
+
+    def call_control(self, reducer, *args):
+        self.spacetime("call", "spacetime-control", reducer, *map(json.dumps, args))
 
 
 class LeaderElection(ReplicationTest):
@@ -404,3 +409,31 @@ class QuorumLoss(ReplicationTest):
         with self.assertRaises(Exception):
             for i in range(1001):
                 self.call("send_message", "terminal")
+
+
+class EnableReplication(ReplicationTest):
+    AUTOPUBLISH = False
+
+    def test_enable_replication(self):
+        """Tests enabling replication on an un-replicated database"""
+
+        name = random_string()
+
+        self.publish_module(name, num_replicas = 1)
+        leader = self.cluster.wait_for_leader_change(None)
+
+        n1 = 1_000
+        n2 = 100
+        self.start(1, n1)
+
+        self.cluster.wait_counter_value(1, n1, max_attempts=10, delay=10)
+
+        self.call_control("enable_replication", {"Name": name}, 3)
+
+        self.cluster.wait_for_leader_change(leader)
+        self.start(2, n2)
+
+        self.cluster.wait_counter_value(2, n2)
+
+        rows = self.collect_counter_rows()
+        self.assertEqual([{"id": 1, "value": n1}, {"id": 2, "value": n2}], rows)
