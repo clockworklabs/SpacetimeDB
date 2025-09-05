@@ -3,7 +3,7 @@ use spacetimedb::log;
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
-    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp, TimeDuration,
+    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp,
 };
 
 pub type TestAlias = TestA;
@@ -196,9 +196,9 @@ pub fn init(ctx: &ReducerContext) {
         scheduled_id: 0,
         scheduled_at: duration!("1000ms").into(),
     });
-    
+
     let current_time = ctx.timestamp;
-    let one_second = TimeDuration::from_micros(1_000_000);    
+    let one_second = TimeDuration::from_micros(1_000_000);
     let future_timestamp: Timestamp = current_time + one_second;
 
     ctx.db.nonrepeating_test_arg().insert(NonrepeatingTestArg {
@@ -223,7 +223,11 @@ pub fn nonrepeating_test(ctx: &ReducerContext, arg: NonrepeatingTestArg) {
         .timestamp
         .duration_since(arg.prev_time)
         .expect("arg.prev_time is later than ctx.timestamp... huh?");
-    log::trace!("This reducers runs only once, at Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
+    log::trace!(
+        "This reducers runs only once, at Timestamp: {:?}, Delta time: {:?}",
+        ctx.timestamp,
+        delta_time
+    );
 }
 
 #[spacetimedb::reducer]
