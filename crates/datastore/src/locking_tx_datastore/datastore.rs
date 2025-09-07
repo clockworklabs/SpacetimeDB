@@ -219,9 +219,7 @@ impl Locking {
                 .set(table_size as i64);
         }
 
-        // Fix up auto_inc IDs in the cached system table schemas.
-        // We might need something to reset sequence ids?
-
+        // Double check that our in-memory system table ids match the on-disk schemas.
         committed_state.assert_system_table_schemas_match()?;
         // Set the sequence state. In practice we will end up doing this again after replaying
         // the commit log, but we do it here too just to avoid having an incorrectly restored
