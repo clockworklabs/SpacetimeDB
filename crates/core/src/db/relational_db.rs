@@ -2096,7 +2096,6 @@ mod tests {
     #![allow(clippy::disallowed_macros)]
 
     use std::cell::RefCell;
-    use std::fs;
     use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::rc::Rc;
