@@ -97,7 +97,7 @@ public partial record CustomTaggedEnum
 [SpacetimeDB.Table]
 public partial class PrivateTable { }
 
-[SpacetimeDB.Table]
+[SpacetimeDB.Table(Public = true)]
 public partial struct PublicTable
 {
     [SpacetimeDB.AutoInc]
@@ -256,6 +256,17 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
 
     [SpacetimeDB.Unique]
     public uint Unique2;
+}
+
+/// <summary>
+/// These used to cause conflicts when generating the BSATN struct for a type.
+/// </summary>
+[SpacetimeDB.Type]
+partial struct FormerlyForbiddenFieldNames
+{
+    public uint Read;
+    public uint Write;
+    public uint GetAlgebraicType;
 }
 
 public class Module

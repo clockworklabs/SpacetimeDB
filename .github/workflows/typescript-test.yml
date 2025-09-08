@@ -8,7 +8,7 @@ on:
   merge_group:
 
 jobs:
-  compile-and-test:
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +22,6 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9.7
           run_install: true
 
       - name: Get pnpm store directory
@@ -39,9 +38,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - name: Compile
+      - name: Build
         working-directory: sdks/typescript
-        run: pnpm compile
+        run: pnpm build
 
       - name: Run sdk tests
         working-directory: sdks/typescript/packages/sdk

@@ -37,6 +37,14 @@ HAVE_DOCKER = False
 # and a dotnet installation is detected
 HAVE_DOTNET = False
 
+# When we pass --spacetime-login, we are running against a server that requires "real" spacetime logins (rather than `--server-issued-login`).
+# This is used to skip tests that don't work with that.
+USE_SPACETIME_LOGIN = False
+
+# If we pass `--remote-server`, the server address will be something other than the default. This is used to skip tests that rely on use
+# having the default localhost server.
+REMOTE_SERVER = False
+
 # default value can be overridden by `--compose-file` flag
 COMPOSE_FILE = "./docker-compose.yml"
 
@@ -61,6 +69,15 @@ def requires_dotnet(item):
         return item
     return unittest.skip("dotnet 8.0 not available")(item)
 
+def requires_anonymous_login(item):
+    if USE_SPACETIME_LOGIN:
+        return unittest.skip("using `spacetime login`")(item)
+    return item
+
+def requires_local_server(item):
+    if REMOTE_SERVER:
+        return unittest.skip("running against a remote server")(item)
+    return item
 
 def build_template_target():
     if not TEMPLATE_TARGET_DIR.exists():
@@ -253,27 +270,45 @@ class Smoketest(unittest.TestCase):
         # and **not raise any exceptions to the caller**.
         return ReturnThread(run).join
 
+    def get_server_address(self):
+        with open(self.config_path, "rb") as f:
+            config = tomllib.load(f)
+            token = config['spacetimedb_token']
+            server_name = config['default_server']
+            server_config = next((c for c in config['server_configs'] if c['nickname'] == server_name), None)
+            if server_config is None:
+                raise Exception(f"Unable to find server in config with nickname {server_name}")
+            host = server_config['host']
+            protocol = server_config['protocol']
+
+            return dict(host=host, protocol=protocol, token=token)
+
     # Make an HTTP call with `method` to `path`.
     #
     # If the response is 200, return the body.
     # Otherwise, throw an `Exception` constructed with two arguments, the response object and the body.
-    def api_call(self, method, path, body = None, headers = {}):
-        with open(self.config_path, "rb") as f:
-            config = tomllib.load(f)
-            host = config['default_server']
-            token = config['spacetimedb_token']
+    def api_call(self, method, path, body=None, headers={}):
+        server = self.get_server_address()
+        host = server["host"]
+        protocol = server["protocol"]
+        token = server["token"]
+        conn = None
+        if protocol == "http":
             conn = http.client.HTTPConnection(host)
-            auth = {"Authorization": f'Bearer {token}'}
-            headers.update(auth)
-            log_cmd([method, path])
-            conn.request(method, path, body, headers)
-            resp = conn.getresponse()
-            body = resp.read()
-            logging.debug(f"{resp.status} {body}")
-            if resp.status != 200:
-                raise Exception(resp, body)
-            return body
-
+        elif protocol == "https":
+            conn = http.client.HTTPSConnection(host)
+        else:
+            raise Exception(f"Unknown protocol: {protocol}")
+        auth = {"Authorization": f'Bearer {token}'}
+        headers.update(auth)
+        log_cmd([method, path])
+        conn.request(method, path, body, headers)
+        resp = conn.getresponse()
+        body = resp.read()
+        logging.debug(f"{resp.status} {body}")
+        if resp.status != 200:
+            raise Exception(resp, body)
+        return body
 
     @classmethod
     def write_module_code(cls, module_code):

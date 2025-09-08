@@ -1,8 +1,7 @@
 //! Helpers to allow deserializing data using a ReducerDef.
 
 use crate::def::ReducerDef;
-use spacetimedb_lib::sats::{self, de, ser, ProductValue};
-use spacetimedb_sats::impl_serialize;
+use spacetimedb_lib::sats::{self, de, ProductValue};
 
 /// Wrapper around a `ReducerDef` that allows deserializing to a `ProductValue` at the type
 /// of the reducer's parameter `ProductType`.
@@ -45,17 +44,3 @@ impl<'de> de::ProductVisitor<'de> for ReducerArgsDeserializeSeed<'_> {
         de::visit_named_product(self.0.map(|r| &*r.params.elements), &self, tup)
     }
 }
-
-pub struct ReducerArgsWithSchema<'a> {
-    value: &'a ProductValue,
-    ty: sats::WithTypespace<'a, ReducerDef>,
-}
-impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
-    use itertools::Itertools;
-    use ser::SerializeSeqProduct;
-    let mut seq = ser.serialize_seq_product(self.value.elements.len())?;
-    for (value, elem) in self.value.elements.iter().zip_eq(&*self.ty.ty().params.elements) {
-        seq.serialize_element(&self.ty.with(&elem.algebraic_type).with_value(value))?;
-    }
-    seq.end()
-});

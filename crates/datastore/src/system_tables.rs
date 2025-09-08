@@ -568,6 +568,17 @@ impl From<StColumnRow> for ColumnSchema {
     }
 }
 
+impl From<ColumnSchema> for StColumnRow {
+    fn from(column: ColumnSchema) -> Self {
+        Self {
+            table_id: column.table_id,
+            col_pos: column.col_pos,
+            col_name: column.col_name,
+            col_type: column.col_type.into(),
+        }
+    }
+}
+
 /// System Table [ST_INDEX_NAME]
 ///
 /// | index_id | table_id | index_name  | index_algorithm            |
