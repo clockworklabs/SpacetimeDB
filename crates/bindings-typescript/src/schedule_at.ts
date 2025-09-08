@@ -1,6 +1,12 @@
 import { AlgebraicType } from './algebraic_type';
+import { TimeDuration } from './time_duration';
+import { Timestamp } from './timestamp';
 
 export const ScheduleAt: {
+  /**
+   * Get the algebraic type representation of the {@link ScheduleAt} type.
+   * @returns The algebraic type representation of the type.
+   */
   getAlgebraicType(): AlgebraicType;
 } = {
   getAlgebraicType(): AlgebraicType {
@@ -18,19 +24,19 @@ export const ScheduleAt: {
 
 export type Interval = {
   tag: 'Interval';
-  value: { __time_duration_micros__: bigint };
+  value: TimeDuration;
 };
 export const Interval = (value: bigint): Interval => ({
   tag: 'Interval',
-  value: { __time_duration_micros__: value },
+  value: new TimeDuration(value),
 });
 export type Time = {
   tag: 'Time';
-  value: { __timestamp_micros_since_unix_epoch__: bigint };
+  value: Timestamp;
 };
 export const Time = (value: bigint): Time => ({
   tag: 'Time',
-  value: { __timestamp_micros_since_unix_epoch__: value },
+  value: new Timestamp(value),
 });
 
 export type ScheduleAt = Interval | Time;
