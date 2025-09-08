@@ -26,14 +26,6 @@ impl MemoryUsage for Sequence {
 
 impl Sequence {
     pub(super) fn new(schema: SequenceSchema, previous_allocation: Option<i128>) -> Self {
-        if let Some(prev) = previous_allocation {
-            if prev < schema.min_value || prev > schema.max_value {
-                panic!(
-                    "Invalid sequence: previous allocation value {prev} is out of bounds for sequence with min_value {} and max_value {}",
-                    schema.min_value, schema.max_value
-                );
-            }
-        }
         if schema.start < schema.min_value || schema.start > schema.max_value {
             panic!(
                 "Invalid sequence: start value {} is out of bounds for sequence with min_value {} and max_value {}",
@@ -51,7 +43,24 @@ impl Sequence {
                 "Invalid sequence: increment must be less than or equal to the range between min_value and max_value"
             );
         }
-        let start = previous_allocation.unwrap_or(schema.start);
+        let start = if let Some(prev) = previous_allocation {
+            if prev < schema.min_value || prev > schema.max_value {
+                // Previous versions set allocated to 0 as a default,
+                // so we have this special case.
+                if prev == 0 {
+                    schema.start
+                } else {
+                    panic!(
+                        "Invalid sequence: previous allocation value {prev} is out of bounds for sequence with min_value {} and max_value {}",
+                        schema.min_value, schema.max_value
+                    );
+                }
+            } else {
+                prev
+            }
+        } else {
+            schema.start
+        };
         // We will always need to allocate before generating any values.
         Self {
             value: start,
@@ -416,6 +425,22 @@ mod tests {
             previous_allocation: Some(100),
         };
         make_test_sequence_schema(seq_params);
+    }
+
+    #[test]
+    fn test_previous_out_of_range_but_zero() {
+        // This is a sequence that would only ever be able to generate one value.
+        let seq_params = SequenceParams {
+            min: 1,
+            max: 10,
+            increment: 1,
+            start: 1,
+            previous_allocation: Some(0),
+        };
+        let mut seq = make_test_sequence_schema(seq_params);
+        assert!(seq.needs_allocation());
+        seq.allocate_steps(1);
+        assert_eq!(1, seq.gen_next_value().unwrap());
     }
 
     #[test]
