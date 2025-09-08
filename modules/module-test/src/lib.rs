@@ -43,7 +43,7 @@ pub enum TestC {
 const DEFAULT_TEST_C: TestC = TestC::Foo;
 #[table(name = test_d, public)]
 pub struct TestD {
-    #[default(value = Some(DEFAULT_TEST_C))]
+    #[default(Some(DEFAULT_TEST_C))]
     test_c: Option<TestC>,
 }
 
