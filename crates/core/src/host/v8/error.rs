@@ -126,7 +126,9 @@ pub(super) struct JsError {
 impl fmt::Display for JsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "js error {}", self.msg)?;
-        writeln!(f, "{}", self.trace)?;
+        if !f.alternate() {
+            writeln!(f, "{}", self.trace)?;
+        }
         Ok(())
     }
 }
@@ -245,6 +247,16 @@ impl JsError {
                 trace: JsStackTrace::default(),
                 msg: "unknown error".to_owned(),
             },
+        }
+    }
+}
+
+pub(super) fn log_traceback(func_type: &str, func: &str, e: &anyhow::Error) {
+    log::info!("{func_type} \"{func}\" runtime error: {e:#}");
+    if let Some(js_err) = e.downcast_ref::<JsError>() {
+        log::info!("js error {}", js_err.msg);
+        for (index, frame) in js_err.trace.frames.iter().enumerate() {
+            log::info!("  Frame #{index}: {frame}");
         }
     }
 }
