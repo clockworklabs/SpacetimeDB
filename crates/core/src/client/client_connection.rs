@@ -346,6 +346,13 @@ impl ClientConnectionSender {
 
     /// Send a message to the client. For data-related messages, you should probably use
     /// `BroadcastQueue::send` to ensure that the client sees data messages in a consistent order.
+    ///
+    /// If `message` is the result of evaluating a query, then `tx_offset` should be
+    /// the TX offset of the database state against which the query was evaluated.
+    /// If `message` is not the result of evaluating a query (e.g. it reports an error),
+    /// `tx_offset` should be `None`.
+    /// For clients which have requested only confirmed durable reads,
+    /// the sender will delay sending `message` until the `tx_offset` is confirmed.
     pub fn send_message(
         &self,
         tx_offset: Option<TxOffset>,
