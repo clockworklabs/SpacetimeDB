@@ -1,3 +1,5 @@
+use crate::blob_store::NullBlobStore;
+
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::{write_row_to_pages, write_row_to_pages_bsatn, Error},
@@ -1138,10 +1140,10 @@ impl Table {
 
     /// Deletes the row identified by `ptr` from the table.
     ///
-    /// Returns the number of blob bytes deleted. This method does not update statistics by itself.
+    /// This method does update statistics.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) -> BlobNumBytes {
+    unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
         // Delete row from indices.
         // Do this before the actual deletion, as `index.delete` needs a `RowRef`
         // so it can extract the appropriate value.
@@ -1149,7 +1151,9 @@ impl Table {
         unsafe { self.delete_from_indices(blob_store, ptr) };
 
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        unsafe { self.delete_internal(blob_store, ptr) }
+        let blob_bytes_deleted = unsafe { self.delete_internal(blob_store, ptr) };
+
+        self.update_statistics_deleted_row(blob_bytes_deleted);
     }
 
     /// Delete `row_ref` from all the indices of this table until `index_id` is reached.
@@ -1201,8 +1205,7 @@ impl Table {
         let ret = before(row_ref);
 
         // SAFETY: We've checked above that `self.is_row_present(ptr)`.
-        let blob_bytes_deleted = unsafe { self.delete_unchecked(blob_store, ptr) };
-        self.update_statistics_deleted_row(blob_bytes_deleted);
+        unsafe { self.delete_unchecked(blob_store, ptr) };
 
         Some(ret)
     }
@@ -1242,11 +1245,8 @@ impl Table {
 
         // If an equal row was present, delete it.
         if let Some(existing_row_ptr) = existing_row_ptr {
-            let blob_bytes_deleted = unsafe {
-                // SAFETY: `find_same_row` ensures that the pointer is valid.
-                self.delete_unchecked(blob_store, existing_row_ptr)
-            };
-            self.update_statistics_deleted_row(blob_bytes_deleted);
+            // SAFETY: `find_same_row` ensures that the pointer is valid.
+            unsafe { self.delete_unchecked(blob_store, existing_row_ptr) };
         }
 
         // Remove the temporary row we inserted in the beginning.
@@ -1257,6 +1257,17 @@ impl Table {
         }
 
         Ok(existing_row_ptr)
+    }
+
+    /// Clears this table, removing all present rows from it.
+    pub fn clear(&mut self, blob_store: &mut dyn BlobStore) -> usize {
+        let ptrs = self.scan_all_row_ptrs();
+        let len = ptrs.len();
+        for ptr in ptrs {
+            // SAFETY: `ptr` came rom `self.scan_rows(...)`, so it's present.
+            unsafe { self.delete_unchecked(blob_store, ptr) };
+        }
+        len
     }
 
     /// Returns the row type for rows in this table.
@@ -1359,7 +1370,7 @@ impl Table {
         Some(index)
     }
 
-    /// Returns an iterator over all the rows of `self`, yielded as [`RefRef`]s.
+    /// Returns an iterator over all the rows of `self`, yielded as [`RowRef`]s.
     pub fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
         TableScanIter {
             current_page: None, // Will be filled by the iterator.
@@ -1367,6 +1378,13 @@ impl Table {
             table: self,
             blob_store,
         }
+    }
+
+    /// Returns a list of all present row pointers.
+    pub fn scan_all_row_ptrs(&self) -> Vec<RowPointer> {
+        let mut ptrs = Vec::with_capacity(self.row_count as usize);
+        ptrs.extend(self.scan_rows(&NullBlobStore).map(|row| row.pointer()));
+        ptrs
     }
 
     /// Returns this table combined with the index for [`IndexId`], if any.
