@@ -937,40 +937,47 @@ public class Module : IIncrementalGenerator
             transform: (transformContext, ct) =>
                 transformContext.ParseWithDiags(diag => 
                 {
-                    var fieldSymbol = (IFieldSymbol)transformContext.TargetSymbol;
-                    var fieldSyntax = (FieldDeclarationSyntax)transformContext.TargetNode;
-                    var containingType = fieldSymbol.ContainingType;
-                    
-                    var table = tables
-                        .Select((t, ct) => t)
-                        .Where(t => t != null && t.FullName == containingType.ToDisplayString())
-                        .Collect()
-                        .Select((ts, _) => ts.FirstOrDefault());
-                    
-                    if (table == null)
-                    {
-                        return null;
-                    }
-                    
-                    var columnIndex = table.Members
-                        .Select((col, idx) => (col, idx))
-                        .FirstOrDefault(x => x.col.Name == fieldSymbol.Name)
-                        .idx;
-                    
-                    if (columnIndex < 0)
-                    {
-                        return null;
-                    }
-                    
-                    var column = new ColumnDeclaration(
-                        table.FullName,
-                        columnIndex,
-                        fieldSymbol,
-                        diag
+                    // var fieldSymbol = (IFieldSymbol)transformContext.TargetSymbol;
+                    // var fieldSyntax = (FieldDeclarationSyntax)transformContext.TargetNode;
+                    // var containingType = fieldSymbol.ContainingType;
+                    //
+                    // var table = tables
+                    //     .Select((t, ct) => t)
+                    //     .Where(t => t != null && t.FullName == containingType.ToDisplayString())
+                    //     .Collect()
+                    //     .Select((ts, _) => ts.FirstOrDefault());
+                    //
+                    // if (table == null)
+                    // {
+                    //     return null;
+                    // }
+                    //
+                    //
+                    // var columnIndex = table.Members
+                    //     .Select((col, idx) => (col, idx))
+                    //     .FirstOrDefault(x => x.col.Name == fieldSymbol.Name)
+                    //     .idx;
+                    //
+                    // if (columnIndex < 0)
+                    // {
+                    //     return null;
+                    // }
+                    //
+                    // var column = new ColumnDeclaration(
+                    //     table.FullName,
+                    //     columnIndex,
+                    //     fieldSymbol,
+                    //     diag
+                    // );
+                    //
+                    // var columnDefaultValueData = column.GetColumnDefaultValue();
+                    // return columnDefaultValueData;
+                    return new ColumnDefaultValueData(
+                        "User",
+                        "DefaultUInt",
+                        1,
+                        "9"
                     );
-                    
-                    var columnDefaultValueData = column.GetColumnDefaultValue();
-                    return columnDefaultValueData;
                 })
             )
             .Where(x => x != null)
