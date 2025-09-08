@@ -5,6 +5,7 @@ import type {
   InferTypeOfRow,
   InferTypeOfTypeBuilder,
   TypeBuilder,
+  U8ColumnBuilder,
 } from './type_builders';
 
 type MustBeNever<T> = [T] extends [never]
@@ -93,6 +94,9 @@ const _row3: {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _row4: {
   foo: TypeBuilder<string, AlgebraicTypeVariants.String>;
+  baz: U8ColumnBuilder<{
+    isAutoIncrement: true;
+  }>;
   bar: I32ColumnBuilder<{
     isPrimaryKey: true;
   }>;
@@ -102,6 +106,7 @@ const _row4: {
   }>;
 } = {
   foo: t.string(),
+  baz: t.u8().autoInc(),
   bar: t.i32().primaryKey(),
   idx: t.i64().unique().index('btree'),
 };
