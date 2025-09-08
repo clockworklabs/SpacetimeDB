@@ -1,65 +1,14 @@
 import {
   AlgebraicType,
+  ConnectionId,
+  Identity,
   ScheduleAt,
   SumTypeVariant,
+  TimeDuration,
+  Timestamp,
   type AlgebraicTypeVariants,
 } from '..';
-import type { Prettify } from './type_util';
-
-/**
- * A set of methods for building a column definition. Type builders extend this
- * interface so that they can be converted to column builders by calling
- * one of the methods that returns a column builder.
- *
- * Notably, `scheduleAt` is not part of this interface even though it is part
- * of the metadata for a column because it specifies both the type of the
- * column and the metadata as well. Therefore, it should not be possible to
- * convert a normal type into a `ScheduleAt` column. You should instead use
- * {@link t.scheduleAt} to create a column with the `ScheduleAt` type directly.
- */
-interface IntoColumnBuilder<Type, SpacetimeType extends AlgebraicType> {
-  /**
-   * Specify the index type for this column
-   * @param algorithm The index algorithm to use
-   */
-  index<
-    M extends ColumnMetadata = DefaultMetadata,
-    N extends IndexTypes = 'btree',
-  >(
-    algorithm?: N
-  ): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'indexType'> & { indexType: N }>
-  >;
-
-  /**
-   * Specify this column as the primary key
-   */
-  primaryKey<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isPrimaryKey'> & { isPrimaryKey: true }>
-  >;
-
-  /**
-   * Specify this column as unique
-   */
-  unique<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isUnique'> & { isUnique: true }>
-  >;
-
-  /**
-   * Specify this column as auto-incrementing
-   */
-  autoInc<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isAutoIncrement'> & { isAutoIncrement: true }>
-  >;
-}
+import type { Set } from './type_util';
 
 /**
  * Helper type to extract the TypeScript type from a TypeBuilder
@@ -135,9 +84,7 @@ type VariantsArrayFromVariantsObj<Obj extends VariantsObj> = {
  * A generic type builder that captures both the TypeScript type
  * and the corresponding `AlgebraicType`.
  */
-export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
-  implements IntoColumnBuilder<Type, SpacetimeType>
-{
+export class TypeBuilder<Type, SpacetimeType extends AlgebraicType> {
   /**
    * The TypeScript phantom type. This is not stored at runtime,
    * but is visible to the compiler
@@ -164,184 +111,757 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
   constructor(algebraicType: AlgebraicType) {
     this.algebraicType = algebraicType;
   }
+}
 
+/**
+ * Interface for types that can be converted into a column builder with primary key metadata.
+ *
+ * Implementing this interface allows a type to be marked as the primary key of a table column
+ * in a type-safe manner. The `primaryKey()` method returns a new `ColumnBuilder` instance
+ * with the metadata updated to indicate that the column is a primary key.
+ *
+ * @typeParam Type - The TypeScript type of the column's value.
+ * @typeParam SpacetimeType - The corresponding SpacetimeDB algebraic type.
+ * @typeParam M - The metadata type for the column, defaulting to `DefaultMetadata`.
+ *
+ * @remarks
+ * - This interface is typically implemented by type builders for primitive and complex types.
+ * - The returned `ColumnBuilder` will have its metadata extended with `{ isPrimaryKey: true }`.
+ * - Marking a column as a primary key is mutually exclusive with certain other metadata flags,
+ *   such as `isAutoIncrement` or `isUnique`, depending on the database schema rules.
+ */
+interface PrimaryKeyable<
+  Type,
+  SpacetimeType extends AlgebraicType,
+  M extends ColumnMetadata = DefaultMetadata,
+> {
+  /**
+   * Specify this column as primary key
+   */
+  primaryKey(): ColumnBuilder<
+    Type,
+    SpacetimeType,
+    Set<M, 'isPrimaryKey', true>
+  >;
+}
+
+/**
+ * Interface for types that can be converted into a column builder with unique metadata.
+ *
+ * Implementing this interface allows a type to be marked as unique in a table column
+ * in a type-safe manner. The `unique()` method returns a new `ColumnBuilder` instance
+ * with the metadata updated to indicate that the column is unique.
+ *
+ * @typeParam Type - The TypeScript type of the column's value.
+ * @typeParam SpacetimeType - The corresponding SpacetimeDB algebraic type.
+ * @typeParam M - The metadata type for the column, defaulting to `DefaultMetadata`.
+ *
+ * @remarks
+ * - This interface is typically implemented by type builders for primitive and complex types.
+ * - The returned `ColumnBuilder` will have its metadata extended with `{ isUnique: true }`.
+ * - Marking a column as unique is mutually exclusive with certain other metadata flags,
+ *   such as `isAutoIncrement` or `isPrimaryKey`, depending on the database schema rules.
+ */
+interface Uniqueable<
+  Type,
+  SpacetimeType extends AlgebraicType,
+  M extends ColumnMetadata = DefaultMetadata,
+> {
+  /**
+   * Specify this column as unique
+   */
+  unique(): ColumnBuilder<Type, SpacetimeType, Set<M, 'isUnique', true>>;
+}
+
+/**
+ * Interface for types that can be converted into a column builder with index metadata.
+ *
+ * Implementing this interface allows a type to be indexed in a table column
+ * in a type-safe manner. The `index()` method returns a new `ColumnBuilder` instance
+ * with the metadata updated to indicate the index type.
+ *
+ * @typeParam Type - The TypeScript type of the column's value.
+ * @typeParam SpacetimeType - The corresponding SpacetimeDB algebraic type.
+ * @typeParam M - The metadata type for the column, defaulting to `DefaultMetadata`.
+ *
+ * @remarks
+ * - This interface is typically implemented by type builders for primitive and complex types.
+ * - The returned `ColumnBuilder` will have its metadata extended with `{ indexType: N }`.
+ * - Indexing a column may have implications for performance and query optimization.
+ */
+interface Indexable<
+  Type,
+  SpacetimeType extends AlgebraicType,
+  M extends ColumnMetadata = DefaultMetadata,
+> {
   /**
    * Specify the index type for this column
    * @param algorithm The index algorithm to use
    */
-  index<
-    M extends ColumnMetadata = DefaultMetadata,
-    N extends IndexTypes = 'btree',
-  >(
+  index<N extends IndexTypes = 'btree'>(
     algorithm?: N
-  ): ColumnBuilder<
+  ): ColumnBuilder<Type, SpacetimeType, Set<M, 'indexType', N>>;
+}
+
+/**
+ * Interface for types that can be converted into a column builder with auto-increment metadata.
+ *
+ * Implementing this interface allows a type to be marked as auto-incrementing in a table column
+ * in a type-safe manner. The `autoInc()` method returns a new `ColumnBuilder` instance
+ * with the metadata updated to indicate that the column is auto-incrementing.
+ *
+ * @typeParam Type - The TypeScript type of the column's value.
+ * @typeParam SpacetimeType - The corresponding SpacetimeDB algebraic type.
+ * @typeParam M - The metadata type for the column, defaulting to `DefaultMetadata`.
+ *
+ * @remarks
+ * - This interface is typically implemented by type builders for primitive and complex types.
+ * - The returned `ColumnBuilder` will have its metadata extended with `{ isAutoIncrement: true }`.
+ * - Marking a column as auto-incrementing is mutually exclusive with certain other metadata flags,
+ *   such as `isUnique` or `isPrimaryKey`, depending on the database schema rules.
+ */
+interface AutoIncrementable<
+  Type,
+  SpacetimeType extends AlgebraicType,
+  M extends ColumnMetadata = DefaultMetadata,
+> {
+  /**
+   * Specify this column as auto-incrementing
+   */
+  autoInc(): ColumnBuilder<
     Type,
     SpacetimeType,
-    Prettify<Omit<M, 'indexType'> & { indexType: N }>
-  > {
-    return new ColumnBuilder<
-      Type,
-      SpacetimeType,
-      Prettify<Omit<M, 'indexType'> & { indexType: N }>
-    >(this, {
+    Set<M, 'isAutoIncrement', true>
+  >;
+}
+
+export class U8Builder
+  extends TypeBuilder<number, AlgebraicTypeVariants.U8>
+  implements
+    Indexable<number, AlgebraicTypeVariants.U8>,
+    Uniqueable<number, AlgebraicTypeVariants.U8>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.U8>,
+    AutoIncrementable<number, AlgebraicTypeVariants.U8>
+{
+  constructor() {
+    super(AlgebraicType.U8);
+  }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): U8ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new U8ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
       ...defaultMetadata,
       indexType: algorithm,
     });
   }
-
-  /**
-   * Specify this column as the primary key
-   */
-  primaryKey<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isPrimaryKey'> & { isPrimaryKey: true }>
-  > {
-    return new ColumnBuilder<
-      Type,
-      SpacetimeType,
-      Prettify<Omit<M, 'isPrimaryKey'> & { isPrimaryKey: true }>
-    >(this, {
-      ...defaultMetadata,
-      isPrimaryKey: true,
-    });
-  }
-
-  /**
-   * Specify this column as unique
-   */
-  unique<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isUnique'> & { isUnique: true }>
-  > {
-    return new ColumnBuilder<
-      Type,
-      SpacetimeType,
-      Prettify<Omit<M, 'isUnique'> & { isUnique: true }>
-    >(this, {
+  unique(): U8ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new U8ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
       ...defaultMetadata,
       isUnique: true,
     });
   }
-
-  /**
-   * Specify this column as auto-incrementing
-   */
-  autoInc<M extends ColumnMetadata = DefaultMetadata>(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isAutoIncrement'> & { isAutoIncrement: true }>
-  > {
-    return new ColumnBuilder<
-      Type,
-      SpacetimeType,
-      Prettify<Omit<M, 'isAutoIncrement'> & { isAutoIncrement: true }>
-    >(this, {
-      ...defaultMetadata,
-      isAutoIncrement: true,
-    });
+  primaryKey(): U8ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new U8ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): U8ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new U8ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
   }
 }
 
-export class U8Builder extends TypeBuilder<number, AlgebraicTypeVariants.U8> {
-  constructor() {
-    super(AlgebraicType.U8);
-  }
-}
-export class U16Builder extends TypeBuilder<number, AlgebraicTypeVariants.U16> {
+export class U16Builder
+  extends TypeBuilder<number, AlgebraicTypeVariants.U16>
+  implements
+    Indexable<number, AlgebraicTypeVariants.U16>,
+    Uniqueable<number, AlgebraicTypeVariants.U16>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.U16>,
+    AutoIncrementable<number, AlgebraicTypeVariants.U16>
+{
   constructor() {
     super(AlgebraicType.U16);
   }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): U16ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new U16ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): U16ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new U16ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): U16ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new U16ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): U16ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new U16ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
 }
-export class U32Builder extends TypeBuilder<number, AlgebraicTypeVariants.U32> {
+
+export class U32Builder
+  extends TypeBuilder<number, AlgebraicTypeVariants.U32>
+  implements
+    Indexable<number, AlgebraicTypeVariants.U32>,
+    Uniqueable<number, AlgebraicTypeVariants.U32>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.U32>,
+    AutoIncrementable<number, AlgebraicTypeVariants.U32>
+{
   constructor() {
     super(AlgebraicType.U32);
   }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): U32ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new U32ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): U32ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new U32ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): U32ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new U32ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): U32ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new U32ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
 }
-export class U64Builder extends TypeBuilder<bigint, AlgebraicTypeVariants.U64> {
+
+export class U64Builder
+  extends TypeBuilder<bigint, AlgebraicTypeVariants.U64>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.U64>,
+    Uniqueable<bigint, AlgebraicTypeVariants.U64>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.U64>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.U64>
+{
   constructor() {
     super(AlgebraicType.U64);
   }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): U64ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new U64ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): U64ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new U64ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): U64ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new U64ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): U64ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new U64ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
 }
-export class U128Builder extends TypeBuilder<
-  bigint,
-  AlgebraicTypeVariants.U128
-> {
+
+export class U128Builder
+  extends TypeBuilder<bigint, AlgebraicTypeVariants.U128>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.U128>,
+    Uniqueable<bigint, AlgebraicTypeVariants.U128>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.U128>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.U128>
+{
   constructor() {
     super(AlgebraicType.U128);
   }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): U128ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new U128ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): U128ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new U128ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): U128ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new U128ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): U128ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new U128ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
 }
-export class U256Builder extends TypeBuilder<
-  bigint,
-  AlgebraicTypeVariants.U256
-> {
+
+export class U256Builder
+  extends TypeBuilder<bigint, AlgebraicTypeVariants.U256>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.U256>,
+    Uniqueable<bigint, AlgebraicTypeVariants.U256>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.U256>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.U256>
+{
   constructor() {
     super(AlgebraicType.U256);
   }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): U256ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new U256ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): U256ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new U256ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): U256ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new U256ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): U256ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new U256ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
 }
-export class I128Builder extends TypeBuilder<
-  bigint,
-  AlgebraicTypeVariants.I128
-> {
+
+export class I8Builder
+  extends TypeBuilder<number, AlgebraicTypeVariants.I8>
+  implements
+    Indexable<number, AlgebraicTypeVariants.I8>,
+    Uniqueable<number, AlgebraicTypeVariants.I8>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.I8>,
+    AutoIncrementable<number, AlgebraicTypeVariants.I8>
+{
+  constructor() {
+    super(AlgebraicType.I8);
+  }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): I8ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new I8ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I8ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new I8ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I8ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new I8ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): I8ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new I8ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class I16Builder
+  extends TypeBuilder<number, AlgebraicTypeVariants.I16>
+  implements
+    Indexable<number, AlgebraicTypeVariants.I16>,
+    Uniqueable<number, AlgebraicTypeVariants.I16>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.I16>,
+    AutoIncrementable<number, AlgebraicTypeVariants.I16>
+{
+  constructor() {
+    super(AlgebraicType.I16);
+  }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): I16ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new I16ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I16ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new I16ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I16ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new I16ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): I16ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new I16ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class I32Builder
+  extends TypeBuilder<number, AlgebraicTypeVariants.I32>
+  implements
+    Indexable<number, AlgebraicTypeVariants.I32>,
+    Uniqueable<number, AlgebraicTypeVariants.I32>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.I32>,
+    AutoIncrementable<number, AlgebraicTypeVariants.I32>
+{
+  constructor() {
+    super(AlgebraicType.I32);
+  }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): I32ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new I32ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I32ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new I32ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I32ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new I32ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): I32ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new I32ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class I64Builder
+  extends TypeBuilder<bigint, AlgebraicTypeVariants.I64>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.I64>,
+    Uniqueable<bigint, AlgebraicTypeVariants.I64>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.I64>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.I64>
+{
+  constructor() {
+    super(AlgebraicType.I64);
+  }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): I64ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new I64ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I64ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new I64ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I64ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new I64ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): I64ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new I64ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class I128Builder
+  extends TypeBuilder<bigint, AlgebraicTypeVariants.I128>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.I128>,
+    Uniqueable<bigint, AlgebraicTypeVariants.I128>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.I128>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.I128>
+{
   constructor() {
     super(AlgebraicType.I128);
   }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): I128ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new I128ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I128ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new I128ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I128ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new I128ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): I128ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new I128ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
 }
-export class I256Builder extends TypeBuilder<
-  bigint,
-  AlgebraicTypeVariants.I256
-> {
+
+export class I256Builder
+  extends TypeBuilder<bigint, AlgebraicTypeVariants.I256>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.I256>,
+    Uniqueable<bigint, AlgebraicTypeVariants.I256>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.I256>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.I256>
+{
   constructor() {
     super(AlgebraicType.I256);
   }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): I256ColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new I256ColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I256ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new I256ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I256ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new I256ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): I256ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
+    return new I256ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
 }
+
 export class F32Builder extends TypeBuilder<number, AlgebraicTypeVariants.F32> {
   constructor() {
     super(AlgebraicType.F32);
   }
 }
+
 export class F64Builder extends TypeBuilder<number, AlgebraicTypeVariants.F64> {
   constructor() {
     super(AlgebraicType.F64);
   }
 }
-export class BoolBuilder extends TypeBuilder<
-  boolean,
-  AlgebraicTypeVariants.Bool
-> {
+
+export class BoolBuilder
+  extends TypeBuilder<boolean, AlgebraicTypeVariants.Bool>
+  implements
+    Indexable<boolean, AlgebraicTypeVariants.Bool>,
+    Uniqueable<boolean, AlgebraicTypeVariants.Bool>,
+    PrimaryKeyable<boolean, AlgebraicTypeVariants.Bool>
+{
   constructor() {
     super(AlgebraicType.Bool);
   }
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): BoolColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new BoolColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): BoolColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new BoolColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(this, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): BoolColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new BoolColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
 }
-export class StringBuilder extends TypeBuilder<
-  string,
-  AlgebraicTypeVariants.String
-> {
+
+export class StringBuilder
+  extends TypeBuilder<string, AlgebraicTypeVariants.String>
+  implements
+    Indexable<string, AlgebraicTypeVariants.String>,
+    Uniqueable<string, AlgebraicTypeVariants.String>,
+    PrimaryKeyable<string, AlgebraicTypeVariants.String>
+{
   constructor() {
     super(AlgebraicType.String);
   }
-}
-export class I8Builder extends TypeBuilder<number, AlgebraicTypeVariants.I8> {
-  constructor() {
-    super(AlgebraicType.I8);
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): StringColumnBuilder<Set<DefaultMetadata, 'indexType', N>> {
+    return new StringColumnBuilder<Set<DefaultMetadata, 'indexType', N>>(this, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): StringColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new StringColumnBuilder<Set<DefaultMetadata, 'isUnique', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isUnique: true,
+      }
+    );
+  }
+  primaryKey(): StringColumnBuilder<
+    Set<DefaultMetadata, 'isPrimaryKey', true>
+  > {
+    return new StringColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>>(
+      this,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
   }
 }
-export class I16Builder extends TypeBuilder<number, AlgebraicTypeVariants.I16> {
-  constructor() {
-    super(AlgebraicType.I16);
-  }
-}
-export class I32Builder extends TypeBuilder<number, AlgebraicTypeVariants.I32> {
-  constructor() {
-    super(AlgebraicType.I32);
-  }
-}
-export class I64Builder extends TypeBuilder<bigint, AlgebraicTypeVariants.I64> {
-  constructor() {
-    super(AlgebraicType.I64);
-  }
-}
+
 export class ArrayBuilder<
   Element extends TypeBuilder<any, any>,
 > extends TypeBuilder<
@@ -357,6 +877,7 @@ export class ArrayBuilder<
     super(AlgebraicType.Array(element.algebraicType));
   }
 }
+
 export class ProductBuilder<Elements extends ElementsObj> extends TypeBuilder<
   TypeScriptTypeFromElementsObj<Elements>,
   {
@@ -383,6 +904,7 @@ export class ProductBuilder<Elements extends ElementsObj> extends TypeBuilder<
     );
   }
 }
+
 export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
   TypeScriptTypeFromVariantsObj<Variants>,
   { tag: 'Sum'; value: { variants: VariantsArrayFromVariantsObj<Variants> } }
@@ -409,65 +931,6 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
   }
 }
 
-export type U8ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<number, AlgebraicTypeVariants.U8, M>;
-export type U16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<number, AlgebraicTypeVariants.U16, M>;
-export type U32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<number, AlgebraicTypeVariants.U32, M>;
-export type U64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<bigint, AlgebraicTypeVariants.U64, M>;
-export type U128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<bigint, AlgebraicTypeVariants.U128, M>;
-export type U256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<bigint, AlgebraicTypeVariants.U256, M>;
-export type I8ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<number, AlgebraicTypeVariants.I8, M>;
-export type I16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<number, AlgebraicTypeVariants.I16, M>;
-export type I32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<number, AlgebraicTypeVariants.I32, M>;
-export type I64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<bigint, AlgebraicTypeVariants.I64, M>;
-export type I128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<bigint, AlgebraicTypeVariants.I128, M>;
-export type I256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<bigint, AlgebraicTypeVariants.I256, M>;
-export type F32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<number, AlgebraicTypeVariants.F32, M>;
-export type F64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<number, AlgebraicTypeVariants.F64, M>;
-export type BoolColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<boolean, AlgebraicTypeVariants.Bool, M>;
-export type StringColumnBuilder<M extends ColumnMetadata = DefaultMetadata> =
-  ColumnBuilder<string, AlgebraicTypeVariants.String, M>;
-export type ArrayColumnBuilder<
-  Element extends TypeBuilder<any, any>,
-  M extends ColumnMetadata = DefaultMetadata,
-> = ColumnBuilder<
-  Array<Element['type']>,
-  { tag: 'Array'; value: Element['spacetimeType'] },
-  M
->;
-export type ProductColumnBuilder<
-  Elements extends Array<{ name: string; algebraicType: AlgebraicType }>,
-  M extends ColumnMetadata = DefaultMetadata,
-> = ColumnBuilder<
-  { [K in Elements[number]['name']]: any },
-  { tag: 'Product'; value: { elements: Elements } },
-  M
->;
-export type SumColumnBuilder<
-  Variants extends Array<{ name: string; algebraicType: AlgebraicType }>,
-  M extends ColumnMetadata = DefaultMetadata,
-> = ColumnBuilder<
-  {
-    [K in Variants[number]['name']]: { tag: K; value: any };
-  }[Variants[number]['name']],
-  { tag: 'Sum'; value: { variants: Variants } },
-  M
->;
-
 /**
  * The type of index types that can be applied to a column.
  * `undefined` is the default
@@ -478,34 +941,22 @@ type IndexTypes = 'btree' | 'hash' | undefined;
  * Metadata describing column constraints and index type
  */
 export type ColumnMetadata = {
-  isPrimaryKey: boolean;
-  isUnique: boolean;
-  isAutoIncrement: boolean;
-  isScheduleAt: boolean;
-  indexType: IndexTypes;
+  isPrimaryKey?: true;
+  isUnique?: true;
+  isAutoIncrement?: true;
+  isScheduleAt?: true;
+  indexType?: IndexTypes;
 };
 
 /**
  * Default metadata state type for a newly created column
  */
-type DefaultMetadata = {
-  isPrimaryKey: false;
-  isUnique: false;
-  isAutoIncrement: false;
-  isScheduleAt: false;
-  indexType: undefined;
-};
+type DefaultMetadata = object;
 
 /**
  * Default metadata state value for a newly created column
  */
-const defaultMetadata: DefaultMetadata = {
-  isPrimaryKey: false,
-  isUnique: false,
-  isAutoIncrement: false,
-  isScheduleAt: false,
-  indexType: undefined,
-};
+const defaultMetadata: DefaultMetadata = {};
 
 /**
  * A column builder allows you to incrementally specify constraints
@@ -518,8 +969,13 @@ export class ColumnBuilder<
   Type,
   SpacetimeType extends AlgebraicType,
   M extends ColumnMetadata = DefaultMetadata,
-> implements IntoColumnBuilder<Type, SpacetimeType>
-{
+> {
+  /**
+   * The TypeScript phantom type. This is not stored at runtime,
+   * but is visible to the compiler
+   */
+  readonly columnMetadataType!: M;
+
   typeBuilder: TypeBuilder<Type, SpacetimeType>;
   columnMetadata: ColumnMetadata;
 
@@ -530,82 +986,607 @@ export class ColumnBuilder<
     this.typeBuilder = typeBuilder;
     this.columnMetadata = metadata ?? defaultMetadata;
   }
+}
 
-  /**
-   * Specify the index type for this column
-   * @param algorithm The index algorithm to use
-   */
+export class U8ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<number, AlgebraicTypeVariants.U8, M>
+  implements
+    Indexable<number, AlgebraicTypeVariants.U8>,
+    Uniqueable<number, AlgebraicTypeVariants.U8>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.U8>,
+    AutoIncrementable<number, AlgebraicTypeVariants.U8>
+{
   index<N extends IndexTypes = 'btree'>(
     algorithm?: N
-  ): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'indexType'> & { indexType: N }>
-  > {
-    return new ColumnBuilder<
-      Type,
-      SpacetimeType,
-      Prettify<Omit<M, 'indexType'> & { indexType: N }>
-    >(this.typeBuilder, {
-      ...this.columnMetadata,
+  ): U8ColumnBuilder<Set<M, 'indexType', N>> {
+    return new U8ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
       indexType: algorithm,
     });
   }
-
-  /**
-   * Specify this column as the primary key
-   */
-  primaryKey(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isPrimaryKey'> & { isPrimaryKey: true }>
-  > {
-    return new ColumnBuilder<
-      Type,
-      SpacetimeType,
-      Prettify<Omit<M, 'isPrimaryKey'> & { isPrimaryKey: true }>
-    >(this.typeBuilder, {
-      ...this.columnMetadata,
-      isPrimaryKey: true,
-    });
-  }
-
-  /**
-   * Specify this column as unique
-   */
-  unique(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isUnique'> & { isUnique: true }>
-  > {
-    return new ColumnBuilder<
-      Type,
-      SpacetimeType,
-      Prettify<Omit<M, 'isUnique'> & { isUnique: true }>
-    >(this.typeBuilder, {
-      ...this.columnMetadata,
+  unique(): U8ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new U8ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
       isUnique: true,
     });
   }
-
-  /**
-   * Specify this column as auto-incrementing
-   */
-  autoInc(): ColumnBuilder<
-    Type,
-    SpacetimeType,
-    Prettify<Omit<M, 'isAutoIncrement'> & { isAutoIncrement: true }>
-  > {
-    return new ColumnBuilder<
-      Type,
-      SpacetimeType,
-      Prettify<Omit<M, 'isAutoIncrement'> & { isAutoIncrement: true }>
-    >(this.typeBuilder, {
-      ...this.columnMetadata,
-      isAutoIncrement: true,
+  primaryKey(): U8ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new U8ColumnBuilder<Set<M, 'isPrimaryKey', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isPrimaryKey: true,
     });
   }
+  autoInc(): U8ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new U8ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
 }
+
+export class U16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<number, AlgebraicTypeVariants.U16, M>
+  implements
+    Indexable<number, AlgebraicTypeVariants.U16>,
+    Uniqueable<number, AlgebraicTypeVariants.U16>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.U16>,
+    AutoIncrementable<number, AlgebraicTypeVariants.U16>
+{
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): U16ColumnBuilder<Set<M, 'indexType', N>> {
+    return new U16ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): U16ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new U16ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): U16ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new U16ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): U16ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new U16ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class U32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<number, AlgebraicTypeVariants.U32, M>
+  implements
+    Indexable<number, AlgebraicTypeVariants.U32>,
+    Uniqueable<number, AlgebraicTypeVariants.U32>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.U32>,
+    AutoIncrementable<number, AlgebraicTypeVariants.U32>
+{
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): U32ColumnBuilder<Set<M, 'indexType', N>> {
+    return new U32ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): U32ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new U32ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): U32ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new U32ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): U32ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new U32ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class U64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<bigint, AlgebraicTypeVariants.U64, M>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.U64>,
+    Uniqueable<bigint, AlgebraicTypeVariants.U64>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.U64>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.U64>
+{
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): U64ColumnBuilder<Set<M, 'indexType', N>> {
+    return new U64ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): U64ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new U64ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): U64ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new U64ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): U64ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new U64ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class U128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<bigint, AlgebraicTypeVariants.U128, M>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.U128>,
+    Uniqueable<bigint, AlgebraicTypeVariants.U128>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.U128>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.U128>
+{
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): U128ColumnBuilder<Set<M, 'indexType', N>> {
+    return new U128ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): U128ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new U128ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): U128ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new U128ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): U128ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new U128ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class U256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<bigint, AlgebraicTypeVariants.U256, M>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.U256>,
+    Uniqueable<bigint, AlgebraicTypeVariants.U256>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.U256>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.U256>
+{
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): U256ColumnBuilder<Set<M, 'indexType', N>> {
+    return new U256ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): U256ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new U256ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): U256ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new U256ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): U256ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new U256ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class I8ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<number, AlgebraicTypeVariants.I8, M>
+  implements
+    Indexable<number, AlgebraicTypeVariants.I8>,
+    Uniqueable<number, AlgebraicTypeVariants.I8>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.I8>,
+    AutoIncrementable<number, AlgebraicTypeVariants.I8>
+{
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): I8ColumnBuilder<Set<M, 'indexType', N>> {
+    return new I8ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I8ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new I8ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I8ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new I8ColumnBuilder<Set<M, 'isPrimaryKey', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isPrimaryKey: true,
+    });
+  }
+  autoInc(): I8ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new I8ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class I16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<number, AlgebraicTypeVariants.I16, M>
+  implements
+    Indexable<number, AlgebraicTypeVariants.I16>,
+    Uniqueable<number, AlgebraicTypeVariants.I16>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.I16>,
+    AutoIncrementable<number, AlgebraicTypeVariants.I16>
+{
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): I16ColumnBuilder<Set<M, 'indexType', N>> {
+    return new I16ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I16ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new I16ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I16ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new I16ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): I16ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new I16ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class I32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<number, AlgebraicTypeVariants.I32, M>
+  implements
+    Indexable<number, AlgebraicTypeVariants.I32>,
+    Uniqueable<number, AlgebraicTypeVariants.I32>,
+    PrimaryKeyable<number, AlgebraicTypeVariants.I32>,
+    AutoIncrementable<number, AlgebraicTypeVariants.I32>
+{
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): I32ColumnBuilder<Set<M, 'indexType', N>> {
+    return new I32ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I32ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new I32ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I32ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new I32ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): I32ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new I32ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class I64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<bigint, AlgebraicTypeVariants.I64, M>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.I64>,
+    Uniqueable<bigint, AlgebraicTypeVariants.I64>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.I64>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.I64>
+{
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): I64ColumnBuilder<Set<M, 'indexType', N>> {
+    return new I64ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I64ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new I64ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I64ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new I64ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): I64ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new I64ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class I128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<bigint, AlgebraicTypeVariants.I128, M>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.I128>,
+    Uniqueable<bigint, AlgebraicTypeVariants.I128>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.I128>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.I128>
+{
+  index<
+    M extends ColumnMetadata = DefaultMetadata,
+    N extends IndexTypes = 'btree',
+  >(algorithm?: N): I128ColumnBuilder<Set<M, 'indexType', N>> {
+    return new I128ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I128ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new I128ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I128ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new I128ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): I128ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new I128ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class I256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<bigint, AlgebraicTypeVariants.I256, M>
+  implements
+    Indexable<bigint, AlgebraicTypeVariants.I256>,
+    Uniqueable<bigint, AlgebraicTypeVariants.I256>,
+    PrimaryKeyable<bigint, AlgebraicTypeVariants.I256>,
+    AutoIncrementable<bigint, AlgebraicTypeVariants.I256>
+{
+  index<N extends IndexTypes = 'btree'>(
+    algorithm?: N
+  ): I256ColumnBuilder<Set<M, 'indexType', N>> {
+    return new I256ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): I256ColumnBuilder<Set<M, 'isUnique', true>> {
+    return new I256ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): I256ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new I256ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+  autoInc(): I256ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
+    return new I256ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isAutoIncrement: true,
+      }
+    );
+  }
+}
+
+export class F32ColumnBuilder<
+  M extends ColumnMetadata = DefaultMetadata,
+> extends ColumnBuilder<number, AlgebraicTypeVariants.F32, M> {}
+export class F64ColumnBuilder<
+  M extends ColumnMetadata = DefaultMetadata,
+> extends ColumnBuilder<number, AlgebraicTypeVariants.F64, M> {}
+export class BoolColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<boolean, AlgebraicTypeVariants.Bool, M>
+  implements
+    Indexable<boolean, AlgebraicTypeVariants.Bool>,
+    Uniqueable<boolean, AlgebraicTypeVariants.Bool>,
+    PrimaryKeyable<boolean, AlgebraicTypeVariants.Bool>
+{
+  index<
+    M extends ColumnMetadata = DefaultMetadata,
+    N extends IndexTypes = 'btree',
+  >(algorithm?: N): BoolColumnBuilder<Set<M, 'indexType', N>> {
+    return new BoolColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): BoolColumnBuilder<Set<M, 'isUnique', true>> {
+    return new BoolColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): BoolColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new BoolColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+}
+
+export class StringColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
+  extends ColumnBuilder<string, AlgebraicTypeVariants.String, M>
+  implements
+    Indexable<string, AlgebraicTypeVariants.String>,
+    Uniqueable<string, AlgebraicTypeVariants.String>,
+    PrimaryKeyable<string, AlgebraicTypeVariants.String>
+{
+  index<
+    M extends ColumnMetadata = DefaultMetadata,
+    N extends IndexTypes = 'btree',
+  >(algorithm?: N): StringColumnBuilder<Set<M, 'indexType', N>> {
+    return new StringColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
+      ...defaultMetadata,
+      indexType: algorithm,
+    });
+  }
+  unique(): StringColumnBuilder<Set<M, 'isUnique', true>> {
+    return new StringColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
+      ...defaultMetadata,
+      isUnique: true,
+    });
+  }
+  primaryKey(): StringColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new StringColumnBuilder<Set<M, 'isPrimaryKey', true>>(
+      this.typeBuilder,
+      {
+        ...defaultMetadata,
+        isPrimaryKey: true,
+      }
+    );
+  }
+}
+
+export class ArrayColumnBuilder<
+  Element extends TypeBuilder<any, any>,
+  M extends ColumnMetadata = DefaultMetadata,
+> extends ColumnBuilder<
+  Array<Element['type']>,
+  { tag: 'Array'; value: Element['spacetimeType'] },
+  M
+> {}
+
+export class ProductColumnBuilder<
+  Elements extends Array<{ name: string; algebraicType: AlgebraicType }>,
+  M extends ColumnMetadata = DefaultMetadata,
+> extends ColumnBuilder<
+  { [K in Elements[number]['name']]: any },
+  { tag: 'Product'; value: { elements: Elements } },
+  M
+> {}
+
+export class SumColumnBuilder<
+  Variants extends Array<{ name: string; algebraicType: AlgebraicType }>,
+  M extends ColumnMetadata = DefaultMetadata,
+> extends ColumnBuilder<
+  {
+    [K in Variants[number]['name']]: { tag: K; value: any };
+  }[Variants[number]['name']],
+  { tag: 'Sum'; value: { variants: Variants } },
+  M
+> {}
 
 /**
  * A collection of factory functions for creating various SpacetimeDB algebraic types
@@ -628,139 +1609,140 @@ const t = {
   /**
    * Creates a new `Bool` {@link AlgebraicType} to be used in table definitions
    * Represented as `boolean` in TypeScript.
-   * @returns A new BoolBuilder instance
+   * @returns A new {@link BoolBuilder} instance
    */
   bool: (): BoolBuilder => new BoolBuilder(),
 
   /**
    * Creates a new `String` {@link AlgebraicType} to be used in table definitions
    * Represented as `string` in TypeScript.
-   * @returns A new StringBuilder instance
+   * @returns A new {@link StringBuilder} instance
    */
   string: (): StringBuilder => new StringBuilder(),
 
   /**
    * Creates a new `F64` {@link AlgebraicType} to be used in table definitions
    * Represented as `number` in TypeScript.
-   * @returns A new F64Builder instance
+   * @returns A new {@link F64Builder} instance
    */
   number: (): F64Builder => new F64Builder(),
 
   /**
    * Creates a new `I8` {@link AlgebraicType} to be used in table definitions
    * Represented as `number` in TypeScript.
-   * @returns A new I8Builder instance
+   * @returns A new {@link I8Builder} instance
    */
   i8: (): I8Builder => new I8Builder(),
 
   /**
    * Creates a new `U8` {@link AlgebraicType} to be used in table definitions
    * Represented as `number` in TypeScript.
-   * @returns A new U8Builder instance
+   * @returns A new {@link U8Builder} instance
    */
   u8: (): U8Builder => new U8Builder(),
 
   /**
    * Creates a new `I16` {@link AlgebraicType} to be used in table definitions
    * Represented as `number` in TypeScript.
-   * @returns A new I16Builder instance
+   * @returns A new {@link I16Builder} instance
    */
   i16: (): I16Builder => new I16Builder(),
 
   /**
    * Creates a new `U16` {@link AlgebraicType} to be used in table definitions
    * Represented as `number` in TypeScript.
-   * @returns A new U16Builder instance
+   * @returns A new {@link U16Builder} instance
    */
   u16: (): U16Builder => new U16Builder(),
 
   /**
    * Creates a new `I32` {@link AlgebraicType} to be used in table definitions
    * Represented as `number` in TypeScript.
-   * @returns A new I32Builder instance
+   * @returns A new {@link I32Builder} instance
    */
   i32: (): I32Builder => new I32Builder(),
 
   /**
    * Creates a new `U32` {@link AlgebraicType} to be used in table definitions
    * Represented as `number` in TypeScript.
-   * @returns A new U32Builder instance
+   * @returns A new {@link U32Builder} instance
    */
   u32: (): U32Builder => new U32Builder(),
 
   /**
-   * Creates a new `I64` AlgebraicType to be used in table definitions
+   * Creates a new `I64` {@link AlgebraicType} to be used in table definitions
    * Represented as `bigint` in TypeScript.
-   * @returns A new U32Builder instance
+   * @returns A new {@link I64Builder} instance
    */
   i64: (): I64Builder => new I64Builder(),
 
   /**
    * Creates a new `U64` {@link AlgebraicType} to be used in table definitions
    * Represented as `bigint` in TypeScript.
-   * @returns A new U64Builder instance
+   * @returns A new {@link U64Builder} instance
    */
   u64: (): U64Builder => new U64Builder(),
 
   /**
    * Creates a new `I128` {@link AlgebraicType} to be used in table definitions
    * Represented as `bigint` in TypeScript.
-   * @returns A new I128Builder instance
+   * @returns A new {@link I128Builder} instance
    */
   i128: (): I128Builder => new I128Builder(),
 
   /**
    * Creates a new `U128` {@link AlgebraicType} to be used in table definitions
    * Represented as `bigint` in TypeScript.
-   * @returns A new U128Builder instance
+   * @returns A new {@link U128Builder} instance
    */
   u128: (): U128Builder => new U128Builder(),
 
   /**
    * Creates a new `I256` {@link AlgebraicType} to be used in table definitions
    * Represented as `bigint` in TypeScript.
-   * @returns A new I256Builder instance
+   * @returns A new {@link I256Builder} instance
    */
   i256: (): I256Builder => new I256Builder(),
 
   /**
    * Creates a new `U256` {@link AlgebraicType} to be used in table definitions
    * Represented as `bigint` in TypeScript.
-   * @returns A new U256Builder instance
+   * @returns A new {@link U256Builder} instance
    */
   u256: (): U256Builder => new U256Builder(),
 
   /**
-   * Creates a new `F32` AlgebraicType to be used in table definitions
+   * Creates a new `F32` {@link AlgebraicType} to be used in table definitions
    * Represented as `number` in TypeScript.
-   * @returns A new F32Builder instance
+   * @returns A new {@link F32Builder} instance
    */
   f32: (): F32Builder => new F32Builder(),
 
   /**
    * Creates a new `F64` {@link AlgebraicType} to be used in table definitions
    * Represented as `number` in TypeScript.
-   * @returns A new F64Builder instance
+   * @returns A new {@link F64Builder} instance
    */
   f64: (): F64Builder => new F64Builder(),
 
   /**
-   * Creates a new `Object` AlgebraicType to be used in table definitions.
+   * Creates a new `Product` {@link AlgebraicType} to be used in table definitions. Product types in SpacetimeDB
+   * are essentially the same as objects in JavaScript/TypeScript.
    * Properties of the object must also be {@link TypeBuilder}s.
    * Represented as an object with specific properties in TypeScript.
    * @param obj The object defining the properties of the type, whose property
    * values must be {@link TypeBuilder}s.
-   * @returns A new ObjectBuilder instance
+   * @returns A new {@link ProductBuilder} instance
    */
   object<Obj extends ElementsObj>(obj: Obj): ProductBuilder<Obj> {
     return new ProductBuilder<Obj>(obj);
   },
 
   /**
-   * Creates a new `Array` AlgebraicType to be used in table definitions.
+   * Creates a new `Array` {@link AlgebraicType} to be used in table definitions.
    * Represented as an array in TypeScript.
    * @param element The element type of the array, which must be a `TypeBuilder`.
-   * @returns A new ArrayBuilder instance
+   * @returns A new {@link ArrayBuilder} instance
    */
   array<Element extends TypeBuilder<any, any>>(
     e: Element
@@ -769,11 +1751,13 @@ const t = {
   },
 
   /**
-   * Creates a new `Enum` AlgebraicType to be used in table definitions.
+   * Creates a new `Sum` {@link AlgebraicType} to be used in table definitions. Sum types in SpacetimeDB
+   * are similar to enums or unions in languages like Rust or TypeScript respectively.
+   * Each variant of the enum must be a {@link TypeBuilder}.
    * Represented as a union of string literals in TypeScript.
    * @param obj The object defining the variants of the enum, whose variant
    * types must be `TypeBuilder`s.
-   * @returns A new EnumBuilder instance
+   * @returns A new {@link SumBuilder} instance
    */
   enum<Obj extends VariantsObj>(obj: Obj): SumBuilder<Obj> {
     return new SumBuilder<Obj>(obj);
@@ -802,6 +1786,66 @@ const t = {
         isScheduleAt: true,
       }
     );
+  },
+
+  /**
+   * This is a convenience method for creating a column with the {@link Identity} type.
+   * You can create a column of the same type by constructing an `object` with a single `__identity__` element.
+   * @returns A new {@link TypeBuilder} instance with the {@link Identity} type.
+   */
+  identity: (): TypeBuilder<
+    Identity,
+    AlgebraicTypeVariants.Product & { value: typeof Identity }
+  > => {
+    return new TypeBuilder<
+      Identity,
+      AlgebraicTypeVariants.Product & { value: typeof Identity }
+    >(Identity.getAlgebraicType());
+  },
+
+  /**
+   * This is a convenience method for creating a column with the {@link ConnectionId} type.
+   * You can create a column of the same type by constructing an `object` with a single `__connection_id__` element.
+   * @returns A new {@link TypeBuilder} instance with the {@link ConnectionId} type.
+   */
+  connectionId: (): TypeBuilder<
+    string,
+    AlgebraicTypeVariants.Product & { value: typeof ConnectionId }
+  > => {
+    return new TypeBuilder<
+      string,
+      AlgebraicTypeVariants.Product & { value: typeof ConnectionId }
+    >(ConnectionId.getAlgebraicType());
+  },
+
+  /**
+   * This is a convenience method for creating a column with the {@link Timestamp} type.
+   * You can create a column of the same type by constructing an `object` with a single `__timestamp_micros_since_unix_epoch__` element.
+   * @returns A new {@link TypeBuilder} instance with the {@link Timestamp} type.
+   */
+  timestamp: (): TypeBuilder<
+    Timestamp,
+    AlgebraicTypeVariants.Product & { value: typeof Timestamp }
+  > => {
+    return new TypeBuilder<
+      Timestamp,
+      AlgebraicTypeVariants.Product & { value: typeof Timestamp }
+    >(Timestamp.getAlgebraicType());
+  },
+
+  /**
+   * This is a convenience method for creating a column with the {@link TimeDuration} type.
+   * You can create a column of the same type by constructing an `object` with a single `__time_duration_micros__` element.
+   * @returns A new {@link TypeBuilder} instance with the {@link TimeDuration} type.
+   */
+  timeDuration: (): TypeBuilder<
+    TimeDuration,
+    AlgebraicTypeVariants.Product & { value: typeof TimeDuration }
+  > => {
+    return new TypeBuilder<
+      TimeDuration,
+      AlgebraicTypeVariants.Product & { value: typeof TimeDuration }
+    >(TimeDuration.getAlgebraicType());
   },
 } as const;
 export default t;

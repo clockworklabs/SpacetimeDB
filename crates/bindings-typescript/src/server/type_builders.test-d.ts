@@ -78,20 +78,30 @@ const _row3: {
   foo: TypeBuilder<string, AlgebraicTypeVariants.String>;
   bar: I32ColumnBuilder<{
     isPrimaryKey: true;
-    isUnique: false;
-    isAutoIncrement: false;
-    isScheduleAt: false;
-    indexType: undefined;
   }>;
   idx: I64ColumnBuilder<{
-    isPrimaryKey: false;
     isUnique: true;
-    isAutoIncrement: false;
-    isScheduleAt: false;
     indexType: 'btree';
   }>;
 } = {
   foo: t.string(),
   bar: t.i32().primaryKey(),
   idx: t.i64().index('btree').unique(),
+};
+
+// Test that you can add the index and unique constraint in any order
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _row4: {
+  foo: TypeBuilder<string, AlgebraicTypeVariants.String>;
+  bar: I32ColumnBuilder<{
+    isPrimaryKey: true;
+  }>;
+  idx: I64ColumnBuilder<{
+    isUnique: true;
+    indexType: 'btree';
+  }>;
+} = {
+  foo: t.string(),
+  bar: t.i32().primaryKey(),
+  idx: t.i64().unique().index('btree'),
 };
