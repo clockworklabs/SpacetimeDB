@@ -12,7 +12,7 @@ use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica
 use anyhow::anyhow;
 use core::time::Duration;
 use de::deserialize_js;
-use error::{catch_exception, exception_already_thrown, ExcResult, Throwable};
+use error::{catch_exception, exception_already_thrown, log_traceback, ExcResult, Throwable};
 use from_value::cast;
 use key_cache::get_or_create_key_cache;
 use ser::serialize_to_js;
@@ -157,8 +157,7 @@ impl ModuleInstance for JsInstance {
             &self.replica_ctx.clone(),
             tx,
             params,
-            // TODO(centril): logging.
-            |_ty, _fun, _err| {},
+            log_traceback,
             |tx, op, _budget| {
                 let call_result = call_call_reducer_from_op(scope, op);
                 // TODO(centril): energy metrering.
