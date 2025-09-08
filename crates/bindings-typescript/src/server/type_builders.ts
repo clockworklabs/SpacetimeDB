@@ -1000,19 +1000,19 @@ export class U8ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     algorithm?: N
   ): U8ColumnBuilder<Set<M, 'indexType', N>> {
     return new U8ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): U8ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U8ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
   primaryKey(): U8ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new U8ColumnBuilder<Set<M, 'isPrimaryKey', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isPrimaryKey: true,
     });
   }
@@ -1020,7 +1020,7 @@ export class U8ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new U8ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1039,13 +1039,13 @@ export class U16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     algorithm?: N
   ): U16ColumnBuilder<Set<M, 'indexType', N>> {
     return new U16ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): U16ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U16ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1053,7 +1053,7 @@ export class U16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new U16ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
@@ -1062,7 +1062,7 @@ export class U16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new U16ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1081,13 +1081,13 @@ export class U32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     algorithm?: N
   ): U32ColumnBuilder<Set<M, 'indexType', N>> {
     return new U32ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): U32ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U32ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1095,7 +1095,7 @@ export class U32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new U32ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
@@ -1104,7 +1104,7 @@ export class U32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new U32ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1123,13 +1123,13 @@ export class U64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     algorithm?: N
   ): U64ColumnBuilder<Set<M, 'indexType', N>> {
     return new U64ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): U64ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U64ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1137,7 +1137,7 @@ export class U64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new U64ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
@@ -1146,7 +1146,7 @@ export class U64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new U64ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1165,13 +1165,13 @@ export class U128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     algorithm?: N
   ): U128ColumnBuilder<Set<M, 'indexType', N>> {
     return new U128ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): U128ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U128ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1179,7 +1179,7 @@ export class U128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new U128ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
@@ -1188,7 +1188,7 @@ export class U128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new U128ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1207,13 +1207,13 @@ export class U256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     algorithm?: N
   ): U256ColumnBuilder<Set<M, 'indexType', N>> {
     return new U256ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): U256ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U256ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1221,7 +1221,7 @@ export class U256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new U256ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
@@ -1230,7 +1230,7 @@ export class U256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new U256ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1249,19 +1249,19 @@ export class I8ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     algorithm?: N
   ): I8ColumnBuilder<Set<M, 'indexType', N>> {
     return new I8ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): I8ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I8ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
   primaryKey(): I8ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new I8ColumnBuilder<Set<M, 'isPrimaryKey', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isPrimaryKey: true,
     });
   }
@@ -1269,7 +1269,7 @@ export class I8ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new I8ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1288,13 +1288,13 @@ export class I16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     algorithm?: N
   ): I16ColumnBuilder<Set<M, 'indexType', N>> {
     return new I16ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): I16ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I16ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1302,7 +1302,7 @@ export class I16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new I16ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
@@ -1311,7 +1311,7 @@ export class I16ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new I16ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1330,13 +1330,13 @@ export class I32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     algorithm?: N
   ): I32ColumnBuilder<Set<M, 'indexType', N>> {
     return new I32ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): I32ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I32ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1344,7 +1344,7 @@ export class I32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new I32ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
@@ -1353,7 +1353,7 @@ export class I32ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new I32ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1372,13 +1372,13 @@ export class I64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     algorithm?: N
   ): I64ColumnBuilder<Set<M, 'indexType', N>> {
     return new I64ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): I64ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I64ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1386,7 +1386,7 @@ export class I64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new I64ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
@@ -1395,7 +1395,7 @@ export class I64ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new I64ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1415,13 +1415,13 @@ export class I128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     N extends IndexTypes = 'btree',
   >(algorithm?: N): I128ColumnBuilder<Set<M, 'indexType', N>> {
     return new I128ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): I128ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I128ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1429,7 +1429,7 @@ export class I128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new I128ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
@@ -1438,7 +1438,7 @@ export class I128ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new I128ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1457,13 +1457,13 @@ export class I256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     algorithm?: N
   ): I256ColumnBuilder<Set<M, 'indexType', N>> {
     return new I256ColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): I256ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I256ColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1471,7 +1471,7 @@ export class I256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new I256ColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
@@ -1480,7 +1480,7 @@ export class I256ColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new I256ColumnBuilder<Set<M, 'isAutoIncrement', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isAutoIncrement: true,
       }
     );
@@ -1505,13 +1505,13 @@ export class BoolColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     N extends IndexTypes = 'btree',
   >(algorithm?: N): BoolColumnBuilder<Set<M, 'indexType', N>> {
     return new BoolColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): BoolColumnBuilder<Set<M, 'isUnique', true>> {
     return new BoolColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1519,7 +1519,7 @@ export class BoolColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new BoolColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
@@ -1538,13 +1538,13 @@ export class StringColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     N extends IndexTypes = 'btree',
   >(algorithm?: N): StringColumnBuilder<Set<M, 'indexType', N>> {
     return new StringColumnBuilder<Set<M, 'indexType', N>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       indexType: algorithm,
     });
   }
   unique(): StringColumnBuilder<Set<M, 'isUnique', true>> {
     return new StringColumnBuilder<Set<M, 'isUnique', true>>(this.typeBuilder, {
-      ...defaultMetadata,
+      ...this.columnMetadata,
       isUnique: true,
     });
   }
@@ -1552,7 +1552,7 @@ export class StringColumnBuilder<M extends ColumnMetadata = DefaultMetadata>
     return new StringColumnBuilder<Set<M, 'isPrimaryKey', true>>(
       this.typeBuilder,
       {
-        ...defaultMetadata,
+        ...this.columnMetadata,
         isPrimaryKey: true,
       }
     );
