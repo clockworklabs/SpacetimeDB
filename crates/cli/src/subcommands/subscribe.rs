@@ -2,7 +2,7 @@ use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches};
 use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
-use http::uri::{PathAndQuery, Scheme};
+use reqwest::Url;
 use serde_json::Value;
 use spacetimedb_client_api_messages::websocket::{self as ws, JsonFormat};
 use spacetimedb_data_structures::map::HashMap;
@@ -137,23 +137,20 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let api = ClientApi::new(conn);
     let module_def = api.module_def().await?;
 
+    let mut url = Url::parse(&api.con.db_uri("subscribe"))?;
     // Change the URI scheme from `http(s)` to `ws(s)`.
-    let mut uri = http::Uri::try_from(api.con.db_uri("subscribe"))?.into_parts();
-    uri.scheme = uri.scheme.map(|s| {
-        if s == Scheme::HTTP {
-            "ws".parse().unwrap()
-        } else if s == Scheme::HTTPS {
-            "wss".parse().unwrap()
-        } else {
-            s
-        }
-    });
+    url.set_scheme(match url.scheme() {
+        "http" => "ws",
+        "https" => "wss",
+        unknown => unreachable!("Invalid URL scheme in `Connection::db_uri`: {unknown}"),
+    })
+    .unwrap();
     if confirmed {
-        append_query_param(&mut uri, ("confirmed", "true"));
+        url.query_pairs_mut().append_pair("confirmed", "true");
     }
 
     // Create the websocket request.
-    let mut req = http::Uri::from_parts(uri)?.into_client_request()?;
+    let mut req = url.into_client_request()?;
     req.headers_mut().insert(
         header::SEC_WEBSOCKET_PROTOCOL,
         http::HeaderValue::from_static(ws::TEXT_PROTOCOL),
@@ -338,22 +335,4 @@ fn format_output_json(msg: &ws::DatabaseUpdate<JsonFormat>, schema: &RawModuleDe
     let output = serde_json::to_string(&formatted)? + "\n";
 
     Ok(output)
-}
-
-fn append_query_param(uri: &mut http::uri::Parts, (k, v): (&str, &str)) {
-    let (mut path, query) = uri
-        .path_and_query
-        .as_ref()
-        .map(|pq| (pq.path().to_owned(), pq.query()))
-        .unwrap_or_default();
-    path.push('?');
-    if let Some(query) = query {
-        path.push_str(query);
-        path.push('&');
-    }
-    path.push_str(k);
-    path.push('=');
-    path.push_str(v);
-
-    uri.path_and_query = Some(PathAndQuery::from_maybe_shared(path).unwrap());
 }
