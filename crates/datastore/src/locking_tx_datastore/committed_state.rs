@@ -347,9 +347,9 @@ impl CommittedState {
 
     pub(super) fn replay_delete_by_rel(&mut self, table_id: TableId, row: &ProductValue) -> Result<()> {
         // Get the table for mutation.
-        // If it was dropped, avoid an error and just ignore the row instead.
         let table = match self.tables.get_mut(&table_id) {
             Some(t) => t,
+            // (1) If it was dropped, avoid an error and just ignore the row instead.
             None if self.table_dropped.contains(&table_id) => return Ok(()),
             None => return Err(TableError::IdNotFoundState(table_id).into()),
         };
@@ -364,9 +364,14 @@ impl CommittedState {
         if table_id == ST_TABLE_ID {
             // A row was removed from `st_table`, so a table was dropped.
             // Remove that table from the in-memory structures.
+            let dropped_table_id = Self::read_table_id(row);
             self.tables
-                .remove(&Self::read_table_id(row))
+                .remove(&dropped_table_id)
                 .expect("table to remove should exist");
+            // Mark the table as dropped so that when
+            // processing row deletions for that table later,
+            // they are simply ignored in (1).
+            self.table_dropped.insert(dropped_table_id);
         }
 
         Ok(())
