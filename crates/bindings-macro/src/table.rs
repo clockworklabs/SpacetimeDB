@@ -505,22 +505,14 @@ impl ColumnAttr {
 }
 
 fn parse_default_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<ColumnAttr> {
-    let mut default_value = None;
+    if let Ok(expr) = attr.parse_args::<syn::Expr>() {
+        return Ok(ColumnAttr::Default(expr, ident.span()));
+    }
 
-    attr.parse_nested_meta(|meta| {
-        if meta.path.is_ident("value") {
-            // #[default(value = expr)]
-            let expr: syn::Expr = meta.value()?.parse()?;
-            default_value = Some(expr);
-        };
-        Ok(())
-    })?;
-
-    let expr = default_value.ok_or_else(|| {
-        syn::Error::new_spanned(&attr.meta, "must provide a default value, e.g. #[default(value = 42)]")
-    })?;
-
-    Ok(ColumnAttr::Default(expr, ident.span()))
+    Err(syn::Error::new_spanned(
+        &attr.meta,
+        "expected default value in format `#[default(CONSTANT_VALUE)]`",
+    ))
 }
 
 pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
