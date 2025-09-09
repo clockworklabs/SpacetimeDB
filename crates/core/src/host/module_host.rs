@@ -41,7 +41,7 @@ use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
-use spacetimedb_schema::auto_migrate::AutoMigrateError;
+use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -335,6 +335,7 @@ pub trait ModuleInstance: Send + 'static {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
@@ -459,8 +460,9 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database(program, old_module_info);
+        let ret = self.inst.update_database(program, old_module_info, policy);
         self.check_trap();
         ret
     }
@@ -1058,9 +1060,10 @@ impl ModuleHost {
         &self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         self.call("<update_database>", move |inst| {
-            inst.update_database(program, old_module_info)
+            inst.update_database(program, old_module_info, policy)
         })
         .await?
     }
