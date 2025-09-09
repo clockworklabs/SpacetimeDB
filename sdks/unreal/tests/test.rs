@@ -50,9 +50,10 @@ fn ue_build_script() -> String {
     normalize_path(path)
 }
 
-// Reads the UE_ROOT_PATH environment variable to find the Unreal Editor directory.
-// Errors if UE_ROOT_PATH is not set — must point to the full path of Editor direcory path.
-// Example: "C:/Program Files/Epic Games/UE_5.6"
+/// Reads the UE_ROOT_PATH environment variable to find the Unreal Editor directory.
+///
+/// Errors if UE_ROOT_PATH is not set — must point to the full path of Editor direcory path.
+/// Example: "C:/Program Files/Epic Games/UE_5.6"
 fn ue_root() -> PathBuf {
     let root = env::var("UE_ROOT_PATH")
         .expect("UE_ROOT_PATH not set — set to Unreal Engine root directory (no trailing slash)");
