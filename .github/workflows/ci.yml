@@ -58,7 +58,7 @@ jobs:
           Start-Process target/debug/spacetimedb-cli.exe start
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
-          dotnet workload config --update-mode workload-set
+          dotnet workload config --update-mode manifests
           dotnet workload update
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }

@@ -851,21 +851,27 @@ impl TypedWriter for SqlFormatter<'_, '_> {
     }
 
     fn write_bytes(&mut self, value: &[u8]) -> Result<(), Self::Error> {
-        write!(self.fmt, "0x{}", hex::encode(value))
+        self.write_hex(value)
     }
 
     fn write_hex(&mut self, value: &[u8]) -> Result<(), Self::Error> {
-        write!(self.fmt, "0x{}", hex::encode(value))
+        match self.ty.client {
+            PsqlClient::SpacetimeDB => write!(self.fmt, "0x{}", hex::encode(value)),
+            PsqlClient::Postgres => write!(self.fmt, "\"0x{}\"", hex::encode(value)),
+        }
     }
 
     fn write_timestamp(&mut self, value: Timestamp) -> Result<(), Self::Error> {
-        write!(self.fmt, "{}", value.to_rfc3339().unwrap())
+        match self.ty.client {
+            PsqlClient::SpacetimeDB => write!(self.fmt, "{}", value.to_rfc3339().unwrap()),
+            PsqlClient::Postgres => write!(self.fmt, "\"{}\"", value.to_rfc3339().unwrap()),
+        }
     }
 
     fn write_duration(&mut self, value: TimeDuration) -> Result<(), Self::Error> {
         match self.ty.client {
             PsqlClient::SpacetimeDB => write!(self.fmt, "{value}"),
-            PsqlClient::Postgres => write!(self.fmt, "{}", value.to_iso8601()),
+            PsqlClient::Postgres => write!(self.fmt, "\"{}\"", value.to_iso8601()),
         }
     }
 
