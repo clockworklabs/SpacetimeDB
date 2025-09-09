@@ -193,6 +193,8 @@ impl ModuleInstance for JsInstance {
     }
 }
 
+/// Spawns a thread that will terminate reducer execution
+/// when `budget` has been used up.
 fn run_reducer_timeout(isolate_handle: IsolateHandle, budget: ReducerBudget) -> Arc<AtomicBool> {
     let execution_done_flag = Arc::new(AtomicBool::new(false));
     let execution_done_flag2 = execution_done_flag.clone();
@@ -216,12 +218,14 @@ fn run_reducer_timeout(isolate_handle: IsolateHandle, budget: ReducerBudget) -> 
     execution_done_flag
 }
 
+/// Converts a [`ReducerBudget`] to a [`Duration`].
 fn budget_to_duration(_budget: ReducerBudget) -> Duration {
     // TODO(v8): This is fake logic that allows a maximum timeout.
     // Replace with sensible math.
     Duration::MAX
 }
 
+/// Converts a [`Duration`] to a [`ReducerBudget`].
 fn duration_to_budget(_duration: Duration) -> ReducerBudget {
     // TODO(v8): This is fake logic that allows minimum energy usage.
     // Replace with sensible math.
