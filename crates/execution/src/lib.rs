@@ -255,7 +255,7 @@ impl<'a> Iterator for DeltaScanIter<'a> {
 
 /// Execute a query plan.
 /// The actual execution is driven by `f`.
-pub fn execute_plan<T, R>(plan: &ProjectPlan, tx: &T, f: impl Fn(PlanIter) -> R) -> Result<R>
+pub fn execute_plan<T, R>(plan: &ProjectPlan, tx: &T, f: impl Fn(PlanIter<'_>) -> R) -> Result<R>
 where
     T: Datastore + DeltaStore,
 {

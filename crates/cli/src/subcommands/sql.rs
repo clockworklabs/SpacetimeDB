@@ -34,6 +34,7 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("query")
                 .help("Instead of using a query, run an interactive command prompt for `SQL` expressions"),
         )
+        .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
@@ -178,11 +179,15 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         crate::repl::exec(con).await?;
     } else {
         let query = args.get_one::<String>("query").unwrap();
+        let confirmed = args.get_flag("confirmed");
 
         let con = parse_req(config, args).await?;
-        let api = ClientApi::new(con);
+        let mut api = ClientApi::new(con).sql();
+        if confirmed {
+            api = api.query(&[("confirmed", "true")]);
+        }
 
-        run_sql(api.sql(), query, false).await?;
+        run_sql(api, query, false).await?;
     }
     Ok(())
 }

@@ -32,7 +32,7 @@ use spacetimedb_datastore::{
     },
     traits::TxData,
 };
-use spacetimedb_durability::{self as durability, TxOffset};
+use spacetimedb_durability as durability;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::st_var::StVarValue;
@@ -62,6 +62,8 @@ use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch;
+
+pub use durability::{DurableOffset, TxOffset};
 
 // NOTE(cloutiertyler): We should be using the associated types, but there is
 // a bug in the Rust compiler that prevents us from doing so.
@@ -369,7 +371,9 @@ impl RelationalDB {
             .as_ref()
             .map(|pair| pair.0.clone())
             .as_deref()
-            .and_then(|durability| durability.durable_tx_offset());
+            .map(|durability| durability.durable_tx_offset().get())
+            .transpose()?
+            .flatten();
         let (min_commitlog_offset, _) = history.tx_range_hint();
 
         log::info!("[{database_identity}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
@@ -801,18 +805,18 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn release_tx(&self, tx: Tx) -> (TxMetrics, String) {
+    pub fn release_tx(&self, tx: Tx) -> (TxOffset, TxMetrics, String) {
         log::trace!("RELEASE TX");
         self.inner.release_tx(tx)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn commit_tx(&self, tx: MutTx) -> Result<Option<(TxData, TxMetrics, String)>, DBError> {
+    pub fn commit_tx(&self, tx: MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>, DBError> {
         log::trace!("COMMIT MUT TX");
 
         // TODO: Never returns `None` -- should it?
         let reducer_context = tx.ctx.reducer_context().cloned();
-        let Some((tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
+        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
             return Ok(None);
         };
 
@@ -822,7 +826,7 @@ impl RelationalDB {
             Self::do_durability(&**durability, reducer_context.as_ref(), &tx_data)
         }
 
-        Ok(Some((tx_data, tx_metrics, reducer)))
+        Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -896,6 +900,14 @@ impl RelationalDB {
                 reducer_context.map(|rcx| &rcx.name),
             );
         }
+    }
+
+    /// Get the [`DurableOffset`] of this database, or `None` if this is an
+    /// in-memory instance.
+    pub fn durable_tx_offset(&self) -> Option<DurableOffset> {
+        self.durability
+            .as_ref()
+            .map(|durability| durability.durable_tx_offset())
     }
 
     /// Decide based on the `committed_state.next_tx_offset`
@@ -1000,7 +1012,7 @@ impl RelationalDB {
     {
         let mut tx = self.begin_tx(workload);
         let res = f(&mut tx);
-        let (tx_metrics, reducer) = self.release_tx(tx);
+        let (_tx_offset, tx_metrics, reducer) = self.release_tx(tx);
         self.report_read_tx_metrics(reducer, tx_metrics);
         res
     }
@@ -1015,7 +1027,7 @@ impl RelationalDB {
             self.report_mut_tx_metrics(reducer, tx_metrics, None);
         } else {
             match self.commit_tx(tx).map_err(E::from)? {
-                Some((tx_data, tx_metrics, reducer)) => {
+                Some((_tx_offset, tx_data, tx_metrics, reducer)) => {
                     self.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                 }
                 None => panic!("TODO: retry?"),
@@ -2141,7 +2153,7 @@ mod tests {
     fn table(
         name: &str,
         columns: ProductType,
-        f: impl FnOnce(RawTableDefBuilder) -> RawTableDefBuilder,
+        f: impl FnOnce(RawTableDefBuilder<'_>) -> RawTableDefBuilder,
     ) -> TableSchema {
         let mut builder = RawModuleDefV9Builder::new();
         f(builder.build_table_with_new_type(name, columns, true));
