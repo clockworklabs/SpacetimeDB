@@ -10,7 +10,7 @@ use crate::host::wasm_common::module_host_actor::{
 use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
 use anyhow::anyhow;
-use core::time::Duration;
+use std::time::Instant;
 use de::deserialize_js;
 use error::{catch_exception, exception_already_thrown, log_traceback, ExcResult, Throwable};
 use from_value::cast;
@@ -143,35 +143,46 @@ impl ModuleInstance for JsInstance {
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
-        // TODO(centril): snapshots, module->host calls
-        let mut isolate = Isolate::new(<_>::default());
-        let scope = &mut HandleScope::new(&mut isolate);
-        let context = Context::new(scope, ContextOptions::default());
-        let scope = &mut ContextScope::new(scope, context);
-
         self.common.call_reducer_with_tx(
             &self.replica_ctx.clone(),
             tx,
             params,
             log_traceback,
             |tx, op, _budget| {
-                let call_result = call_call_reducer_from_op(scope, op);
+                // TODO(centril): snapshots, module->host calls
+                // Setup V8 scope.
+                let mut isolate: v8::OwnedIsolate = Isolate::new(<_>::default());
+                let mut scope_1 = HandleScope::new(&mut isolate);
+                let context = Context::new(&mut scope_1, ContextOptions::default());
+                let mut scope_2 = ContextScope::new(&mut scope_1, context);
+
+                // Call the reducer.
+                let start = Instant::now();
+                let call_result = call_call_reducer_from_op(&mut scope_2, op);
+                let total_duration = start.elapsed();
+
                 // TODO(centril): energy metrering.
                 let energy = EnergyStats {
                     used: EnergyQuanta::ZERO,
                     wasmtime_fuel_used: 0,
                     remaining: ReducerBudget::ZERO,
                 };
-                // TODO(centril): timings.
                 let timings = ExecutionTimings {
-                    total_duration: Duration::ZERO,
+                    total_duration,
+                    // TODO(centril): call times.
                     wasm_instance_env_call_times: CallTimes::new(),
                 };
+
+                // Fetch the currently used heap size in V8.
+                // The used size is ostensibly fairer than the total size.
+                drop(scope_2);
+                drop(scope_1);
+                let memory_allocation = isolate.get_heap_statistics().used_heap_size();
+
                 let exec_result = ExecuteResult {
                     energy,
                     timings,
-                    // TODO(centril): memory allocation.
-                    memory_allocation: 0,
+                    memory_allocation,
                     call_result,
                 };
                 (tx, exec_result)
