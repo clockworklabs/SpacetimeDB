@@ -48,6 +48,15 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("build_options")
                 .help("The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project."),
         )
+        // TODO(v8): needs better UX but good enough for a demo...
+        .arg(
+            Arg::new("javascript")
+                .long("javascript")
+                .action(SetTrue)
+                .requires("wasm_file")
+                .hide(true)
+                .help("UNSTABLE: interpret `--bin-path` as a JS module"),
+        )
         .arg(
             Arg::new("num_replicas")
                 .value_parser(clap::value_parser!(u8))
@@ -84,6 +93,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let force = args.get_flag("force");
     let anon_identity = args.get_flag("anon_identity");
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
+    // TODO(v8): needs better UX but good enough for a demo...
+    let wasm_file_is_really_js = args.get_flag("javascript");
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
     let num_replicas = args.get_one::<u8>("num_replicas");
@@ -122,6 +133,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
     };
     let program_bytes = fs::read(path_to_wasm)?;
+
+    // TODO(v8): needs better UX but good enough for a demo...
+    if wasm_file_is_really_js {
+        builder.query(&[("host_type", "Js")])
+    }
 
     let server_address = {
         let url = Url::parse(&database_host)?;

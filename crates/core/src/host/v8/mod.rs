@@ -81,10 +81,6 @@ impl V8RuntimeInner {
             mcc.program.hash,
         );
 
-        if true {
-            return Err::<JsModule, _>(anyhow!("v8_todo"));
-        }
-
         let desc = todo!();
         // Validate and create a common module rom the raw definition.
         let common = build_common_module_from_raw(mcc, desc)?;
@@ -152,7 +148,7 @@ impl ModuleInstance for JsInstance {
             params,
             log_traceback,
             |tx, op, budget| {
-                // TODO(centril): snapshots, module->host calls
+                // TODO(v8): snapshots, module->host calls
                 // Setup V8 scope.
                 let mut isolate: v8::OwnedIsolate = Isolate::new(<_>::default());
                 let isolate_handle = isolate.thread_safe_handle();
@@ -175,7 +171,7 @@ impl ModuleInstance for JsInstance {
                 let energy = EnergyStats { budget, remaining };
                 let timings = ExecutionTimings {
                     total_duration,
-                    // TODO(centril): call times.
+                    // TODO(v8): call times.
                     wasm_instance_env_call_times: CallTimes::new(),
                 };
 
@@ -202,7 +198,7 @@ fn run_reducer_timeout(isolate_handle: IsolateHandle, budget: ReducerBudget) -> 
     let execution_done_flag2 = execution_done_flag.clone();
     let timeout = budget_to_duration(budget);
 
-    // TODO(centril): Using an OS thread is a bit heavy handed...?
+    // TODO(v8): Using an OS thread is a bit heavy handed...?
     thread::spawn(move || {
         // Sleep until the timeout.
         thread::sleep(timeout);
@@ -221,13 +217,13 @@ fn run_reducer_timeout(isolate_handle: IsolateHandle, budget: ReducerBudget) -> 
 }
 
 fn budget_to_duration(_budget: ReducerBudget) -> Duration {
-    // TODO(centril): This is fake logic that allows a maximum timeout.
+    // TODO(v8): This is fake logic that allows a maximum timeout.
     // Replace with sensible math.
     Duration::MAX
 }
 
 fn duration_to_budget(_duration: Duration) -> ReducerBudget {
-    // TODO(centril): This is fake logic that allows minimum energy usage.
+    // TODO(v8): This is fake logic that allows minimum energy usage.
     // Replace with sensible math.
     ReducerBudget::ZERO
 }
