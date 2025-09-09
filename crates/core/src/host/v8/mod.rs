@@ -10,20 +10,23 @@ use crate::host::wasm_common::module_host_actor::{
 use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
 use anyhow::anyhow;
-use std::time::Instant;
+use core::sync::atomic::{AtomicBool, Ordering};
+use core::time::Duration;
 use de::deserialize_js;
 use error::{catch_exception, exception_already_thrown, log_traceback, ExcResult, Throwable};
 use from_value::cast;
 use key_cache::get_or_create_key_cache;
 use ser::serialize_to_js;
-use spacetimedb_client_api_messages::energy::{EnergyQuanta, ReducerBudget};
+use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::RawModuleDef;
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
-use v8::{Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, Local, Value};
+use std::thread;
+use std::time::Instant;
+use v8::{Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, IsolateHandle, Local, Value};
 
 mod de;
 mod error;
@@ -152,25 +155,28 @@ impl ModuleInstance for JsInstance {
             tx,
             params,
             log_traceback,
-            |tx, op, _budget| {
+            |tx, op, budget| {
                 // TODO(centril): snapshots, module->host calls
                 // Setup V8 scope.
                 let mut isolate: v8::OwnedIsolate = Isolate::new(<_>::default());
+                let isolate_handle = isolate.thread_safe_handle();
                 let mut scope_1 = HandleScope::new(&mut isolate);
                 let context = Context::new(&mut scope_1, ContextOptions::default());
                 let mut scope_2 = ContextScope::new(&mut scope_1, context);
+
+                let timeout_thread_cancel_flag = run_reducer_timeout(isolate_handle, budget);
 
                 // Call the reducer.
                 let start = Instant::now();
                 let call_result = call_call_reducer_from_op(&mut scope_2, op);
                 let total_duration = start.elapsed();
+                // Cancel the execution timeout in `run_reducer_timeout`.
+                timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
 
-                // TODO(centril): energy metrering.
-                let energy = EnergyStats {
-                    used: EnergyQuanta::ZERO,
-                    wasmtime_fuel_used: 0,
-                    remaining: ReducerBudget::ZERO,
-                };
+                // Handle energy and timings.
+                let used = duration_to_budget(total_duration);
+                let remaining = budget - used;
+                let energy = EnergyStats { budget, remaining };
                 let timings = ExecutionTimings {
                     total_duration,
                     // TODO(centril): call times.
@@ -193,6 +199,41 @@ impl ModuleInstance for JsInstance {
             },
         )
     }
+}
+
+fn run_reducer_timeout(isolate_handle: IsolateHandle, budget: ReducerBudget) -> Arc<AtomicBool> {
+    let execution_done_flag = Arc::new(AtomicBool::new(false));
+    let execution_done_flag2 = execution_done_flag.clone();
+    let timeout = budget_to_duration(budget);
+
+    // TODO(centril): Using an OS thread is a bit heavy handed...?
+    thread::spawn(move || {
+        // Sleep until the timeout.
+        thread::sleep(timeout);
+
+        if execution_done_flag2.load(Ordering::Relaxed) {
+            // The reducer completed successfully.
+            return;
+        }
+
+        // Reducer is still running.
+        // Terminate V8 execution.
+        isolate_handle.terminate_execution();
+    });
+
+    execution_done_flag
+}
+
+fn budget_to_duration(_budget: ReducerBudget) -> Duration {
+    // TODO(centril): This is fake logic that allows a maximum timeout.
+    // Replace with sensible math.
+    Duration::MAX
+}
+
+fn duration_to_budget(_duration: Duration) -> ReducerBudget {
+    // TODO(centril): This is fake logic that allows minimum energy usage.
+    // Replace with sensible math.
+    ReducerBudget::ZERO
 }
 
 /// Returns the global property `key`.

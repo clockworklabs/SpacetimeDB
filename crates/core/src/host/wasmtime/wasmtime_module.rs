@@ -192,11 +192,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> module_host_actor::ExecuteResult {
         let store = &mut self.store;
-        // note that ReducerBudget being a u64 is load-bearing here - although we convert budget right back into
-        // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
-        // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
+        // Set the fuel budget in WASM.
         set_store_fuel(store, budget.into());
-        let original_fuel = get_store_fuel(store);
         store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
 
         // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
@@ -230,14 +227,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result.map(|code| handle_error_sink_code(code, error));
 
+        // Compute fuel and heap usage.
         let remaining_fuel = get_store_fuel(store);
-
         let remaining: ReducerBudget = remaining_fuel.into();
-        let energy = module_host_actor::EnergyStats {
-            used: (budget - remaining).into(),
-            wasmtime_fuel_used: original_fuel.0 - remaining_fuel.0,
-            remaining,
-        };
+        let energy = module_host_actor::EnergyStats { budget, remaining };
         let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
         module_host_actor::ExecuteResult {
