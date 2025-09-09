@@ -8,7 +8,7 @@ use tracing::span::EnteredSpan;
 use super::instrumentation::CallTimes;
 use crate::client::ClientConnectionSender;
 use crate::database_logger;
-use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
+use crate::energy::{EnergyMonitor, ReducerBudget, ReducerFingerprint};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
@@ -60,9 +60,15 @@ pub trait WasmInstance: Send + Sync + 'static {
 }
 
 pub struct EnergyStats {
-    pub used: EnergyQuanta,
-    pub wasmtime_fuel_used: u64,
+    pub budget: ReducerBudget,
     pub remaining: ReducerBudget,
+}
+
+impl EnergyStats {
+    /// Returns the used energy amount.
+    fn used(&self) -> ReducerBudget {
+        (self.budget.get() - self.remaining.get()).into()
+    }
 }
 
 pub struct ExecutionTimings {
@@ -407,14 +413,16 @@ impl InstanceCommon {
             call_result,
         } = result;
 
+        let energy_used = energy.used();
+        let energy_quanta_used = energy_used.into();
         vm_metrics.report(
-            energy.wasmtime_fuel_used,
+            energy_used.get(),
             timings.total_duration,
             &timings.wasm_instance_env_call_times,
         );
 
         self.energy_monitor
-            .record_reducer(&energy_fingerprint, energy.used, timings.total_duration);
+            .record_reducer(&energy_fingerprint, energy_quanta_used, timings.total_duration);
         if self.allocated_memory != memory_allocation {
             self.metric_wasm_memory_bytes.set(memory_allocation as i64);
             self.allocated_memory = memory_allocation;
@@ -422,7 +430,7 @@ impl InstanceCommon {
 
         reducer_span
             .record("timings.total_duration", tracing::field::debug(timings.total_duration))
-            .record("energy.used", tracing::field::debug(energy.used));
+            .record("energy.used", tracing::field::debug(energy_used));
 
         maybe_log_long_running_reducer(reducer_name, timings.total_duration);
         reducer_span.exit();
@@ -481,7 +489,7 @@ impl InstanceCommon {
                 args,
             },
             status,
-            energy_quanta_used: energy.used,
+            energy_quanta_used,
             host_execution_duration: timings.total_duration,
             request_id,
             timer,
@@ -490,7 +498,7 @@ impl InstanceCommon {
 
         ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
-            energy_used: energy.used,
+            energy_used: energy_quanta_used,
             execution_duration: timings.total_duration,
         }
     }
