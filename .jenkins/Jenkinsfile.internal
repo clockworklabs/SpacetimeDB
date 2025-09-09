@@ -29,7 +29,7 @@ pipeline {
 	    	script {
 		    
 		    def jobName = 'Internal Tests'
-		    def branchName = 'master' // branch to trigger
+		    def branchName = 'bfops/private-public' // branch to trigger
 
 		    // call the internal Jenkins job
 		    build job: "/${jobName}/${branchName}", propagate: true, wait: true, parameters: [
