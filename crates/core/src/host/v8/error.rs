@@ -206,7 +206,7 @@ impl fmt::Display for JsStackTraceFrame {
 
         // This isn't exactly the same format as chrome uses,
         // but it's close enough for now.
-        // TODO(centril): make it more like chrome in the future.
+        // TODO(v8): make it more like chrome in the future.
         f.write_fmt(format_args!(
             "at {} ({}:{}:{})",
             fn_name, script_name, &self.line, &self.column
