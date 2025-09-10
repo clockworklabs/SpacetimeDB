@@ -9,7 +9,6 @@ use crate::host::wasm_common::module_host_actor::{
 };
 use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
-use anyhow::anyhow;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 use de::deserialize_js;
@@ -87,6 +86,10 @@ impl V8RuntimeInner {
             return Err::<JsModule, _>(anyhow!("v8_todo"));
         }
 
+        // TODO(v8): determine min required ABI by module and check that it's supported?
+
+        // TODO(v8): validate function signatures like in WASM? Is that possible with V8?
+
         let desc = todo!();
         // Validate and create a common module rom the raw definition.
         let common = build_common_module_from_raw(mcc, desc)?;
@@ -124,6 +127,17 @@ impl Module for JsModule {
     }
 
     fn create_instance(&self) -> Self::Instance {
+        // TODO(v8): consider some equivalent to `epoch_deadline_callback`
+        // where we report `Js has been running for ...`.
+
+        // TODO(v8): timeout things like `extract_description`.
+
+        // TODO(v8): do we care about preinits / setup or are they unnecessary?
+
+        // TODO(v8): create `InstanceEnv`.
+
+        // TODO(v8): extract description.
+
         todo!()
     }
 }
