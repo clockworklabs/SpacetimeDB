@@ -3,12 +3,15 @@
 use super::module_common::{build_common_module_from_raw, ModuleCommon};
 use super::module_host::{CallReducerParams, DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime};
 use super::UpdateDatabaseResult;
+use crate::host::instance_env::InstanceEnv;
+use crate::host::module_common::run_describer;
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
-    EnergyStats, ExecuteResult, ExecutionTimings, InstanceCommon, ReducerOp,
+    DescribeError, EnergyStats, ExecuteResult, ExecutionTimings, InstanceCommon, ReducerOp,
 };
 use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
+use core::str;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 use de::deserialize_js;
@@ -23,7 +26,9 @@ use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef};
 use std::sync::{Arc, LazyLock};
 use std::thread;
 use std::time::Instant;
-use v8::{Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, IsolateHandle, Local, Value};
+use v8::{
+    Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, IsolateHandle, Local, OwnedIsolate, Value,
+};
 
 mod de;
 mod error;
@@ -84,17 +89,23 @@ impl V8RuntimeInner {
 
         // TODO(v8): validate function signatures like in WASM? Is that possible with V8?
 
-        let desc = todo!();
+        // Convert program to a string.
+        let program: Arc<str> = str::from_utf8(&mcc.program.bytes)?.into();
+
+        // Run the program as a script and extract the raw module def.
+        let desc = extract_description(&program)?;
+
         // Validate and create a common module rom the raw definition.
         let common = build_common_module_from_raw(mcc, desc)?;
 
-        Ok(JsModule { common })
+        Ok(JsModule { common, program })
     }
 }
 
 #[derive(Clone)]
 struct JsModule {
     common: ModuleCommon,
+    program: Arc<str>,
 }
 
 impl DynModule for JsModule {
@@ -122,23 +133,36 @@ impl Module for JsModule {
 
     fn create_instance(&self) -> Self::Instance {
         // TODO(v8): consider some equivalent to `epoch_deadline_callback`
-        // where we report `Js has been running for ...`.
-
-        // TODO(v8): timeout things like `extract_description`.
+        // where we report `Js has been running for ...`s.
 
         // TODO(v8): do we care about preinits / setup or are they unnecessary?
 
-        // TODO(v8): create `InstanceEnv`.
+        let common = &self.common;
+        let instance_env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
+        let instance = JsInstanceEnv { instance_env };
 
-        // TODO(v8): extract description.
+        // NOTE(centril): We don't need to do `extract_description` here
+        // as unlike WASM, we have to recreate the isolate every time.
 
-        todo!()
+        let common = InstanceCommon::new(common);
+        let program = self.program.clone();
+
+        JsInstance {
+            common,
+            instance,
+            program,
+        }
     }
+}
+
+struct JsInstanceEnv {
+    instance_env: InstanceEnv,
 }
 
 struct JsInstance {
     common: InstanceCommon,
-    replica_ctx: Arc<ReplicaContext>,
+    instance: JsInstanceEnv,
+    program: Arc<str>,
 }
 
 impl ModuleInstance for JsInstance {
@@ -151,33 +175,33 @@ impl ModuleInstance for JsInstance {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let replica_ctx = &self.replica_ctx;
+        let replica_ctx = &self.instance.instance_env.replica_ctx;
         self.common.update_database(replica_ctx, program, old_module_info)
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
         self.common.call_reducer_with_tx(
-            &self.replica_ctx.clone(),
+            &self.instance.instance_env.replica_ctx.clone(),
             tx,
             params,
             log_traceback,
             |tx, op, budget| {
                 // TODO(v8): snapshots, module->host calls
-                // Setup V8 scope.
-                let mut isolate: v8::OwnedIsolate = Isolate::new(<_>::default());
-                let isolate_handle = isolate.thread_safe_handle();
-                let mut scope_1 = HandleScope::new(&mut isolate);
-                let context = Context::new(&mut scope_1, ContextOptions::default());
-                let mut scope_2 = ContextScope::new(&mut scope_1, context);
-
-                let timeout_thread_cancel_flag = run_reducer_timeout(isolate_handle, budget);
-
                 // Call the reducer.
-                let start = Instant::now();
-                let call_result = call_call_reducer_from_op(&mut scope_2, op);
-                let total_duration = start.elapsed();
-                // Cancel the execution timeout in `run_reducer_timeout`.
-                timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
+                let (mut isolate, (tx, call_result, total_duration)) = with_script(&self.program, budget, |scope, _| {
+                    let start = Instant::now();
+
+                    let (tx, call_result) = self
+                        .instance
+                        .instance_env
+                        .tx
+                        .clone()
+                        .set(tx, || call_call_reducer_from_op(scope, op));
+
+                    let total_duration = start.elapsed();
+
+                    (tx, call_result, total_duration)
+                });
 
                 // Handle energy and timings.
                 let used = duration_to_budget(total_duration);
@@ -191,8 +215,6 @@ impl ModuleInstance for JsInstance {
 
                 // Fetch the currently used heap size in V8.
                 // The used size is ostensibly fairer than the total size.
-                drop(scope_2);
-                drop(scope_1);
                 let memory_allocation = isolate.get_heap_statistics().used_heap_size();
 
                 let exec_result = ExecuteResult {
@@ -205,6 +227,39 @@ impl ModuleInstance for JsInstance {
             },
         )
     }
+}
+
+fn with_script<R>(
+    code: &str,
+    budget: ReducerBudget,
+    logic: impl for<'scope> FnOnce(&mut HandleScope<'scope>, Local<'scope, Value>) -> R,
+) -> (OwnedIsolate, R) {
+    with_scope(budget, |scope| {
+        let code = v8::String::new(scope, code).unwrap();
+        let script_val = v8::Script::compile(scope, code, None).unwrap().run(scope).unwrap();
+        logic(scope, script_val)
+    })
+}
+
+/// Sets up an isolate and run `logic` with a [`HandleScope`].
+pub(crate) fn with_scope<R>(budget: ReducerBudget, logic: impl FnOnce(&mut HandleScope<'_>) -> R) -> (OwnedIsolate, R) {
+    let mut isolate: OwnedIsolate = Isolate::new(<_>::default());
+    isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
+    let isolate_handle = isolate.thread_safe_handle();
+    let mut scope_1 = HandleScope::new(&mut isolate);
+    let context = Context::new(&mut scope_1, ContextOptions::default());
+    let mut scope_2 = ContextScope::new(&mut scope_1, context);
+
+    let timeout_thread_cancel_flag = run_reducer_timeout(isolate_handle, budget);
+
+    let ret = logic(&mut scope_2);
+    drop(scope_2);
+    drop(scope_1);
+
+    // Cancel the execution timeout in `run_reducer_timeout`.
+    timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
+
+    (isolate, ret)
 }
 
 /// Spawns a thread that will terminate reducer execution
@@ -315,6 +370,14 @@ fn call_call_reducer(
         Ok(user_res)
     })
     .map_err(Into::into)
+}
+
+/// Extracts the raw module def by running `__describe_module__` in `program`.
+fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
+    let (_, ret) = with_script(program, ReducerBudget::DEFAULT_BUDGET, |scope, _| {
+        run_describer(log_traceback, || call_describe_module(scope))
+    });
+    ret
 }
 
 // Calls the `__describe_module__` function on the global proxy object to extract a [`RawModuleDef`].

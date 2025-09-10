@@ -136,7 +136,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // TODO(v8): needs better UX but good enough for a demo...
     if wasm_file_is_really_js {
-        builder.query(&[("host_type", "Js")])
+        builder = builder.query(&[("host_type", "Js")]);
     }
 
     let server_address = {
