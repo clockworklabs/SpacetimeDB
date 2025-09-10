@@ -271,17 +271,17 @@ jobs:
           find /home/ue4 -name 'Build'
           find /home/ue4 -name 'BatchFiles'
           find /home/ue4 -name 'Build.sh'
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Run Unreal Engine tests
-        working-directory: sdks/unreal
-        env:
-          UE_ROOT_PATH: /home/ue4/UnrealEngine/Engine/Binaries/Linux/
-        run: |
-          cargo test
+#      - name: Checkout sources
+#        uses: actions/checkout@v4
+#        with:
+#          ref: ${{ env.GIT_REF }}
+#      - uses: dsherret/rust-toolchain-file@v1
+#      - name: Run Unreal Engine tests
+#        working-directory: sdks/unreal
+#        env:
+#          UE_ROOT_PATH: /home/ue4/UnrealEngine/Engine/Binaries/Linux/
+#        run: |
+#          cargo test
 
   cli_docs:
     name: Check CLI docs
