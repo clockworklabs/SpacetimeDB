@@ -267,7 +267,10 @@ jobs:
 #          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
       - name: Find unreal binary
         run: |
-          find / -name '*Unreal*'
+          find /home/ue4 -name 'Engine'
+          find /home/ue4 -name 'Build'
+          find /home/ue4 -name 'BatchFiles'
+          find /home/ue4 -name 'Build.sh'
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
