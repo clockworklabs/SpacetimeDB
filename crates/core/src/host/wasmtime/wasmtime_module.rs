@@ -4,6 +4,7 @@ use super::wasm_instance_env::WasmInstanceEnv;
 use super::{Mem, WasmtimeFuel, EPOCH_TICKS_PER_SECOND};
 use crate::energy::ReducerBudget;
 use crate::host::instance_env::InstanceEnv;
+use crate::host::module_common::run_describer;
 use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
 use crate::host::wasm_common::*;
 use crate::util::string_from_utf8_lossy_owned;
@@ -158,29 +159,18 @@ pub struct WasmtimeInstance {
 impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn extract_descriptions(&mut self) -> Result<Vec<u8>, DescribeError> {
         let describer_func_name = DESCRIBE_MODULE_DUNDER;
-        let store = &mut self.store;
 
-        let describer = self.instance.get_func(&mut *store, describer_func_name).unwrap();
-        let describer = describer
-            .typed::<u32, ()>(&mut *store)
+        let describer = self
+            .instance
+            .get_typed_func::<u32, ()>(&mut self.store, describer_func_name)
             .map_err(|_| DescribeError::Signature)?;
 
-        let sink = store.data_mut().setup_standard_bytes_sink();
+        let sink = self.store.data_mut().setup_standard_bytes_sink();
 
-        let start = std::time::Instant::now();
-        log::trace!("Start describer \"{describer_func_name}\"...");
-
-        let result = describer.call(&mut *store, sink);
-
-        let duration = start.elapsed();
-        log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros());
-
-        result
-            .inspect_err(|err| log_traceback("describer", describer_func_name, err))
-            .map_err(DescribeError::RuntimeError)?;
+        run_describer(log_traceback, || describer.call(&mut self.store, sink))?;
 
         // Fetch the bsatn returned by the describer call.
-        let bytes = store.data_mut().take_standard_bytes_sink();
+        let bytes = self.store.data_mut().take_standard_bytes_sink();
 
         Ok(bytes)
     }

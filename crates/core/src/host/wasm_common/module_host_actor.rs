@@ -166,16 +166,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, instance: T::Instance) -> WasmModuleInstance<T::Instance> {
-        let common = InstanceCommon {
-            info: self.common.info(),
-            energy_monitor: self.common.energy_monitor(),
-            // will be updated on the first reducer call
-            allocated_memory: 0,
-            metric_wasm_memory_bytes: WORKER_METRICS
-                .wasm_memory_bytes
-                .with_label_values(self.common.database_identity()),
-            trapped: false,
-        };
+        let common = InstanceCommon::new(&self.common);
         WasmModuleInstance { instance, common }
     }
 }
@@ -279,6 +270,19 @@ pub(crate) struct InstanceCommon {
 }
 
 impl InstanceCommon {
+    pub(crate) fn new(module: &ModuleCommon) -> Self {
+        Self {
+            info: module.info(),
+            energy_monitor: module.energy_monitor(),
+            // Will be updated on the first reducer call.
+            allocated_memory: 0,
+            metric_wasm_memory_bytes: WORKER_METRICS
+                .wasm_memory_bytes
+                .with_label_values(module.database_identity()),
+            trapped: false,
+        }
+    }
+
     #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn update_database(
         &mut self,
