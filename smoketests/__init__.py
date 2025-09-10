@@ -118,6 +118,17 @@ def extract_fields(cmd_output, field_name):
             out.append(val)
     return out
 
+def parse_sql_result(res: str) -> list[dict]:
+    """Parse tabular output from an SQL query into a list of dicts."""
+    lines = res.splitlines()
+    headers = lines[0].split('|') if '|' in lines[0] else [lines[0]]
+    headers = [header.strip() for header in headers]
+    rows = []
+    for row in lines[2:]:
+        cols = [col.strip() for col in row.split('|')]
+        rows.append(dict(zip(headers, cols)))
+    return rows
+
 def extract_field(cmd_output, field_name):
     field, = extract_fields(cmd_output, field_name)
     return field
@@ -232,11 +243,22 @@ class Smoketest(unittest.TestCase):
     def new_identity(self):
         new_identity(self.__class__.config_path)
 
-    def subscribe(self, *queries, n):
+    def subscribe(self, *queries, n, confirmed = False):
         self._check_published()
         assert isinstance(n, int)
 
-        args = [SPACETIME_BIN, "--config-path", str(self.config_path),"subscribe", self.database_identity, "-t", "600", "-n", str(n), "--print-initial-update", "--", *queries]
+        args = [
+            SPACETIME_BIN,
+            "--config-path", str(self.config_path),
+            "subscribe", self.database_identity,
+            "-t", "600",
+            "-n", str(n),
+            "--print-initial-update",
+        ]
+        if confirmed:
+            args.append("--confirmed")
+        args.extend(["--", *queries])
+
         fake_args = ["spacetime", *args[1:]]
         log_cmd(fake_args)
 
@@ -270,11 +292,7 @@ class Smoketest(unittest.TestCase):
         # and **not raise any exceptions to the caller**.
         return ReturnThread(run).join
 
-    # Make an HTTP call with `method` to `path`.
-    #
-    # If the response is 200, return the body.
-    # Otherwise, throw an `Exception` constructed with two arguments, the response object and the body.
-    def api_call(self, method, path, body = None, headers = {}):
+    def get_server_address(self):
         with open(self.config_path, "rb") as f:
             config = tomllib.load(f)
             token = config['spacetimedb_token']
@@ -284,24 +302,35 @@ class Smoketest(unittest.TestCase):
                 raise Exception(f"Unable to find server in config with nickname {server_name}")
             host = server_config['host']
             protocol = server_config['protocol']
-            conn = None
-            if protocol == "http":
-                conn = http.client.HTTPConnection(host)
-            elif protocol == "https":
-                conn = http.client.HTTPSConnection(host)
-            else:
-                raise Exception(f"Unknown protocol: {protocol}")
-            auth = {"Authorization": f'Bearer {token}'}
-            headers.update(auth)
-            log_cmd([method, path])
-            conn.request(method, path, body, headers)
-            resp = conn.getresponse()
-            body = resp.read()
-            logging.debug(f"{resp.status} {body}")
-            if resp.status != 200:
-                raise Exception(resp, body)
-            return body
 
+            return dict(host=host, protocol=protocol, token=token)
+
+    # Make an HTTP call with `method` to `path`.
+    #
+    # If the response is 200, return the body.
+    # Otherwise, throw an `Exception` constructed with two arguments, the response object and the body.
+    def api_call(self, method, path, body=None, headers={}):
+        server = self.get_server_address()
+        host = server["host"]
+        protocol = server["protocol"]
+        token = server["token"]
+        conn = None
+        if protocol == "http":
+            conn = http.client.HTTPConnection(host)
+        elif protocol == "https":
+            conn = http.client.HTTPSConnection(host)
+        else:
+            raise Exception(f"Unknown protocol: {protocol}")
+        auth = {"Authorization": f'Bearer {token}'}
+        headers.update(auth)
+        log_cmd([method, path])
+        conn.request(method, path, body, headers)
+        resp = conn.getresponse()
+        body = resp.read()
+        logging.debug(f"{resp.status} {body}")
+        if resp.status != 200:
+            raise Exception(resp, body)
+        return body
 
     @classmethod
     def write_module_code(cls, module_code):

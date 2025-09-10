@@ -8,14 +8,19 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "prettier": "^3.3.3",
     "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.3.2",
+    "typescript": "^5.6.3",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.0.0"
   },
   "scripts": {
-    "build": "tsc --project ./tsconfig.json",
+    "build": "tsc --project ./tsconfig.json && pnpm fix-markdown && prettier --write docs/nav.js",
+    "fix-markdown": "scripts/markdown-fix.mjs docs/cli-reference.md",
+    "format": "pnpm fix-markdown && prettier --write .",
+    "lint": "prettier . --check --verbose",
     "check-links": "tsx scripts/checkLinks.ts"
   },
   "author": "Clockwork Labs",

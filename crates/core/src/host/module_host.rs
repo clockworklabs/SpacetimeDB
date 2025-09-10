@@ -41,7 +41,7 @@ use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
-use spacetimedb_schema::auto_migrate::AutoMigrateError;
+use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -49,6 +49,7 @@ use spacetimedb_vm::relation::RelValue;
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
+use tokio::sync::oneshot;
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -334,6 +335,7 @@ pub trait ModuleInstance: Send + 'static {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
@@ -395,7 +397,7 @@ fn init_database(
 
     let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
         None => {
-            if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+            if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
                 stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
             }
             None
@@ -458,8 +460,9 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database(program, old_module_info);
+        let ret = self.inst.update_database(program, old_module_info, policy);
         self.check_trap();
         ret
     }
@@ -1057,9 +1060,10 @@ impl ModuleHost {
         &self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         self.call("<update_database>", move |inst| {
-            inst.update_database(program, old_module_info)
+            inst.update_database(program, old_module_info, policy)
         })
         .await?
     }
@@ -1109,74 +1113,79 @@ impl ModuleHost {
         log::debug!("One-off query: {query}");
         let metrics = self
             .on_module_thread("one_off_query", move || {
-                db.with_read_only(Workload::Sql, |tx| {
-                    // We wrap the actual query in a closure so we can use ? to handle errors without making
-                    // the entire transaction abort with an error.
-                    let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
-                        let tx = SchemaViewer::new(tx, &auth);
+                let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
+                let tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
+                    let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
+                    let _ = tx_offset_sender.send(tx_offset);
+                    db.report_read_tx_metrics(reducer, tx_metrics);
+                });
 
-                        let (
-                            // A query may compile down to several plans.
-                            // This happens when there are multiple RLS rules per table.
-                            // The original query is the union of these plans.
-                            plans,
-                            _,
-                            table_name,
-                            _,
-                        ) = compile_subscription(&query, &tx, &auth)?;
+                // We wrap the actual query in a closure so we can use ? to handle errors without making
+                // the entire transaction abort with an error.
+                let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
+                    let tx = SchemaViewer::new(&*tx, &auth);
 
-                        // Optimize each fragment
-                        let optimized = plans
-                            .into_iter()
-                            .map(|plan| plan.optimize())
-                            .collect::<Result<Vec<_>, _>>()?;
+                    let (
+                        // A query may compile down to several plans.
+                        // This happens when there are multiple RLS rules per table.
+                        // The original query is the union of these plans.
+                        plans,
+                        _,
+                        table_name,
+                        _,
+                    ) = compile_subscription(&query, &tx, &auth)?;
 
-                        check_row_limit(
-                            &optimized,
-                            &db,
-                            &tx,
-                            // Estimate the number of rows this query will scan
-                            |plan, tx| estimate_rows_scanned(tx, plan),
-                            &auth,
-                        )?;
+                    // Optimize each fragment
+                    let optimized = plans
+                        .into_iter()
+                        .map(|plan| plan.optimize())
+                        .collect::<Result<Vec<_>, _>>()?;
 
-                        let optimized = optimized
-                            .into_iter()
-                            // Convert into something we can execute
-                            .map(PipelinedProject::from)
-                            .collect::<Vec<_>>();
+                    check_row_limit(
+                        &optimized,
+                        &db,
+                        &tx,
+                        // Estimate the number of rows this query will scan
+                        |plan, tx| estimate_rows_scanned(tx, plan),
+                        &auth,
+                    )?;
 
-                        // Execute the union and return the results
-                        execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
-                            .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
-                            .context("One-off queries are not allowed to modify the database")
-                    })();
+                    let optimized = optimized
+                        .into_iter()
+                        // Convert into something we can execute
+                        .map(PipelinedProject::from)
+                        .collect::<Vec<_>>();
 
-                    let total_host_execution_duration = timer.elapsed().into();
-                    let (message, metrics): (SerializableMessage, Option<ExecutionMetrics>) = match result {
-                        Ok((rows, metrics)) => (
-                            into_message(OneOffQueryResponseMessage {
-                                message_id,
-                                error: None,
-                                results: vec![rows],
-                                total_host_execution_duration,
-                            }),
-                            Some(metrics),
-                        ),
-                        Err(err) => (
-                            into_message(OneOffQueryResponseMessage {
-                                message_id,
-                                error: Some(format!("{err}")),
-                                results: vec![],
-                                total_host_execution_duration,
-                            }),
-                            None,
-                        ),
-                    };
+                    // Execute the union and return the results
+                    execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
+                        .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
+                        .context("One-off queries are not allowed to modify the database")
+                })();
 
-                    subscriptions.send_client_message(client, message, tx)?;
-                    Ok::<Option<ExecutionMetrics>, anyhow::Error>(metrics)
-                })
+                let total_host_execution_duration = timer.elapsed().into();
+                let (message, metrics): (SerializableMessage, Option<ExecutionMetrics>) = match result {
+                    Ok((rows, metrics)) => (
+                        into_message(OneOffQueryResponseMessage {
+                            message_id,
+                            error: None,
+                            results: vec![rows],
+                            total_host_execution_duration,
+                        }),
+                        Some(metrics),
+                    ),
+                    Err(err) => (
+                        into_message(OneOffQueryResponseMessage {
+                            message_id,
+                            error: Some(format!("{err}")),
+                            results: vec![],
+                            total_host_execution_duration,
+                        }),
+                        None,
+                    ),
+                };
+
+                subscriptions.send_client_message(client, message, (&*tx, tx_offset_receiver))?;
+                Ok::<Option<ExecutionMetrics>, anyhow::Error>(metrics)
             })
             .await??;
 

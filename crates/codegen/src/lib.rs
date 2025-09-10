@@ -1,5 +1,4 @@
-use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef, TypeDef};
 
 mod code_indenter;
 pub mod csharp;
@@ -14,32 +13,24 @@ pub use self::typescript::TypeScript;
 pub use self::unrealcpp::UnrealCpp;
 pub use util::AUTO_GENERATED_PREFIX;
 
-pub fn generate(module: &ModuleDef, lang: &dyn Lang) -> Vec<(String, String)> {
+pub fn generate(module: &ModuleDef, lang: &dyn Lang) -> Vec<OutputFile> {
     itertools::chain!(
-        module
-            .tables()
-            .map(|tbl| (lang.table_filename(module, tbl), lang.generate_table(module, tbl))),
-        module
-            .types()
-            .map(|typ| (lang.type_filename(&typ.name), lang.generate_type(module, typ))),
-        util::iter_reducers(module).map(|reducer| {
-            (
-                lang.reducer_filename(&reducer.name),
-                lang.generate_reducer(module, reducer),
-            )
-        }),
-        lang.generate_globals(module),
+        module.tables().map(|tbl| lang.generate_table_file(module, tbl)),
+        module.types().flat_map(|typ| lang.generate_type_files(module, typ)),
+        util::iter_reducers(module).map(|reducer| lang.generate_reducer_file(module, reducer)),
+        std::iter::once(lang.generate_globals_file(module)),
     )
     .collect()
 }
 
-pub trait Lang {
-    fn table_filename(&self, module: &ModuleDef, table: &TableDef) -> String;
-    fn type_filename(&self, type_name: &ScopedTypeName) -> String;
-    fn reducer_filename(&self, reducer_name: &Identifier) -> String;
+pub struct OutputFile {
+    pub filename: String,
+    pub code: String,
+}
 
-    fn generate_table(&self, module: &ModuleDef, tbl: &TableDef) -> String;
-    fn generate_type(&self, module: &ModuleDef, typ: &TypeDef) -> String;
-    fn generate_reducer(&self, module: &ModuleDef, reducer: &ReducerDef) -> String;
-    fn generate_globals(&self, module: &ModuleDef) -> Vec<(String, String)>;
+pub trait Lang {
+    fn generate_table_file(&self, module: &ModuleDef, tbl: &TableDef) -> OutputFile;
+    fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile>;
+    fn generate_reducer_file(&self, module: &ModuleDef, reducer: &ReducerDef) -> OutputFile;
+    fn generate_globals_file(&self, module: &ModuleDef) -> OutputFile;
 }
