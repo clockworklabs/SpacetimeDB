@@ -707,6 +707,31 @@ impl ProcedureContext {
         // which reads the module identity out of the `InstanceEnv`.
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
     }
+
+    /// Suspend execution until approximately `Timestamp`.
+    ///
+    /// This will update `self.timestamp` to the new time after execution resumes.
+    ///
+    /// Actual time suspended may not be exactly equal to `duration`.
+    /// Callers should read `self.timestamp` after resuming to determine the new time.
+    ///
+    /// ```no-run
+    /// # use std::time::Duration;
+    /// # #[procedure]
+    /// # fn sleep_one_second(ctx: &mut ProcedureContext) {
+    /// let prev_time = ctx.timestamp;
+    /// let target = timestamp + Duration::SECOND;
+    /// ctx.sleep_until(target);
+    /// let new_time = ctx.timestamp;
+    /// let actual_delta = new_time - prev_time;
+    /// log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta}");
+    /// # }
+    /// ```
+    pub fn sleep_until(&mut self, timestamp: Timestamp) {
+        let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
+        let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
+        self.timestamp = new_time;
+    }
 }
 
 /// The context that any reducer is provided with.
