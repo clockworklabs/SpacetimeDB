@@ -265,6 +265,9 @@ jobs:
 #            GIT_REF="${{ github.ref }}"
 #          fi
 #          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+      - name: Find unreal binary
+        run: |
+          find / -name '*Unreal*'
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
