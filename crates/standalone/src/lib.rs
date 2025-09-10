@@ -5,7 +5,7 @@ pub mod version;
 
 use crate::control_db::ControlDb;
 use crate::subcommands::{extract_schema, start};
-use anyhow::{ensure, Context, Ok};
+use anyhow::{ensure, Context as _, Ok};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
@@ -13,7 +13,8 @@ use spacetimedb::config::{CertificateAuthority, MetadataFile};
 use spacetimedb::db::{self, relational_db};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::{
-    DiskStorage, DurabilityProvider, ExternalDurability, HostController, StartSnapshotWatcher, UpdateDatabaseResult,
+    DiskStorage, DurabilityProvider, ExternalDurability, HostController, MigratePlanResult, StartSnapshotWatcher,
+    UpdateDatabaseResult,
 };
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
@@ -28,6 +29,7 @@ use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
+use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
 use std::sync::Arc;
 
@@ -239,6 +241,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         &self,
         publisher: &Identity,
         spec: spacetimedb_client_api::DatabaseDef,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
 
@@ -295,7 +298,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .await?
                     .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
                 let update_result = leader
-                    .update(database, spec.host_type, spec.program_bytes.into())
+                    .update(database, spec.host_type, spec.program_bytes.into(), policy)
                     .await?;
                 if update_result.was_successful() {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
@@ -342,6 +345,30 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
                 anyhow::Ok(Some(update_result))
             }
+        }
+    }
+
+    async fn migrate_plan(
+        &self,
+        spec: spacetimedb_client_api::DatabaseDef,
+        style: PrettyPrintStyle,
+    ) -> anyhow::Result<MigratePlanResult> {
+        let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
+
+        match existing_db {
+            Some(db) => {
+                let host = self
+                    .leader(db.id)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
+                self.host_controller
+                    .migrate_plan(db, spec.host_type, host.replica_id, spec.program_bytes.into(), style)
+                    .await
+            }
+            None => anyhow::bail!(
+                "Database `{}` does not exist",
+                spec.database_identity.to_abbreviated_hex()
+            ),
         }
     }
 
