@@ -1,5 +1,6 @@
 mod circles;
 mod ia_loop;
+mod player_move;
 mod synthetic;
 
 pub(crate) struct Load {
