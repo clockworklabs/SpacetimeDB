@@ -1,8 +1,15 @@
 use super::mut_tx::{FilterDeleted, IndexScanRanged};
 use super::{committed_state::CommittedState, datastore::Result, tx_state::TxState};
 use crate::error::{DatastoreError, TableError};
-use crate::system_tables::{ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID};
+use crate::system_tables::{
+    ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow,
+    StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow,
+    StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID,
+    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
+};
+use anyhow::anyhow;
 use core::ops::RangeBounds;
+use spacetimedb_lib::ConnectionId;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
@@ -11,8 +18,6 @@ use spacetimedb_table::{
     table::{IndexScanRangeIter, RowRef, Table, TableScanIter},
 };
 use std::sync::Arc;
-use anyhow::anyhow;
-use spacetimedb_lib::ConnectionId;
 
 // StateView trait, is designed to define the behavior of viewing internal datastore states.
 // Currently, it applies to: CommittedState, MutTxId, and TxId.

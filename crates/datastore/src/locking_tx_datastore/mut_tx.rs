@@ -10,7 +10,10 @@ use super::{
 };
 use crate::execution_context::ExecutionContext;
 use crate::execution_context::Workload;
-use crate::system_tables::{system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow, ST_CONNECTION_CREDENTIALS_ID};
+use crate::system_tables::{
+    system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow,
+    ST_CONNECTION_CREDENTIALS_ID,
+};
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
     error::{IndexError, SequenceError, TableError},
@@ -58,8 +61,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use anyhow::anyhow;
-use crate::error::DatastoreError;
 
 type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
@@ -1373,7 +1374,6 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
-
     pub fn insert_st_client(
         &mut self,
         identity: Identity,

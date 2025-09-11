@@ -25,10 +25,7 @@ use crate::{
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
 use spacetimedb_data_structures::map::{HashSet, IntMap};
-use spacetimedb_lib::{
-    db::auth::{StAccess, StTableType},
-    Identity,
-};
+use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};

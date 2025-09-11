@@ -442,14 +442,14 @@ impl InstanceCommon {
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
             Ok(res) => match res.and_then(|()| {
-                    // If this is an OnDisconnect lifecycle event, remove the client from st_clients.
-                    // We handle OnConnect events before running the reducer.
-                    match reducer_def.lifecycle {
-                        Some(Lifecycle::OnDisconnect) => tx.delete_st_client(caller_identity, caller_connection_id, database_identity).map_err(|e| e.to_string().into())
-            ,
-                        _ => Ok(()),
-                    }
-
+                // If this is an OnDisconnect lifecycle event, remove the client from st_clients.
+                // We handle OnConnect events before running the reducer.
+                match reducer_def.lifecycle {
+                    Some(Lifecycle::OnDisconnect) => tx
+                        .delete_st_client(caller_identity, caller_connection_id, database_identity)
+                        .map_err(|e| e.to_string().into()),
+                    _ => Ok(()),
+                }
             }) {
                 Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
                 Err(err) => {

@@ -393,7 +393,6 @@ impl RelationalDB {
         );
         db.migrate_system_tables()?;
 
-
         if let Some(meta) = db.metadata()? {
             if meta.database_identity != database_identity {
                 return Err(anyhow!(
@@ -418,18 +417,17 @@ impl RelationalDB {
     }
 
     fn migrate_system_tables(&self) -> Result<(), DBError> {
-        println!("Begin migrating system tables");
         let mut tx = self.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        println!("Got a lock");
         for schema in system_tables() {
             if !self.table_id_exists_mut(&tx, &schema.table_id) {
-                println!("Missing system table {}: {}", schema.table_id, schema.table_name);
+                log::info!(
+                    "[{}] DATABASE: adding missing system table {}",
+                    self.database_identity,
+                    schema.table_name
+                );
                 let _ = self.create_table(&mut tx, schema.clone())?;
             }
-            //let tid = tx.create_table(schema.clone())?;
-
         }
-        println!("Going to commit");
         let _ = self.commit_tx(tx)?;
         self.inner.assert_system_tables_match()?;
         Ok(())
@@ -3326,10 +3324,9 @@ mod tests {
         assert!(table_1_id > table_0_id);
     }
 
+    use crate::error::DBError;
     use fs_extra::dir::{copy, CopyOptions};
     use itertools::Itertools;
-    use crate::error::DBError;
-
 
     /// Make a temp dir with the contents of the given directory.
     fn copy_fixture_dir(src: &PathBuf) -> TempDir {
@@ -3434,7 +3431,7 @@ mod tests {
             owner_identity,
             use_snapshot,
         )?;
-        let schemas = db.with_read_only(Workload::ForTests, |tx| db.get_all_tables(&tx))?;
+        let schemas = db.with_read_only(Workload::ForTests, |tx| db.get_all_tables(tx))?;
         let user_table_names: Vec<String> = schemas
             .iter()
             .filter(|s| s.table_id.0 > 4000)
@@ -3446,8 +3443,9 @@ mod tests {
         // directory.
         assert_eq!(user_table_names, expected_table_names);
 
-        db.with_auto_commit(Workload::ForTests, |mut tx| {
-            tx.insert_st_client(Identity::ZERO, ConnectionId::ZERO, "invalid_jwt".into()).unwrap();
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            tx.insert_st_client(Identity::ZERO, ConnectionId::ZERO, "invalid_jwt")
+                .unwrap();
             Ok::<(), DBError>(())
         })?;
         // Now we are going to shut it down and reopen it, to ensure that the new table can be
@@ -3456,7 +3454,7 @@ mod tests {
         let handle = Arc::into_inner(durability_handle).expect("Durability handle should be dropped by db");
         rt.block_on(handle.close()).expect("Failed to close durability handle");
 
-        let (db, durability_handle) = TestDB::open_existing_durable(
+        let (db, _) = TestDB::open_existing_durable(
             &dir,
             rt.handle().clone(),
             22000001,

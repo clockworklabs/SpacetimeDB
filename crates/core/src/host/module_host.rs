@@ -33,6 +33,7 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
@@ -888,6 +889,21 @@ impl ModuleHost {
         })
         .await
         .map_err(Into::<ReducerCallError>::into)?
+    }
+
+    /// Empty the system tables tracking clients without running any lifecycle reducers.
+    pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
+        let me = self.clone();
+        self.call("clear_all_clients", move |_| {
+            let stdb = &me.module.replica_ctx().relational_db;
+            let workload = Workload::Internal;
+            stdb.with_auto_commit(workload, |mut_tx| {
+                stdb.clear_table(mut_tx, ST_CONNECTION_CREDENTIALS_ID)?;
+                stdb.clear_table(mut_tx, ST_CLIENT_ID)
+            })
+        })
+        .await?
+        .map_err(anyhow::Error::from)
     }
 
     async fn call_reducer_inner(
