@@ -37,13 +37,8 @@ git push -u origin a-branch-name-that-describes-my-change
 > NOTE! If you make a change to `nav.ts` you will have to run `npm run build` to generate a new `docs/nav.js` file.
 
 #### CLI Reference Section
-1. Run `cargo run --features markdown-docs -p spacetimedb-cli > cli-reference.md`
-
-We currently don't properly render markdown backticks and bolding that are inside of headers, so do these two manual replacements to make them look okay (these have only been tested on Linux):
-```bash
-sed -i'' -E 's!^(##) `(.*)`$!\1 \2!' docs/cli-reference.md
-sed -i'' -E 's!^(######) \*\*(.*)\*\*$!\1 <b>\2</b>!' docs/cli-reference.md
-```
+1. Run `cargo run --features markdown-docs -p spacetimedb-cli > docs/cli-reference.md`
+2. Run `pnpm format`
 
 ### Checking Links
 

@@ -8,14 +8,14 @@ use v8::{BigInt, Boolean, HandleScope, Integer, Local, Number, Value};
 /// The conversion can be done without the possibility for error.
 pub(super) trait ToValue {
     /// Converts `self` within `scope` (a sort of stack management in V8) to a [`Value`].
-    fn to_value<'s>(&self, scope: &mut HandleScope<'s>) -> Local<'s, Value>;
+    fn to_value<'scope>(&self, scope: &mut HandleScope<'scope>) -> Local<'scope, Value>;
 }
 
 /// Provides a [`ToValue`] implementation.
 macro_rules! impl_to_value {
     ($ty:ty, ($val:ident, $scope:ident) => $logic:expr) => {
         impl ToValue for $ty {
-            fn to_value<'s>(&self, $scope: &mut HandleScope<'s>) -> Local<'s, Value> {
+            fn to_value<'scope>(&self, $scope: &mut HandleScope<'scope>) -> Local<'scope, Value> {
                 let $val = *self;
                 $logic.into()
             }
@@ -47,11 +47,11 @@ impl_to_value!(u64, (val, scope) => BigInt::new_from_u64(scope, val));
 /// Converts the little-endian bytes of a number to a V8 [`BigInt`].
 ///
 /// The `sign` is passed along to the `BigInt`.
-fn le_bytes_to_bigint<'s, const N: usize, const W: usize>(
-    scope: &mut HandleScope<'s>,
+fn le_bytes_to_bigint<'scope, const N: usize, const W: usize>(
+    scope: &mut HandleScope<'scope>,
     sign: bool,
     le_bytes: [u8; N],
-) -> Local<'s, BigInt>
+) -> Local<'scope, BigInt>
 where
     [u8; N]: NoUninit,
     [u64; W]: Pod,
@@ -73,7 +73,7 @@ pub(super) const WORD_MIN: u64 = i64::MIN as u64;
 /// `i64::MIN` becomes `-1 * WORD_MIN * (2^64)^0 = -1 * WORD_MIN`
 /// `i128::MIN` becomes `-1 * (0 * (2^64)^0 + WORD_MIN * (2^64)^1) = -1 * WORD_MIN * 2^64`
 /// `i256::MIN` becomes `-1 * (0 * (2^64)^0 + 0 * (2^64)^1 + WORD_MIN * (2^64)^2) = -1 * WORD_MIN * (2^128)`
-fn signed_min_bigint<'s, const WORDS: usize>(scope: &mut HandleScope<'s>) -> Local<'s, BigInt> {
+fn signed_min_bigint<'scope, const WORDS: usize>(scope: &mut HandleScope<'scope>) -> Local<'scope, BigInt> {
     let words = &mut [0u64; WORDS];
     if let [.., last] = words.as_mut_slice() {
         *last = WORD_MIN;
@@ -103,7 +103,7 @@ impl_to_value!(i256, (val, scope) => {
 });
 
 #[cfg(test)]
-mod test {
+pub(in super::super) mod test {
     use super::super::from_value::FromValue;
     use super::super::V8Runtime;
     use super::*;
@@ -112,23 +112,30 @@ mod test {
     use spacetimedb_sats::proptest::{any_i256, any_u256};
     use v8::{Context, ContextScope, HandleScope, Isolate};
 
-    /// Roundtrips `rust_val` via `ToValue` to the V8 representation
-    /// and then back via `FromValue`,
-    /// asserting that it's the same as the passed value.
-    fn assert_roundtrips<T: ToValue + FromValue + PartialEq + Debug>(rust_val: T) {
-        // Setup V8 and get a `HandleScope`.
+    /// Sets up V8 and runs `logic` with a [`HandleScope`].
+    pub(in super::super) fn with_scope<R>(logic: impl FnOnce(&mut HandleScope<'_>) -> R) -> R {
         V8Runtime::init_for_test();
         let isolate = &mut Isolate::new(<_>::default());
+        isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
         let scope = &mut HandleScope::new(isolate);
         let context = Context::new(scope, Default::default());
         let scope = &mut ContextScope::new(scope, context);
 
-        // Convert to JS and then back.
-        let js_val = rust_val.to_value(scope);
-        let rust_val_prime = T::from_value(js_val, scope).unwrap();
+        logic(scope)
+    }
 
-        // We should end up where we started.
-        assert_eq!(rust_val, rust_val_prime);
+    /// Roundtrips `rust_val` via `ToValue` to the V8 representation
+    /// and then back via `FromValue`,
+    /// asserting that it's the same as the passed value.
+    fn assert_roundtrips<T: ToValue + FromValue + PartialEq + Debug>(rust_val: T) {
+        with_scope(|scope| {
+            // Convert to JS and then back.
+            let js_val = rust_val.to_value(scope);
+            let rust_val_prime = T::from_value(js_val, scope).unwrap();
+
+            // We should end up where we started.
+            assert_eq!(rust_val, rust_val_prime);
+        })
     }
 
     proptest! {

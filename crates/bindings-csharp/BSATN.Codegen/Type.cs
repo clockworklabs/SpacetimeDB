@@ -1,5 +1,14 @@
 namespace SpacetimeDB.Codegen;
 
+// Generate code to implement serialization to the BSATN format (https://spacetimedb.com/docs/bsatn).
+// C# doesn't support static methods in interfaces, so instead we declare a zero-sized `struct` type that implements
+// the serialization interface (IReadWrite) for us.
+//
+// See BSATN.Runtime for the support code referenced by code generation,
+// and see Codegen.Tests/fixtures/*/snapshots for examples of generated code.
+// Also, if you set <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles> in a csproj,
+// you can find the generated code in obj/Debug/*/generated/SpacetimeDB.BSATN.Codegen.
+
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -27,6 +36,14 @@ using static Utils;
 /// <param name="BSATNName">The name of the BSATN struct for the type.</param>
 public abstract record TypeUse(string Name, string BSATNName)
 {
+    internal static string BSATN_FIELD_SUFFIX = "RW";
+
+    /// <summary>
+    /// The name of the static field containing an IReadWrite in the IReadWrite struct associated with this type.
+    /// We make sure this is different from the field name so that collisions cannot occur.
+    /// </summary>
+    public static string BsatnFieldSuffix => $"{BSATN_FIELD_SUFFIX}";
+
     /// <summary>
     /// Parse a type use for a member.
     /// </summary>
@@ -330,14 +347,20 @@ public record MemberDeclaration(
         var visStr = SyntaxFacts.GetText(visibility);
         return string.Join(
             "\n        ",
-            members.Select(m => $"{visStr} static readonly {m.Type.BSATNName} {m.Name} = new();")
+            members.Select(m =>
+                $"{visStr} static readonly {m.Type.BSATNName} {m.Name}{TypeUse.BsatnFieldSuffix} = new();"
+            )
         );
     }
 
     public static string GenerateDefs(IEnumerable<MemberDeclaration> members) =>
         string.Join(
             ",\n                ",
-            members.Select(m => $"new(nameof({m.Name}), {m.Name}.GetAlgebraicType(registrar))")
+            // we can't use nameof(m.Type.BsatnFieldName) because the bsatn field name differs from the logical name
+            // assigned in the type.
+            members.Select(m =>
+                $"new(\"{m.Name}\", {m.Name}{TypeUse.BsatnFieldSuffix}.GetAlgebraicType(registrar))"
+            )
         );
 }
 
@@ -450,8 +473,6 @@ public abstract record BaseTypeDeclaration<M>
         var extensions = new Scope.Extensions(Scope, FullName);
 
         var bsatnDecls = Members.Cast<MemberDeclaration>();
-        var fieldNames = bsatnDecls.Select(m => m.Name);
-        var fieldNamesAndIds = fieldNames.Select((name, i) => (name, i));
 
         extensions.BaseTypes.Add($"System.IEquatable<{ShortName}>");
 
@@ -480,8 +501,8 @@ public abstract record BaseTypeDeclaration<M>
                     return reader.ReadByte() switch {
                         {{string.Join(
                             "\n            ",
-                            fieldNames.Select((name, i) =>
-                                $"{i} => new {name}({name}.Read(reader)),"
+                            bsatnDecls.Select((m, i) =>
+                                $"{i} => new {m.Name}({m.Name}{TypeUse.BsatnFieldSuffix}.Read(reader)),"
                             )
                         )}}
                         _ => throw new System.InvalidOperationException("Invalid tag value, this state should be unreachable.")
@@ -492,12 +513,12 @@ public abstract record BaseTypeDeclaration<M>
             switch (value) {
             {{string.Join(
                 "\n",
-                fieldNames.Select((name, i) => $"""
-                            case {name}(var inner):
-                                writer.Write((byte){i});
-                                {name}.Write(writer, inner);
-                                break;
-                """))}}
+                bsatnDecls.Select((m, i) => $"""
+                                                            case {m.Name}(var inner):
+                                                                writer.Write((byte){i});
+                                                                {m.Name}{TypeUse.BsatnFieldSuffix}.Write(writer, inner);
+                                                                break;
+                                                """))}}
                         }
             """;
 
@@ -530,14 +551,14 @@ public abstract record BaseTypeDeclaration<M>
                 public void ReadFields(System.IO.BinaryReader reader) {
             {{string.Join(
                     "\n",
-                    fieldNames.Select(name => $"        {name} = BSATN.{name}.Read(reader);")
+                    bsatnDecls.Select(m => $"        {m.Name} = BSATN.{m.Name}{TypeUse.BsatnFieldSuffix}.Read(reader);")
                 )}}
                 }
 
                 public void WriteFields(System.IO.BinaryWriter writer) {
             {{string.Join(
                     "\n",
-                    fieldNames.Select(name => $"        BSATN.{name}.Write(writer, {name});")
+                    bsatnDecls.Select(m => $"        BSATN.{m.Name}{TypeUse.BsatnFieldSuffix}.Write(writer, {m.Name});")
                 )}}
                 }
 
@@ -557,7 +578,7 @@ public abstract record BaseTypeDeclaration<M>
                 public override string ToString() =>
                     $"{{ShortName}} {{start}} {{string.Join(
                         ", ",
-                        fieldNames.Select(name => $$"""{{name}} = {SpacetimeDB.BSATN.StringUtil.GenericToString({{name}})}""")
+                        bsatnDecls.Select(m => $$"""{{m.Name}} = {SpacetimeDB.BSATN.StringUtil.GenericToString({{m.Name}})}""")
                     )}} {{end}}";
             """
             );

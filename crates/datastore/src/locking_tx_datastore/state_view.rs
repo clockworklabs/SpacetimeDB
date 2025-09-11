@@ -1,11 +1,7 @@
 use super::mut_tx::{FilterDeleted, IndexScanRanged};
 use super::{committed_state::CommittedState, datastore::Result, tx_state::TxState};
-use crate::error::TableError;
-use crate::system_tables::{
-    StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields,
-    StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID,
-    ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
-};
+use crate::error::{DatastoreError, TableError};
+use crate::system_tables::{ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID};
 use core::ops::RangeBounds;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
@@ -15,6 +11,8 @@ use spacetimedb_table::{
     table::{IndexScanRangeIter, RowRef, Table, TableScanIter},
 };
 use std::sync::Arc;
+use anyhow::anyhow;
+use spacetimedb_lib::ConnectionId;
 
 // StateView trait, is designed to define the behavior of viewing internal datastore states.
 // Currently, it applies to: CommittedState, MutTxId, and TxId.
@@ -79,12 +77,8 @@ pub trait StateView {
         let table_primary_key = row.table_primary_key.as_ref().and_then(ColList::as_singleton);
 
         // Look up the columns for the table in question.
-        let mut columns: Vec<ColumnSchema> = self
-            .iter_by_col_eq(ST_COLUMN_ID, StColumnFields::TableId, value_eq)?
-            .map(|row| {
-                let row = StColumnRow::try_from(row)?;
-                Ok(row.into())
-            })
+        let mut columns: Vec<ColumnSchema> = iter_st_column_for_table(self, &table_id.into())?
+            .map(|row| Ok(StColumnRow::try_from(row)?.into()))
             .collect::<Result<Vec<_>>>()?;
         columns.sort_by_key(|col| col.col_pos);
 
@@ -147,6 +141,37 @@ pub trait StateView {
 
         self.schema_for_table_raw(table_id).map(Arc::new)
     }
+
+    fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>> {
+        log::info!("Getting JWT payload for connection id: {}", connection_id.to_hex());
+        let mut buf: Vec<u8> = Vec::new();
+        self.iter_by_col_eq(
+            ST_CONNECTION_CREDENTIALS_ID,
+            StConnectionCredentialsFields::ConnectionId,
+            &ConnectionIdViaU128::from(connection_id).into(),
+        )?
+            .next()
+            .map(|row| row.read_via_bsatn::<StConnectionCredentialsRow>(&mut buf).map(|r| r.jwt_payload))
+            .transpose()
+            .map_err(|e| {
+                log::error!(
+                    "[{connection_id}]: get_jwt_payload: failed to get JWT payload for connection id ({connection_id}), error: {e}"
+                );
+                DatastoreError::Other(
+                    anyhow!(
+                        "Failed to get JWT payload for connection id ({connection_id}): {e}"
+                    )
+                )
+            })
+    }
+}
+
+/// Returns an iterator over all `st_column` rows for `table_id`.
+pub(crate) fn iter_st_column_for_table<'a>(
+    this: &'a (impl StateView + ?Sized),
+    table_id: &'a AlgebraicValue,
+) -> Result<impl 'a + Iterator<Item = RowRef<'a>>> {
+    this.iter_by_col_eq(ST_COLUMN_ID, StColumnFields::TableId, table_id)
 }
 
 pub struct IterMutTx<'a> {

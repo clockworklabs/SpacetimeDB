@@ -10,9 +10,7 @@ use super::{
 };
 use crate::execution_context::ExecutionContext;
 use crate::execution_context::Workload;
-use crate::system_tables::{
-    ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow, ST_CONNECTION_CREDENTIALS_ID,
-};
+use crate::system_tables::{system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow, ST_CONNECTION_CREDENTIALS_ID};
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
     error::{IndexError, SequenceError, TableError},
@@ -60,6 +58,8 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use anyhow::anyhow;
+use crate::error::DatastoreError;
 
 type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
@@ -191,7 +191,8 @@ impl MutTxId {
     /// - The table metadata is inserted into the system tables.
     /// - The returned ID is unique and not `TableId::SENTINEL`.
     pub fn create_table(&mut self, mut table_schema: TableSchema) -> Result<TableId> {
-        if table_schema.table_id != TableId::SENTINEL {
+        let matching_system_table_schema = system_tables().iter().find(|s| **s == table_schema).cloned();
+        if table_schema.table_id != TableId::SENTINEL && matching_system_table_schema.is_none() {
             return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{:#?}`", table_schema).into());
             // checks for children are performed in the relevant `create_...` functions.
         }
@@ -203,7 +204,7 @@ impl MutTxId {
         // NOTE: Because `st_tables` has a unique index on `table_name`, this will
         // fail if the table already exists.
         let row = StTableRow {
-            table_id: TableId::SENTINEL,
+            table_id: table_schema.table_id,
             table_name: table_name.clone(),
             table_type: table_schema.table_type,
             table_access: table_schema.table_access,
@@ -219,16 +220,8 @@ impl MutTxId {
 
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
 
-        // Insert the columns into `st_columns`
-        for col in table_schema.columns() {
-            let row = StColumnRow {
-                table_id: col.table_id,
-                col_pos: col.col_pos,
-                col_name: col.col_name.clone(),
-                col_type: col.col_type.clone().into(),
-            };
-            self.insert_via_serialize_bsatn(ST_COLUMN_ID, &row)?;
-        }
+        // Insert the columns into `st_column`.
+        self.insert_st_column(table_schema.columns())?;
 
         let schedule = table_schema.schedule.clone();
         let mut schema_internal = table_schema;
@@ -246,7 +239,7 @@ impl MutTxId {
         if let Some(schedule) = schedule {
             let row = StScheduledRow {
                 table_id: schedule.table_id,
-                schedule_id: ScheduleId::SENTINEL,
+                schedule_id: schedule.schedule_id,
                 schedule_name: schedule.schedule_name,
                 reducer_name: schedule.reducer_name,
                 at_column: schedule.at_column,
@@ -280,6 +273,15 @@ impl MutTxId {
         log::trace!("TABLE CREATED: {table_name}, table_id: {table_id}");
 
         Ok(table_id)
+    }
+
+    /// Insert `columns` into `st_column`.
+    fn insert_st_column(&mut self, columns: &[ColumnSchema]) -> Result<()> {
+        columns.iter().try_for_each(|col| {
+            let row: StColumnRow = col.clone().into();
+            self.insert_via_serialize_bsatn(ST_COLUMN_ID, &row)?;
+            Ok(())
+        })
     }
 
     fn create_table_internal(&mut self, schema: Arc<TableSchema>) {
@@ -322,6 +324,11 @@ impl MutTxId {
         Ok(RowTypeForTable::Arc(self.schema_for_table(table_id)?))
     }
 
+    /// Drops all the columns of `table_id` in `st_column`.
+    fn drop_st_column(&mut self, table_id: TableId) -> Result<()> {
+        self.delete_col_eq(ST_COLUMN_ID, StColumnFields::TableId.col_id(), &table_id.into())
+    }
+
     pub fn drop_table(&mut self, table_id: TableId) -> Result<()> {
         let schema = &*self.schema_for_table(table_id)?;
 
@@ -339,7 +346,7 @@ impl MutTxId {
 
         // Drop the table and their columns
         self.delete_col_eq(ST_TABLE_ID, StTableFields::TableId.col_id(), &table_id.into())?;
-        self.delete_col_eq(ST_COLUMN_ID, StColumnFields::TableId.col_id(), &table_id.into())?;
+        self.drop_st_column(table_id)?;
 
         if let Some(schedule) = &schema.schedule {
             self.delete_col_eq(
@@ -467,10 +474,18 @@ impl MutTxId {
         column_schemas.iter_mut().for_each(|c| c.table_id = table_id);
 
         // Try to change the tables into what we want.
-        let old_column_schemas = tx_table.change_columns_to(column_schemas).map_err(TableError::from)?;
+        let old_column_schemas = tx_table
+            .change_columns_to(column_schemas.clone())
+            .map_err(TableError::from)?;
         // SAFETY: `commit_table` should have a schema identical to that of `tx_table`
         // prior to changing it just now.
         unsafe { commit_table.set_layout_and_schema_to(tx_table) };
+
+        // Update system tables.
+        // We'll simply remove all rows in `st_columns` and then add the new ones.
+        // The datastore takes care of not persisting any no-op delete/inserts to the commitlog.
+        self.drop_st_column(table_id)?;
+        self.insert_st_column(&column_schemas)?;
 
         // Remember the pending change so we can undo if necessary.
         self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
@@ -491,9 +506,11 @@ impl MutTxId {
     /// - The index metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and is not `IndexId::SENTINEL`.
     pub fn create_index(&mut self, mut index_schema: IndexSchema, is_unique: bool) -> Result<IndexId> {
+        /*
         if index_schema.index_id != IndexId::SENTINEL {
             return Err(anyhow::anyhow!("`index_id` must be `IndexId::SENTINEL` in `{:#?}`", index_schema).into());
         }
+         */
         let table_id = index_schema.table_id;
         if table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", index_schema).into());
@@ -829,8 +846,8 @@ fn get_next_sequence_value(
         let mut seq_row = StSequenceRow::try_from(old_seq_row_ref)?;
 
         let sequence = get_sequence_mut(seq_state, seq_id)?;
-        seq_row.allocated = sequence.nth_value(SEQUENCE_ALLOCATION_STEP as usize);
-        sequence.set_allocation(seq_row.allocated);
+        let new_allocated = sequence.allocate_steps(SEQUENCE_ALLOCATION_STEP as usize);
+        seq_row.allocated = new_allocated;
         seq_row
     };
 
@@ -885,7 +902,7 @@ impl MutTxId {
             sequence_name: seq.sequence_name,
             table_id,
             col_pos: seq.col_pos,
-            allocated: seq.allocated,
+            allocated: seq.start,
             increment: seq.increment,
             start: seq.start,
             min_value: seq.min_value,
@@ -899,7 +916,7 @@ impl MutTxId {
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         // This won't clone-write when creating a table but likely to otherwise.
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_sequence(schema.clone()));
-        self.sequence_state_lock.insert(Sequence::new(schema));
+        self.sequence_state_lock.insert(Sequence::new(schema, None));
         self.push_schema_change(PendingSchemaChange::SequenceAdded(table_id, seq_id));
 
         log::trace!("SEQUENCE CREATED: id = {seq_id}");
@@ -956,6 +973,7 @@ impl MutTxId {
     /// - The constraint metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and is not `constraintId::SENTINEL`.
     fn create_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<ConstraintId> {
+        /*
         if constraint.constraint_id != ConstraintId::SENTINEL {
             return Err(anyhow::anyhow!(
                 "`constraint_id` must be `ConstraintId::SENTINEL` in `{:#?}`",
@@ -963,6 +981,8 @@ impl MutTxId {
             )
             .into());
         }
+
+         */
         if constraint.table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", constraint).into());
         }
@@ -981,7 +1001,7 @@ impl MutTxId {
         // this will fail if the table already exists.
         let constraint_row = StConstraintRow {
             table_id,
-            constraint_id: ConstraintId::SENTINEL,
+            constraint_id: constraint.constraint_id,
             constraint_name: constraint.constraint_name.clone(),
             constraint_data: constraint.data.clone().into(),
         };
@@ -1353,6 +1373,7 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
+
     pub fn insert_st_client(
         &mut self,
         identity: Identity,

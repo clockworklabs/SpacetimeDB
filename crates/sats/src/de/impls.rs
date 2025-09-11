@@ -600,7 +600,7 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
     // This is worst case quadratic in complexity
     // as fields can be specified out of order (value side) compared to `elems` (type side).
     for _ in 0..elems.len() {
-        // Deserialize a field name, match against the element types, .
+        // Deserialize a field name, match against the element types.
         let index = tup.get_field_ident(TupleNameVisitor { elems, kind })?.ok_or_else(|| {
             // Couldn't deserialize a field name.
             // Find the first field name we haven't filled an element for.
@@ -659,12 +659,13 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
             .ok_or_else(|| Error::unknown_field_name(name, &self))
     }
 
-    fn visit_seq<E: Error>(self, index: usize, name: &str) -> Result<Self::Output, E> {
+    fn visit_seq(self, index: usize) -> Self::Output {
+        // Confirm that the index exists.
         self.elems
             .get(index)
-            .ok_or_else(|| Error::unknown_field_name(name, &self))?;
+            .expect("`index` should exist when `visit_seq` is called");
 
-        Ok(index)
+        index
     }
 }
 

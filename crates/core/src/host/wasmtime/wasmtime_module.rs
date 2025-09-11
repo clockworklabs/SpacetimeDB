@@ -189,14 +189,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         self.store.data().instance_env()
     }
 
-    type Trap = anyhow::Error;
-
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer(
-        &mut self,
-        op: ReducerOp<'_>,
-        budget: ReducerBudget,
-    ) -> module_host_actor::ExecuteResult<Self::Trap> {
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> module_host_actor::ExecuteResult {
         let store = &mut self.store;
         // note that ReducerBudget being a u64 is load-bearing here - although we convert budget right back into
         // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
@@ -210,7 +204,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let [conn_id_0, conn_id_1] = bytemuck::must_cast(op.caller_connection_id.as_le_byte_array());
 
         // Prepare arguments to the reducer + the error sink & start timings.
-        let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, op.arg_bytes, op.timestamp);
+        let args_bytes = op.args.get_bsatn().clone();
+        let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, args_bytes, op.timestamp);
 
         let call_result = self.call_reducer.call(
             &mut *store,
@@ -253,7 +248,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         }
     }
 
-    fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap) {
+    fn log_traceback(func_type: &str, func: &str, trap: &anyhow::Error) {
         log_traceback(func_type, func, trap)
     }
 }
