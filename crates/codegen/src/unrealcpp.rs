@@ -43,7 +43,7 @@ impl Lang for UnrealCpp<'_> {
         let mut output = UnrealCppAutogen::new(
             &[
                 "Types/Builtins.h",
-                &format!("ModuleBindings/Types/{}Type.g.h", struct_name),
+                &format!("ModuleBindings/Types/{struct_name}Type.g.h"),
                 "Tables/RemoteTable.h",
                 "DBCache/WithBsatn.h",
                 "DBCache/TableHandle.h",
@@ -53,8 +53,8 @@ impl Lang for UnrealCpp<'_> {
             false,
         );
 
-        let row_struct = format!("F{}Type", struct_name); // e.g. "FUserType", "FMessageType"
-        let handle_cls = format!("U{}Table", struct_name); // "UMessageTable"
+        let row_struct = format!("F{struct_name}Type"); // e.g. "FUserType", "FMessageType"
+        let handle_cls = format!("U{struct_name}Table"); // "UMessageTable"
         let table_name = table.name.deref().to_string();
         let table_pascal = struct_name.clone();
 
@@ -80,15 +80,15 @@ impl Lang for UnrealCpp<'_> {
                         let field_name = f_name.deref().to_case(Case::Pascal);
                         let field_type = cpp_ty_fmt_with_module(module, f_ty, self.module_name).to_string();
                         let index_name = accessor_name.deref().to_case(Case::Pascal);
-                        let index_class_name = format!("U{}{}UniqueIndex", table_pascal, index_name);
+                        let index_class_name = format!("U{table_pascal}{index_name}UniqueIndex");
                         let key_type = field_type.clone();
+                        let field_name_lowercase = field_name.to_lowercase();
 
                         writeln!(output, "UCLASS(Blueprintable)");
                         writeln!(
                             output,
-                            "class {} {} : public UObject",
-                            self.get_api_macro(),
-                            index_class_name
+                            "class {} {index_class_name} : public UObject",
+                            self.get_api_macro()
                         );
                         writeln!(output, "{{");
                         writeln!(output, "    GENERATED_BODY()");
@@ -101,35 +101,27 @@ impl Lang for UnrealCpp<'_> {
                         );
                         writeln!(
                             output,
-                            "    FUniqueIndexHelper<{}, {}, FTableCache<{}>> {}IndexHelper;",
-                            row_struct, key_type, row_struct, index_name
+                            "    FUniqueIndexHelper<{row_struct}, {key_type}, FTableCache<{row_struct}>> {index_name}IndexHelper;"
                         );
                         writeln!(output);
                         writeln!(output, "public:");
-                        writeln!(output, "    {}()", index_class_name);
+                        writeln!(output, "    {index_class_name}()");
                         writeln!(
                             output,
                             "        // Initialize the helper with the specific unique index name"
                         );
-                        writeln!(output, "        : {}IndexHelper(\"{}\") {{", index_name, f_name.deref());
+                        writeln!(output, "        : {index_name}IndexHelper(\"{}\") {{", f_name.deref());
                         writeln!(output, "    }}");
                         writeln!(output);
                         writeln!(output, "    /**");
                         writeln!(
                             output,
-                            "     * Finds a {} by their unique {}.",
-                            table_pascal,
-                            field_name.to_lowercase()
+                            "     * Finds a {table_pascal} by their unique {field_name_lowercase}."
                         );
+                        writeln!(output, "     * @param Key The {field_name_lowercase} to search for.");
                         writeln!(
                             output,
-                            "     * @param Key The {} to search for.",
-                            field_name.to_lowercase()
-                        );
-                        writeln!(
-                            output,
-                            "     * @return The found {}, or a default-constructed {} if not found.",
-                            row_struct, row_struct
+                            "     * @return The found {row_struct}, or a default-constructed {row_struct} if not found."
                         );
                         writeln!(output, "     */");
 
@@ -137,21 +129,19 @@ impl Lang for UnrealCpp<'_> {
                         if is_blueprintable(module, f_ty) {
                             writeln!(
                                 output,
-                                "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{}Index\")",
-                                table_pascal
+                                "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{table_pascal}Index\")"
                             );
                         } else {
                             writeln!(
                                 output,
-                                "    // NOTE: Not exposed to Blueprint because {} types are not Blueprint-compatible",
-                                key_type
+                                "    // NOTE: Not exposed to Blueprint because {key_type} types are not Blueprint-compatible"                                
                             );
                         }
 
-                        writeln!(output, "    {} Find({} Key)", row_struct, key_type);
+                        writeln!(output, "    {row_struct} Find({key_type} Key)");
                         writeln!(output, "    {{");
                         writeln!(output, "        // Simply delegate the call to the internal helper");
-                        writeln!(output, "        return {}IndexHelper.FindUniqueIndex(Key);", index_name);
+                        writeln!(output, "        return {index_name}IndexHelper.FindUniqueIndex(Key);");
                         writeln!(output, "    }}");
                         writeln!(output);
                         writeln!(
@@ -161,15 +151,10 @@ impl Lang for UnrealCpp<'_> {
                         writeln!(output, "    // This is a common pattern when the cache might be created or provided by another system.");
                         writeln!(
                             output,
-                            "    void SetCache(TSharedPtr<const FTableCache<{}>> In{}Cache)",
-                            row_struct, table_pascal
+                            "    void SetCache(TSharedPtr<const FTableCache<{row_struct}>> In{table_pascal}Cache)"
                         );
                         writeln!(output, "    {{");
-                        writeln!(
-                            output,
-                            "        {}IndexHelper.Cache = In{}Cache;",
-                            index_name, table_pascal
-                        );
+                        writeln!(output, "        {index_name}IndexHelper.Cache = In{table_pascal}Cache;");
                         writeln!(output, "    }}");
                         writeln!(output, "}};");
                         writeln!(output, "/***/");
@@ -182,7 +167,7 @@ impl Lang for UnrealCpp<'_> {
                 else {
                     // Generate non-unique BTree index class
                     let _index_name = accessor_name.deref().to_case(Case::Pascal);
-                    let index_class_name = format!("U{}{}Index", table_pascal, _index_name);
+                    let index_class_name = format!("U{table_pascal}{_index_name}Index");
 
                     // Get column information
                     let column_info: Vec<_> = columns
@@ -191,7 +176,7 @@ impl Lang for UnrealCpp<'_> {
                             let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
                             let field_name = f_name.deref().to_case(Case::Pascal);
                             let field_type = cpp_ty_fmt_with_module(module, f_ty, self.module_name).to_string();
-                            let param_type = format!("const {}&", field_type);
+                            let param_type = format!("const {field_type}&");
 
                             (field_name, field_type, param_type, f_ty, f_name.deref().to_string())
                         })
@@ -210,7 +195,7 @@ impl Lang for UnrealCpp<'_> {
                     // Create parameter list for methods
                     let method_params = column_info
                         .iter()
-                        .map(|(field_name, _, param_type, _, _)| format!("{} {}", param_type, field_name))
+                        .map(|(field_name, _, param_type, _, _)| format!("{param_type} {field_name}"))
                         .collect::<Vec<_>>()
                         .join(", ");
 
@@ -228,27 +213,26 @@ impl Lang for UnrealCpp<'_> {
                         .collect::<Vec<_>>()
                         .join(", ");
 
-                    let tuple_type = if column_info.len() == 1 {
-                        format!("TTuple<{}>", tuple_types)
-                    } else {
-                        format!("TTuple<{}>", tuple_types)
-                    };
+                    // This is a potential bug in the original code, but keeping it as is for now
+                    // Originally Arvikasoft had if column_info.len() == 1 { format!("TTuple<{tuple_types}>"); } else { format!("TTuple<{tuple_types}>"); }
+                    // This makes no sense since both branches are the same
+                    let tuple_type = format!("TTuple<{tuple_types}>");
 
                     writeln!(output, "UCLASS(Blueprintable)");
-                    writeln!(output, "class {} : public UObject", index_class_name);
+                    writeln!(output, "class {index_class_name} : public UObject");
                     writeln!(output, "{{");
                     writeln!(output, "    GENERATED_BODY()");
                     writeln!(output);
                     writeln!(output, "public:");
 
-                    writeln!(output, "    TArray<{}> Filter({}) const", row_struct, method_params);
+                    writeln!(output, "    TArray<{row_struct}> Filter({method_params}) const");
                     writeln!(output, "    {{");
-                    writeln!(output, "        TArray<{}> OutResults;", row_struct);
+                    writeln!(output, "        TArray<{row_struct}> OutResults;");
                     writeln!(output);
-                    writeln!(output, "        LocalCache->FindByMultiKeyBTreeIndex<{}>(", tuple_type);
+                    writeln!(output, "        LocalCache->FindByMultiKeyBTreeIndex<{tuple_type}>(");
                     writeln!(output, "            OutResults,");
                     writeln!(output, "            TEXT(\"{}\"),", accessor_name.deref());
-                    writeln!(output, "            MakeTuple({})", param_names);
+                    writeln!(output, "            MakeTuple({param_names})");
                     writeln!(output, "        );");
                     writeln!(output);
                     writeln!(output, "        return OutResults;");
@@ -257,8 +241,7 @@ impl Lang for UnrealCpp<'_> {
 
                     writeln!(
                         output,
-                        "    void SetCache(TSharedPtr<FTableCache<{}>> InCache)",
-                        row_struct
+                        "    void SetCache(TSharedPtr<FTableCache<{row_struct}>> InCache)"
                     );
                     writeln!(output, "    {{");
                     writeln!(output, "        LocalCache = InCache;");
@@ -279,15 +262,14 @@ impl Lang for UnrealCpp<'_> {
 
                     writeln!(
                         output,
-                        "    void {}(TArray<{}>& OutResults, {})",
-                        filter_method_name, row_struct, method_params
+                        "    void {filter_method_name}(TArray<{row_struct}>& OutResults, {method_params})"
                     );
                     writeln!(output, "    {{");
-                    writeln!(output, "        OutResults = Filter({});", param_names);
+                    writeln!(output, "        OutResults = Filter({param_names});");
                     writeln!(output, "    }}");
                     writeln!(output);
 
-                    writeln!(output, "    TSharedPtr<FTableCache<{}>> LocalCache;", row_struct);
+                    writeln!(output, "    TSharedPtr<FTableCache<{row_struct}>> LocalCache;");
                     writeln!(output, "}};");
                     writeln!(output);
 
@@ -301,9 +283,8 @@ impl Lang for UnrealCpp<'_> {
         writeln!(output, "UCLASS(BlueprintType)");
         writeln!(
             output,
-            "class {} {} : public URemoteTable",
-            self.get_api_macro(),
-            handle_cls
+            "class {} {handle_cls} : public URemoteTable",
+            self.get_api_macro()
         );
         writeln!(output, "{{");
         writeln!(output, "    GENERATED_BODY()");
@@ -313,30 +294,24 @@ impl Lang for UnrealCpp<'_> {
         // Generate unique index properties
         for (index_name, index_class_name, _, _) in &unique_indexes {
             writeln!(output, "    UPROPERTY(BlueprintReadOnly)");
-            writeln!(output, "    {}* {};", index_class_name, index_name);
+            writeln!(output, "    {index_class_name}* {index_name};");
             writeln!(output);
         }
 
         // Generate non-unique BTree index properties
         for (index_name, index_class_name) in &multi_key_indexes {
             writeln!(output, "    UPROPERTY(BlueprintReadOnly)");
-            writeln!(
-                output,
-                "    {}* {};",
-                index_class_name,
-                index_name.to_case(Case::Pascal)
-            );
+            writeln!(output, "    {index_class_name}* {};", index_name.to_case(Case::Pascal));
             writeln!(output);
         }
 
         writeln!(output, "    void PostInitialize();");
         writeln!(output);
 
-        writeln!(output, "    /** Update function for {} table*/", table_name);
+        writeln!(output, "    /** Update function for {table_name} table*/");
         writeln!(
             output,
-            "    FTableAppliedDiff<{}> Update(TArray<FWithBsatn<{}>> InsertsRef, TArray<FWithBsatn<{}>> DeletesRef);",
-            row_struct, row_struct, row_struct
+            "    FTableAppliedDiff<{row_struct}> Update(TArray<FWithBsatn<{row_struct}>> InsertsRef, TArray<FWithBsatn<{row_struct}>> DeletesRef);"
         );
         writeln!(output);
 
@@ -347,55 +322,55 @@ impl Lang for UnrealCpp<'_> {
 
         writeln!(output, "    /** Return all subscribed rows in the cache */");
         writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
-        writeln!(output, "    TArray<{}> Iter() const;", row_struct);
+        writeln!(output, "    TArray<{row_struct}> Iter() const;");
         writeln!(output);
 
         // Generate table events in public section
         writeln!(output, "    // Table Events");
         writeln!(output, "    DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams( ");
-        writeln!(output, "        FOn{}Insert,", table_pascal);
+        writeln!(output, "        FOn{table_pascal}Insert,");
         writeln!(output, "        const FEventContext&, Context,");
-        writeln!(output, "        const {}&, NewRow);", row_struct);
+        writeln!(output, "        const {row_struct}&, NewRow);");
         writeln!(output);
 
         writeln!(output, "    DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams( ");
-        writeln!(output, "        FOn{}Update,", table_pascal);
+        writeln!(output, "        FOn{table_pascal}Update,");
         writeln!(output, "        const FEventContext&, Context,");
-        writeln!(output, "        const {}&, OldRow,", row_struct);
-        writeln!(output, "        const {}&, NewRow);", row_struct);
+        writeln!(output, "        const {row_struct}&, OldRow,");
+        writeln!(output, "        const {row_struct}&, NewRow);");
         writeln!(output);
 
         writeln!(output, "    DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams( ");
-        writeln!(output, "        FOn{}Delete,", table_pascal);
+        writeln!(output, "        FOn{table_pascal}Delete,");
         writeln!(output, "        const FEventContext&, Context,");
-        writeln!(output, "        const {}&, DeletedRow);", row_struct);
+        writeln!(output, "        const {row_struct}&, DeletedRow);");
         writeln!(output);
 
         writeln!(
             output,
             "    UPROPERTY(BlueprintAssignable, Category = \"SpacetimeDB Events\")"
         );
-        writeln!(output, "    FOn{}Insert OnInsert;", table_pascal);
+        writeln!(output, "    FOn{table_pascal}Insert OnInsert;");
         writeln!(output);
 
         writeln!(
             output,
             "    UPROPERTY(BlueprintAssignable, Category = \"SpacetimeDB Events\")"
         );
-        writeln!(output, "    FOn{}Update OnUpdate;", table_pascal);
+        writeln!(output, "    FOn{table_pascal}Update OnUpdate;");
         writeln!(output);
 
         writeln!(
             output,
             "    UPROPERTY(BlueprintAssignable, Category = \"SpacetimeDB Events\")"
         );
-        writeln!(output, "    FOn{}Delete OnDelete;", table_pascal);
+        writeln!(output, "    FOn{table_pascal}Delete OnDelete;");
         writeln!(output);
 
         writeln!(output, "private:");
-        writeln!(output, "    const FString TableName = TEXT(\"{}\");", table_name);
+        writeln!(output, "    const FString TableName = TEXT(\"{table_name}\");");
         writeln!(output);
-        writeln!(output, "    TSharedPtr<UClientCache<{}>> Data;", row_struct);
+        writeln!(output, "    TSharedPtr<UClientCache<{row_struct}>> Data;");
 
         writeln!(output, "}};"); // end UCLASS
 
@@ -456,12 +431,12 @@ impl Lang for UnrealCpp<'_> {
 
         let mut header = UnrealCppAutogen::new(&include_refs, &pascal, false);
 
-        let args_struct = format!("F{}Args", pascal);
+        let args_struct = format!("F{pascal}Args");
 
         // Generate reducer arguments struct
-        writeln!(header, "// Reducer arguments struct for {}", pascal);
+        writeln!(header, "// Reducer arguments struct for {pascal}");
         writeln!(header, "USTRUCT(BlueprintType)");
-        writeln!(header, "struct {} {}", self.get_api_macro(), args_struct);
+        writeln!(header, "struct {} {args_struct}", self.get_api_macro());
         writeln!(header, "{{");
         writeln!(header, "    GENERATED_BODY()");
         writeln!(header);
@@ -470,7 +445,7 @@ impl Lang for UnrealCpp<'_> {
         for (param_name, param_type) in &reducer.params_for_generate.elements {
             let param_pascal = param_name.deref().to_case(Case::Pascal);
             let type_str = cpp_ty_fmt_with_module(module, param_type, self.module_name).to_string();
-            let field_decl = format!("{} {}", type_str, param_pascal);
+            let field_decl = format!("{type_str} {param_pascal}");
 
             // Check if the type is blueprintable
             if is_blueprintable(module, param_type) {
@@ -479,21 +454,20 @@ impl Lang for UnrealCpp<'_> {
                 // Add comment explaining why the field isn't exposed as UPROPERTY
                 writeln!(
                     header,
-                    "    // NOTE: {} field not exposed to Blueprint due to non-blueprintable elements",
-                    type_str
+                    "    // NOTE: {type_str} field not exposed to Blueprint due to non-blueprintable elements"
                 );
             }
-            writeln!(header, "    {};", field_decl);
+            writeln!(header, "    {field_decl};");
             writeln!(header);
         }
 
         // Generate default constructor
-        writeln!(header, "    {}() = default;", args_struct);
+        writeln!(header, "    {args_struct}() = default;");
         writeln!(header);
 
         // Generate parameterized constructor (for BSATN/internal use)
         if !reducer.params_for_generate.elements.is_empty() {
-            write!(header, "    {}(", args_struct);
+            write!(header, "    {args_struct}(");
             let mut first = true;
             for (param_name, param_type) in &reducer.params_for_generate.elements {
                 if !first {
@@ -503,7 +477,7 @@ impl Lang for UnrealCpp<'_> {
                 let param_pascal = param_name.deref().to_case(Case::Pascal);
                 let type_str = cpp_ty_fmt_with_module(module, param_type, self.module_name).to_string();
 
-                write!(header, "const {}& In{}", type_str, param_pascal);
+                write!(header, "const {type_str}& In{param_pascal}");
             }
             writeln!(header, ")");
 
@@ -515,7 +489,7 @@ impl Lang for UnrealCpp<'_> {
                 }
                 first = false;
                 let param_pascal = param_name.deref().to_case(Case::Pascal);
-                write!(header, "{}(In{})", param_pascal, param_pascal);
+                write!(header, "{param_pascal}(In{param_pascal})");
             }
             writeln!(header);
             writeln!(header, "    {{}}");
@@ -526,8 +500,7 @@ impl Lang for UnrealCpp<'_> {
         writeln!(header);
         writeln!(
             header,
-            "    FORCEINLINE bool operator==(const {}& Other) const",
-            args_struct
+            "    FORCEINLINE bool operator==(const {args_struct}& Other) const"
         );
         writeln!(header, "    {{");
 
@@ -537,7 +510,7 @@ impl Lang for UnrealCpp<'_> {
             let param_pascal = param_name.deref().to_case(Case::Pascal);
 
             // For value types, direct comparison
-            comparisons.push(format!("{} == Other.{}", param_pascal, param_pascal));
+            comparisons.push(format!("{param_pascal} == Other.{param_pascal}"));
         }
 
         if comparisons.is_empty() {
@@ -549,8 +522,7 @@ impl Lang for UnrealCpp<'_> {
         writeln!(header, "    }}");
         writeln!(
             header,
-            "    FORCEINLINE bool operator!=(const {}& Other) const",
-            args_struct
+            "    FORCEINLINE bool operator!=(const {args_struct}& Other) const"
         );
         writeln!(header, "    {{");
         writeln!(header, "        return !(*this == Other);");
@@ -572,12 +544,11 @@ impl Lang for UnrealCpp<'_> {
             .collect();
 
         if field_names.is_empty() {
-            writeln!(header, "    UE_SPACETIMEDB_STRUCT_EMPTY({});", args_struct);
+            writeln!(header, "    UE_SPACETIMEDB_STRUCT_EMPTY({args_struct});");
         } else {
             writeln!(
                 header,
-                "    UE_SPACETIMEDB_STRUCT({}, {});",
-                args_struct,
+                "    UE_SPACETIMEDB_STRUCT({args_struct}, {});",
                 field_names.join(", ")
             );
         }
@@ -590,9 +561,8 @@ impl Lang for UnrealCpp<'_> {
         writeln!(header, "UCLASS(BlueprintType)");
         writeln!(
             header,
-            "class {} U{}Reducer : public UReducerBase",
-            self.get_api_macro(),
-            pascal
+            "class {} U{pascal}Reducer : public UReducerBase",
+            self.get_api_macro()
         );
         writeln!(header, "{{");
         writeln!(header, "    GENERATED_BODY()");
@@ -603,7 +573,7 @@ impl Lang for UnrealCpp<'_> {
         for (param_name, param_type) in &reducer.params_for_generate.elements {
             let param_pascal = param_name.deref().to_case(Case::Pascal);
             let type_str = cpp_ty_fmt_with_module(module, param_type, self.module_name).to_string();
-            let field_decl = format!("{} {}", type_str, param_pascal);
+            let field_decl = format!("{type_str} {param_pascal}");
 
             // Check if the type is blueprintable
             if is_blueprintable(module, param_type) {
@@ -612,11 +582,10 @@ impl Lang for UnrealCpp<'_> {
                 // Add comment explaining why the field isn't exposed as UPROPERTY
                 writeln!(
                     header,
-                    "    // NOTE: {} field not exposed to Blueprint due to non-blueprintable elements",
-                    type_str
+                    "    // NOTE: {type_str} field not exposed to Blueprint due to non-blueprintable elements"
                 );
             }
-            writeln!(header, "    {};", field_decl);
+            writeln!(header, "    {field_decl};");
         }
         if !reducer.params_for_generate.elements.is_empty() {
             writeln!(header);
@@ -627,11 +596,9 @@ impl Lang for UnrealCpp<'_> {
 
         writeln!(header);
 
+        let module_name = &self.module_name;
         OutputFile {
-            filename: format!(
-                "Source/{}/Public/ModuleBindings/Reducers/{}.g.h",
-                self.module_name, pascal
-            ),
+            filename: format!("Source/{module_name}/Public/ModuleBindings/Reducers/{pascal}.g.h"),
             code: header.into_inner(),
         }
     }
@@ -644,13 +611,12 @@ impl Lang for UnrealCpp<'_> {
         for optional_name in optional_types {
             let module_name_pascal = self.module_name.to_case(Case::Pascal);
             let filename = format!(
-                "Source/{}/Public/ModuleBindings/Optionals/{}{}.g.h",
-                module_name_pascal, module_name_pascal, optional_name
+                "Source/{module_name_pascal}/Public/ModuleBindings/Optionals/{module_name_pascal}{optional_name}.g.h"
             );
 
             let content = generate_optional_type(&optional_name, module, &self.get_api_macro(), self.module_name);
             files.push(OutputFile {
-                filename: filename,
+                filename,
                 code: content,
             });
         }
@@ -670,7 +636,7 @@ impl Lang for UnrealCpp<'_> {
         // Include reducers
         for reducer in iter_reducers(module) {
             let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
-            includes.insert(format!("ModuleBindings/Reducers/{}.g.h", reducer_pascal));
+            includes.insert(format!("ModuleBindings/Reducers/{reducer_pascal}.g.h"));
         }
 
         // Collect includes for types used in delegates and contexts
@@ -707,7 +673,7 @@ impl Lang for UnrealCpp<'_> {
         writeln!(client_h, "/** Forward declaration for tables */");
         for table in iter_tables(module) {
             let table_pascal = type_ref_name(module, table.product_type_ref);
-            writeln!(client_h, "class U{}Table;", table_pascal);
+            writeln!(client_h, "class U{table_pascal}Table;");
         }
         writeln!(client_h, "/***/");
         writeln!(client_h);
@@ -738,7 +704,7 @@ impl Lang for UnrealCpp<'_> {
         for reducer in iter_reducers(module) {
             let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
             writeln!(client_h, "\tUFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
-            writeln!(client_h, "\tvoid {}(ECallReducerFlags Flag);", reducer_pascal);
+            writeln!(client_h, "\tvoid {reducer_pascal}(ECallReducerFlags Flag);");
         }
 
         writeln!(client_h);
@@ -846,10 +812,10 @@ impl Lang for UnrealCpp<'_> {
 // Helper function to generate table .cpp implementation files
 fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -> String {
     let table_pascal = type_ref_name(module, table.product_type_ref);
-    let row_struct = format!("F{}Type", table_pascal);
+    let row_struct = format!("F{table_pascal}Type");
 
     // Include the table header and other necessary headers
-    let table_header = format!("ModuleBindings/Tables/{}Table.g.h", table_pascal);
+    let table_header = format!("ModuleBindings/Tables/{table_pascal}Table.g.h");
     let includes = vec![
         table_header.as_str(),
         "DBCache/UniqueIndex.h",
@@ -886,7 +852,7 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -
             } else {
                 // Non-unique BTree index
                 let index_name = accessor_name.deref().to_case(Case::Pascal);
-                let index_class_name = format!("U{}{}Index", table_pascal, index_name);
+                let index_class_name = format!("U{table_pascal}{index_name}Index");
 
                 // Collect column information for AddMultiKeyBTreeIndex call
                 let column_info: Vec<_> = columns
@@ -910,36 +876,31 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -
     }
 
     // Generate PostInitialize implementation
-    writeln!(output, "void U{}Table::PostInitialize()", table_pascal);
+    writeln!(output, "void U{table_pascal}Table::PostInitialize()");
     writeln!(output, "{{");
     writeln!(output, "    /** Client cache init and setting up indexes*/");
-    writeln!(output, "    Data = MakeShared<UClientCache<{}>>();", row_struct);
+    writeln!(output, "    Data = MakeShared<UClientCache<{row_struct}>>();");
     writeln!(output);
     writeln!(
         output,
-        "    TSharedPtr<FTableCache<{}>> {}Table = Data->GetOrAdd(TableName);",
-        row_struct, table_pascal
+        "    TSharedPtr<FTableCache<{row_struct}>> {table_pascal}Table = Data->GetOrAdd(TableName);"
     );
 
     // Add unique constraints for each unique index
     for (_index_name, field_type, field_name) in &unique_indexes {
         writeln!(
             output,
-            "    {}Table->AddUniqueConstraint<{}>(\"{}\", [](const {}& Row) -> const {}& {{",
-            table_pascal,
-            field_type,
-            field_name.to_lowercase(),
-            row_struct,
-            field_type
+            "    {table_pascal}Table->AddUniqueConstraint<{field_type}>(\"{}\", [](const {row_struct}& Row) -> const {field_type}& {{",
+            field_name.to_lowercase()            
         );
         writeln!(output, "        return Row.{}; }});", field_name.to_case(Case::Pascal));
     }
 
     writeln!(output);
     for (index_name, _, _) in &unique_indexes {
-        let index_class_name = format!("U{}{}UniqueIndex", table_pascal, index_name);
-        writeln!(output, "    {} = NewObject<{}>(this);", index_name, index_class_name);
-        writeln!(output, "    {}->SetCache({}Table);", index_name, table_pascal);
+        let index_class_name = format!("U{table_pascal}{index_name}UniqueIndex");
+        writeln!(output, "    {index_name} = NewObject<{index_class_name}>(this);");
+        writeln!(output, "    {index_name}->SetCache({table_pascal}Table);");
         writeln!(output);
     }
 
@@ -952,21 +913,19 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -
         // Generate field access expressions
         let field_accesses: Vec<String> = column_info
             .iter()
-            .map(|(field_name, _)| format!("Row.{}", field_name))
+            .map(|(field_name, _)| format!("Row.{field_name}"))
             .collect();
 
         writeln!(
             output,
-            "    // Register a new multi-key B-Tree index named \"{}\" on the {}Table.",
-            accessor_name, table_pascal
+            "    // Register a new multi-key B-Tree index named \"{accessor_name}\" on the {table_pascal}Table."
         );
         writeln!(
             output,
-            "    {}Table->AddMultiKeyBTreeIndex<{}>(",
-            table_pascal, tuple_type
+            "    {table_pascal}Table->AddMultiKeyBTreeIndex<{tuple_type}>("
         );
-        writeln!(output, "        TEXT(\"{}\"),", accessor_name);
-        writeln!(output, "        [](const {}& Row)", row_struct);
+        writeln!(output, "        TEXT(\"{accessor_name}\"),");
+        writeln!(output, "        [](const {row_struct}& Row)");
         writeln!(output, "        {{");
         writeln!(
             output,
@@ -976,8 +935,8 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -
         writeln!(output, "        }}");
         writeln!(output, "    );");
         writeln!(output);
-        writeln!(output, "    {} = NewObject<{}>(this);", index_name, index_class_name);
-        writeln!(output, "    {}->SetCache({}Table);", index_name, table_pascal);
+        writeln!(output, "    {index_name} = NewObject<{index_class_name}>(this);");
+        writeln!(output, "    {index_name}->SetCache({table_pascal}Table);");
         writeln!(output);
     }
 
@@ -988,8 +947,7 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -
     // Generate Update implementation
     writeln!(
         output,
-        "FTableAppliedDiff<{}> U{}Table::Update(TArray<FWithBsatn<{}>> InsertsRef, TArray<FWithBsatn<{}>> DeletesRef)",
-        row_struct, table_pascal, row_struct, row_struct
+        "FTableAppliedDiff<{row_struct}> U{table_pascal}Table::Update(TArray<FWithBsatn<{row_struct}>> InsertsRef, TArray<FWithBsatn<{row_struct}>> DeletesRef)"
     );
     writeln!(output, "{{");
     writeln!(
@@ -4263,12 +4221,12 @@ fn cpp_ty_fmt_blueprint_impl<'a>(
     fmt_fn(move |f| match ty {
         AlgebraicTypeUse::Array(elem) => {
             let elem_type = cpp_ty_fmt_with_module(module, elem, module_name).to_string();
-            write!(f, "TArray<{}>", elem_type)
+            write!(f, "TArray<{elem_type}>")
         }
         // For all other types, use the regular implementation
         _ => {
             let display_obj = cpp_ty_fmt_with_module(module, ty, module_name);
-            write!(f, "{}", display_obj)
+            write!(f, "{display_obj}")
         }
     })
 }
@@ -4304,7 +4262,7 @@ fn cpp_ty_fmt_impl<'a>(
 
         AlgebraicTypeUse::Array(elem) => {
             let elem_type = cpp_ty_fmt_impl(module, elem, module_name).to_string();
-            write!(f, "TArray<{}>", elem_type)
+            write!(f, "TArray<{elem_type}>")
         }
 
         AlgebraicTypeUse::String => f.write_str("FString"),
@@ -4319,9 +4277,9 @@ fn cpp_ty_fmt_impl<'a>(
         AlgebraicTypeUse::Ref(r) => {
             let scoped = type_ref_name(module, *r); // PascalCase
             match &module.typespace_for_generate()[*r] {
-                AlgebraicTypeDef::PlainEnum(_) => write!(f, "E{}Type", scoped), // enum → EFooType
-                AlgebraicTypeDef::Product(_) => write!(f, "F{}Type", scoped),   // struct/record → FFooType
-                AlgebraicTypeDef::Sum(_) => write!(f, "F{}Type", scoped),       // sum type → FFooType (UStruct)
+                AlgebraicTypeDef::PlainEnum(_) => write!(f, "E{scoped}Type"), // enum → EFooType
+                AlgebraicTypeDef::Product(_) => write!(f, "F{scoped}Type"),   // struct/record → FFooType
+                AlgebraicTypeDef::Sum(_) => write!(f, "F{scoped}Type"),       // sum type → FFooType (UStruct)
             }
         }
 
@@ -4329,10 +4287,10 @@ fn cpp_ty_fmt_impl<'a>(
         AlgebraicTypeUse::Option(inner) => {
             let optional_name = get_optional_type_name(module, inner);
             if module_name.is_empty() {
-                write!(f, "F{}", optional_name)
+                write!(f, "F{optional_name}")
             } else {
                 let module_name_pascal = module_name.to_case(Case::Pascal);
-                write!(f, "F{}{}", module_name_pascal, optional_name)
+                write!(f, "F{module_name_pascal}{optional_name}")
             }
         }
 
@@ -4358,7 +4316,7 @@ fn collect_includes_for_type(
             // Add the optional type header
             let optional_name = get_optional_type_name(module, inner);
             let module_name_pascal = module_name.to_case(Case::Pascal);
-            let header = format!("ModuleBindings/Optionals/{}{}.g.h", module_name_pascal, optional_name);
+            let header = format!("ModuleBindings/Optionals/{module_name_pascal}{optional_name}.g.h");
             out.insert(header);
             // Also collect includes for the inner type
             collect_includes_for_type(module, inner, out, module_name);
