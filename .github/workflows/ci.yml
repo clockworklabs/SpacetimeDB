@@ -258,10 +258,15 @@ jobs:
       RUNNER_TEMP: /tmp/actions_tmp/${{ github.run_id }}
       ACTIONS_RUNNER_TEMP: /tmp/actions_tmp/${{ github.run_id }}
     steps:
-      - name: Prepare runner temp
+      - name: Prepare runner temp in a writeable dir
         run: |
           set -eux
           mkdir -p "$RUNNER_TEMP/_runner_file_commands"
+          # Point the core file-command files away from /__w/_temp to our writable dir
+          echo "GITHUB_STATE=$RUNNER_TEMP/_runner_file_commands/save_state"       >> "$GITHUB_ENV"
+          echo "GITHUB_OUTPUT=$RUNNER_TEMP/_runner_file_commands/output"          >> "$GITHUB_ENV"
+          echo "GITHUB_ENV=$RUNNER_TEMP/_runner_file_commands/env"                >> "$GITHUB_ENV"
+          echo "GITHUB_STEP_SUMMARY=$RUNNER_TEMP/_runner_file_commands/summary"   >> "$GITHUB_ENV"
 #      - name: Find Git ref
 #        env:
 #          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
