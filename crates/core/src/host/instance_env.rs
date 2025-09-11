@@ -2,6 +2,7 @@ use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
+use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
@@ -187,6 +188,21 @@ impl InstanceEnv {
             self.replica_ctx.database_identity.to_abbreviated_hex(),
             record.message
         );
+    }
+
+    /// End a console timer by logging the span at INFO level.
+    pub fn console_timer_end(&self, span: &TimingSpan, bt: &dyn BacktraceProvider) -> RtResult<u32> {
+        let elapsed = span.start.elapsed();
+        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+
+        let record = Record {
+            ts: chrono::Utc::now(),
+            target: None,
+            filename: None,
+            line_number: None,
+            message: &message,
+        };
+        self.console_log(LogLevel::Info, &record, bt);
     }
 
     /// Project `cols` in `row_ref` encoded in BSATN to `buffer`

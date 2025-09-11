@@ -1188,22 +1188,10 @@ impl WasmInstanceEnv {
             let Some(span) = caller.data_mut().timing_spans.take(TimingSpanIdx(span_id)) else {
                 return Ok(errno::NO_SUCH_CONSOLE_TIMER.get().into());
             };
-
-            let elapsed = span.start.elapsed();
-            let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
-
-            let record = Record {
-                ts: chrono::Utc::now(),
-                target: None,
-                filename: None,
-                line_number: None,
-                message: &message,
-            };
-            caller.data().instance_env.console_log(
-                crate::database_logger::LogLevel::Info,
-                &record,
-                &caller.as_context(),
-            );
+            caller
+                .data()
+                .instance_env
+                .console_timer_end(&span, &caller.as_context());
             Ok(0)
         })
     }
