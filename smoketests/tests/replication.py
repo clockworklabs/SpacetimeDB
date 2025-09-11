@@ -428,13 +428,12 @@ class EnableReplication(ReplicationTest):
     def test_enable_replication(self):
         """Tests enabling and disabling replication"""
 
+        self.add_me_as_admin()
         name = random_string()
+        n = 100
 
         self.publish_module(name, num_replicas = 1)
         self.cluster.wait_for_leader_change(None)
-
-        self.add_me_as_admin()
-        n = 100
 
         # start un-replicated
         self.run_counter(1, n)
@@ -447,3 +446,42 @@ class EnableReplication(ReplicationTest):
         # enable it one more time
         self.call_control("enable_replication", {"Name": name}, 3)
         self.run_counter(4, n)
+
+
+class EnableReplicationSuspended(ReplicationTest):
+    AUTOPUBLISH = False
+
+    def test_enable_replication_on_suspended_database(self):
+        """Tests that we can enable replication on a suspended database"""
+
+        self.add_me_as_admin()
+        name = random_string()
+
+        self.publish_module(name, num_replicas = 1)
+        self.cluster.wait_for_leader_change(None)
+        self.cluster.ensure_leader_health(1)
+
+        id = self.cluster.get_db_id()
+
+        self.call_control("suspend_database", {"Name": name})
+        # Database is now unreachable.
+        with self.assertRaises(Exception):
+            self.call("send_message", "hi")
+
+        self.call_control("enable_replication", {"Name": name}, 3)
+        # Still unreachable until we call unsuspend.
+        with self.assertRaises(Exception):
+            self.call("send_message", "hi")
+
+        self.call_control("unsuspend_database", {"Name": name})
+        self.cluster.wait_for_leader_change(None)
+        self.cluster.ensure_leader_health(2)
+
+        # We can't direcly observe that there are indeed three replicas running,
+        # so as a sanity check inspect the event log.
+        rows = self.cluster.read_controldb(
+            f"select message from staged_enable_replication_event where database_id={id}")
+        self.assertEqual(rows, [
+            {'message': '"bootstrap requested"'},
+            {'message': '"bootstrap complete"'},
+        ])
