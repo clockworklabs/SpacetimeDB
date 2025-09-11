@@ -251,22 +251,12 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GHCR_TOKEN }}
-    env:
-      # We override this because the default directories are not writeable by the default user inside the container.
-      # An alternative would be to run as the root user (by settings `options: --user 0:0`) but then Unreal itself gets
-      # worried.
-      RUNNER_TEMP: /tmp/actions_tmp/${{ github.run_id }}
-      ACTIONS_RUNNER_TEMP: /tmp/actions_tmp/${{ github.run_id }}
+      # Run as root because otherwise we get permission denied for various directories inside the container. I tried doing dances to allow it to run
+      # without this (reassigning env vars and stuff), but was unable to get it to work and it felt like an uphill battle.
+      options: --user 0:0
     steps:
-      - name: Prepare runner temp in a writeable dir
-        run: |
-          set -eux
-          mkdir -p "$RUNNER_TEMP/_runner_file_commands"
-          # Point the core file-command files away from /__w/_temp to our writable dir
-          echo "GITHUB_STATE=$RUNNER_TEMP/_runner_file_commands/save_state"       >> "$GITHUB_ENV"
-          echo "GITHUB_OUTPUT=$RUNNER_TEMP/_runner_file_commands/output"          >> "$GITHUB_ENV"
-          echo "GITHUB_ENV=$RUNNER_TEMP/_runner_file_commands/env"                >> "$GITHUB_ENV"
-          echo "GITHUB_STEP_SUMMARY=$RUNNER_TEMP/_runner_file_commands/summary"   >> "$GITHUB_ENV"
+# Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
+# commits though.
 #      - name: Find Git ref
 #        env:
 #          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
