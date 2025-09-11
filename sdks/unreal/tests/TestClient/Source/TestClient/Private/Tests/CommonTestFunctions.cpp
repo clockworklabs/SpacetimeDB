@@ -131,6 +131,7 @@ UDbConnection* ConnectWithThen(TSharedPtr<FTestCounter> Counter,
 
 	if (Conn)
 	{
+		Conn->SetAutoTicking(true); // Enable automatic ticking of the connection each frame
 		Conn->AddToRoot();
 	}
 	return Conn;

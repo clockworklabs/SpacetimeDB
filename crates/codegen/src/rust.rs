@@ -487,7 +487,7 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
         }
     }
 
-    fn generate_globals_file(&self, module: &ModuleDef) -> OutputFile {
+    fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -530,10 +530,10 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
         // This includes a method for initializing the tables in the client cache.
         print_impl_spacetime_module(module, out);
 
-        OutputFile {
+        vec![OutputFile {
             filename: "mod.rs".to_string(),
             code: output.into_inner(),
-        }
+        }]
     }
 }
 

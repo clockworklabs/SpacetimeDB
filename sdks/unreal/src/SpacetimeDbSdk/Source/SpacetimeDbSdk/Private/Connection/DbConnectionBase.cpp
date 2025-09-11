@@ -124,7 +124,7 @@ void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
 	});
 }
 
-void UDbConnectionBase::Tick(float DeltaTime)
+void UDbConnectionBase::FrameTick()
 {
 	TArray<FServerMessageType> Local;
 	{
@@ -146,6 +146,13 @@ void UDbConnectionBase::Tick(float DeltaTime)
 		ProcessServerMessage(Msg);
 	}
 }
+void UDbConnectionBase::Tick(float DeltaTime)
+{
+	if (bIsAutoTicking)
+	{
+		FrameTick();
+	}
+}
 
 TStatId UDbConnectionBase::GetStatId() const
 {
@@ -155,12 +162,12 @@ TStatId UDbConnectionBase::GetStatId() const
 
 bool UDbConnectionBase::IsTickable() const
 {
-	return true; 
+	return bIsAutoTicking; 
 }
 
 bool UDbConnectionBase::IsTickableInEditor() const
 {
-	return true;
+	return bIsAutoTicking;
 }
 
 

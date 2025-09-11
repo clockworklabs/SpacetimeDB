@@ -4925,7 +4925,7 @@ dependencies = [
 
 [[package]]
 name = "sdk-unreal-test-harness"
-version = "1.3.2"
+version = "1.4.0"
 dependencies = [
  "serial_test",
  "spacetimedb-testing",

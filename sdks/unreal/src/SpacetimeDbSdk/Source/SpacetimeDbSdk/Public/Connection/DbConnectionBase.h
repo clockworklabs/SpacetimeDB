@@ -87,6 +87,12 @@ public:
 	UFUNCTION(BlueprintPure, Category="SpacetimeDB")
 	bool IsActive() const;
 
+	UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
+	void FrameTick();
+
+	UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
+	void SetAutoTicking(bool bAutoTick) { bIsAutoTicking = bAutoTick; }
+
 	/** Send a raw JSON message to the server. */
 	bool SendRawMessage(const FString& Message);
 	/** Send a raw binary message to the server. */
@@ -332,6 +338,8 @@ protected:
 	UPROPERTY()
 	FSpacetimeDBConnectionId ConnectionId;
 
+	UPROPERTY()
+	bool bIsAutoTicking = false;
 
 	FOnConnectErrorDelegate OnConnectErrorDelegate;
 	FOnDisconnectBaseDelegate OnDisconnectBaseDelegate;

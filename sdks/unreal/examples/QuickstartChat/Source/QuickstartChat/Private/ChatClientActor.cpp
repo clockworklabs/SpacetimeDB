@@ -53,6 +53,7 @@ void AChatClientActor::BeginPlay()
 		->OnConnectError(ErrorDelegate) // Bind failure handler
 		->Build();
 
+	Conn->SetAutoTicking(true); // Enable automatic ticking of the connection each frame
 	// Register table and reducer callbacks after connection creation
 	RegisterCallbacks();
 }

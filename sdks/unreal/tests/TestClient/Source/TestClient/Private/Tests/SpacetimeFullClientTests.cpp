@@ -1586,6 +1586,13 @@ bool FInsertPrimitivesAsStringTest::RunTest(const FString &Parameters)
 	return true;
 }
 
+static FString GetReauthTokenPath()
+{
+    const FString Dir = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Tests"));
+    IFileManager::Get().MakeDirectory(*Dir, /*Tree*/true);
+    return FPaths::Combine(Dir, TEXT("reauth_token.txt"));
+}
+
 bool FReauth1Test::RunTest(const FString &Parameters)
 {
 	TestName = "Reauth";
@@ -1601,9 +1608,16 @@ bool FReauth1Test::RunTest(const FString &Parameters)
 
 	UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [this, Handler](UDbConnection *Conn)
 											{
+			UCredentials::Init(TestName);
 			const FString Token = UCredentials::LoadToken();
+			UE_LOG(LogTemp, Display, TEXT("[Reauth1] Loaded token: '%s'"), *Token);
 			if (!Token.IsEmpty())
 			{
+				const FString TokenFilePath = GetReauthTokenPath();
+				const bool bOK = FFileHelper::SaveStringToFile(Token, *TokenFilePath);
+                UE_LOG(LogTemp, Display, TEXT("[Reauth1] Save token -> %s (ok=%d)"), *TokenFilePath, bOK);
+
+				UCredentials::SaveToken(Token);
 				Handler->Counter->MarkSuccess("ReauthPart1");
 			}
 			else
@@ -1631,7 +1645,19 @@ bool FReauth2Test::RunTest(const FString &Parameters)
 	Handler->Counter->Register(TEXT("ReauthPart2"));
 
 	UCredentials::Init(TestName);
-	const FString OldToken = UCredentials::LoadToken();
+	const FString TokenFilePath = GetReauthTokenPath();
+	//const FString OldToken = UCredentials::LoadToken();
+	FString OldToken;
+    const bool bRead = FFileHelper::LoadFileToString(OldToken, *TokenFilePath);
+
+    UE_LOG(LogTemp, Display, TEXT("[Reauth2] Read token (ok=%d) from %s: '%s'"),
+           bRead, *TokenFilePath, *OldToken);
+    if (!bRead || OldToken.IsEmpty())
+    {
+        Handler->Counter->MarkFailure("ReauthPart2", TEXT("Missing/empty token file"));
+        ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
+        return true;
+    }
 
 	UDbConnection *Connection = ConnectWithThen(
 		Handler->Counter,
@@ -1643,7 +1669,9 @@ bool FReauth2Test::RunTest(const FString &Parameters)
 		[this, Handler, OldToken](UDbConnection *Conn)
 		{
 			const FString CurrentToken = UCredentials::LoadToken();
-			if (CurrentToken != OldToken)
+			            UE_LOG(LogTemp, Display, TEXT("[Reauth2] CurrentToken='%s' OldToken='%s'"),
+                   *CurrentToken, *OldToken);
+			if (CurrentToken == OldToken)
 			{
 				Handler->Counter->MarkSuccess("ReauthPart2");
 			}
