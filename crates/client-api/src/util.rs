@@ -97,10 +97,10 @@ impl NameOrIdentity {
     pub async fn try_resolve(
         &self,
         ctx: &(impl ControlStateReadAccess + ?Sized),
-    ) -> axum::response::Result<Result<Identity, &DatabaseName>> {
+    ) -> anyhow::Result<Result<Identity, &DatabaseName>> {
         Ok(match self {
             Self::Identity(identity) => Ok(Identity::from(*identity)),
-            Self::Name(name) => ctx.lookup_identity(name.as_ref()).map_err(log_and_500)?.ok_or(name),
+            Self::Name(name) => ctx.lookup_identity(name.as_ref())?.ok_or(name),
         })
     }
 
@@ -108,7 +108,10 @@ impl NameOrIdentity {
     /// response if `self` is a [`NameOrIdentity::Name`] for which no
     /// corresponding [`Identity`] is found in the SpacetimeDB DNS.
     pub async fn resolve(&self, ctx: &(impl ControlStateReadAccess + ?Sized)) -> axum::response::Result<Identity> {
-        self.try_resolve(ctx).await?.map_err(|_| StatusCode::NOT_FOUND.into())
+        self.try_resolve(ctx)
+            .await
+            .map_err(log_and_500)?
+            .map_err(|_| StatusCode::NOT_FOUND.into())
     }
 }
 
