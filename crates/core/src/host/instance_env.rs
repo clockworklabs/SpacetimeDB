@@ -2,6 +2,7 @@ use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
+use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
@@ -180,13 +181,29 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
+    pub(crate) fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
         self.replica_ctx.logger.write(level, record, bt);
         log::trace!(
             "MOD({}): {}",
             self.replica_ctx.database_identity.to_abbreviated_hex(),
             record.message
         );
+    }
+
+    /// End a console timer by logging the span at INFO level.
+    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>, bt: &dyn BacktraceProvider) {
+        let elapsed = span.start.elapsed();
+        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+
+        let record = Record {
+            ts: chrono::Utc::now(),
+            target: None,
+            filename: None,
+            line_number: None,
+            function,
+            message: &message,
+        };
+        self.console_log(LogLevel::Info, &record, bt);
     }
 
     /// Project `cols` in `row_ref` encoded in BSATN to `buffer`
