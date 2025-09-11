@@ -891,7 +891,7 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -
         writeln!(
             output,
             "    {table_pascal}Table->AddUniqueConstraint<{field_type}>(\"{}\", [](const {row_struct}& Row) -> const {field_type}& {{",
-            field_name.to_lowercase()            
+            field_name.to_lowercase()
         );
         writeln!(output, "        return Row.{}; }});", field_name.to_case(Case::Pascal));
     }
@@ -920,10 +920,7 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -
             output,
             "    // Register a new multi-key B-Tree index named \"{accessor_name}\" on the {table_pascal}Table."
         );
-        writeln!(
-            output,
-            "    {table_pascal}Table->AddMultiKeyBTreeIndex<{tuple_type}>("
-        );
+        writeln!(output, "    {table_pascal}Table->AddMultiKeyBTreeIndex<{tuple_type}>(");
         writeln!(output, "        TEXT(\"{accessor_name}\"),");
         writeln!(output, "        [](const {row_struct}& Row)");
         writeln!(output, "        {{");
