@@ -245,10 +245,16 @@ jobs:
 
   unreal_engine_tests:
     name: Unreal Engine Tests
+    # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
+    # a custom runner.
     runs-on: spacetimedb-runner
     container:
       image: ghcr.io/epicgames/unreal-engine:dev-5.6
       credentials:
+        # Note(bfops): I don't think that `github.actor` needs to match the user that the token is for, because I'm using a token for my account and
+        # it seems to be totally happy.
+        # However, the token needs to be for a user that has access to the EpicGames org (see
+        # https://dev.epicgames.com/documentation/en-us/unreal-engine/downloading-source-code-in-unreal-engine?application_version=5.6)
         username: ${{ github.actor }}
         password: ${{ secrets.GHCR_TOKEN }}
       # Run as root because otherwise we get permission denied for various directories inside the container. I tried doing dances to allow it to run
