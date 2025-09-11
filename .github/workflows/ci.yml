@@ -255,13 +255,13 @@ jobs:
       # We override this because the default directories are not writeable by the default user inside the container.
       # An alternative would be to run as the root user (by settings `options: --user 0:0`) but then Unreal itself gets
       # worried.
-      RUNNER_TEMP: /tmp
-      ACTIONS_RUNNER_TEMP: /tmp
+      RUNNER_TEMP: /tmp/actions_tmp/${{ github.run_id }}
+      ACTIONS_RUNNER_TEMP: /tmp/actions_tmp/${{ github.run_id }}
     steps:
       - name: Prepare runner temp
         run: |
-          mkdir -p /tmp/_runner_file_commands
-          chmod -R a+rwx /tmp
+          set -eux
+          mkdir -p "$RUNNER_TEMP/_runner_file_commands"
 #      - name: Find Git ref
 #        env:
 #          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
