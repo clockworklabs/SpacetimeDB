@@ -29,7 +29,6 @@ use core::{mem, ops::RangeBounds};
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
-use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
 use spacetimedb_sats::layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size};
@@ -314,13 +313,15 @@ pub struct AddColumnsError {
     table_name: Box<str>,
     old: Vec<ColumnSchema>,
     new: Vec<ColumnSchema>,
-    default_values: IntMap<ColId, AlgebraicValue>,
+    default_values: Vec<AlgebraicValue>,
     reason: AddColumnsErrorReason,
 }
 
 #[derive(Error, Debug)]
 pub enum AddColumnsErrorReason {
-    #[error("New column must be provided with default value for column: {0}")]
+    #[error("Default value type does not match column type for column {0}")]
+    DefaultValueTypeNotMatch(ColId),
+    #[error("Missing default value for column {0}")]
     DefaultValueMissing(ColId),
     #[error("New column schema missing existing columns")]
     MissingExistingColumns,
@@ -416,10 +417,12 @@ impl Table {
     /// Validates that the proposed `new_columns` schema is compatible with the
     /// existing table schema and that all newly added columns are initialized
     /// with default values.
+    ///`new_columns`: columns schema after adding new columns ordered by `ColId`s.
+    ///`default_values`: default values for newly added columns ordered by `ColId`s.
     pub fn validate_add_columns_schema(
         &self,
         new_columns: &[ColumnSchema],
-        default_values: &IntMap<ColId, AlgebraicValue>,
+        default_values: &[AlgebraicValue],
     ) -> Result<(), Box<AddColumnsError>> {
         let schema = self.get_schema();
         let existing_columns = &schema.columns;
@@ -430,34 +433,31 @@ impl Table {
                 table_name: schema.table_name.clone(),
                 old: schema.columns().to_vec(),
                 new: new_columns.to_vec(),
-                default_values: default_values.clone(),
+                default_values: default_values.to_vec(),
                 reason,
             })
         };
 
-        if new_columns.len() < existing_columns.len() {
+        // Ensure we have at least as many (prefix) as the existing columns.
+        let Some(old_cols_in_new_schema) = &new_columns.get(..existing_columns.len()) else {
             return Err(make_err(AddColumnsErrorReason::MissingExistingColumns));
-        }
+        };
 
-        // Check if existing columns remain compatible
-        let old_cols_in_new_schema = &new_columns.get(..existing_columns.len()).expect("length checked above");
+        // Ensure that the existing prefix is compatible with the new prefix.
         let new_row_layout: RowTypeLayout = columns_to_row_type(old_cols_in_new_schema).into();
         self.validate_row_type_layout(&new_row_layout, new_columns)
             .map_err(|e| make_err(e.reason.into()))?;
 
-        // Validate that existing columns remain unchanged in order
-        for (existing_column, new_column) in existing_columns.iter().zip(new_columns.iter()) {
-            if existing_column.col_name != new_column.col_name {
-                return Err(make_err(AddColumnsErrorReason::MissingExistingColumns));
+        // Validate that all new columns have default values and thier types match.
+        for (idx, new_col) in new_columns.iter().skip(existing_columns.len()).enumerate() {
+            let default_value = default_values
+                .get(idx)
+                .ok_or_else(|| make_err(AddColumnsErrorReason::DefaultValueMissing(new_col.col_pos)))?;
+            if Some(new_col.col_type.clone()) != default_value.type_of() {
+                return Err(make_err(AddColumnsErrorReason::DefaultValueTypeNotMatch(
+                    new_col.col_pos,
+                )));
             }
-        }
-
-        // Validate that all new columns have default values
-        for new_col_idx in existing_columns.len()..new_columns.len() {
-            let new_col_id: ColId = new_col_idx.into();
-            default_values
-                .get(&new_col_id)
-                .ok_or_else(|| make_err(AddColumnsErrorReason::DefaultValueMissing(new_col_idx.into())))?;
         }
 
         Ok(())

@@ -27,12 +27,12 @@ use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap, IntMap};
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
-use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
@@ -319,7 +319,7 @@ impl Locking {
         tx: &mut MutTxId,
         table_id: TableId,
         column_schemas: Vec<ColumnSchema>,
-        defaults: IntMap<ColId, AlgebraicValue>,
+        defaults: Vec<AlgebraicValue>,
     ) -> Result<TableId> {
         tx.add_columns_to_table(table_id, column_schemas, defaults)
     }
@@ -1169,7 +1169,6 @@ mod tests {
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
-    use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_execution::dml::MutDatastore as _;
     use spacetimedb_execution::Datastore;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -3372,23 +3371,29 @@ mod tests {
 
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
 
-        let columns_original = tx.get_schema(table_id).unwrap().columns.to_vec();
+        let mut columns_original = tx.get_schema(table_id).unwrap().columns.to_vec();
 
         // Insert initial rows
-        let initial_row = ProductValue {
-            elements: [AlgebraicValue::U64(0), AlgebraicValue::sum(0, AlgebraicValue::U16(1))].into(),
-        };
-        tx.insert_product_value(table_id, &initial_row).unwrap();
-        tx.insert_product_value(table_id, &initial_row).unwrap();
-
+        let initial_row = product![0u64, AlgebraicValue::sum(0, AlgebraicValue::U16(1))];
+        insert(&datastore, &mut tx, table_id, &initial_row).unwrap();
+        insert(&datastore, &mut tx, table_id, &initial_row).unwrap();
         commit(&datastore, tx)?;
 
         // Alter Table: Add Variant and Column
+        //
+        // Change the `b` column, adding a variant.
+        let vars_ref = &mut columns_original[1].col_type.as_sum_mut().unwrap().variants;
+        let mut vars = Vec::from(mem::take(vars_ref));
+        vars.push(SumTypeVariant::new_named(AlgebraicType::U8, "bb"));
+        *vars_ref = vars.into();
+        // Add column `c`
         let mut new_columns = columns_original.clone();
         new_columns.push(ColumnSchema::for_test(2, "c", AlgebraicType::U8));
-        let defaults = IntMap::from_iter([(2.into(), AlgebraicValue::U8(42))]);
+        let defaults = vec![AlgebraicValue::U8(42)];
 
         let mut tx = begin_mut_tx(&datastore);
+        // insert a row in tx_state when before adding column
+        tx.insert_product_value(table_id, &initial_row).unwrap();
         let new_table_id = datastore.add_columns_to_table_mut_tx(&mut tx, table_id, new_columns.clone(), defaults)?;
         let tx_data = commit(&datastore, tx)?;
 
@@ -3404,8 +3409,8 @@ mod tests {
             .expect("Expected delete log for original table");
 
         let deleted_rows = [
-            product![AlgebraicValue::U64(5), AlgebraicValue::sum(0, AlgebraicValue::U16(1))],
-            product![AlgebraicValue::U64(6), AlgebraicValue::sum(0, AlgebraicValue::U16(1))],
+            product![5u64, AlgebraicValue::sum(0, 1u16.into())],
+            product![6u64, AlgebraicValue::sum(0, 1u16.into())],
         ];
 
         assert_eq!(
@@ -3414,16 +3419,9 @@ mod tests {
         );
 
         let inserted_rows = [
-            product![
-                AlgebraicValue::U64(5),
-                AlgebraicValue::sum(0, AlgebraicValue::U16(1)),
-                AlgebraicValue::U8(42)
-            ],
-            product![
-                AlgebraicValue::U64(6),
-                AlgebraicValue::sum(0, AlgebraicValue::U16(1)),
-                AlgebraicValue::U8(42)
-            ],
+            product![5u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![6u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![7u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
         ];
 
         let (_, inserts) = tx_data
@@ -3439,15 +3437,7 @@ mod tests {
         // Insert Rows into Altered Table
         let mut tx = begin_mut_tx(&datastore);
 
-        let new_row = ProductValue {
-            elements: [
-                AlgebraicValue::U64(0),
-                AlgebraicValue::sum(0, AlgebraicValue::U16(1)),
-                AlgebraicValue::U8(0),
-            ]
-            .into(),
-        };
-
+        let new_row = product![0u64, AlgebraicValue::sum(0, 1u16.into()), 0u8];
         tx.insert_product_value(new_table_id, &new_row).unwrap();
         commit(&datastore, tx)?;
 
@@ -3464,6 +3454,60 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_table_schemas_consistency() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        let mut tx = begin_mut_tx(&datastore);
+
+        let initial_sum_type = AlgebraicType::sum([("ba", AlgebraicType::U16)]);
+        let initial_columns = [
+            ColumnSchema::for_test(0, "a", AlgebraicType::U64),
+            ColumnSchema::for_test(1, "b", initial_sum_type.clone()),
+        ];
+
+        let initial_indices = [
+            IndexSchema::for_test("index_a", BTreeAlgorithm::from(0)),
+            IndexSchema::for_test("index_b", BTreeAlgorithm::from(1)),
+        ];
+
+        let sequence = SequenceRow {
+            id: SequenceId::SENTINEL.into(),
+            table: 0,
+            col_pos: 0,
+            name: "Foo_id_seq",
+            start: 5,
+        };
+
+        let schema = user_public_table(
+            initial_columns,
+            initial_indices.clone(),
+            [],
+            map_array([sequence]),
+            None,
+            None,
+        );
+
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let initial_row = product![0u64, AlgebraicValue::sum(0, AlgebraicValue::U16(1))];
+
+        for _ in 0..5000 {
+            insert(&datastore, &mut tx, table_id, &initial_row).unwrap();
+        }
+        commit(&datastore, tx)?;
+
+        let tx = begin_tx(&datastore);
+        let table_schema = tx.schema_for_table(table_id).unwrap();
+        let table_schema_raw = tx.schema_for_table_raw(table_id).unwrap();
+
+        //TODO: Fix the bug and update the assert
+        assert_ne!(
+            table_schema.sequences[0].allocated, table_schema_raw.sequences[0].allocated,
+            "Allocated sequence values are differ between schema and raw schema"
+        );
         Ok(())
     }
 }

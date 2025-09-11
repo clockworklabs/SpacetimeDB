@@ -10,7 +10,6 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
-use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
@@ -1058,7 +1057,7 @@ impl RelationalDB {
         tx: &mut MutTx,
         table_id: TableId,
         column_schemas: Vec<ColumnSchema>,
-        default_values: IntMap<ColId, AlgebraicValue>,
+        default_values: Vec<AlgebraicValue>,
     ) -> Result<TableId, DBError> {
         Ok(self
             .inner

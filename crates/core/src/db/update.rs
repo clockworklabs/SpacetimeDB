@@ -1,12 +1,12 @@
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::sql::parser::RowLevelExpr;
-use spacetimedb_data_structures::map::{HashMap, IntMap};
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
-use spacetimedb_primitives::{ColId, ColSet, TableId};
+use spacetimedb_primitives::{ColSet, TableId};
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::TableDef;
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
@@ -257,10 +257,10 @@ fn auto_migrate_database(
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
 
-                let default_values: IntMap<ColId, AlgebraicValue> = table_def
+                let default_values: Vec<AlgebraicValue> = table_def
                     .columns
                     .iter()
-                    .filter_map(|col_def| col_def.default_value.as_ref().map(|v| (col_def.col_id, v.clone())))
+                    .filter_map(|col_def| col_def.default_value.clone())
                     .collect();
                 stdb.add_columns_to_table(tx, table_id, column_schemas, default_values)?;
             }
