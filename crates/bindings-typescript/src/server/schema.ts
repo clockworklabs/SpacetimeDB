@@ -3,27 +3,36 @@
 //   ProductType,
 //   ProductTypeElement,
 // } from '../algebraic_type';
-// import type RawConstraintDefV9 from '../autogen/raw_constraint_def_v_9_type';
-// import RawIndexAlgorithm from '../autogen/raw_index_algorithm_type';
-// import type RawIndexDefV9 from '../autogen/raw_index_def_v_9_type';
-// import { RawModuleDefV9 } from "../autogen/raw_module_def_v_9_type";
-// import type RawReducerDefV9 from '../autogen/raw_reducer_def_v_9_type';
-// import type RawSequenceDefV9 from '../autogen/raw_sequence_def_v_9_type';
-// import Lifecycle from '../autogen/lifecycle_type';
+// import type RawConstraintDefV9 from '../lib/autogen/raw_constraint_def_v_9_type';
+// import RawIndexAlgorithm from '../lib/autogen/raw_index_algorithm_type';
+// import type RawIndexDefV9 from '../lib/autogen/raw_index_def_v_9_type';
+// import { RawModuleDefV9 } from "../lib/autogen/raw_module_def_v_9_type";
+// import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
+// import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
+// import Lifecycle from '../lib/autogen/lifecycle_type';
 // import ScheduleAt from '../schedule_at';
-// import RawTableDefV9 from '../autogen/raw_table_def_v_9_type';
-// import type Typespace from '../autogen/typespace_type';
+// import RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
+// import type Typespace from '../lib/autogen/typespace_type';
 // import type { ColumnBuilder } from './type_builders';
 // import t from "./type_builders";
-import { AlgebraicType, t } from '..';
-import type RawConstraintDefV9 from '../autogen/raw_constraint_def_v_9_type';
-import RawIndexAlgorithm from '../autogen/raw_index_algorithm_type';
-import type RawIndexDefV9 from '../autogen/raw_index_def_v_9_type';
-import type RawModuleDefV9 from '../autogen/raw_module_def_v_9_type';
-import type RawSequenceDefV9 from '../autogen/raw_sequence_def_v_9_type';
-import type RawTableDefV9 from '../autogen/raw_table_def_v_9_type';
-import type Typespace from '../autogen/typespace_type';
-import type { ColumnBuilder, Infer, TypeBuilder } from './type_builders';
+import { AlgebraicType, ProductType, ProductTypeElement, t } from '..';
+import Lifecycle from '../lib/autogen/lifecycle_type';
+import type RawConstraintDefV9 from '../lib/autogen/raw_constraint_def_v_9_type';
+import RawIndexAlgorithm from '../lib/autogen/raw_index_algorithm_type';
+import type RawIndexDefV9 from '../lib/autogen/raw_index_def_v_9_type';
+import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
+import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
+import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
+import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
+import type Typespace from '../lib/autogen/typespace_type';
+import type {
+  ColumnBuilder,
+  ColumnMetadata,
+  Infer,
+  InferTypeOfRow,
+  ProductColumnBuilder,
+  TypeBuilder,
+} from './type_builders';
 
 /*****************************************************************
  * the run‑time catalogue that we are filling
@@ -44,7 +53,10 @@ type ColList = ColId[];
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.
  */
-type TableHandle<TableName extends string, Row> = {
+type TableHandle<
+  TableName extends string,
+  Row extends Record<string, ColumnBuilder<any, any, any>>,
+> = {
   /**
    * The TypeScript phantom type. This is not stored at runtime,
    * but is visible to the compiler
@@ -67,12 +79,23 @@ type TableHandle<TableName extends string, Row> = {
   readonly tableDef: RawTableDefV9;
 };
 
+type RowObj = Record<
+  string,
+  TypeBuilder<any, any> | ColumnBuilder<any, any, any>
+>;
+
+type CoerceRow<Row extends RowObj> = {
+  [k in keyof Row & string]: CoerceColumn<Row[k]>;
+};
+
+type CoerceColumn<
+  Col extends TypeBuilder<any, any> | ColumnBuilder<any, any, any>,
+> =
+  Col extends TypeBuilder<infer T, infer U> ? ColumnBuilder<T, U, object> : Col;
+
 type TableOpts<
   TableName extends string,
-  Row extends Record<
-    string,
-    TypeBuilder<any, any> | ColumnBuilder<any, any, any>
-  >,
+  Row extends RowObj,
   Idx extends PendingIndex<keyof Row & string>[] | undefined = undefined,
 > = {
   name: TableName;
@@ -112,15 +135,12 @@ type PendingIndex<AllowedCol extends string> = {
  */
 export function table<
   const TableName extends string,
-  Row extends Record<
-    string,
-    TypeBuilder<any, any> | ColumnBuilder<any, any, any>
-  >,
+  Row extends RowObj,
   Idx extends PendingIndex<keyof Row & string>[] | undefined = undefined,
 >(
   opts: TableOpts<TableName, Row, Idx>,
   row: Row
-): TableHandle<TableName, Infer<Row>> {
+): TableHandle<TableName, CoerceRow<Row>> {
   const {
     name,
     public: isPublic = false,
@@ -256,19 +276,19 @@ export function table<
     }),
   });
 
-  const handle: TableHandle<TableName, Infer<Row>> = {
+  const handle: TableHandle<TableName, CoerceRow<Row>> = {
     tableName: name, // stays the literal "users" | "posts"
     rowSpacetimeType: productType,
     tableDef,
-    rowType: {} as Infer<Row>,
+    rowType: {} as CoerceRow<Row>,
   };
   return handle;
 }
 
-class Schema<S> {
+class Schema<S extends UntypedSchemaDef> {
   readonly tablesDef: { tables: RawTableDefV9[] };
   readonly typespace: Typespace;
-  readonly schemaType!: S;
+  private readonly schemaType!: S;
 
   constructor(tables: RawTableDefV9[], typespace: Typespace) {
     this.tablesDef = { tables };
@@ -277,21 +297,19 @@ class Schema<S> {
 }
 
 // Create interfaces for each table to enable better navigation
-type TableHandleTupleToObject<T extends readonly TableHandle<any, any>[]> =
-  T extends readonly [
-    TableHandle<infer TN extends PropertyKey, infer R>,
-    ...infer Rest,
-  ]
-    ? Rest extends readonly TableHandle<any, any>[]
-      ? { [K in TN]: R } & TableHandleTupleToObject<Rest>
-      : { [K in TN]: R }
-    : {};
+type TableHandleTupleToObject<T extends readonly TableHandle<any, any>[]> = {
+  readonly [i in keyof T]: {
+    name: T[i]['tableName'];
+    columns: T[i]['rowType'];
+  };
+};
 
-type TupleToSchema<T extends readonly TableHandle<any, any>[]> =
-  TableHandleTupleToObject<T>;
+type TupleToSchema<T extends readonly TableHandle<any, any>[]> = {
+  tables: TableHandleTupleToObject<T>;
+};
 
-type InferSchema<SchemaDef> =
-  SchemaDef extends Schema<infer Tables> ? Tables : never;
+type InferSchema<SchemaDef extends Schema<any>> =
+  SchemaDef extends Schema<infer S> ? S : never;
 
 /**
  * Creates a schema from table definitions
@@ -334,10 +352,11 @@ export function schema<const H extends readonly TableHandle<any, any>[]>(
   handles: H
 ): Schema<TupleToSchema<H>>;
 
-export function schema(...args: any[]): Schema<any> {
-  const handles = (
-    args.length === 1 && Array.isArray(args[0]) ? args[0] : args
-  ) as TableHandle<any, any>[];
+export function schema(
+  ...args: [readonly TableHandle<any, any>[]] | readonly TableHandle<any, any>[]
+): Schema<UntypedSchemaDef> {
+  const handles: readonly TableHandle<any, any>[] =
+    args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
 
   // typespace: Typespace;
   // tables: RawTableDefV9[];
@@ -373,140 +392,108 @@ export function schema(...args: any[]): Schema<any> {
   return new Schema(tableDefs, typespace);
 }
 
-const s = schema(
-  table(
-    { name: 'users' },
-    {
-      id: t.string().primaryKey(),
-    }
-  ),
-  table(
-    { name: 'posts' },
-    {
-      id: t.string().primaryKey(),
-      title: t.string(),
-      content: t.string(),
-      authorId: t.string(),
-    }
-  )
-);
+/**
+ * shared helpers
+ */
+type Merge<M1, M2> = M1 & Omit<M2, keyof M1>;
+type Values<T> = T[keyof T];
 
-type S = InferSchema<typeof s>;
+/*****************************************************************
+ *  Type helpers
+ *****************************************************************/
+type ColumnType<C> = C extends ColumnBuilder<infer JS, any> ? JS : never;
 
-// /**
-//  * shared helpers
-//  */
-// type Merge<M1, M2> = M1 & Omit<M2, keyof M1>;
-// type Values<T> = T[keyof T];
+type ParamsObj = Record<string, TypeBuilder<any, any>>;
 
-// /*****************************************************************
-//  *  Type helpers
-//  *****************************************************************/
-// type ColumnType<C> = C extends ColumnBuilder<infer JS, any> ? JS : never;
+/*****************************************************************
+ * reducer()
+ *****************************************************************/
+type ParamsAsObject<ParamDef extends ParamsObj | RowObj> =
+  InferTypeOfRow<ParamDef>;
 
-// /*****************************************************************
-//  * reducer()
-//  *****************************************************************/
-// type ParamsAsObject<ParamDef extends Record<string, ColumnBuilder<any>>> = {
-//   [K in keyof ParamDef]: Infer<ParamDef[K]>;
-// };
+// type ParamsOrRowAsObject<Params
 
-// /*****************************************************************
-//  * procedure()
-//  *
-//  * Stored procedures are opaque to the DB engine itself, so we just
-//  * keep them out of `RawModuleDefV9` for now – you can forward‑declare
-//  * a companion `RawMiscModuleExportV9` type later if desired.
-//  *****************************************************************/
-// export function procedure<
-//   Name extends string,
-//   Params extends Record<string, ColumnBuilder<any>>,
-//   Ctx,
-//   R,
-// >(
-//   _name: Name,
-//   _params: Params,
-//   _fn: (ctx: Ctx, payload: ParamsAsObject<Params>) => Promise<R> | R
-// ): void {
-//   /* nothing to push yet — left for your misc export section */
-// }
+/*****************************************************************
+ * procedure()
+ *
+ * Stored procedures are opaque to the DB engine itself, so we just
+ * keep them out of `RawModuleDefV9` for now – you can forward‑declare
+ * a companion `RawMiscModuleExportV9` type later if desired.
+ *****************************************************************/
+export function procedure<
+  Name extends string,
+  Params extends Record<string, ColumnBuilder<any, any, any>>,
+  Ctx,
+  R,
+>(
+  _name: Name,
+  _params: Params,
+  _fn: (ctx: Ctx, payload: ParamsAsObject<Params>) => Promise<R> | R
+): void {
+  /* nothing to push yet — left for your misc export section */
+}
 
-// /*****************************************************************
-//  * internal: pushReducer() helper used by reducer() and lifecycle wrappers
-//  *****************************************************************/
-// function pushReducer<
-//   S,
-//   Name extends string = string,
-//   Params extends Record<string, ColumnBuilder<any>> = Record<
-//     string,
-//     ColumnBuilder<any>
-//   >,
-// >(
-//   name: Name,
-//   params: Params | ProductTypeColumnBuilder<Params>,
-//   lifecycle?: RawReducerDefV9['lifecycle']
-// ): void {
-//   // Allow either a product-type ColumnBuilder or a plain params object
-//   const paramsInternal: Params =
-//     (params as any).__is_product_type__ === true
-//       ? (params as ProductTypeColumnBuilder<Params>).__def__
-//       : (params as Params);
+/*****************************************************************
+ * internal: pushReducer() helper used by reducer() and lifecycle wrappers
+ *****************************************************************/
+function pushReducer(
+  name: string,
+  params: RowObj,
+  fn: Reducer<any, any>,
+  lifecycle?: RawReducerDefV9['lifecycle']
+): void {
+  const paramType: ProductType = {
+    elements: Object.entries(params).map(([n, c]) => ({
+      name: n,
+      algebraicType: ('typeBuilder' in c ? c.typeBuilder : c).algebraicType,
+    })),
+  };
 
-//   const paramType = {
-//     elements: Object.entries(paramsInternal).map(
-//       ([n, c]) =>
-//         ({ name: n, algebraicType: (c as ColumnBuilder<any>).__spacetime_type__ })
-//     )
-//   };
+  MODULE_DEF.reducers.push({
+    name,
+    params: paramType,
+    lifecycle, // <- lifecycle flag lands here
+  });
 
-//   MODULE_DEF.reducers.push({
-//     name,
-//     params: paramType,
-//     lifecycle, // <- lifecycle flag lands here
-//   });
-// }
+  REDUCERS.set(name, fn);
+}
 
-// /*****************************************************************
-//  * reducer() – leave behavior the same; delegate to pushReducer()
-//  *****************************************************************/
+type Reducer<S extends UntypedSchemaDef, Params extends RowObj> = (
+  ctx: ReducerCtx<S>,
+  payload: ParamsAsObject<Params>
+) => void;
 
-// /*****************************************************************
-//  * Lifecycle reducers
-//  * - register with lifecycle: 'init' | 'on_connect' | 'on_disconnect'
-//  * - keep the same call shape you're already using
-//  *****************************************************************/
-// export function init<
-//   S extends Record<string, any> = any,
-//   Params extends Record<string, ColumnBuilder<any>> = {},
-// >(
-//   name: 'init' = 'init',
-//   params: Params | ProductTypeColumnBuilder<Params> = {} as any,
-//   _fn?: (ctx: ReducerCtx<S>, payload: ParamsAsObject<Params>) => void
-// ): void {
-//   pushReducer(name, params, Lifecycle.Init);
-// }
+const REDUCERS: Map<string, Reducer<any, any>> = new Map();
 
-// export function clientConnected<
-//   S extends Record<string, any> = any,
-//   Params extends Record<string, ColumnBuilder<any>> = {},
-// >(
-//   name: 'on_connect' = 'on_connect',
-//   params: Params | ProductTypeColumnBuilder<Params> = {} as any,
-//   _fn?: (ctx: ReducerCtx<S>, payload: ParamsAsObject<Params>) => void
-// ): void {
-//   pushReducer(name, params, Lifecycle.OnConnect);
-// }
+/*****************************************************************
+ * reducer() – leave behavior the same; delegate to pushReducer()
+ *****************************************************************/
 
-// export function clientDisconnected<
-//   S extends Record<string, any> = any,
-//   Params extends Record<string, ColumnBuilder<any>> = {},
-// >(
-//   name: 'on_disconnect' = 'on_disconnect',
-//   params: Params | ProductTypeColumnBuilder<Params> = {} as any,
-//   _fn?: (ctx: ReducerCtx<S>, payload: ParamsAsObject<Params>) => void
-// ): void {
-//   pushReducer(name, params, Lifecycle.OnDisconnect);
-// }
+/*****************************************************************
+ * Lifecycle reducers
+ * - register with lifecycle: 'init' | 'on_connect' | 'on_disconnect'
+ * - keep the same call shape you're already using
+ *****************************************************************/
+export function init<S extends UntypedSchemaDef, Params extends ParamsObj>(
+  params: Params,
+  fn: Reducer<S, Params>
+): void {
+  pushReducer('init', params, fn, Lifecycle.Init);
+}
+
+export function clientConnected<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj,
+>(params: Params, fn: Reducer<S, Params>): void {
+  pushReducer('on_connect', params, fn, Lifecycle.OnConnect);
+}
+
+export function clientDisconnected<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj,
+>(params: Params, fn: Reducer<S, Params>): void {
+  pushReducer('on_disconnect', params, fn, Lifecycle.OnDisconnect);
+}
 
 // /*****************************************************************
 //  * Example usage with explicit interfaces for better navigation
@@ -645,7 +632,7 @@ type S = InferSchema<typeof s>;
 
 // // type TableOpts<
 // //   N extends string,
-// //   Def extends Record<string, ColumnBuilder<any>>,
+// //   Def extends Record<string, ColumnBuilder<any,any,any>>,
 // //   Idx extends PendingIndex<keyof Def & string>[] | undefined = undefined,
 // // > = {
 // //   name: N;
@@ -656,10 +643,10 @@ type S = InferSchema<typeof s>;
 
 // // export function table<
 // //   const Name extends string,
-// //   Def extends Record<string, ColumnBuilder<any>>,
-// //   Row extends ProductTypeColumnBuilder<Def>,
+// //   Def extends Record<string, ColumnBuilder<any,any,any>>,
+// //   Row extends ProductColumnBuilder<Def>,
 // //   Idx extends PendingIndex<keyof Def & string>[] | undefined = undefined,
-// // >(opts: TableOpts<Name, Def, Idx>, row: Row): TableHandle<Infer<Row>, Name> {
+// // >(opts: TableOpts<Name, Def, Idx>, row: Row): TableHandle<InferTypeOfRow<Row>, Name> {
 
 // type UntypedTablesTuple = TableHandle<any, any>[];
 // function schema<TablesTuple extends UntypedTablesTuple>(...tablesTuple: TablesTuple): Schema<TablesTuple> {
@@ -668,10 +655,9 @@ type S = InferSchema<typeof s>;
 //   }
 // }
 
-// type UntypedSchemaDef = {
-//   typespace: Typespace,
-//   tables: [RawTableDefV9],
-// }
+type UntypedSchemaDef = {
+  tables: readonly UntypedTableDef[];
+};
 
 // type Schema<Tables> = {
 //   tables: Tables,
@@ -683,51 +669,60 @@ type S = InferSchema<typeof s>;
 //   readonly __row_spacetime_type__: AlgebraicType;
 // };
 
-// /**
-//  * Reducer context parametrized by the inferred Schema
-//  */
-// export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = {
-//   db: DbView<SchemaDef>;
-// };
+/**
+ * Reducer context parametrized by the inferred Schema
+ */
+export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = {
+  db: DbView<SchemaDef>;
+};
 
-// type DbView<SchemaDef extends UntypedSchemaDef> = {
-//   [K in keyof SchemaDef]: Table<TableHandleTupleToObject<SchemaDef>>
-// };
+type DbView<SchemaDef extends UntypedSchemaDef> = {
+  [Tbl in SchemaDef['tables'][number] as Tbl['name']]: Table<Tbl>;
+};
 
-// // schema provided -> ctx.db is precise
-// export function reducer<
-//   S extends Record<string, any>,
-//   Name extends string = string,
-//   Params extends Record<string, ColumnBuilder<any>> = Record<
-//     string,
-//     ColumnBuilder<any>
-//   >,
-//   F = (ctx: ReducerCtx<S>, payload: ParamsAsObject<Params>) => void,
-// >(name: Name, params: Params | ProductTypeColumnBuilder<Params>, fn: F): F;
+export type ModuleDef<S extends UntypedSchemaDef> = {
+  reducer<Params extends ParamsObj | RowObj>(
+    name: string,
+    params: Params,
+    fn: Reducer<S, Params>
+  ): void;
 
-// // no schema provided -> ctx.db is permissive
-// export function reducer<
-//   Name extends string = string,
-//   Params extends Record<string, ColumnBuilder<any>> = Record<
-//     string,
-//     ColumnBuilder<any>
-//   >,
-//   F = (ctx: ReducerCtx<any>, payload: ParamsAsObject<Params>) => void,
-// >(name: Name, params: Params | ProductTypeColumnBuilder<Params>, fn: F): F;
+  init<Params extends ParamsObj>(params: Params, fn: Reducer<S, Params>): void;
 
-// // single implementation (S defaults to any -> JS-like)
-// export function reducer<
-//   S extends Record<string, any> = any,
-//   Name extends string = string,
-//   Params extends Record<string, ColumnBuilder<any>> = Record<
-//     string,
-//     ColumnBuilder<any>
-//   >,
-//   F = (ctx: ReducerCtx<S>, payload: ParamsAsObject<Params>) => void,
-// >(name: Name, params: Params | ProductTypeColumnBuilder<Params>, fn: F): F {
-//   pushReducer<S>(name, params);
-//   return fn;
-// }
+  clientConnected<Params extends ParamsObj>(
+    params: Params,
+    fn: Reducer<S, Params>
+  ): void;
+
+  clientDisconnected<Params extends ParamsObj>(
+    params: Params,
+    fn: Reducer<S, Params>
+  ): void;
+};
+
+export function moduleDef<S extends UntypedSchemaDef>(): ModuleDef<S> {
+  return { reducer, init, clientConnected, clientDisconnected };
+}
+
+export function reducer<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj | RowObj,
+>(
+  name: string,
+  params: Params,
+  fn: (ctx: ReducerCtx<S>, payload: ParamsAsObject<Params>) => void
+): void {
+  pushReducer(name, params, fn);
+}
+
+type UntypedTableDef = {
+  name: string;
+  columns: Record<string, ColumnBuilder<any, any, any>>;
+};
+
+type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
+  TableDef['columns']
+>;
 
 // // export type Infer<S> = S extends ColumnBuilder<infer JS, any> ? JS : never;
 
@@ -762,30 +757,92 @@ type S = InferSchema<typeof s>;
 
 // type Local = {};
 
-// /**
-//  * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
-//  *
-//  * - Row: row shape
-//  * - UCV: unique-constraint violation error type (never if none)
-//  * - AIO: auto-increment overflow error type (never if none)
-//  */
-// export type Table<TableDef extends UntypedTableDef> = {
-//   /** Returns the number of rows in the TX state. */
-//   count(): number;
+/**
+ * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
+ *
+ * - Row: row shape
+ * - UCV: unique-constraint violation error type (never if none)
+ * - AIO: auto-increment overflow error type (never if none)
+ */
+export type Table<TableDef extends UntypedTableDef> = {
+  /** Returns the number of rows in the TX state. */
+  count(): number;
 
-//   /** Iterate over all rows in the TX state. Rust IteratorIterator<Item=Row> → TS Iterable<Row>. */
-//   iter(): IterableIterator<Row>;
+  /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
+  iter(): IterableIterator<RowType<TableDef>>;
 
-//   /** Insert and return the inserted row (auto-increment fields filled). May throw on error. */
-//   insert(row: Row): Row;
+  /** Insert and return the inserted row (auto-increment fields filled). May throw on error. */
+  insert(row: RowType<TableDef>): RowType<TableDef>;
 
-//   /** Like insert, but returns a Result instead of throwing. */
-//   try_insert(row: Row): Result<Row, UCV | AIO>;
+  /** Like insert, but returns a Result instead of throwing. */
+  try_insert(
+    row: RowType<TableDef>
+  ): Result<RowType<TableDef>, TryInsertError<TableDef>>;
 
-//   /** Delete a row equal to `row`. Returns true if something was deleted. */
-//   delete(row: Row): boolean;
-// };
+  /** Delete a row equal to `row`. Returns true if something was deleted. */
+  delete(row: RowType<TableDef>): boolean;
+};
 
-// type DbContext<DbView extends DbView<Row>> = {
-//   db: DbView,
-// };
+type CheckAnyMetadata<
+  TableDef extends UntypedTableDef,
+  Metadata extends ColumnMetadata,
+  T,
+> = Values<TableDef['columns']>['columnMetadata'] extends Metadata ? T : never;
+
+type TryInsertError<TableDef extends UntypedTableDef> =
+  | CheckAnyMetadata<
+      TableDef,
+      { isUnique: true } | { isPrimaryKey: true },
+      UniqueConstraintViolation
+    >
+  | CheckAnyMetadata<TableDef, { isAutoIncrement: true }, AutoIncOverflow>;
+
+export class UniqueConstraintViolation extends Error {
+  name = 'UniqueConstraintViolation';
+}
+
+export class AutoIncOverflow extends Error {
+  name = 'AutoIncOverflow';
+}
+
+type Result<T, E> = { ok: true; val: T } | { ok: false; err: E };
+
+type DbContext<S extends UntypedSchemaDef> = {
+  db: DbView<S>;
+};
+
+const x = schema(table({ name: 'hello' }, { x: t.i32() }));
+// const y = x.schemaType.hello.x;
+// type Y = Infer<import('./type_builders').I32Builder>;
+// type A = import('./type_builders').I32Builder;
+// type Z = A['type'];
+
+const s = schema(
+  table(
+    { name: 'users' },
+    {
+      id: t.string().primaryKey(),
+    }
+  ),
+  table(
+    { name: 'posts' },
+    {
+      id: t.string().primaryKey(),
+      title: t.string(),
+      content: t.string(),
+      authorId: t.string(),
+    }
+  )
+);
+
+type S = InferSchema<typeof s>;
+
+reducer('foo', { x: t.i32() }, (ctx: ReducerCtx<S>, { x }) => {
+  type AssertEquals<T, U> =
+    (<G>() => G extends T ? 1 : 2) extends <G>() => G extends U ? 1 : 2
+      ? true
+      : false;
+
+  const _t1: AssertEquals<typeof x, number> = true;
+  x;
+});

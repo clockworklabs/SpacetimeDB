@@ -10,6 +10,13 @@ export type Set<T, F extends string, V> = Prettify<
   Omit<T, F> & { [K in F]: V }
 >;
 
+export function set<T, F extends string, V>(
+  x: T,
+  t: { [k in F]: V }
+): Set<T, F, V> {
+  return { ...x, ...t };
+}
+
 type Equals<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
     ? true
