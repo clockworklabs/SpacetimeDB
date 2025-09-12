@@ -19,6 +19,7 @@ use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::vec::IntoIter;
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -490,6 +491,33 @@ impl InstanceEnv {
         tx.metrics.bytes_scanned += bytes_scanned;
 
         Ok(chunks)
+    }
+
+    pub fn fill_buffer_from_iter(
+        iter: &mut IntoIter<Vec<u8>>,
+        mut buffer: &mut [u8],
+        chunk_pool: &mut ChunkPool,
+    ) -> usize {
+        let mut written = 0;
+        // Fill the buffer as much as possible.
+        while let Some(chunk) = iter.as_slice().first() {
+            let Some((buf_chunk, rest)) = buffer.split_at_mut_checked(chunk.len()) else {
+                // Cannot fit chunk into the buffer,
+                // either because we already filled it too much,
+                // or because it is too small.
+                break;
+            };
+            buf_chunk.copy_from_slice(chunk);
+            written += chunk.len();
+            buffer = rest;
+
+            // Advance the iterator, as we used a chunk.
+            // SAFETY: We peeked one `chunk`, so there must be one at least.
+            let chunk = unsafe { iter.next().unwrap_unchecked() };
+            chunk_pool.put(chunk);
+        }
+
+        written
     }
 }
 
