@@ -27,7 +27,9 @@ spacetimedb-core.workspace = true
 spacetimedb-datastore.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-paths.workspace = true
+spacetimedb-pg.workspace = true
 spacetimedb-table.workspace = true
+spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true

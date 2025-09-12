@@ -372,9 +372,10 @@ impl Tx for Locking {
     /// allowing new mutable transactions to start if this was the last read-only transaction.
     ///
     /// Returns:
+    /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String) {
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String) {
         tx.release()
     }
 }
@@ -887,11 +888,11 @@ impl MutTx for Locking {
         }
     }
 
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String) {
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, String) {
         tx.rollback()
     }
 
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, TxMetrics, String)>> {
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>> {
         Ok(Some(tx.commit()))
     }
 }
@@ -931,7 +932,7 @@ pub struct Replay<F> {
 }
 
 impl<F> Replay<F> {
-    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<F>) -> T) -> T {
+    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<'_, F>) -> T) -> T {
         let mut committed_state = self.committed_state.write_arc();
         let mut visitor = ReplayVisitor {
             database_identity: &self.database_identity,
@@ -1443,7 +1444,8 @@ mod tests {
     }
 
     fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<TxData> {
-        Ok(datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`").0)
+        let (_, tx_data, _, _) = datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`");
+        Ok(tx_data)
     }
 
     #[rustfmt::skip]

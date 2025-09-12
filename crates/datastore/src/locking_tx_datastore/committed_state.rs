@@ -25,6 +25,7 @@ use crate::{
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
 use spacetimedb_data_structures::map::{HashSet, IntMap};
+use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
@@ -654,12 +655,13 @@ impl CommittedState {
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.
-    pub(super) fn rollback(&mut self, seq_state: &mut SequencesState, tx_state: TxState) {
+    pub(super) fn rollback(&mut self, seq_state: &mut SequencesState, tx_state: TxState) -> TxOffset {
         // Roll back the changes in the reverse order in which they were made
         // so that e.g., the last change is undone first.
         for change in tx_state.pending_schema_changes.into_iter().rev() {
             self.rollback_pending_schema_change(seq_state, change);
         }
+        self.next_tx_offset.saturating_sub(1)
     }
 
     fn rollback_pending_schema_change(

@@ -29,6 +29,7 @@ use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
 use spacetimedb_lib::{
@@ -1195,7 +1196,9 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub(super) fn commit(mut self) -> (TxData, TxMetrics, String) {
+    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
+        self.committed_state_write_lock.next_tx_offset += 1;
+        let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
 
         // Compute and keep enough info that we can
@@ -1213,7 +1216,20 @@ impl MutTxId {
         );
         let reducer = self.ctx.into_reducer_name();
 
-        (tx_data, tx_metrics, reducer)
+        // If the transaction didn't consume an offset (i.e. it was empty),
+        // report the previous offset.
+        //
+        // Note that technically the tx could have run against an empty database,
+        // in which case we'd wrongly return zero (a non-existent transaction).
+        // This doesn not happen in practice, however, as [RelationalDB::set_initialized]
+        // creates a transaction.
+        let tx_offset = if tx_offset == self.committed_state_write_lock.next_tx_offset {
+            tx_offset.saturating_sub(1)
+        } else {
+            tx_offset
+        };
+
+        (tx_offset, tx_data, tx_metrics, reducer)
     }
 
     /// Commits this transaction, applying its changes to the committed state.
@@ -1258,8 +1274,9 @@ impl MutTxId {
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn rollback(mut self) -> (TxMetrics, String) {
-        self.committed_state_write_lock
+    pub fn rollback(mut self) -> (TxOffset, TxMetrics, String) {
+        let offset = self
+            .committed_state_write_lock
             .rollback(&mut self.sequence_state_lock, self.tx_state);
 
         // Compute and keep enough info that we can
@@ -1276,7 +1293,7 @@ impl MutTxId {
             &self.committed_state_write_lock,
         );
         let reducer = self.ctx.into_reducer_name();
-        (tx_metrics, reducer)
+        (offset, tx_metrics, reducer)
     }
 
     /// Roll back this transaction, discarding its changes.

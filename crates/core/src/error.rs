@@ -6,6 +6,7 @@ use std::sync::{MutexGuard, PoisonError};
 use enum_as_inner::EnumAsInner;
 use hex::FromHexError;
 use spacetimedb_commitlog::repo::TxOffset;
+use spacetimedb_durability::DurabilityExited;
 use spacetimedb_expr::errors::TypingError;
 use spacetimedb_lib::Identity;
 use spacetimedb_schema::error::ValidationErrors;
@@ -144,6 +145,8 @@ pub enum DBError {
     },
     #[error(transparent)]
     RestoreSnapshot(#[from] RestoreSnapshotError),
+    #[error(transparent)]
+    DurabilityGone(#[from] DurabilityExited),
 }
 
 impl DBError {
