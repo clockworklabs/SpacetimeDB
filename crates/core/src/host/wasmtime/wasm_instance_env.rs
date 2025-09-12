@@ -123,6 +123,7 @@ pub(super) struct WasmInstanceEnv {
 
     /// The last, including current, reducer to be executed by this environment.
     reducer_name: String,
+
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
     chunk_pool: ChunkPool,
@@ -697,27 +698,12 @@ impl WasmInstanceEnv {
             // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
             let buffer_len = u32::read_from(mem, buffer_len_ptr)?;
             let write_buffer_len = |mem, len| u32::try_from(len).unwrap().write_to(mem, buffer_len_ptr);
+
             // Get a mutable view to the `buffer`.
-            let mut buffer = mem.deref_slice_mut(buffer_ptr, buffer_len)?;
+            let buffer = mem.deref_slice_mut(buffer_ptr, buffer_len)?;
 
-            let mut written = 0;
             // Fill the buffer as much as possible.
-            while let Some(chunk) = iter.as_slice().first() {
-                let Some((buf_chunk, rest)) = buffer.split_at_mut_checked(chunk.len()) else {
-                    // Cannot fit chunk into the buffer,
-                    // either because we already filled it too much,
-                    // or because it is too small.
-                    break;
-                };
-                buf_chunk.copy_from_slice(chunk);
-                written += chunk.len();
-                buffer = rest;
-
-                // Advance the iterator, as we used a chunk.
-                // SAFETY: We peeked one `chunk`, so there must be one at least.
-                let chunk = unsafe { iter.next().unwrap_unchecked() };
-                env.chunk_pool.put(chunk);
-            }
+            let written = InstanceEnv::fill_buffer_from_iter(iter, buffer, &mut env.chunk_pool);
 
             let ret = match (written, iter.as_slice().first()) {
                 // Nothing was written and the iterator is not exhausted.

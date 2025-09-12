@@ -3,15 +3,19 @@
 use super::module_common::{build_common_module_from_raw, ModuleCommon};
 use super::module_host::{CallReducerParams, DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime};
 use super::UpdateDatabaseResult;
-use crate::host::instance_env::InstanceEnv;
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::module_common::run_describer;
+use crate::host::v8::de::{scratch_buf, v8_interned_string};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     DescribeError, EnergyStats, ExecuteResult, ExecutionTimings, InstanceCommon, ReducerOp,
 };
+use crate::host::wasm_common::{RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
 use crate::host::wasmtime::{epoch_ticker, ticks_in_duration, EPOCH_TICKS_PER_SECOND};
 use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
+use anyhow::Context as _;
 use core::ffi::c_void;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
@@ -26,10 +30,13 @@ use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
+use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_sats::Serialize;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use v8::{
-    Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, IsolateHandle, Local, OwnedIsolate, Value,
+    Context, ContextOptions, ContextScope, Function, FunctionCallbackArguments, HandleScope, Isolate, IsolateHandle,
+    Local, Object, OwnedIsolate, Value,
 };
 
 mod de;
@@ -142,7 +149,10 @@ impl Module for JsModule {
             instance_env,
             reducer_start: Instant::now(),
             call_times: CallTimes::new(),
+            iters: Default::default(),
             reducer_name: String::from("<initializing>"),
+            chunk_pool: <_>::default(),
+            timing_spans: <_>::default(),
         });
 
         // NOTE(centril): We don't need to do `extract_description` here
@@ -172,6 +182,12 @@ fn env_on_instance(inst: &mut JsInstance) -> &mut JsInstanceEnv {
 struct JsInstanceEnv {
     instance_env: InstanceEnv,
 
+    /// The slab of `BufferIters` created for this instance.
+    iters: RowIters,
+
+    /// Track time spent in module-defined spans.
+    timing_spans: TimingSpanSet,
+
     /// The point in time the last reducer call started at.
     reducer_start: Instant,
 
@@ -183,6 +199,10 @@ struct JsInstanceEnv {
 
     /// The last, including current, reducer to be executed by this environment.
     reducer_name: String,
+
+    /// A pool of unused allocated chunks that can be reused.
+    // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
+    chunk_pool: ChunkPool,
 }
 
 impl JsInstanceEnv {
@@ -308,6 +328,9 @@ fn with_script<R>(
     with_scope(isolate, callback_every, callback, budget, |scope| {
         let code = v8::String::new(scope, code).unwrap();
         let script_val = v8::Script::compile(scope, code, None).unwrap().run(scope).unwrap();
+
+        register_host_funs(scope);
+
         logic(scope, script_val)
     })
 }
@@ -395,14 +418,16 @@ fn duration_to_budget(_duration: Duration) -> ReducerBudget {
     ReducerBudget::ZERO
 }
 
+fn global<'scope>(scope: &mut HandleScope<'scope>) -> Local<'scope, Object> {
+    scope.get_current_context().global(scope)
+}
+
 /// Returns the global property `key`.
 fn get_global_property<'scope>(
     scope: &mut HandleScope<'scope>,
     key: Local<'scope, v8::String>,
 ) -> ExcResult<Local<'scope, Value>> {
-    scope
-        .get_current_context()
-        .global(scope)
+    global(scope)
         .get(scope, key.into())
         .ok_or_else(exception_already_thrown)
 }
@@ -503,6 +528,340 @@ fn call_describe_module(scope: &mut HandleScope<'_>) -> anyhow::Result<RawModule
         Ok(raw_mod)
     })
     .map_err(Into::into)
+}
+
+fn table_id_from_name<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let name: &str = deserialize_js(scope, args.get(0))?;
+    let id = env_on_isolate(scope).instance_env.table_id_from_name(name).unwrap();
+    let ret = serialize_to_js(scope, &id)?;
+    Ok(ret)
+}
+
+fn index_id_from_name<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let name: &str = deserialize_js(scope, args.get(0))?;
+    let id = env_on_isolate(scope).instance_env.index_id_from_name(name).unwrap();
+    let ret = serialize_to_js(scope, &id)?;
+    Ok(ret)
+}
+
+fn datastore_table_row_count<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let table_id: TableId = deserialize_js(scope, args.get(0))?;
+    let count = env_on_isolate(scope)
+        .instance_env
+        .datastore_table_row_count(table_id)
+        .unwrap();
+    serialize_to_js(scope, &count)
+}
+
+fn datastore_table_scan_bsatn<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let table_id: TableId = deserialize_js(scope, args.get(0))?;
+
+    let env = env_on_isolate(scope);
+    // Collect the iterator chunks.
+    let chunks = env
+        .instance_env
+        .datastore_table_scan_bsatn_chunks(&mut env.chunk_pool, table_id)
+        .unwrap();
+
+    // Register the iterator and get back the index to write to `out`.
+    // Calls to the iterator are done through dynamic dispatch.
+    let idx = env.iters.insert(chunks.into_iter());
+
+    let ret = serialize_to_js(scope, &idx.0)?;
+    Ok(ret)
+}
+
+fn convert_u32_to_col_id(col_id: u32) -> anyhow::Result<ColId> {
+    let col_id: u16 = col_id.try_into().context("ABI violation, a `ColId` must be a `u16`")?;
+    Ok(col_id.into())
+}
+
+fn datastore_index_scan_range_bsatn<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let index_id: IndexId = deserialize_js(scope, args.get(0))?;
+
+    let prefix_elems: u32 = deserialize_js(scope, args.get(2))?;
+    let prefix_elems = convert_u32_to_col_id(prefix_elems).unwrap();
+
+    let prefix: &[u8] = if prefix_elems.idx() == 0 {
+        &[]
+    } else {
+        deserialize_js(scope, args.get(1))?
+    };
+
+    let rstart: &[u8] = deserialize_js(scope, args.get(3))?;
+    let rend: &[u8] = deserialize_js(scope, args.get(4))?;
+
+    let env = env_on_isolate(scope);
+
+    // Find the relevant rows.
+    let chunks = env
+        .instance_env
+        .datastore_index_scan_range_bsatn_chunks(&mut env.chunk_pool, index_id, prefix, prefix_elems, rstart, rend)
+        .unwrap();
+
+    // Insert the encoded + concatenated rows into a new buffer and return its id.
+    let idx = env.iters.insert(chunks.into_iter());
+
+    let ret = serialize_to_js(scope, &idx.0)?;
+    Ok(ret)
+}
+
+fn row_iter_bsatn_advance<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let row_iter_idx: u32 = deserialize_js(scope, args.get(0))?;
+    let row_iter_idx = RowIterIdx(row_iter_idx);
+    let buffer_max_len: u32 = deserialize_js(scope, args.get(1))?;
+
+    // Retrieve the iterator by `row_iter_idx`, or error.
+    let env = env_on_isolate(scope);
+    let iter = env.iters.get_mut(row_iter_idx).unwrap();
+
+    // Allocate a buffer with `buffer_max_len` capacity.
+    let mut buffer = vec![0; buffer_max_len as usize];
+    // Fill the buffer as much as possible.
+    let written = InstanceEnv::fill_buffer_from_iter(iter, &mut buffer, &mut env.chunk_pool);
+    buffer.truncate(written);
+
+    let ret = match (written, iter.as_slice().first()) {
+        // Nothing was written and the iterator is not exhausted.
+        (0, Some(_chunk)) => {
+            unimplemented!()
+        }
+        // The iterator is exhausted, destroy it, and tell the caller.
+        (_, None) => {
+            env.iters.take(row_iter_idx);
+            serialize_to_js(scope, &AdvanceRet { flag: -1, buffer })?
+        }
+        // Something was written, but the iterator is not exhausted.
+        (_, Some(_)) => serialize_to_js(scope, &AdvanceRet { flag: 0, buffer })?,
+    };
+    Ok(ret)
+}
+
+#[derive(Serialize)]
+struct AdvanceRet {
+    buffer: Vec<u8>,
+    flag: i32,
+}
+
+fn row_iter_bsatn_close<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let row_iter_idx: u32 = deserialize_js(scope, args.get(0))?;
+    let row_iter_idx = RowIterIdx(row_iter_idx);
+
+    // Retrieve the iterator by `row_iter_idx`, or error.
+    let env = env_on_isolate(scope);
+
+    // Retrieve the iterator by `row_iter_idx`, or error.
+    Ok(match env.iters.take(row_iter_idx) {
+        None => unimplemented!(),
+        // TODO(Centril): consider putting these into a pool for reuse.
+        Some(_) => serialize_to_js(scope, &0u32)?,
+    })
+}
+
+fn datastore_insert_bsatn<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let table_id: TableId = deserialize_js(scope, args.get(0))?;
+    let mut row: Vec<u8> = deserialize_js(scope, args.get(1))?;
+
+    // Insert the row into the DB and write back the generated column values.
+    let env: &mut JsInstanceEnv = env_on_isolate(scope);
+    let row_len = env.instance_env.insert(table_id, &mut row).unwrap();
+    row.truncate(row_len);
+
+    serialize_to_js(scope, &row)
+}
+
+fn datastore_update_bsatn<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let table_id: TableId = deserialize_js(scope, args.get(0))?;
+    let index_id: IndexId = deserialize_js(scope, args.get(1))?;
+    let mut row: Vec<u8> = deserialize_js(scope, args.get(2))?;
+
+    // Insert the row into the DB and write back the generated column values.
+    let env: &mut JsInstanceEnv = env_on_isolate(scope);
+    let row_len = env.instance_env.update(table_id, index_id, &mut row).unwrap();
+    row.truncate(row_len);
+
+    serialize_to_js(scope, &row)
+}
+
+fn datastore_delete_by_index_scan_range_bsatn<'s>(
+    scope: &mut HandleScope<'s>,
+    args: FunctionCallbackArguments<'s>,
+) -> FnRet<'s> {
+    let index_id: IndexId = deserialize_js(scope, args.get(0))?;
+
+    let prefix_elems: u32 = deserialize_js(scope, args.get(2))?;
+    let prefix_elems = convert_u32_to_col_id(prefix_elems).unwrap();
+
+    let prefix: &[u8] = if prefix_elems.idx() == 0 {
+        &[]
+    } else {
+        deserialize_js(scope, args.get(1))?
+    };
+
+    let rstart: &[u8] = deserialize_js(scope, args.get(3))?;
+    let rend: &[u8] = deserialize_js(scope, args.get(4))?;
+
+    let env = env_on_isolate(scope);
+
+    // Delete the relevant rows.
+    let num = env
+        .instance_env
+        .datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+        .unwrap();
+
+    serialize_to_js(scope, &num)
+}
+
+fn datastore_delete_all_by_eq_bsatn<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let table_id: TableId = deserialize_js(scope, args.get(0))?;
+    let relation: &[u8] = deserialize_js(scope, args.get(1))?;
+
+    let env = env_on_isolate(scope);
+    let num = env
+        .instance_env
+        .datastore_delete_all_by_eq_bsatn(table_id, relation)
+        .unwrap();
+
+    serialize_to_js(scope, &num)
+}
+
+fn volatile_nonatomic_schedule_immediate<'s>(
+    scope: &mut HandleScope<'s>,
+    args: FunctionCallbackArguments<'s>,
+) -> FnRet<'s> {
+    let name: String = deserialize_js(scope, args.get(0))?;
+    let args: Vec<u8> = deserialize_js(scope, args.get(1))?;
+
+    let env = env_on_isolate(scope);
+    env.instance_env
+        .scheduler
+        .volatile_nonatomic_schedule_immediate(name, crate::host::ReducerArgs::Bsatn(args.into()));
+
+    Ok(v8::undefined(scope).into())
+}
+
+fn console_log<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let level: u32 = deserialize_js(scope, args.get(0))?;
+
+    let msg = args.get(1).cast::<v8::String>();
+    let mut buf = scratch_buf::<128>();
+    let msg = msg.to_rust_cow_lossy(scope, &mut buf);
+    let frame: Local<'_, v8::StackFrame> = v8::StackTrace::current_stack_trace(scope, 2)
+        .ok_or_else(exception_already_thrown)?
+        .get_frame(scope, 1)
+        .ok_or_else(exception_already_thrown)?;
+    let mut buf = scratch_buf::<32>();
+    let filename = frame
+        .get_script_name(scope)
+        .map(|s| s.to_rust_cow_lossy(scope, &mut buf));
+    let record = Record {
+        // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start)
+        ts: chrono::Utc::now(),
+        target: None,
+        filename: filename.as_deref(),
+        line_number: Some(frame.get_line_number() as u32),
+        message: &msg,
+    };
+
+    let env = env_on_isolate(scope);
+    env.instance_env.console_log((level as u8).into(), &record, &Noop);
+
+    Ok(v8::undefined(scope).into())
+}
+
+struct Noop;
+impl BacktraceProvider for Noop {
+    fn capture(&self) -> Box<dyn ModuleBacktrace> {
+        Box::new(Noop)
+    }
+}
+impl ModuleBacktrace for Noop {
+    fn frames(&self) -> Vec<BacktraceFrame<'_>> {
+        Vec::new()
+    }
+}
+
+fn console_timer_start<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let name = args.get(0).cast::<v8::String>();
+    let mut buf = scratch_buf::<128>();
+    let name = name.to_rust_cow_lossy(scope, &mut buf).into_owned();
+
+    let env = env_on_isolate(scope);
+    let span_id = env.timing_spans.insert(TimingSpan::new(name)).0;
+    serialize_to_js(scope, &span_id)
+}
+
+fn console_timer_end<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let span_id: u32 = deserialize_js(scope, args.get(0))?;
+
+    let env = env_on_isolate(scope);
+    let span = env.timing_spans.take(TimingSpanIdx(span_id)).unwrap();
+    env.instance_env.console_timer_end(&span, &Noop);
+
+    serialize_to_js(scope, &0u32)
+}
+
+fn identity<'s>(scope: &mut HandleScope<'s>, _: FunctionCallbackArguments<'s>) -> FnRet<'s> {
+    let env = env_on_isolate(scope);
+    let identity = *env.instance_env.database_identity();
+    serialize_to_js(scope, &identity)
+}
+
+fn register_host_funs(scope: &mut HandleScope<'_>) {
+    register_host_fun(scope, "table_id_from_name", table_id_from_name);
+    register_host_fun(scope, "index_id_from_name", index_id_from_name);
+    register_host_fun(scope, "datastore_table_row_count", datastore_table_row_count);
+    register_host_fun(scope, "datastore_table_scan_bsatn", datastore_table_scan_bsatn);
+    register_host_fun(
+        scope,
+        "datastore_index_scan_range_bsatn",
+        datastore_index_scan_range_bsatn,
+    );
+    register_host_fun(scope, "row_iter_bsatn_advance", row_iter_bsatn_advance);
+    register_host_fun(scope, "row_iter_bsatn_close", row_iter_bsatn_close);
+    register_host_fun(scope, "datastore_insert_bsatn", datastore_insert_bsatn);
+    register_host_fun(scope, "datastore_update_bsatn", datastore_update_bsatn);
+    register_host_fun(
+        scope,
+        "datastore_delete_by_index_scan_range_bsatn",
+        datastore_delete_by_index_scan_range_bsatn,
+    );
+    register_host_fun(
+        scope,
+        "datastore_delete_all_by_eq_bsatn",
+        datastore_delete_all_by_eq_bsatn,
+    );
+    register_host_fun(
+        scope,
+        "volatile_nonatomic_schedule_immediate",
+        volatile_nonatomic_schedule_immediate,
+    );
+    register_host_fun(scope, "console_log", console_log);
+    register_host_fun(scope, "console_timer_start", console_timer_start);
+    register_host_fun(scope, "console_timer_end", console_timer_end);
+    register_host_fun(scope, "identity", identity);
+}
+
+type FnRet<'s> = ExcResult<Local<'s, Value>>;
+
+fn register_host_fun(
+    scope: &mut HandleScope<'_>,
+    name: &str,
+    fun: impl for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>) -> FnRet<'s>,
+) {
+    let name = v8_interned_string(scope, name).into();
+    let fun = Function::new(scope, &adapt_fun(fun)).unwrap().into();
+    global(scope).set(scope, name, fun).unwrap();
+}
+
+fn adapt_fun(
+    fun: impl for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>) -> FnRet<'s>,
+) -> impl for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>, v8::ReturnValue<Value>) {
+    move |scope, args, mut rv| {
+        if let Ok(value) = fun(scope, args) {
+            rv.set(value);
+        }
+    }
 }
 
 #[cfg(test)]

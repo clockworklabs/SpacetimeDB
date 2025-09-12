@@ -59,12 +59,12 @@ impl<'scope, M: IntoJsString> IntoException<'scope> for RangeError<M> {
 }
 
 #[derive(Debug)]
-pub(super) struct ExceptionThrown {
+pub(crate) struct ExceptionThrown {
     _priv: (),
 }
 
 /// A result where the error indicates that an exception has already been thrown in V8.
-pub(super) type ExcResult<T> = Result<T, ExceptionThrown>;
+pub(crate) type ExcResult<T> = Result<T, ExceptionThrown>;
 
 /// Indicates that the JS side had thrown an exception.
 pub(super) fn exception_already_thrown() -> ExceptionThrown {

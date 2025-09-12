@@ -4,7 +4,9 @@
 use crate::{
     energy::EnergyMonitor,
     host::{
-        module_host::{DynModule, ModuleInfo}, wasm_common::{module_host_actor::DescribeError, DESCRIBE_MODULE_DUNDER}, Scheduler
+        module_host::{DynModule, ModuleInfo},
+        wasm_common::{module_host_actor::DescribeError, DESCRIBE_MODULE_DUNDER},
+        Scheduler,
     },
     module_host_context::ModuleCreationContext,
     replica_context::ReplicaContext,
