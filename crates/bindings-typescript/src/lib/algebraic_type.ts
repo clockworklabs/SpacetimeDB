@@ -54,6 +54,10 @@ export type AlgebraicType = AlgebraicTypeType;
  * Algebraic Type utilities.
  */
 export const AlgebraicType: {
+  Sum<T extends SumType>(value: T): { tag: 'Sum'; value: T };
+  Product<T extends ProductType>(value: T): { tag: 'Product'; value: T };
+  Array<T extends AlgebraicType>(value: T): { tag: 'Array'; value: T };
+
   createOptionType(innerType: AlgebraicTypeType): AlgebraicTypeType;
   createIdentityType(): AlgebraicTypeType;
   createConnectionIdType(): AlgebraicTypeType;
@@ -72,6 +76,18 @@ export const AlgebraicType: {
   intoMapKey(ty: AlgebraicTypeType, value: any): ComparablePrimitive;
 } & typeof AlgebraicTypeValue = {
   ...AlgebraicTypeValue,
+  Sum: <T extends SumType>(value: T): { tag: 'Sum'; value: T } => ({
+    tag: 'Sum',
+    value,
+  }),
+  Product: <T extends ProductType>(value: T): { tag: 'Product'; value: T } => ({
+    tag: 'Product',
+    value,
+  }),
+  Array: <T extends AlgebraicType>(value: T): { tag: 'Array'; value: T } => ({
+    tag: 'Array',
+    value,
+  }),
   createOptionType: function (innerType: AlgebraicTypeType): AlgebraicTypeType {
     return AlgebraicTypeValue.Sum({
       variants: [
@@ -362,6 +378,8 @@ export const ProductType: {
     return writer.toBase64();
   },
 };
+
+export type SumType = SumTypeType;
 
 /**
  * Unlike most languages, sums in SATS are *[structural]* and not nominal.
