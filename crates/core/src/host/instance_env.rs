@@ -8,7 +8,7 @@ use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_lib::Timestamp;
+use spacetimedb_lib::{Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -171,6 +171,11 @@ impl InstanceEnv {
         }
     }
 
+    /// Returns the database's identity.
+    pub fn database_identity(&self) -> &Identity {
+        &self.replica_ctx.database.database_identity
+    }
+
     /// Signal to this `InstanceEnv` that a reducer call is beginning.
     pub fn start_reducer(&mut self, ts: Timestamp) {
         self.start_time = ts;
@@ -191,7 +196,7 @@ impl InstanceEnv {
     }
 
     /// End a console timer by logging the span at INFO level.
-    pub fn console_timer_end(&self, span: &TimingSpan, bt: &dyn BacktraceProvider) -> RtResult<u32> {
+    pub(crate) fn console_timer_end(&self, span: &TimingSpan, bt: &dyn BacktraceProvider) {
         let elapsed = span.start.elapsed();
         let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
 

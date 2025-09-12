@@ -9,11 +9,13 @@ use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     DescribeError, EnergyStats, ExecuteResult, ExecutionTimings, InstanceCommon, ReducerOp,
 };
+use crate::host::wasmtime::{epoch_ticker, ticks_in_duration, EPOCH_TICKS_PER_SECOND};
 use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
-use core::str;
+use core::ffi::c_void;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
+use core::{ptr, str};
 use de::deserialize_js;
 use error::{catch_exception, exception_already_thrown, log_traceback, ExcResult, Throwable};
 use from_value::cast;
@@ -22,9 +24,8 @@ use ser::serialize_to_js;
 use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef};
+use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use std::sync::{Arc, LazyLock};
-use std::thread;
 use std::time::Instant;
 use v8::{
     Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, IsolateHandle, Local, OwnedIsolate, Value,
@@ -132,14 +133,16 @@ impl Module for JsModule {
     }
 
     fn create_instance(&self) -> Self::Instance {
-        // TODO(v8): consider some equivalent to `epoch_deadline_callback`
-        // where we report `Js has been running for ...`s.
-
         // TODO(v8): do we care about preinits / setup or are they unnecessary?
 
         let common = &self.common;
         let instance_env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
-        let instance = JsInstanceEnv { instance_env };
+        let instance = Some(JsInstanceEnv {
+            instance_env,
+            reducer_start: Instant::now(),
+            call_times: CallTimes::new(),
+            reducer_name: String::from("<initializing>"),
+        });
 
         // NOTE(centril): We don't need to do `extract_description` here
         // as unlike WASM, we have to recreate the isolate every time.
@@ -155,13 +158,72 @@ impl Module for JsModule {
     }
 }
 
+const EXPECT_ENV: &str = "there should be a `JsInstanceEnv`";
+
+fn env_on_isolate(isolate: &mut Isolate) -> &mut JsInstanceEnv {
+    isolate.get_slot_mut().expect(EXPECT_ENV)
+}
+
+fn env_on_instance(inst: &mut JsInstance) -> &mut JsInstanceEnv {
+    inst.instance.as_mut().expect(EXPECT_ENV)
+}
+
 struct JsInstanceEnv {
     instance_env: InstanceEnv,
+
+    /// The point in time the last reducer call started at.
+    reducer_start: Instant,
+
+    /// Track time spent in all wasm instance env calls (aka syscall time).
+    ///
+    /// Each function, like `insert`, will add the `Duration` spent in it
+    /// to this tracker.
+    call_times: CallTimes,
+
+    /// The last, including current, reducer to be executed by this environment.
+    reducer_name: String,
+}
+
+impl JsInstanceEnv {
+    /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
+    ///
+    /// Returns the handle used by reducers to read from `args`
+    /// as well as the handle used to write the error message, if any.
+    pub fn start_reducer(&mut self, name: &str, ts: Timestamp) {
+        self.reducer_start = Instant::now();
+        name.clone_into(&mut self.reducer_name);
+        self.instance_env.start_reducer(ts);
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment.
+    pub fn reducer_name(&self) -> &str {
+        &self.reducer_name
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment.
+    pub fn reducer_start(&self) -> Instant {
+        self.reducer_start
+    }
+
+    /// Signal to this `WasmInstanceEnv` that a reducer call is over.
+    /// This resets all of the state associated to a single reducer call,
+    /// and returns instrumentation records.
+    pub fn finish_reducer(&mut self) -> ExecutionTimings {
+        let total_duration = self.reducer_start.elapsed();
+
+        // Taking the call times record also resets timings to 0s for the next call.
+        let wasm_instance_env_call_times = self.call_times.take();
+
+        ExecutionTimings {
+            total_duration,
+            wasm_instance_env_call_times,
+        }
+    }
 }
 
 struct JsInstance {
     common: InstanceCommon,
-    instance: JsInstanceEnv,
+    instance: Option<JsInstanceEnv>,
     program: Arc<str>,
 }
 
@@ -175,43 +237,47 @@ impl ModuleInstance for JsInstance {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let replica_ctx = &self.instance.instance_env.replica_ctx;
+        let replica_ctx = &env_on_instance(self).instance_env.replica_ctx.clone();
         self.common.update_database(replica_ctx, program, old_module_info)
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
-        self.common.call_reducer_with_tx(
-            &self.instance.instance_env.replica_ctx.clone(),
-            tx,
-            params,
-            log_traceback,
-            |tx, op, budget| {
+        let replica_ctx = env_on_instance(self).instance_env.replica_ctx.clone();
+
+        self.common
+            .call_reducer_with_tx(&replica_ctx, tx, params, log_traceback, |tx, op, budget| {
+                let callback_every = EPOCH_TICKS_PER_SECOND;
+                extern "C" fn callback(isolate: &mut Isolate, _: *mut c_void) {
+                    let env = env_on_isolate(isolate);
+                    let database = env.instance_env.replica_ctx.database_identity;
+                    let reducer = env.reducer_name();
+                    let dur = env.reducer_start().elapsed();
+                    tracing::warn!(reducer, ?database, "Wasm has been running for {dur:?}");
+                }
+
+                // Prepare the isolate with the env.
+                let mut isolate = Isolate::new(<_>::default());
+                isolate.set_slot(self.instance.take().expect(EXPECT_ENV));
+
                 // TODO(v8): snapshots, module->host calls
                 // Call the reducer.
-                let (mut isolate, (tx, call_result, total_duration)) = with_script(&self.program, budget, |scope, _| {
-                    let start = Instant::now();
+                env_on_isolate(&mut isolate).instance_env.start_reducer(op.timestamp);
+                let (mut isolate, (tx, call_result)) =
+                    with_script(isolate, &self.program, callback_every, callback, budget, |scope, _| {
+                        let (tx, call_result) = env_on_isolate(scope)
+                            .instance_env
+                            .tx
+                            .clone()
+                            .set(tx, || call_call_reducer_from_op(scope, op));
+                        (tx, call_result)
+                    });
+                let timings = env_on_isolate(&mut isolate).finish_reducer();
+                self.instance = isolate.remove_slot();
 
-                    let (tx, call_result) = self
-                        .instance
-                        .instance_env
-                        .tx
-                        .clone()
-                        .set(tx, || call_call_reducer_from_op(scope, op));
-
-                    let total_duration = start.elapsed();
-
-                    (tx, call_result, total_duration)
-                });
-
-                // Handle energy and timings.
-                let used = duration_to_budget(total_duration);
+                // Derive energy stats.
+                let used = duration_to_budget(timings.total_duration);
                 let remaining = budget - used;
                 let energy = EnergyStats { budget, remaining };
-                let timings = ExecutionTimings {
-                    total_duration,
-                    // TODO(v8): call times.
-                    wasm_instance_env_call_times: CallTimes::new(),
-                };
 
                 // Fetch the currently used heap size in V8.
                 // The used size is ostensibly fairer than the total size.
@@ -224,17 +290,19 @@ impl ModuleInstance for JsInstance {
                     call_result,
                 };
                 (tx, exec_result)
-            },
-        )
+            })
     }
 }
 
 fn with_script<R>(
+    isolate: OwnedIsolate,
     code: &str,
+    callback_every: u64,
+    callback: IsolateCallback,
     budget: ReducerBudget,
     logic: impl for<'scope> FnOnce(&mut HandleScope<'scope>, Local<'scope, Value>) -> R,
 ) -> (OwnedIsolate, R) {
-    with_scope(budget, |scope| {
+    with_scope(isolate, callback_every, callback, budget, |scope| {
         let code = v8::String::new(scope, code).unwrap();
         let script_val = v8::Script::compile(scope, code, None).unwrap().run(scope).unwrap();
         logic(scope, script_val)
@@ -242,15 +310,20 @@ fn with_script<R>(
 }
 
 /// Sets up an isolate and run `logic` with a [`HandleScope`].
-pub(crate) fn with_scope<R>(budget: ReducerBudget, logic: impl FnOnce(&mut HandleScope<'_>) -> R) -> (OwnedIsolate, R) {
-    let mut isolate: OwnedIsolate = Isolate::new(<_>::default());
+pub(crate) fn with_scope<R>(
+    mut isolate: OwnedIsolate,
+    callback_every: u64,
+    callback: IsolateCallback,
+    budget: ReducerBudget,
+    logic: impl FnOnce(&mut HandleScope<'_>) -> R,
+) -> (OwnedIsolate, R) {
     isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
     let isolate_handle = isolate.thread_safe_handle();
     let mut scope_1 = HandleScope::new(&mut isolate);
     let context = Context::new(&mut scope_1, ContextOptions::default());
     let mut scope_2 = ContextScope::new(&mut scope_1, context);
 
-    let timeout_thread_cancel_flag = run_reducer_timeout(isolate_handle, budget);
+    let timeout_thread_cancel_flag = run_reducer_timeout(callback_every, callback, budget, isolate_handle);
 
     let ret = logic(&mut scope_2);
     drop(scope_2);
@@ -262,26 +335,44 @@ pub(crate) fn with_scope<R>(budget: ReducerBudget, logic: impl FnOnce(&mut Handl
     (isolate, ret)
 }
 
+type IsolateCallback = extern "C" fn(&mut Isolate, *mut c_void);
+
 /// Spawns a thread that will terminate reducer execution
 /// when `budget` has been used up.
-fn run_reducer_timeout(isolate_handle: IsolateHandle, budget: ReducerBudget) -> Arc<AtomicBool> {
+///
+/// Every `callback_every` ticks, `callback` is called.
+fn run_reducer_timeout(
+    callback_every: u64,
+    callback: IsolateCallback,
+    budget: ReducerBudget,
+    isolate_handle: IsolateHandle,
+) -> Arc<AtomicBool> {
     let execution_done_flag = Arc::new(AtomicBool::new(false));
     let execution_done_flag2 = execution_done_flag.clone();
     let timeout = budget_to_duration(budget);
+    let max_ticks = ticks_in_duration(timeout);
 
-    // TODO(v8): Using an OS thread is a bit heavy handed...?
-    thread::spawn(move || {
-        // Sleep until the timeout.
-        thread::sleep(timeout);
-
+    let mut num_ticks = 0;
+    epoch_ticker(move || {
+        // Check if execution completed.
         if execution_done_flag2.load(Ordering::Relaxed) {
-            // The reducer completed successfully.
-            return;
+            return None;
         }
 
-        // Reducer is still running.
-        // Terminate V8 execution.
-        isolate_handle.terminate_execution();
+        // We've reached the number of ticks to call `callback`.
+        if num_ticks % callback_every == 0 && isolate_handle.request_interrupt(callback, ptr::null_mut()) {
+            return None;
+        }
+
+        if num_ticks == max_ticks {
+            // Execution still ongoing while budget has been exhausted.
+            // Terminate V8 execution.
+            // This implements "gas" for v8.
+            isolate_handle.terminate_execution();
+        }
+
+        num_ticks += 1;
+        Some(())
     });
 
     execution_done_flag
@@ -374,9 +465,18 @@ fn call_call_reducer(
 
 /// Extracts the raw module def by running `__describe_module__` in `program`.
 fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
-    let (_, ret) = with_script(program, ReducerBudget::DEFAULT_BUDGET, |scope, _| {
-        run_describer(log_traceback, || call_describe_module(scope))
-    });
+    let budget = ReducerBudget::DEFAULT_BUDGET;
+    let callback_every = EPOCH_TICKS_PER_SECOND;
+    extern "C" fn callback(_: &mut Isolate, _: *mut c_void) {}
+
+    let (_, ret) = with_script(
+        Isolate::new(<_>::default()),
+        program,
+        callback_every,
+        callback,
+        budget,
+        |scope, _| run_describer(log_traceback, || call_describe_module(scope)),
+    );
     ret
 }
 
