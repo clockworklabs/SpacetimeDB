@@ -4,3 +4,4 @@ export * from './db_connection_impl.ts';
 export * from 'spacetimedb';
 export * from './client_cache.ts';
 export * from './message_types.ts';
+export * from './react';
