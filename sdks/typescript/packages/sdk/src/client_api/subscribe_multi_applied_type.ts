@@ -3,76 +3,84 @@
 
 /* eslint-disable */
 /* tslint:disable */
-// @ts-nocheck
 import {
-  AlgebraicType,
-  AlgebraicValue,
-  BinaryReader,
-  BinaryWriter,
-  CallReducerFlags,
-  ConnectionId,
-  DbConnectionBuilder,
-  DbConnectionImpl,
-  DbContext,
-  ErrorContextInterface,
-  Event,
-  EventContextInterface,
-  Identity,
-  ProductType,
-  ProductTypeElement,
-  ReducerEventContextInterface,
-  SubscriptionBuilderImpl,
-  SubscriptionEventContextInterface,
-  SumType,
-  SumTypeVariant,
-  TableCache,
-  TimeDuration,
-  Timestamp,
-  deepEqual,
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../index';
-import { QueryId as __QueryId } from './query_id_type';
-import { DatabaseUpdate as __DatabaseUpdate } from './database_update_type';
+import { QueryId } from './query_id_type';
+// Mark import as potentially unused
+declare type __keep_QueryId = QueryId;
+import { DatabaseUpdate } from './database_update_type';
+// Mark import as potentially unused
+declare type __keep_DatabaseUpdate = DatabaseUpdate;
 
 export type SubscribeMultiApplied = {
   requestId: number;
   totalHostExecutionDurationMicros: bigint;
-  queryId: __QueryId;
-  update: __DatabaseUpdate;
+  queryId: QueryId;
+  update: DatabaseUpdate;
 };
-
 /**
- * A namespace for generated helper functions.
+ * An object for generated helper functions.
  */
-export namespace SubscribeMultiApplied {
+export const SubscribeMultiApplied = {
   /**
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
-  export function getTypeScriptAlgebraicType(): AlgebraicType {
-    return AlgebraicType.createProductType([
-      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
-      new ProductTypeElement(
-        'totalHostExecutionDurationMicros',
-        AlgebraicType.createU64Type()
-      ),
-      new ProductTypeElement('queryId', __QueryId.getTypeScriptAlgebraicType()),
-      new ProductTypeElement(
-        'update',
-        __DatabaseUpdate.getTypeScriptAlgebraicType()
-      ),
-    ]);
-  }
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
+      elements: [
+        { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
+        {
+          name: 'totalHostExecutionDurationMicros',
+          algebraicType: __AlgebraicTypeValue.U64,
+        },
+        {
+          name: 'queryId',
+          algebraicType: QueryId.getTypeScriptAlgebraicType(),
+        },
+        {
+          name: 'update',
+          algebraicType: DatabaseUpdate.getTypeScriptAlgebraicType(),
+        },
+      ],
+    });
+  },
 
-  export function serialize(
-    writer: BinaryWriter,
-    value: SubscribeMultiApplied
-  ): void {
-    SubscribeMultiApplied.getTypeScriptAlgebraicType().serialize(writer, value);
-  }
-
-  export function deserialize(reader: BinaryReader): SubscribeMultiApplied {
-    return SubscribeMultiApplied.getTypeScriptAlgebraicType().deserialize(
-      reader
+  serialize(writer: __BinaryWriter, value: SubscribeMultiApplied): void {
+    __AlgebraicTypeValue.serializeValue(
+      writer,
+      SubscribeMultiApplied.getTypeScriptAlgebraicType(),
+      value
     );
-  }
-}
+  },
+
+  deserialize(reader: __BinaryReader): SubscribeMultiApplied {
+    return __AlgebraicTypeValue.deserializeValue(
+      reader,
+      SubscribeMultiApplied.getTypeScriptAlgebraicType()
+    );
+  },
+};
+
+export default SubscribeMultiApplied;

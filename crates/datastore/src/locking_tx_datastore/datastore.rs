@@ -676,7 +676,9 @@ impl MutTxDatastore for Locking {
 /// Various measurements, needed for metrics, of the work performed by a transaction.
 #[must_use = "TxMetrics should be reported"]
 pub struct TxMetrics {
-    table_stats: HashMap<TableId, TableStats>,
+    /// The transaction metrics for a particular table.
+    /// The value `None` for a [`TableId`] means that it was deleted.
+    table_stats: HashMap<TableId, Option<TableStats>>,
     workload: WorkloadType,
     database_identity: Identity,
     elapsed_time: Duration,
@@ -725,16 +727,12 @@ impl TxMetrics {
                 let mut table_stats =
                     <HashMap<_, _, _> as HashCollectionExt>::with_capacity(tx_data.num_tables_affected());
                 for (table_id, _) in tx_data.table_ids_and_names() {
-                    committed_state.get_table(table_id).and_then(|table| {
-                        table_stats.insert(
-                            table_id,
-                            TableStats {
-                                row_count: table.row_count,
-                                bytes_occupied_overestimate: table.bytes_occupied_overestimate(),
-                                num_indices: table.num_indices(),
-                            },
-                        )
+                    let stats = committed_state.get_table(table_id).map(|table| TableStats {
+                        row_count: table.row_count,
+                        bytes_occupied_overestimate: table.bytes_occupied_overestimate(),
+                        num_indices: table.num_indices(),
                     });
+                    table_stats.insert(table_id, stats);
                 }
                 table_stats
             })
@@ -784,63 +782,106 @@ impl TxMetrics {
 
         get_exec_counter(self.workload).record(&self.exec_metrics);
 
+        // TODO(centril): simplify this by exposing `tx_data.for_table(table_id)`.
         if let Some(tx_data) = tx_data {
             // Update table rows and table size gauges,
             // and sets them to zero if no table is present.
             for (table_id, table_name) in tx_data.table_ids_and_names() {
-                let stats = self.table_stats.get(&table_id).unwrap();
-
-                DB_METRICS
-                    .rdb_num_table_rows
-                    .with_label_values(db, &table_id.0, table_name)
-                    .set(stats.row_count as i64);
-                DB_METRICS
-                    .rdb_table_size
-                    .with_label_values(db, &table_id.0, table_name)
-                    .set(stats.bytes_occupied_overestimate as i64);
+                if let Some(stats) = self.table_stats.get(&table_id).unwrap() {
+                    DB_METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(db, &table_id.0, table_name)
+                        .set(stats.row_count as i64);
+                    DB_METRICS
+                        .rdb_table_size
+                        .with_label_values(db, &table_id.0, table_name)
+                        .set(stats.bytes_occupied_overestimate as i64);
+                } else {
+                    // Table was dropped, remove the metrics.
+                    let _ = DB_METRICS
+                        .rdb_num_table_rows
+                        .remove_label_values(db, &table_id.0, table_name);
+                    let _ = DB_METRICS
+                        .rdb_table_size
+                        .remove_label_values(db, &table_id.0, table_name);
+                }
             }
 
             // Record inserts.
             for (table_id, table_name, inserts) in tx_data.inserts_with_table_name() {
-                let stats = self.table_stats.get(table_id).unwrap();
-                let num_inserts = inserts.len() as u64;
-                let num_indices = stats.num_indices as u64;
+                if let Some(stats) = self.table_stats.get(table_id).unwrap() {
+                    let num_inserts = inserts.len() as u64;
+                    let num_indices = stats.num_indices as u64;
 
-                // Increment rows inserted counter.
-                DB_METRICS
-                    .rdb_num_rows_inserted
-                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                    .inc_by(num_inserts);
-
-                // We don't have sparse indexes, so we can just multiply by the number of indexes.
-                if stats.num_indices > 0 {
-                    // Increment index rows inserted counter
+                    // Increment rows inserted counter.
                     DB_METRICS
-                        .rdb_num_index_entries_inserted
+                        .rdb_num_rows_inserted
                         .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                        .inc_by(num_inserts * num_indices);
+                        .inc_by(num_inserts);
+
+                    // We don't have sparse indexes, so we can just multiply by the number of indexes.
+                    if stats.num_indices > 0 {
+                        // Increment index rows inserted counter
+                        DB_METRICS
+                            .rdb_num_index_entries_inserted
+                            .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                            .inc_by(num_inserts * num_indices);
+                    }
+                } else {
+                    // Table was dropped, remove the metrics.
+                    let _ = DB_METRICS.rdb_num_rows_inserted.remove_label_values(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id.0,
+                        table_name,
+                    );
+                    let _ = DB_METRICS.rdb_num_index_entries_inserted.remove_label_values(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id.0,
+                        table_name,
+                    );
                 }
             }
 
             // Record deletes.
             for (table_id, table_name, deletes) in tx_data.deletes_with_table_name() {
-                let stats = self.table_stats.get(table_id).unwrap();
-                let num_deletes = deletes.len() as u64;
-                let num_indices = stats.num_indices as u64;
+                if let Some(stats) = self.table_stats.get(table_id).unwrap() {
+                    let num_deletes = deletes.len() as u64;
+                    let num_indices = stats.num_indices as u64;
 
-                // Increment rows deleted counter.
-                DB_METRICS
-                    .rdb_num_rows_deleted
-                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                    .inc_by(num_deletes);
-
-                // We don't have sparse indexes, so we can just multiply by the number of indexes.
-                if num_indices > 0 {
-                    // Increment index rows deleted counter.
+                    // Increment rows deleted counter.
                     DB_METRICS
-                        .rdb_num_index_entries_deleted
+                        .rdb_num_rows_deleted
                         .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                        .inc_by(num_deletes * num_indices);
+                        .inc_by(num_deletes);
+
+                    // We don't have sparse indexes, so we can just multiply by the number of indexes.
+                    if num_indices > 0 {
+                        // Increment index rows deleted counter.
+                        DB_METRICS
+                            .rdb_num_index_entries_deleted
+                            .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                            .inc_by(num_deletes * num_indices);
+                    }
+                } else {
+                    // Table was dropped, remove the metrics.
+                    let _ = DB_METRICS.rdb_num_rows_deleted.remove_label_values(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id.0,
+                        table_name,
+                    );
+                    let _ = DB_METRICS.rdb_num_index_entries_deleted.remove_label_values(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id.0,
+                        table_name,
+                    );
                 }
             }
         }
