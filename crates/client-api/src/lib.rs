@@ -7,7 +7,7 @@ use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use spacetimedb::host::{HostController, MigratePlanResult, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
@@ -15,6 +15,7 @@ use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_lib::{ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
+use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use tokio::sync::watch;
 
 pub mod auth;
@@ -67,6 +68,7 @@ impl Host {
         &self,
         auth: AuthCtx,
         database: Database,
+        confirmed_read: bool,
         body: String,
     ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>> {
         let module_host = self
@@ -74,7 +76,7 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        let json = self
+        let (tx_offset, durable_offset, json) = self
             .host_controller
             .using_database(
                 database,
@@ -115,16 +117,27 @@ impl Host {
                         .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
                         .collect();
 
-                    Ok(vec![SqlStmtResult {
-                        schema,
-                        rows: result.rows,
-                        total_duration_micros: total_duration.as_micros() as u64,
-                        stats: SqlStmtStats::from_metrics(&result.metrics),
-                    }])
+                    Ok((
+                        result.tx_offset,
+                        db.durable_tx_offset(),
+                        vec![SqlStmtResult {
+                            schema,
+                            rows: result.rows,
+                            total_duration_micros: total_duration.as_micros() as u64,
+                            stats: SqlStmtStats::from_metrics(&result.metrics),
+                        }],
+                    ))
                 },
             )
             .await
             .map_err(log_and_500)??;
+
+        if confirmed_read {
+            if let Some(mut durable_offset) = durable_offset {
+                let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
+                durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
+            }
+        }
 
         Ok(json)
     }
@@ -134,9 +147,10 @@ impl Host {
         database: Database,
         host_type: HostType,
         program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.host_controller
-            .update_module_host(database, host_type, self.replica_id, program_bytes)
+            .update_module_host(database, host_type, self.replica_id, program_bytes, policy)
             .await
     }
 }
@@ -219,7 +233,10 @@ pub trait ControlStateWriteAccess: Send + Sync {
         &self,
         publisher: &Identity,
         spec: DatabaseDef,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
+
+    async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult>;
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
 
@@ -309,8 +326,13 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         &self,
         identity: &Identity,
         spec: DatabaseDef,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
-        (**self).publish_database(identity, spec).await
+        (**self).publish_database(identity, spec, policy).await
+    }
+
+    async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult> {
+        (**self).migrate_plan(spec, style).await
     }
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {

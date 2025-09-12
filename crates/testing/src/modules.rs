@@ -12,6 +12,7 @@ use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::{generate_random_connection_id, WebSocketOptions};
 use spacetimedb_paths::{RootDir, SpacetimePaths};
+use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
 use tokio::runtime::{Builder, Runtime};
 
@@ -205,6 +206,7 @@ impl CompiledModule {
                 num_replicas: None,
                 host_type: HostType::Wasm,
             },
+            MigrationPolicy::Compatible,
         )
         .await
         .unwrap();

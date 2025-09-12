@@ -222,16 +222,16 @@ impl<TV: TokenValidator + Send + Sync> TokenSigner for JwtKeyAuthProvider<TV> {
 impl<TV: TokenValidator + Send + Sync> JwtAuthProvider for JwtKeyAuthProvider<TV> {
     type TV = TV;
 
+    fn validator(&self) -> &Self::TV {
+        &self.validator
+    }
+
     fn local_issuer(&self) -> &str {
         &self.local_issuer
     }
 
     fn public_key_bytes(&self) -> &[u8] {
         &self.keys.public_pem
-    }
-
-    fn validator(&self) -> &Self::TV {
-        &self.validator
     }
 }
 
@@ -260,6 +260,13 @@ mod tests {
     }
 }
 
+pub async fn validate_token<S: NodeDelegate>(
+    state: &S,
+    token: &str,
+) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
+    state.jwt_auth_provider().validator().validate_token(token).await
+}
+
 pub struct SpacetimeAuthHeader {
     auth: Option<SpacetimeAuth>,
 }
@@ -272,10 +279,7 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
             return Ok(Self { auth: None });
         };
 
-        let claims = state
-            .jwt_auth_provider()
-            .validator()
-            .validate_token(&creds.token)
+        let claims = validate_token(state, &creds.token)
             .await
             .map_err(AuthorizationRejection::Custom)?;
 

@@ -31,6 +31,7 @@ use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::Serialize;
+use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use v8::{
@@ -256,9 +257,11 @@ impl ModuleInstance for JsInstance {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &env_on_instance(self).instance_env.replica_ctx.clone();
-        self.common.update_database(replica_ctx, program, old_module_info)
+        self.common
+            .update_database(replica_ctx, program, old_module_info, policy)
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {

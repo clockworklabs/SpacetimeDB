@@ -214,6 +214,7 @@ Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject 
 ###### <b>Options:</b>
 
 * `--interactive` — Instead of using a query, run an interactive command prompt for `SQL` expressions
+* `--confirmed` — Instruct the server to deliver only updates of confirmed transactions
 * `--anonymous` — Perform this action with an anonymous identity
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
@@ -479,6 +480,7 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 * `-t`, `--timeout <TIMEOUT>` — The timeout, in seconds, after which to disconnect and stop receiving subscription messages. If `-n` is specified, it will stop after whichever
   one comes first.
 * `--print-initial-update` — Print the initial update for the queries.
+* `--confirmed` — Instruct the server to deliver only updates of confirmed transactions
 * `--anonymous` — Perform this action with an anonymous identity
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database

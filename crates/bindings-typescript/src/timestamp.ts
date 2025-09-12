@@ -1,3 +1,5 @@
+import { AlgebraicType } from './algebraic_type';
+
 /**
  * A point in time, represented as a number of microseconds since the Unix epoch.
  */
@@ -12,6 +14,21 @@ export class Timestamp {
 
   constructor(micros: bigint) {
     this.__timestamp_micros_since_unix_epoch__ = micros;
+  }
+
+  /**
+   * Get the algebraic type representation of the {@link Timestamp} type.
+   * @returns The algebraic type representation of the type.
+   */
+  static getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.Product({
+      elements: [
+        {
+          name: '__timestamp_micros_since_unix_epoch__',
+          algebraicType: AlgebraicType.I64,
+        },
+      ],
+    });
   }
 
   /**

@@ -84,41 +84,19 @@ export const AlgebraicType: {
     });
   },
   createIdentityType: function (): AlgebraicTypeType {
-    return AlgebraicTypeValue.Product({
-      elements: [
-        { name: '__identity__', algebraicType: AlgebraicTypeValue.U256 },
-      ],
-    });
+    return Identity.getAlgebraicType();
   },
   createConnectionIdType: function (): AlgebraicTypeType {
-    return AlgebraicTypeValue.Product({
-      elements: [
-        { name: '__connection_id__', algebraicType: AlgebraicTypeValue.U128 },
-      ],
-    });
+    return ConnectionId.getAlgebraicType();
   },
   createScheduleAtType: function (): AlgebraicTypeType {
     return ScheduleAt.getAlgebraicType();
   },
   createTimestampType: function (): AlgebraicTypeType {
-    return AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: '__timestamp_micros_since_unix_epoch__',
-          algebraicType: AlgebraicTypeValue.I64,
-        },
-      ],
-    });
+    return Timestamp.getAlgebraicType();
   },
   createTimeDurationType: function (): AlgebraicTypeType {
-    return AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: '__time_duration_micros__',
-          algebraicType: AlgebraicTypeValue.I64,
-        },
-      ],
-    });
+    return TimeDuration.getAlgebraicType();
   },
   serializeValue: function (
     writer: BinaryWriter,
