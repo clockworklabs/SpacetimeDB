@@ -5079,6 +5079,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdk-unreal-test-harness"
+version = "1.4.0"
+dependencies = [
+ "serial_test",
+ "spacetimedb-testing",
+]
+
+[[package]]
 name = "seahash"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

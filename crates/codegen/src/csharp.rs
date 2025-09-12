@@ -707,7 +707,7 @@ impl Lang for Csharp<'_> {
         }
     }
 
-    fn generate_globals_file(&self, module: &ModuleDef) -> OutputFile {
+    fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
         let mut output = CsharpAutogen::new(
             self.namespace,
             &[
@@ -861,10 +861,10 @@ impl Lang for Csharp<'_> {
             });
         });
 
-        OutputFile {
+        vec![OutputFile {
             filename: "SpacetimeDBClient.g.cs".to_owned(),
             code: output.into_inner(),
-        }
+        }]
     }
 }
 
