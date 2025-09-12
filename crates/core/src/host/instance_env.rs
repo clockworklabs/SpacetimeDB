@@ -8,7 +8,7 @@ use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_lib::Timestamp;
+use spacetimedb_lib::{Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -169,6 +169,11 @@ impl InstanceEnv {
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
         }
+    }
+
+    /// Returns the database's identity.
+    pub fn database_identity(&self) -> &Identity {
+        &self.replica_ctx.database.database_identity
     }
 
     /// Signal to this `InstanceEnv` that a reducer call is beginning.

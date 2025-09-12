@@ -320,7 +320,7 @@ impl<I: ResourceIndex> ResourceSlab<I> {
 decl_index!(RowIterIdx => std::vec::IntoIter<Vec<u8>>);
 pub(super) type RowIters = ResourceSlab<RowIterIdx>;
 
-pub(super) struct TimingSpan {
+pub(crate) struct TimingSpan {
     pub start: Instant,
     pub name: String,
 }
