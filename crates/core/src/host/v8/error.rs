@@ -59,12 +59,12 @@ impl<'scope, M: IntoJsString> IntoException<'scope> for RangeError<M> {
 }
 
 #[derive(Debug)]
-pub(super) struct ExceptionThrown {
+pub(crate) struct ExceptionThrown {
     _priv: (),
 }
 
 /// A result where the error indicates that an exception has already been thrown in V8.
-pub(super) type ExcResult<T> = Result<T, ExceptionThrown>;
+pub(crate) type ExcResult<T> = Result<T, ExceptionThrown>;
 
 /// Indicates that the JS side had thrown an exception.
 pub(super) fn exception_already_thrown() -> ExceptionThrown {
@@ -126,7 +126,9 @@ pub(super) struct JsError {
 impl fmt::Display for JsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "js error {}", self.msg)?;
-        writeln!(f, "{}", self.trace)?;
+        if !f.alternate() {
+            writeln!(f, "{}", self.trace)?;
+        }
         Ok(())
     }
 }
@@ -204,7 +206,7 @@ impl fmt::Display for JsStackTraceFrame {
 
         // This isn't exactly the same format as chrome uses,
         // but it's close enough for now.
-        // TODO(centril): make it more like chrome in the future.
+        // TODO(v8): make it more like chrome in the future.
         f.write_fmt(format_args!(
             "at {} ({}:{}:{})",
             fn_name, script_name, &self.line, &self.column
@@ -245,6 +247,16 @@ impl JsError {
                 trace: JsStackTrace::default(),
                 msg: "unknown error".to_owned(),
             },
+        }
+    }
+}
+
+pub(super) fn log_traceback(func_type: &str, func: &str, e: &anyhow::Error) {
+    log::info!("{func_type} \"{func}\" runtime error: {e:#}");
+    if let Some(js_err) = e.downcast_ref::<JsError>() {
+        log::info!("js error {}", js_err.msg);
+        for (index, frame) in js_err.trace.frames.iter().enumerate() {
+            log::info!("  Frame #{index}: {frame}");
         }
     }
 }
