@@ -949,8 +949,7 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -
     writeln!(output, "{{");
     writeln!(
         output,
-        "    FTableAppliedDiff<{}> Diff = BaseUpdate<{}>(InsertsRef, DeletesRef, Data, TableName);",
-        row_struct, row_struct
+        "    FTableAppliedDiff<{row_struct}> Diff = BaseUpdate<{row_struct}>(InsertsRef, DeletesRef, Data, TableName);"
     );
     writeln!(output);
 
@@ -959,10 +958,10 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -
         let pk_field_name = pk.col_name.deref().to_case(Case::Pascal);
         let pk_type = &product_type.unwrap().elements[pk.col_pos.idx()].1;
         let pk_type_str = cpp_ty_fmt_with_module(module, pk_type, module_name).to_string();
-        writeln!(output, "    Diff.DeriveUpdatesByPrimaryKey<{}>(", pk_type_str);
-        writeln!(output, "        [](const {}& Row) ", row_struct);
+        writeln!(output, "    Diff.DeriveUpdatesByPrimaryKey<{pk_type_str}>(");
+        writeln!(output, "        [](const {row_struct}& Row) ");
         writeln!(output, "        {{");
-        writeln!(output, "            return Row.{}; ", pk_field_name);
+        writeln!(output, "            return Row.{pk_field_name}; ");
         writeln!(output, "        }}");
         writeln!(output, "    );");
         writeln!(output);
@@ -982,24 +981,19 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -
     writeln!(output);
 
     // Generate Count implementation
-    writeln!(output, "int32 U{}Table::Count() const", table_pascal);
+    writeln!(output, "int32 U{table_pascal}Table::Count() const");
     writeln!(output, "{{");
     writeln!(
         output,
-        "    return GetRowCountFromTable<{}>(Data, TableName);",
-        row_struct
+        "    return GetRowCountFromTable<{row_struct}>(Data, TableName);"
     );
     writeln!(output, "}}");
     writeln!(output);
 
     // Generate Iter implementation
-    writeln!(output, "TArray<{}> U{}Table::Iter() const", row_struct, table_pascal);
+    writeln!(output, "TArray<{row_struct}> U{table_pascal}Table::Iter() const");
     writeln!(output, "{{");
-    writeln!(
-        output,
-        "    return GetAllRowsFromTable<{}>(Data, TableName);",
-        row_struct
-    );
+    writeln!(output, "    return GetAllRowsFromTable<{row_struct}>(Data, TableName);");
     writeln!(output, "}}");
 
     output.into_inner()
@@ -1035,7 +1029,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "// Context classes for event handling");
     writeln!(output);
     writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(output, "struct {} FContextBase", api_macro);
+    writeln!(output, "struct {api_macro} FContextBase");
     writeln!(output, "{{");
     writeln!(output, "\tGENERATED_BODY()");
     writeln!(output);
@@ -1082,7 +1076,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
             } else {
                 first = false;
             }
-            write!(output, "    {}", reducer_pascal);
+            write!(output, "    {reducer_pascal}");
         }
         writeln!(output);
     }
@@ -1091,7 +1085,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     // FReducer: tagged union over reducer args, with optional metadata
     writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(output, "struct {} FReducer", api_macro);
+    writeln!(output, "struct {api_macro} FReducer");
     writeln!(output, "{{");
     writeln!(output, "    GENERATED_BODY()");
     writeln!(output);
@@ -1109,7 +1103,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
             } else {
                 first = false;
             }
-            write!(output, "F{}Args", reducer_pascal);
+            write!(output, "F{reducer_pascal}Args");
         }
     }
     writeln!(output, "> Data;");
@@ -1126,34 +1120,30 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
         let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
         writeln!(
             output,
-            "    static FReducer {}(const F{}Args& Value)",
-            reducer_pascal, reducer_pascal
+            "    static FReducer {reducer_pascal}(const F{reducer_pascal}Args& Value)"
         );
         writeln!(output, "    {{");
         writeln!(output, "        FReducer Out;");
-        writeln!(output, "        Out.Tag = EReducerTag::{};", reducer_pascal);
-        writeln!(output, "        Out.Data.Set<F{}Args>(Value);", reducer_pascal);
+        writeln!(output, "        Out.Tag = EReducerTag::{reducer_pascal};");
+        writeln!(output, "        Out.Data.Set<F{reducer_pascal}Args>(Value);");
         writeln!(output, "        Out.ReducerName = TEXT(\"{}\");", reducer.name.deref());
         writeln!(output, "        return Out;");
         writeln!(output, "    }}");
         writeln!(output);
         writeln!(
             output,
-            "    FORCEINLINE bool Is{}() const {{ return Tag == EReducerTag::{}; }}",
-            reducer_pascal, reducer_pascal
+            "    FORCEINLINE bool Is{reducer_pascal}() const {{ return Tag == EReducerTag::{reducer_pascal}; }}"
         );
         writeln!(
             output,
-            "    FORCEINLINE F{}Args GetAs{}() const",
-            reducer_pascal, reducer_pascal
+            "    FORCEINLINE F{reducer_pascal}Args GetAs{reducer_pascal}() const"
         );
         writeln!(output, "    {{");
         writeln!(
             output,
-            "        ensureMsgf(Is{}(), TEXT(\"Reducer does not hold {}!\"));",
-            reducer_pascal, reducer_pascal
+            "        ensureMsgf(Is{reducer_pascal}(), TEXT(\"Reducer does not hold {reducer_pascal}!\"));"
         );
-        writeln!(output, "        return Data.Get<F{}Args>();", reducer_pascal);
+        writeln!(output, "        return Data.Get<F{reducer_pascal}Args>();");
         writeln!(output, "    }}");
         writeln!(output);
     }
@@ -1164,11 +1154,10 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "        {{");
     for reducer in iter_reducers(module) {
         let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
-        writeln!(output, "        case EReducerTag::{}:", reducer_pascal);
+        writeln!(output, "        case EReducerTag::{reducer_pascal}:");
         writeln!(
             output,
-            "            return GetAs{}() == Other.GetAs{}();",
-            reducer_pascal, reducer_pascal
+            "            return GetAs{reducer_pascal}() == Other.GetAs{reducer_pascal}();"
         );
     }
     writeln!(output, "        default: return false;");
@@ -1185,8 +1174,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "UCLASS()");
     writeln!(
         output,
-        "class {} UReducerBpLib : public UBlueprintFunctionLibrary",
-        api_macro
+        "class {api_macro} UReducerBpLib : public UBlueprintFunctionLibrary"
     );
     writeln!(output, "{{");
     writeln!(output, "    GENERATED_BODY()");
@@ -1203,10 +1191,9 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
         );
         writeln!(
             output,
-            "    static FReducer {}(const F{}Args& Value) {{",
-            reducer_pascal, reducer_pascal
+            "    static FReducer {reducer_pascal}(const F{reducer_pascal}Args& Value) {{"
         );
-        writeln!(output, "        return FReducer::{}(Value);", reducer_pascal);
+        writeln!(output, "        return FReducer::{reducer_pascal}(Value);");
         writeln!(output, "    }}");
         writeln!(output);
 
@@ -1217,8 +1204,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
         );
         writeln!(
             output,
-            "    static bool Is{}(const FReducer& Reducer) {{ return Reducer.Is{}(); }}",
-            reducer_pascal, reducer_pascal
+            "    static bool Is{reducer_pascal}(const FReducer& Reducer) {{ return Reducer.Is{reducer_pascal}(); }}"
         );
         writeln!(output);
 
@@ -1229,10 +1215,9 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
         );
         writeln!(
             output,
-            "    static F{}Args GetAs{}(const FReducer& Reducer) {{",
-            reducer_pascal, reducer_pascal
+            "    static F{reducer_pascal}Args GetAs{reducer_pascal}(const FReducer& Reducer) {{"
         );
-        writeln!(output, "        return Reducer.GetAs{}();", reducer_pascal);
+        writeln!(output, "        return Reducer.GetAs{reducer_pascal}();");
         writeln!(output, "    }}");
     }
 
@@ -1242,7 +1227,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     // FReducerEvent: metadata about a reducer invocation, with typed args
     writeln!(output, "/** Metadata describing a reducer run. */");
     writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(output, "struct {} F{}ReducerEvent", api_macro, module_name);
+    writeln!(output, "struct {api_macro} F{module_name}ReducerEvent");
     writeln!(output, "{{");
     writeln!(output, "\tGENERATED_BODY()");
     writeln!(output);
@@ -1297,8 +1282,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "\tFORCEINLINE bool operator==(const F{}ReducerEvent& Other) const",
-        module_name
+        "\tFORCEINLINE bool operator==(const F{module_name}ReducerEvent& Other) const"
     );
     writeln!(output, "\t{{");
     writeln!(output, "\t\treturn Status == Other.Status && Timestamp == Other.Timestamp && CallerIdentity == Other.CallerIdentity &&");
@@ -1312,8 +1296,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "\tFORCEINLINE bool operator!=(const F{}ReducerEvent& Other) const",
-        module_name
+        "\tFORCEINLINE bool operator!=(const F{module_name}ReducerEvent& Other) const"
     );
     writeln!(output, "\t{{");
     writeln!(output, "\t\treturn !(*this == Other);");
@@ -1324,7 +1307,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     // {}Event: union-like struct representing SpacetimeDB event messages
     writeln!(output, "/** Represents event with variant message data. */");
     writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(output, "struct {} F{}Event", api_macro, module_name);
+    writeln!(output, "struct {api_macro} F{module_name}Event");
     writeln!(output, "{{");
     writeln!(output, "\tGENERATED_BODY()");
     writeln!(output);
@@ -1346,9 +1329,9 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     // === Static factory methods ===
     writeln!(output, "\t/** === Static factory methods ===*/");
-    writeln!(output, "\tstatic F{}Event Reducer(const FReducer& Value)", module_name);
+    writeln!(output, "\tstatic F{module_name}Event Reducer(const FReducer& Value)");
     writeln!(output, "\t{{");
-    writeln!(output, "\t\tF{}Event Obj;", module_name);
+    writeln!(output, "\t\tF{module_name}Event Obj;");
     writeln!(output, "\t\tObj.Tag = ESpacetimeDBEventTag::Reducer;");
     writeln!(output, "\t\tObj.MessageData.Set<FReducer>(Value);");
     writeln!(output, "\t\treturn Obj;");
@@ -1357,11 +1340,10 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "\tstatic F{}Event SubscribeApplied(const FSpacetimeDBUnit& Value)",
-        module_name
+        "\tstatic F{module_name}Event SubscribeApplied(const FSpacetimeDBUnit& Value)"
     );
     writeln!(output, "\t{{");
-    writeln!(output, "\t\tF{}Event Obj;", module_name);
+    writeln!(output, "\t\tF{module_name}Event Obj;");
     writeln!(output, "\t\tObj.Tag = ESpacetimeDBEventTag::SubscribeApplied;");
     writeln!(output, "\t\tObj.MessageData.Set<FSpacetimeDBUnit>(Value);");
     writeln!(output, "\t\treturn Obj;");
@@ -1370,11 +1352,10 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "\tstatic F{}Event UnsubscribeApplied(const FSpacetimeDBUnit& Value)",
-        module_name
+        "\tstatic F{module_name}Event UnsubscribeApplied(const FSpacetimeDBUnit& Value)"
     );
     writeln!(output, "\t{{");
-    writeln!(output, "\t\tF{}Event Obj;", module_name);
+    writeln!(output, "\t\tF{module_name}Event Obj;");
     writeln!(output, "\t\tObj.Tag = ESpacetimeDBEventTag::UnsubscribeApplied;");
     writeln!(output, "\t\tObj.MessageData.Set<FSpacetimeDBUnit>(Value);");
     writeln!(output, "\t\treturn Obj;");
@@ -1383,11 +1364,10 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "\tstatic F{}Event Disconnected(const FSpacetimeDBUnit& Value)",
-        module_name
+        "\tstatic F{module_name}Event Disconnected(const FSpacetimeDBUnit& Value)"
     );
     writeln!(output, "\t{{");
-    writeln!(output, "\t\tF{}Event Obj;", module_name);
+    writeln!(output, "\t\tF{module_name}Event Obj;");
     writeln!(output, "\t\tObj.Tag = ESpacetimeDBEventTag::Disconnected;");
     writeln!(output, "\t\tObj.MessageData.Set<FSpacetimeDBUnit>(Value);");
     writeln!(output, "\t\treturn Obj;");
@@ -1396,11 +1376,10 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "\tstatic F{}Event SubscribeError(const FString& Value)",
-        module_name
+        "\tstatic F{module_name}Event SubscribeError(const FString& Value)"
     );
     writeln!(output, "\t{{");
-    writeln!(output, "\t\tF{}Event Obj;", module_name);
+    writeln!(output, "\t\tF{module_name}Event Obj;");
     writeln!(output, "\t\tObj.Tag = ESpacetimeDBEventTag::SubscribeError;");
     writeln!(output, "\t\tObj.MessageData.Set<FString>(Value);");
     writeln!(output, "\t\treturn Obj;");
@@ -1409,11 +1388,10 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "\tstatic F{}Event UnknownTransaction(const FSpacetimeDBUnit& Value)",
-        module_name
+        "\tstatic F{module_name}Event UnknownTransaction(const FSpacetimeDBUnit& Value)"
     );
     writeln!(output, "\t{{");
-    writeln!(output, "\t\tF{}Event Obj;", module_name);
+    writeln!(output, "\t\tF{module_name}Event Obj;");
     writeln!(output, "\t\tObj.Tag = ESpacetimeDBEventTag::UnknownTransaction;");
     writeln!(output, "\t\tObj.MessageData.Set<FSpacetimeDBUnit>(Value);");
     writeln!(output, "\t\treturn Obj;");
@@ -1503,8 +1481,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     // === Equality operators ===
     writeln!(
         output,
-        "\tFORCEINLINE bool operator==(const F{}Event& Other) const",
-        module_name
+        "\tFORCEINLINE bool operator==(const F{module_name}Event& Other) const"
     );
     writeln!(output, "\t{{");
     writeln!(output, "\t\tif (Tag != Other.Tag) return false;");
@@ -1532,8 +1509,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "\tFORCEINLINE bool operator!=(const F{}Event& Other) const",
-        module_name
+        "\tFORCEINLINE bool operator!=(const F{module_name}Event& Other) const"
     );
     writeln!(output, "\t{{");
     writeln!(output, "\t\treturn !(*this == Other);");
@@ -1545,8 +1521,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "UCLASS()");
     writeln!(
         output,
-        "class {} U{}EventBpLib : public UBlueprintFunctionLibrary",
-        api_macro, module_name
+        "class {api_macro} U{module_name}EventBpLib : public UBlueprintFunctionLibrary"
     );
     writeln!(output, "{{");
     writeln!(output, "    GENERATED_BODY()");
@@ -1556,55 +1531,44 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     // Reducer
     writeln!(
         output,
-        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static F{}Event Reducer(const FReducer& InValue)",
-        module_name
+        "    static F{module_name}Event Reducer(const FReducer& InValue)"
     );
     writeln!(output, "    {{");
-    writeln!(output, "        return F{}Event::Reducer(InValue);", module_name);
+    writeln!(output, "        return F{module_name}Event::Reducer(InValue);");
     writeln!(output, "    }}");
     writeln!(output);
 
     // SubscribeApplied
     writeln!(
         output,
-        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static F{}Event SubscribeApplied(const FSpacetimeDBUnit& InValue)",
-        module_name
+        "    static F{module_name}Event SubscribeApplied(const FSpacetimeDBUnit& InValue)"
     );
     writeln!(output, "    {{");
-    writeln!(
-        output,
-        "        return F{}Event::SubscribeApplied(InValue);",
-        module_name
-    );
+    writeln!(output, "        return F{module_name}Event::SubscribeApplied(InValue);");
     writeln!(output, "    }}");
     writeln!(output);
 
     // UnsubscribeApplied
     writeln!(
         output,
-        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static F{}Event UnsubscribeApplied(const FSpacetimeDBUnit& InValue)",
-        module_name
+        "    static F{module_name}Event UnsubscribeApplied(const FSpacetimeDBUnit& InValue)"
     );
     writeln!(output, "    {{");
     writeln!(
         output,
-        "        return F{}Event::UnsubscribeApplied(InValue);",
-        module_name
+        "        return F{module_name}Event::UnsubscribeApplied(InValue);"
     );
     writeln!(output, "    }}");
     writeln!(output);
@@ -1612,51 +1576,44 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     // Disconnected
     writeln!(
         output,
-        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static F{}Event Disconnected(const FSpacetimeDBUnit& InValue)",
-        module_name
+        "    static F{module_name}Event Disconnected(const FSpacetimeDBUnit& InValue)"
     );
     writeln!(output, "    {{");
-    writeln!(output, "        return F{}Event::Disconnected(InValue);", module_name);
+    writeln!(output, "        return F{module_name}Event::Disconnected(InValue);");
     writeln!(output, "    }}");
     writeln!(output);
 
     // SubscribeError
     writeln!(
         output,
-        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static F{}Event SubscribeError(const FString& InValue)",
-        module_name
+        "    static F{module_name}Event SubscribeError(const FString& InValue)"
     );
     writeln!(output, "    {{");
-    writeln!(output, "        return F{}Event::SubscribeError(InValue);", module_name);
+    writeln!(output, "        return F{module_name}Event::SubscribeError(InValue);");
     writeln!(output, "    }}");
     writeln!(output);
 
     // UnknownTransaction
     writeln!(
         output,
-        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static F{}Event UnknownTransaction(const FSpacetimeDBUnit& InValue)",
-        module_name
+        "    static F{module_name}Event UnknownTransaction(const FSpacetimeDBUnit& InValue)"
     );
     writeln!(output, "    {{");
     writeln!(
         output,
-        "        return F{}Event::UnknownTransaction(InValue);",
-        module_name
+        "        return F{module_name}Event::UnknownTransaction(InValue);"
     );
     writeln!(output, "    }}");
     writeln!(output);
@@ -1672,13 +1629,11 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     ] {
         writeln!(
             output,
-            "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{}Event\")",
-            module_name
+            "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{module_name}Event\")"
         );
         writeln!(
             output,
-            "    static bool Is{}(const F{}Event& Event) {{ return Event.Is{}(); }}",
-            case, module_name, case
+            "    static bool Is{case}(const F{module_name}Event& Event) {{ return Event.Is{case}(); }}"
         );
         writeln!(output);
     }
@@ -1686,13 +1641,11 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     // GetAs* helpers
     writeln!(
         output,
-        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static FReducer GetAsReducer(const F{}Event& Event)",
-        module_name
+        "    static FReducer GetAsReducer(const F{module_name}Event& Event)"
     );
     writeln!(output, "    {{");
     writeln!(output, "        return Event.GetAsReducer();");
@@ -1701,13 +1654,11 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static FSpacetimeDBUnit GetAsSubscribeApplied(const F{}Event& Event)",
-        module_name
+        "    static FSpacetimeDBUnit GetAsSubscribeApplied(const F{module_name}Event& Event)"
     );
     writeln!(output, "    {{");
     writeln!(output, "        return Event.GetAsSubscribeApplied();");
@@ -1716,13 +1667,11 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static FSpacetimeDBUnit GetAsUnsubscribeApplied(const F{}Event& Event)",
-        module_name
+        "    static FSpacetimeDBUnit GetAsUnsubscribeApplied(const F{module_name}Event& Event)"
     );
     writeln!(output, "    {{");
     writeln!(output, "        return Event.GetAsUnsubscribeApplied();");
@@ -1731,13 +1680,11 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static FSpacetimeDBUnit GetAsDisconnected(const F{}Event& Event)",
-        module_name
+        "    static FSpacetimeDBUnit GetAsDisconnected(const F{module_name}Event& Event)"
     );
     writeln!(output, "    {{");
     writeln!(output, "        return Event.GetAsDisconnected();");
@@ -1746,13 +1693,11 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static FString GetAsSubscribeError(const F{}Event& Event)",
-        module_name
+        "    static FString GetAsSubscribeError(const F{module_name}Event& Event)"
     );
     writeln!(output, "    {{");
     writeln!(output, "        return Event.GetAsSubscribeError();");
@@ -1761,13 +1706,11 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 
     writeln!(
         output,
-        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{}Event\")",
-        module_name
+        "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{module_name}Event\")"
     );
     writeln!(
         output,
-        "    static FSpacetimeDBUnit GetAsUnknownTransaction(const F{}Event& Event)",
-        module_name
+        "    static FSpacetimeDBUnit GetAsUnknownTransaction(const F{module_name}Event& Event)"
     );
     writeln!(output, "    {{");
     writeln!(output, "        return Event.GetAsUnknownTransaction();");
@@ -1780,39 +1723,34 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     // FEventContext, FReducerEventContext, FErrorContext, FSubscriptionEventContext
     writeln!(output);
     writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(output, "struct {} FEventContext : public FContextBase", api_macro);
+    writeln!(output, "struct {api_macro} FEventContext : public FContextBase");
     writeln!(output, "{{");
     writeln!(output, "\tGENERATED_BODY()");
     writeln!(output);
     writeln!(output, "\tFEventContext() = default;");
     writeln!(
         output,
-        "\tFEventContext(UDbConnection* InConn, const F{}Event& InEvent) : FContextBase(InConn), Event(InEvent) {{}}",
-        module_name
+        "\tFEventContext(UDbConnection* InConn, const F{module_name}Event& InEvent) : FContextBase(InConn), Event(InEvent) {{}}"
     );
     writeln!(output);
     writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\")");
-    writeln!(output, "\tF{}Event Event;", module_name);
+    writeln!(output, "\tF{module_name}Event Event;");
     writeln!(output, "}};");
     writeln!(output);
     writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(
-        output,
-        "struct {} FReducerEventContext : public FContextBase",
-        api_macro
-    );
+    writeln!(output, "struct {api_macro} FReducerEventContext : public FContextBase");
     writeln!(output, "{{");
     writeln!(output, "\tGENERATED_BODY()");
     writeln!(output);
     writeln!(output, "\tFReducerEventContext() = default;");
-    writeln!(output, "\tFReducerEventContext(UDbConnection* InConn, F{}ReducerEvent InEvent) : FContextBase(InConn), Event(InEvent) {{}}", module_name);
+    writeln!(output, "\tFReducerEventContext(UDbConnection* InConn, F{module_name}ReducerEvent InEvent) : FContextBase(InConn), Event(InEvent) {{}}");
     writeln!(output, "\t");
     writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\") ");
-    writeln!(output, "\tF{}ReducerEvent Event;", module_name);
+    writeln!(output, "\tF{module_name}ReducerEvent Event;");
     writeln!(output, "}};");
     writeln!(output);
     writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(output, "struct {} FErrorContext : public FContextBase", api_macro);
+    writeln!(output, "struct {api_macro} FErrorContext : public FContextBase");
     writeln!(output, "{{");
     writeln!(output, "\tGENERATED_BODY()");
     writeln!(output);
@@ -1830,8 +1768,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "USTRUCT(BlueprintType)");
     writeln!(
         output,
-        "struct {} FSubscriptionEventContext : public FContextBase",
-        api_macro
+        "struct {api_macro} FSubscriptionEventContext : public FContextBase"
     );
     writeln!(output, "{{");
     writeln!(output, "\tGENERATED_BODY()");
@@ -1857,7 +1794,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 fn generate_remote_tables_class(output: &mut UnrealCppAutogen, module: &ModuleDef, api_macro: &str) {
     writeln!(output, "// RemoteTables class");
     writeln!(output, "UCLASS(BlueprintType)");
-    writeln!(output, "class {} URemoteTables : public UObject", api_macro);
+    writeln!(output, "class {api_macro} URemoteTables : public UObject");
     writeln!(output, "{{");
     writeln!(output, "    GENERATED_BODY()");
     writeln!(output);
@@ -1872,8 +1809,7 @@ fn generate_remote_tables_class(output: &mut UnrealCppAutogen, module: &ModuleDe
         writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\")");
         writeln!(
             output,
-            "    U{}Table* {};",
-            table_pascal,
+            "    U{table_pascal}Table* {};",
             table.name.deref().to_case(Case::Pascal)
         );
         writeln!(output);
@@ -1891,7 +1827,7 @@ fn generate_remote_reducers_class(
 ) {
     writeln!(output, "// RemoteReducers class");
     writeln!(output, "UCLASS(BlueprintType)");
-    writeln!(output, "class {} URemoteReducers : public UObject", api_macro);
+    writeln!(output, "class {api_macro} URemoteReducers : public UObject");
     writeln!(output, "{{");
     writeln!(output, "    GENERATED_BODY()");
     writeln!(output);
@@ -1912,9 +1848,9 @@ fn generate_remote_reducers_class(
         if use_args_struct {
             // For more than 9 params, use a struct to wrap the arguments
             writeln!(output, "    DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(");
-            writeln!(output, "        F{}Handler,", reducer_pascal);
+            writeln!(output, "        F{reducer_pascal}Handler,");
             writeln!(output, "        const FReducerEventContext&, Context,");
-            writeln!(output, "        const F{}Args&, Args", reducer_pascal);
+            writeln!(output, "        const F{reducer_pascal}Args&, Args");
             writeln!(output, "    );");
 
             // For delegates using args struct, check the actual delegate parameters:
@@ -1946,8 +1882,7 @@ fn generate_remote_reducers_class(
 
             write!(
                 output,
-                "    {}(\n        F{}Handler,\n        const FReducerEventContext&, Context",
-                delegate_macro, reducer_pascal
+                "    {delegate_macro}(\n        F{reducer_pascal}Handler,\n        const FReducerEventContext&, Context"
             );
 
             for (param_name, param_type) in &reducer.params_for_generate.elements {
@@ -1964,16 +1899,14 @@ fn generate_remote_reducers_class(
                     // Only true primitives are passed by value in delegates
                     write!(
                         output,
-                        ",\n        {}, {}",
-                        type_str,
+                        ",\n        {type_str}, {}",
                         param_name.deref().to_case(Case::Pascal)
                     );
                 } else {
                     // Complex types (including FSpacetimeDB structs) use const references
                     write!(
                         output,
-                        ",\n        const {}&, {}",
-                        type_str,
+                        ",\n        const {type_str}&, {}",
                         param_name.deref().to_case(Case::Pascal)
                     );
                 }
@@ -1989,27 +1922,24 @@ fn generate_remote_reducers_class(
             let types_str = non_blueprintable_types_for_delegate.join(", ");
             writeln!(
                 output,
-                "    // NOTE: Not exposed to Blueprint because {} types are not Blueprint-compatible",
-                types_str
+                "    // NOTE: Not exposed to Blueprint because {types_str} types are not Blueprint-compatible"
             );
         }
-        writeln!(output, "    F{}Handler On{};", reducer_pascal, reducer_pascal);
+        writeln!(output, "    F{reducer_pascal}Handler On{reducer_pascal};");
         writeln!(output);
 
         // Generate call method
         if non_blueprintable_types_for_function.is_empty() {
             write!(
                 output,
-                "    UFUNCTION(BlueprintCallable, Category=\"SpacetimeDB\")\n    void {}(",
-                reducer_pascal
+                "    UFUNCTION(BlueprintCallable, Category=\"SpacetimeDB\")\n    void {reducer_pascal}("
             );
         } else {
             // Generate specific message about which types are not Blueprint-compatible
             let types_str = non_blueprintable_types_for_function.join(", ");
             write!(
                 output,
-                "    // NOTE: Not exposed to Blueprint because {} types are not Blueprint-compatible\n    void {}(",
-                types_str, reducer_pascal
+                "    // NOTE: Not exposed to Blueprint because {types_str} types are not Blueprint-compatible\n    void {reducer_pascal}("
             );
         }
 
@@ -2051,8 +1981,7 @@ fn generate_remote_reducers_class(
         // Generate invoke method
         write!(
             output,
-            "    bool Invoke{}(const FReducerEventContext& Context, const U{}Reducer* Args);",
-            reducer_pascal, reducer_pascal
+            "    bool Invoke{reducer_pascal}(const FReducerEventContext& Context, const U{reducer_pascal}Reducer* Args);"
         );
         writeln!(output);
         writeln!(output);
@@ -2085,8 +2014,7 @@ fn generate_subscription_builder_class(output: &mut UnrealCppAutogen, api_macro:
     writeln!(output, "UCLASS(BlueprintType)");
     writeln!(
         output,
-        "class {} USubscriptionBuilder : public USubscriptionBuilderBase",
-        api_macro
+        "class {api_macro} USubscriptionBuilder : public USubscriptionBuilderBase"
     );
     writeln!(output, "{{");
     writeln!(output, "    GENERATED_BODY()");
@@ -2141,8 +2069,7 @@ fn generate_subscription_handle_class(output: &mut UnrealCppAutogen, api_macro: 
     writeln!(output, "UCLASS(BlueprintType)");
     writeln!(
         output,
-        "class {} USubscriptionHandle : public USubscriptionHandleBase",
-        api_macro
+        "class {api_macro} USubscriptionHandle : public USubscriptionHandleBase"
     );
     writeln!(output, "{{");
     writeln!(output, "    GENERATED_BODY()");
@@ -2185,8 +2112,7 @@ fn generate_db_connection_builder_class(output: &mut UnrealCppAutogen, api_macro
     writeln!(output, "UCLASS(BlueprintType)");
     writeln!(
         output,
-        "class {} UDbConnectionBuilder : public UDbConnectionBuilderBase",
-        api_macro
+        "class {api_macro} UDbConnectionBuilder : public UDbConnectionBuilderBase"
     );
     writeln!(output, "{{");
     writeln!(output, "    GENERATED_BODY()");
@@ -2239,7 +2165,7 @@ fn generate_db_connection_builder_class(output: &mut UnrealCppAutogen, api_macro
 fn generate_db_connection_class(output: &mut UnrealCppAutogen, _module: &ModuleDef, api_macro: &str) {
     writeln!(output, "// Main DbConnection class");
     writeln!(output, "UCLASS(BlueprintType)");
-    writeln!(output, "class {} UDbConnection : public UDbConnectionBase", api_macro);
+    writeln!(output, "class {api_macro} UDbConnection : public UDbConnectionBase");
     writeln!(output, "{{");
     writeln!(output, "    GENERATED_BODY()");
     writeln!(output);
@@ -2342,14 +2268,13 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
         let reducer_name = reducer.name.deref();
         let reducer_pascal = reducer_name.to_case(Case::Pascal);
 
-        writeln!(output, "    if (ReducerName == TEXT(\"{}\"))", reducer_name);
+        writeln!(output, "    if (ReducerName == TEXT(\"{reducer_name}\"))");
         writeln!(output, "    {{");
         writeln!(
             output,
-            "        F{}Args Args = UE::SpacetimeDB::Deserialize<F{}Args>(Event.ReducerCall.Args);",
-            reducer_pascal, reducer_pascal
+            "        F{reducer_pascal}Args Args = UE::SpacetimeDB::Deserialize<F{reducer_pascal}Args>(Event.ReducerCall.Args);"
         );
-        writeln!(output, "        return FReducer::{}(Args);", reducer_pascal);
+        writeln!(output, "        return FReducer::{reducer_pascal}(Args);");
         writeln!(output, "    }}");
         writeln!(output);
     }
@@ -2462,11 +2387,10 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
         let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
         writeln!(
             output,
-            "void USetReducerFlags::{}(ECallReducerFlags Flag)",
-            reducer_pascal
+            "void USetReducerFlags::{reducer_pascal}(ECallReducerFlags Flag)"
         );
         writeln!(output, "{{");
-        writeln!(output, "\tFlagMap.Add(\"{}\", Flag);", reducer_pascal);
+        writeln!(output, "\tFlagMap.Add(\"{reducer_pascal}\", Flag);");
         writeln!(output, "}}");
     }
     writeln!(output);
@@ -2477,7 +2401,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
         let reducer_snake = reducer.name.deref();
 
         // Call method implementation
-        write!(output, "void URemoteReducers::{}(", reducer_pascal);
+        write!(output, "void URemoteReducers::{reducer_pascal}(");
         let mut first = true;
         for (param_name, param_type) in &reducer.params_for_generate.elements {
             if !first {
@@ -2519,14 +2443,12 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
         if reducer.params_for_generate.elements.is_empty() {
             writeln!(
                 output,
-                "\tConn->CallReducerTyped(TEXT(\"{}\"), F{}Args(), SetCallReducerFlags);",
-                reducer_snake, reducer_pascal
+                "\tConn->CallReducerTyped(TEXT(\"{reducer_snake}\"), F{reducer_pascal}Args(), SetCallReducerFlags);"
             );
         } else {
             write!(
                 output,
-                "\tConn->CallReducerTyped(TEXT(\"{}\"), F{}Args(",
-                reducer_snake, reducer_pascal
+                "\tConn->CallReducerTyped(TEXT(\"{reducer_snake}\"), F{reducer_pascal}Args("
             );
             let mut first = true;
             for (param_name, _) in &reducer.params_for_generate.elements {
@@ -2535,7 +2457,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
                 }
                 first = false;
                 let param_pascal = param_name.deref().to_case(Case::Pascal);
-                write!(output, "{}", param_pascal);
+                write!(output, "{param_pascal}");
             }
             writeln!(output, "), SetCallReducerFlags);");
         }
@@ -2545,12 +2467,11 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
         // Invoke method implementation
         write!(
             output,
-            "bool URemoteReducers::Invoke{}(const FReducerEventContext& Context, const U{}Reducer* Args)",
-            reducer_pascal, reducer_pascal
+            "bool URemoteReducers::Invoke{reducer_pascal}(const FReducerEventContext& Context, const U{reducer_pascal}Reducer* Args)"
         );
         writeln!(output);
         writeln!(output, "{{");
-        writeln!(output, "    if (!On{}.IsBound())", reducer_pascal);
+        writeln!(output, "    if (!On{reducer_pascal}.IsBound())");
         writeln!(output, "    {{");
         writeln!(output, "        // Handle unhandled reducer error");
         writeln!(output, "        if (InternalOnUnhandledReducerError.IsBound())");
@@ -2562,8 +2483,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
         writeln!(output, "            // For now, just broadcast any error");
         writeln!(
             output,
-            "            InternalOnUnhandledReducerError.Broadcast(Context, TEXT(\"No handler registered for {}\"));",
-            reducer_pascal
+            "            InternalOnUnhandledReducerError.Broadcast(Context, TEXT(\"No handler registered for {reducer_pascal}\"));"
         );
         writeln!(output, "        }}");
         writeln!(output, "        return false;");
@@ -2576,18 +2496,18 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
 
         if use_args_struct {
             // Create args struct from individual fields
-            writeln!(output, "    F{}Args ArgsStruct;", reducer_pascal);
+            writeln!(output, "    F{reducer_pascal}Args ArgsStruct;");
             for (param_name, _) in &reducer.params_for_generate.elements {
                 let param_pascal = param_name.deref().to_case(Case::Pascal);
-                writeln!(output, "    ArgsStruct.{} = Args->{};", param_pascal, param_pascal);
+                writeln!(output, "    ArgsStruct.{param_pascal} = Args->{param_pascal};");
             }
-            writeln!(output, "    On{}.Broadcast(Context, ArgsStruct);", reducer_pascal);
+            writeln!(output, "    On{reducer_pascal}.Broadcast(Context, ArgsStruct);");
         } else {
             // Use individual parameters
-            write!(output, "    On{}.Broadcast(Context", reducer_pascal);
+            write!(output, "    On{reducer_pascal}.Broadcast(Context");
             for (param_name, _) in &reducer.params_for_generate.elements {
                 let param_pascal = param_name.deref().to_case(Case::Pascal);
-                write!(output, ", Args->{}", param_pascal);
+                write!(output, ", Args->{param_pascal}");
             }
             writeln!(output, ");");
         }
@@ -2638,7 +2558,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output);
 
     // Build the {}ReducerEvent object
-    writeln!(output, "    F{}ReducerEvent ReducerEvent;", module_name);
+    writeln!(output, "    F{module_name}ReducerEvent ReducerEvent;");
     writeln!(
         output,
         "    ReducerEvent.CallerConnectionId = Event.CallerConnectionId;"
@@ -2662,26 +2582,24 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     for reducer in iter_reducers(module) {
         let reducer_name = reducer.name.deref();
         let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
-        writeln!(output, "    if (ReducerName == TEXT(\"{}\"))", reducer_name);
+        writeln!(output, "    if (ReducerName == TEXT(\"{reducer_name}\"))");
         writeln!(output, "    {{");
         writeln!(
             output,
-            "        F{}Args Args = ReducerEvent.Reducer.GetAs{}();",
-            reducer_pascal, reducer_pascal
+            "        F{reducer_pascal}Args Args = ReducerEvent.Reducer.GetAs{reducer_pascal}();"
         );
         writeln!(
             output,
-            "        U{}Reducer* Reducer = NewObject<U{}Reducer>();",
-            reducer_pascal, reducer_pascal
+            "        U{reducer_pascal}Reducer* Reducer = NewObject<U{reducer_pascal}Reducer>();"
         );
 
         // Copy fields from Args struct to Reducer object
         for (param_name, _) in &reducer.params_for_generate.elements {
             let param_pascal = param_name.deref().to_case(Case::Pascal);
-            writeln!(output, "        Reducer->{} = Args.{};", param_pascal, param_pascal);
+            writeln!(output, "        Reducer->{param_pascal} = Args.{param_pascal};");
         }
 
-        writeln!(output, "        Reducers->Invoke{}(Context, Reducer);", reducer_pascal);
+        writeln!(output, "        Reducers->Invoke{reducer_pascal}(Context, Reducer);");
         writeln!(output, "        return;");
         writeln!(output, "    }}");
     }
@@ -2703,7 +2621,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output);
 
     // Build the {}ReducerEvent object
-    writeln!(output, "    F{}ReducerEvent ReducerEvent;", module_name);
+    writeln!(output, "    F{module_name}ReducerEvent ReducerEvent;");
     writeln!(
         output,
         "    ReducerEvent.CallerConnectionId = Event.CallerConnectionId;"
@@ -2950,7 +2868,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "{{");
 
     // Create {}Event
-    writeln!(output, "    F{}Event BaseEvent;", module_name);
+    writeln!(output, "    F{module_name}Event BaseEvent;");
     writeln!(output, "    BaseEvent.Tag = Event.Tag;");
     writeln!(output);
 
@@ -2963,7 +2881,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    {{");
     writeln!(output, "        FReducerEvent ReducerEvent = Event.GetAsReducer();");
     writeln!(output, "        FReducer Reducer = DecodeReducer(ReducerEvent);");
-    writeln!(output, "        BaseEvent = F{}Event::Reducer(Reducer);", module_name);
+    writeln!(output, "        BaseEvent = F{module_name}Event::Reducer(Reducer);");
     writeln!(output, "        break;");
     writeln!(output, "    }}");
     writeln!(output);
@@ -2972,8 +2890,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    case ESpacetimeDBEventTag::SubscribeApplied:");
     writeln!(
         output,
-        "        BaseEvent = F{}Event::SubscribeApplied(Event.GetAsSubscribeApplied());",
-        module_name
+        "        BaseEvent = F{module_name}Event::SubscribeApplied(Event.GetAsSubscribeApplied());"
     );
     writeln!(output, "        break;");
     writeln!(output);
@@ -2981,8 +2898,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    case ESpacetimeDBEventTag::UnsubscribeApplied:");
     writeln!(
         output,
-        "        BaseEvent = F{}Event::UnsubscribeApplied(Event.GetAsUnsubscribeApplied());",
-        module_name
+        "        BaseEvent = F{module_name}Event::UnsubscribeApplied(Event.GetAsUnsubscribeApplied());"
     );
     writeln!(output, "        break;");
     writeln!(output);
@@ -2990,8 +2906,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    case ESpacetimeDBEventTag::Disconnected:");
     writeln!(
         output,
-        "        BaseEvent = F{}Event::Disconnected(Event.GetAsDisconnected());",
-        module_name
+        "        BaseEvent = F{module_name}Event::Disconnected(Event.GetAsDisconnected());"
     );
     writeln!(output, "        break;");
     writeln!(output);
@@ -2999,8 +2914,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    case ESpacetimeDBEventTag::SubscribeError:");
     writeln!(
         output,
-        "        BaseEvent = F{}Event::SubscribeError(Event.GetAsSubscribeError());",
-        module_name
+        "        BaseEvent = F{module_name}Event::SubscribeError(Event.GetAsSubscribeError());"
     );
     writeln!(output, "        break;");
     writeln!(output);
@@ -3008,8 +2922,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    case ESpacetimeDBEventTag::UnknownTransaction:");
     writeln!(
         output,
-        "        BaseEvent = F{}Event::UnknownTransaction(Event.GetAsUnknownTransaction());",
-        module_name
+        "        BaseEvent = F{module_name}Event::UnknownTransaction(Event.GetAsUnknownTransaction());"
     );
     writeln!(output, "        break;");
     writeln!(output);
@@ -3064,7 +2977,7 @@ impl UnrealCppAutogen {
         for include in extra_includes {
             writeln!(output, "#include \"{include}\"");
         }
-        writeln!(output, "#include \"{}.g.generated.h\"", self_header); // need to include the generated header for Unreal's reflection
+        writeln!(output, "#include \"{self_header}.g.generated.h\""); // need to include the generated header for Unreal's reflection
         writeln!(output);
         Self { output }
     }
@@ -3188,10 +3101,10 @@ fn get_cpp_type_for_array_element(elem_type_str: &str, _: &ModuleDef, module_nam
         _ if elem_type_str.starts_with("Int32") => {
             // Handle nested optionals like Int32 from OptionalInt32
             let module_name_pascal = module_name.to_case(Case::Pascal);
-            format!("F{}OptionalInt32", module_name_pascal)
+            format!("F{module_name_pascal}OptionalInt32")
         }
         _ => {
-            format!("E{}Type", elem_type_str)
+            format!("E{elem_type_str}Type")
         }
     }
 }
@@ -3222,10 +3135,7 @@ fn get_array_element_type_name(module: &ModuleDef, elem: &AlgebraicTypeUse) -> S
         AlgebraicTypeUse::Timestamp => "Timestamp".to_string(),
         AlgebraicTypeUse::TimeDuration => "TimeDuration".to_string(),
         AlgebraicTypeUse::ScheduleAt => "ScheduleAt".to_string(),
-        AlgebraicTypeUse::Ref(r) => {
-            let type_name = type_ref_name(module, *r);
-            type_name
-        }
+        AlgebraicTypeUse::Ref(r) => type_ref_name(module, *r),
         AlgebraicTypeUse::Option(nested_inner) => {
             // Handle optional elements in arrays like Vec<Option<i32>>
             let inner_optional_name = get_optional_type_name(module, nested_inner);
@@ -3267,16 +3177,16 @@ fn get_optional_type_name(module: &ModuleDef, inner: &AlgebraicTypeUse) -> Strin
         AlgebraicTypeUse::Array(elem) => {
             // Generate specific optional array types based on element type
             let elem_name = get_array_element_type_name(module, elem);
-            format!("OptionalVec{}", elem_name)
+            format!("OptionalVec{elem_name}")
         }
         AlgebraicTypeUse::Ref(r) => {
             let type_name = type_ref_name(module, *r);
-            format!("Optional{}", type_name)
+            format!("Optional{type_name}")
         }
         AlgebraicTypeUse::Option(nested_inner) => {
             // Handle nested optionals like Option<Option<String>>
             let inner_optional_name = get_optional_type_name(module, nested_inner);
-            format!("Optional{}", inner_optional_name)
+            format!("Optional{inner_optional_name}")
         }
         _ => "OptionalUnknown".to_string(),
     }
@@ -3285,11 +3195,7 @@ fn get_optional_type_name(module: &ModuleDef, inner: &AlgebraicTypeUse) -> Strin
 // Generate the content for an optional type file
 fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &str, module_name: &str) -> String {
     // Extract the inner type from the optional name
-    let inner_type_str = if optional_name.starts_with("Optional") {
-        &optional_name[8..] // Remove "Optional" prefix
-    } else {
-        optional_name
-    };
+    let inner_type_str = optional_name.strip_prefix("Optional").unwrap_or(optional_name);
 
     // Determine the C++ type for the inner value
     let cpp_inner_type = match inner_type_str {
@@ -3318,19 +3224,19 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
         _ if inner_type_str.starts_with("Optional") => {
             // Handle nested optionals like OptionalOptionalString
             let module_name_pascal = module_name.to_case(Case::Pascal);
-            format!("F{}{}", module_name_pascal, inner_type_str)
+            format!("F{module_name_pascal}{inner_type_str}")
         }
         _ if inner_type_str.starts_with("Vec") => {
             // Handle OptionalVecXxx -> should use TArray<FModuleOptionalXxx>
             let elem_type_str = &inner_type_str[3..]; // Remove "Vec" prefix
             let module_name_pascal = module_name.to_case(Case::Pascal);
-            format!("TArray<F{}Optional{}>", module_name_pascal, elem_type_str)
+            format!("TArray<F{module_name_pascal}Optional{elem_type_str}>")
         }
         _ if inner_type_str.starts_with("OptionalVec") => {
             // Handle specific optional array types like OptionalVecI32, OptionalVecString, etc.
             let elem_type_str = &inner_type_str[11..]; // Remove "OptionalVec" prefix
             let cpp_elem_type = get_cpp_type_for_array_element(elem_type_str, module, module_name);
-            format!("TArray<{}>", cpp_elem_type)
+            format!("TArray<{cpp_elem_type}>")
         }
         _ => {
             // For custom types, check if it's an enum or struct
@@ -3349,9 +3255,9 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
             });
 
             if is_enum {
-                format!("E{}Type", inner_type_str)
+                format!("E{inner_type_str}Type")
             } else {
-                format!("F{}Type", inner_type_str)
+                format!("F{inner_type_str}Type")
             }
         }
     };
@@ -3374,8 +3280,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
             let elem_type_str = &inner_type_str[3..]; // Remove "Vec" prefix
             let module_name_pascal = module_name.to_case(Case::Pascal);
             extra_includes.push(format!(
-                "ModuleBindings/Optionals/{}Optional{}.g.h",
-                module_name_pascal, elem_type_str
+                "ModuleBindings/Optionals/{module_name_pascal}Optional{elem_type_str}.g.h"
             ));
         }
         _ if inner_type_str.starts_with("OptionalVec") => {
@@ -3392,8 +3297,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
                     // Handle nested optional includes like Int32 from OptionalInt32
                     let module_name_pascal = module_name.to_case(Case::Pascal);
                     extra_includes.push(format!(
-                        "ModuleBindings/Optionals/{}OptionalInt32.g.h",
-                        module_name_pascal
+                        "ModuleBindings/Optionals/{module_name_pascal}OptionalInt32.g.h"
                     ));
                 }
                 _ if !elem_type_str.starts_with("Bool")
@@ -3403,7 +3307,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
                     && elem_type_str != "String" =>
                 {
                     // Custom type, need its header
-                    extra_includes.push(format!("ModuleBindings/Types/{}Type.g.h", elem_type_str));
+                    extra_includes.push(format!("ModuleBindings/Types/{elem_type_str}Type.g.h"));
                 }
                 _ => {} // Primitive types don't need extra includes
             }
@@ -3412,25 +3316,24 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
             // Nested optional, need its header
             let module_name_pascal = module_name.to_case(Case::Pascal);
             extra_includes.push(format!(
-                "ModuleBindings/Optionals/{}{}.g.h",
-                module_name_pascal, inner_type_str
+                "ModuleBindings/Optionals/{module_name_pascal}{inner_type_str}.g.h"
             ));
         }
         _ if !inner_type_str.starts_with("Int") && !inner_type_str.starts_with("UInt") => {
             // Custom type, need its header
-            extra_includes.push(format!("ModuleBindings/Types/{}Type.g.h", inner_type_str));
+            extra_includes.push(format!("ModuleBindings/Types/{inner_type_str}Type.g.h"));
         }
         _ => {}
     }
 
     let extra_includes_refs: Vec<&str> = extra_includes.iter().map(|s| s.as_str()).collect();
     let module_name_pascal = module_name.to_case(Case::Pascal);
-    let struct_name = format!("F{}{}", module_name_pascal, optional_name);
-    let header_name = format!("{}{}", module_name_pascal, optional_name);
+    let struct_name = format!("F{module_name_pascal}{optional_name}");
+    let header_name = format!("{module_name_pascal}{optional_name}");
     let mut output = UnrealCppAutogen::new(&extra_includes_refs, &header_name, false);
 
     writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(output, "struct {} {}", api_macro, struct_name);
+    writeln!(output, "struct {api_macro} {struct_name}");
     writeln!(output, "{{");
     output.indent(1);
     writeln!(output, "GENERATED_BODY()");
@@ -3472,17 +3375,16 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
     } else {
         writeln!(
             output,
-            "// NOTE: {} field not exposed to Blueprint due to non-blueprintable elements",
-            cpp_inner_type
+            "// NOTE: {cpp_inner_type} field not exposed to Blueprint due to non-blueprintable elements"
         );
     }
-    writeln!(output, "{} Value;", cpp_inner_type);
+    writeln!(output, "{cpp_inner_type} Value;");
     writeln!(output);
 
     // Constructors
-    writeln!(output, "{}() = default;", struct_name);
+    writeln!(output, "{struct_name}() = default;");
     writeln!(output);
-    writeln!(output, "explicit {}(const {}& InValue)", struct_name, cpp_inner_type);
+    writeln!(output, "explicit {struct_name}(const {cpp_inner_type}& InValue)");
     writeln!(output, "    : bHasValue(true), Value(InValue) {{}}");
     writeln!(output);
 
@@ -3492,11 +3394,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
     writeln!(output);
 
     // Operators
-    writeln!(
-        output,
-        "FORCEINLINE bool operator==(const {}& Other) const",
-        struct_name
-    );
+    writeln!(output, "FORCEINLINE bool operator==(const {struct_name}& Other) const");
     writeln!(output, "{{");
     output.indent(1);
     writeln!(output, "if (bHasValue != Other.bHasValue) return false;");
@@ -3505,11 +3403,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
     writeln!(output, "}}");
     writeln!(output);
 
-    writeln!(
-        output,
-        "FORCEINLINE bool operator!=(const {}& Other) const",
-        struct_name
-    );
+    writeln!(output, "FORCEINLINE bool operator!=(const {struct_name}& Other) const");
     writeln!(output, "{{");
     output.indent(1);
     writeln!(output, "return !(*this == Other);");
@@ -3522,16 +3416,12 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
 
     // Add GetTypeHash implementation for optional types
     writeln!(output, "/**");
-    writeln!(output, " * Custom hash function for {}.", struct_name);
+    writeln!(output, " * Custom hash function for {struct_name}.");
     writeln!(output, " * Hashes the HasValue flag and the Value if present.");
-    writeln!(output, " * @param Optional The {} instance to hash.", struct_name);
+    writeln!(output, " * @param Optional The {struct_name} instance to hash.");
     writeln!(output, " * @return The combined hash value.");
     writeln!(output, " */");
-    writeln!(
-        output,
-        "FORCEINLINE uint32 GetTypeHash(const {}& Optional)",
-        struct_name
-    );
+    writeln!(output, "FORCEINLINE uint32 GetTypeHash(const {struct_name}& Optional)");
     writeln!(output, "{{");
     output.indent(1);
     writeln!(output, "uint32 Hash = GetTypeHash(Optional.bHasValue);");
@@ -3550,15 +3440,11 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
     writeln!(output, "namespace UE::SpacetimeDB");
     writeln!(output, "{{");
 
-    writeln!(output, "    UE_SPACETIMEDB_ENABLE_TARRAY({});", struct_name);
+    writeln!(output, "    UE_SPACETIMEDB_ENABLE_TARRAY({struct_name});");
 
     writeln!(output);
 
-    writeln!(
-        output,
-        "    UE_SPACETIMEDB_OPTIONAL({}, bHasValue, Value);",
-        struct_name
-    );
+    writeln!(output, "    UE_SPACETIMEDB_OPTIONAL({struct_name}, bHasValue, Value);");
     writeln!(output, "}}");
 
     output.into_inner()
@@ -3582,11 +3468,11 @@ fn autogen_cpp_struct(
     slices.sort(); // make output deterministic
 
     // --------- start writing file ---------
-    let type_name = format!("{}Type", name);
+    let type_name = format!("{name}Type");
     let mut output = UnrealCppAutogen::new(&slices, &type_name, false);
 
     writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(output, "struct {} F{}Type", api_macro, name);
+    writeln!(output, "struct {api_macro} F{name}Type");
     writeln!(output, "{{");
     output.indent(1);
     writeln!(output, "GENERATED_BODY()");
@@ -3595,7 +3481,7 @@ fn autogen_cpp_struct(
     for (orig_name, ty) in product_type.into_iter() {
         let field_name = orig_name.deref().to_case(Case::Pascal);
         let ty_str = cpp_ty_fmt_with_module(module, ty, module_name).to_string();
-        let field_decl = format!("{} {}", ty_str, field_name);
+        let field_decl = format!("{ty_str} {field_name}");
 
         // Check if the type is blueprintable
         if is_blueprintable(module, ty) {
@@ -3607,16 +3493,15 @@ fn autogen_cpp_struct(
             // Add comment explaining why the field isn't exposed as UPROPERTY
             writeln!(
                 output,
-                "// NOTE: {} field not exposed to Blueprint due to non-blueprintable elements",
-                ty_str
+                "// NOTE: {ty_str} field not exposed to Blueprint due to non-blueprintable elements"
             );
         }
-        writeln!(output, "{};", field_decl);
+        writeln!(output, "{field_decl};");
         writeln!(output);
     }
 
     // Generate operator== and operator!=
-    writeln!(output, "FORCEINLINE bool operator==(const F{}Type& Other) const", name);
+    writeln!(output, "FORCEINLINE bool operator==(const F{name}Type& Other) const");
     writeln!(output, "{{");
     output.indent(1);
 
@@ -3626,7 +3511,7 @@ fn autogen_cpp_struct(
         let field_name = orig_name.deref().to_case(Case::Pascal);
 
         // For value types, direct comparison
-        comparisons.push(format!("{} == Other.{}", field_name, field_name));
+        comparisons.push(format!("{field_name} == Other.{field_name}"));
     }
 
     if comparisons.is_empty() {
@@ -3639,7 +3524,7 @@ fn autogen_cpp_struct(
     writeln!(output, "}}");
     writeln!(output);
 
-    writeln!(output, "FORCEINLINE bool operator!=(const F{}Type& Other) const", name);
+    writeln!(output, "FORCEINLINE bool operator!=(const F{name}Type& Other) const");
     writeln!(output, "{{");
     output.indent(1);
     writeln!(output, "return !(*this == Other);");
@@ -3652,19 +3537,15 @@ fn autogen_cpp_struct(
 
     // Add GetTypeHash implementation
     writeln!(output, "/**");
-    writeln!(output, " * Custom hash function for F{}Type.", name);
+    writeln!(output, " * Custom hash function for F{name}Type.");
     writeln!(
         output,
         " * Combines the hashes of all fields that are compared in operator==."
     );
-    writeln!(output, " * @param {}Type The F{}Type instance to hash.", name, name);
+    writeln!(output, " * @param {name}Type The F{name}Type instance to hash.");
     writeln!(output, " * @return The combined hash value.");
     writeln!(output, " */");
-    writeln!(
-        output,
-        "FORCEINLINE uint32 GetTypeHash(const F{}Type& {}Type)",
-        name, name
-    );
+    writeln!(output, "FORCEINLINE uint32 GetTypeHash(const F{name}Type& {name}Type)");
     writeln!(output, "{{");
     output.indent(1);
 
@@ -3684,8 +3565,7 @@ fn autogen_cpp_struct(
         for field_name in field_names.iter().skip(1) {
             writeln!(
                 output,
-                "Hash = HashCombine(Hash, GetTypeHash({}Type.{}));",
-                name, field_name
+                "Hash = HashCombine(Hash, GetTypeHash({name}Type.{field_name}));"
             );
         }
 
@@ -3700,12 +3580,12 @@ fn autogen_cpp_struct(
     writeln!(output, "namespace UE::SpacetimeDB");
     writeln!(output, "{{");
 
-    writeln!(output, "    UE_SPACETIMEDB_ENABLE_TARRAY(F{}Type);", name);
+    writeln!(output, "    UE_SPACETIMEDB_ENABLE_TARRAY(F{name}Type);");
 
     writeln!(output);
 
     if field_names.is_empty() {
-        writeln!(output, "    UE_SPACETIMEDB_STRUCT_EMPTY(F{}Type);", name);
+        writeln!(output, "    UE_SPACETIMEDB_STRUCT_EMPTY(F{name}Type);");
     } else {
         writeln!(
             output,
@@ -3721,15 +3601,11 @@ fn autogen_cpp_struct(
 }
 
 fn is_primitive_or_fstring(ty: &AlgebraicTypeUse) -> bool {
-    match ty {
-        AlgebraicTypeUse::Primitive(_) => true,
-        AlgebraicTypeUse::String => true,
-        _ => false,
-    }
+    matches!(ty, AlgebraicTypeUse::Primitive(_) | AlgebraicTypeUse::String)
 }
 
 // Helper function to check if a type should be passed by value (only true primitives)
-fn should_pass_by_value_in_delegate(module: &ModuleDef, ty: &AlgebraicTypeUse) -> bool {
+fn should_pass_by_value_in_delegate(_module: &ModuleDef, ty: &AlgebraicTypeUse) -> bool {
     match ty {
         // Only basic C++ primitives should be passed by value in delegates
         AlgebraicTypeUse::Primitive(p) => match p {
@@ -3757,7 +3633,7 @@ fn should_pass_by_value_in_delegate(module: &ModuleDef, ty: &AlgebraicTypeUse) -
         // Custom structs/enums use const references
         AlgebraicTypeUse::Ref(_) => false,
         AlgebraicTypeUse::Array(_) => false, // Arrays use const references
-        AlgebraicTypeUse::Option(inner) => should_pass_by_value_in_delegate(module, inner),
+        AlgebraicTypeUse::Option(inner) => should_pass_by_value_in_delegate(_module, inner),
         AlgebraicTypeUse::ScheduleAt => false,
         AlgebraicTypeUse::Never => false,
     }
@@ -3846,10 +3722,10 @@ fn is_type_blueprintable_for_delegates(module: &ModuleDef, ty: &AlgebraicTypeUse
 fn autogen_cpp_enum(name: &str, enum_type: &PlainEnumTypeDef) -> String {
     // Changed name to &str
 
-    let type_name = format!("{}Type", name);
+    let type_name = format!("{name}Type");
     let mut output = UnrealCppAutogen::new(&[], &type_name, false);
     writeln!(output, "UENUM(BlueprintType)");
-    writeln!(output, "enum class E{}Type : uint8", name);
+    writeln!(output, "enum class E{name}Type : uint8");
     writeln!(output, "{{");
     output.indent(1);
 
@@ -3865,7 +3741,7 @@ fn autogen_cpp_enum(name: &str, enum_type: &PlainEnumTypeDef) -> String {
     writeln!(output, "namespace UE::SpacetimeDB");
     writeln!(output, "{{");
 
-    writeln!(output, "    UE_SPACETIMEDB_ENABLE_TARRAY(E{}Type);", name);
+    writeln!(output, "    UE_SPACETIMEDB_ENABLE_TARRAY(E{name}Type);");
 
     writeln!(output, "}}");
 
@@ -3896,13 +3772,13 @@ fn autogen_cpp_sum(
     // /* ------------------------------------------------------------------ */
     // /* 2. emit boiler-plate + forward decls ----------------------------- */
     // /* ------------------------------------------------------------------ */
-    let type_name = format!("{}Type", name);
+    let type_name = format!("{name}Type");
     let mut output = UnrealCppAutogen::new(&include_slices, &type_name, false);
 
     /* ------------------------------------------------------------------ */
     /* 3. generate the tag enum ----------------------------------------- */
     /* ------------------------------------------------------------------ */
-    writeln!(output, "UENUM(BlueprintType)\nenum class E{}Tag : uint8\n{{", name);
+    writeln!(output, "UENUM(BlueprintType)\nenum class E{name}Tag : uint8\n{{");
 
     let mut variant_type = HashSet::<String>::new();
 
@@ -3919,11 +3795,11 @@ fn autogen_cpp_sum(
     /* 4. generate the UStruct ----------------------------------- */
     /* ------------------------------------------------------------------ */
 
-    writeln!(output, "USTRUCT(BlueprintType)\nstruct {} F{}Type\n{{", api_macro, name);
+    writeln!(output, "USTRUCT(BlueprintType)\nstruct {api_macro} F{name}Type\n{{");
     writeln!(output, "    GENERATED_BODY()\n");
 
     // default ctor
-    writeln!(output, "public:\n    F{}Type() = default;\n", name);
+    writeln!(output, "public:\n    F{name}Type() = default;\n");
 
     // data + tag
     writeln!(
@@ -3938,23 +3814,22 @@ fn autogen_cpp_sum(
 
     writeln!(output);
 
-    writeln!(output, "    UPROPERTY(BlueprintReadOnly)\n    E{}Tag Tag;\n", name);
+    writeln!(output, "    UPROPERTY(BlueprintReadOnly)\n    E{name}Tag Tag;\n");
 
     /* 4a. Static factories per variant -------------------------------- */
     for (variant_name, variant_type) in &sum_type.variants {
         let pas = variant_name.to_case(Case::Pascal);
         let variant_cpp_type = cpp_ty_fmt_with_module(module, variant_type, module_name).to_string();
-        let param_type = format!("const {}& ", variant_cpp_type);
+        let param_type = format!("const {variant_cpp_type}& ");
 
-        writeln!(output, "    static F{}Type {}({}Value)\n    {{", name, pas, param_type);
+        writeln!(output, "    static F{name}Type {pas}({param_type}Value)\n    {{");
 
-        writeln!(output, "        F{}Type Obj;", name);
-        writeln!(output, "        Obj.Tag = E{}Tag::{};", name, pas);
+        writeln!(output, "        F{name}Type Obj;");
+        writeln!(output, "        Obj.Tag = E{name}Tag::{pas};");
 
         writeln!(
             output,
-            "        Obj.MessageData.Set<{}>(Value);\n        return Obj;\n    }}\n",
-            variant_cpp_type
+            "        Obj.MessageData.Set<{variant_cpp_type}>(Value);\n        return Obj;\n    }}\n"
         );
     }
 
@@ -3966,21 +3841,18 @@ fn autogen_cpp_sum(
         // Is*
         writeln!(
             output,
-            "    FORCEINLINE bool Is{}() const {{ return Tag == E{}Tag::{}; }}",
-            pas, name, pas
+            "    FORCEINLINE bool Is{pas}() const {{ return Tag == E{name}Tag::{pas}; }}"
         );
 
         // GetAs*
         writeln!(
             output,
-            "\n    FORCEINLINE {} GetAs{}() const\n    {{",
-            variant_cpp_type, pas
+            "\n    FORCEINLINE {variant_cpp_type} GetAs{pas}() const\n    {{"
         );
 
         writeln!(
             output,
-            "        ensureMsgf(Is{}(), TEXT(\"MessageData does not hold {}!\"));\n        return MessageData.Get<{}>();\n    }}\n",
-            pas, pas, variant_cpp_type
+            "        ensureMsgf(Is{pas}(), TEXT(\"MessageData does not hold {pas}!\"));\n        return MessageData.Get<{variant_cpp_type}>();\n    }}\n"
         );
     }
 
@@ -3988,8 +3860,7 @@ fn autogen_cpp_sum(
     writeln!(output, "    // Inline equality operators");
     writeln!(
         output,
-        "    FORCEINLINE bool operator==(const F{}Type& Other) const",
-        name
+        "    FORCEINLINE bool operator==(const F{name}Type& Other) const"
     );
     writeln!(output, "    {{");
     writeln!(output, "        if (Tag != Other.Tag) return false;");
@@ -4001,11 +3872,10 @@ fn autogen_cpp_sum(
     for (variant_name, _variant_type) in &sum_type.variants {
         let pas = variant_name.to_case(Case::Pascal);
 
-        writeln!(output, "            case E{}Tag::{}:", name, pas);
+        writeln!(output, "            case E{name}Tag::{pas}:");
         writeln!(
             output,
-            "                return GetAs{}() == Other.GetAs{}();",
-            variant_name, variant_name
+            "                return GetAs{variant_name}() == Other.GetAs{variant_name}();"
         );
     }
 
@@ -4017,8 +3887,7 @@ fn autogen_cpp_sum(
 
     writeln!(
         output,
-        "    FORCEINLINE bool operator!=(const F{}Type& Other) const",
-        name
+        "    FORCEINLINE bool operator!=(const F{name}Type& Other) const"
     );
     writeln!(output, "    {{");
     writeln!(output, "        return !(*this == Other);");
@@ -4028,23 +3897,22 @@ fn autogen_cpp_sum(
 
     // Add GetTypeHash implementation
     writeln!(output, "/**");
-    writeln!(output, " * Custom hash function for F{}Type.", name);
+    writeln!(output, " * Custom hash function for F{name}Type.");
     writeln!(
         output,
         " * Combines the hashes of all fields that are compared in operator==."
     );
-    writeln!(output, " * @param {}Type The F{}Type instance to hash.", name, name);
+    writeln!(output, " * @param {name}Type The F{name}Type instance to hash.");
     writeln!(output, " * @return The combined hash value.");
     writeln!(output, " */");
-    writeln!(output, "FORCEINLINE uint32 GetTypeHash(const F{}Type& {})", name, name);
+    writeln!(output, "FORCEINLINE uint32 GetTypeHash(const F{name}Type& {name})");
     writeln!(output, "{{");
     writeln!(
         output,
-        "    const uint32 TagHash = GetTypeHash(static_cast<uint8>({}.Tag));",
-        name
+        "    const uint32 TagHash = GetTypeHash(static_cast<uint8>({name}.Tag));"
     );
 
-    writeln!(output, "    switch ({}.Tag)", name);
+    writeln!(output, "    switch ({name}.Tag)");
     writeln!(output, "    {{");
 
     output.indent(1);
@@ -4060,8 +3928,7 @@ fn autogen_cpp_sum(
 
         writeln!(
             output,
-            "    case E{}Tag::{}: return HashCombine(TagHash, {}({}.GetAs{}()));",
-            name, pascal_variant, hash_fn_prefix, name, pascal_variant
+            "    case E{name}Tag::{pascal_variant}: return HashCombine(TagHash, {hash_fn_prefix}({name}.GetAs{pascal_variant}()));"
         );
     }
 
@@ -4076,13 +3943,13 @@ fn autogen_cpp_sum(
     writeln!(output, "namespace UE::SpacetimeDB");
     writeln!(output, "{{");
 
-    writeln!(output, "    UE_SPACETIMEDB_ENABLE_TARRAY(F{}Type);", name);
+    writeln!(output, "    UE_SPACETIMEDB_ENABLE_TARRAY(F{name}Type);");
 
     writeln!(output);
 
     writeln!(output, "    UE_SPACETIMEDB_TAGGED_ENUM(");
-    writeln!(output, "        F{}Type,", name);
-    writeln!(output, "        E{}Tag,", name);
+    writeln!(output, "        F{name}Type,");
+    writeln!(output, "        E{name}Tag,");
     writeln!(output, "        MessageData,");
 
     // Generate the variant list
@@ -4092,9 +3959,9 @@ fn autogen_cpp_sum(
         let variant_cpp_type = cpp_ty_fmt_with_module(module, variant_type, module_name).to_string();
 
         if idx < variant_count - 1 {
-            writeln!(output, "        {}, {},", variant_pascal, variant_cpp_type);
+            writeln!(output, "        {variant_pascal}, {variant_cpp_type},");
         } else {
-            writeln!(output, "        {}, {}", variant_pascal, variant_cpp_type);
+            writeln!(output, "        {variant_pascal}, {variant_cpp_type}");
         }
     }
 
@@ -4105,8 +3972,7 @@ fn autogen_cpp_sum(
     // Blueprint Function Library support for BPs
     writeln!(
         output,
-        "UCLASS()\nclass {} U{}BpLib : public UBlueprintFunctionLibrary\n{{",
-        api_macro, name
+        "UCLASS()\nclass {api_macro} U{name}BpLib : public UBlueprintFunctionLibrary\n{{"
     );
     writeln!(output, "    GENERATED_BODY()\n");
 
@@ -4120,37 +3986,32 @@ fn autogen_cpp_sum(
         if is_blueprintable(module, variant_type) {
             writeln!(
                 output,
-                "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{}\")",
-                name
+                "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{name}\")"
             );
         } else {
             writeln!(
                 output,
-                "    // NOTE: Not exposed to Blueprint because {} types are not Blueprint-compatible",
-                variant_cpp_type
+                "    // NOTE: Not exposed to Blueprint because {variant_cpp_type} types are not Blueprint-compatible"
             );
         }
 
         writeln!(
             output,
-            "    static F{}Type {}(const {}& InValue)",
-            name, pas, variant_cpp_type
+            "    static F{name}Type {pas}(const {variant_cpp_type}& InValue)"
         );
         writeln!(output, "    {{");
-        writeln!(output, "        return F{}Type::{}(InValue);", name, pas);
+        writeln!(output, "        return F{name}Type::{pas}(InValue);");
         writeln!(output, "    }}");
         writeln!(output);
 
         // Is*
         writeln!(
             output,
-            "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{}\")",
-            name
+            "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{name}\")"
         );
         writeln!(
             output,
-            "    static bool Is{}(const F{}Type& InValue) {{ return InValue.Is{}(); }}",
-            pas, name, pas
+            "    static bool Is{pas}(const F{name}Type& InValue) {{ return InValue.Is{pas}(); }}"
         );
 
         writeln!(output);
@@ -4159,23 +4020,20 @@ fn autogen_cpp_sum(
         if is_blueprintable(module, variant_type) {
             writeln!(
                 output,
-                "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{}\")",
-                name
+                "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|{name}\")"
             );
         } else {
             writeln!(
                 output,
-                "    // NOTE: Not exposed to Blueprint because {} types are not Blueprint-compatible",
-                variant_cpp_type
+                "    // NOTE: Not exposed to Blueprint because {variant_cpp_type} types are not Blueprint-compatible"
             );
         }
         writeln!(
             output,
-            "    static {} GetAs{}(const F{}Type& InValue)\n    {{",
-            variant_cpp_type, pas, name
+            "    static {variant_cpp_type} GetAs{pas}(const F{name}Type& InValue)\n    {{"
         );
 
-        writeln!(output, "        return InValue.GetAs{}();\n    }}\n", pas);
+        writeln!(output, "        return InValue.GetAs{pas}();\n    }}\n");
     }
 
     writeln!(output, "}};");

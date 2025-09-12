@@ -68,39 +68,23 @@ fn make_test(test_name: &str) -> Test {
     assert_existing_file("Unreal Editor executable", &editor_exe);
 
     let client_root = normalize_path(PathBuf::from(CLIENT_ROOT));
-    let uproject_path = normalize_path(PathBuf::from(format!("{}/{}", client_root, UPROJECT_FILE)));
+    let uproject_path = normalize_path(PathBuf::from(format!("{client_root}/{UPROJECT_FILE}")));
     assert_existing_file("uproject", &uproject_path);
 
     // Headless compile (no cook)
     let compile_command = if cfg!(target_os = "windows") {
         format!(
-            "\"{}\" {}Editor Win64 Development \"{}\" -waitmutex -skipbuildengine",
-            build_script, UNREAL_MODULE, uproject_path
+            "\"{build_script}\" {UNREAL_MODULE}Editor Win64 Development \"{uproject_path}\" -waitmutex -skipbuildengine"
         )
     } else {
-        format!(
-            "\"{}\" {}Editor Linux Development \"{}\" -skipbuildengine",
-            build_script, UNREAL_MODULE, uproject_path
-        )
+        format!("\"{build_script}\" {UNREAL_MODULE}Editor Linux Development \"{uproject_path}\" -skipbuildengine")
     };
 
     // Run automation test
-    let run_command = format!(
-        "\"{}\" \"{}\" -NullRHI -Unattended -NoSound -nop4 -NoSplash -ExecCmds=\"Automation RunTests {}; Quit\"",
-        editor_exe,
-        uproject_path,
-        format!("SpacetimeDB.TestClient.{test_name}")
-    );
 
-    println!("------------------");
-    println!("with_name: {}", test_name);
-    println!("with_module: {}", MODULE);
-    println!("with_client: {}", client_root);
-    println!("with_language: {}", LANGUAGE);
-    println!("with_unreal_module: {}", UNREAL_MODULE);
-    println!("with_compile_command: {}", compile_command);
-    println!("with_run_command: {}", run_command);
-    println!("------------------");
+    let run_command = format!(
+        "\"{editor_exe}\" \"{uproject_path}\" -NullRHI -Unattended -NoSound -nop4 -NoSplash -ExecCmds=\"Automation RunTests SpacetimeDB.TestClient.{test_name}; Quit\""
+    );
 
     Test::builder()
         .with_name(test_name)

@@ -122,7 +122,7 @@ impl Test {
         let wasm_file = compile_module(&self.module_name);
 
         generate_bindings(
-            &paths,
+            paths,
             &self.generate_language,
             &wasm_file,
             &self.client_project,
@@ -467,11 +467,12 @@ impl TestBuilder {
 
         // For non-Unreal: require generate_subdir as before.
         // For Unreal: ignore generate_subdir entirely, but still populate with a harmless placeholder.
-        let generate_subdir = self.generate_subdir.expect(if language_is_unreal(&generate_language) {
+        let msg = if language_is_unreal(&generate_language) {
             "Supply an Unreal module name using TestBuilder::with_unreal_module"
         } else {
             "Supply a module_bindings subdirectory using TestBuilder::with_bindings_dir"
-        });
+        };
+        let generate_subdir = self.generate_subdir.expect(msg);
 
         Test {
             name: self.name.expect("Supply a test name using TestBuilder::with_name"),
