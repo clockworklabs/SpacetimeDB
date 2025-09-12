@@ -1354,7 +1354,7 @@ impl WasmInstanceEnv {
         // as we want to possibly trap, but not to return an error code.
         Self::with_span(caller, AbiCall::Identity, |caller| {
             let (mem, env) = Self::mem_env(caller);
-            let identity = env.instance_env.replica_ctx.database.database_identity;
+            let identity = env.instance_env.database_identity();
             // We're implicitly casting `out_ptr` to `WasmPtr<Identity>` here.
             // (Both types are actually `u32`.)
             // This works because `Identity::write_to` does not require an aligned pointer,
