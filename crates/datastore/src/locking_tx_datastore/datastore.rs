@@ -3394,7 +3394,31 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         // insert a row in tx_state when before adding column
         tx.insert_product_value(table_id, &initial_row).unwrap();
+        // add column and then rollback
+        let rollback_table_id =
+            datastore.add_columns_to_table_mut_tx(&mut tx, table_id, new_columns.clone(), defaults.clone())?;
+        let _ = tx.rollback();
+
+        let old_rows = [
+            product![5u64, AlgebraicValue::sum(0, 1u16.into())],
+            product![6u64, AlgebraicValue::sum(0, 1u16.into())],
+        ];
+
+        let mut tx = begin_mut_tx(&datastore);
+        // check rollback was successful
+        let rows = tx
+            .table_scan(table_id)
+            .unwrap()
+            .map(|row| row.to_product_value())
+            .collect::<Vec<_>>();
+        assert_eq!(rows, old_rows, "Rows shouldn't be changed if rolledback");
+        let table = tx.table(rollback_table_id);
+        assert!(table.is_none(), "new table shouldn't be created if rolledback");
+
+        // Add colum and actually commit this time
+        tx.insert_product_value(table_id, &initial_row).unwrap();
         let new_table_id = datastore.add_columns_to_table_mut_tx(&mut tx, table_id, new_columns.clone(), defaults)?;
+
         let tx_data = commit(&datastore, tx)?;
 
         assert_ne!(
@@ -3408,20 +3432,15 @@ mod tests {
             .find(|(id, _)| **id == table_id)
             .expect("Expected delete log for original table");
 
-        let deleted_rows = [
-            product![5u64, AlgebraicValue::sum(0, 1u16.into())],
-            product![6u64, AlgebraicValue::sum(0, 1u16.into())],
-        ];
-
         assert_eq!(
-            &**deletes, &deleted_rows,
+            &**deletes, &old_rows,
             "Unexpected delete entries after altering the table"
         );
 
         let inserted_rows = [
             product![5u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
             product![6u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
-            product![7u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![8u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
         ];
 
         let (_, inserts) = tx_data
@@ -3434,7 +3453,7 @@ mod tests {
             "Unexpected insert entries after altering the table"
         );
 
-        // Insert Rows into Altered Table
+        // Insert Rows into New Table
         let mut tx = begin_mut_tx(&datastore);
 
         let new_row = product![0u64, AlgebraicValue::sum(0, 1u16.into()), 0u8];
