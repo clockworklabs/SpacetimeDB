@@ -36,7 +36,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use v8::{
     Context, ContextOptions, ContextScope, Function, FunctionCallbackArguments, HandleScope, Isolate, IsolateHandle,
-    Local, Object, OwnedIsolate, Value,
+    Local, Object, OwnedIsolate, ReturnValue, Value,
 };
 
 mod de;
@@ -847,16 +847,16 @@ type FnRet<'s> = ExcResult<Local<'s, Value>>;
 fn register_host_fun(
     scope: &mut HandleScope<'_>,
     name: &str,
-    fun: impl for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>) -> FnRet<'s>,
+    fun: impl Copy + for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>) -> FnRet<'s>,
 ) {
     let name = v8_interned_string(scope, name).into();
-    let fun = Function::new(scope, &adapt_fun(fun)).unwrap().into();
+    let fun = Function::new(scope, adapt_fun(fun)).unwrap().into();
     global(scope).set(scope, name, fun).unwrap();
 }
 
 fn adapt_fun(
-    fun: impl for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>) -> FnRet<'s>,
-) -> impl for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>, v8::ReturnValue<Value>) {
+    fun: impl Copy + for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>) -> FnRet<'s>,
+) -> impl Copy + for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>, ReturnValue<Value>) {
     move |scope, args, mut rv| {
         if let Ok(value) = fun(scope, args) {
             rv.set(value);
