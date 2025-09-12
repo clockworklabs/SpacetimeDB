@@ -15,15 +15,15 @@
 // import type Typespace from '../autogen/typespace_type';
 // import type { ColumnBuilder } from './type_builders';
 // import t from "./type_builders";
-import { AlgebraicType, t } from "..";
-import type RawConstraintDefV9 from "../autogen/raw_constraint_def_v_9_type";
-import RawIndexAlgorithm from "../autogen/raw_index_algorithm_type";
-import type RawIndexDefV9 from "../autogen/raw_index_def_v_9_type";
-import type RawModuleDefV9 from "../autogen/raw_module_def_v_9_type";
-import type RawSequenceDefV9 from "../autogen/raw_sequence_def_v_9_type";
-import type RawTableDefV9 from "../autogen/raw_table_def_v_9_type";
-import type Typespace from "../autogen/typespace_type";
-import type { ColumnBuilder, Infer, TypeBuilder } from "./type_builders";
+import { AlgebraicType, t } from '..';
+import type RawConstraintDefV9 from '../autogen/raw_constraint_def_v_9_type';
+import RawIndexAlgorithm from '../autogen/raw_index_algorithm_type';
+import type RawIndexDefV9 from '../autogen/raw_index_def_v_9_type';
+import type RawModuleDefV9 from '../autogen/raw_module_def_v_9_type';
+import type RawSequenceDefV9 from '../autogen/raw_sequence_def_v_9_type';
+import type RawTableDefV9 from '../autogen/raw_table_def_v_9_type';
+import type Typespace from '../autogen/typespace_type';
+import type { ColumnBuilder, Infer, TypeBuilder } from './type_builders';
 
 /*****************************************************************
  * the run‑time catalogue that we are filling
@@ -69,7 +69,10 @@ type TableHandle<TableName extends string, Row> = {
 
 type TableOpts<
   TableName extends string,
-  Row extends Record<string, TypeBuilder<any, any> | ColumnBuilder<any, any, any>>,
+  Row extends Record<
+    string,
+    TypeBuilder<any, any> | ColumnBuilder<any, any, any>
+  >,
   Idx extends PendingIndex<keyof Row & string>[] | undefined = undefined,
 > = {
   name: TableName;
@@ -86,9 +89,9 @@ type PendingIndex<AllowedCol extends string> = {
   name?: string;
   accessor_name?: string;
   algorithm:
-  | { tag: 'BTree'; value: { columns: readonly AllowedCol[] } }
-  | { tag: 'Hash'; value: { columns: readonly AllowedCol[] } }
-  | { tag: 'Direct'; value: { column: AllowedCol } };
+    | { tag: 'BTree'; value: { columns: readonly AllowedCol[] } }
+    | { tag: 'Hash'; value: { columns: readonly AllowedCol[] } }
+    | { tag: 'Direct'; value: { column: AllowedCol } };
 };
 
 /**
@@ -109,9 +112,15 @@ type PendingIndex<AllowedCol extends string> = {
  */
 export function table<
   const TableName extends string,
-  Row extends Record<string, TypeBuilder<any, any> | ColumnBuilder<any, any, any>>,
+  Row extends Record<
+    string,
+    TypeBuilder<any, any> | ColumnBuilder<any, any, any>
+  >,
   Idx extends PendingIndex<keyof Row & string>[] | undefined = undefined,
->(opts: TableOpts<TableName, Row, Idx>, row: Row): TableHandle<TableName, Infer<Row>> {
+>(
+  opts: TableOpts<TableName, Row, Idx>,
+  row: Row
+): TableHandle<TableName, Infer<Row>> {
   const {
     name,
     public: isPublic = false,
@@ -152,15 +161,23 @@ export function table<
       const id = colIds.get(name)!;
       indexes.push(
         algo === 'Direct'
-          ? { name: "TODO", accessorName: "TODO", algorithm: RawIndexAlgorithm.Direct(id) }
-          : { name: "TODO", accessorName: "TODO", algorithm: { tag: algo, value: [id] } }
+          ? {
+              name: 'TODO',
+              accessorName: 'TODO',
+              algorithm: RawIndexAlgorithm.Direct(id),
+            }
+          : {
+              name: 'TODO',
+              accessorName: 'TODO',
+              algorithm: { tag: algo, value: [id] },
+            }
       );
     }
 
     /* uniqueness */
     if (meta.unique) {
       constraints.push({
-        name: "TODO",
+        name: 'TODO',
         data: { tag: 'Unique', value: { columns: [colIds.get(name)!] } },
       });
     }
@@ -168,7 +185,7 @@ export function table<
     /* auto increment */
     if (meta.autoInc) {
       sequences.push({
-        name: "TODO",
+        name: 'TODO',
         start: 0n, // TODO
         minValue: 0n, // TODO
         maxValue: 0n, // TODO
@@ -218,10 +235,10 @@ export function table<
     schedule:
       scheduled && scheduleAtCol !== undefined
         ? {
-          name: "TODO",
-          reducerName: scheduled,
-          scheduledAtColumn: scheduleAtCol,
-        }
+            name: 'TODO',
+            reducerName: scheduled,
+            scheduledAtColumn: scheduleAtCol,
+          }
         : undefined,
     tableType: { tag: 'User' },
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
@@ -231,15 +248,16 @@ export function table<
     elements: Object.entries(row).map(([columnName, columnBuilder]) => {
       // If it's a ColumnBuilder, use .typeBuilder.algebraicType, else use .algebraicType directly
       const algebraicType =
-        "typeBuilder" in columnBuilder
-          ? (columnBuilder as ColumnBuilder<any, any, any>).typeBuilder.algebraicType
+        'typeBuilder' in columnBuilder
+          ? (columnBuilder as ColumnBuilder<any, any, any>).typeBuilder
+              .algebraicType
           : (columnBuilder as TypeBuilder<any, any>).algebraicType;
       return { name: columnName, algebraicType };
-    })
+    }),
   });
 
   const handle: TableHandle<TableName, Infer<Row>> = {
-    tableName: name,                 // stays the literal "users" | "posts"
+    tableName: name, // stays the literal "users" | "posts"
     rowSpacetimeType: productType,
     tableDef,
     rowType: {} as Infer<Row>,
@@ -260,31 +278,20 @@ class Schema<S> {
 
 // Create interfaces for each table to enable better navigation
 type TableHandleTupleToObject<T extends readonly TableHandle<any, any>[]> =
-  T extends readonly [TableHandle<infer TN extends PropertyKey, infer R>, ...infer Rest]
+  T extends readonly [
+    TableHandle<infer TN extends PropertyKey, infer R>,
+    ...infer Rest,
+  ]
     ? Rest extends readonly TableHandle<any, any>[]
       ? { [K in TN]: R } & TableHandleTupleToObject<Rest>
       : { [K in TN]: R }
     : {};
 
-type TupleToSchema<T extends readonly TableHandle<any, any>[]> = TableHandleTupleToObject<T>;
+type TupleToSchema<T extends readonly TableHandle<any, any>[]> =
+  TableHandleTupleToObject<T>;
 
-type InferSchema<SchemaDef> = SchemaDef extends Schema<infer Tables> ? Tables : never;
-
-/**
- * Creates a schema from table definitions
- * @param handles - Array of table handles created by table() function
- * @returns ColumnBuilder representing the complete database schema
- * @example
- * ```ts
- * const s = schema(
- *   table({ name: 'users' }, userTable),
- *   table({ name: 'posts' }, postTable)
- * );
- * ```
- */
-export function schema<
-  const H extends readonly TableHandle<any, any>[]
->(...handles: H): Schema<TupleToSchema<H>>;
+type InferSchema<SchemaDef> =
+  SchemaDef extends Schema<infer Tables> ? Tables : never;
 
 /**
  * Creates a schema from table definitions
@@ -298,22 +305,39 @@ export function schema<
  * );
  * ```
  */
-export function schema<
-  const H extends readonly TableHandle<any, any>[]
->(...handles: H): Schema<TupleToSchema<H>>;
+export function schema<const H extends readonly TableHandle<any, any>[]>(
+  ...handles: H
+): Schema<TupleToSchema<H>>;
+
+/**
+ * Creates a schema from table definitions
+ * @param handles - Array of table handles created by table() function
+ * @returns ColumnBuilder representing the complete database schema
+ * @example
+ * ```ts
+ * const s = schema(
+ *   table({ name: 'users' }, userTable),
+ *   table({ name: 'posts' }, postTable)
+ * );
+ * ```
+ */
+export function schema<const H extends readonly TableHandle<any, any>[]>(
+  ...handles: H
+): Schema<TupleToSchema<H>>;
 
 /**
  * Creates a schema from table definitions (array overload)
  * @param handles - Array of table handles created by table() function
  * @returns ColumnBuilder representing the complete database schema
  */
-export function schema<
-  const H extends readonly TableHandle<any, any>[]
->(handles: H): Schema<TupleToSchema<H>>;
+export function schema<const H extends readonly TableHandle<any, any>[]>(
+  handles: H
+): Schema<TupleToSchema<H>>;
 
 export function schema(...args: any[]): Schema<any> {
-  const handles =
-    (args.length === 1 && Array.isArray(args[0]) ? args[0] : args) as TableHandle<any, any>[];
+  const handles = (
+    args.length === 1 && Array.isArray(args[0]) ? args[0] : args
+  ) as TableHandle<any, any>[];
 
   // typespace: Typespace;
   // tables: RawTableDefV9[];
@@ -326,10 +350,10 @@ export function schema(...args: any[]): Schema<any> {
   // Traverse the tables in order. For each newly encountered
   // insert the type into the typespace and increment the product
   // type reference, inserting the product type reference into the
-  // table. 
+  // table.
   let productTypeRef: AlgebraicTypeRef = 0;
   const typespace: Typespace = {
-    types: []
+    types: [],
   };
   handles.forEach(h => {
     const tableType = h.rowSpacetimeType;
@@ -350,15 +374,21 @@ export function schema(...args: any[]): Schema<any> {
 }
 
 const s = schema(
-  table({ name: 'users' }, {
-    id: t.string().primaryKey(),
-  }),
-  table({ name: 'posts' }, {
-    id: t.string().primaryKey(),
-    title: t.string(),
-    content: t.string(),
-    authorId: t.string(),
-  })
+  table(
+    { name: 'users' },
+    {
+      id: t.string().primaryKey(),
+    }
+  ),
+  table(
+    { name: 'posts' },
+    {
+      id: t.string().primaryKey(),
+      title: t.string(),
+      content: t.string(),
+      authorId: t.string(),
+    }
+  )
 );
 
 type S = InferSchema<typeof s>;
@@ -631,7 +661,6 @@ type S = InferSchema<typeof s>;
 // //   Idx extends PendingIndex<keyof Def & string>[] | undefined = undefined,
 // // >(opts: TableOpts<Name, Def, Idx>, row: Row): TableHandle<Infer<Row>, Name> {
 
-
 // type UntypedTablesTuple = TableHandle<any, any>[];
 // function schema<TablesTuple extends UntypedTablesTuple>(...tablesTuple: TablesTuple): Schema<TablesTuple> {
 //   return {
@@ -653,7 +682,6 @@ type S = InferSchema<typeof s>;
 //   readonly __row_type__: Row;
 //   readonly __row_spacetime_type__: AlgebraicType;
 // };
-
 
 // /**
 //  * Reducer context parametrized by the inferred Schema
@@ -702,7 +730,6 @@ type S = InferSchema<typeof s>;
 // }
 
 // // export type Infer<S> = S extends ColumnBuilder<infer JS, any> ? JS : never;
-
 
 // type TableNamesInSchemaDef<SchemaDef extends UntypedSchemaDef> =
 //   keyof SchemaDef & string;
