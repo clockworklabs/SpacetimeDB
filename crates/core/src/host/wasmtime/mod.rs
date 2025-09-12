@@ -38,7 +38,9 @@ pub(crate) fn epoch_ticker(mut on_tick: impl 'static + Send + FnMut() -> Option<
         let mut interval = tokio::time::interval(EPOCH_TICK_LENGTH);
         loop {
             interval.tick().await;
-            let Some(()) = on_tick() else { return; };
+            let Some(()) = on_tick() else {
+                return;
+            };
         }
     });
 }
