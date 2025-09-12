@@ -308,6 +308,7 @@ version = "25"
 default-features = false
 features = [
   "addr2line",
+  "async",
   "cache",
   "cranelift",
   "demangle",

@@ -36,7 +36,17 @@ impl WasmtimeRuntime {
             .cranelift_opt_level(wasmtime::OptLevel::Speed)
             .consume_fuel(true)
             .epoch_interruption(true)
-            .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
+            .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable)
+            // We need async support to enable suspending execution of procedures
+            // when waiting for e.g. HTTP responses or the transaction lock.
+            // We don't enable either fuel-based or epoch-based yielding
+            // (see https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.epoch_deadline_async_yield_and_update
+            // and https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.fuel_async_yield_interval)
+            // so reducers will always execute to completion during the first `Future::poll` call,
+            // and procedures will only yield when performing an asynchronous operation.
+            // These futures are executed on a separate single-threaded executor not related to the "global" Tokio runtime,
+            // which is responsible only for executing WASM. See `crate::util::jobs` for this infrastructure.
+            .async_support(true);
 
         // Offer a compile-time flag for enabling perfmap generation,
         // so `perf` can display JITted symbol names.
