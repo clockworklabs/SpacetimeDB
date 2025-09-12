@@ -56,9 +56,18 @@ export const AlgebraicType = {
   // assert!(foo.value === 42);
   // ```
   Ref: (value: number): AlgebraicType => ({ tag: 'Ref', value }),
-  Sum: (value: SumType): AlgebraicType => ({ tag: 'Sum', value }),
-  Product: (value: ProductType): AlgebraicType => ({ tag: 'Product', value }),
-  Array: (value: AlgebraicType): AlgebraicType => ({ tag: 'Array', value }),
+  Sum: <T extends SumType>(value: T): { tag: 'Sum'; value: T } => ({
+    tag: 'Sum',
+    value,
+  }),
+  Product: <T extends ProductType>(value: T): { tag: 'Product'; value: T } => ({
+    tag: 'Product',
+    value,
+  }),
+  Array: <T extends AlgebraicType>(value: T): { tag: 'Array'; value: T } => ({
+    tag: 'Array',
+    value,
+  }),
   String: { tag: 'String' } as const,
   Bool: { tag: 'Bool' } as const,
   I8: { tag: 'I8' } as const,
