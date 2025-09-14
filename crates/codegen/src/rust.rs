@@ -979,7 +979,7 @@ fn print_db_update_defn(module: &ModuleDef, out: &mut Indenter) {
             for table in iter_tables(module) {
                 writeln!(
                     out,
-                    "{}: __sdk::TableUpdate<{}>,",
+                    "pub {}: __sdk::TableUpdate<{}>,",
                     table_method_name(&table.name),
                     type_ref_name(module, table.product_type_ref),
                 );
