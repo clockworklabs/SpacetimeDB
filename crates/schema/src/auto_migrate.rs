@@ -8,13 +8,14 @@ use spacetimedb_data_structures::{
 };
 use spacetimedb_lib::{
     db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType},
-    AlgebraicType,
+    hash_bytes, AlgebraicType, Identity,
 };
 use spacetimedb_sats::{
     layout::{HasLayout, SumTypeLayout},
     WithTypespace,
 };
 use termcolor_formatter::{ColorScheme, TermColorFormatter};
+use thiserror::Error;
 mod formatter;
 mod termcolor_formatter;
 
@@ -50,9 +51,19 @@ impl<'def> MigratePlan<'def> {
         }
     }
 
+    pub fn breaks_client(&self) -> bool {
+        match self {
+            //TODO: fix it when support for manual migration plans is added.
+            MigratePlan::Manual(_) => true,
+            MigratePlan::Auto(plan) => plan
+                .steps
+                .iter()
+                .any(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers)),
+        }
+    }
+
     pub fn pretty_print(&self, style: PrettyPrintStyle) -> anyhow::Result<String> {
         use PrettyPrintStyle::*;
-
         match self {
             MigratePlan::Manual(_) => {
                 anyhow::bail!("Manual migration plans are not yet supported for pretty printing.")
@@ -70,6 +81,101 @@ impl<'def> MigratePlan<'def> {
             }
             .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}")),
         }
+    }
+}
+
+/// A migration policy that determines whether a module update is allowed to break client compatibility.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MigrationPolicy {
+    /// Migration must maintain backward compatibility with existing clients.
+    Compatible,
+    /// To use this, a valid [`MigrationToken`] must be provided.
+    /// The token is issued through the pre-publish API (see the `client-api` crate)
+    /// and proves that the publisher explicitly acknowledged the breaking change.
+    BreakClients(spacetimedb_lib::Hash),
+}
+
+impl MigrationPolicy {
+    /// Verifies whether the given migration plan is allowed under the current policy.
+    ///
+    /// Returns `Ok(())` if allowed, otherwise an appropriate `MigrationPolicyError`
+    fn permits_plan(&self, plan: &MigratePlan<'_>, token: &MigrationToken) -> anyhow::Result<(), MigrationPolicyError> {
+        match self {
+            MigrationPolicy::Compatible => {
+                if plan.breaks_client() {
+                    Err(MigrationPolicyError::ClientBreakingChangeDisallowed)
+                } else {
+                    Ok(())
+                }
+            }
+            MigrationPolicy::BreakClients(expected_hash) => {
+                if token.hash() == *expected_hash {
+                    Ok(())
+                } else {
+                    Err(MigrationPolicyError::InvalidToken)
+                }
+            }
+        }
+    }
+
+    /// Attempts to generate a migration plan and validate it under this policy.
+    ///
+    /// Fails if migration is not permitted by the policy or migration planning fails.
+    pub fn try_migrate<'def>(
+        &self,
+        database_identity: Identity,
+        old_module_hash: spacetimedb_lib::Hash,
+        old_module_def: &'def ModuleDef,
+        new_module_hash: spacetimedb_lib::Hash,
+        new_module_def: &'def ModuleDef,
+    ) -> anyhow::Result<MigratePlan<'def>, MigrationPolicyError> {
+        let plan = ponder_migrate(old_module_def, new_module_def).map_err(MigrationPolicyError::AutoMigrateFailure)?;
+
+        let token = MigrationToken {
+            database_identity,
+            old_module_hash,
+            new_module_hash,
+        };
+        self.permits_plan(&plan, &token)?;
+        Ok(plan)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum MigrationPolicyError {
+    #[error("Automatic migration planning failed")]
+    AutoMigrateFailure(ErrorStream<AutoMigrateError>),
+
+    #[error("Token provided is invalid or does not match expected hash")]
+    InvalidToken,
+
+    #[error("Migration plan contains a client-breaking change which is disallowed under current policy")]
+    ClientBreakingChangeDisallowed,
+}
+
+/// A token acknowledging a breaking migration.
+///
+/// Note: This token is only intended as a UX safeguard, not as a security measure.
+/// No secret is used in its generation, which means anyone can reproduce it given
+/// the inputs. That is acceptable for our purposes since it only signals user intent,
+/// not authorization.
+pub struct MigrationToken {
+    pub database_identity: Identity,
+    pub old_module_hash: spacetimedb_lib::Hash,
+    pub new_module_hash: spacetimedb_lib::Hash,
+}
+
+impl MigrationToken {
+    pub fn hash(&self) -> spacetimedb_lib::Hash {
+        hash_bytes(
+            format!(
+                "{}{}{}",
+                self.database_identity.to_hex(),
+                self.old_module_hash.to_hex(),
+                self.new_module_hash.to_hex()
+            )
+            .as_str(),
+        )
     }
 }
 

@@ -19,7 +19,9 @@ use ser::serialize_to_js;
 use spacetimedb_client_api_messages::energy::{EnergyQuanta, ReducerBudget};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef};
+use spacetimedb_lib::RawModuleDef;
+use spacetimedb_lib::{ConnectionId, Identity};
+use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use v8::{Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, Local, Value};
 
@@ -137,9 +139,11 @@ impl ModuleInstance for JsInstance {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
-        self.common.update_database(replica_ctx, program, old_module_info)
+        self.common
+            .update_database(replica_ctx, program, old_module_info, policy)
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
