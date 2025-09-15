@@ -6,7 +6,17 @@
     "name": "Clockwork Labs",
     "email": "no-reply@clockworklabs.io"
   },
-  "types": "./dist/index.d.ts",
+  "keywords": [
+    "spacetime",
+    "spacetimedb",
+    "database",
+    "react",
+    "state",
+    "realtime",
+    "websocket",
+    "serverless"
+  ],
+  "types": "./src/index.ts",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "browser": "./dist/browser/index.js",
@@ -16,13 +26,20 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.ts",
       "browser": "./dist/browser/index.js",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./react": {
+      "types": "./src/react/index.ts",
+      "browser": "./dist/browser/index.js",
+      "import": "./dist/react/index.js",
+      "default": "./dist/react/index.js"
+    },
     "./package.json": "./package.json"
   },
+  "sideEffects": false,
   "scripts": {
     "build": "tsup",
     "format": "prettier --write .",
@@ -42,10 +59,17 @@
     "node": ">=18.0.0"
   },
   "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
     "undici": "^6.19.2"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@clockworklabs/test-app": "workspace:^",
+    "@types/react": "^19.1.13",
     "prettier": "^3.3.3",
     "tsup": "^8.1.0",
     "undici": "^6.19.2",

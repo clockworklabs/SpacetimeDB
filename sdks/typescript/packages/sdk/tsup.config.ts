@@ -28,6 +28,7 @@ function commonEsbuildTweaks() {
 }
 
 export default defineConfig([
+  // Core ESM build -> dist
   {
     entryPoints: {
       index: 'src/index.ts',
@@ -41,15 +42,17 @@ export default defineConfig([
     outDir: 'dist',
     clean: true,
     platform: 'browser',
-    noExternal: ['spacetimedb', 'brotli', 'buffer'],
+    noExternal: ['brotli', 'buffer'],
     treeshake: 'smallest',
-    external: ['undici'],
+    external: ['spacetimedb', 'undici'],
     env: {
       BROWSER: 'false',
     },
     esbuildPlugins: [aliasSpacetimedb()],
     esbuildOptions: commonEsbuildTweaks(),
   },
+
+  // Browser-flavored build -> dist/browser
   {
     entryPoints: {
       index: 'src/index.ts',
@@ -61,15 +64,17 @@ export default defineConfig([
     outDir: 'dist/browser',
     clean: true,
     platform: 'browser',
-    noExternal: ['spacetimedb', 'brotli', 'buffer'],
+    noExternal: ['brotli', 'buffer'],
     treeshake: 'smallest',
-    external: ['undici'],
+    external: ['spacetimedb', 'undici'],
     env: {
       BROWSER: 'true',
     },
     esbuildPlugins: [aliasSpacetimedb()],
     esbuildOptions: commonEsbuildTweaks(),
   },
+
+  // Minified browser build -> dist/min
   {
     entryPoints: {
       index: 'src/index.ts',
@@ -79,11 +84,51 @@ export default defineConfig([
     outDir: 'dist/min',
     dts: false,
     sourcemap: true,
-    noExternal: ['spacetimedb', 'brotli', 'buffer', 'events'],
+    noExternal: ['brotli', 'buffer', 'events'],
     treeshake: 'smallest',
     minify: 'terser',
     platform: 'browser',
-    external: ['undici'],
+    external: ['spacetimedb', 'undici'],
+    esbuildPlugins: [aliasSpacetimedb()],
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // React subpath (SSR-friendly) -> dist/react
+  {
+    entryPoints: { index: 'src/react/index.ts' },
+    format: ['esm'],
+    target: 'es2022',
+    legacyOutput: false,
+    dts: { resolve: true },            // emit dist/react/index.d.ts
+    outDir: 'dist/react',
+    clean: true,
+    platform: 'neutral',               // <- SSR safe
+    noExternal: ['brotli', 'buffer'],
+    treeshake: 'smallest',
+    external: ['spacetimedb', 'react', 'react-dom', 'undici'],
+    env: { BROWSER: 'false' },
+    esbuildPlugins: [aliasSpacetimedb()],
+    esbuildOptions: (options) => {
+      commonEsbuildTweaks()(options);
+      options.jsx = 'automatic';
+      options.jsxImportSource = 'react';
+    },
+  },
+
+  // React subpath (browser-flavored) -> dist/browser/react
+  {
+    entryPoints: { index: 'src/react/index.ts' },
+    format: ['esm'],
+    target: 'es2022',
+    legacyOutput: false,
+    dts: false,                         // types come from the SSR build
+    outDir: 'dist/browser/react',
+    clean: true,
+    platform: 'browser',
+    noExternal: ['brotli', 'buffer'],
+    treeshake: 'smallest',
+    external: ['spacetimedb', 'react', 'react-dom', 'undici'],
+    env: { BROWSER: 'true' },
     esbuildPlugins: [aliasSpacetimedb()],
     esbuildOptions: commonEsbuildTweaks(),
   },

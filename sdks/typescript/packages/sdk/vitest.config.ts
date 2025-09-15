@@ -3,13 +3,20 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    deps: { inline: ['spacetimedb'] },
+    deps: {
+      external: ['spacetimedb'],
+    },
   },
   resolve: {
-    // include conditions that point to source in dev
-    conditions: ['development', 'source', 'node', 'import', 'default'],
+    // Prefer source in dev *if your SDK exposes "source" in exports*.
+    // Otherwise omit "source".
+    conditions: ['source', 'development', 'node', 'import', 'default'],
     mainFields: ['module', 'main', 'browser'],
-    preserveSymlinks: true,
+    preserveSymlinks: false,
     extensions: ['.ts', '.tsx', '.mjs', '.js', '.json'],
+  },
+  optimizeDeps: {
+    esbuildOptions: { conditions: ['source', 'import', 'module', 'default'] },
+    exclude: ['spacetimedb'],
   },
 });
