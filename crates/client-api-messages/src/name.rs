@@ -121,7 +121,7 @@ pub enum PrettyPrintStyle {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
-pub struct PrintPlanResult {
+pub struct PrePublishResult {
     pub migrate_plan: Box<str>,
     pub break_clients: bool,
     pub token: spacetimedb_lib::Hash,
