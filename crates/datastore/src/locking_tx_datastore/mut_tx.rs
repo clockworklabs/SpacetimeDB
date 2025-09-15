@@ -1197,7 +1197,6 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
     pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
-        self.committed_state_write_lock.next_tx_offset += 1;
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
 

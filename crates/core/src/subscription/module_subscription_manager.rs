@@ -568,7 +568,6 @@ pub fn from_tx_offset(offset: TxOffset) -> TransactionOffset {
     rx
 }
 
-
 /// Message sent by the [`SubscriptionManager`] to the [`SendWorker`].
 #[derive(Debug)]
 enum SendWorkerMessage {

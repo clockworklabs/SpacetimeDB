@@ -1,5 +1,8 @@
 use super::execution_unit::QueryHash;
-use super::module_subscription_manager::{from_tx_offset, spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats, SubscriptionManager, TransactionOffset};
+use super::module_subscription_manager::{
+    from_tx_offset, spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats,
+    SubscriptionManager, TransactionOffset,
+};
 use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
 use super::{collect_table_update, TableUpdateType};
@@ -897,7 +900,9 @@ impl ModuleSubscriptions {
                         database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
                     };
 
-                    let _ = self.broadcast_queue.send_client_message(client, Some(from_tx_offset(tx_offset)), message);
+                    let _ = self
+                        .broadcast_queue
+                        .send_client_message(client, Some(from_tx_offset(tx_offset)), message);
                 } else {
                     log::trace!("Reducer failed but there is no client to send the failure to!")
                 }
