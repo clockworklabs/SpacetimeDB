@@ -125,10 +125,10 @@ export class DbConnectionBuilder<
    *
    * @param confirmedReads `true` to enable confirmed reads.
    */
-   withConfirmedReads(confirmedReads: boolean): this {
-       this.#confirmedReads = confirmedReads;
-       return this;
-   }
+  withConfirmedReads(confirmedReads: boolean): this {
+    this.#confirmedReads = confirmedReads;
+    return this;
+  }
 
   /**
    * Register a callback to be invoked upon authentication with the database.

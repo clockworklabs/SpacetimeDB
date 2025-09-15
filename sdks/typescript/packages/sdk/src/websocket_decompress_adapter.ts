@@ -80,7 +80,7 @@ export class WebsocketDecompressAdapter {
     authToken?: string;
     compression: 'gzip' | 'none';
     lightMode: boolean;
-    confirmedReads: boolean,
+    confirmedReads: boolean;
   }): Promise<WebsocketDecompressAdapter> {
     const headers = new Headers();
 
@@ -127,7 +127,7 @@ export class WebsocketDecompressAdapter {
       databaseUrl.searchParams.set('light', 'true');
     }
     if (confirmedReads) {
-        databaseUrl.searchParams.set('confirmed', 'true');
+      databaseUrl.searchParams.set('confirmed', 'true');
     }
 
     const ws = new WS(databaseUrl.toString(), wsProtocol);

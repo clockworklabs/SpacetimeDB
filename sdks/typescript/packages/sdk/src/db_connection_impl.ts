@@ -112,7 +112,7 @@ type DbConnectionConfig = {
   createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
   compression: 'gzip' | 'none';
   lightMode: boolean;
-  confirmedReads: boolean,
+  confirmedReads: boolean;
 };
 
 export class DbConnectionImpl<
