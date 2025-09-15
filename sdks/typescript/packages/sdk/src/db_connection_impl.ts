@@ -112,6 +112,7 @@ type DbConnectionConfig = {
   createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
   compression: 'gzip' | 'none';
   lightMode: boolean;
+  confirmedReads: boolean,
 };
 
 export class DbConnectionImpl<
@@ -189,6 +190,7 @@ export class DbConnectionImpl<
     createWSFn,
     compression,
     lightMode,
+    confirmedReads,
   }: DbConnectionConfig) {
     stdbLogger('info', 'Connecting to SpacetimeDB WS...');
 
@@ -224,6 +226,7 @@ export class DbConnectionImpl<
       authToken: token,
       compression: compression,
       lightMode: lightMode,
+      confirmedReads: confirmedReads,
     })
       .then(v => {
         this.ws = v;
