@@ -247,7 +247,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-runner
+    runs-on: ubuntu-latest
     container:
       image: ghcr.io/epicgames/unreal-engine:dev-5.6
       credentials:
@@ -259,7 +259,7 @@ jobs:
         password: ${{ secrets.GHCR_TOKEN }}
       # Run as root because otherwise we get permission denied for various directories inside the container. I tried doing dances to allow it to run
       # without this (reassigning env vars and stuff), but was unable to get it to work and it felt like an uphill battle.
-      options: --user 0:0
+      # options: --user 0:0
     steps:
 # Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
 # commits though.
