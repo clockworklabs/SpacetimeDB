@@ -1,5 +1,14 @@
 import { decompress } from './decompress';
 
+// Add type declarations for ImportMeta.env
+interface ImportMetaEnv {
+  readonly BROWSER?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
 export class WebsocketDecompressAdapter {
   onclose?: (...ev: any[]) => void;
   onopen?: (...ev: any[]) => void;
@@ -84,8 +93,7 @@ export class WebsocketDecompressAdapter {
 
     let WS: typeof WebSocket;
 
-    // @ts-ignore
-    if (import.meta.env.BROWSER === 'false') {
+    if ((import.meta as unknown as ImportMeta).env?.BROWSER === 'false') {
       WS =
         'WebSocket' in globalThis
           ? WebSocket

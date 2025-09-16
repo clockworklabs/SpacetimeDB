@@ -9,8 +9,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "format": "prettier --write .",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0 && prettier . --check",
+    "format": "prettier . --write --ignore-path ../../../../.prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path ../../../../.prettierignore",
     "preview": "vite preview",
     "generate": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-cli generate --lang typescript --out-dir src/module_bindings --project-path server && prettier --write src/module_bindings",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path server",
@@ -19,15 +19,15 @@
     "spacetime:publish": "spacetime publish game --project-path server --server testnet"
   },
   "dependencies": {
+    "@clockworklabs/spacetimedb-sdk": "workspace:*",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "@clockworklabs/spacetimedb-sdk": "workspace:*"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "typescript": "^5.2.2",
-    "vite": "^5.3.4"
+    "vite": "^7.1.5"
   }
 }

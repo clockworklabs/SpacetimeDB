@@ -4,11 +4,7 @@ import { describe, expect, test } from 'vitest';
 
 import { Player } from '@clockworklabs/test-app/src/module_bindings';
 
-import {
-  AlgebraicType,
-  ProductType,
-  type AlgebraicTypeVariants,
-} from 'spacetimedb';
+import { AlgebraicType, type AlgebraicTypeVariants } from 'spacetimedb';
 
 interface ApplyOperations {
   ops: Operation[];
@@ -54,7 +50,7 @@ interface AssertionInput {
   callbackHistory: CallbackEvent[];
 }
 
-type Assertion = (AssertionInput) => void;
+type Assertion = (arg0: AssertionInput) => void;
 
 interface TestStep {
   // The operations to apply.
@@ -122,7 +118,7 @@ describe('TableCache', () => {
     };
     const newTable = () => new TableCache<Player>(tableTypeInfo);
     const mkOperation = (type: 'insert' | 'delete', row: Player) => {
-      let rowId = AlgebraicType.intoMapKey(tableTypeInfo.rowType, row);
+      const rowId = AlgebraicType.intoMapKey(tableTypeInfo.rowType, row);
       return {
         type,
         rowId,
@@ -133,7 +129,7 @@ describe('TableCache', () => {
     test('Insert one', () => {
       const tableCache = newTable();
       const steps: TestStep[] = [];
-      let player = {
+      const player = {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -163,7 +159,7 @@ describe('TableCache', () => {
     test('Inserting one twice only triggers one event', () => {
       const tableCache = newTable();
       const steps: TestStep[] = [];
-      let player = {
+      const player = {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -193,7 +189,7 @@ describe('TableCache', () => {
     test('Insert dupe is a noop', () => {
       const tableCache = newTable();
       const steps: TestStep[] = [];
-      let player = {
+      const player = {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -237,7 +233,7 @@ describe('TableCache', () => {
     test('Insert once and delete', () => {
       const tableCache = newTable();
       const steps: TestStep[] = [];
-      let player = {
+      const player = {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -280,7 +276,7 @@ describe('TableCache', () => {
     test('Insert twice and delete', () => {
       const tableCache = newTable();
       const steps: TestStep[] = [];
-      let mkPlayer = () => ({
+      const mkPlayer = () => ({
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -288,7 +284,7 @@ describe('TableCache', () => {
           y: 2,
         },
       });
-      let player = {
+      const player = {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -387,7 +383,7 @@ describe('TableCache', () => {
 
     test('Insert one', () => {
       const tableCache = newTable();
-      let op = mkOperation('insert', {
+      const op = mkOperation('insert', {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -396,7 +392,7 @@ describe('TableCache', () => {
         },
       });
       let rowsInserted = 0;
-      let callbacks = tableCache.applyOperations([op], {} as any);
+      const callbacks = tableCache.applyOperations([op], {} as any);
       tableCache.onInsert((ctx, row) => {
         rowsInserted++;
         expect(row).toEqual(op.row);
@@ -434,7 +430,7 @@ describe('TableCache', () => {
     };
     const newTable = () => new TableCache<Player>(tableTypeInfo);
     const mkOperation = (type: 'insert' | 'delete', row: Player) => {
-      let rowId = AlgebraicType.intoMapKey(
+      const rowId = AlgebraicType.intoMapKey(
         tableTypeInfo.primaryKeyInfo!.colType,
         row['ownerId']
       );
@@ -448,7 +444,7 @@ describe('TableCache', () => {
     test('Insert one', () => {
       const tableCache = newTable();
       const steps: TestStep[] = [];
-      let player = {
+      const player = {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -478,7 +474,7 @@ describe('TableCache', () => {
     test('Inserting one twice only triggers one event', () => {
       const tableCache = newTable();
       const steps: TestStep[] = [];
-      let player = {
+      const player = {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -508,7 +504,7 @@ describe('TableCache', () => {
     test('Insert dupe is a noop', () => {
       const tableCache = newTable();
       const steps: TestStep[] = [];
-      let player = {
+      const player = {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -552,7 +548,7 @@ describe('TableCache', () => {
     test('Insert once and delete', () => {
       const tableCache = newTable();
       const steps: TestStep[] = [];
-      let player = {
+      const player = {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -595,7 +591,7 @@ describe('TableCache', () => {
     test('Update smoke test', () => {
       const tableCache = newTable();
       const steps: TestStep[] = [];
-      let mkPlayer = (name: string) => ({
+      const mkPlayer = (name: string) => ({
         ownerId: '1',
         name: name,
         location: {
@@ -640,7 +636,7 @@ describe('TableCache', () => {
     test('Insert twice and delete', () => {
       const tableCache = newTable();
       const steps: TestStep[] = [];
-      let mkPlayer = () => ({
+      const mkPlayer = () => ({
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -648,7 +644,7 @@ describe('TableCache', () => {
           y: 2,
         },
       });
-      let player = {
+      const player = {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -747,7 +743,7 @@ describe('TableCache', () => {
 
     test('Insert one', () => {
       const tableCache = newTable();
-      let op = mkOperation('insert', {
+      const op = mkOperation('insert', {
         ownerId: '1',
         name: 'Player 1',
         location: {
@@ -756,7 +752,7 @@ describe('TableCache', () => {
         },
       });
       let rowsInserted = 0;
-      let callbacks = tableCache.applyOperations([op], {} as any);
+      const callbacks = tableCache.applyOperations([op], {} as any);
       tableCache.onInsert((ctx, row) => {
         rowsInserted++;
         expect(row).toEqual(op.row);
@@ -796,6 +792,5 @@ describe('TableCache', () => {
     };
     const tableCache = new TableCache<Player>(tableTypeInfo);
     expect(tableCache.count()).toBe(0);
-    tableCache.applyOperations;
   });
 });

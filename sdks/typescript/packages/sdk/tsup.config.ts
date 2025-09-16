@@ -1,11 +1,4 @@
-import path from 'node:path';
-import { defineConfig } from 'tsup';
-
-// Hard path to the spacetimedb source file
-const STDB_SRC = path.resolve(
-  __dirname,
-  '../../../../crates/bindings-typescript/src/index.ts'
-);
+import { defineConfig, type Options } from 'tsup';
 
 function commonEsbuildTweaks() {
   return (options: any) => {
@@ -117,4 +110,14 @@ export default defineConfig([
     env: { BROWSER: 'true' },
     esbuildOptions: commonEsbuildTweaks(),
   },
-]);
+]) satisfies
+  | Options
+  | Options[]
+  | ((
+      overrideOptions: Options
+    ) => Options | Options[] | Promise<Options | Options[]>) as
+  | Options
+  | Options[]
+  | ((
+      overrideOptions: Options
+    ) => Options | Options[] | Promise<Options | Options[]>);

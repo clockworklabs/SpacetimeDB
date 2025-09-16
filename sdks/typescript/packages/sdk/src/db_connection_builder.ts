@@ -11,7 +11,7 @@ import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
 export class DbConnectionBuilder<
   DbConnection,
   ErrorContext,
-  SubscriptionEventContext,
+  _SubscriptionEventContext,
 > {
   #uri?: URL;
   #nameOrAddress?: string;

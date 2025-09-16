@@ -43,7 +43,7 @@ mod tests {
 }
 */
 
-let testCases: Array<[string, BigInt | number, Array<number>]> = [
+const testCases: Array<[string, bigint | number, Array<number>]> = [
   ['I8', 48, [48]],
   ['I16', 2910, [94, 11]],
   ['I32', -799760706, [190, 158, 84, 208]],
@@ -94,14 +94,14 @@ let testCases: Array<[string, BigInt | number, Array<number>]> = [
 
 describe('BinaryReader/Writer', () => {
   test('correctly reads/writes little endian values', () => {
-    for (let [name, int, buf] of testCases) {
-      let arr = new Uint8Array(buf);
-      let reader = new BinaryReader(arr);
+    for (const [name, int, buf] of testCases) {
+      const arr = new Uint8Array(buf);
+      const reader = new BinaryReader(arr);
 
-      let read = reader['read' + name]();
+      const read = reader['read' + name]();
       expect(read).toEqual(int);
 
-      let writer = new BinaryWriter(0);
+      const writer = new BinaryWriter(0);
       writer['write' + name](int);
 
       expect(writer.getBuffer()).toEqual(arr);

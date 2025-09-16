@@ -2,10 +2,12 @@
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
-    "outDir": "./docs",
+    "moduleResolution": "bundler",
     "esModuleInterop": false,
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["node"],
+    "noEmit": true
   },
-  "include": ["nav.ts"]
+  "include": ["nav.ts", "scripts/**/*.ts"]
 }

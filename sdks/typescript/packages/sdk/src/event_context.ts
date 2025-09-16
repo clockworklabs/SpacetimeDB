@@ -22,6 +22,7 @@ export interface ReducerEventContextInterface<
   event: ReducerEvent<Reducer>;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface SubscriptionEventContextInterface<
   DBView = any,
   Reducers = any,

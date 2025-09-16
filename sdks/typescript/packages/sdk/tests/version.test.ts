@@ -8,28 +8,28 @@ import {
 describe('SemanticVersion', () => {
   describe('Minimum version check', () => {
     test('older versions throw an error', () => {
-      let olderVersions: string[] = ['0.0.1', '0.1.0', '1.1.0'];
+      const olderVersions: string[] = ['0.0.1', '0.1.0', '1.1.0'];
       if (_MINIMUM_CLI_VERSION.major > 0) {
-        let olderVersion = _MINIMUM_CLI_VERSION.clone();
+        const olderVersion = _MINIMUM_CLI_VERSION.clone();
         olderVersion.major -= 1;
         olderVersions.push(olderVersion.toString());
       }
       if (_MINIMUM_CLI_VERSION.minor > 0) {
-        let olderVersion = _MINIMUM_CLI_VERSION.clone();
+        const olderVersion = _MINIMUM_CLI_VERSION.clone();
         olderVersion.minor -= 1;
         olderVersions.push(olderVersion.toString());
       }
       if (_MINIMUM_CLI_VERSION.patch > 0) {
-        let olderVersion = _MINIMUM_CLI_VERSION.clone();
+        const olderVersion = _MINIMUM_CLI_VERSION.clone();
         olderVersion.patch -= 1;
         olderVersions.push(olderVersion.toString());
       }
       if (!_MINIMUM_CLI_VERSION.preRelease) {
-        let olderVersion = _MINIMUM_CLI_VERSION.clone();
+        const olderVersion = _MINIMUM_CLI_VERSION.clone();
         olderVersion.preRelease = ['alpha'];
         olderVersions.push(olderVersion.toString());
       }
-      let olderVersion = _MINIMUM_CLI_VERSION.clone();
+      const olderVersion = _MINIMUM_CLI_VERSION.clone();
       if (olderVersion.preRelease != null) {
         if (typeof olderVersion.preRelease[0] === 'number') {
           olderVersion.preRelease[0] = olderVersion.preRelease[0] - 1;
@@ -49,7 +49,7 @@ describe('SemanticVersion', () => {
     });
 
     test('newer versions do not throw', () => {
-      let newerVersions: string[] = [_MINIMUM_CLI_VERSION.toString()];
+      const newerVersions: string[] = [_MINIMUM_CLI_VERSION.toString()];
       let newVersion = _MINIMUM_CLI_VERSION.clone();
       newVersion.major += 1;
       newerVersions.push(newVersion.toString());
@@ -64,9 +64,6 @@ describe('SemanticVersion', () => {
         newVersion.preRelease = null;
         newerVersions.push(newVersion.toString());
       }
-      const errorRegexp = new RegExp(
-        '.*generated with an incompatible version.*'
-      );
       for (const versionString of newerVersions) {
         expect(
           () => ensureMinimumVersionOrThrow(versionString),
@@ -81,7 +78,7 @@ describe('SemanticVersion', () => {
       // and that the TableCache is working as expected.
       // You can add more tests here to cover different scenarios.
       //parseVersionString('1.0.0');
-      let tests: [string, SemanticVersion][] = [
+      const tests: [string, SemanticVersion][] = [
         ['1.0.0', new SemanticVersion(1, 0, 0)],
         ['1.0.0-alpha', new SemanticVersion(1, 0, 0, ['alpha'])],
         ['1.0.0-alpha.1', new SemanticVersion(1, 0, 0, ['alpha', 1])],
@@ -116,7 +113,7 @@ describe('SemanticVersion', () => {
     });
 
     test('invalid version strings should throw an error', () => {
-      let invalidTests: string[] = [
+      const invalidTests: string[] = [
         '1.0', // Missing patch version
         '1', // Missing minor and patch versions
         '1.0.0-', // Trailing hyphen
@@ -145,7 +142,7 @@ describe('SemanticVersion', () => {
       version1: SemanticVersion,
       version2: SemanticVersion
     ): number {
-      let c = version1.compare(version2);
+      const c = version1.compare(version2);
       if (c < 0) {
         return -1;
       }
@@ -155,7 +152,7 @@ describe('SemanticVersion', () => {
       return 0;
     }
     test('test comparison order', () => {
-      let cases: [string, string, number][] = [
+      const cases: [string, string, number][] = [
         ['1.0.0', '1.0.0', 0],
         ['1.0.0', '1.0.1', -1],
         ['1.10.0', '1.2.1', 1],

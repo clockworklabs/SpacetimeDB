@@ -75,7 +75,7 @@ export function useTable<
   let spacetime: DbConnection | undefined;
   try {
     spacetime = useSpacetimeDB<DbConnection>();
-  } catch (e) {
+  } catch {
     throw new Error(
       'Could not find SpacetimeDB client! Did you forget to add a' +
         '`SpacetimeDBProvider`? `useTable` must be used in the React component tree' +
@@ -106,6 +106,7 @@ export function useTable<
       rows: result,
       state: subscribeApplied ? 'ready' : 'loading',
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, tableName, whereKey, subscribeApplied]);
 
   useEffect(() => {
@@ -140,7 +141,7 @@ export function useTable<
         cancel.unsubscribe();
       };
     }
-  }, [query, isActive]);
+  }, [query, isActive, client]);
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
@@ -213,7 +214,15 @@ export function useTable<
         table.removeOnUpdate?.(onUpdate);
       };
     },
-    [client, callbacks?.onDelete, callbacks?.onInsert, callbacks?.onUpdate]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      client,
+      tableName,
+      whereKey,
+      callbacks?.onDelete,
+      callbacks?.onInsert,
+      callbacks?.onUpdate,
+    ]
   );
 
   const getSnapshot = useCallback((): Snapshot<RowType> => {

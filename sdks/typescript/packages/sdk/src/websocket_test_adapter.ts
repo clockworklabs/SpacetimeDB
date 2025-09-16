@@ -3,6 +3,7 @@ import { ServerMessage } from './client_api/index.ts';
 
 class WebsocketTestAdapter {
   onclose: any;
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   onopen!: Function;
   onmessage: any;
   onerror: any;
@@ -43,7 +44,7 @@ class WebsocketTestAdapter {
     this.onmessage({ data: rawBytes });
   }
 
-  async createWebSocketFn(args: {
+  async createWebSocketFn(_args: {
     url: URL;
     wsProtocol: string;
     authToken?: string;

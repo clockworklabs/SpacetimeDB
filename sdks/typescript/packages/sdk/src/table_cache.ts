@@ -1,12 +1,9 @@
 import { EventEmitter } from './event_emitter.ts';
 import type { TableRuntimeTypeInfo } from './spacetime_module.ts';
 
-import {
-  BinaryWriter,
-  type EventContextInterface,
-} from './db_connection_impl.ts';
 import { stdbLogger } from './logger.ts';
 import type { ComparablePrimitive } from 'spacetimedb';
+import type { EventContextInterface } from './index.ts';
 
 export type Operation<
   RowType extends Record<string, any> = Record<string, any>,

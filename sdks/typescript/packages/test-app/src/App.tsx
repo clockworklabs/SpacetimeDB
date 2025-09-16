@@ -15,7 +15,7 @@ function App() {
     setTimeout(() => {
       console.log(Array.from(players.rows));
     }, 5000);
-  }, [connection]);
+  }, [connection, players.rows]);
 
   return (
     <div className="App">

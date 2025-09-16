@@ -1,3 +1,4 @@
+import type { UserConfig } from 'vite';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -19,4 +20,4 @@ export default defineConfig({
     esbuildOptions: { conditions: ['source', 'import', 'module', 'default'] },
     exclude: ['spacetimedb'],
   },
-});
+}) satisfies UserConfig as UserConfig;

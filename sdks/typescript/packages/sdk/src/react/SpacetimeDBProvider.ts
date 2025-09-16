@@ -1,5 +1,5 @@
 import { DbConnectionBuilder, type DbConnectionImpl } from '../index';
-import React, { createContext, useState, type Context } from 'react';
+import React from 'react';
 import { SpacetimeDBContext } from './useSpacetimeDB';
 
 export interface SpacetimeDBProviderProps<

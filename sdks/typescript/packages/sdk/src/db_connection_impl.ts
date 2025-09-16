@@ -91,7 +91,6 @@ type ReducerEventCallback<ReducerArgs extends any[] = any[]> = (
 type SubscriptionEventCallback = (
   ctx: SubscriptionEventContextInterface
 ) => void;
-type ErrorCallback = (ctx: ErrorContextInterface) => void;
 
 function callReducerFlagsToNumber(flags: CallReducerFlags): number {
   switch (flags) {
@@ -195,7 +194,7 @@ export class DbConnectionImpl<
     // We use .toString() here because some versions of React Native contain a bug where the URL constructor
     // incorrectly treats a URL instance as a plain string.
     // This results in an attempt to call .endsWith() on it, leading to an error.
-    let url = new URL(uri.toString());
+    const url = new URL(uri.toString());
     if (!/^wss?:/.test(uri.protocol)) {
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     }
@@ -206,7 +205,7 @@ export class DbConnectionImpl<
     this.#remoteModule = remoteModule;
     this.#emitter = emitter;
 
-    let connectionId = this.connectionId.toHexString();
+    const connectionId = this.connectionId.toHexString();
     url.searchParams.set('connection_id', connectionId);
 
     this.clientCache = new ClientCache();
@@ -431,7 +430,7 @@ export class DbConnectionImpl<
         // TODO: Can `reducerName` be '<none>'?
         // See: https://github.com/clockworklabs/SpacetimeDB/blob/a2a1b5d9b2e0ebaaf753d074db056d319952d442/crates/core/src/client/message_handlers.rs#L155
         if (reducerName === '<none>') {
-          let errorMessage = errMessage;
+          const errorMessage = errMessage;
           console.error(`Received an error from the database: ${errorMessage}`);
           return;
         }
@@ -539,8 +538,8 @@ export class DbConnectionImpl<
     tableUpdates: CacheTableUpdate[],
     eventContext: EventContextInterface
   ): PendingCallback[] {
-    let pendingCallbacks: PendingCallback[] = [];
-    for (let tableUpdate of tableUpdates) {
+    const pendingCallbacks: PendingCallback[] = [];
+    for (const tableUpdate of tableUpdates) {
       // Get table information for the table being updated
       const tableName = tableUpdate.tableName;
       const tableTypeInfo = this.#remoteModule.tables[tableName]!;
@@ -564,7 +563,7 @@ export class DbConnectionImpl<
     }
     switch (message.tag) {
       case 'InitialSubscription': {
-        let event: Event<never> = { tag: 'SubscribeApplied' };
+        const event: Event<never> = { tag: 'SubscribeApplied' };
 
         const eventContext = this.#remoteModule.eventContextConstructor(
           this,
@@ -587,7 +586,7 @@ export class DbConnectionImpl<
         break;
       }
       case 'TransactionUpdateLight': {
-        let event: Event<never> = { tag: 'UnknownTransaction' };
+        const event: Event<never> = { tag: 'UnknownTransaction' };
         const eventContext = this.#remoteModule.eventContextConstructor(
           this,
           event
@@ -681,7 +680,7 @@ export class DbConnectionImpl<
         const argsArray: any[] = [];
         (
           reducerTypeInfo.argsType as AlgebraicTypeVariants.Product
-        ).value.elements.forEach((element, index) => {
+        ).value.elements.forEach(element => {
           argsArray.push(reducerArgs[element.name!]);
         });
         this.#reducerEmitter.emit(

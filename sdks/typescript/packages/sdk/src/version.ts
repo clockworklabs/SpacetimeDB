@@ -129,7 +129,5 @@ export function ensureMinimumVersionOrThrow(versionString?: string): void {
 }
 
 function versionErrorMessage(incompatibleVersion?: string): string {
-  const badVersion =
-    incompatibleVersion === undefined ? 'unknown' : incompatibleVersion;
-  return `Module code was generated with an incompatible version of the spacetimedb cli (${incompatibleVersion}).  Update the cli version to at least ${_MINIMUM_CLI_VERSION.toString()} and regenerate the bindings. You can upgrade to the latest cli version by running: spacetime version upgrade`;
+  return `Module code was generated with an incompatible version of the spacetimedb cli (${incompatibleVersion}). Update the cli version to at least ${_MINIMUM_CLI_VERSION.toString()} and regenerate the bindings. You can upgrade to the latest cli version by running: spacetime version upgrade`;
 }

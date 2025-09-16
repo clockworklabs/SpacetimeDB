@@ -23,6 +23,6 @@
       "spacetimedb": ["../../../crates/bindings-typescript/src/index.ts"]
     }
   },
-  "include": ["src/**/*", "tests/**/*"],
+  "include": ["src/**/*", "tests/**/*", "tsup.config.ts", "vitest.config.ts"],
   "exclude": ["node_modules", "**/__tests__/*", "dist/**/*"]
 }

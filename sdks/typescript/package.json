@@ -1,5 +1,4 @@
 {
-  "name": "spacetimedb-ts-sdk",
   "private": true,
   "engines": {
     "node": ">=18.0.0",
@@ -9,8 +8,8 @@
     "changeset": "changeset",
     "ci:release": "changeset publish",
     "ci:version": "changeset version",
-    "format": "prettier --write .",
-    "lint": "prettier . --check",
+    "format": "prettier . --write --ignore-path ../../.prettierignore",
+    "lint": "pnpm --filter ./packages/sdk run lint && pnpm --filter ./packages/test-app run lint && pnpm --filter ./examples/quickstart-chat run lint",
     "build": "pnpm --filter ./packages/sdk run build && pnpm --filter ./packages/test-app run build && pnpm --filter ./examples/quickstart-chat run build",
     "test": "pnpm --filter ./packages/sdk run test && pnpm --filter ./packages/test-app run test && pnpm --filter ./examples/quickstart-chat run test",
     "generate": "pnpm --filter ./packages/sdk run generate && pnpm --filter ./packages/test-app run generate && pnpm --filter ./examples/quickstart-chat run generate"
@@ -24,6 +23,6 @@
     "tsup": "^8.1.0",
     "tsx": "^4.17.0",
     "typescript": "^5.5.3",
-    "vitest": "^2.0.3"
+    "vitest": "^3.2.4"
   }
 }

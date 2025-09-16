@@ -147,14 +147,11 @@ describe('DbConnection', () => {
 
   test('it calls onInsert callback when a record is added with a subscription update and then with a transaction update', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    let called = false;
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
-      .onConnect(() => {
-        called = true;
-      })
+      .onConnect(() => {})
       .build();
 
     await Promise.race([
@@ -200,7 +197,7 @@ describe('DbConnection', () => {
       }
     });
 
-    let reducerCallbackLog: {
+    const reducerCallbackLog: {
       reducerEvent: ReducerEvent<{
         name: 'CreatePlayer';
         args: CreatePlayer;
@@ -325,26 +322,21 @@ describe('DbConnection', () => {
 
   test('tables should be updated before the reducer callback', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    let called = false;
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
-      .onConnect(() => {
-        called = true;
-      })
+      .onConnect(() => {})
       .build();
 
     await client['wsPromise'];
     wsAdapter.acceptConnection();
 
-    let callbackLog: string[] = [];
-
     const updatePromise = new Deferred<void>();
 
     expect(client.db.player.count()).toBe(0);
 
-    client.reducers.onCreatePlayer((ctx, name, location) => {
+    client.reducers.onCreatePlayer(() => {
       expect(client.db.player.count()).toBe(1);
       updatePromise.resolve();
     });
@@ -397,31 +389,28 @@ describe('DbConnection', () => {
 
   test('a reducer callback should be called before the database callbacks', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    let called = false;
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
-      .onConnect(() => {
-        called = true;
-      })
+      .onConnect(() => {})
       .build();
 
     await client['wsPromise'];
     wsAdapter.acceptConnection();
 
-    let callbackLog: string[] = [];
+    const callbackLog: string[] = [];
 
     const insertPromise = new Deferred<void>();
     const updatePromise = new Deferred<void>();
 
-    client.db.player.onInsert((ctx, player) => {
+    client.db.player.onInsert(() => {
       callbackLog.push('Player');
 
       insertPromise.resolve();
     });
 
-    client.reducers.onCreatePlayer((ctx, name, location) => {
+    client.reducers.onCreatePlayer(() => {
       callbackLog.push('CreatePlayerReducer');
 
       updatePromise.resolve();
@@ -477,14 +466,11 @@ describe('DbConnection', () => {
 
   test('it calls onUpdate callback when a record is added with a subscription update and then with a transaction update when the PK is of type Identity', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    let called = false;
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
-      .onConnect(() => {
-        called = true;
-      })
+      .onConnect(() => {})
       .build();
 
     await client['wsPromise'];
@@ -518,7 +504,7 @@ describe('DbConnection', () => {
       oldUser: User;
       newUser: User;
     }[] = [];
-    client.db.user.onInsert((ctx, user) => {
+    client.db.user.onInsert(() => {
       initialInsertPromise.resolve();
       console.log('got insert');
     });
@@ -662,8 +648,8 @@ describe('DbConnection', () => {
       totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
     });
     const gotAllInserts = new Deferred<void>();
-    var inserts = 0;
-    client.db.user.onInsert((ctx, user) => {
+    let inserts = 0;
+    client.db.user.onInsert(() => {
       inserts++;
       if (inserts == 2) {
         gotAllInserts.resolve();
@@ -673,7 +659,7 @@ describe('DbConnection', () => {
     await gotAllInserts.promise;
 
     const filteredUser = client.db.user.identity.find(sallyIdentity);
-    expect(filteredUser).not.toBeUndefined;
+    expect(filteredUser).not.toBeUndefined();
     expect(filteredUser!.username).toBe('sally');
     expect(client.db.user.count()).toBe(2);
   });

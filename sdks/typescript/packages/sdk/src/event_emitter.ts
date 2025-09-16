@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 export class EventEmitter<Key, Callback extends Function = Function> {
   #events: Map<Key, Set<Callback>> = new Map();
 
@@ -11,7 +12,7 @@ export class EventEmitter<Key, Callback extends Function = Function> {
   }
 
   off(event: Key, callback: Callback): void {
-    let callbacks = this.#events.get(event);
+    const callbacks = this.#events.get(event);
     if (!callbacks) {
       return;
     }
@@ -19,12 +20,12 @@ export class EventEmitter<Key, Callback extends Function = Function> {
   }
 
   emit(event: Key, ...args: any[]): void {
-    let callbacks = this.#events.get(event);
+    const callbacks = this.#events.get(event);
     if (!callbacks) {
       return;
     }
 
-    for (let callback of callbacks) {
+    for (const callback of callbacks) {
       callback(...args);
     }
   }
