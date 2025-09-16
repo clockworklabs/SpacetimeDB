@@ -279,42 +279,54 @@ jobs:
         env:
           UE_ROOT_PATH: /home/ue4/UnrealEngine
         run: |
-          # Ensure these mounts are owned by the user we'll run as
-          for p in "$GITHUB_WORKSPACE" "$RUNNER_TEMP" "$RUNNER_TOOL_CACHE"; do
-            [ -n "${p:-}" ] && [ -d "$p" ] && chown -R 1001:1001 "$p" || true
+
+          # Paths
+          REPO="$GITHUB_WORKSPACE"
+          UE_DIR="${UE_ROOT_PATH:-/home/ue4/UnrealEngine}"
+          CARGO_HOME="${RUNNER_TOOL_CACHE:-/__t}/cargo"
+          RUSTUP_HOME="${RUNNER_TOOL_CACHE:-/__t}/rustup"
+
+          # 1) Hand ownership to ue4 where it needs to read/write
+          for p in "$REPO" "${RUNNER_TEMP:-/__t}" "${RUNNER_TOOL_CACHE:-/__t}"; do
+            [ -d "$p" ] && chown -R ue4:ue4 "$p" || true
           done
 
-          # Create the build user if needed
-          getent group 1001 >/dev/null || groupadd -g 1001 runnergrp
-          getent passwd 1001 >/dev/null || useradd -u 1001 -g 1001 -m -s /bin/bash runnerusr
+          # 2) Ensure UE build script is executable (parents traversable)
+          if [ -d "$UE_DIR" ]; then
+            chmod a+rx "$UE_DIR" || true
+            chmod -R a+X "$UE_DIR/Engine/Build/BatchFiles" || true
+            [ -f "$UE_DIR/Engine/Build/BatchFiles/Linux/Build.sh" ] && chmod a+rx "$UE_DIR/Engine/Build/BatchFiles/Linux/Build.sh" || true
+          fi
 
-          # Use the runner's tool cache so Rust persists across runs
-          export CARGO_HOME="${RUNNER_TOOL_CACHE:-/tmp}/cargo"
-          export RUSTUP_HOME="${RUNNER_TOOL_CACHE:-/tmp}/rustup"
+          # 3) Persist Rust under the tool cache owned by ue4
           mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
-          chown -R 1001:1001 "$CARGO_HOME" "$RUSTUP_HOME"
+          chown -R ue4:ue4 "$CARGO_HOME" "$RUSTUP_HOME"
 
-          # Make sure curl exists
-          apt-get update
-          apt-get install -y curl ca-certificates
+          # 4) Run tests as ue4
+          sudo -E -H -u ue4 env \
+            HOME=/home/ue4 \
+            XDG_CONFIG_HOME=/home/ue4/.config \
+            CARGO_HOME="$CARGO_HOME" \
+            RUSTUP_HOME="$RUSTUP_HOME" \
+            PATH="$CARGO_HOME/bin:$PATH" \
+            bash -lc '
+              set -euxo pipefail
+              command -v curl >/dev/null || (sudo apt-get update && sudo apt-get install -y curl ca-certificates)
 
-          # Install rustup + toolchain for the 1001 user (rust-toolchain.toml will be honored)
-          sudo -E -H -u runnerusr bash -lc '
-            set -euxo pipefail
-            export CARGO_HOME='"$CARGO_HOME"'
-            export RUSTUP_HOME='"$RUSTUP_HOME"'
-            export PATH="$CARGO_HOME/bin:$PATH"
-            if ! command -v cargo >/dev/null 2>&1; then
-              curl -sSf https://sh.rustup.rs | sh -s -- -y
-            fi
-            # Preload the toolchain requested by rust-toolchain.toml
-            cd "$GITHUB_WORKSPACE"
-            export PATH="$CARGO_HOME/bin:$PATH"
-            rustup show >/dev/null
-            cd "$GITHUB_WORKSPACE/sdks/unreal"
-            cargo --version
-            cargo test
-          '
+              # Install rustup/cargo for ue4 if missing (uses shared caches)
+              if ! command -v cargo >/dev/null 2>&1; then
+                curl -sSf https://sh.rustup.rs | sh -s -- -y
+              fi
+              rustup show >/dev/null
+
+              # Some Git setups are picky about ownership; silence that if it crops up
+              git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
+
+              cd "$GITHUB_WORKSPACE/sdks/unreal"
+              cargo --version
+              cargo test
+            '
+
   cli_docs:
     name: Check CLI docs
     permissions: read-all
