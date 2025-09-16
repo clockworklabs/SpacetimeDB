@@ -764,7 +764,8 @@ impl ModuleHost {
 
                 // TODO: Is this being broadcast? Does it need to be, or are st_client table subscriptions
                 // not allowed?
-                // I don't think it was being broadcast previously.
+                // I (jsdt) don't think it was being broadcast previously. See:
+                // https://github.com/clockworklabs/SpacetimeDB/issues/3130
                 stdb.finish_tx(ScopeGuard::into_inner(mut_tx), Ok(()))
                     .map_err(|e: DBError| {
                         log::error!("`call_identity_connected`: finish transaction failed: {e:#?}");
