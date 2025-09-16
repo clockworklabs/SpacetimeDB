@@ -845,49 +845,51 @@ export class DbConnectionImpl<
     });
   }
 
-  #on(
+  private on(
     eventName: ConnectionEvent,
     callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.on(eventName, callback);
   }
 
-  #off(
+  private off(
     eventName: ConnectionEvent,
     callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.off(eventName, callback);
   }
 
-  #onConnect(callback: (ctx: DbConnectionImpl, ...args: any[]) => void): void {
+  private onConnect(
+    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+  ): void {
     this.#emitter.on('connect', callback);
   }
 
-  #onDisconnect(
+  private onDisconnect(
     callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.on('disconnect', callback);
   }
 
-  #onConnectError(
+  private onConnectError(
     callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.on('connectError', callback);
   }
 
-  #removeOnConnect(
+  private removeOnConnect(
     callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.off('connect', callback);
   }
 
-  #removeOnDisconnect(
+  private removeOnDisconnect(
     callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.off('disconnect', callback);
   }
 
-  #removeOnConnectError(
+  private removeOnConnectError(
     callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.off('connectError', callback);

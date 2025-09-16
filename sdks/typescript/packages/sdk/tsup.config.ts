@@ -7,16 +7,6 @@ const STDB_SRC = path.resolve(
   '../../../../crates/bindings-typescript/src/index.ts'
 );
 
-// Minimal alias plugin: rewrites "spacetimedb" to STDB_SRC
-function aliasSpacetimedb() {
-  return {
-    name: 'alias-spacetimedb',
-    setup(build: any) {
-      build.onResolve({ filter: /^spacetimedb$/ }, () => ({ path: STDB_SRC }));
-    },
-  };
-}
-
 function commonEsbuildTweaks() {
   return (options: any) => {
     // Prefer package.json "exports" condition "source"
@@ -48,7 +38,6 @@ export default defineConfig([
     env: {
       BROWSER: 'false',
     },
-    esbuildPlugins: [aliasSpacetimedb()],
     esbuildOptions: commonEsbuildTweaks(),
   },
 
@@ -70,7 +59,6 @@ export default defineConfig([
     env: {
       BROWSER: 'true',
     },
-    esbuildPlugins: [aliasSpacetimedb()],
     esbuildOptions: commonEsbuildTweaks(),
   },
 
@@ -89,7 +77,6 @@ export default defineConfig([
     minify: 'terser',
     platform: 'browser',
     external: ['spacetimedb', 'undici'],
-    esbuildPlugins: [aliasSpacetimedb()],
     esbuildOptions: commonEsbuildTweaks(),
   },
 
@@ -99,16 +86,15 @@ export default defineConfig([
     format: ['esm'],
     target: 'es2022',
     legacyOutput: false,
-    dts: { resolve: true },            // emit dist/react/index.d.ts
+    dts: { resolve: true }, // emit dist/react/index.d.ts
     outDir: 'dist/react',
     clean: true,
-    platform: 'neutral',               // <- SSR safe
+    platform: 'neutral', // <- SSR safe
     noExternal: ['brotli', 'buffer'],
     treeshake: 'smallest',
     external: ['spacetimedb', 'react', 'react-dom', 'undici'],
     env: { BROWSER: 'false' },
-    esbuildPlugins: [aliasSpacetimedb()],
-    esbuildOptions: (options) => {
+    esbuildOptions: options => {
       commonEsbuildTweaks()(options);
       options.jsx = 'automatic';
       options.jsxImportSource = 'react';
@@ -121,7 +107,7 @@ export default defineConfig([
     format: ['esm'],
     target: 'es2022',
     legacyOutput: false,
-    dts: false,                         // types come from the SSR build
+    dts: false, // types come from the SSR build
     outDir: 'dist/browser/react',
     clean: true,
     platform: 'browser',
@@ -129,7 +115,6 @@ export default defineConfig([
     treeshake: 'smallest',
     external: ['spacetimedb', 'react', 'react-dom', 'undici'],
     env: { BROWSER: 'true' },
-    esbuildPlugins: [aliasSpacetimedb()],
     esbuildOptions: commonEsbuildTweaks(),
   },
 ]);

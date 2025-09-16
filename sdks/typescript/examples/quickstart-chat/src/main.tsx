@@ -6,11 +6,7 @@ import { Identity } from '@clockworklabs/spacetimedb-sdk';
 import { SpacetimeDBProvider } from '@clockworklabs/spacetimedb-sdk/react';
 import { DbConnection, ErrorContext } from './module_bindings/index.ts';
 
-const onConnect = (
-  conn: DbConnection,
-  identity: Identity,
-  token: string
-) => {
+const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
   localStorage.setItem('auth_token', token);
   console.log(
     'Connected to SpacetimeDB with identity:',

@@ -1,10 +1,6 @@
 import React, { useState } from 'react';
 import './App.css';
-import {
-  DbConnection,
-  Message,
-  User,
-} from './module_bindings';
+import { DbConnection, Message, User } from './module_bindings';
 import { useSpacetimeDB, useTable } from '@clockworklabs/spacetimedb-sdk/react';
 
 export type PrettyMessage = {
@@ -13,9 +9,8 @@ export type PrettyMessage = {
 };
 
 function App() {
-  const conn = useSpacetimeDB<DbConnection>()
-  const identity = conn.identity;
-  const connected = conn.isActive;
+  const conn = useSpacetimeDB<DbConnection>();
+  const { identity, isActive: connected } = conn;
   const [newName, setNewName] = useState('');
   const [settingName, setSettingName] = useState(false);
   const [systemMessage, setSystemMessage] = useState('');
@@ -23,7 +18,7 @@ function App() {
 
   const { rows: messages } = useTable<DbConnection, Message>('message');
   const { rows: users } = useTable<DbConnection, User>('user', {
-    onInsert: (user) => {
+    onInsert: user => {
       if (user.online) {
         const name = user.name || user.identity.toHexString().substring(0, 8);
         setSystemMessage(prev => prev + `\n${name} has connected.`);
@@ -38,7 +33,7 @@ function App() {
         setSystemMessage(prev => prev + `\n${name} has disconnected.`);
       }
     },
-    onDelete: (user) => {
+    onDelete: user => {
       const name = user.name || user.identity.toHexString().substring(0, 8);
       setSystemMessage(prev => prev + `\n${name} has disconnected.`);
     },
@@ -47,14 +42,18 @@ function App() {
   const prettyMessages: PrettyMessage[] = Array.from(messages)
     .sort((a, b) => (a.sent > b.sent ? 1 : -1))
     .map(message => {
-      const user = users.find(u => u.identity.toHexString() === message.sender.toHexString());
+      const user = users.find(
+        u => u.identity.toHexString() === message.sender.toHexString()
+      );
       return {
         senderName: user?.name || message.sender.toHexString().substring(0, 8),
         text: message.text,
       };
     });
 
-  if (!conn || !connected || !identity) {
+  console.log('connected:', connected, 'identity:', identity?.toHexString());
+
+  if (!connected || !identity) {
     return (
       <div className="App">
         <h1>Connecting...</h1>
