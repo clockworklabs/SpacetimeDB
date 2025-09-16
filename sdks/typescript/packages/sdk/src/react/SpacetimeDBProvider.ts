@@ -33,10 +33,3 @@ export function SpacetimeDBProvider<
     children
   );
 }
-
-// export type ConnectionState =
-//   | "idle"
-//   | "connecting"
-//   | "connected"
-//   | "disconnected"
-//   | "error";
