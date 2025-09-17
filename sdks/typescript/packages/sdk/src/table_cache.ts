@@ -8,18 +8,21 @@ import {
 import { stdbLogger } from './logger.ts';
 import type { ComparablePrimitive } from 'spacetimedb';
 
-export type Operation = {
+export type Operation<
+  RowType extends Record<string, any> = Record<string, any>,
+> = {
   type: 'insert' | 'delete';
   // For tables with a primary key, this is the primary key value, as a primitive or string.
   // Otherwise, it is an encoding of the full row.
   rowId: ComparablePrimitive;
-  // TODO: Refine this type to at least reflect that it is a product.
-  row: any;
+  row: RowType;
 };
 
-export type TableUpdate = {
+export type TableUpdate<
+  RowType extends Record<string, any> = Record<string, any>,
+> = {
   tableName: string;
-  operations: Operation[];
+  operations: Operation<RowType>[];
 };
 
 export type PendingCallback = {
@@ -30,7 +33,9 @@ export type PendingCallback = {
 /**
  * Builder to generate calls to query a `table` in the database
  */
-export class TableCache<RowType = any> {
+export class TableCache<
+  RowType extends Record<string, any> = Record<string, any>,
+> {
   private rows: Map<ComparablePrimitive, [RowType, number]>;
   private tableTypeInfo: TableRuntimeTypeInfo;
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
@@ -57,18 +62,24 @@ export class TableCache<RowType = any> {
   /**
    * @returns The values of the rows in the table
    */
-  iter(): any[] {
+  iter(): RowType[] {
     return Array.from(this.rows.values()).map(([row]) => row);
   }
 
   applyOperations = (
-    operations: Operation[],
+    operations: Operation<RowType>[],
     ctx: EventContextInterface
   ): PendingCallback[] => {
     const pendingCallbacks: PendingCallback[] = [];
     if (this.tableTypeInfo.primaryKeyInfo !== undefined) {
-      const insertMap = new Map<ComparablePrimitive, [Operation, number]>();
-      const deleteMap = new Map<ComparablePrimitive, [Operation, number]>();
+      const insertMap = new Map<
+        ComparablePrimitive,
+        [Operation<RowType>, number]
+      >();
+      const deleteMap = new Map<
+        ComparablePrimitive,
+        [Operation<RowType>, number]
+      >();
       for (const op of operations) {
         if (op.type === 'insert') {
           const [_, prevCount] = insertMap.get(op.rowId) || [op, 0];
@@ -177,7 +188,7 @@ export class TableCache<RowType = any> {
 
   insert = (
     ctx: EventContextInterface,
-    operation: Operation,
+    operation: Operation<RowType>,
     count: number = 1
   ): PendingCallback | undefined => {
     const [_, previousCount] = this.rows.get(operation.rowId) || [
@@ -200,7 +211,7 @@ export class TableCache<RowType = any> {
 
   delete = (
     ctx: EventContextInterface,
-    operation: Operation,
+    operation: Operation<RowType>,
     count: number = 1
   ): PendingCallback | undefined => {
     const [_, previousCount] = this.rows.get(operation.rowId) || [
