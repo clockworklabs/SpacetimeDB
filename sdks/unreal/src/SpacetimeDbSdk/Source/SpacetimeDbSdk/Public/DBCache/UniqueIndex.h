@@ -95,7 +95,6 @@ public:
         // If found and valid, log and return the const shared pointer
         if (Found && Found->IsValid())
         {
-            UE_LOG(LogTemp, Log, TEXT("UniqueIndex: Index found for given key"));
             return StaticCastSharedPtr<const RowType>(*Found);
         }
 

@@ -2557,8 +2557,9 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    FReducer DecodedReducer = DecodeReducer(Event);");
     writeln!(output);
 
+    let module_name_pascal = module_name.to_case(Case::Pascal);
     // Build the {}ReducerEvent object
-    writeln!(output, "    F{module_name}ReducerEvent ReducerEvent;");
+    writeln!(output, "    F{module_name_pascal}ReducerEvent ReducerEvent;");
     writeln!(
         output,
         "    ReducerEvent.CallerConnectionId = Event.CallerConnectionId;"
@@ -2621,7 +2622,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output);
 
     // Build the {}ReducerEvent object
-    writeln!(output, "    F{module_name}ReducerEvent ReducerEvent;");
+    writeln!(output, "    F{module_name_pascal}ReducerEvent ReducerEvent;");
     writeln!(
         output,
         "    ReducerEvent.CallerConnectionId = Event.CallerConnectionId;"
@@ -2868,7 +2869,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "{{");
 
     // Create {}Event
-    writeln!(output, "    F{module_name}Event BaseEvent;");
+    writeln!(output, "    F{module_name_pascal}Event BaseEvent;");
     writeln!(output, "    BaseEvent.Tag = Event.Tag;");
     writeln!(output);
 
@@ -2881,7 +2882,10 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    {{");
     writeln!(output, "        FReducerEvent ReducerEvent = Event.GetAsReducer();");
     writeln!(output, "        FReducer Reducer = DecodeReducer(ReducerEvent);");
-    writeln!(output, "        BaseEvent = F{module_name}Event::Reducer(Reducer);");
+    writeln!(
+        output,
+        "        BaseEvent = F{module_name_pascal}Event::Reducer(Reducer);"
+    );
     writeln!(output, "        break;");
     writeln!(output, "    }}");
     writeln!(output);
@@ -2890,7 +2894,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    case ESpacetimeDBEventTag::SubscribeApplied:");
     writeln!(
         output,
-        "        BaseEvent = F{module_name}Event::SubscribeApplied(Event.GetAsSubscribeApplied());"
+        "        BaseEvent = F{module_name_pascal}Event::SubscribeApplied(Event.GetAsSubscribeApplied());"
     );
     writeln!(output, "        break;");
     writeln!(output);
@@ -2898,7 +2902,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    case ESpacetimeDBEventTag::UnsubscribeApplied:");
     writeln!(
         output,
-        "        BaseEvent = F{module_name}Event::UnsubscribeApplied(Event.GetAsUnsubscribeApplied());"
+        "        BaseEvent = F{module_name_pascal}Event::UnsubscribeApplied(Event.GetAsUnsubscribeApplied());"
     );
     writeln!(output, "        break;");
     writeln!(output);
@@ -2906,7 +2910,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    case ESpacetimeDBEventTag::Disconnected:");
     writeln!(
         output,
-        "        BaseEvent = F{module_name}Event::Disconnected(Event.GetAsDisconnected());"
+        "        BaseEvent = F{module_name_pascal}Event::Disconnected(Event.GetAsDisconnected());"
     );
     writeln!(output, "        break;");
     writeln!(output);
@@ -2914,7 +2918,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    case ESpacetimeDBEventTag::SubscribeError:");
     writeln!(
         output,
-        "        BaseEvent = F{module_name}Event::SubscribeError(Event.GetAsSubscribeError());"
+        "        BaseEvent = F{module_name_pascal}Event::SubscribeError(Event.GetAsSubscribeError());"
     );
     writeln!(output, "        break;");
     writeln!(output);
@@ -2922,7 +2926,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    case ESpacetimeDBEventTag::UnknownTransaction:");
     writeln!(
         output,
-        "        BaseEvent = F{module_name}Event::UnknownTransaction(Event.GetAsUnknownTransaction());"
+        "        BaseEvent = F{module_name_pascal}Event::UnknownTransaction(Event.GetAsUnknownTransaction());"
     );
     writeln!(output, "        break;");
     writeln!(output);
