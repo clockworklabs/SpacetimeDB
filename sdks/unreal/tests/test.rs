@@ -126,166 +126,166 @@ fn make_test(test_name: &str) -> Test {
 
 #[test]
 #[serial(Group1)]
-fn insert_primitive() {
+fn unreal_insert_primitive() {
     make_test("InsertPrimitiveTest").run();
 }
 
 #[test]
 #[serial(Group1)]
-fn subscribe_and_cancel() {
+fn unreal_subscribe_and_cancel() {
     make_test("SubscribeAndCancelTest").run();
 }
 
 #[test]
 #[serial(Group1)]
-fn subscribe_and_unsubscribe() {
+fn unreal_subscribe_and_unsubscribe() {
     make_test("SubscribeAndUnsubscribeTest").run();
 }
 
 #[test]
 #[serial(Group1)]
-fn subscription_error_smoke_test() {
+fn unreal_subscription_error_smoke_test() {
     make_test("SubscriptionErrorSmokeTest").run();
 }
 
 #[test]
 #[serial(Group1)]
-fn delete_primitive() {
+fn unreal_delete_primitive() {
     make_test("DeletePrimitiveTest").run();
 }
 
 #[test]
 #[serial(Group1)]
-fn update_primitive() {
+fn unreal_update_primitive() {
     make_test("UpdatePrimitiveTest").run();
 }
 
 #[test]
 #[serial(Group1)]
-fn insert_identity() {
+fn unreal_insert_identity() {
     make_test("InsertIdentityTest").run();
 }
 
 #[test]
 #[serial(Group1)]
-fn insert_caller_identity() {
+fn unreal_insert_caller_identity() {
     make_test("InsertCallerIdentityTest").run();
 }
 
 // ---------------- GROUP 2 ----------------
 #[test]
 #[serial(Group2)]
-fn delete_identity() {
+fn unreal_delete_identity() {
     make_test("DeleteIdentityTest").run();
 }
 
 #[test]
 #[serial(Group2)]
-fn update_identity() {
+fn unreal_update_identity() {
     make_test("UpdateIdentityTest").run();
 }
 
 #[test]
 #[serial(Group2)]
-fn insert_connection_id() {
+fn unreal_insert_connection_id() {
     make_test("InsertConnectionIdTest").run();
 }
 
 #[test]
 #[serial(Group2)]
-fn insert_caller_connection_id() {
+fn unreal_insert_caller_connection_id() {
     make_test("InsertCallerConnectionIdTest").run();
 }
 
 #[test]
 #[serial(Group2)]
-fn delete_connection_id() {
+fn unreal_delete_connection_id() {
     make_test("DeleteConnectionIdTest").run();
 }
 
 #[test]
 #[serial(Group2)]
-fn update_connection_id() {
+fn unreal_update_connection_id() {
     make_test("UpdateConnectionIdTest").run();
 }
 
 #[test]
 #[serial(Group2)]
-fn insert_timestamp() {
+fn unreal_insert_timestamp() {
     make_test("InsertTimestampTest").run();
 }
 
 #[test]
 #[serial(Group2)]
-fn insert_call_timestamp() {
+fn unreal_insert_call_timestamp() {
     make_test("InsertCallTimestampTest").run();
 }
 
 // ---------------- GROUP 3 ----------------
 #[test]
 #[serial(Group3)]
-fn on_reducer() {
+fn unreal_on_reducer() {
     make_test("OnReducerTest").run();
 }
 
 #[test]
 #[serial(Group3)]
-fn fail_reducer() {
+fn unreal_fail_reducer() {
     make_test("FailReducerTest").run();
 }
 
 #[test]
 #[serial(Group3)]
-fn insert_vec() {
+fn unreal_insert_vec() {
     make_test("InsertVecTest").run();
 }
 
 #[test]
 #[serial(Group3)]
-fn insert_option_some() {
+fn unreal_insert_option_some() {
     make_test("InsertOptionSomeTest").run();
 }
 
 #[test]
 #[serial(Group3)]
-fn insert_option_none() {
+fn unreal_insert_option_none() {
     make_test("InsertOptionNoneTest").run();
 }
 
 #[test]
 #[serial(Group3)]
-fn insert_struct() {
+fn unreal_insert_struct() {
     make_test("InsertStructTest").run();
 }
 
 #[test]
 #[serial(Group3)]
-fn insert_simple_enum() {
+fn unreal_insert_simple_enum() {
     make_test("InsertSimpleEnumTest").run();
 }
 
 #[test]
 #[serial(Group3)]
-fn insert_enum_with_payload() {
+fn unreal_insert_enum_with_payload() {
     make_test("InsertEnumWithPayloadTest").run();
 }
 
 // ---------------- GROUP 4 ----------------
 #[test]
 #[serial(Group4)]
-fn insert_delete_large_table() {
+fn unreal_insert_delete_large_table() {
     make_test("InsertDeleteLargeTableTest").run();
 }
 
 #[test]
 #[serial(Group4)]
-fn insert_primitives_as_strings() {
+fn unreal_insert_primitives_as_strings() {
     make_test("InsertPrimitivesAsStringsTest").run();
 }
 
 #[test]
 #[serial(Group4)]
-fn reauth() {
+fn unreal_reauth() {
     make_test("ReauthPart1Test").run();
     make_test("ReauthPart2Test").run();
 }
@@ -293,86 +293,86 @@ fn reauth() {
 #[test]
 #[should_panic]
 #[serial(Group4)]
-fn should_fail() {
+fn unreal_should_fail() {
     make_test("ShouldFailTest").run();
 }
 
 #[test]
 #[serial(Group4)]
-fn caller_always_notified() {
+fn unreal_caller_always_notified() {
     make_test("CallerAlwaysNotifiedTest").run();
 }
 
 #[test]
 #[serial(Group4)]
-fn subscribe_all_select_star() {
+fn unreal_subscribe_all_select_star() {
     make_test("SubscribeAllSelectStarTest").run();
 }
 
 // ---------------- GROUP 5 ----------------
 #[test]
 #[serial(Group5)]
-fn row_deduplication() {
+fn unreal_row_deduplication() {
     make_test("RowDeduplicationTest").run();
 }
 
 #[test]
 #[serial(Group5)]
-fn row_deduplication_join_r_and_s() {
+fn unreal_row_deduplication_join_r_and_s() {
     make_test("RowDeduplicationJoinRAndSTest").run();
 }
 
 #[test]
 #[serial(Group5)]
-fn row_deduplication_r_join_s_and_r_joint() {
+fn unreal_row_deduplication_r_join_s_and_r_joint() {
     make_test("RowDeduplicationRJoinSAndRJoinTTest").run();
 }
 
 #[test]
 #[serial(Group5)]
-fn test_lhs_join_update() {
+fn unreal_test_lhs_join_update() {
     make_test("LhsJoinUpdateTest").run();
 }
 
 #[test]
 #[serial(Group5)]
-fn test_lhs_join_update_disjoint_queries() {
+fn unreal_test_lhs_join_update_disjoint_queries() {
     make_test("LhsJoinUpdateDisjointQueriesTest").run();
 }
 
 #[test]
 #[serial(Group5)]
-fn test_intra_query_bag_semantics_for_join() {
+fn unreal_test_intra_query_bag_semantics_for_join() {
     make_test("IntraQueryBagSemanticsForJoinTest").run();
 }
 
 // ---------------- GROUP 6 ----------------
 #[test]
 #[serial(Group6)]
-fn test_parameterized_subscription() {
+fn unreal_test_parameterized_subscription() {
     make_test("ParameterizedSubscriptionTest").run();
 }
 
 #[test]
 #[serial(Group6)]
-fn test_rls_subscription() {
+fn unreal_test_rls_subscription() {
     make_test("RlsSubscriptionTest").run();
 }
 
 #[test]
 #[serial(Group6)]
-fn pk_simple_enum() {
+fn unreal_pk_simple_enum() {
     make_test("PkSimpleEnumTest").run();
 }
 
 #[test]
 #[serial(Group6)]
-fn indexed_simple_enum() {
+fn unreal_indexed_simple_enum() {
     make_test("IndexedSimpleEnumTest").run();
 }
 
 #[test]
 #[serial(Group6)]
-fn overlapping_subscriptions() {
+fn unreal_overlapping_subscriptions() {
     make_test("OverlappingSubscriptionsTest").run();
 }
