@@ -9,6 +9,7 @@ use super::Result;
 use crate::execution_context::{ReducerContext, Workload};
 use crate::system_tables::ST_TABLE_ID;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
@@ -177,13 +178,13 @@ pub struct TxData {
     deletes: BTreeMap<TableId, Arc<[ProductValue]>>,
     /// Map of all `TableId`s in both `inserts` and `deletes` to their
     /// corresponding table name.
+    // TODO: Store table name as ref counted string.
     tables: IntMap<TableId, String>,
     /// Tx offset of the transaction which performed these operations.
     ///
     /// `None` implies that `inserts` and `deletes` are both empty,
     /// but `Some` does not necessarily imply that either is non-empty.
     tx_offset: Option<u64>,
-    // TODO: Store an `Arc<String>` or equivalent instead.
 }
 
 impl TxData {
@@ -327,9 +328,19 @@ pub trait Tx {
     /// Release this read-only transaction.
     ///
     /// Returns:
+    /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
+    ///
+    ///   Note that, if the transaction was running under an isolation level
+    ///   weaker than [`IsolationLevel::Snapshot`], it may have observed
+    ///   transactions at a later offset than when it started.
+    ///
+    ///   Implementations must uphold that the returned transaction offset
+    ///   accounts for such read anomalies, i.e. the offset must include the
+    ///   observed transactions.
+    ///
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String);
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String);
 }
 
 pub trait MutTx {
@@ -341,10 +352,20 @@ pub trait MutTx {
     /// Commits `tx`, applying its changes to the committed state.
     ///
     /// Returns:
+    /// - [`TxOffset`], the offset this transaction was committed at.
+    ///
+    ///   Note that, if the transaction was running under an isolation level
+    ///   weaker than [`IsolationLevel::Snapshot`], it may have observed
+    ///   transactions at a later offset than when it started.
+    ///
+    ///   Implementations must uphold that the returned transaction offset
+    ///   accounts for such read anomalies, i.e. the offset must include the
+    ///   observed transactions.
+    ///
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, TxMetrics, String)>>;
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>>;
 
     /// Rolls back this transaction, discarding its changes.
     ///

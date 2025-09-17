@@ -2,7 +2,7 @@ use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches};
 use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
-use http::uri::Scheme;
+use reqwest::Url;
 use serde_json::Value;
 use spacetimedb_client_api_messages::websocket::{self as ws, JsonFormat};
 use spacetimedb_data_structures::map::HashMap;
@@ -65,6 +65,7 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
         )
+        .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::yes())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
@@ -130,25 +131,26 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
+    let confirmed = args.get_flag("confirmed");
 
     let conn = parse_req(config, args).await?;
     let api = ClientApi::new(conn);
     let module_def = api.module_def().await?;
 
+    let mut url = Url::parse(&api.con.db_uri("subscribe"))?;
     // Change the URI scheme from `http(s)` to `ws(s)`.
-    let mut uri = http::Uri::try_from(api.con.db_uri("subscribe"))?.into_parts();
-    uri.scheme = uri.scheme.map(|s| {
-        if s == Scheme::HTTP {
-            "ws".parse().unwrap()
-        } else if s == Scheme::HTTPS {
-            "wss".parse().unwrap()
-        } else {
-            s
-        }
-    });
+    url.set_scheme(match url.scheme() {
+        "http" => "ws",
+        "https" => "wss",
+        unknown => unreachable!("Invalid URL scheme in `Connection::db_uri`: {unknown}"),
+    })
+    .unwrap();
+    if confirmed {
+        url.query_pairs_mut().append_pair("confirmed", "true");
+    }
 
     // Create the websocket request.
-    let mut req = http::Uri::from_parts(uri)?.into_client_request()?;
+    let mut req = url.into_client_request()?;
     req.headers_mut().insert(
         header::SEC_WEBSOCKET_PROTOCOL,
         http::HeaderValue::from_static(ws::TEXT_PROTOCOL),
