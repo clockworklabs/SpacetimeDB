@@ -20,7 +20,7 @@ export class DbConnectionBuilder<
   #emitter: EventEmitter<ConnectionEvent> = new EventEmitter();
   #compression: 'gzip' | 'none' = 'gzip';
   #lightMode: boolean = false;
-  #confirmedReads: boolean = false;
+  #confirmedReads?: boolean;
   #createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
 
   /**
@@ -123,7 +123,10 @@ export class DbConnectionBuilder<
    * reducer call and the corresponding subscription update arriving at the
    * client.
    *
-   * @param confirmedReads `true` to enable confirmed reads.
+   * If this method is not called, not preference is sent to the server, and
+   * the server will choose the default.
+   *
+   * @param confirmedReads `true` to enable confirmed reads, `false` to disable.
    */
   withConfirmedReads(confirmedReads: boolean): this {
     this.#confirmedReads = confirmedReads;
