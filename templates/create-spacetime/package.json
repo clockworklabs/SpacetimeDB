@@ -1,0 +1,66 @@
+{
+  "name": "create-spacetime",
+  "version": "0.0.3",
+  "type": "module",
+  "author": {
+    "name": "Clockwork Labs",
+    "email": "no-reply@clockworklabs.io"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/clockworklabs/SpacetimeDB.git",
+    "directory": "templates/create-spacetime"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "bin": {
+    "create-spacetime": "./dist/index.js"
+  },
+  "files": [
+    "dist/**/*"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write src/**/*.ts src/*.ts",
+    "format:check": "prettier --check src/**/*.ts",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run clean && npm run lint && npm run format:check && npm run build",
+    "size-check": "npm pack --dry-run",
+    "test": "npm run build && node dist/index.js test-app --dry-run"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "cross-spawn": "^7.0.3",
+    "degit": "^2.8.4",
+    "fs-extra": "^11.2.0",
+    "inquirer": "^9.2.15",
+    "ora": "^8.0.1",
+    "validate-npm-package-name": "^5.0.0",
+    "which": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
+    "@types/degit": "^2.8.6",
+    "@types/fs-extra": "^11.0.4",
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^20.11.24",
+    "@types/validate-npm-package-name": "^4.0.2",
+    "@types/which": "^3.0.3",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.5.4"
+  }
+}

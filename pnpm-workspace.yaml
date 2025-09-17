@@ -5,3 +5,4 @@ packages:
   - 'sdks/typescript/packages/test-app'
   - 'sdks/typescript/examples/quickstart-chat'
   - 'docs'
+  - 'templates/create-spacetime'
