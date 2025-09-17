@@ -54,7 +54,7 @@ const nav: Nav = {
     page('2 - Connecting to SpacetimeDB', 'unreal/part-2', 'unreal/part-2.md'),
     page('3 - Gameplay', 'unreal/part-3', 'unreal/part-3.md'),
     page('4 - Moving and Colliding', 'unreal/part-4', 'unreal/part-4.md'),
-	page('Reference', 'unreal/part-4', 'unreal/part-4.md'),
+    page('Reference', 'unreal/part-4', 'unreal/part-4.md'),
 
     section('CLI Reference'),
     page('CLI Reference', 'cli-reference', 'cli-reference.md'),
