@@ -5,7 +5,7 @@ export class ClientCache {
   /**
    * The tables in the database.
    */
-  tables: Map<string, TableCache>;
+  tables: Map<string, TableCache<any>>;
 
   constructor() {
     this.tables = new Map();
@@ -16,7 +16,9 @@ export class ClientCache {
    * @param name The name of the table.
    * @returns The table
    */
-  getTable(name: string): TableCache {
+  getTable<RowType extends Record<string, any>>(
+    name: string
+  ): TableCache<RowType> {
     const table = this.tables.get(name);
 
     // ! This should not happen as the table should be available but an exception is thrown just in case.
@@ -30,10 +32,10 @@ export class ClientCache {
     return table;
   }
 
-  getOrCreateTable<RowType>(
+  getOrCreateTable<RowType extends Record<string, any>>(
     tableTypeInfo: TableRuntimeTypeInfo
   ): TableCache<RowType> {
-    let table: TableCache;
+    let table: TableCache<RowType>;
     if (!this.tables.has(tableTypeInfo.tableName)) {
       table = new TableCache<RowType>(tableTypeInfo);
       this.tables.set(tableTypeInfo.tableName, table);
