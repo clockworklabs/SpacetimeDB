@@ -25,7 +25,7 @@ use std::io::Read;
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
-        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH>] For UnrealCpp: use --module-name <module_name> --uproject-dir <DIR> instead of --out-dir")
+        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR>]")
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
@@ -68,7 +68,7 @@ pub fn cli() -> clap::Command {
             Arg::new("uproject_dir")
                 .value_parser(clap::value_parser!(PathBuf))
                 .long("uproject-dir")
-                .help("Path to the Unreal project directory (only used with --lang unrealcpp)")
+                .help("Path to the Unreal project directory, replaces --out-dir for Unreal generation (only used with --lang unrealcpp)")
                 .required_if_eq("lang", "unrealcpp")
         )
         .arg(
