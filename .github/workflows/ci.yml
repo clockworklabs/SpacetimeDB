@@ -280,46 +280,41 @@ jobs:
           UE_ROOT_PATH: /home/ue4/UnrealEngine
         run: |
 
-          # Paths
           REPO="$GITHUB_WORKSPACE"
           UE_DIR="${UE_ROOT_PATH:-/home/ue4/UnrealEngine}"
           CARGO_HOME="${RUNNER_TOOL_CACHE:-/__t}/cargo"
           RUSTUP_HOME="${RUNNER_TOOL_CACHE:-/__t}/rustup"
 
-          # 1) Hand ownership to ue4 where it needs to read/write
-          for p in "$REPO" "${RUNNER_TEMP:-/__t}" "${RUNNER_TOOL_CACHE:-/__t}"; do
-            [ -d "$p" ] && chown -R ue4:ue4 "$p" || true
-          done
+          # 1) Only chown what ue4 must write to (not RUNNER_TEMP)
+          mkdir -p "$CARGO_HOME" "$RUSTUP_HOME" /tmp/cargo-target
+          chown -R ue4:ue4 "$CARGO_HOME" "$RUSTUP_HOME" /tmp/cargo-target
 
-          # 2) Ensure UE build script is executable (parents traversable)
+          # If your tests write under sdks/unreal (Saved/, Intermediate/, etc), chown just that subtree:
+          chown -R ue4:ue4 "$REPO/sdks/unreal"
+
+          # 2) Ensure UE build script is executable/traversable
           if [ -d "$UE_DIR" ]; then
             chmod a+rx "$UE_DIR" || true
             chmod -R a+X "$UE_DIR/Engine/Build/BatchFiles" || true
             [ -f "$UE_DIR/Engine/Build/BatchFiles/Linux/Build.sh" ] && chmod a+rx "$UE_DIR/Engine/Build/BatchFiles/Linux/Build.sh" || true
           fi
 
-          # 3) Persist Rust under the tool cache owned by ue4
-          mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
-          chown -R ue4:ue4 "$CARGO_HOME" "$RUSTUP_HOME"
-
-          # 4) Run tests as ue4
+          # 3) Run tests as ue4 (don’t touch RUNNER_TEMP)
           sudo -E -H -u ue4 env \
             HOME=/home/ue4 \
             XDG_CONFIG_HOME=/home/ue4/.config \
             CARGO_HOME="$CARGO_HOME" \
             RUSTUP_HOME="$RUSTUP_HOME" \
             PATH="$CARGO_HOME/bin:$PATH" \
+            TMPDIR=/tmp \
             bash -lc '
               set -euxo pipefail
               command -v curl >/dev/null || (sudo apt-get update && sudo apt-get install -y curl ca-certificates)
 
-              # Install rustup/cargo for ue4 if missing (uses shared caches)
               if ! command -v cargo >/dev/null 2>&1; then
                 curl -sSf https://sh.rustup.rs | sh -s -- -y
               fi
               rustup show >/dev/null
-
-              # Some Git setups are picky about ownership; silence that if it crops up
               git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
 
               cd "$GITHUB_WORKSPACE/sdks/unreal"
