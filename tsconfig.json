@@ -1,10 +1,10 @@
 {
   "files": [],
   "references": [
-    { "path": "sdks/typescript/packages/sdk" },
-    { "path": "sdks/typescript/packages/test-app" },
-    { "path": "sdks/typescript/examples/quickstart-chat" },
-    { "path": "docs" },
     { "path": "crates/bindings-typescript" },
+    { "path": "crates/bindings-typescript/test-app" },
+    { "path": "docs" },
+    { "path": "sdks/typescript" },
+    { "path": "sdks/typescript/examples/quickstart-chat" },
   ]
 }

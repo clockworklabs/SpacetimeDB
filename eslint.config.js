@@ -34,7 +34,14 @@ export default tseslint.config(
       sourceType: 'module',
       globals: { ...globals.browser, ...globals.node },
       parserOptions: {
-        project: true,
+        project: [
+          './tsconfig.json',
+          './crates/bindings-typescript/tsconfig.json',
+          './crates/bindings-typescript/test-app/tsconfig.json',
+          './docs/tsconfig.json',
+          './sdks/typescript/tsconfig.json',
+          './sdks/typescript/examples/quickstart-chat/tsconfig.json',
+        ],
         projectService: true,
         tsconfigRootDir: __dirname,
       },
