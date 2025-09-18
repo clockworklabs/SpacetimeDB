@@ -5,8 +5,11 @@ import {
   BinaryWriter,
   type EventContextInterface,
 } from './db_connection_impl.ts';
+import type { DbConnectionImpl } from './db_connection_impl.ts';
+import type { DbContext } from './db_context.ts';
 import { stdbLogger } from './logger.ts';
 import type { ComparablePrimitive } from 'spacetimedb';
+import { QueryBuilderImpl } from './query_builder_impl.ts';
 
 export type Operation<
   RowType extends Record<string, any> = Record<string, any>,
@@ -37,6 +40,7 @@ export class TableCache<
   RowType extends Record<string, any> = Record<string, any>,
 > {
   private rows: Map<ComparablePrimitive, [RowType, number]>;
+  private ctx: DbContext;
   private tableTypeInfo: TableRuntimeTypeInfo;
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
 
@@ -46,10 +50,18 @@ export class TableCache<
    * @param primaryKey column name designated as `#[primarykey]`
    * @param entityClass the entityClass
    */
-  constructor(tableTypeInfo: TableRuntimeTypeInfo) {
+  constructor(ctx: DbContext, tableTypeInfo: TableRuntimeTypeInfo) {
+    this.ctx = ctx;
     this.tableTypeInfo = tableTypeInfo;
     this.rows = new Map();
     this.emitter = new EventEmitter();
+  }
+
+  /**
+   * @returns name of the table
+   */
+  name(): string {
+    return this.tableTypeInfo.tableName;
   }
 
   /**
@@ -64,6 +76,17 @@ export class TableCache<
    */
   iter(): RowType[] {
     return Array.from(this.rows.values()).map(([row]) => row);
+  }
+
+  remoteQuery(filters: string): Promise<RowType[]> {
+    return new Promise((resolve, reject) => {
+      const name = this.name();
+
+      new QueryBuilderImpl(this.ctx as DbConnectionImpl)
+        .onResolved((ctx, tables) => resolve(tables.get(name)?.iter()))
+        .onError((ctx, error) => reject(error))
+        .query(`SELECT ${name}.* FROM ${name} ${filters}`);
+    });
   }
 
   applyOperations = (
