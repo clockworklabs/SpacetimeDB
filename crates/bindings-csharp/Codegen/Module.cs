@@ -8,7 +8,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using SpacetimeDB.Internal;
 using static Utils;
 
-readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null, object? ColumnDefaultValue = null)
+readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null, string? ColumnDefaultValue = null)
 {
     private static readonly ImmutableDictionary<string, System.Type> AttrTypes = ImmutableArray
         .Create(typeof(AutoIncAttribute),
@@ -27,14 +27,15 @@ readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null, object
         {
             return default;
         }
-        var attr = attrData.ParseAs<ColumnAttribute>(attrType);
-        
+    
         if (attrClass.ToString() == typeof(DefaultAttribute).FullName)
         {
-            var value = attrData.ConstructorArguments.FirstOrDefault().Value;
-            return new(ColumnAttrs.Default, attr.Table, value);
+            // Create a dummy instance to get the mask
+            var attrWithDefault = attrData.ParseAs<DefaultAttribute>(attrType);
+            return new(attrWithDefault.Mask, attrWithDefault.Table, attrWithDefault.Value);
         }
-        
+    
+        var attr = attrData.ParseAs<ColumnAttribute>(attrType);
         return new(attr.Mask, attr.Table);
     }
 }
@@ -159,44 +160,48 @@ record ColumnDeclaration : MemberDeclaration
     public string GenerateColumnDef() =>
         $"new (nameof({Name}), BSATN.{Name}{TypeUse.BsatnFieldSuffix}.GetAlgebraicType(registrar))";
 
-    internal ColumnDefaultValueData? GetColumnDefaultValue()
-    {
-        var defaultAttr = Attrs.FirstOrDefault(a => a.Mask.HasFlag(ColumnAttrs.Default));
- 
-        if (defaultAttr != null && defaultAttr.ColumnDefaultValue != null)
-        {
-            var defaultValueCode = GetDefaultValueCode(defaultAttr.ColumnDefaultValue);
-            return new ColumnDefaultValueData(
-                Table: FullTableName,
-                FieldName: Name,
-                ColId: ColumnIndex,
-                ValueCode: defaultValueCode
-            );
-        }
-        return null;
-    }
-
      // Converts value to a string that can be used as a default value in generated code.
-     private string GetDefaultValueCode(object? value)
+     internal static string GetDefaultValueCode(object? value)
      {
          if (value == null)
              return "null";
 
-         return value switch
+         // Handle string escaping
+         if (value is string str)
          {
-             string s => $"\"{s.Replace("\"", "\"")}\"",
-             bool b => b ? "true" : "false",
-             _ => value.ToString() ?? "null"
-         };
-     }
-}
+             return $"\"{str.Replace("\"", "\\\"")}\"";
+         }
 
-record ColumnDefaultValueData(string Table, string FieldName, int ColId, string ValueCode)
-{
-    public string Table { get; } = Table;
-    public string FieldName { get; } = FieldName;
-    public int ColId { get; } = ColId;
-    public string ValueCode { get; } = ValueCode;
+         // Handle boolean values
+         if (value is bool b)
+         {
+             return b ? "true" : "false";
+         }
+
+         // Handle numeric types
+         if (value is int || value is long || value is short || value is byte ||
+             value is uint || value is ulong || value is ushort || value is sbyte ||
+             value is float || value is double || value is decimal)
+         {
+             return value.ToString() ?? "0";
+         }
+
+         // Handle enums
+         if (value is Enum enumValue)
+         {
+             return $"{enumValue.GetType().FullName}.{enumValue}";
+         }
+
+         // For any other type, use its string representation
+         var strValue = value.ToString();
+         if (string.IsNullOrEmpty(strValue))
+         {
+             return "null";
+         }
+
+         // Escape any quotes in the string representation
+         return $"\"{strValue.Replace("\"", "\\\"")}\"";
+     }
 }
 
 record Scheduled(string ReducerName, int ScheduledAtColumn);
@@ -591,6 +596,51 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             );
         }
     }
+    
+    public record struct FieldDefaultValue(string tableName, string columnId, string value);
+    
+    public IEnumerable<FieldDefaultValue> GenerateDefaultValues()
+    {
+        if (Kind is TypeKind.Sum)
+        {
+            yield break;
+        }
+
+        foreach (var view in Views)
+        {
+            var members = string.Join(", ", Members.Select(m => m.Name));
+            var fieldsWithDefaultValues = Members.Where(m => m.GetAttrs(view).HasFlag(ColumnAttrs.Default));
+            var defaultValueAttributes = string.Join(", ", 
+                Members
+                    .Where(m => m.GetAttrs(view).HasFlag(ColumnAttrs.Default))
+                    .Select(m => 
+                        m.Attrs
+                            .FirstOrDefault(a => a.Mask == ColumnAttrs.Default)
+                    )
+            );
+
+            var withDefaultValues = fieldsWithDefaultValues as ColumnDeclaration[] ?? fieldsWithDefaultValues.ToArray();
+            foreach (var fieldsWithDefaultValue in withDefaultValues)
+            {
+                var defaultValue = fieldsWithDefaultValue.Attrs.FirstOrDefault(a => a.Mask == ColumnAttrs.Default);
+                
+                yield return new FieldDefaultValue(
+                    fieldsWithDefaultValue.Name, 
+                    fieldsWithDefaultValue.ColumnIndex.ToString(),
+                    defaultValue.ColumnDefaultValue ?? "Debug log: Default value was null when it should not have been."
+                );
+            }
+            
+            if (withDefaultValues.Length != 0)
+            {
+                yield return new FieldDefaultValue(
+                    "Debug log: This is a debug entry of FieldDefaultValue to see the data available to the codegen.",
+                    $"\"Members of this table ({Members.Length}) = {members}, Views ({Views.Length}) = {view.Name}\"", // This
+                    $$"""defaultColumnNames ({{withDefaultValues.Length}}) = {{defaultValueAttributes}}"""
+                );
+            }
+        }
+    }
 
     public record struct Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
     {
@@ -779,6 +829,16 @@ record ClientVisibilityFilterDeclaration
 [Generator]
 public class Module : IIncrementalGenerator
 {
+    /// <summary>
+    /// Collects distinct items from a source sequence, ensuring no duplicate export names exist.
+    /// </summary>
+    /// <typeparam name="T">The type of items being collected</typeparam>
+    /// <param name="kind">The category/type of items being collected (used for error messages)</param>
+    /// <param name="context">The incremental generator context for reporting diagnostics</param>
+    /// <param name="source">The source sequence of items to process</param>
+    /// <param name="toExportName">Function to get the export name for an item (used for deduplication)</param>
+    /// <param name="toFullName">Function to get the full name of an item (used for error messages)</param>
+    /// <returns>An incremental value provider containing the distinct items</returns>
     private static IncrementalValueProvider<EquatableArray<T>> CollectDistinct<T>(
         string kind,
         IncrementalGeneratorInitializationContext context,
@@ -929,63 +989,19 @@ public class Module : IIncrementalGenerator
             (f) => f.FullName,
             (f) => f.FullName
         );
-
-        var defaultValues = context
-            .SyntaxProvider.ForAttributeWithMetadataName(
-            fullyQualifiedMetadataName: typeof(DefaultAttribute).FullName!,
-            predicate: (node, ct) => node is FieldDeclarationSyntax,
-            transform: (transformContext, ct) =>
-                transformContext.ParseWithDiags(diag => 
-                {
-                    // var fieldSymbol = (IFieldSymbol)transformContext.TargetSymbol;
-                    // var fieldSyntax = (FieldDeclarationSyntax)transformContext.TargetNode;
-                    // var containingType = fieldSymbol.ContainingType;
-                    //
-                    // var table = tables
-                    //     .Select((t, ct) => t)
-                    //     .Where(t => t != null && t.FullName == containingType.ToDisplayString())
-                    //     .Collect()
-                    //     .Select((ts, _) => ts.FirstOrDefault());
-                    //
-                    // if (table == null)
-                    // {
-                    //     return null;
-                    // }
-                    //
-                    //
-                    // var columnIndex = table.Members
-                    //     .Select((col, idx) => (col, idx))
-                    //     .FirstOrDefault(x => x.col.Name == fieldSymbol.Name)
-                    //     .idx;
-                    //
-                    // if (columnIndex < 0)
-                    // {
-                    //     return null;
-                    // }
-                    //
-                    // var column = new ColumnDeclaration(
-                    //     table.FullName,
-                    //     columnIndex,
-                    //     fieldSymbol,
-                    //     diag
-                    // );
-                    //
-                    // var columnDefaultValueData = column.GetColumnDefaultValue();
-                    // return columnDefaultValueData;
-                    return new ColumnDefaultValueData(
-                        "User",
-                        "DefaultUInt",
-                        1,
-                        "9"
-                    );
-                })
-            )
-            .Where(x => x != null)
-            .ReportDiagnostics(context)
-            .WithTrackingName("SpacetimeDB.Table.CollectDefaultValues");
+        
+        var defaultValues = CollectDistinct(
+            "DefaultValues",
+            context,
+            tables
+                .SelectMany((t, ct) => t.GenerateDefaultValues())
+                .WithTrackingName("SpacetimeDB.Table.GenerateDefaultValues"),
+            v => v.tableName,
+            v => v.tableName+"_"+v.columnId
+        );
 
         context.RegisterSourceOutput(
-            tableViews.Combine(addReducers).Combine(rlsFiltersArray).Combine(defaultValues.Collect()),
+            tableViews.Combine(addReducers).Combine(rlsFiltersArray).Combine(defaultValues),
             (context, tuple) =>
             {
                 var (((tableViews, addReducers), rlsFilters), defaultValues) = tuple;
@@ -1062,12 +1078,12 @@ public class Module : IIncrementalGenerator
                             {{string.Join(
                                 "\n",
                                 defaultValues.Select(d => 
-                                    $"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(" +
-                                    $"\"{d.Table}\", " +
-                                    $"{d.ColId}, " +
-                                    $"SpacetimeDB.BSATN.Serializer.Serialize({d.ValueCode}));")
+                                    $"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, \"{d.value}\");")
                             )}}
-                        }
+                            {{$"//Debug log: Total count of Default Values entries: {defaultValues.Length}"}}
+                            //Sample of the desired result for Default Values entries:
+                            //SpacetimeDB.Internal.Module.RegisterTableDefaultValue("user",3,"test");
+                        } 
 
                     // Exports only work from the main assembly, so we need to generate forwarding methods.
                     #if EXPERIMENTAL_WASM_AOT

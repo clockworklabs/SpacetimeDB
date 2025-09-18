@@ -38,11 +38,7 @@ partial class RawModuleDefV9
 
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         RowLevelSecurity.Add(rls);
-
-    internal void RegisterTableDefaultValue(string table, ushort colId, List<byte> value) =>
-        MiscExports.Add(new RawMiscModuleExportV9.ColumnDefaultValue(
-            new RawColumnDefaultValueV9(table, colId, value)
-        ));
+    
 }
 
 public static class Module

@@ -121,12 +121,12 @@
     /// </remarks>
     /// <param name="value">The default value for the column.</param>
     [AttributeUsage(AttributeTargets.Field)]
-    public sealed class DefaultAttribute(object value) : Internal.ColumnAttribute
+    public sealed class DefaultAttribute(object? value) : Internal.ColumnAttribute
     {
         /// <summary>
         /// The default value for the column.
         /// </summary>
-        public object Value { get; } = value;
+        public string? Value { get; } = value?.ToString();
 
         internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Default;
     }
