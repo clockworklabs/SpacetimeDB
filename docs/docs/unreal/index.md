@@ -18,8 +18,7 @@ SpacetimeDB supports Unreal Engine version `5.6` or later, and this tutorial has
 - `5.6`
 > REVIEW: We should be able to support 5.3+ as C++20 became the default + minimum; however current build has been on 5.6; do we want to look into earlier versions of UE, not everyone jumps on the latest for stability reasons?
 
-This tutorial is written for C++, but don’t worry a Blueprint version is coming soon.
-> REVIEW: Maybe better wording here?
+This tutorial is written for C++, but the SpacetimeDB Unreal client SDK also supports Blueprints! Stay tuned for a Blueprint-based tutorial.
 
 Please file an issue [here](https://github.com/clockworklabs/SpacetimeDB/issues) if you encounter an issue with a specific Unreal version, but please be aware that the SpacetimeDB team is unable to offer support for issues related to versions of Unreal prior to `5.6`.
 
