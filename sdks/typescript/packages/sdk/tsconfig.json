@@ -20,7 +20,8 @@
     "baseUrl": ".",
     "paths": {
       "spacetimedb": ["../../../crates/bindings-typescript/src/index.ts"]
-    }
+    },
+    "jsx": "react-jsx"
   },
   "include": ["src/**/*", "tests/**/*"],
   "exclude": ["node_modules", "**/__tests__/*", "dist/**/*"]
