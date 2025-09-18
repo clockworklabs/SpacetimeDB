@@ -83,7 +83,7 @@ fn make_test(test_name: &str) -> Test {
     // Run automation test
 
     let run_command = format!(
-        "\"{editor_exe}\" \"{uproject_path}\" -NullRHI -Unattended -NoSound -nop4 -NoSplash -ExecCmds=\"Automation RunTests SpacetimeDB.TestClient.{test_name}; Quit\""
+        "\"{editor_exe}\" \"{uproject_path}\" -NullRHI -Unattended -NoSound -nop4 -NoSplash -DDC-ForceMemoryCache -ddc=InstalledNoZenLocalFallback -ExecCmds=\"Automation RunTests SpacetimeDB.TestClient.{test_name}; Quit\""
     );
 
     Test::builder()
