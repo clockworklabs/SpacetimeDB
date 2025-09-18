@@ -166,18 +166,6 @@ fn random_module_name() -> String {
 ///
 /// The keys may be either a single variable or a tuple of variables.
 ///
-/// E.g.:
-///
-/// ```rust
-/// fn add_one(n: i32) -> i32 {
-///     memoized!(|n: i32| -> i32 { n + 1 })
-/// }
-///
-/// fn add_together(n: i32, m: i32) -> i32 {
-///     memoized!(|(n, m): (i32, i32)| -> i32 { n + m })
-/// }
-/// ```
-///
 /// The key types must be `'static`, `Clone`, `Eq` and `Hash`, as they'll be stored in a [`HashMap`].
 ///
 /// Used in this file primarily for running expensive and side-effecting subprocesses
