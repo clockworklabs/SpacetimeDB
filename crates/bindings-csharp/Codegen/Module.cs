@@ -625,8 +625,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var defaultValue = fieldsWithDefaultValue.Attrs.FirstOrDefault(a => a.Mask == ColumnAttrs.Default);
                 
                 yield return new FieldDefaultValue(
-                    fieldsWithDefaultValue.Name, 
-                    fieldsWithDefaultValue.ColumnIndex.ToString(),
+                    view.Name, 
+                    $"\"{fieldsWithDefaultValue.ColumnIndex} (Debug log: column name = {fieldsWithDefaultValue.Name}\"",
                     defaultValue.ColumnDefaultValue ?? "Debug log: Default value was null when it should not have been."
                 );
             }
@@ -996,7 +996,7 @@ public class Module : IIncrementalGenerator
             tables
                 .SelectMany((t, ct) => t.GenerateDefaultValues())
                 .WithTrackingName("SpacetimeDB.Table.GenerateDefaultValues"),
-            v => v.tableName,
+            v => v.tableName+"_"+v.columnId,
             v => v.tableName+"_"+v.columnId
         );
 
@@ -1080,9 +1080,6 @@ public class Module : IIncrementalGenerator
                                 defaultValues.Select(d => 
                                     $"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, \"{d.value}\");")
                             )}}
-                            {{$"//Debug log: Total count of Default Values entries: {defaultValues.Length}"}}
-                            //Sample of the desired result for Default Values entries:
-                            //SpacetimeDB.Internal.Module.RegisterTableDefaultValue("user",3,"test");
                         } 
 
                     // Exports only work from the main assembly, so we need to generate forwarding methods.
