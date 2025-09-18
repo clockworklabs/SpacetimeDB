@@ -32,7 +32,7 @@ SpacetimeDB supports Unreal version `5.6` or later. See [the overview](.) for mo
 
 Launch Unreal 5.6 and create a new project by selecting Games from the Unreal Project Browser.
 
-**⚠️ Important: Select the Blank** template and in **Project Defaults select C++**. 
+> ⚠️ Important: Select the **Blank** template and in **Project Defaults** select **C++**. 
 
 For `Project Name` use `client_unreal`. For Project Location make sure that you use your `blackholio` directory. This is the directory that we created in a previous step.
 
