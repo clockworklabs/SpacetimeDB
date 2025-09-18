@@ -68,9 +68,6 @@ export function hexStringToUint8Array(str: string): Uint8Array {
   const data = Uint8Array.from(
     matches.map((byte: string) => parseInt(byte, 16))
   );
-  if (data.length != 32) {
-    return new Uint8Array(0);
-  }
   return data.reverse();
 }
 
