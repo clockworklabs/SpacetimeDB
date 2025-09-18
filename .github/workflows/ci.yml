@@ -103,9 +103,10 @@ jobs:
         run: |
           sudo mkdir /stdb
           sudo chmod 777 /stdb
-
+      
       - name: Run cargo test
-        run: cargo test --all
+        #Note: Unreal tests will be run separately
+        run: cargo test --all --skip unreal
 
       - name: Check that the test outputs are up-to-date
         run: bash tools/check-diff.sh
