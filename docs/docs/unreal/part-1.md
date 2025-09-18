@@ -42,8 +42,11 @@ Click "Create" to generate the blank project.
 
 ### Import the SpacetimeDB Unreal SDK
 
-We're working on hosting the SpacetimeDB SDK for Unreal, in the mean time you can download from GitHub:
+While the SpacetimeDB Unreal client SDK is in preview releases, it can only be installed from GitHub:
+
 > https://github.com/clockworklabs/SpacetimeDB/tree/master/sdks/unreal/src
+
+Once the SDK is stabilized, we'll find a more ergonomic way to distribute it.
 
 > REVIEW: We need to decide how we'll share the SDK (eventually we should host with Fab.com and they can add it like any normal Unreal plugin)
 
