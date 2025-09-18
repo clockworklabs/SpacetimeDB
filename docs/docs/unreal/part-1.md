@@ -67,7 +67,7 @@ In the root of the Unreal project, right click the client_unreal.uproject and se
 ### Create the GameManager Actor
 
 1. Open the `client_unreal` project. Unreal will prompt you to build the `SpacetimeDbSdk` module. Do so.
-2. Open `Tools > New C++ Class` in the top menu, select **Actor** as the parent and click **Next**
+2. Open **Tools > New C++ Class** in the top menu, select **Actor** as the parent and click **Next**
 3. Select **Public** Class Type
 4. Name the script `GameManager`.
 
