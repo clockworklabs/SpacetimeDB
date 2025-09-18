@@ -25,21 +25,31 @@ export default defineConfig([
     clean: true,
     platform: 'neutral',
     treeshake: 'smallest',
+    external: ['undici'],
+    // env variable used at build time to determine platform-specific code
+    // see: websocket_decompress_adapter.ts 
+    env: {
+      BROWSER: 'false', 
+    },
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
 
-  // Browser-flavored root wrapper: dist/browser/index.mjs
+  // Browser-flavored root wrapper: dist/index.browser.mjs
   {
-    entry: { index: 'src/index.ts' },
+    entry: { 'index.browser': 'src/index.ts' },
     format: ['esm'],
     target: 'es2022',
-    outDir: 'dist/browser',
+    outDir: 'dist',
     dts: false,
     sourcemap: true,
     clean: true,
     platform: 'browser',
     treeshake: 'smallest',
+    external: ['undici'],
+    env: {
+      BROWSER: 'true',
+    },
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -55,6 +65,10 @@ export default defineConfig([
     clean: true,
     platform: 'neutral',
     treeshake: 'smallest',
+    external: ['undici'],
+    env: {
+      BROWSER: 'false',
+    },
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -70,6 +84,10 @@ export default defineConfig([
     clean: true,
     platform: 'browser',
     treeshake: 'smallest',
+    external: ['undici'],
+    env: {
+      BROWSER: 'true',
+    },
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -85,6 +103,10 @@ export default defineConfig([
     clean: true,
     platform: 'neutral', // flip to 'node' if you actually rely on Node builtins
     treeshake: 'smallest',
+    external: ['undici'],
+    env: {
+      BROWSER: 'false',
+    },
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -94,9 +116,9 @@ export default defineConfig([
   // It is expected that consumers of the library will run their own
   // minification as part of their app bundling process.
 
-  // Minified browser build: dist/min/index.mjs
+  // Minified browser build: dist/min/index.browser.mjs
   {
-    entry: { index: 'src/index.ts' },
+    entry: { 'index.browser': 'src/index.ts' },
     format: ['esm'],
     target: 'es2022',
     outDir: 'dist/min',
@@ -105,6 +127,10 @@ export default defineConfig([
     minify: 'terser',
     platform: 'browser',
     treeshake: 'smallest',
+    external: ['undici'],
+    env: {
+      BROWSER: 'true',
+    },
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -120,6 +146,10 @@ export default defineConfig([
     minify: 'terser',
     platform: 'browser',
     treeshake: 'smallest',
+    external: ['undici'],
+    env: {
+      BROWSER: 'true',
+    },
     outExtension: ({ format }) => ({ js: format === 'cjs' ? '.cjs' : '.mjs' }),
     esbuildOptions: commonEsbuildTweaks(),
   },

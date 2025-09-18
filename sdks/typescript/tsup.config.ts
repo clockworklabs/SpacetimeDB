@@ -21,6 +21,7 @@ export default defineConfig([
     platform: 'neutral',
     noExternal: ['spacetimedb'],
     treeshake: 'smallest',
+    external: ['undici'],
     esbuildOptions: commonEsbuildTweaks(),
   },
 
@@ -36,10 +37,16 @@ export default defineConfig([
     platform: 'browser',
     noExternal: ['spacetimedb'],
     treeshake: 'smallest',
+    external: ['undici'],
     esbuildOptions: commonEsbuildTweaks(),
   },
 
-  // Minified browser build -> dist/min/index.js (keeps your size script happy)
+  // The below minified builds are not referenced in package.json and are
+  // just included in the build for measuring the size impact of minification.
+  // It is expected that consumers of the library will run their own
+  // minification as part of their app bundling process.
+
+  // Minified browser build -> dist/min/index.js
   {
     entry: { index: 'src/index.ts' },
     format: ['esm'],
@@ -51,16 +58,17 @@ export default defineConfig([
     platform: 'browser',
     noExternal: ['spacetimedb'],
     treeshake: 'smallest',
+    external: ['undici'],
     esbuildOptions: commonEsbuildTweaks(),
   },
 ]) satisfies
   | Options
   | Options[]
   | ((
-      overrideOptions: Options
-    ) => Options | Options[] | Promise<Options | Options[]>) as
+    overrideOptions: Options
+  ) => Options | Options[] | Promise<Options | Options[]>) as
   | Options
   | Options[]
   | ((
-      overrideOptions: Options
-    ) => Options | Options[] | Promise<Options | Options[]>);
+    overrideOptions: Options
+  ) => Options | Options[] | Promise<Options | Options[]>);

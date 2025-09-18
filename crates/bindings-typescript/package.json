@@ -42,6 +42,7 @@
       "types": "./src/index.ts",
       "source": "./src/index.ts",
       "development": "./src/index.ts",
+      "browser": "./dist/index.browser.mjs",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs",
       "default": "./dist/index.mjs"
