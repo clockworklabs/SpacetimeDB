@@ -37,12 +37,20 @@ jobs:
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
+      
+      - name: Build module library
+        working-directory: crates/bindings-typescript
+        run: pnpm build
 
-      - name: Build
+      - name: Run module library tests
+        working-directory: crates/bindings-typescript 
+        run: pnpm test
+
+      - name: Build SDK
         working-directory: sdks/typescript
         run: pnpm build
 
-      - name: Run sdk tests
+      - name: Run SDK tests
         working-directory: sdks/typescript/packages/sdk
         run: pnpm test
 

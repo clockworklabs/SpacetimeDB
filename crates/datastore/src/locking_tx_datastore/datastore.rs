@@ -111,7 +111,12 @@ impl Locking {
         commit_state.bootstrap_system_tables(database_identity)?;
         // The database tables are now initialized with the correct data.
         // Now we have to build our in memory structures.
-        commit_state.build_sequence_state(&mut datastore.sequence_state.lock())?;
+        {
+            let sequence_state = commit_state.build_sequence_state()?;
+            // Reset our sequence state so that they start in the right places.
+            *datastore.sequence_state.lock() = sequence_state;
+        }
+
         // We don't want to build indexes here; we'll build those later,
         // in `rebuild_state_after_replay`.
         // We actively do not want indexes to exist during replay,
@@ -128,14 +133,14 @@ impl Locking {
     /// There may eventually be better way to do this, but this will have to do for now.
     pub fn rebuild_state_after_replay(&self) -> Result<()> {
         let mut committed_state = self.committed_state.write_arc();
-        let mut sequence_state = self.sequence_state.lock();
         // `build_missing_tables` must be called before indexes.
         // Honestly this should maybe just be one big procedure.
         // See John Carmack's philosophy on this.
         committed_state.reschema_tables()?;
         committed_state.build_missing_tables()?;
         committed_state.build_indexes()?;
-        committed_state.build_sequence_state(&mut sequence_state)?;
+        // Figure out where to pick up for each sequence.
+        *self.sequence_state.lock() = committed_state.build_sequence_state()?;
         Ok(())
     }
 
@@ -160,8 +165,6 @@ impl Locking {
     /// - Populate those tables with all rows in `snapshot`.
     /// - Construct a [`HashMapBlobStore`] containing all the large blobs referenced by `snapshot`,
     ///   with reference counts specified in `snapshot`.
-    /// - Do [`CommittedState::reset_system_table_schemas`] to fix-up auto_inc IDs in the system tables,
-    ///   to ensure those schemas match what [`Self::bootstrap`] would install.
     /// - Notably, **do not** construct indexes or sequences.
     ///   This should be done by [`Self::rebuild_state_after_replay`],
     ///   after replaying the suffix of the commitlog.
@@ -216,8 +219,16 @@ impl Locking {
                 .set(table_size as i64);
         }
 
-        // Fix up auto_inc IDs in the cached system table schemas.
-        committed_state.reset_system_table_schemas()?;
+        // Double check that our in-memory system table ids match the on-disk schemas.
+        committed_state.assert_system_table_schemas_match()?;
+        // Set the sequence state. In practice we will end up doing this again after replaying
+        // the commit log, but we do it here too just to avoid having an incorrectly restored
+        // snapshot.
+        {
+            let sequence_state = committed_state.build_sequence_state()?;
+            // Reset our sequence state so that they start in the right places.
+            *datastore.sequence_state.lock() = sequence_state;
+        }
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
@@ -355,9 +366,10 @@ impl Tx for Locking {
     /// allowing new mutable transactions to start if this was the last read-only transaction.
     ///
     /// Returns:
+    /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String) {
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String) {
         tx.release()
     }
 }
@@ -914,7 +926,7 @@ impl MutTx for Locking {
         tx.rollback()
     }
 
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, TxMetrics, String)>> {
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>> {
         Ok(Some(tx.commit()))
     }
 }
@@ -954,7 +966,7 @@ pub struct Replay<F> {
 }
 
 impl<F> Replay<F> {
-    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<F>) -> T) -> T {
+    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<'_, F>) -> T) -> T {
         let mut committed_state = self.committed_state.write_arc();
         let mut visitor = ReplayVisitor {
             database_identity: &self.database_identity,
@@ -1125,8 +1137,8 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
             .replay_delete_by_rel(table_id, &row)
             .with_context(|| {
                 format!(
-                    "Error deleting row {:?} during transaction {:?} playback",
-                    row, self.committed_state.next_tx_offset
+                    "Error deleting row {:?} from table {:?} during transaction {:?} playback",
+                    row, table_name, self.committed_state.next_tx_offset
                 )
             })?;
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
@@ -1218,7 +1230,8 @@ mod tests {
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.
-    const FIRST_NON_SYSTEM_ID: u32 = ST_RESERVED_SEQUENCE_RANGE + 1;
+    /// N.B. This used to be one higher (before 1.4) because of how we treated `allocated`.
+    const FIRST_NON_SYSTEM_ID: u32 = ST_RESERVED_SEQUENCE_RANGE;
 
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
@@ -1409,7 +1422,7 @@ mod tests {
                 start: value.start,
                 min_value: 1,
                 max_value: i128::MAX,
-                allocated: 0,
+                allocated: value.start,
             }
         }
     }
@@ -1425,7 +1438,6 @@ mod tests {
                 start: value.start,
                 min_value: 1,
                 max_value: i128::MAX,
-                allocated: 0,
             }
         }
     }
@@ -1465,7 +1477,8 @@ mod tests {
     }
 
     fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<TxData> {
-        Ok(datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`").0)
+        let (_, tx_data, _, _) = datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`");
+        Ok(tx_data)
     }
 
     #[rustfmt::skip]
@@ -1532,7 +1545,6 @@ mod tests {
             increment: 1,
             min_value: 1,
             max_value: i128::MAX,
-            allocated: 0,
         };
         user_public_table(
             map_array(basic_table_schema_cols()),
@@ -1714,7 +1726,7 @@ mod tests {
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
             IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
         ]));
-        let start = FIRST_NON_SYSTEM_ID as i128;
+        let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
         assert_eq!(query.scan_st_sequences()?, map_array_fn(
             [
@@ -1725,7 +1737,7 @@ mod tests {
                 SequenceRow { id: 4, table: ST_SCHEDULED_ID.into(), col_pos: 0, name: "st_scheduled_schedule_id_seq", start },
             ],
             |row| StSequenceRow {
-                allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
+                allocated: start - 1,
                 ..StSequenceRow::from(row)
             }
         ));
@@ -1764,8 +1776,14 @@ mod tests {
             );
 
             assert_eq!(
-                schema.indexes,
+                schema
+                    .indexes
+                    .clone()
+                    .into_iter()
+                    .sorted_by_key(|x| x.index_id)
+                    .collect::<Vec<_>>(),
                 idx.iter()
+                    .sorted_by_key(|x| x.index_id)
                     .filter(|x| x.table_id == st.table_id)
                     .cloned()
                     .map(Into::into)
@@ -1775,8 +1793,14 @@ mod tests {
             );
 
             assert_eq!(
-                schema.sequences,
+                schema
+                    .sequences
+                    .clone()
+                    .into_iter()
+                    .sorted_by_key(|x| x.sequence_id)
+                    .collect::<Vec<_>>(),
                 seq.iter()
+                    .sorted_by_key(|x| x.sequence_id)
                     .filter(|x| x.table_id == st.table_id)
                     .cloned()
                     .map(Into::into)
@@ -1786,8 +1810,14 @@ mod tests {
             );
 
             assert_eq!(
-                schema.constraints,
+                schema
+                    .constraints
+                    .clone()
+                    .into_iter()
+                    .sorted_by_key(|x| x.constraint_id)
+                    .collect::<Vec<_>>(),
                 ct.iter()
+                    .sorted_by_key(|x| x.constraint_id)
                     .filter(|x| x.table_id == st.table_id)
                     .cloned()
                     .map(Into::into)
@@ -1942,7 +1972,7 @@ mod tests {
         verify_schemas_consistent(&mut tx, table_id);
 
         let expected_indexes = [IndexRow {
-            id: ST_RESERVED_SEQUENCE_RANGE + dropped_indexes + 1,
+            id: FIRST_NON_SYSTEM_ID + dropped_indexes,
             table: FIRST_NON_SYSTEM_ID,
             col: col_list![0],
             name: "Foo_id_idx_btree",
@@ -2301,7 +2331,6 @@ mod tests {
             increment: 1,
             min_value: 1,
             max_value: i128::MAX,
-            allocated: 0,
         };
         let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
         assert_matches!(

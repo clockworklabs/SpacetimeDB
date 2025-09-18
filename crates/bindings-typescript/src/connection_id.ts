@@ -1,3 +1,4 @@
+import { AlgebraicType } from './algebraic_type';
 import { hexStringToU128, u128ToHexString, u128ToUint8Array } from './utils';
 
 /**
@@ -11,6 +12,18 @@ export class ConnectionId {
    */
   constructor(data: bigint) {
     this.__connection_id__ = data;
+  }
+
+  /**
+   * Get the algebraic type representation of the {@link ConnectionId} type.
+   * @returns The algebraic type representation of the type.
+   */
+  static getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.Product({
+      elements: [
+        { name: '__connection_id__', algebraicType: AlgebraicType.U128 },
+      ],
+    });
   }
 
   isZero(): boolean {
