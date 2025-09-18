@@ -111,7 +111,7 @@ Let's set up the basic level, add our new GameManager to the level and a little 
 
 ### Add simple GameMode
 
-We'll need a very simple GameMode to tweak the start up settings, let's add that now and wire it in for the World Settings.
+We'll need a very simple GameMode to tweak the start up settings. Let's add that now and wire it in for the World Settings.
 
 1. **Create the C++ Class**:
    - Open `Tools > New C++ Class` in the top menu, select **GameModeBase** as the parent and click **Next**
