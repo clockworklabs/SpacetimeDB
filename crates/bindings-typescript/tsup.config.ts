@@ -44,36 +44,6 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
-  // React subpath (SSR-friendly): dist/react/index.{mjs,cjs}
-  {
-    entry: { index: 'src/react/index.ts' },
-    format: ['esm', 'cjs'],
-    target: 'es2022',
-    outDir: 'dist/react',
-    dts: false,
-    sourcemap: true,
-    clean: true,
-    platform: 'neutral',
-    treeshake: 'smallest',
-    outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
-  },
-
-  // React subpath (browser ESM): dist/browser/react/index.mjs
-  {
-    entry: { index: 'src/react/index.ts' },
-    format: ['esm'],
-    target: 'es2022',
-    outDir: 'dist/browser/react',
-    dts: false,
-    sourcemap: true,
-    clean: true,
-    platform: 'browser',
-    treeshake: 'smallest',
-    outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
-  },
-
   // SDK subpath (SSR-friendly): dist/sdk/index.{mjs,cjs}
   {
     entry: { index: 'src/sdk/index.ts' },
@@ -136,21 +106,6 @@ export default defineConfig([
     platform: 'browser',
     treeshake: 'smallest',
     outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
-  },
-
-  // Minified browser React build: dist/min/react/index.mjs
-  {
-    entry: { index: 'src/react/index.ts' },
-    format: ['esm'],
-    target: 'es2022',
-    outDir: 'dist/min/react',
-    dts: false,
-    sourcemap: true,
-    minify: 'terser',
-    platform: 'browser',
-    treeshake: 'smallest',
-    outExtension: ({ format }) => ({ js: format === 'cjs' ? '.cjs' : '.mjs' }),
     esbuildOptions: commonEsbuildTweaks(),
   },
 

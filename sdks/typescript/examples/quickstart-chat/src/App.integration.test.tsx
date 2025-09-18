@@ -2,20 +2,10 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
-import { SpacetimeDBProvider } from '@clockworklabs/spacetimedb-sdk/react';
-import { DbConnection } from './module_bindings';
 
 describe('App Integration Test', () => {
   it('connects to the DB, allows name change and message sending', async () => {
-    const connectionBuilder = DbConnection.builder()
-      .withUri('ws://localhost:3000')
-      .withModuleName('quickstart-chat')
-      .withToken(localStorage.getItem('auth_token') || '');
-    render(
-      <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
-        <App />
-      </SpacetimeDBProvider>
-    );
+    render(<App />);
 
     // Initially, we should see "Connecting..."
     expect(screen.getByText(/Connecting.../i)).toBeInTheDocument();

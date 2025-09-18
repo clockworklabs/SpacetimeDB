@@ -53,36 +53,6 @@ export default defineConfig([
     treeshake: 'smallest',
     esbuildOptions: commonEsbuildTweaks(),
   },
-
-  // React subpath (SSR-friendly) -> dist/react/index.js
-  {
-    entry: { index: 'src/react/index.ts' },
-    format: ['esm'],
-    target: 'es2022',
-    outDir: 'dist/react',
-    dts: false, // wrapper doesn't own .d.ts; package.json points to src
-    sourcemap: true,
-    clean: true,
-    platform: 'neutral',
-    noExternal: ['spacetimedb'],
-    treeshake: 'smallest',
-    esbuildOptions: commonEsbuildTweaks(),
-  },
-
-  // React subpath (browser) -> dist/browser/react/index.js
-  {
-    entry: { index: 'src/react/index.ts' },
-    format: ['esm'],
-    target: 'es2022',
-    outDir: 'dist/browser/react',
-    dts: false,
-    sourcemap: true,
-    clean: true,
-    platform: 'browser',
-    noExternal: ['spacetimedb'],
-    treeshake: 'smallest',
-    esbuildOptions: commonEsbuildTweaks(),
-  },
 ]) satisfies
   | Options
   | Options[]

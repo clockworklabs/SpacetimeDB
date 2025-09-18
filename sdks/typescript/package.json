@@ -31,12 +31,6 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./react": {
-      "types": "./src/react/index.ts",
-      "browser": "./dist/browser/react/index.js",
-      "import": "./dist/react/index.js",
-      "default": "./dist/react/index.js"
-    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,

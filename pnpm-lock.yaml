@@ -53,9 +53,6 @@ importers:
       prettier:
         specifier: ^3.3.3
         version: 3.6.2
-      react:
-        specifier: ^18.0.0 || ^19.0.0-0 || ^19.0.0
-        version: 18.3.1
       undici:
         specifier: ^6.19.2
         version: 6.21.3
@@ -66,9 +63,6 @@ importers:
       '@size-limit/file':
         specifier: ^11.2.0
         version: 11.2.0(size-limit@11.2.0)
-      '@types/react':
-        specifier: ^19.1.13
-        version: 19.1.13
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.18.2
         version: 8.40.0(@typescript-eslint/parser@8.40.0(eslint@9.33.0(jiti@2.5.1))(typescript@5.9.2))(eslint@9.33.0(jiti@2.5.1))(typescript@5.9.2)
