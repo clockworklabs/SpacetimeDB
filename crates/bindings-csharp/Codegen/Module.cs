@@ -159,49 +159,6 @@ record ColumnDeclaration : MemberDeclaration
     // For the `TableDesc` constructor.
     public string GenerateColumnDef() =>
         $"new (nameof({Name}), BSATN.{Name}{TypeUse.BsatnFieldSuffix}.GetAlgebraicType(registrar))";
-
-     // Converts value to a string that can be used as a default value in generated code.
-     internal static string GetDefaultValueCode(object? value)
-     {
-         if (value == null)
-             return "null";
-
-         // Handle string escaping
-         if (value is string str)
-         {
-             return $"\"{str.Replace("\"", "\\\"")}\"";
-         }
-
-         // Handle boolean values
-         if (value is bool b)
-         {
-             return b ? "true" : "false";
-         }
-
-         // Handle numeric types
-         if (value is int || value is long || value is short || value is byte ||
-             value is uint || value is ulong || value is ushort || value is sbyte ||
-             value is float || value is double || value is decimal)
-         {
-             return value.ToString() ?? "0";
-         }
-
-         // Handle enums
-         if (value is Enum enumValue)
-         {
-             return $"{enumValue.GetType().FullName}.{enumValue}";
-         }
-
-         // For any other type, use its string representation
-         var strValue = value.ToString();
-         if (string.IsNullOrEmpty(strValue))
-         {
-             return "null";
-         }
-
-         // Escape any quotes in the string representation
-         return $"\"{strValue.Replace("\"", "\\\"")}\"";
-     }
 }
 
 record Scheduled(string ReducerName, int ScheduledAtColumn);
@@ -289,8 +246,7 @@ record ViewIndex
             ImmutableArray.Create(col),
             null,
             ViewIndexType.BTree // this might become hash in the future
-        )
-    { }
+        ) { }
 
     private ViewIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
         : this(attr.Name, columns, attr.Table, ViewIndexType.BTree) { }
@@ -642,7 +598,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
-    public record struct Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
+    public record Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
     {
         public ViewIndex ToIndex() => new(new ColumnRef(Pos, Col.Name));
     }
