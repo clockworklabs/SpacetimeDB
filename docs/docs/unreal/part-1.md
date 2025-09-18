@@ -57,8 +57,7 @@ Add the SpacetimeDB Unreal SDK by first adding a new plugin folder:
 cd client_unreal
 md Plugins
 ```
-Copy the SpacetimeDbSdk to the new Plugins folder.
-> You should have /client_unreal/Plugins/SpacetimeDbSdk
+Copy the SpacetimeDbSdk to the new Plugins folder. This should create `/client_unreal/Plugins/SpacetimeDbSdk`.
 
 In the root of the Unreal project, right click the client_unreal.uproject and select **Generate Visual Studio project files**. 
 
