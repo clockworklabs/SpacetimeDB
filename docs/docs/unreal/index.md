@@ -14,9 +14,7 @@ This tutorial assumes that you have a basic understanding of the Unreal Engine, 
 
 We’ll keep things intentionally simple: a single “Game Manager” class, minimal error handling, and hardcoded settings where convenient. This makes the SDK flow easy to see. For production, prefer Unreal’s Subsystems, move secrets out of code, follow best practices, and add proper logging/retry.
 
-SpacetimeDB supports Unreal Engine version `5.6` or later, and this tutorial has been tested with the following Unreal versions:
-- `5.6`
-> REVIEW: We should be able to support 5.3+ as C++20 became the default + minimum; however current build has been on 5.6; do we want to look into earlier versions of UE, not everyone jumps on the latest for stability reasons?
+SpacetimeDB supports Unreal Engine version `5.6`. This tutorial has been tested only with that version.
 
 This tutorial is written for C++, but the SpacetimeDB Unreal client SDK also supports Blueprints! Stay tuned for a Blueprint-based tutorial.
 

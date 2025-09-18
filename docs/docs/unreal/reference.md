@@ -24,15 +24,17 @@ Add the SpacetimeDB Unreal SDK to your project as a plugin. The SDK provides bot
 Each SpacetimeDB client depends on some bindings specific to your module. Generate the Unreal interface files using the Spacetime CLI. From your project directory, run:
 
 ```bash
-spacetime generate --lang unrealcpp --uproject-dir <uproject_directory> --project-path <module_path> --module-name <ModuleName>
+spacetime generate --lang unrealcpp --uproject-dir <uproject_directory> --project-path <module_path> --module-name <module_name>
 ```
 
 Replace:
+
 - `<uproject_directory>` with the path to your Unreal project directory (containing the `.uproject` file)
 - `<module_path>` with the path to your SpacetimeDB module
-- `<ModuleName>` with the name of your module
+- `<module_name>` with the name of your module
 
 **Example:**
+
 ```bash
 spacetime generate --lang unrealcpp --uproject-dir /path/to/MyGame --project-path /path/to/quickstart-chat --module-name QuickstartChat
 ```
@@ -119,6 +121,7 @@ class UDbConnectionBuilder
 ```
 
 Set the compression method for WebSocket communication. Available options:
+
 - `ESpacetimeDBCompression::None` - No compression
 - `ESpacetimeDBCompression::Gzip` - Gzip compression (default)
 - `ESpacetimeDBCompression::Brotli` - Brotli compression (not implemented, defaults to Gzip)

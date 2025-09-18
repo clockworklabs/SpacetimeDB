@@ -564,9 +564,9 @@ Deleting the data is optional in this case, but in case you've been messing arou
 
 ### Creating the Arena
 
-Now that we've set up our server logic to spawn food and players, let's continue developing our Unreal client to display what we have so far.
+With the server logic in place to spawn food and players, extend the Unreal client to display the current state.
 
-Start by adding `SetupArena` and `CreateBorderCube` methods and properties we'll need to your `GameManager.h` class, you can add this below the Handle functions in the private block: 
+Add the `SetupArena` and `CreateBorderCube` methods and properties to your `GameManager.h` class. Place them below the `Handle{}` functions in the private block:
 
 ```cpp
     /* Border */
@@ -588,7 +588,7 @@ Start by adding `SetupArena` and `CreateBorderCube` methods and properties we'll
     /* Border */
 ```
 
-We'll need to update the constructor `AGameManager()` to add our InstancedStaticMeshComponent and set up the Cube in the `GameManager.cpp`, update the constructor to the following:
+The `AGameManager()` constructor in `GameManager.cpp` includes an `InstancedStaticMeshComponent` to set up the cube. Update the constructor as follows:
 
 ```cpp
 AGameManager::AGameManager()
@@ -610,7 +610,7 @@ AGameManager::AGameManager()
 }
 ```
 
-Next up let's add the implementation for `SetupArena` and `CreateBorderCube` by adding these to the end of the `GameManager.cpp`:
+Add the implementations of `SetupArena` and `CreateBorderCube` to the end of `GameManager.cpp`:
 
 ```cpp
 void AGameManager::SetupArena(uint64 WorldSizeMeters)
@@ -674,7 +674,7 @@ void AGameManager::CreateBorderCube(const FVector2f Position, const FVector2f Si
 }
 ```
 
-In your `HandleSubscriptionApplied` let's now call `SetupArena` method. Modify your `HandleSubscriptionApplied` method as in the below.
+In `HandleSubscriptionApplied`, call the `SetupArena` method. Update `HandleSubscriptionApplied` as follows:
 
 ```cpp
 void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
@@ -688,125 +688,135 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
 }
 ```
 
-The `OnApplied` callback will be called after the server synchronizes the initial state of your tables with your client. Once the sync has happened, we can look up the world size from the `config` table and use it to set up our arena.
+The `OnApplied` callback is called after the server synchronizes the initial state of your tables with the client. After the sync, look up the world size from the `config` table and use it to set up the arena.
 
-In the scene view, select the `GameManager` object. Click on the `Border Material` property and choose `Sprites-Default`.
+### Create Entity Blueprints
 
-### Creating Entity Blueprints
+With the arena set up, use the row data that SpacetimeDB syncs with the client to create and display **Blueprints** on the screen.
 
-Now that we have our arena all set up, we need to take the row data that SpacetimeDB syncs with our client and use it to create and draw `Blueprint`s on the screen.
+Start by making a C++ class for each entity you want in the scene. If the Unreal project is not running, start it now. From the top menu, choose **Tools -> New C++ Class...** to create the following classes (you’ll modify these later):
 
-Let's start by making some classes for each of the entities we'd like to have in our scene. If the Unreal project is not started, start it up now. Use the `Tools > New C++ Class...` to create the following classes (we'll modify these later):
+> **Note:** After creating the first class, wait for **Live Coding** to finish before creating the next classes.
 
-1. Parent: Actor, Class Type: Public, Class name: `Entity` -> **Wait for the Live Coding to finish to set up the next classes**
-2. Parent: (All Classes) Entity, Class type: Public, Class name: `Circle`
-3. Parent: (All Classes) Entity, Class type: Public, Class name: `Food`
-4. Parent: Pawn, Class type: Public, Class name: `PlayerPawn`
-5. Parent: Player Controller, Class type: Public, Class name: `BlackholioPlayerController`
-6. Parent: None, Class type: Public, Class name: `DbVector2`
+1. **Parent:** **Actor** · **Class Type:** **Public** · **Class Name:** `Entity`
+2. **Parent:** **All Classes -> Entity** · **Class Type:** **Public** · **Class Name:** `Circle`
+3. **Parent:** **All Classes -> Entity** · **Class Type:** **Public** · **Class Name:** `Food`
+4. **Parent:** **Pawn** · **Class Type:** **Public** · **Class Name:** `PlayerPawn`
+5. **Parent:** **Player Controller** · **Class Type:** **Public** · **Class Name:** `BlackholioPlayerController`
+6. **Parent:** **None** · **Class Type:** **Public** · **Class Name:** `DbVector2`
 
-Next let's make some blueprints for our these classes.
+Next add blueprints for our these classes:
 
-1. **Circle Blueprint**
-    - In the content drawer window, create a new `Blueprint` by right-clicking and selecting `Blueprint > Blueprint Class`
-    - Expand `All Classes`, search for `Circle`, highlight Circle and click **Select**
-    - Rename the new blueprint to `BP_Circle`
-2. **Food Blueprint**
-    - In the content drawer window, create a new `Blueprint` by right-clicking and selecting `Blueprint > Blueprint Class`
-    - Expand `All Classes`, search for `Food`, highlight Food and click **Select**
-    - Rename the new blueprint to `BP_Food`
-3. **Player Blueprint**
-    - In the content drawer window, create a new `Blueprint` by right-clicking and selecting `Blueprint > Blueprint Class`
-    - Expand `All Classes`, search for `PlayerPawn`, highlight PlayerPawn and click **Select**
-    - Rename the new blueprint to `BP_PlayerPawn`
-4. **Player Controller Blueprint**
-    - In the content drawer window, create a new `Blueprint` by right-clicking and selecting `Blueprint > Blueprint Class`
-    - Expand `All Classes`, search for `BlackholioPlayerController`, highlight BlackholioPlayerController and click **Select**
-    - Rename the new blueprint to `BP_PlayerController`
-    - Open `Window > World Settings` in the top menu
-    - Update Player Controller Class from **PlayerController** to **BP_BlackholioPlayerController**
-    - Save the level
+1. **Circle Blueprint**  
+   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.  
+   - Expand **All Classes**, search for `Circle`, highlight `Circle`, and click **Select**.  
+   - Rename the new Blueprint to `BP_Circle`.
+
+2. **Food Blueprint**  
+   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.  
+   - Expand **All Classes**, search for `Food`, highlight `Food`, and click **Select**.  
+   - Rename the new Blueprint to `BP_Food`.
+
+3. **Player Blueprint**  
+   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.  
+   - Expand **All Classes**, search for `PlayerPawn`, highlight `PlayerPawn`, and click **Select**.  
+   - Rename the new Blueprint to `BP_PlayerPawn`.
+
+4. **Player Controller Blueprint**  
+   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.  
+   - Expand **All Classes**, search for `BlackholioPlayerController`, highlight `BlackholioPlayerController`, and click **Select**.  
+   - Rename the new Blueprint to `BP_BlackholioPlayerController`.  
+   - Open **Window -> World Settings** in the top menu.  
+   - Change **Player Controller Class** from **PlayerController** to `BP_BlackholioPlayerController`.  
+   - Save the level.
 
 ![Add Circle](./part-3-01-create-blueprint.png)
 
-### Setup Nameplate Blueprint
+### Set Up the Nameplate Blueprint
 
-A piece we'll need is a widget for the nameplate for player circles, to set that up add another `Blueprint` class:
-    - In the content drawer window, create a new `Blueprint` by right-clicking and selecting `Blueprint > Blueprint Class`
-    - Expand `All Classes`, search for `UserWidget`, highlight UserWidget and click **Select**
-    - Rename the new blueprint to `WBP_Nameplate`
+Create a widget Blueprint for the player nameplate:
 
-With that created double-click it to open/edit the new widget blueprint and make a few changes:
+- In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.  
+- Expand **All Classes**, search for **UserWidget**, highlight **UserWidget**, and click **Select**.  
+- Name the new Blueprint `WBP_Nameplate`.
 
-1. On the palette on the left search for `Size Box` and drag and drop it into the Hierachy under `WBP_Nameplate`
-2. Search the palette for `Text`, drag and drop it under the `Size Box`
-3. Select the `Text`, and edit the details:
-    - Rename to `TextBlock`
-    - Check **Is Variable**
-    - Update **Font > Size** to 24
-    - Update **Font > Justification** to `Align Text Center`
+Double-click `WBP_Nameplate` to open it, then make the following changes:
 
+1. In the **Palette** on the left, search for **Size Box** and drag it into the **Hierarchy** under `WBP_Nameplate`.  
+2. Search the **Palette** for **Text** and drag it under the **Size Box**.  
+3. Select the **Text** widget and update its details:  
+   - Rename it to `TextBlock`.  
+   - Check **Is Variable**.  
+   - Set **Font -> Size** to `24`.
+   - Set **Font -> Justification** to **Align Text Center**.
 
 ![WBP_Nameplate](./part-3-02-create-nameplate.png)
 
-Finally, we'll add a way for the circle to update the nameplate with a little bit of Blueprint code:
+Finally, add Blueprint logic so the circle can update its nameplate:
 
-1. Click **Graph** tab on the top right of the `WBP_Nameplate` editor
-2. Click **+** button to the right of the `My Blueprint > Functions` and name the new function `UpdateText`
-3. Select **UpdateText** in the editor and add to the `Details > Inputs` a variable named `Text` as type `String`
-4. Drag **TextBlock** to the right of `UpdateText` in the editor and select `Get TextBlock`
-5. Drag off the added `TextBlock` and search for `Set Text`
-6. Attach `UpdateText` to `Set Text` added above, and attach `UpdateText > Text` to `Set Text > Text`
-    - This will add a convert from String to Text and that is expected
-7. Click **Save** and **Compile**
+1. In the `WBP_Nameplate` editor, open the **Graph** tab (top right).  
+2. Click the **+** button next to **My Blueprint -> Functions** and name the new function `UpdateText`.  
+3. Select `UpdateText` in the editor, then in **Details -> Inputs**, add a variable named `Text` of type `String`.  
+4. Drag **TextBlock** into the graph and choose **Get TextBlock**.  
+5. Drag off **TextBlock** and search for **Set Text**.  
+6. Connect **UpdateText** to **Set Text**, then connect **UpdateText -> Text** to **Set Text -> Text**.  
+   - A conversion from `String` to `Text` is added automatically; this is expected.  
+7. Click **Save** and **Compile**.
 
 ![UpdateText Function](./part-3-03-update-text-function.png)
 
-### Setup Circle Entity Blueprint
+### Set Up Circle Entity Blueprint
 
-To set up the Circle we'll want to add the circle sprite by using the image below and import it into Unreal, right click and save this image:
+Import and set up the circle sprite:
 
+1. Right-click the image below and save it locally:  
 ![Circle](./Circle.png)
 
-Right click in the `Content Drawer` and select `Import to Current Folder` and select the saved image. This will import the Circle as a texture, next right-click the imported texture and select `Sprite Actions > Create Sprite` which will make Circle_Sprite we can use below.
+2. In the **Content Drawer**, right-click and select **Import to Current Folder**, then choose the saved image.  
+   - This imports the Circle as a texture.  
+   - Right-click the imported texture, select **Sprite Actions -> Create Sprite**, and rename it `Circle_Sprite`.
 
-Next open up the `BP_Circle` to get it set up:
+Next, open `BP_Circle` and configure it:
 
-1. Select `DefaultSceneRoot`, add `Components > Paper Sprite` component and rename it to `Circle`
-    - In the details panel update the **Scale** to 0.4 for all three axis
-    - Set the **Source Sprite** to `Circle_Sprite`
-2. Select `DefaultSceneRoot`, add `Components > Widget` component and rename it to `NameplateWidget`
-    - In the details panel update the **Location** to 0, 10, -45
-    - Update the **Rotation** to 0, 0, 90
-    - Under `User Interface` update:
-        - **Widget Class** to the `WBP_Nameplate`
-        - **Draw Size** to 300, 60
-        - **Pivot** to 0.5, 1.0
+1. Select **DefaultSceneRoot**, add a **Components -> Paper Sprite** component, and rename it `Circle`.  
+   - In the **Details** panel, set **Scale** to `0.4` for all three axes.  
+   - Set **Source Sprite** to `Circle_Sprite`.
 
-### Setup Food Entity Blueprint
+2. Select **DefaultSceneRoot**, add a **Components -> Widget** component, and rename it `NameplateWidget`.  
+   - In the **Details** panel, set **Location** to `0, 10, -45`.  
+   - Set **Rotation** to `0, 0, 90`.  
+   - Under **User Interface**, update:  
+     - **Widget Class** to `WBP_Nameplate`  
+     - **Draw Size** to `300, 60`  
+     - **Pivot** to `0.5, 1.0`
 
-This is a simple entity representation of the food the player can collect and will be quick to set up. Open up the `BP_Food` to get it set up:
+### Set Up the Food Entity Blueprint
 
-1. Select `DefaultSceneRoot`, add `Components > Paper Sprite` component and rename it to `Circle`
-    - In the details panel update the **Scale** to 0.4 for all three axis
-    - Set the **Source Sprite** to `Circle_Sprite`
+The food entity is a simple collectible. Open `BP_Food` and configure it as follows:
 
-### Setup PlayerPawn Blueprint
+1. Select **DefaultSceneRoot**, add a **Components -> Paper Sprite** component, and rename it `Circle`.  
+   - In the **Details** panel, set **Scale** to `0.4` for all three axes.  
+   - Set **Source Sprite** to `Circle_Sprite`.
 
-The player pawn will own the circle(s) and handle the camera position by following the center of mass, this setup will get us the beginning functionality but we'll add the rest in the C++ class. Open the `BP_PlayerPawn` and make the following changes:
+### Set Up the PlayerPawn Blueprint
 
-1. Select `DefaultSceneRoot`, add `Components > Spring Arm` component
-    - In the details panel update:
-        - **Location** to 0, 15000, 0
-        - **Rotation** to 0, 0, -90
-        - **Target Arm Length** to 200
-2. Select `SpringArm`, add `Components > Camera` component
+The PlayerPawn owns the circles and controls the camera by following the center of mass. This setup provides the initial functionality; additional behavior will be added in the C++ class.  
+
+Open `BP_PlayerPawn` and make the following changes:
+
+1. Select **DefaultSceneRoot**, add a **Components -> Spring Arm** component.  
+   - In the **Details** panel, set:  
+     - **Location** to `0, 15000, 0`  
+     - **Rotation** to `0, 0, -90`  
+     - **Target Arm Length** to `200`
+
+2. Select **SpringArm**, add a **Components -> Camera** component.
 
 ### Update Classes
 
-With the blueprints set up we can get back to the sourcecode backing the different entities. First we'll set up some functions we'll need to translate server-side vectors to Unreal vectors.
+With the Blueprints set up, return to the source code behind the entities. First, add helper functions to translate server-side vectors to Unreal vectors.
 
-Open up `DbVector2.h` and update it to the following:
+Open `DbVector2.h` and update it as follows:
 
 ```cpp
 #pragma once
@@ -840,11 +850,11 @@ FORCEINLINE FVector ToFVector(const FDbVector2Type& Vec, float Z = 0.f)
 }
 ```
 
-> You can delete the `DbVector2.cpp` file as we won't need this, or at least clear out the file to let compliation work.
+> **Note:** Delete `DbVector2.cpp` (not needed), or clear its contents so compilation succeeds.
 
 #### Entity Class
 
-With the foundation set up let's put together the core entity class, edit the `Entity.h` to the following:
+With the foundation in place, implement the core entity class. Edit `Entity.h` as follows:
 
 ```cpp
 #pragma once
@@ -889,7 +899,7 @@ public:
 };
 ```
 
-Edit the `Entity.cpp` and set it up as below:
+Update `Entity.cpp` as follows:
 
 ```cpp
 #include "Entity.h"
@@ -949,15 +959,15 @@ void AEntity::SetColor(const FLinearColor& Color) const
 }
 ```
 
-The `Entity` class just provides some helper functions and basic functionality to manage our game objects based on entity updates.
+The `Entity` class provides helper functions and basic functionality to manage game objects based on entity updates.
 
-> One notable feature is that we linearly interpolate (lerp) between the position where the server says the entity is, and where we actually draw it. This is a common technique which provides for smoother movement.
+> **Note:** One notable feature is linear interpolation (lerp) between the server-reported entity position and the client-drawn position. This technique produces smoother movement.
 >
 > If you're interested in learning more checkout [this demo](https://gabrielgambetta.com/client-side-prediction-live-demo.html) from Gabriel Gambetta.
 
 #### Circle Class
 
-Now open the `Circle.h` script and modify the contents to be:
+Open `Circle.h` and update it as follows:
 
 ```cpp
 #pragma once
@@ -1000,7 +1010,8 @@ private:
 };
 ```
 
-With the `Circle.cpp` to the following:
+Update `Circle.cpp` as follows:
+
 ```cpp
 #include "Circle.h"
 #include "PlayerPawn.h"
@@ -1057,13 +1068,13 @@ void ACircle::SetUsername(const FString& InUsername)
 }
 ```
 
-At the top, we're just defining some possible colors for our circle. We've also created a spawn function which takes a `ACircle` (same type that's in our `circle` table) and a `APlayerPawn` which sets the color based on the circle's player ID, as well as setting the text of the Circle to be the player's username.
+At the top of the file, define possible colors for the circle. A spawn function creates an `ACircle` (the same type stored in the `circle` table) and an `APlayerPawn`. The function sets the circle’s color based on the player ID and updates the circle’s text with the player’s username.
 
-Note that the `ACircle` inherits from the `AEntity`, not `AActor`. We will also fail to compile until we have the `APlayerPawn` finished.
+> **Note:** `ACircle` inherits from `AEntity`, not `AActor`. Compilation will fail until `APlayerPawn` is implemented.
 
 #### Food Class
 
-Next open the `Food.h` file and replace the contents with:
+Open `Food.h` and update it as follows:
 
 ```cpp
 #pragma once
@@ -1088,7 +1099,7 @@ protected:
 };
 ```
 
-And the `Food.cpp` to the following:
+Update `Food.cpp` as follows:
 
 ```cpp
 #include "Food.h"
@@ -1121,7 +1132,7 @@ void AFood::Spawn(const FFoodType& FoodEntity)
 
 #### PlayerPawn Class
 
-Open the `PlayerPawn.h` header and modify the contents to be:
+Open `PlayerPawn.h` and update it as follows:
 
 ```cpp
 #pragma once
@@ -1172,7 +1183,9 @@ private:
 };
 ```
 
-Next let's add the content to `PlayerPawn.cpp`. Here, we set up the PlayerPawn with a spring arm and camera, which makes handling camera controls simpler since the camera automatically follows the pawn. You can see this in action in the Tick function below:
+Next, add the implementation to `PlayerPawn.cpp`.  
+In the Blueprint we've set the `PlayerPawn` with a spring arm and camera, simplifying camera controls since the camera automatically follows the pawn.  
+You can see this behavior in the `Tick` function below:
 
 ```cpp
 #include "PlayerPawn.h"
@@ -1328,12 +1341,13 @@ void APlayerPawn::Tick(float DeltaTime)
 
 ### Spawning
 
-Let's update the `GameManager.h` to set up for spawning our blueprints, below are the edits across the file required.
+Update `GameManager.h` to support spawning Blueprints.  
+Make the following edits to the file:
 
-Add below UDbConnection forward declaration:
+Add the code below after the `UDbConnection` forward declaration:
 
 ```cpp
-...
+// ...
 class UDbConnection;
 class AEntity;
 class ACircle;
@@ -1342,29 +1356,33 @@ class APlayerPawn;
 
 UCLASS()
 class CLIENT_UNREAL_API AGameManager : public AActor
-...
+// ...
 ```
 
-Add in publc below the TokenFilePath:
+Add in public below the TokenFilePath:
 
 ```cpp
-...
-    FString TokenFilePath = TEXT(".spacetime_blackholio");
-    
+class CLIENT_UNREAL_API AGameManager : public AActor
+{
+    GENERATED_BODY()
+
+public:
+    // ...
+
     UPROPERTY(EditAnywhere, Category="BH|Classes")
     TSubclassOf<ACircle> CircleClass;
     UPROPERTY(EditAnywhere, Category="BH|Classes")
     TSubclassOf<AFood> FoodClass;
     UPROPERTY(EditAnywhere, Category="BH|Classes")
     TSubclassOf<APlayerPawn> PlayerClass;
-...
+    
+    // ...
 ```
 
-And below the /* Border */ section will set up our linking of the SpacetimeDb tables to our GameManager and spawning of entities:
+Below the `/* Border */` section, add code to link the SpacetimeDB tables to the `GameManager` and handle entity spawning:
 
 ```cpp
-...
-    UStaticMesh* CubeMesh = nullptr;        // defaults as /Engine/BasicShapes/Cube.Cube	
+    // ...
     /* Border */
     
     /* Data Bindings */
@@ -1390,12 +1408,14 @@ And below the /* Border */ section will set up our linking of the SpacetimeDb ta
     UFUNCTION()
     void OnPlayerDelete(const FEventContext& Context, const FPlayerType& RemovedRow);
     /* Data Bindings */
-...
+
+    // ...
 ```
 
-With the header updated we can add the wiring for the spawning with the data coming from SpacetimeDb into `GameManager.cpp`. Similar to the changes to the header we'll do this by editing the correct parts.
+With the header updated, add the wiring for spawning entities with data from SpacetimeDB in `GameManager.cpp`.  
+As with the header, edit only the relevant parts of the file.
 
-First let's update the includes:
+First, update the includes:
 
 ```cpp
 #include "GameManager.h"
@@ -1412,7 +1432,7 @@ First let's update the includes:
 #include "ModuleBindings/Tables/PlayerTable.g.h"
 ```
 
-Next up, the `HandleConnect` function will need to be updated to wire up the table changes:
+Next, update `HandleConnect` to register the table-change handlers:
 
 ```cpp
 void AGameManager::HandleConnect(UDbConnection* InConn, FSpacetimeDBIdentity Identity, const FString& Token)
@@ -1436,9 +1456,10 @@ void AGameManager::HandleConnect(UDbConnection* InConn, FSpacetimeDBIdentity Ide
 }
 ```
 
-Finally, at the end of the file we'll add all the new functionality to spawn our entities:
+Finally, add the new functions at the end of `GameManager.cpp` to handle entity spawning:
 
 ```cpp
+// ...
 void AGameManager::OnCircleInsert(const FEventContext& Context, const FCircleType& NewRow)
 {
     if (EntityMap.Contains(NewRow.EntityId)) return;
@@ -1571,9 +1592,10 @@ AFood* AGameManager::SpawnFood(const FFoodType& FoodEntity)
 
 ### Player Controller
 
-As most Unreal projects the key to allow the input to be handled correctly we need the PlayerController properly set up and we'll finish that in the next part of the tutorial. We'll just get the possession logic in place for now.
+In most Unreal projects, proper input handling depends on setting up the PlayerController.  
+We’ll finish that setup in the next part of the tutorial. For now, add the possession logic.
 
-Edit the `BlackholioPlayerController.h` to the following:
+Edit `BlackholioPlayerController.h` as follows:
 
 ```cpp
 #pragma once
@@ -1610,7 +1632,7 @@ private:
 };
 ```
 
-And the `BlackholioPlayerController.cpp` (we'll fill in the direction in the next part):
+Update `BlackholioPlayerController.cpp` (the movement logic will be added in the next part):
 
 ```cpp
 #include "BlackholioPlayerController.h"
@@ -1656,7 +1678,8 @@ At this point, you may need to regenerate your bindings the following command fr
 spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-path ./
 ```
 
-The last step is to call the `enter_game` reducer on the server, passing in a username for our player, which will spawn a circle for our player. For the sake of simplicity, let's call the `enter_game` reducer from the `HandleSubscriptionApplied` callback with the name "TestPlayer".
+The last step is to call the `enter_game` reducer on the server, passing in a username for the player.  
+For simplicity, call `enter_game` from the `HandleSubscriptionApplied` callback with the name `TestPlayer`:
 
 ```cpp
 void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
@@ -1672,21 +1695,29 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
 }
 ```
 
-### Trying it out
+### Trying It Out
 
-We're almost ready to play but we do need to set up the spawning of classes, go ahead and launch the project and open up `BP_GameManager` to update the spawning classes:
+Almost everything is ready to play. Before launching, set up the spawning classes:  
 
-1. **Circle Class**: BP_Circle
-2. **Food Class**: BP_Food
-3. **Player Class**: BP_PlayerPawn
+1. Open `BP_GameManager`.  
+2. Update the spawning classes:  
+   - **Circle Class** → `BP_Circle`  
+   - **Food Class** → `BP_Food`  
+   - **Player Class** → `BP_PlayerPawn`  
 
-> Don't forget to Compile + Save your changes.
+> **Reminder:** Compile and save your changes.
 
-Finally, let's wire up the SetUsername to change the Nameplate. Open up `BP_Circle` and add the following to the `Event BeginPlay`:
+Next, wire up `SetUsername` to update the Nameplate:  
+
+1. Open `BP_Circle`.  
+2. In **Event BeginPlay**, add the following:  
 
 ![Nameplate Update](./part-3-04-nameplate-change.png)
 
-At this point, after publishing our module we can press the play button to see the fruits of our labor! You should be able to see your player's circle, with its username label, surrounded by food.
+---
+
+After publishing the module, press **Play** to see it in action.  
+You should see your player’s circle with its username label, surrounded by food.
 
 ### Next Steps
 

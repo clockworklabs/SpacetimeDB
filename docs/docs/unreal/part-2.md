@@ -467,7 +467,7 @@ This will also generate a file in the `client_unreal/Source/client_unreal/Privat
 
 ### Connecting to the Database
 
-To make sure building the Unreal project will work, let's make sure to update the `client_unreal.Build.cs` to include the SpacetimeDbSdk. Update the PublicDependencyModuleNames, and PrivateDependencyModuleNames as following for current and future needs:
+Update `client_unreal.Build.cs` to include the `SpacetimeDbSdk`. Add `SpacetimeDbSdk` to `PublicDependencyModuleNames`, and confirm that `PrivateDependencyModuleNames` includes the following modules for current and future needs:
 
 ```cpp
         PublicDependencyModuleNames.AddRange(new string[]
@@ -489,7 +489,8 @@ To make sure building the Unreal project will work, let's make sure to update th
         });
 ```
 
-At this point we can set up Unreal to connect your Unreal client to the server. We'll need to update the `GameManager.h` to the following:
+Update `GameManager.h` as follows to set up the Unreal client connection to the server:
+
 ```cpp
 #pragma once
 
@@ -505,7 +506,7 @@ class CLIENT_UNREAL_API AGameManager : public AActor
 {
     GENERATED_BODY()
 
-public:	
+public:
     AGameManager();
     static AGameManager* Instance;
 
@@ -553,11 +554,11 @@ private:
     UFUNCTION()
     void HandleDisconnect(UDbConnection* InConn, const FString& Error);
     UFUNCTION()
-    void HandleSubscriptionApplied(FSubscriptionEventContext& Context);	
+    void HandleSubscriptionApplied(FSubscriptionEventContext& Context);
 };
 ```
 
-Next up let's update the `GameManager.cpp` to finalize the setup:
+Next, update GameManager.cpp to finalize the setup:
 
 ```cpp
 #include "GameManager.h"
