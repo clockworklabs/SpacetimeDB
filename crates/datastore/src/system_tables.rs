@@ -355,7 +355,6 @@ fn system_module_def() -> ModuleDef {
     // TODO: add empty unique constraint here, once we've implemented those.
 
     let st_connection_credentials_type = builder.add_type::<StConnectionCredentialsRow>();
-    // let st_connection_credentials_unique_cols = [StConnectionCredentialsFields::ConnectionId];
     builder
         .build_table(
             ST_CONNECTION_CREDENTIALS_NAME,

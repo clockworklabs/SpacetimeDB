@@ -508,11 +508,6 @@ impl MutTxId {
     /// - The index metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and is not `IndexId::SENTINEL`.
     pub fn create_index(&mut self, mut index_schema: IndexSchema, is_unique: bool) -> Result<IndexId> {
-        /*
-        if index_schema.index_id != IndexId::SENTINEL {
-            return Err(anyhow::anyhow!("`index_id` must be `IndexId::SENTINEL` in `{:#?}`", index_schema).into());
-        }
-         */
         let table_id = index_schema.table_id;
         if table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", index_schema).into());
@@ -975,16 +970,6 @@ impl MutTxId {
     /// - The constraint metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and is not `constraintId::SENTINEL`.
     fn create_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<ConstraintId> {
-        /*
-        if constraint.constraint_id != ConstraintId::SENTINEL {
-            return Err(anyhow::anyhow!(
-                "`constraint_id` must be `ConstraintId::SENTINEL` in `{:#?}`",
-                constraint
-            )
-            .into());
-        }
-
-         */
         if constraint.table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", constraint).into());
         }
