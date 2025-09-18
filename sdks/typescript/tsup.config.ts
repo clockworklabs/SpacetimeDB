@@ -65,10 +65,10 @@ export default defineConfig([
   | Options
   | Options[]
   | ((
-    overrideOptions: Options
-  ) => Options | Options[] | Promise<Options | Options[]>) as
+      overrideOptions: Options
+    ) => Options | Options[] | Promise<Options | Options[]>) as
   | Options
   | Options[]
   | ((
-    overrideOptions: Options
-  ) => Options | Options[] | Promise<Options | Options[]>);
+      overrideOptions: Options
+    ) => Options | Options[] | Promise<Options | Options[]>);

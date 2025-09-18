@@ -27,9 +27,9 @@ export default defineConfig([
     treeshake: 'smallest',
     external: ['undici'],
     // env variable used at build time to determine platform-specific code
-    // see: websocket_decompress_adapter.ts 
+    // see: websocket_decompress_adapter.ts
     env: {
-      BROWSER: 'false', 
+      BROWSER: 'false',
     },
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
