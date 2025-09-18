@@ -8,7 +8,7 @@ import path from "path";
 import spawn from "cross-spawn";
 import { readFileSync } from "fs";
 import { createProject } from "./create-project.js";
-import { getTemplateChoices, getValidTemplateKeys, isValidTemplate } from "./templates/index.js";
+import { getTemplateChoices, isValidTemplate, TEMPLATES } from "./templates/index.js";
 import { detectPackageManager } from "./utils/packageManager.js";
 import { getValidPackageName, checkDependencies } from "./utils/validation.js";
 
@@ -32,7 +32,7 @@ init().catch((e) => {
   process.exit(1);
 });
 
-async function checkSpacetimeLogin(): Promise<{ loggedIn: boolean }> {
+async function checkSpacetimeLogin(): Promise<boolean> {
   try {
     const result = spawn.sync("spacetime", ["login", "show"], {
       stdio: "pipe",
@@ -45,27 +45,18 @@ async function checkSpacetimeLogin(): Promise<{ loggedIn: boolean }> {
       const output = String(result.stdout);
 
       if (output.includes("You are not logged in")) {
-        return { loggedIn: false };
+        return false;
       }
 
       if (output.includes("You are logged in as")) {
-        return { loggedIn: true };
+        return true;
       }
     }
 
-    return { loggedIn: false };
+    return false;
   } catch (error) {
     console.error("SpacetimeDB login check failed:", error);
-    return { loggedIn: false };
-  }
-}
-
-function validateProjectName(input: string): { valid: boolean; name?: string; error?: string } {
-  try {
-    const name = getValidPackageName(input || "");
-    return { valid: true, name };
-  } catch (error) {
-    return { valid: false, error: error instanceof Error ? error.message : "Invalid project name" };
+    return false;
   }
 }
 
@@ -77,7 +68,7 @@ async function init() {
     .description("Create a new SpacetimeDB project")
     .version(getPackageVersion())
     .argument("[project-name]", "Name of the project to create")
-    .option("-t, --template <template>", `Template to use (${getValidTemplateKeys().join(", ")})`)
+    .option("-t, --template <template>", `Template to use (${Object.keys(TEMPLATES).join(", ")})`)
     .option("--local", "Use local SpacetimeDB server instead of cloud")
     .option("-y, --yes", "Skip interactive prompts and use defaults")
     .option("--dry-run", "Show what would be created without actually creating it")
@@ -85,7 +76,7 @@ async function init() {
       console.log(chalk.blue("Welcome to create-spacetime!"));
       console.log();
 
-      const packageManager = await detectPackageManager();
+      const packageManager = detectPackageManager();
       console.log(`Using package manager: ${chalk.green(packageManager)}`);
       console.log();
 
@@ -106,59 +97,53 @@ async function init() {
       let isLoggedIn = false;
 
       if (deps.spacetime && !options.local) {
-        const loginInfo = await checkSpacetimeLogin();
-        isLoggedIn = loginInfo.loggedIn;
+        isLoggedIn = await checkSpacetimeLogin();
 
-        if (isLoggedIn) {
-          console.log(chalk.green("Already logged in to SpacetimeDB"));
-        } else {
-          console.log(chalk.yellow("Not logged in to SpacetimeDB"));
+        console.log(
+          isLoggedIn
+            ? chalk.green("Already logged in to SpacetimeDB")
+            : chalk.yellow("Not logged in to SpacetimeDB"),
+        );
 
-          if (!options.yes) {
-            const { shouldLogin } = await inquirer.prompt([
-              {
-                type: "confirm",
-                name: "shouldLogin",
-                message: "Do you want to login to SpacetimeDB? (required to deploy to Maincloud)",
-                default: true,
-              },
-            ]);
+        if (!isLoggedIn && !options.yes) {
+          const { shouldLogin } = await inquirer.prompt([
+            {
+              type: "confirm",
+              name: "shouldLogin",
+              message: "Login to SpacetimeDB? (required for Maincloud)",
+              default: true,
+            },
+          ]);
 
-            if (shouldLogin) {
-              console.log("Opening SpacetimeDB login...");
-              try {
-                const loginResult = spawn.sync("spacetime", ["login"], {
-                  stdio: "inherit",
-                  encoding: "utf8",
-                  timeout: 30000,
-                });
-
-                if (loginResult.status === 0) {
-                  console.log(chalk.green("Successfully logged in to SpacetimeDB"));
-                  isLoggedIn = true;
-                } else {
-                  console.log(chalk.yellow("Login cancelled or failed"));
-                  console.log(chalk.gray("Will default to local deployment"));
-                }
-              } catch (error) {
-                console.log(chalk.yellow("Login failed"));
-                console.log(chalk.gray("Will default to local deployment"));
-              }
-            } else {
-              console.log(chalk.gray("Skipping login - will default to local deployment"));
+          if (shouldLogin) {
+            console.log("Opening SpacetimeDB login...");
+            try {
+              const result = spawn.sync("spacetime", ["login"], {
+                stdio: "inherit",
+                encoding: "utf8",
+                timeout: 30000,
+              });
+              isLoggedIn = result.status === 0;
+              console.log(
+                isLoggedIn
+                  ? chalk.green("Successfully logged in to SpacetimeDB")
+                  : chalk.yellow("Login failed - default to local deployment"),
+              );
+            } catch (error) {
+              console.log(chalk.yellow("Login failed - default to local deployment"));
             }
           } else {
-            console.log(
-              chalk.gray("Skipping login (--yes mode) - will default to local deployment"),
-            );
+            console.log(chalk.gray("Skipping login - default to local deployment"));
           }
+        } else if (!isLoggedIn && options.yes) {
+          console.log(chalk.gray("Skipping login (--yes mode) - default to local deployment"));
         }
         console.log();
       }
 
       if (options.template && !isValidTemplate(options.template)) {
         console.error(chalk.red(`Invalid template: ${options.template}`));
-        console.error(chalk.yellow(`Valid templates: ${getValidTemplateKeys().join(", ")}`));
+        console.error(chalk.yellow(`Valid templates: ${Object.keys(TEMPLATES).join(", ")}`));
         process.exit(1);
       }
 
@@ -168,11 +153,15 @@ async function init() {
       const getProjectName = () => (targetDir === "." ? path.basename(path.resolve()) : targetDir);
 
       if (options.dryRun) {
-        const nameValidation = validateProjectName(getProjectName());
-        if (!nameValidation.valid) {
+        let validatedName: string;
+        try {
+          validatedName = getValidPackageName(getProjectName());
+        } catch (error) {
           console.error(chalk.red(`Invalid project name: ${getProjectName()}`));
           console.error(
-            chalk.yellow(nameValidation.error || "Please provide a valid project name"),
+            chalk.yellow(
+              error instanceof Error ? error.message : "Please provide a valid project name",
+            ),
           );
           process.exit(1);
         }
@@ -182,12 +171,12 @@ async function init() {
 
         console.log(chalk.green("Dry run - showing what would be created:"));
         console.log();
-        console.log(`Project name: ${chalk.bold(nameValidation.name)}`);
+        console.log(`Project name: ${chalk.bold(validatedName)}`);
         console.log(`Template: ${chalk.bold(selectedTemplate)}`);
         console.log(`Package manager: ${chalk.bold(packageManager)}`);
         console.log(`Target: ${chalk.bold(useLocal ? "Local deployment" : "Maincloud")}`);
         console.log(`Auto setup: ${chalk.bold(deps.spacetime ? "Yes" : "No")}`);
-        console.log(`Path: ${chalk.bold(path.resolve(nameValidation.name!))}`);
+        console.log(`Path: ${chalk.bold(path.resolve(validatedName))}`);
         console.log();
         console.log(chalk.green("Nothing created (dry run mode)"));
         return;
@@ -216,8 +205,12 @@ async function init() {
               message: "Project name:",
               default: defaultTargetDir,
               validate: (input: string) => {
-                const validation = validateProjectName(input);
-                return validation.valid || validation.error || "Invalid project name";
+                try {
+                  getValidPackageName(input);
+                  return true;
+                } catch (error) {
+                  return error instanceof Error ? error.message : "Invalid project name";
+                }
               },
             });
           }
@@ -284,17 +277,22 @@ async function init() {
       }
 
       const projectName = getProjectName();
-      const nameValidation = validateProjectName(projectName);
-      if (!nameValidation.valid) {
+      let validatedName: string;
+      try {
+        validatedName = getValidPackageName(projectName);
+      } catch (error) {
         console.error(chalk.red(`Invalid project name: ${projectName}`));
-        console.error(chalk.yellow(nameValidation.error || "Please provide a valid project name"));
+        console.error(
+          chalk.yellow(
+            error instanceof Error ? error.message : "Please provide a valid project name",
+          ),
+        );
         process.exit(1);
       }
 
       const selectedTemplate = options.template || promptTemplate || "rust";
       const useLocal = options.local || promptDeploymentTarget === "local" || !isLoggedIn;
 
-      const validatedName = nameValidation.name!;
       const root = path.join(cwd, validatedName);
 
       if ((await fs.pathExists(root)) && !(await isEmpty(root))) {
@@ -303,7 +301,7 @@ async function init() {
             type: "confirm",
             name: "shouldOverwrite",
             message: `Directory "${validatedName}" is not empty. Remove existing files?`,
-            default: false,
+            default: true,
           },
         ]);
 

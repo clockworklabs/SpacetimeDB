@@ -2,19 +2,11 @@ import validatePackageName from "validate-npm-package-name";
 import which from "which";
 
 export function getValidPackageName(input: string): string {
-  if (!input || typeof input !== "string") {
-    throw new Error("Project name cannot be empty");
-  }
-
-  const trimmed = input.trim();
-
-  const validation = validatePackageName(trimmed);
-  if (validation.validForNewPackages) {
-    return trimmed;
-  }
+  if (!input?.trim()) throw new Error("Project name cannot be empty");
 
   // normalize package name to valid format
-  const normalized = trimmed
+  const normalized = input
+    .trim()
     .toLowerCase()
     .replace(/\s+/g, "-")
     .replace(/^[._]/, "")
@@ -22,16 +14,12 @@ export function getValidPackageName(input: string): string {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 
-  if (!normalized) {
-    throw new Error("Project name contains invalid characters");
+  const validation = validatePackageName(normalized);
+  if (!validation.validForNewPackages) {
+    throw new Error(validation.errors?.[0] || "Invalid package name");
   }
 
-  const normalizedValidation = validatePackageName(normalized);
-  if (normalizedValidation.validForNewPackages) {
-    return normalized;
-  }
-  const errorMessage = validation.errors?.[0] || "Invalid package name";
-  throw new Error(errorMessage);
+  return normalized;
 }
 
 export async function checkDependencies(): Promise<{

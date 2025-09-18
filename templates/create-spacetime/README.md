@@ -52,7 +52,7 @@ Creates a full-stack SpacetimeDB app with server module and React frontend, incl
 ## Requirements
 
 - Node.js 18+ and npm 8+
-- SpacetimeDB CLI (optional for creation, required for deployment) - [spacetimedb.com/install](https://spacetimedb.com/install)
+- SpacetimeDB CLI (optional for creation, required for Maincloud deployment) - [spacetimedb.com/install](https://spacetimedb.com/install)
 
 ## Running The Project
 

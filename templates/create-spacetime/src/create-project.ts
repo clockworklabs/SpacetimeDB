@@ -6,7 +6,18 @@ import chalk from "chalk";
 import degit from "degit";
 import { getTemplate } from "./templates/index.js";
 import { PackageManager, getInstallCommand, getRunCommand } from "./utils/packageManager.js";
-import { SPACETIME_VERSIONS, SERVER_CONFIG } from "./config.js";
+
+const SPACETIME_VERSIONS = {
+  SDK: "^1.3.1",
+  RUNTIME: "1.3.*",
+  CLI: "1.3",
+} as const;
+
+const SERVER_CONFIG = {
+  LOCAL_PORT: 3000,
+  MAINCLOUD_URI: "wss://maincloud.spacetimedb.com",
+  LOCAL_URI: "ws://localhost:3000",
+} as const;
 
 const SPACETIME_SDK_PACKAGE = "@clockworklabs/spacetimedb-sdk";
 
@@ -46,14 +57,9 @@ export async function createProject(options: CreateProjectOptions): Promise<bool
     console.error(chalk.red("Failed to create project:"));
     console.error(chalk.red(error instanceof Error ? error.message : String(error)));
 
-    try {
-      await fs.remove(root);
-      console.log(chalk.gray("Cleaned up incomplete project files"));
-    } catch (cleanupError) {
-      console.warn(chalk.yellow("Warning: Failed to clean up project files"));
-      console.warn(chalk.gray(`You may need to manually remove: ${root}`));
-      console.error("Cleanup error details:", cleanupError);
-    }
+    await fs
+      .remove(root)
+      .catch(() => console.warn(chalk.yellow(`Warning: Manual cleanup needed: ${root}`)));
 
     return false;
   }
@@ -139,105 +145,77 @@ async function configureServer(root: string, name: string, serverLanguage: strin
   }
 }
 
-async function updateConfigFile(
-  filePath: string,
-  updates: Record<string, string>,
-  warnMessage: string,
-): Promise<void> {
-  try {
-    if (!(await fs.pathExists(filePath))) {
-      console.warn(
-        chalk.gray(`Warning: ${path.basename(filePath)} not found, skipping configuration`),
-      );
-      return;
-    }
-
-    let content = await fs.readFile(filePath, "utf-8");
-
-    for (const [pattern, replacement] of Object.entries(updates)) {
-      const regex = new RegExp(pattern, "g");
-      content = content.replace(regex, replacement);
-    }
-
-    await fs.writeFile(filePath, content);
-  } catch (error) {
-    console.warn(chalk.gray(warnMessage), error);
-  }
-}
-
 // existing rust and C# example servers configs need to be updated to work with the project setup
 async function configureRustServer(serverDir: string, name: string) {
   const safeName = name.replace(/[^a-zA-Z0-9_]/g, "_");
+  const cargoPath = path.join(serverDir, "Cargo.toml");
 
-  await updateConfigFile(
-    path.join(serverDir, "Cargo.toml"),
-    {
-      "^name = .*$": `name = "${safeName}"`,
-      "edition\\.workspace = true": 'edition = "2021"',
-      "log\\.workspace = true": 'log = "0.4"',
-      'spacetimedb = \\{ path = ".*" \\}': `spacetimedb = "${SPACETIME_VERSIONS.CLI}"`,
-      'spacetimedb-lib = \\{ path = ".*" \\}': `spacetimedb-lib = "${SPACETIME_VERSIONS.CLI}"`,
-    },
-    "Warning: Could not update Cargo.toml",
-  );
+  try {
+    if (await fs.pathExists(cargoPath)) {
+      let content = await fs.readFile(cargoPath, "utf-8");
+      content = content.replace(/^name = .*$/m, `name = "${safeName}"`);
+      content = content.replace(/edition\.workspace = true/g, 'edition = "2021"');
+      content = content.replace(/log\.workspace = true/g, 'log = "0.4"');
+      content = content.replace(
+        /spacetimedb = \{ path = ".*" \}/g,
+        `spacetimedb = "${SPACETIME_VERSIONS.CLI}"`,
+      );
+      content = content.replace(
+        /spacetimedb-lib = \{ path = ".*" \}/g,
+        `spacetimedb-lib = "${SPACETIME_VERSIONS.CLI}"`,
+      );
+      await fs.writeFile(cargoPath, content);
+    }
+  } catch (error) {
+    console.warn(chalk.gray("Warning: Could not update Cargo.toml"), error);
+  }
 }
 
 async function configureCsharpServer(serverDir: string) {
-  await updateConfigFile(
-    path.join(serverDir, "StdbModule.csproj"),
-    {
-      '<PackageReference Include="SpacetimeDB\\.Runtime" Version="[^"]*" \\/>': `<PackageReference Include="SpacetimeDB.Runtime" Version="${SPACETIME_VERSIONS.RUNTIME}" />`,
-    },
-    "Warning: Could not update .csproj file",
-  );
+  const csprojPath = path.join(serverDir, "StdbModule.csproj");
+
+  try {
+    if (await fs.pathExists(csprojPath)) {
+      let content = await fs.readFile(csprojPath, "utf-8");
+      content = content.replace(
+        /<PackageReference Include="SpacetimeDB\.Runtime" Version="[^"]*" \/>/g,
+        `<PackageReference Include="SpacetimeDB.Runtime" Version="${SPACETIME_VERSIONS.RUNTIME}" />`,
+      );
+      await fs.writeFile(csprojPath, content);
+    }
+  } catch (error) {
+    console.warn(chalk.gray("Warning: Could not update .csproj file"), error);
+  }
 }
 
 async function updateClientConfig(root: string, name: string, useLocal: boolean) {
   const targetUri = useLocal ? SERVER_CONFIG.LOCAL_URI : SERVER_CONFIG.MAINCLOUD_URI;
+  const appPath = path.join(root, "client/src/App.tsx");
 
-  await updateConfigFile(
-    path.join(root, "client/src/App.tsx"),
-    {
-      "\\.withModuleName\\(['\"`][^'\"`]*['\"`]\\)": `.withModuleName('${name}')`,
-      "\\.withUri\\(['\"`]ws:\\/\\/localhost:3000['\"`]\\)": `.withUri('${targetUri}')`,
-    },
-    "Warning: Could not update client config",
-  );
+  try {
+    if (await fs.pathExists(appPath)) {
+      let content = await fs.readFile(appPath, "utf-8");
+      content = content.replace(
+        /\.withModuleName\(['"`][^'"`]*['"`]\)/g,
+        `.withModuleName('${name}')`,
+      );
+      content = content.replace(
+        /\.withUri\(['"`]ws:\/\/localhost:3000['"`]\)/g,
+        `.withUri('${targetUri}')`,
+      );
+      await fs.writeFile(appPath, content);
+    }
+  } catch (error) {
+    console.warn(chalk.gray("Warning: Could not update client config"), error);
+  }
 }
 
 async function installDependencies(root: string, packageManager: PackageManager): Promise<void> {
-  const args = getInstallCommand(packageManager);
   const clientDir = path.join(root, "client");
-
   if (!(await fs.pathExists(clientDir))) {
     throw new Error(`Client directory not found: ${clientDir}`);
   }
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(packageManager, args, {
-      cwd: clientDir,
-      stdio: "inherit",
-    });
-
-    const timeout = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`${packageManager} install timeout`));
-    }, 600000); // 10 min
-
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      if (code !== 0) {
-        reject(new Error(`${packageManager} install failed with exit code ${code}`));
-        return;
-      }
-      resolve();
-    });
-
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      reject(new Error(`Failed to spawn ${packageManager}: ${error.message}`));
-    });
-  });
+  await runCommand(packageManager, getInstallCommand(packageManager), clientDir, 600000); // 10 min
 }
 
 async function setupSpacetimeDB(
@@ -263,19 +241,22 @@ async function setupSpacetimeDB(
     spinner.start(`Publishing to ${target}...`);
     spinner.stop();
     console.log();
-    await runCommand(
-      "spacetime",
-      [
-        "publish",
-        "--project-path",
-        "server",
-        "--server",
-        useLocal ? "local" : "maincloud",
-        "--yes",
-        name,
-      ],
-      root,
-    );
+    const publishArgs = [
+      "publish",
+      "--project-path",
+      "server",
+      "--server",
+      useLocal ? "local" : "maincloud",
+    ];
+
+    if (useLocal) {
+      publishArgs.push("--anonymous");
+    } else {
+      publishArgs.push("--yes");
+    }
+    publishArgs.push(name);
+
+    await runCommand("spacetime", publishArgs, root);
     spinner.start("Generating module bindings...");
     spinner.stop();
     console.log();
@@ -317,7 +298,12 @@ async function ensureLocalServer(spinner: any) {
 
   if (!isRunning) {
     spinner.text = "Starting local SpacetimeDB server...";
-    spawn("spacetime", ["start"], { detached: true, stdio: "ignore" });
+    const child = spawn("spacetime", ["start"], {
+      detached: true,
+      stdio: "ignore",
+    });
+
+    child.unref();
 
     await new Promise((resolve) => setTimeout(resolve, 3000));
 
@@ -376,7 +362,12 @@ function printInstructions(
   console.log(message);
 }
 
-function runCommand(command: string, args: string[], cwd: string): Promise<void> {
+function runCommand(
+  command: string,
+  args: string[],
+  cwd: string,
+  timeoutMs: number = 300000, // 5 min
+): Promise<void> {
   const SAFE_COMMANDS = ["spacetime", "npm", "yarn", "pnpm", "bun"];
   if (!SAFE_COMMANDS.includes(command)) {
     throw new Error(`Unsafe command: ${command}`);
@@ -388,7 +379,7 @@ function runCommand(command: string, args: string[], cwd: string): Promise<void>
     const timeout = setTimeout(() => {
       childProcess.kill("SIGTERM");
       reject(new Error(`Command timeout: ${command}`));
-    }, 300000); // 5 min
+    }, timeoutMs);
 
     childProcess.on("close", (code) => {
       clearTimeout(timeout);
