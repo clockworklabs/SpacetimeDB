@@ -216,7 +216,7 @@ class Smoketest(unittest.TestCase):
         logs = self.spacetime("logs", "--format=json", "-n", str(n), "--", self.database_identity)
         return list(map(json.loads, logs.splitlines()))
 
-    def publish_module(self, domain=None, *, clear=True, capture_stderr=True):
+    def publish_module(self, domain=None, *, clear=True, capture_stderr=True, num_replicas=None):
         print("publishing module", self.publish_module)
         publish_output = self.spacetime(
             "publish",
@@ -227,10 +227,11 @@ class Smoketest(unittest.TestCase):
             # because the server address is `node` which doesn't look like `localhost` or `127.0.0.1`
             # and so the publish step prompts for confirmation.
             "--yes",
+            *["--num-replicas", f"{num_replicas}"] if num_replicas is not None else [],
             capture_stderr=capture_stderr,
         )
         self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]
-        self.database_identity = domain if domain is not None else self.resolved_identity
+        self.database_identity = self.resolved_identity
 
     @classmethod
     def reset_config(cls):

@@ -32,6 +32,7 @@ use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
+use spacetimedb_durability::DurableOffset;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
@@ -1231,6 +1232,10 @@ impl ModuleHost {
 
     pub fn database_info(&self) -> &Database {
         &self.replica_ctx().database
+    }
+
+    pub fn durable_tx_offset(&self) -> Option<DurableOffset> {
+        self.replica_ctx().relational_db.durable_tx_offset()
     }
 
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
