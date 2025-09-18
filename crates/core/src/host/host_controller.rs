@@ -16,7 +16,7 @@ use crate::subscription::module_subscription_manager::{spawn_send_worker, Subscr
 use crate::util::asyncify;
 use crate::util::jobs::{JobCore, JobCores};
 use crate::worker_metrics::WORKER_METRICS;
-use anyhow::{anyhow, ensure, Context};
+use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
@@ -446,117 +446,6 @@ impl HostController {
         let host = guard.as_ref().ok_or(NoSuchModule)?;
 
         host.migrate_plan(host_type, program, style).await
-    }
-
-    /// Start the host `replica_id` and conditionally update it.
-    ///
-    /// If the host was not initialized before, it is initialized with the
-    /// program [`Database::initial_program`], which is loaded from the
-    /// controller's [`ProgramStorage`].
-    ///
-    /// If it was already initialized and its stored program hash matches
-    /// [`Database::initial_program`], no further action is taken.
-    ///
-    /// Otherwise, if `expected_hash` is `Some` and does **not** match the
-    /// stored hash, an error is returned.
-    ///
-    /// Otherwise, the host is updated to [`Database::initial_program`], loading
-    /// the program data from the controller's [`ProgramStorage`].
-    ///
-    /// > Note that this ascribes different semantics to [`Database::initial_program`]
-    /// > than elsewhere, where the [`Database`] value is provided by the control
-    /// > database. The method is mainly useful for bootstrapping the control
-    /// > database itself.
-    pub async fn init_maybe_update_module_host(
-        &self,
-        database: Database,
-        replica_id: u64,
-        expected_hash: Option<Hash>,
-    ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
-        trace!("custom bootstrap {}/{}", database.database_identity, replica_id);
-
-        let db_addr = database.database_identity;
-        let host_type = database.host_type;
-        let program_hash = database.initial_program;
-
-        let mut guard = self.acquire_write_lock(replica_id).await;
-
-        // `HostController::clone` is fast,
-        // as all of its fields are either `Copy` or wrapped in `Arc`.
-        let this = self.clone();
-
-        // `try_init_host` is not cancel safe, as it will spawn other async tasks
-        // which hold a filesystem lock past when `try_init_host` returns or is cancelled.
-        // This means that, if `try_init_host` is cancelled, subsequent calls will fail.
-        //
-        // The rest of this future is also not cancel safe, as it will `Option::take` out of the guard
-        // at the start of the block and then store back into it at the end.
-        //
-        // This is problematic because Axum will cancel its handler tasks if the client disconnects,
-        // and this method is called from Axum handlers, e.g. for the publish route.
-        // `tokio::spawn` a task to update the contents of `guard`,
-        // so that it will run to completion even if the caller goes away.
-        //
-        // Note that `tokio::spawn` only cancels its tasks when the runtime shuts down,
-        // at which point we won't be calling `try_init_host` again anyways.
-        let module = tokio::spawn(async move {
-            let mut host = match guard.take() {
-                Some(host) => host,
-                None => this.try_init_host(database, replica_id).await?,
-            };
-            let module = host.module.subscribe();
-
-            // The program is now either:
-            //
-            // - the desired one from [Database], in which case we do nothing
-            // - `Some` expected hash, in which case we update to the desired one
-            // - `None` expected hash, in which case we also update
-            let stored_hash = stored_program_hash(host.db())?
-                .with_context(|| format!("[{db_addr}] database improperly initialized"))?;
-            if stored_hash == program_hash {
-                info!("[{db_addr}] database up-to-date with {program_hash}");
-                *guard = Some(host);
-            } else {
-                if let Some(expected_hash) = expected_hash {
-                    ensure!(
-                        expected_hash == stored_hash,
-                        "[{}] expected program {} found {}",
-                        db_addr,
-                        expected_hash,
-                        stored_hash
-                    );
-                }
-                info!("[{db_addr}] updating database from `{stored_hash}` to `{program_hash}`");
-                let program = load_program(&this.program_storage, program_hash).await?;
-                let update_result = host
-                    .update_module(
-                        this.runtimes.clone(),
-                        host_type,
-                        program,
-                        MigrationPolicy::Compatible,
-                        this.energy_monitor.clone(),
-                        this.unregister_fn(replica_id),
-                        this.db_cores.take(),
-                    )
-                    .await?;
-                match update_result {
-                    UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
-                        *guard = Some(host);
-                    }
-                    UpdateDatabaseResult::AutoMigrateError(e) => {
-                        return Err(anyhow::anyhow!(e));
-                    }
-                    UpdateDatabaseResult::ErrorExecutingMigration(e) => {
-                        return Err(e);
-                    }
-                }
-            }
-
-            Ok::<_, anyhow::Error>(module)
-        })
-        .await??;
-
-        Ok(module)
     }
 
     /// Release all resources of the [`ModuleHost`] identified by `replica_id`,
@@ -1120,10 +1009,6 @@ impl Host {
         };
 
         Ok(res)
-    }
-
-    fn db(&self) -> &RelationalDB {
-        &self.replica_ctx.relational_db
     }
 }
 
