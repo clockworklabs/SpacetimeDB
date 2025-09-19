@@ -252,6 +252,18 @@ fn auto_migrate_database(
                 log!(logger, "Removing-row level security `{sql_rls}`");
                 stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddColumns(table_name) => {
+                let table_def = plan.new.stored_in_table_def(table_name).expect("table must exist");
+                let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
+
+                let default_values: Vec<AlgebraicValue> = table_def
+                    .columns
+                    .iter()
+                    .filter_map(|col_def| col_def.default_value.clone())
+                    .collect();
+                stdb.add_columns_to_table(tx, table_id, column_schemas, default_values)?;
+            }
             _ => anyhow::bail!("migration step not implemented: {step:?}"),
         }
     }
