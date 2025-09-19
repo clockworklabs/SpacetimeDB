@@ -220,7 +220,8 @@ impl Locking {
         }
 
         // Double check that our in-memory system table ids match the on-disk schemas.
-        committed_state.assert_system_table_schemas_match()?;
+        // committed_state.assert_system_table_schemas_match()?;
+
         // Set the sequence state. In practice we will end up doing this again after replaying
         // the commit log, but we do it here too just to avoid having an incorrectly restored
         // snapshot.
@@ -252,6 +253,11 @@ impl Locking {
     pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>> {
         let maybe_offset_and_path = Self::take_snapshot_internal(&self.committed_state, repo)?;
         Ok(maybe_offset_and_path.map(|(_, path)| path))
+    }
+
+    pub fn assert_system_tables_match(&self) -> Result<()> {
+        let committed_state = self.committed_state.read_arc();
+        committed_state.assert_system_table_schemas_match()
     }
 
     pub fn take_snapshot_internal(
@@ -882,7 +888,7 @@ impl MutTx for Locking {
         }
     }
 
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String) {
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, String) {
         tx.rollback()
     }
 
@@ -1159,9 +1165,10 @@ mod tests {
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::system_tables::{
-        system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
-        StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow,
-        StTableRow, StVarFields, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
+        system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
+        StConstraintRow, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields,
+        StSequenceFields, StSequenceRow, StTableRow, StVarFields, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME,
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
         ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
         ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
@@ -1615,6 +1622,7 @@ mod tests {
             TableRow { id: ST_VAR_ID.into(), name: ST_VAR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StVarFields::Name.into()) },
             TableRow { id: ST_SCHEDULED_ID.into(), name: ST_SCHEDULED_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StScheduledFields::ScheduleId.into()) },
             TableRow { id: ST_ROW_LEVEL_SECURITY_ID.into(), name: ST_ROW_LEVEL_SECURITY_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StRowLevelSecurityFields::Sql.into()) },
+            TableRow { id: ST_CONNECTION_CREDENTIALS_ID.into(), name: ST_CONNECTION_CREDENTIALS_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(StConnectionCredentialsFields::ConnectionId.into()) },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
@@ -1670,6 +1678,9 @@ mod tests {
 
             ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
             ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 1, name: "sql", ty: AlgebraicType::String },
+
+            ColRow { table: ST_CONNECTION_CREDENTIALS_ID.into(), pos: 0, name: "connection_id", ty: AlgebraicType::U128 },
+            ColRow { table: ST_CONNECTION_CREDENTIALS_ID.into(), pos: 1, name: "jwt_payload", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1685,6 +1696,7 @@ mod tests {
             IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
             IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
+            IndexRow { id: 13, table: ST_CONNECTION_CREDENTIALS_ID.into(), col: col(0), name: "st_connection_credentials_connection_id_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1714,6 +1726,7 @@ mod tests {
             ConstraintRow { constraint_id: 9, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(0), constraint_name: "st_scheduled_schedule_id_key", },
             ConstraintRow { constraint_id: 10, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(1), constraint_name: "st_scheduled_table_id_key", },
             ConstraintRow { constraint_id: 11, table_id: ST_ROW_LEVEL_SECURITY_ID.into(), unique_columns: col(1), constraint_name: "st_row_level_security_sql_key", },
+            ConstraintRow { constraint_id: 12, table_id: ST_CONNECTION_CREDENTIALS_ID.into(), unique_columns: col(0), constraint_name: "st_connection_credentials_connection_id_key", },
         ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2129,6 +2142,7 @@ mod tests {
             IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
             IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
+            IndexRow { id: 13, table: ST_CONNECTION_CREDENTIALS_ID.into(), col: col(0), name: "st_connection_credentials_connection_id_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
