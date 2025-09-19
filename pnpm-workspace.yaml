@@ -1,7 +1,6 @@
 packages:
   - 'crates/bindings-typescript'
+  - 'crates/bindings-typescript/test-app'
   - 'sdks/typescript'
-  - 'sdks/typescript/packages/sdk'
-  - 'sdks/typescript/packages/test-app'
   - 'sdks/typescript/examples/quickstart-chat'
   - 'docs'

@@ -51,7 +51,7 @@ jobs:
         run: pnpm build
 
       - name: Run SDK tests
-        working-directory: sdks/typescript/packages/sdk
+        working-directory: sdks/typescript
         run: pnpm test
 
       # - name: Extract SpacetimeDB branch name from file
