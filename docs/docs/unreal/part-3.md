@@ -801,6 +801,7 @@ Next, open `BP_Circle` and configure it:
      - **Widget Class** to `WBP_Nameplate`  
      - **Draw Size** to `300, 60`  
      - **Pivot** to `0.5, 1.0`
+3. Click **Save** and **Compile**.
 
 ### Set Up the Food Entity Blueprint
 
@@ -809,6 +810,7 @@ The food entity is a simple collectible. Open `BP_Food` and configure it as foll
 1. Select **DefaultSceneRoot**, add a **Components -> Paper Sprite** component, and rename it `Circle`.  
    - In the **Details** panel, set **Scale** to `0.4` for all three axes.  
    - Set **Source Sprite** to `Circle_Sprite`.
+2. Click **Save** and **Compile**.
 
 ### Set Up the PlayerPawn Blueprint
 
@@ -821,8 +823,8 @@ Open `BP_PlayerPawn` and make the following changes:
      - **Location** to `0, 15000, 0`  
      - **Rotation** to `0, 0, -90`  
      - **Target Arm Length** to `200`
-
 2. Select **SpringArm**, add a **Components -> Camera** component.
+3. Click **Save** and **Compile**.
 
 ### Update Classes
 
@@ -1061,7 +1063,7 @@ void ACircle::Spawn(const FCircleType& Circle, APlayerPawn* InOwner)
     SetColor(Color);
     
     this->Owner = InOwner;
-    SetUsername(InOwner->GetUsername());
+    SetUsername(InOwner->Username);
 }
 
 void ACircle::OnDelete(const FEventContext& Context)
@@ -1167,7 +1169,7 @@ public:
     
     uint32 PlayerId = 0;
     UPROPERTY(BlueprintReadOnly, Category="BH|Player")
-    FString Username;	
+    FString Username;
     UPROPERTY(BlueprintReadWrite, Category="BH|Player")
     bool bIsLocalPlayer = false;
     
@@ -1690,8 +1692,10 @@ At this point, you may need to regenerate your bindings the following command fr
 spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-path ./ --module-name client_unreal
 ```
 
-The last step is to call the `enter_game` reducer on the server, passing in a username for the player.  
-For simplicity, call `enter_game` from the `HandleSubscriptionApplied` callback with the name `TestPlayer`:
+The last step is to call the `enter_game` reducer on the server, passing in a username for the player.
+For simplicity, call `enter_game` from the `HandleSubscriptionApplied` callback with the name `TestPlayer`.
+
+Open up `GameManager.cpp` and edit `HandleSubscriptionApplied` to match the following:
 
 ```cpp
 void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
