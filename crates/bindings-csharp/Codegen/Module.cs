@@ -28,15 +28,23 @@ readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null, string
             return default;
         }
     
-        if (attrClass.ToString() == typeof(DefaultAttribute).FullName)
-        {
-            // Create a dummy instance to get the mask
-            var attrWithDefault = attrData.ParseAs<DefaultAttribute>(attrType);
-            return new(attrWithDefault.Mask, attrWithDefault.Table, attrWithDefault.Value);
-        }
-    
         var attr = attrData.ParseAs<ColumnAttribute>(attrType);
         return new(attr.Mask, attr.Table);
+    }
+    
+    public static ColumnAttr ParseDefaultAttribute(AttributeData attrData)
+    {
+        if (
+            attrData.AttributeClass is not { } attrClass
+            || !AttrTypes.TryGetValue(attrClass.ToString(), out var attrType)
+            || attrClass.ToString() != typeof(DefaultAttribute).FullName
+        )
+        {
+            return default;
+        }
+        
+        var attr = attrData.ParseAs<DefaultAttribute>(attrType);
+        return new(attr.Mask, attr.Table, attr.Value);
     }
 }
 
@@ -49,6 +57,7 @@ record ColumnDeclaration : MemberDeclaration
     public readonly bool IsEquatable;
     public readonly string FullTableName;
     public readonly int ColumnIndex;
+    public readonly string? ColumnDefaultValue;
 
     // A helper to combine multiple column attributes into a single mask.
     // Note: it doesn't check the table names, this is left up to the caller.
@@ -80,6 +89,15 @@ record ColumnDeclaration : MemberDeclaration
                 .Select(a => new ViewIndex(new ColumnRef(index, field.Name), a, diag))
                 .ToImmutableArray()
         );
+        
+        ColumnDefaultValue = 
+            field
+                .GetAttributes()
+                .Select(ColumnAttr.ParseDefaultAttribute)
+                .Where(a => a.Mask == ColumnAttrs.Default)
+                .Select(a => a.ColumnDefaultValue)
+                .ToList().FirstOrDefault()
+            ;
 
         var type = field.Type;
 
@@ -582,17 +600,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 
                 yield return new FieldDefaultValue(
                     view.Name, 
-                    $"\"{fieldsWithDefaultValue.ColumnIndex} (Debug log: column name = {fieldsWithDefaultValue.Name}\"",
-                    defaultValue.ColumnDefaultValue ?? "Debug log: Default value was null when it should not have been."
-                );
-            }
-            
-            if (withDefaultValues.Length != 0)
-            {
-                yield return new FieldDefaultValue(
-                    "Debug log: This is a debug entry of FieldDefaultValue to see the data available to the codegen.",
-                    $"\"Members of this table ({Members.Length}) = {members}, Views ({Views.Length}) = {view.Name}\"", // This
-                    $$"""defaultColumnNames ({{withDefaultValues.Length}}) = {{defaultValueAttributes}}"""
+                    fieldsWithDefaultValue.ColumnIndex.ToString(),
+                    fieldsWithDefaultValue.ColumnDefaultValue
                 );
             }
         }
