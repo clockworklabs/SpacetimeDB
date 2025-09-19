@@ -363,16 +363,16 @@ public static partial class InAnotherNamespace
 }
 
 [SpacetimeDB.Table]
-public partial struct TestDefaultFeildValues
+public partial struct TestDefaultFieldValues
 {
     [Unique]
     public int? UniqueField;
 
     [Default(5)]
-    public int IntFeildWithDefault;
+    public int IntFieldWithDefault;
     
     [Default("Attribute defined default value")]
-    public string StringFeildWithDefault;
+    public string StringFieldWithDefault;
 }
 
 [SpacetimeDB.Table]
