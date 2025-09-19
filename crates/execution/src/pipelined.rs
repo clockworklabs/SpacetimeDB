@@ -257,6 +257,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                     lhs_field,
                     rhs_field,
                     unique,
+                    outer,
                 },
                 semijoin,
             ) => Self::HashJoin(BlockingHashJoin {
@@ -265,6 +266,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 lhs_field,
                 rhs_field,
                 unique,
+                outer,
                 semijoin,
             }),
             PhysicalPlan::NLJoin(lhs, rhs) => Self::NLJoin(BlockingNLJoin {
@@ -1088,6 +1090,7 @@ pub struct BlockingHashJoin {
     pub lhs_field: TupleField,
     pub rhs_field: TupleField,
     pub unique: bool,
+    pub outer: bool,
     pub semijoin: Semi,
 }
 
@@ -1107,11 +1110,17 @@ impl BlockingHashJoin {
         let mut bytes_scanned = 0;
         match self {
             Self {
+                outer: true,
+                semijoin: Semi::Lhs | Semi::Rhs,
+                ..
+            } => unreachable!("Outer semijoin is not possible"),
+            Self {
                 lhs,
                 rhs,
                 lhs_field,
                 rhs_field,
                 unique: true,
+                outer: false,
                 semijoin: Semi::Lhs,
             } => {
                 let mut rhs_table = HashSet::new();
@@ -1137,6 +1146,7 @@ impl BlockingHashJoin {
                 lhs_field,
                 rhs_field,
                 unique: true,
+                outer: false,
                 semijoin: Semi::Rhs,
             } => {
                 let mut rhs_table = HashMap::new();
@@ -1162,6 +1172,7 @@ impl BlockingHashJoin {
                 lhs_field,
                 rhs_field,
                 unique: true,
+                outer,
                 semijoin: Semi::All,
             } => {
                 let mut rhs_table = HashMap::new();
@@ -1177,6 +1188,8 @@ impl BlockingHashJoin {
                     n += 1;
                     if let Some(v) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
                         f(u.clone().join(v.clone()))?;
+                    } else if *outer {
+                        f(u.clone().append(Row::Null))?;
                     }
                     Ok(())
                 })?;
@@ -1187,6 +1200,7 @@ impl BlockingHashJoin {
                 lhs_field,
                 rhs_field,
                 unique: false,
+                outer: false,
                 semijoin: Semi::Lhs,
             } => {
                 let mut rhs_table = HashMap::new();
@@ -1214,6 +1228,7 @@ impl BlockingHashJoin {
                 lhs_field,
                 rhs_field,
                 unique: false,
+                outer: false,
                 semijoin: Semi::Rhs,
             } => {
                 let mut rhs_table: HashMap<AlgebraicValue, Vec<_>> = HashMap::new();
@@ -1243,6 +1258,7 @@ impl BlockingHashJoin {
                 lhs_field,
                 rhs_field,
                 unique: false,
+                outer,
                 semijoin: Semi::All,
             } => {
                 let mut rhs_table: HashMap<AlgebraicValue, Vec<_>> = HashMap::new();
@@ -1262,6 +1278,8 @@ impl BlockingHashJoin {
                         for v in rhs_tuples {
                             f(u.clone().join(v.clone()))?;
                         }
+                    } else if *outer {
+                        f(u.clone().append(Row::Null))?;
                     }
                     Ok(())
                 })?;
