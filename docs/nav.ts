@@ -54,7 +54,6 @@ const nav: Nav = {
     page('2 - Connecting to SpacetimeDB', 'unreal/part-2', 'unreal/part-2.md'),
     page('3 - Gameplay', 'unreal/part-3', 'unreal/part-3.md'),
     page('4 - Moving and Colliding', 'unreal/part-4', 'unreal/part-4.md'),
-    page('Reference', 'unreal/reference', 'unreal/reference.md'),
 
     section('CLI Reference'),
     page('CLI Reference', 'cli-reference', 'cli-reference.md'),
@@ -95,6 +94,7 @@ const nav: Nav = {
       'sdks/typescript/quickstart.md'
     ),
     page('TypeScript Reference', 'sdks/typescript', 'sdks/typescript/index.md'),
+    page('Unreal Reference', 'unreal/reference', 'unreal/reference.md'),
 
     section('SQL'),
     page('SQL Reference', 'sql', 'sql/index.md'),

@@ -31,7 +31,7 @@ Replace:
 
 - `<uproject_directory>` with the path to your Unreal project directory (containing the `.uproject` file)
 - `<module_path>` with the path to your SpacetimeDB module
-- `<module_name>` with the name of your module
+- `<module_name>` with the name of your Unreal module, typically the name of the project
 
 **Example:**
 

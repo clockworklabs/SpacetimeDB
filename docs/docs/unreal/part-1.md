@@ -8,6 +8,8 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 
 ## Prepare Project Structure
 
+> **NOTE:** Ensure you have SpacetimeDB version 1.4.0 installed to enable Unreal Engine code generation support.
+
 This project is separated into two subdirectories;
 
 1. Server (module) code
@@ -49,33 +51,38 @@ While the SpacetimeDB Unreal client SDK is in preview releases, it can only be i
 
 Once the SDK is stabilized, we'll find a more ergonomic way to distribute it.
 
-Before beginning make sure to close the Unreal project and IDE.
+> **Note:** Before beginning make sure to close the Unreal project and IDE.
 
-Add the SpacetimeDB Unreal SDK by first adding a new plugin folder:
-```bash
-cd client_unreal
-md Plugins
-```
-Copy the SpacetimeDbSdk to the new Plugins folder. This should create `/client_unreal/Plugins/SpacetimeDbSdk`.
+#### Installation steps
 
-In the root of the Unreal project, right click the client_unreal.uproject and select **Generate Visual Studio project files**.
+1. Navigate to your Unreal project directory and create a `Plugins` folder if it doesn’t already exist:
+   ```bash
+   cd client_unreal
+   mkdir Plugins
+   ```
+2. Download or clone the SDK from GitHub and copy the SpacetimeDbSdk folder into your new Plugins directory.
+   - This should create `/client_unreal/Plugins/SpacetimeDbSdk`.
+3. In the root of the Unreal project, right click the client_unreal.uproject and select **Generate Visual Studio project files**. On Windows 11 you may need to expand **Show more options** to select the generate option.
 
-![Generate project files](./part-1-02-generate-project.png)
+![Generate project files](./part-1-02-01-generate-project.png)
+![Generate project files](./part-1-02-02-generate-project.png)
 
 ### Create the GameManager Actor
 
-1. Open the `client_unreal` project. Unreal will prompt you to build the `SpacetimeDbSdk` plugin. Do so.
+1. Open the `client_unreal` project in your IDE (Visual Studio or JetBrains Rider) and run the project to launch the Unreal Editor.
+   - This will enable **Live Coding**, making the workflow a bit smoother.
+   - Unreal will prompt you to build the `SpacetimeDbSdk` plugin. Do so.
 2. Open **Tools -> New C++ Class** in the top menu, select **Actor** as the parent and click **Next**
 3. Select **Public** Class Type
 4. Name the class `GameManager`.
 
 The `GameManager` class will be where we will put the high level initialization and coordination logic for our game.
 
-> Note: In a production Unreal project, you would typically implement this logic in a Subsystem. For simplicity, this tutorial uses a singleton actor.
+> **Note:** In a production Unreal project, you would typically implement this logic in a Subsystem. For simplicity, this tutorial uses a singleton actor.
 
 ### Set Up the Level
 
-Set up the basic level, add the new `GameManager` to the level, and add lighting.
+Set up the empty level, add the new `GameManager` to the level, and add lighting.
 
 1. **Create a new level**  
    - Open **File -> New Level** in the top menu, select **Empty Level**, and click **Create**.  

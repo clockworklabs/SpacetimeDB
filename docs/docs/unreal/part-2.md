@@ -438,10 +438,12 @@ Let's generate our types for our module. In the `blackholio/server-csharp` direc
 :::
 
 ```sh
-spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-path ./
+spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-path ./ --module-name client_unreal
 ```
 
 This will generate a set of files in the `client_unreal/Source/client_unreal/Private/ModuleBindings` and `client_unreal/Source/client_unreal/Public/ModuleBindings` directories which contain the code generated types and reducer functions that are defined in your module, but usable on the client.
+
+> **Note:** `--uproject-dir` is straightforward as the path to the .uproject file. `--module-name` is the name of the Unreal module which in most projects is the name of the project, in this case `client_unreal`.
 
 ```
 ├── Reducers
@@ -467,7 +469,7 @@ This will also generate a file in the `client_unreal/Source/client_unreal/Privat
 
 ### Connecting to the Database
 
-Update `client_unreal.Build.cs` to include the `SpacetimeDbSdk`. Add `SpacetimeDbSdk` to `PublicDependencyModuleNames`, and confirm that `PrivateDependencyModuleNames` includes the following modules for current and future needs:
+Update `client_unreal.Build.cs` to include the `SpacetimeDbSdk`. Add `SpacetimeDbSdk` and `Paper2D` to `PublicDependencyModuleNames`, and confirm that `PrivateDependencyModuleNames` includes the following modules for current and future needs:
 
 ```cpp
         PublicDependencyModuleNames.AddRange(new string[]

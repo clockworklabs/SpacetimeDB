@@ -553,7 +553,6 @@ public static void Disconnect(ReducerContext ctx)
 ```
 :::
 
-
 Finally, publish the new module to SpacetimeDB with this command:
 
 ```sh
@@ -561,6 +560,8 @@ spacetime publish --server local blackholio --delete-data
 ```
 
 Deleting the data is optional in this case, but in case you've been messing around with the module we can just start fresh.
+
+> **Note:** When using `--delete-data`, SpacetimeDB will prompt you to confirm the deletion. Enter **y** and press **Enter** to proceed.
 
 ### Creating the Arena
 
@@ -586,6 +587,17 @@ Add the `SetupArena` and `CreateBorderCube` methods and properties to your `Game
     UPROPERTY(EditDefaultsOnly, Category="Arena")
     UStaticMesh* CubeMesh = nullptr;        // defaults as /Engine/BasicShapes/Cube.Cube
     /* Border */
+```
+
+Next, we'll need to make a few updates in `GameManager.cpp`.
+
+First, update the includes:
+
+```cpp
+#include "GameManager.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Connection/Credentials.h"
+#include "ModuleBindings/Tables/ConfigTable.g.h"
 ```
 
 The `AGameManager()` constructor in `GameManager.cpp` includes an `InstancedStaticMeshComponent` to set up the cube. Update the constructor as follows:
@@ -1334,12 +1346,12 @@ void APlayerPawn::Tick(float DeltaTime)
             Target = { CoM.X, 1.f, CoM.Z };
         }
     }
-    const FVector NewLoc = FMath::VInterpTo(GetActorLocation(), Target, DeltaTime, 6.f);
-    SetActorLocation(Target);
+    const FVector NewLoc = FMath::VInterpTo(GetActorLocation(), Target, DeltaTime, 120.f);
+    SetActorLocation(NewLoc);
 }
 ```
 
-### Spawning
+### Spawning Blueprints
 
 Update `GameManager.h` to support spawning Blueprints.  
 Make the following edits to the file:
@@ -1675,7 +1687,7 @@ At this point, you may need to regenerate your bindings the following command fr
 :::
 
 ```sh
-spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-path ./
+spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-path ./ --module-name client_unreal
 ```
 
 The last step is to call the `enter_game` reducer on the server, passing in a username for the player.  
