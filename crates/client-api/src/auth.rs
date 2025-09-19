@@ -89,6 +89,19 @@ pub struct SpacetimeAuth {
     pub jwt_payload: String,
 }
 
+impl SpacetimeAuth {
+    pub fn new(creds: SpacetimeCreds, claims: SpacetimeIdentityClaims) -> Result<Self, anyhow::Error> {
+        let payload = creds
+            .extract_jwt_payload_string()
+            .ok_or_else(|| anyhow!("Failed to extract JWT payload"))?;
+        Ok(Self {
+            creds,
+            claims,
+            jwt_payload: payload,
+        })
+    }
+}
+
 impl From<SpacetimeAuth> for ConnectionAuthCtx {
     fn from(auth: SpacetimeAuth) -> Self {
         ConnectionAuthCtx {
@@ -176,15 +189,7 @@ impl SpacetimeAuth {
         let (claims, token) = claims.encode_and_sign(ctx.jwt_auth_provider()).map_err(log_and_500)?;
         let creds = SpacetimeCreds::from_signed_token(token);
         // Pulling out the payload should never fail, since we just made it.
-        let payload = creds
-            .extract_jwt_payload_string()
-            .ok_or_else(|| log_and_500("internal error"))?;
-
-        Ok(Self {
-            creds,
-            claims,
-            jwt_payload: payload,
-        })
+        Self::new(creds, claims).map_err(log_and_500)
     }
 
     /// Get the auth credentials as headers to be returned from an endpoint.
