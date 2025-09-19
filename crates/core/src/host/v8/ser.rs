@@ -150,7 +150,7 @@ impl<'this, 'scope> ser::Serializer for Serializer<'this, 'scope> {
     }
 
     fn serialize_named_product(self, _len: usize) -> Result<Self::SerializeNamedProduct, Self::Error> {
-        // TODO(noa): this can be more efficient if we tell it the names ahead of time
+        // TODO(v8, noa): this can be more efficient if we tell it the names ahead of time
         let object = Object::new(self.scope);
         Ok(SerializeNamedProduct {
             inner: self,
