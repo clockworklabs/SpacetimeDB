@@ -551,7 +551,7 @@ impl MutTxId {
                     self.sequence_state_lock
                         .get_sequence_mut(s.sequence_id)
                         .expect("sequence just created")
-                        .value,
+                        .get_value(),
                 )
             })
             .collect();
@@ -597,9 +597,10 @@ impl MutTxId {
                 .sequence_state_lock
                 .get_sequence_mut(seq.sequence_id)
                 .expect("sequence just created");
-            new_seq.value = *seq_values
+            let value = *seq_values
                 .get(&seq.sequence_name)
                 .ok_or_else(|| SequenceError::NotFound(seq.sequence_id))?;
+            new_seq.update_value(value);
         }
 
         Ok(table_id)
