@@ -26,6 +26,7 @@ members = [
   "crates/sats",
   "crates/schema",
   "sdks/rust",
+  "sdks/unreal",
   "crates/snapshot",
   "crates/sqltest",
   "crates/sql-parser",

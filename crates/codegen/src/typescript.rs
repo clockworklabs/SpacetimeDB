@@ -312,7 +312,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         }
     }
 
-    fn generate_globals_file(&self, module: &ModuleDef) -> OutputFile {
+    fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -484,10 +484,10 @@ setReducerFlagsConstructor: () => {{
             "export type ErrorContext = __ErrorContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;"
         );
 
-        OutputFile {
+        vec![OutputFile {
             filename: "index.ts".to_string(),
             code: output.into_inner(),
-        }
+        }]
     }
 }
 
