@@ -1,25 +1,18 @@
 import fs from "fs-extra";
 import path from "path";
-import { spawn } from "cross-spawn";
+import { spawn, sync } from "cross-spawn";
 import ora from "ora";
 import chalk from "chalk";
 import degit from "degit";
-import { getTemplate } from "./templates/index.js";
-import { PackageManager, getInstallCommand, getRunCommand } from "./utils/packageManager.js";
 
-const SPACETIME_VERSIONS = {
-  SDK: "^1.3.1",
-  RUNTIME: "1.3.*",
-  CLI: "1.3",
-} as const;
-
-const SERVER_CONFIG = {
-  LOCAL_PORT: 3000,
-  MAINCLOUD_URI: "wss://maincloud.spacetimedb.com",
-  LOCAL_URI: "ws://localhost:3000",
-} as const;
-
-const SPACETIME_SDK_PACKAGE = "@clockworklabs/spacetimedb-sdk";
+import { getTemplate } from "../templates/index.js";
+import { PackageManager, getInstallCommand, getRunCommand } from "../utils/package.js";
+import {
+  SPACETIME_VERSIONS,
+  SERVER_CONFIG,
+  TIMEOUTS,
+  SPACETIME_SDK_PACKAGE,
+} from "../constants.js";
 
 export interface CreateProjectOptions {
   name: string;
@@ -111,7 +104,7 @@ async function createRootPackageJson(root: string, name: string, packageManager:
       dev: `cd client && ${getRunCommand(packageManager, "dev")}`,
       build: `cd server && spacetime build && cd ../client && ${getRunCommand(packageManager, "build")}`,
       deploy: `${getRunCommand(packageManager, "build")} && spacetime publish --project-path server --server maincloud ${name} && spacetime generate --project-path server --lang typescript --out-dir client/src/module_bindings`,
-      local: `${getRunCommand(packageManager, "build")} && spacetime publish --project-path server --server local ${name} && spacetime generate --project-path server --lang typescript --out-dir client/src/module_bindings`,
+      local: `${getRunCommand(packageManager, "build")} && spacetime publish --project-path server --server local ${name} --yes && spacetime generate --project-path server --lang typescript --out-dir client/src/module_bindings`,
     },
     workspaces: ["client"],
   };
@@ -135,17 +128,30 @@ async function updateClientPackageJson(root: string, name: string) {
   }
 }
 
+async function updateDeployScript(
+  root: string,
+  deploymentName: string,
+  packageManager: PackageManager,
+) {
+  const packagePath = path.join(root, "package.json");
+  try {
+    const packageJson = await fs.readJSON(packagePath);
+    packageJson.scripts.deploy = `${getRunCommand(packageManager, "build")} && spacetime publish --project-path server --server maincloud ${deploymentName} && spacetime generate --project-path server --lang typescript --out-dir client/src/module_bindings`;
+    await fs.writeJSON(packagePath, packageJson, { spaces: 2 });
+  } catch (error) {
+    console.warn(chalk.gray("Warning: Could not update deploy script"), error);
+  }
+}
+
 async function configureServer(root: string, name: string, serverLanguage: string) {
   const serverDir = path.join(root, "server");
 
   if (serverLanguage === "rust") {
     await configureRustServer(serverDir, name);
-  } else if (serverLanguage === "C#") {
-    await configureCsharpServer(serverDir);
   }
 }
 
-// existing rust and C# example servers configs need to be updated to work with the project setup
+// existing rust example server configs need to be updated to work with the project setup
 async function configureRustServer(serverDir: string, name: string) {
   const safeName = name.replace(/[^a-zA-Z0-9_]/g, "_");
   const cargoPath = path.join(serverDir, "Cargo.toml");
@@ -171,24 +177,7 @@ async function configureRustServer(serverDir: string, name: string) {
   }
 }
 
-async function configureCsharpServer(serverDir: string) {
-  const csprojPath = path.join(serverDir, "StdbModule.csproj");
-
-  try {
-    if (await fs.pathExists(csprojPath)) {
-      let content = await fs.readFile(csprojPath, "utf-8");
-      content = content.replace(
-        /<PackageReference Include="SpacetimeDB\.Runtime" Version="[^"]*" \/>/g,
-        `<PackageReference Include="SpacetimeDB.Runtime" Version="${SPACETIME_VERSIONS.RUNTIME}" />`,
-      );
-      await fs.writeFile(csprojPath, content);
-    }
-  } catch (error) {
-    console.warn(chalk.gray("Warning: Could not update .csproj file"), error);
-  }
-}
-
-async function updateClientConfig(root: string, name: string, useLocal: boolean) {
+async function updateClientConfig(root: string, moduleName: string, useLocal: boolean) {
   const targetUri = useLocal ? SERVER_CONFIG.LOCAL_URI : SERVER_CONFIG.MAINCLOUD_URI;
   const appPath = path.join(root, "client/src/App.tsx");
 
@@ -197,7 +186,7 @@ async function updateClientConfig(root: string, name: string, useLocal: boolean)
       let content = await fs.readFile(appPath, "utf-8");
       content = content.replace(
         /\.withModuleName\(['"`][^'"`]*['"`]\)/g,
-        `.withModuleName('${name}')`,
+        `.withModuleName('${moduleName}')`,
       );
       content = content.replace(
         /\.withUri\(['"`]ws:\/\/localhost:3000['"`]\)/g,
@@ -215,7 +204,7 @@ async function installDependencies(root: string, packageManager: PackageManager)
   if (!(await fs.pathExists(clientDir))) {
     throw new Error(`Client directory not found: ${clientDir}`);
   }
-  await runCommand(packageManager, getInstallCommand(packageManager), clientDir, 600000); // 10 min
+  await runCommand(packageManager, getInstallCommand(packageManager), clientDir, 600000);
 }
 
 async function setupSpacetimeDB(
@@ -225,6 +214,8 @@ async function setupSpacetimeDB(
   packageManager: PackageManager,
 ) {
   const target = useLocal ? "local" : "Maincloud";
+
+  const moduleName = useLocal ? name : `${name}-${Date.now()}`;
   const spinner = ora(`Setting up SpacetimeDB (${target})...`).start();
 
   try {
@@ -249,12 +240,10 @@ async function setupSpacetimeDB(
       useLocal ? "local" : "maincloud",
     ];
 
-    if (useLocal) {
-      publishArgs.push("--anonymous");
-    } else {
+    if (!useLocal) {
       publishArgs.push("--yes");
     }
-    publishArgs.push(name);
+    publishArgs.push(moduleName);
 
     await runCommand("spacetime", publishArgs, root);
     spinner.start("Generating module bindings...");
@@ -276,10 +265,16 @@ async function setupSpacetimeDB(
     );
 
     console.log(chalk.green("SpacetimeDB setup completed"));
-    console.log(chalk.gray(`Database: ${chalk.bold(name)} (${target})`));
+    console.log(chalk.gray(`Database: ${chalk.bold(moduleName)} (${target})`));
 
     if (!useLocal) {
       console.log(chalk.gray(`Dashboard: ${chalk.blue("https://spacetimedb.com/profile")}`));
+    }
+
+    await updateClientConfig(root, moduleName, useLocal);
+
+    if (!useLocal) {
+      await updateDeployScript(root, moduleName, packageManager);
     }
   } catch (error) {
     spinner.stop();
@@ -305,19 +300,49 @@ async function ensureLocalServer(spinner: any) {
 
     child.unref();
 
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const cleanup = () => {
+      if (child && !child.killed) {
+        try {
+          child.kill();
+        } catch (error) {
+          // process cleanup failed, continue anyway
+        }
+      }
+    };
+
+    process.once("exit", cleanup);
+    process.once("SIGINT", cleanup);
+    process.once("SIGTERM", cleanup);
+
+    await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.SERVER_START_DELAY));
 
     if (!(await checkLocalServer())) {
       throw new Error("Failed to start local SpacetimeDB server");
     }
   }
+
+  spinner.text = "Logging in to local server...";
+
+  try {
+    const result = sync("spacetime", ["login", "--server-issued-login", "local"], {
+      stdio: "pipe",
+      encoding: "utf8",
+      timeout: TIMEOUTS.COMMAND_TIMEOUT,
+      windowsHide: true,
+    });
+
+    if (result.status !== 0) {
+      console.warn(chalk.yellow("Warning: Could not log in to local server"));
+    }
+  } catch (error) {
+    console.warn(chalk.yellow("Warning: Could not log in to local server"));
+  }
 }
 
-// check if local SpacetimeDB server is running reliably
 async function checkLocalServer(): Promise<boolean> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
+    const timeout = setTimeout(() => controller.abort(), TIMEOUTS.SERVER_START_DELAY);
 
     const response = await fetch(
       `http://localhost:${SERVER_CONFIG.LOCAL_PORT}/v1/identity/public-key`,

@@ -1,4 +1,13 @@
+import { readFileSync } from "fs";
+
 export type PackageManager = "npm" | "yarn" | "pnpm" | "bun";
+
+export function getPackageVersion(): string {
+  const packageJson = JSON.parse(
+    readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+  );
+  return packageJson.version;
+}
 
 export function detectPackageManager(): PackageManager {
   const userAgent = process.env.npm_config_user_agent || "";

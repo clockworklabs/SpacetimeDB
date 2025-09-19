@@ -15,6 +15,8 @@ export const TEMPLATES = {
 
 export type TemplateKey = keyof typeof TEMPLATES;
 
+export const DEFAULT_TEMPLATE: TemplateKey = "rust";
+
 export const getTemplateChoices = () =>
   Object.entries(TEMPLATES).map(([key, config]) => ({
     name: config.name,

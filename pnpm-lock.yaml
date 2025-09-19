@@ -275,7 +275,7 @@ importers:
   templates/create-spacetime:
     dependencies:
       chalk:
-        specifier: ^5.3.0
+        specifier: ^5.3.2
         version: 5.6.2
       commander:
         specifier: ^12.0.0
@@ -4557,14 +4557,6 @@ snapshots:
     optionalDependencies:
       vite: 5.4.19(@types/node@22.18.0)(terser@5.43.1)
 
-  '@vitest/mocker@2.1.9(vite@5.4.19(@types/node@24.3.0)(terser@5.43.1))':
-    dependencies:
-      '@vitest/spy': 2.1.9
-      estree-walker: 3.0.3
-      magic-string: 0.30.17
-    optionalDependencies:
-      vite: 5.4.19(@types/node@24.3.0)(terser@5.43.1)
-
   '@vitest/mocker@3.2.4(vite@6.3.5(@types/node@24.3.0)(terser@5.43.1)(tsx@4.20.4))':
     dependencies:
       '@vitest/spy': 3.2.4
@@ -6584,7 +6576,7 @@ snapshots:
   vitest@2.1.9(@types/node@24.3.0)(jsdom@26.1.0)(terser@5.43.1):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.19(@types/node@24.3.0)(terser@5.43.1))
+      '@vitest/mocker': 2.1.9(vite@5.4.19(@types/node@22.18.0)(terser@5.43.1))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9
