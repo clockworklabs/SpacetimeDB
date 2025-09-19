@@ -127,6 +127,8 @@ impl DurabilityProvider for StandaloneDurabilityProvider {
             |snapshot_rx| {
                 tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
                     snapshot_rx,
+                    None,
+                    None,
                     durability,
                 ));
             }
