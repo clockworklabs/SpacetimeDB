@@ -1,0 +1,72 @@
+:root {
+  --ifm-color-primary: #4cf490;
+  --ifm-color-primary-dark: #2ef27d;
+  --ifm-color-primary-darker: #1ff174;
+  --ifm-color-primary-darkest: #0dd35d;
+  --ifm-color-primary-light: #6af6a3;
+  --ifm-color-primary-lighter: #79f7ac;
+  --ifm-color-primary-lightest: #a6fac8;
+  --ifm-background-color: #060606;
+  --ifm-color-content: #b6c0cf;
+  --ifm-toc-border-color: #f4f6fc1c;
+  --ifm-code-background: #0d0d0e;
+  --ifm-code-padding-horizontal: 0.125rem;
+  --ifm-code-padding-vertical: 0.25rem;
+  --ifm-hr-background-color: #f4f6fc1c;
+  --ifm-blockquote-color: #b6c0cf;
+  --ifm-menu-link-sublist-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 24 24"><path fill="rgb(182, 192, 207, 0.5)" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"></path></svg>');
+  --ifm-breadcrumb-separator: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><path fill="rgb(182, 192, 207)" d="M79.093 0 48.907 30.187 146.72 128l-97.813 97.813L79.093 256l128-128z"/></svg>');
+
+  --clockworklabs-title-color: #f4f6fc;
+  --clockworklabs-code-color: #fbdc8e;
+  --clockworklabs-code-border-color: #202126;
+  --clockworklabs-code-background-color: #0d0d0e;
+  --clockworklabs-navbar-border-color: rgb(244 246 252 / 11%);
+  --clockworklabs-strong-color: #ced3e0;
+}
+
+html {
+  background-color: var(--ifm-background-color);
+}
+
+html .main-wrapper {
+  background-color: var(--ifm-background-color);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--clockworklabs-title-color);
+}
+
+pre code {
+  background-color: var(--clockworklabs-code-background-color);
+  color: var(--clockworklabs-code-color);
+  border: 1px solid var(--clockworklabs-code-border-color);
+}
+
+p code {
+  color: var(--clockworklabs-code-color);
+  border: 1px solid var(--clockworklabs-code-border-color);
+}
+
+li code {
+  color: var(--clockworklabs-code-color);
+  border: 1px solid var(--clockworklabs-code-border-color);
+}
+
+strong {
+  color: var(--clockworklabs-strong-color);
+}
+
+.navbar {
+  background-color: var(--ifm-background-color);
+  border-bottom: 1px solid var(--clockworklabs-navbar-border-color);
+}
+
+.footer {
+  background-color: var(--ifm-background-color);
+}
