@@ -19,7 +19,7 @@ use crate::{
         ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID,
         ST_VAR_IDX,
     },
-    traits::TxData,
+    traits::{TxData, TxDeleteEntry, TxTableTruncated},
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
@@ -609,6 +609,16 @@ impl CommittedState {
         // before allocating new pages.
         self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
 
+        let truncated_tables = tx_data
+            .deletes()
+            .filter_map(|(table_id, tx, row)| {
+                (matches!(tx, TxTableTruncated::No) && row.is_empty()).then_some(*table_id)
+            })
+            .collect::<Vec<_>>();
+        for table_id in truncated_tables {
+            tx_data.set_truncate_for_table(table_id);
+        }
+
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
         if self.tx_consumes_offset(&tx_data, ctx) {
@@ -652,7 +662,7 @@ impl CommittedState {
             if !deletes.is_empty() {
                 let table_name = &*table.get_schema().table_name;
                 let truncated = table.row_count == 0;
-                tx_data.set_deletes_for_table(table_id, table_name, deletes.into(), truncated);
+                tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
             }
         }
 
@@ -671,6 +681,7 @@ impl CommittedState {
         // it will never be re-created.
         for change in pending_schema_changes {
             if let PendingSchemaChange::TableRemoved(table_id, mut table) = change {
+                tx_data.set_truncate_for_table(table_id);
                 let row_ptrs = table.scan_all_row_ptrs();
                 delete_rows(
                     tx_data,

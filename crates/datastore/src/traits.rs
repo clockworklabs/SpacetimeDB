@@ -231,21 +231,24 @@ impl TxData {
     /// Set `rows` as the deleted rows for `(table_id, table_name)`.
     ///
     /// When `truncated` is set, the table has been emptied in this transaction.
-    pub fn set_deletes_for_table(
-        &mut self,
-        table_id: TableId,
-        table_name: &str,
-        rows: Arc<[ProductValue]>,
-        truncated: bool,
-    ) {
-        let truncated = if truncated {
-            TxTableTruncated::Yes
-        } else {
-            TxTableTruncated::No
+    pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
+        let entry = TxDeleteEntry {
+            truncated: TxTableTruncated::No,
+            rows,
         };
-        let entry = TxDeleteEntry { truncated, rows };
         self.deletes.insert(table_id, entry);
         self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+    }
+
+    pub fn set_truncate_for_table(&mut self, table_id: TableId) {
+        let entry = self
+            .deletes
+            .entry(table_id)
+            .and_modify(|e| e.truncated = TxTableTruncated::Yes)
+            .or_insert_with(|| TxDeleteEntry {
+                truncated: TxTableTruncated::Yes,
+                rows: Arc::new([]),
+            });
     }
 
     /// Obtain an iterator over the inserted rows per table.
