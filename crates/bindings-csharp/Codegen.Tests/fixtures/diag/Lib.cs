@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using SpacetimeDB;
 
 public enum LocalEnum { }
@@ -359,6 +360,19 @@ public static partial class InAnotherNamespace
 {
     [SpacetimeDB.Table]
     public partial struct TestDuplicateTableName { }
+}
+
+[SpacetimeDB.Table]
+public partial struct TestDefaultFieldValues
+{
+    [Unique]
+    public int? UniqueField;
+
+    [Default(5)]
+    public int IntFieldWithDefault;
+    
+    [Default("Attribute defined default value")]
+    public string StringFieldWithDefault;
 }
 
 [SpacetimeDB.Table]

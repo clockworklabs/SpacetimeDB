@@ -8,11 +8,15 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using SpacetimeDB.Internal;
 using static Utils;
 
-readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null)
+readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null, string? ColumnDefaultValue = null)
 {
     private static readonly ImmutableDictionary<string, System.Type> AttrTypes = ImmutableArray
-        .Create(typeof(AutoIncAttribute), typeof(PrimaryKeyAttribute), typeof(UniqueAttribute))
-        .ToImmutableDictionary(t => t.FullName);
+        .Create(typeof(AutoIncAttribute),
+            typeof(PrimaryKeyAttribute),
+            typeof(UniqueAttribute),
+            typeof(DefaultAttribute)
+            )
+        .ToImmutableDictionary(t => t.FullName!);
 
     public static ColumnAttr Parse(AttributeData attrData)
     {
@@ -23,8 +27,24 @@ readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null)
         {
             return default;
         }
+    
         var attr = attrData.ParseAs<ColumnAttribute>(attrType);
         return new(attr.Mask, attr.Table);
+    }
+    
+    public static ColumnAttr ParseDefaultAttribute(AttributeData attrData)
+    {
+        if (
+            attrData.AttributeClass is not { } attrClass
+            || !AttrTypes.TryGetValue(attrClass.ToString(), out var attrType)
+            || attrClass.ToString() != typeof(DefaultAttribute).FullName
+        )
+        {
+            return default;
+        }
+        
+        var attr = attrData.ParseAs<DefaultAttribute>(attrType);
+        return new(attr.Mask, attr.Table, attr.Value);
     }
 }
 
@@ -36,6 +56,8 @@ record ColumnDeclaration : MemberDeclaration
     public readonly EquatableArray<ViewIndex> Indexes;
     public readonly bool IsEquatable;
     public readonly string FullTableName;
+    public readonly int ColumnIndex;
+    public readonly string? ColumnDefaultValue;
 
     // A helper to combine multiple column attributes into a single mask.
     // Note: it doesn't check the table names, this is left up to the caller.
@@ -46,6 +68,7 @@ record ColumnDeclaration : MemberDeclaration
         : base(field, diag)
     {
         FullTableName = tableName;
+        ColumnIndex = index;
 
         Attrs = new(
             field
@@ -66,6 +89,15 @@ record ColumnDeclaration : MemberDeclaration
                 .Select(a => new ViewIndex(new ColumnRef(index, field.Name), a, diag))
                 .ToImmutableArray()
         );
+        
+        ColumnDefaultValue = 
+            field
+                .GetAttributes()
+                .Select(ColumnAttr.ParseDefaultAttribute)
+                .Where(a => a.Mask == ColumnAttrs.Default)
+                .Select(a => a.ColumnDefaultValue)
+                .ToList().FirstOrDefault()
+            ;
 
         var type = field.Type;
 
@@ -538,6 +570,42 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             );
         }
     }
+    
+    public record struct FieldDefaultValue(string tableName, string columnId, string value);
+    
+    public IEnumerable<FieldDefaultValue> GenerateDefaultValues()
+    {
+        if (Kind is TypeKind.Sum)
+        {
+            yield break;
+        }
+
+        foreach (var view in Views)
+        {
+            var members = string.Join(", ", Members.Select(m => m.Name));
+            var fieldsWithDefaultValues = Members.Where(m => m.GetAttrs(view).HasFlag(ColumnAttrs.Default));
+            var defaultValueAttributes = string.Join(", ", 
+                Members
+                    .Where(m => m.GetAttrs(view).HasFlag(ColumnAttrs.Default))
+                    .Select(m => 
+                        m.Attrs
+                            .FirstOrDefault(a => a.Mask == ColumnAttrs.Default)
+                    )
+            );
+
+            var withDefaultValues = fieldsWithDefaultValues as ColumnDeclaration[] ?? fieldsWithDefaultValues.ToArray();
+            foreach (var fieldsWithDefaultValue in withDefaultValues)
+            {
+                var defaultValue = fieldsWithDefaultValue.Attrs.FirstOrDefault(a => a.Mask == ColumnAttrs.Default);
+                
+                yield return new FieldDefaultValue(
+                    view.Name, 
+                    fieldsWithDefaultValue.ColumnIndex.ToString(),
+                    fieldsWithDefaultValue.ColumnDefaultValue
+                );
+            }
+        }
+    }
 
     public record Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
     {
@@ -640,26 +708,26 @@ record ReducerDeclaration
             )})";
 
         return $$"""
-            class {{Name}}: SpacetimeDB.Internal.IReducer {
-                {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
+                 class {{Name}}: SpacetimeDB.Internal.IReducer {
+                     {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
 
-                public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
-                    nameof({{Name}}),
-                    [{{MemberDeclaration.GenerateDefs(Args)}}],
-                    {{Kind switch
+                     public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                         nameof({{Name}}),
+                         [{{MemberDeclaration.GenerateDefs(Args)}}],
+                         {{Kind switch
         {
             ReducerKind.Init => "SpacetimeDB.Internal.Lifecycle.Init",
             ReducerKind.ClientConnected => "SpacetimeDB.Internal.Lifecycle.OnConnect",
             ReducerKind.ClientDisconnected => "SpacetimeDB.Internal.Lifecycle.OnDisconnect",
             _ => "null"
         }}}
-                );
+                     );
 
-                public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
-                    {{invocation}};
-                }
-            }
-            """;
+                     public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
+                         {{invocation}};
+                     }
+                 }
+                 """;
     }
 
     public Scope.Extensions GenerateSchedule()
@@ -696,10 +764,7 @@ record ClientVisibilityFilterDeclaration
 {
     public readonly string FullName;
 
-    public string GlobalName
-    {
-        get => $"global::{FullName}";
-    }
+    public string GlobalName => $"global::{FullName}";
 
     public ClientVisibilityFilterDeclaration(
         GeneratorAttributeSyntaxContext context,
@@ -729,6 +794,16 @@ record ClientVisibilityFilterDeclaration
 [Generator]
 public class Module : IIncrementalGenerator
 {
+    /// <summary>
+    /// Collects distinct items from a source sequence, ensuring no duplicate export names exist.
+    /// </summary>
+    /// <typeparam name="T">The type of items being collected</typeparam>
+    /// <param name="kind">The category/type of items being collected (used for error messages)</param>
+    /// <param name="context">The incremental generator context for reporting diagnostics</param>
+    /// <param name="source">The source sequence of items to process</param>
+    /// <param name="toExportName">Function to get the export name for an item (used for deduplication)</param>
+    /// <param name="toFullName">Function to get the full name of an item (used for error messages)</param>
+    /// <returns>An incremental value provider containing the distinct items</returns>
     private static IncrementalValueProvider<EquatableArray<T>> CollectDistinct<T>(
         string kind,
         IncrementalGeneratorInitializationContext context,
@@ -879,12 +954,22 @@ public class Module : IIncrementalGenerator
             (f) => f.FullName,
             (f) => f.FullName
         );
+        
+        var defaultValues = CollectDistinct(
+            "DefaultValues",
+            context,
+            tables
+                .SelectMany((t, ct) => t.GenerateDefaultValues())
+                .WithTrackingName("SpacetimeDB.Table.GenerateDefaultValues"),
+            v => v.tableName+"_"+v.columnId,
+            v => v.tableName+"_"+v.columnId
+        );
 
         context.RegisterSourceOutput(
-            tableViews.Combine(addReducers).Combine(rlsFiltersArray),
+            tableViews.Combine(addReducers).Combine(rlsFiltersArray).Combine(defaultValues),
             (context, tuple) =>
             {
-                var ((tableViews, addReducers), rlsFilters) = tuple;
+                var (((tableViews, addReducers), rlsFilters), defaultValues) = tuple;
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
                 if (tableViews.Array.IsEmpty && addReducers.Array.IsEmpty)
                 {
@@ -955,7 +1040,12 @@ public class Module : IIncrementalGenerator
                                 "\n",
                                 rlsFilters.Select(f => $"SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter({f.GlobalName});")
                             )}}
-                        }
+                            {{string.Join(
+                                "\n",
+                                defaultValues.Select(d => 
+                                    $"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, \"{d.value}\");")
+                            )}}
+                        } 
 
                     // Exports only work from the main assembly, so we need to generate forwarding methods.
                     #if EXPERIMENTAL_WASM_AOT
