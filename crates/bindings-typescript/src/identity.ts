@@ -1,3 +1,4 @@
+import { AlgebraicType } from './algebraic_type';
 import { hexStringToU256, u256ToHexString, u256ToUint8Array } from './utils';
 
 /**
@@ -15,6 +16,16 @@ export class Identity {
     // we get a JSON with __identity__ when getting a token with a JSON API
     // and an bigint when using BSATN
     this.__identity__ = typeof data === 'string' ? hexStringToU256(data) : data;
+  }
+
+  /**
+   * Get the algebraic type representation of the {@link Identity} type.
+   * @returns The algebraic type representation of the type.
+   */
+  static getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.Product({
+      elements: [{ name: '__identity__', algebraicType: AlgebraicType.U256 }],
+    });
   }
 
   /**

@@ -25,6 +25,7 @@ use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
 use spacetimedb_lib::{
@@ -415,13 +416,8 @@ impl MutTxId {
         TxTableForInsertion<'_>,
         (&mut Table, &mut dyn BlobStore, &mut IndexIdMap),
     )> {
-        let (commit_table, commit_bs, idx_map) = self.committed_state_write_lock.get_table_and_blob_store_mut(table_id);
-        // NOTE(centril): `TableError` is a fairly large type.
-        // Not making this lazy made `TableError::drop` show up in perf.
-        // TODO(centril): Box all the errors.
-        #[allow(clippy::unnecessary_lazy_evaluations)]
-        let commit_table = commit_table.ok_or_else(|| TableError::IdNotFoundState(table_id))?;
-
+        let (commit_table, commit_bs, idx_map, _) =
+            self.committed_state_write_lock.get_table_and_blob_store_mut(table_id)?;
         // Get the insert table, so we can write the row into it.
         let tx = self
             .tx_state
@@ -960,8 +956,8 @@ fn get_next_sequence_value(
         let mut seq_row = StSequenceRow::try_from(old_seq_row_ref)?;
 
         let sequence = get_sequence_mut(seq_state, seq_id)?;
-        seq_row.allocated = sequence.nth_value(SEQUENCE_ALLOCATION_STEP as usize);
-        sequence.set_allocation(seq_row.allocated);
+        let new_allocated = sequence.allocate_steps(SEQUENCE_ALLOCATION_STEP as usize);
+        seq_row.allocated = new_allocated;
         seq_row
     };
 
@@ -1016,7 +1012,7 @@ impl MutTxId {
             sequence_name: seq.sequence_name,
             table_id,
             col_pos: seq.col_pos,
-            allocated: seq.allocated,
+            allocated: seq.start,
             increment: seq.increment,
             start: seq.start,
             min_value: seq.min_value,
@@ -1030,7 +1026,7 @@ impl MutTxId {
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         // This won't clone-write when creating a table but likely to otherwise.
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_sequence(schema.clone()));
-        self.sequence_state_lock.insert(Sequence::new(schema));
+        self.sequence_state_lock.insert(Sequence::new(schema, None));
         self.push_schema_change(PendingSchemaChange::SequenceAdded(table_id, seq_id));
 
         log::trace!("SEQUENCE CREATED: id = {seq_id}");
@@ -1304,7 +1300,8 @@ impl MutTxId {
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn commit(mut self) -> (TxData, TxMetrics, String) {
+    pub fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
+        let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
 
         // Compute and keep enough info that we can
@@ -1322,7 +1319,20 @@ impl MutTxId {
         );
         let reducer = self.ctx.into_reducer_name();
 
-        (tx_data, tx_metrics, reducer)
+        // If the transaction didn't consume an offset (i.e. it was empty),
+        // report the previous offset.
+        //
+        // Note that technically the tx could have run against an empty database,
+        // in which case we'd wrongly return zero (a non-existent transaction).
+        // This doesn not happen in practice, however, as [RelationalDB::set_initialized]
+        // creates a transaction.
+        let tx_offset = if tx_offset == self.committed_state_write_lock.next_tx_offset {
+            tx_offset.saturating_sub(1)
+        } else {
+            tx_offset
+        };
+
+        (tx_offset, tx_data, tx_metrics, reducer)
     }
 
     /// Commits this transaction, applying its changes to the committed state.

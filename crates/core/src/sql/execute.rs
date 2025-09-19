@@ -9,6 +9,7 @@ use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::ArgsTuple;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{check_row_limit, DbProgram, TxMode};
@@ -26,6 +27,7 @@ use spacetimedb_schema::relation::FieldName;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
+use tokio::sync::oneshot;
 
 pub struct StmtResult {
     pub schema: ProductType,
@@ -172,6 +174,11 @@ pub fn execute_sql_tx<'a>(
 }
 
 pub struct SqlResult {
+    /// The offset of the SQL operation's transaction.
+    ///
+    /// Used to determine visibility of the transaction wrt the durability
+    /// requirements requested by the caller.
+    pub tx_offset: TransactionOffset,
     pub rows: Vec<ProductValue>,
     /// These metrics will be reported via `report_tx_metrics`.
     /// They should not be reported separately to avoid double counting.
@@ -200,9 +207,12 @@ pub fn run(
             // and hence there are no deltas to process.
             let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
 
-            // Release the tx on drop, so that we record metrics.
+            let (tx_offset_send, tx_offset) = oneshot::channel();
+            // Release the tx on drop, so that we record metrics
+            // and set the transaction offset.
             let mut tx = scopeguard::guard(tx, |tx| {
-                let (tx_metrics_downgrade, reducer) = db.release_tx(tx);
+                let (offset, tx_metrics_downgrade, reducer) = db.release_tx(tx);
+                let _ = tx_offset_send.send(offset);
                 db.report_tx_metrics(
                     reducer,
                     Some(Arc::new(tx_data)),
@@ -232,6 +242,7 @@ pub fn run(
             tx.metrics.merge(metrics);
 
             Ok(SqlResult {
+                tx_offset,
                 rows,
                 metrics: tx.metrics,
             })
@@ -252,10 +263,17 @@ pub fn run(
             if subs.is_none() {
                 let metrics = tx.metrics;
                 return db.commit_tx(tx).map(|tx_opt| {
-                    if let Some((tx_data, tx_metrics, reducer)) = tx_opt {
-                        db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+                    let (tx_offset, tx_data, tx_metrics, reducer) = tx_opt.unwrap();
+
+                    let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
+                    let _ = tx_offset_sender.send(tx_offset);
+
+                    db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+                    SqlResult {
+                        tx_offset: tx_offset_receiver,
+                        rows: vec![],
+                        metrics,
                     }
-                    SqlResult { rows: vec![], metrics }
                 });
             }
 
@@ -289,7 +307,11 @@ pub fn run(
                 Err(WriteConflict) => {
                     todo!("See module_host_actor::call_reducer_with_tx")
                 }
-                Ok(_) => Ok(SqlResult { rows: vec![], metrics }),
+                Ok(res) => Ok(SqlResult {
+                    tx_offset: res.tx_offset,
+                    rows: vec![],
+                    metrics,
+                }),
             }
         }
     }
