@@ -65,7 +65,7 @@ const nav = {
       'sdks/typescript/quickstart.md'
     ),
     page('TypeScript Reference', 'sdks/typescript', 'sdks/typescript/index.md'),
-    page('Reference', 'unreal/reference', 'unreal/reference.md'),
+    page('Unreal Reference', 'unreal/reference', 'unreal/reference.md'),
     section('SQL'),
     page('SQL Reference', 'sql', 'sql/index.md'),
     section('Subscriptions'),
