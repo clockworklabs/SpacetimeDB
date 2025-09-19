@@ -622,7 +622,7 @@ Notice that the food automatically respawns as you vaccuum them up. This is beca
 - Update the module name in the Unreal project to `<your database name>`.
 - Your `BP_GameManager` should look something like this:
 
-![Maincloud Setup](./part-4-01-maincloud.png)
+![Maincloud Setup](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-4-01-maincloud.png)
 
 To delete your Maincloud database, you can run: `spacetime delete -s maincloud <your database name>`
 

@@ -742,7 +742,7 @@ Next add blueprints for our these classes:
    - Change **Player Controller Class** from **PlayerController** to `BP_BlackholioPlayerController`.  
    - Save the level.
 
-![Add Circle](./part-3-01-create-blueprint.png)
+![Add Circle](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-01-create-blueprint.png)
 
 ### Set Up the Nameplate Blueprint
 
@@ -762,7 +762,7 @@ Double-click `WBP_Nameplate` to open it, then make the following changes:
    - Set **Font -> Size** to `24`.
    - Set **Font -> Justification** to **Align Text Center**.
 
-![WBP_Nameplate](./part-3-02-create-nameplate.png)
+![WBP_Nameplate](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-create-nameplate.png)
 
 Finally, add Blueprint logic so the circle can update its nameplate:
 
@@ -775,14 +775,14 @@ Finally, add Blueprint logic so the circle can update its nameplate:
    - A conversion from `String` to `Text` is added automatically; this is expected.  
 7. Click **Save** and **Compile**.
 
-![UpdateText Function](./part-3-03-update-text-function.png)
+![UpdateText Function](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-03-update-text-function.png)
 
 ### Set Up Circle Entity Blueprint
 
 Import and set up the circle sprite:
 
 1. Right-click the image below and save it locally:  
-![Circle](./Circle.png)
+![Circle](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/Circle.png)
 
 2. In the **Content Drawer**, right-click and select **Import to Current Folder**, then choose the saved image.  
    - This imports the Circle as a texture.  
@@ -1728,7 +1728,7 @@ Next, wire up `SetUsername` to update the Nameplate:
 1. Open `BP_Circle`.  
 2. In **Event BeginPlay**, add the following:  
 
-![Nameplate Update](./part-3-04-nameplate-change.png)
+![Nameplate Update](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-04-nameplate-change.png)
 
 ---
 
