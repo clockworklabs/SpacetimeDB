@@ -1151,8 +1151,26 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         Ok(row)
     }
 
-    fn visit_truncate(&mut self, _table_id: TableId) -> std::result::Result<(), Self::Error> {
-        Err(anyhow!("visit: truncate not yet supported").into())
+    fn visit_truncate(&mut self, table_id: TableId) -> std::result::Result<(), Self::Error> {
+        let schema = self.committed_state.schema_for_table(table_id)?;
+        // TODO: avoid clone
+        let table_name = schema.table_name.clone();
+
+        self.committed_state.replay_truncate(table_id).with_context(|| {
+            format!(
+                "Error truncating table {:?} during transaction {:?} playback",
+                table_id, self.committed_state.next_tx_offset
+            )
+        })?;
+
+        // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+        // and therefore has performance implications and must not be disabled.
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(self.database_identity, &table_id.into(), &table_name)
+            .set(0);
+
+        Ok(())
     }
 
     fn visit_tx_start(&mut self, offset: u64) -> std::result::Result<(), Self::Error> {
@@ -1206,7 +1224,7 @@ mod tests {
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
         ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
     };
-    use crate::traits::{IsolationLevel, MutTx};
+    use crate::traits::{IsolationLevel, MutTx, TxTableTruncated};
     use crate::Result;
     use bsatn::to_vec;
     use core::{fmt, mem};
@@ -2845,7 +2863,7 @@ mod tests {
         let tx_data_2 = commit(&datastore, tx)?;
         // Ensure that none of the commits deleted rows in our table.
         for tx_data in [&tx_data_1, &tx_data_2] {
-            assert_eq!(tx_data.deletes().find(|(tid, _)| **tid == table_id), None);
+            assert_eq!(tx_data.deletes().find(|(tid, ..)| **tid == table_id), None);
         }
         // Ensure that the first commit added the row but that the second didn't.
         for (tx_data, expected_rows) in [(&tx_data_1, vec![row.clone()]), (&tx_data_2, vec![])] {
@@ -3169,11 +3187,12 @@ mod tests {
         // Now drop the table again and commit.
         assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
         let tx_data = commit(&datastore, tx)?;
-        let (_, deleted) = tx_data
+        let (_, truncated, deleted_rows) = tx_data
             .deletes()
-            .find(|(id, _)| **id == table_id)
+            .find(|(id, ..)| **id == table_id)
             .expect("should have deleted rows for `table_id`");
-        assert_eq!(&**deleted, [row]);
+        assert_eq!(&**deleted_rows, [row]);
+        assert_eq!(truncated, TxTableTruncated::Yes);
 
         // In the next transaction, the table doesn't exist.
         assert!(
@@ -3377,8 +3396,9 @@ mod tests {
         let to_product = |col: &ColumnSchema| value_serialize(&StColumnRow::from(col.clone())).into_product().unwrap();
         let (_, inserts) = tx_data.inserts().find(|(id, _)| **id == ST_COLUMN_ID).unwrap();
         assert_eq!(&**inserts, [to_product(&columns[1])].as_slice());
-        let (_, deletes) = tx_data.deletes().find(|(id, _)| **id == ST_COLUMN_ID).unwrap();
+        let (_, truncated, deletes) = tx_data.deletes().find(|(id, ..)| **id == ST_COLUMN_ID).unwrap();
         assert_eq!(&**deletes, [to_product(&columns_original[1])].as_slice());
+        assert_eq!(truncated, TxTableTruncated::No);
 
         // Check that we can successfully scan using the new schema type post commit.
         let tx = begin_tx(&datastore);
