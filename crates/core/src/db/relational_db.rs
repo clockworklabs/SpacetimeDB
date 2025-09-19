@@ -1643,13 +1643,22 @@ pub async fn local_durability(commitlog_dir: CommitLogDir) -> io::Result<(LocalD
 /// [DurabilityProvider]: crate::host::host_controller::DurabilityProvider
 pub async fn snapshot_watching_commitlog_compressor(
     mut snapshot_rx: watch::Receiver<u64>,
+    mut clog_tx: Option<tokio::sync::mpsc::Sender<u64>>,
+    mut snap_tx: Option<tokio::sync::mpsc::Sender<u64>>,
     durability: LocalDurability,
 ) {
     let mut prev_snapshot_offset = *snapshot_rx.borrow_and_update();
     while snapshot_rx.changed().await.is_ok() {
         let snapshot_offset = *snapshot_rx.borrow_and_update();
         let durability = durability.clone();
-        let res = asyncify(move || {
+
+        if let Some(snap_tx) = &mut snap_tx {
+            if let Err(err) = snap_tx.try_send(snapshot_offset) {
+                tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
+            }
+        }
+
+        let res: io::Result<_> = asyncify(move || {
             let segment_offsets = durability.existing_segment_offsets()?;
             let start_idx = segment_offsets
                 .binary_search(&prev_snapshot_offset)
@@ -1663,15 +1672,27 @@ pub async fn snapshot_watching_commitlog_compressor(
             // in this case, segment_offsets[end_idx] is the segment that contains the snapshot,
             // which we don't want to compress, so an exclusive range is correct.
             let segment_offsets = &segment_offsets[..end_idx];
-            durability.compress_segments(segment_offsets)
+            durability.compress_segments(segment_offsets)?;
+            let n = segment_offsets.len();
+            let last_compressed_segment = if n > 0 { Some(segment_offsets[n - 1]) } else { None };
+            Ok(last_compressed_segment)
         })
         .await;
 
-        if let Err(e) = res {
-            tracing::warn!("failed to compress segments: {e}");
-            continue;
-        }
+        let last_compressed_segment = match res {
+            Ok(opt_offset) => opt_offset,
+            Err(err) => {
+                tracing::warn!("failed to compress segments: {err}");
+                continue;
+            }
+        };
         prev_snapshot_offset = snapshot_offset;
+
+        if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment) {
+            if let Err(err) = clog_tx.try_send(last_compressed_segment) {
+                tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
+            }
+        }
     }
 }
 
