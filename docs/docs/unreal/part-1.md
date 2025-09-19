@@ -97,6 +97,7 @@ Set up the empty level, add the new `GameManager` to the level, and add lighting
    - Open **Edit -> Project Settings** in the top menu, then select **Project -> Maps & Modes** on the left.  
    - Set **Editor Startup Map** to `Blackholio`.  
    - Set **Game Default Map** to `Blackholio`.
+   
    ![Pick Parent Class](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-1-03-create-blueprint.png)
 
 4. **Add to the Level**  
