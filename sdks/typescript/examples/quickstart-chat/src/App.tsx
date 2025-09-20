@@ -14,6 +14,11 @@ export type PrettyMessage = {
   text: string;
 };
 
+const SERVER_URI = 'ws://localhost:3000';
+const MODULE_NAME = 'quickstart-chat';
+// Key to store the auth token in local storage.
+const LOCAL_STORAGE_TOKEN_KEY = `${SERVER_URI}/${MODULE_NAME}/auth_token`;
+
 function useMessages(conn: DbConnection | null): Message[] {
   const [messages, setMessages] = useState<Message[]>([]);
 
@@ -107,7 +112,7 @@ function App() {
     ) => {
       setIdentity(identity);
       setConnected(true);
-      localStorage.setItem('auth_token', token);
+      localStorage.setItem(LOCAL_STORAGE_TOKEN_KEY, token);
       console.log(
         'Connected to SpacetimeDB with identity:',
         identity.toHexString()
@@ -130,9 +135,9 @@ function App() {
 
     setConn(
       DbConnection.builder()
-        .withUri('ws://localhost:3000')
-        .withModuleName('quickstart-chat')
-        .withToken(localStorage.getItem('auth_token') || '')
+        .withUri(SERVER_URI)
+        .withModuleName(MODULE_NAME)
+        .withToken(localStorage.getItem(LOCAL_STORAGE_TOKEN_KEY) || '')
         .onConnect(onConnect)
         .onDisconnect(onDisconnect)
         .onConnectError(onConnectError)
