@@ -48,6 +48,13 @@ const nav: Nav = {
     page('3 - Gameplay', 'unity/part-3', 'unity/part-3.md'),
     page('4 - Moving and Colliding', 'unity/part-4', 'unity/part-4.md'),
 
+    section('Unreal Tutorial - Basic Multiplayer'),
+    page('Overview', 'unreal', 'unreal/index.md'),
+    page('1 - Setup', 'unreal/part-1', 'unreal/part-1.md'),
+    page('2 - Connecting to SpacetimeDB', 'unreal/part-2', 'unreal/part-2.md'),
+    page('3 - Gameplay', 'unreal/part-3', 'unreal/part-3.md'),
+    page('4 - Moving and Colliding', 'unreal/part-4', 'unreal/part-4.md'),
+
     section('CLI Reference'),
     page('CLI Reference', 'cli-reference', 'cli-reference.md'),
     page(
@@ -87,6 +94,7 @@ const nav: Nav = {
       'sdks/typescript/quickstart.md'
     ),
     page('TypeScript Reference', 'sdks/typescript', 'sdks/typescript/index.md'),
+    page('Unreal Reference', 'unreal/reference', 'unreal/reference.md'),
 
     section('SQL'),
     page('SQL Reference', 'sql', 'sql/index.md'),

@@ -610,7 +610,7 @@ The `OnApplied` callback will be called after the server synchronizes the initia
 
 In the scene view, select the `GameManager` object. Click on the `Border Material` property and choose `Sprites-Default`.
 
-### Creating GameObjects 
+### Creating GameObjects
 
 Now that we have our arena all set up, we need to take the row data that SpacetimeDB syncs with our client and use it to create and draw `GameObject`s on the screen.
 
