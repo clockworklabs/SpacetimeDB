@@ -92,16 +92,17 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
     match (expr, expected) {
         (SqlExpr::Lit(SqlLiteral::Bool(v)), None | Some(AlgebraicType::Bool)) => Ok(Expr::bool(v)),
         (SqlExpr::Lit(SqlLiteral::Bool(_)), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
-        (SqlExpr::Lit(SqlLiteral::Str(_) | SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => {
+        (SqlExpr::Lit(SqlLiteral::Str(_) | SqlLiteral::Num(_) | SqlLiteral::Hex(_) | SqlLiteral::Arr(_)), None) => {
             Err(Unresolved::Literal.into())
         }
         (SqlExpr::Lit(SqlLiteral::Str(v) | SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(ty)) => Ok(Expr::Value(
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
-        (SqlExpr::Lit(SqlLiteral::Arr(_)), None) => {
-            Err(Unresolved::Literal.into())
-        }
+        (SqlExpr::Lit(SqlLiteral::Arr(v)), Some(AlgebraicType::Array(ty))) => Ok(Expr::Value(
+            parse_array_value(&v, &ty).map_err(|_| UnexpectedArrayType::new(&ty.elem_ty))?,
+            AlgebraicType::Array(ty.clone()),
+        )),
         (SqlExpr::Lit(SqlLiteral::Arr(_)), Some(ty)) => {
             Err(UnexpectedArrayType::new(ty).into())
         }
@@ -195,7 +196,7 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
 /// Is this type compatible with this binary operator?
 fn op_supports_type(op: BinOp, ty: &AlgebraicType) -> bool {
     match (ty, op) {
-        (AlgebraicType::Product(_), BinOp::Eq | BinOp::Ne) => true,
+        (AlgebraicType::Product(_) | AlgebraicType::Array(_), BinOp::Eq | BinOp::Ne) => true,
         _ if ty.is_bool() => true,
         _ if ty.is_integer() => true,
         _ if ty.is_float() => true,
