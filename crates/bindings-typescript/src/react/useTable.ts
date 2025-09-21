@@ -77,7 +77,7 @@ export function useTable<
     spacetime = useSpacetimeDB<DbConnection>();
   } catch {
     throw new Error(
-      'Could not find SpacetimeDB client! Did you forget to add a' +
+      'Could not find SpacetimeDB client! Did you forget to add a ' +
         '`SpacetimeDBProvider`? `useTable` must be used in the React component tree' +
         'under a `SpacetimeDBProvider` component.'
     );
