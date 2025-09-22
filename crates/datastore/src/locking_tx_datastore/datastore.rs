@@ -6,7 +6,6 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::execution_context::{Workload, WorkloadType};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
@@ -23,18 +22,24 @@ use crate::{
         DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData, TxDatastore,
     },
 };
+use crate::{
+    execution_context::{Workload, WorkloadType},
+    system_tables::StTableRow,
+};
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{
+    algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, AlgebraicValue, ProductValue,
+};
+use spacetimedb_sats::{memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef};
@@ -978,6 +983,7 @@ impl<F> Replay<F> {
             database_identity: &self.database_identity,
             committed_state: &mut committed_state,
             progress: &mut *self.progress.borrow_mut(),
+            truncated_tables: IntMap::default(),
         };
         f(&mut visitor)
     }
@@ -1083,6 +1089,10 @@ struct ReplayVisitor<'a, F> {
     database_identity: &'a Identity,
     committed_state: &'a mut CommittedState,
     progress: &'a mut F,
+    // Since deletes are handled before truncation / drop, sometimes the schema
+    // info is gone. We save the name on the first delete of that table so metrics
+    // can still show a name.
+    truncated_tables: IntMap<TableId, Box<str>>,
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
@@ -1139,6 +1149,14 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         let table_name = schema.table_name.clone();
         let row = ProductValue::decode(schema.get_row_type(), reader)?;
 
+        // If this is a delete from the `st_table` system table, save the name
+        if table_id == ST_TABLE_ID {
+            let ab = AlgebraicValue::Product(row.clone());
+            let st_table_row = StTableRow::deserialize(ValueDeserializer::from_ref(&ab)).unwrap();
+            self.truncated_tables
+                .insert(st_table_row.table_id, st_table_row.table_name);
+        }
+
         self.committed_state
             .replay_delete_by_rel(table_id, &row)
             .with_context(|| {
@@ -1158,9 +1176,18 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
     }
 
     fn visit_truncate(&mut self, table_id: TableId) -> std::result::Result<(), Self::Error> {
-        let schema = self.committed_state.schema_for_table(table_id)?;
-        // TODO: avoid clone
-        let table_name = schema.table_name.clone();
+        let table_name = match self.committed_state.schema_for_table(table_id) {
+            // TODO: avoid clone
+            Ok(schema) => schema.table_name.clone(),
+
+            Err(_) => {
+                if let Some(name) = self.truncated_tables.remove(&table_id) {
+                    name
+                } else {
+                    return Err(anyhow!("Error looking up name for truncated table {:?}", table_id).into());
+                }
+            }
+        };
 
         self.committed_state.replay_truncate(table_id).with_context(|| {
             format!(
