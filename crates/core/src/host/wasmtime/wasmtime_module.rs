@@ -6,9 +6,13 @@ use crate::energy::ReducerBudget;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
 use crate::host::wasm_common::*;
+use crate::util::poll_once_executor::poll_once;
 use crate::util::string_from_utf8_lossy_owned;
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
-use wasmtime::{AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace};
+use wasmtime::{
+    AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace, WasmParams,
+    WasmResults,
+};
 
 fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
     log::info!("{func_type} \"{func}\" runtime error: {e}");
@@ -85,15 +89,32 @@ fn handle_error_sink_code(code: i32, error: Vec<u8>) -> Result<(), Box<str>> {
 
 const CALL_FAILURE: i32 = HOST_CALL_FAILURE.get() as i32;
 
+/// Invoke `typed_func` and assert that it doesn't yield.
+///
+/// Our Wasmtime is configured for `async` execution, and will panic if we use the non-async [`TypedFunc::call`].
+/// The `async` config is necessary to allow procedures to suspend, e.g. when making HTTP calls or acquiring transactions.
+/// However, most of the WASM we execute, incl. reducers and startup functions, should never block/yield.
+/// Rather than crossing our fingers and trusting, we run [`TypedFunc::call_async`] in [`crate::util::poll_once_executor`],
+/// a custom "async executor" which invokes [`std::task::Future::poll`] exactly once.
+fn call_sync_typed_func<Args: WasmParams, Ret: WasmResults>(
+    typed_func: &TypedFunc<Args, Ret>,
+    store: &mut Store<WasmInstanceEnv>,
+    args: Args,
+) -> anyhow::Result<Ret> {
+    let fut = typed_func.call_async(store, args);
+    poll_once(fut).expect("`call_async` of supposedly synchronous WASM function returned `Poll::Pending`")
+}
+
 impl module_host_actor::WasmInstancePre for WasmtimeModule {
     type Instance = WasmtimeInstance;
 
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
         let env = WasmInstanceEnv::new(env);
         let mut store = Store::new(self.module.module().engine(), env);
-        let instance = self
-            .module
-            .instantiate(&mut store)
+        let instance_fut = self.module.instantiate_async(&mut store);
+
+        let instance = poll_once(instance_fut)
+            .expect("`instantiate_async` did not immediately return `Ready`")
             .map_err(InitializationError::Instantiation)?;
 
         let mem = Mem::extract(&instance, &mut store).unwrap();
@@ -114,16 +135,15 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
 
         for preinit in &func_names.preinits {
             let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
-            func.call(&mut store, ())
-                .map_err(|err| InitializationError::RuntimeError {
-                    err,
-                    func: preinit.clone(),
-                })?;
+            call_sync_typed_func(&func, &mut store, ()).map_err(|err| InitializationError::RuntimeError {
+                err,
+                func: preinit.clone(),
+            })?;
         }
 
         if let Ok(init) = instance.get_typed_func::<u32, i32>(&mut store, SETUP_DUNDER) {
             let setup_error = store.data_mut().setup_standard_bytes_sink();
-            let res = init.call(&mut store, setup_error);
+            let res = call_sync_typed_func(&init, &mut store, setup_error);
             let error = store.data_mut().take_standard_bytes_sink();
             match res {
                 // TODO: catch this and return the error message to the http client
@@ -170,7 +190,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let start = std::time::Instant::now();
         log::trace!("Start describer \"{describer_func_name}\"...");
 
-        let result = describer.call(&mut *store, sink);
+        let result = call_sync_typed_func(&describer, &mut *store, sink);
 
         let duration = start.elapsed();
         log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros());
@@ -207,7 +227,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let args_bytes = op.args.get_bsatn().clone();
         let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, args_bytes, op.timestamp);
 
-        let call_result = self.call_reducer.call(
+        let call_result = call_sync_typed_func(
+            &self.call_reducer,
             &mut *store,
             (
                 op.id.0,

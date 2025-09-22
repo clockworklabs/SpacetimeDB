@@ -565,11 +565,22 @@ mod tests {
             websocket: WebSocketOptions::default(),
         };
 
-        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default()).await?;
+        let _env = StandaloneEnv::init(
+            config,
+            &ca,
+            data_dir.clone(),
+            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
+        )
+        .await?;
         // Ensure that we have a lock.
-        assert!(StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default())
-            .await
-            .is_err());
+        assert!(StandaloneEnv::init(
+            config,
+            &ca,
+            data_dir.clone(),
+            JobCores::without_pinned_cores(tokio::runtime::Handle::current())
+        )
+        .await
+        .is_err());
 
         Ok(())
     }
