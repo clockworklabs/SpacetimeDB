@@ -1,12 +1,7 @@
 import React, { useState } from 'react';
 import './App.css';
 import { DbConnection, Message, User } from './module_bindings';
-import {
-  useSpacetimeDB,
-  useTable,
-  where,
-  eq,
-} from 'spacetimedb/react';
+import { useSpacetimeDB, useTable, where, eq } from 'spacetimedb/react';
 import { Identity, Timestamp } from 'spacetimedb';
 
 export type PrettyMessage = {

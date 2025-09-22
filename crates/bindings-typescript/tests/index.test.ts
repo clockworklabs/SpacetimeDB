@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { AlgebraicType, ConnectionId, Identity, t, type IdentityTokenMessage } from '../src/index';
+import {
+  AlgebraicType,
+  ConnectionId,
+  Identity,
+  t,
+  type IdentityTokenMessage,
+} from '../src/index';
 
 describe('TypeBuilder', () => {
   it('builds the correct algebraic type for a point', () => {
@@ -146,4 +152,3 @@ describe('Identity', () => {
     };
   });
 });
-

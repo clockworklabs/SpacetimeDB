@@ -87,9 +87,7 @@ const connectionBuilder = DbConnection.builder()
 
     conn.subscriptionBuilder().subscribe('SELECT * FROM player');
   })
-  .withToken(
-    'TOKEN'
-  );
+  .withToken('TOKEN');
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
