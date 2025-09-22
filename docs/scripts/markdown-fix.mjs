@@ -10,7 +10,7 @@ import remarkStringify from 'remark-stringify';
  * 2) ###### **Heading**   -> ###### <b>Heading</b>
  */
 function pluginTransform() {
-  return (tree, file) => {
+  return tree => {
     const visit = (node, fn, parent = null, index = -1) => {
       fn(node, parent, index);
       if (node.children) {

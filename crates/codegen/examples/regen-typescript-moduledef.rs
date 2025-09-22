@@ -24,7 +24,7 @@ fn main() -> anyhow::Result<()> {
 
     let dir = &Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../bindings-typescript/src/autogen"
+        "/../bindings-typescript/src/lib/autogen"
     ))
     .canonicalize()?;
 
@@ -39,7 +39,7 @@ fn main() -> anyhow::Result<()> {
             if filename == "index.ts" {
                 return Ok(());
             }
-            let code = regex_replace!(&code, r"@clockworklabs/spacetimedb-sdk", "../index");
+            let code = regex_replace!(&code, r"@clockworklabs/spacetimedb-sdk", "../../index");
 
             // Elide types which are related to client-side only things
             let code = regex_replace!(&code, r"type CallReducerFlags as __CallReducerFlags,", r"");

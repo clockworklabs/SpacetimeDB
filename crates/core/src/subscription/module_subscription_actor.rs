@@ -1,7 +1,7 @@
 use super::execution_unit::QueryHash;
 use super::module_subscription_manager::{
-    spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats, SubscriptionManager,
-    TransactionOffset,
+    from_tx_offset, spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats,
+    SubscriptionManager, TransactionOffset,
 };
 use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
@@ -884,55 +884,47 @@ impl ModuleSubscriptions {
                     return Ok(Err(WriteConflict));
                 };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
-                (read_tx, Some(tx_data), tx_metrics)
+                (read_tx, Arc::new(tx_data), tx_metrics)
             }
             EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
-                let (tx_metrics, tx) = stdb.rollback_mut_tx_downgrade(tx, Workload::Update);
-                (tx, None, tx_metrics)
-            }
-        };
+                // If the transaction failed, we need to rollback the mutable tx.
+                // We don't need to do any subscription updates in this case, so we will exit early.
 
-        let tx_data = tx_data.map(Arc::new);
-
-        // When we're done with this method, release the tx and report metrics.
-        let (extra_tx_offset_sender, extra_tx_offset) = oneshot::channel();
-        let (mut read_tx, tx_offset) = self.guard_tx(
-            read_tx,
-            GuardTxOptions::full(extra_tx_offset_sender, tx_data.clone(), tx_metrics_mut),
-        );
-        // Create the delta transaction we'll use to eval updates against.
-        let delta_read_tx = tx_data
-            .as_ref()
-            .as_ref()
-            .map(|tx_data| DeltaTx::new(&read_tx, tx_data, subscriptions.index_ids_for_subscriptions()))
-            .unwrap_or_else(|| DeltaTx::from(&*read_tx));
-
-        let event = Arc::new(event);
-        let mut update_metrics: ExecutionMetrics = ExecutionMetrics::default();
-
-        match &event.status {
-            EventStatus::Committed(_) => {
-                update_metrics =
-                    subscriptions.eval_updates_sequential((&delta_read_tx, tx_offset), event.clone(), caller);
-            }
-            EventStatus::Failed(_) => {
+                let event = Arc::new(event);
+                let (tx_offset, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                self.relational_db
+                    .report_tx_metrics(reducer, None, Some(tx_metrics), None);
                 if let Some(client) = caller {
                     let message = TransactionUpdateMessage {
                         event: Some(event.clone()),
                         database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
                     };
 
-                    let _ = self.broadcast_queue.send_client_message(client, None, message);
+                    let _ = self
+                        .broadcast_queue
+                        .send_client_message(client, Some(from_tx_offset(tx_offset)), message);
                 } else {
                     log::trace!("Reducer failed but there is no client to send the failure to!")
                 }
+                return Ok(Ok(CommitAndBroadcastEventSuccess {
+                    tx_offset: from_tx_offset(tx_offset),
+                    event,
+                    metrics: ExecutionMetrics::default(),
+                }));
             }
-            EventStatus::OutOfEnergy => {} // ?
-        }
+        };
+        let event = Arc::new(event);
 
-        // Merge in the subscription evaluation metrics.
+        // When we're done with this method, release the tx and report metrics.
+        let (extra_tx_offset_sender, extra_tx_offset) = oneshot::channel();
+        let (mut read_tx, tx_offset) = self.guard_tx(
+            read_tx,
+            GuardTxOptions::full(extra_tx_offset_sender, Some(tx_data.clone()), tx_metrics_mut),
+        );
+        // Create the delta transaction we'll use to eval updates against.
+        let delta_read_tx = DeltaTx::new(&read_tx, tx_data.as_ref(), subscriptions.index_ids_for_subscriptions());
+        let update_metrics = subscriptions.eval_updates_sequential((&delta_read_tx, tx_offset), event.clone(), caller);
         read_tx.metrics.merge(update_metrics);
-
         Ok(Ok(CommitAndBroadcastEventSuccess {
             tx_offset: extra_tx_offset,
             event,

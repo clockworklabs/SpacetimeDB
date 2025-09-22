@@ -6,6 +6,7 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
+use crate::system_tables::{ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, IndexError, TableError},
@@ -24,10 +25,8 @@ use crate::{
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
 use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
-use spacetimedb_lib::{
-    db::auth::{StAccess, StTableType},
-    Identity,
-};
+use spacetimedb_durability::TxOffset;
+use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -181,7 +180,7 @@ impl CommittedState {
                 table_id,
                 table_name: schema.table_name.clone(),
                 table_type: StTableType::System,
-                table_access: StAccess::Public,
+                table_access: schema.table_access,
                 table_primary_key: schema.primary_key.map(Into::into),
             };
             let row = ProductValue::from(row);
@@ -249,6 +248,10 @@ impl CommittedState {
         self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
 
         self.create_table(ST_ROW_LEVEL_SECURITY_ID, schemas[ST_ROW_LEVEL_SECURITY_IDX].clone());
+        self.create_table(
+            ST_CONNECTION_CREDENTIALS_ID,
+            schemas[ST_CONNECTION_CREDENTIALS_IDX].clone(),
+        );
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
@@ -294,8 +297,13 @@ impl CommittedState {
             let mut in_st_tables = self.schema_for_table_raw(table_id)?;
             // We normalize so that the orders will match when checking for equality.
             in_st_tables.normalize();
+            let in_memory = {
+                let mut s = in_memory.as_ref().clone();
+                s.normalize();
+                s
+            };
 
-            if *in_memory != in_st_tables {
+            if in_memory != in_st_tables {
                 return Err(anyhow!(
                     "System table schema mismatch for table id {table_id}. Expected: {schema:?}, found: {:?}",
                     in_memory
@@ -303,6 +311,7 @@ impl CommittedState {
                 .into());
             }
         }
+
         Ok(())
     }
 
@@ -716,12 +725,13 @@ impl CommittedState {
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.
-    pub(super) fn rollback(&mut self, seq_state: &mut SequencesState, tx_state: TxState) {
+    pub(super) fn rollback(&mut self, seq_state: &mut SequencesState, tx_state: TxState) -> TxOffset {
         // Roll back the changes in the reverse order in which they were made
         // so that e.g., the last change is undone first.
         for change in tx_state.pending_schema_changes.into_iter().rev() {
             self.rollback_pending_schema_change(seq_state, change);
         }
+        self.next_tx_offset.saturating_sub(1)
     }
 
     fn rollback_pending_schema_change(
