@@ -37,7 +37,7 @@ cd client
 npm install spacetimedb 
 ```
 
-> WARNING! If you are using `@clockworklabs/spacetimedb-sdk` that has been deprecated in favor of `spacetimedb` as of SpacetimeDB version 1.4.0. If you are using the old SDK package, you will need to switch to `spacetimedb`.
+> WARNING! The `@clockworklabs/spacetimedb-sdk` package has been deprecated in favor of the `spacetimedb` package as of SpacetimeDB version 1.4.0. If you are using the old SDK package, you will need to switch to `spacetimedb`. You will also need a SpacetimeDB CLI version of 1.4.0+ to generate bindings for the new `spacetimedb` package.
 
 You should have this folder layout starting from the root of your project:
 
