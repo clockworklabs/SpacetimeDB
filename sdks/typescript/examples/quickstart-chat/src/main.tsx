@@ -28,7 +28,7 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
 const connectionBuilder = DbConnection.builder()
   .withUri('ws://localhost:3000')
   .withModuleName('quickstart-chat')
-  .withToken(localStorage.getItem('auth_token') || '')
+  .withToken(localStorage.getItem('auth_token') || undefined)
   .onConnect(onConnect)
   .onDisconnect(onDisconnect)
   .onConnectError(onConnectError);

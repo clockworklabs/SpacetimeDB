@@ -49,6 +49,13 @@ Replace the entire contents of `client/src/App.tsx` with the following:
 ```tsx
 import React, { useEffect, useState } from 'react';
 import { DbConnection, Message, User } from './module_bindings';
+import {
+  useSpacetimeDB,
+  useTable,
+  where,
+  eq,
+} from '@clockworklabs/spacetimedb-sdk/react';
+import { Identity, Timestamp } from '@clockworklabs/spacetimedb-sdk';
 import './App.css';
 
 export type PrettyMessage = {
@@ -67,6 +74,7 @@ function App() {
   const prettyMessages: PrettyMessage[] = [];
   const onlineUsers: User[] = [];
   const offlineUsers: User[] = [];
+  const users = [...onlineUsers, ...offlineUsers];
 
   const name = '';
 
@@ -76,7 +84,7 @@ function App() {
     // TODO: Call `setName` reducer
   };
 
-  const onMessageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setNewMessage('');
     // TODO: Call `sendMessage` reducer
@@ -187,7 +195,7 @@ return (
       </div>
       <div className="new-message">
         <form
-          onSubmit={onMessageSubmit}
+          onSubmit={onSubmitMessage}
           style={{
             display: 'flex',
             flexDirection: 'column',
@@ -514,7 +522,7 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
 const connectionBuilder = DbConnection.builder()
   .withUri('ws://localhost:3000')
   .withModuleName('quickstart-chat')
-  .withToken(localStorage.getItem('auth_token') || '')
+  .withToken(localStorage.getItem('auth_token') || undefined)
   .onConnect(onConnect)
   .onDisconnect(onDisconnect)
   .onConnectError(onConnectError);
@@ -534,7 +542,7 @@ We are also using `localStorage` to store our SpacetimeDB credentials. This way,
 
 If you chose a different name for your database, replace `quickstart-chat` with that name, or republish your module as `quickstart-chat`.
 
-In the `onConnect` function we are also subscribing to the `message` and `user` tables. When we subscribe, SpacetimeDB will run our subscription queries and store the result in a local "client cache". This cache will be updated in real-time as the data in the table changes on the server.
+Our React hooks will subscribe to the data in SpacetimeDB. When we subscribe, SpacetimeDB will run our subscription queries and store the result in a local "client cache". This cache will be updated in real-time as the data in the table changes on the server.
 
 We pass our connection configuration directly to the `SpacetimeDBProvider` which will manage our connection to SpacetimeDB.
 
@@ -628,7 +636,7 @@ Modify the `onSubmitNewName` callback by adding a call to the `setName` reducer:
 Next modify the `onSubmitMessage` callback by adding a call to the `sendMessage` reducer:
 
 ```tsx
-  const onMessageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setNewMessage("");
     conn.reducers.sendMessage(newMessage);
@@ -702,6 +710,33 @@ Update your `onlineUsers` React hook to add the following callbacks:
 These callbacks will be called any time the state of the `useTable` result changes to add or remove a row, while respecting your `where` filter.
 
 Here we post a system message saying a new user has connected if the user is being added to the `user` table and they're online, or if an existing user's online status is being set to "online".
+
+Next, let's add the system messages to our list of `Message`s so they can be interleaved with the chat messages. Modify `prettyMessages` to concat the `systemMessages` as well:
+
+```tsx
+  const prettyMessages: PrettyMessage[] = Array.from(messages)
+    .concat(systemMessages)
+    .sort((a, b) => (a.sent.toDate() > b.sent.toDate() ? 1 : -1))
+    .map(message => {
+      const user = users.find(
+        u => u.identity.toHexString() === message.sender.toHexString()
+      );
+      return {
+        senderName: user?.name || message.sender.toHexString().substring(0, 8),
+        text: message.text,
+        sent: message.sent,
+        kind: Identity.zero().isEqual(message.sender) ? 'system' : 'user',
+      };
+    });
+```
+
+Finally, let's also subscribe to offline users so we can show offline users in the side bar as well. Replace `const offlineUsers: User[] = [];` with:
+  
+```tsx
+const { rows: offlineUsers } = useTable<DbConnection, User>(
+  'user',
+  where(eq('online', false))
+);
 
 ## Conclusion
 

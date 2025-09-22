@@ -104,7 +104,7 @@ function App() {
     conn.reducers.setName(newName);
   };
 
-  const onMessageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setNewMessage('');
     conn.reducers.sendMessage(newMessage);
@@ -214,7 +214,7 @@ function App() {
       </div>
       <div className="new-message">
         <form
-          onSubmit={onMessageSubmit}
+          onSubmit={onSubmitMessage}
           style={{
             display: 'flex',
             flexDirection: 'column',
