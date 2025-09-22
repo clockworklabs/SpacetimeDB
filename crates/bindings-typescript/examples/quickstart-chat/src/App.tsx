@@ -6,8 +6,8 @@ import {
   useTable,
   where,
   eq,
-} from '@clockworklabs/spacetimedb-sdk/react';
-import { Identity, Timestamp } from '@clockworklabs/spacetimedb-sdk';
+} from 'spacetimedb/react';
+import { Identity, Timestamp } from 'spacetimedb';
 
 export type PrettyMessage = {
   senderName: string;

@@ -28,7 +28,7 @@ pnpm install
 We also need to install the `spacetime-client-sdk` package:
 
 ```bash
-pnpm install @clockworklabs/spacetimedb-sdk
+pnpm install spacetimedb 
 ```
 
 > If you are using another package manager like `yarn` or `npm`, the same steps should work with the appropriate commands for those tools.
@@ -54,8 +54,8 @@ import {
   useTable,
   where,
   eq,
-} from '@clockworklabs/spacetimedb-sdk/react';
-import { Identity, Timestamp } from '@clockworklabs/spacetimedb-sdk';
+} from 'spacetimedb/react';
+import { Identity, Timestamp } from 'spacetimedb';
 import './App.css';
 
 export type PrettyMessage = {
@@ -484,8 +484,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
-import { Identity } from '@clockworklabs/spacetimedb-sdk';
-import { SpacetimeDBProvider } from '@clockworklabs/spacetimedb-sdk/react';
+import { Identity } from 'spacetimedb';
+import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection, ErrorContext } from './module_bindings/index.ts';
 ```
 

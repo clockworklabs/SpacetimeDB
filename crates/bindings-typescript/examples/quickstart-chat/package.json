@@ -1,5 +1,5 @@
 {
-  "name": "client",
+  "name": "@clockworklabs/quickstart-chat",
   "private": true,
   "version": "0.0.1",
   "type": "module",
@@ -16,7 +16,7 @@
     "spacetime:publish": "spacetime publish chat --project-path server --server testnet"
   },
   "dependencies": {
-    "@clockworklabs/spacetimedb-sdk": "workspace:*",
+    "spacetimedb": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

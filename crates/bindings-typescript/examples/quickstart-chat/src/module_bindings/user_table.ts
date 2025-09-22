@@ -25,7 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '@clockworklabs/spacetimedb-sdk';
+} from 'spacetimedb';
 import { User } from './user_type';
 import {
   type EventContext,

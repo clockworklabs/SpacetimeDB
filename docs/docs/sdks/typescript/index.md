@@ -34,7 +34,7 @@ Then add the SpacetimeDB SDK to your dependencies:
 
 ```bash
 cd client
-npm install @clockworklabs/spacetimedb-sdk
+npm install spacetimedb 
 ```
 
 You should have this folder layout starting from the root of your project:
@@ -81,7 +81,7 @@ You may also need to import some definitions from the SDK library:
 ```typescript
 import {
   Identity, ConnectionId, Event, ReducerEvent
-} from '@clockworklabs/spacetimedb-sdk';
+} from 'spacetimedb';
 ```
 
 ## Type `DbConnection`

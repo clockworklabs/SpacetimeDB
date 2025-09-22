@@ -2,8 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
-import { Identity } from '@clockworklabs/spacetimedb-sdk';
-import { SpacetimeDBProvider } from '@clockworklabs/spacetimedb-sdk/react';
+import { Identity } from 'spacetimedb';
+import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection, ErrorContext } from './module_bindings/index.ts';
 
 const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
