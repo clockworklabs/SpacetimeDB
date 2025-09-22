@@ -1,5 +1,5 @@
 import { decompress } from './decompress';
-import { resolveWS } from '#ws';
+import { resolveWS } from './ws';
 
 export class WebsocketDecompressAdapter {
   onclose?: (...ev: any[]) => void;
