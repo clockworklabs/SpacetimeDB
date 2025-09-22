@@ -3439,7 +3439,10 @@ mod tests {
         assert_eq!(&**inserts, [to_product(&columns[1])].as_slice());
         let (_, deletes) = tx_data.deletes().find(|(id, ..)| **id == ST_COLUMN_ID).unwrap();
         assert_eq!(&**deletes, [to_product(&columns_original[1])].as_slice());
-        // assert_eq!(truncated, TxTableTruncated::No);
+        assert!(
+            !tx_data.truncates().contains(&ST_COLUMN_ID),
+            "table should not be truncated"
+        );
 
         // Check that we can successfully scan using the new schema type post commit.
         let tx = begin_tx(&datastore);
