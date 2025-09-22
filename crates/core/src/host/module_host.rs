@@ -395,8 +395,6 @@ impl Instance {
     }
 }
 
-pub trait ModuleInstance: Send + 'static {}
-
 /// Creates the table for `table_def` in `stdb`.
 pub fn create_table_from_def(
     stdb: &RelationalDB,
@@ -981,7 +979,6 @@ impl ModuleHost {
             me.call_identity_disconnected_inner(caller_identity, caller_connection_id, inst)
         })
         .await?
-        .map_err(Into::into)
     }
 
     /// Empty the system tables tracking clients without running any lifecycle reducers.

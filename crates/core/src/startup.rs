@@ -443,6 +443,6 @@ impl DatabaseCores {
     /// let database_cores = cores.databases.make_database_runners(rt.handle());
     /// ```
     pub fn make_database_runners(self, global_runtime: &tokio::runtime::Handle) -> JobCores {
-        JobCores::from_pinned_cores(self.0.into_iter(), global_runtime.clone())
+        JobCores::from_pinned_cores(self.0, global_runtime.clone())
     }
 }
