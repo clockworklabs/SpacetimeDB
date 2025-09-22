@@ -1,13 +1,5 @@
 import { decompress } from './decompress';
-
-// Add type declarations for ImportMeta.env
-interface ImportMetaEnv {
-  readonly BROWSER?: string;
-}
-
-interface ImportMeta {
-  readonly env: ImportMetaEnv;
-}
+import { resolveWS } from '#ws';
 
 export class WebsocketDecompressAdapter {
   onclose?: (...ev: any[]) => void;
@@ -91,27 +83,7 @@ export class WebsocketDecompressAdapter {
   }): Promise<WebsocketDecompressAdapter> {
     const headers = new Headers();
 
-    let WS: typeof WebSocket;
-
-    if ((import.meta as unknown as ImportMeta).env?.BROWSER === 'false') {
-      if ('WebSocket' in globalThis) {
-        WS = WebSocket;
-      } else {
-        try {
-          const { WebSocket: UndiciWS } = await import('undici');
-          WS = UndiciWS as unknown as typeof WebSocket;
-        } catch (err) {
-          console.warn(
-            '[spacetimedb-sdk] No global WebSocket found. ' +
-              'On Node 18–21, please install `undici` (npm install undici) ' +
-              'to enable WebSocket support.'
-          );
-          throw err;
-        }
-      }
-    } else {
-      WS = WebSocket;
-    }
+    const WS = await resolveWS();
 
     // We swap our original token to a shorter-lived token
     // to avoid sending the original via query params.

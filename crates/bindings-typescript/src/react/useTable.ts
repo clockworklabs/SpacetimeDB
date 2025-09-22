@@ -6,7 +6,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { useSpacetimeDB } from './useSpacetimeDB';
-import { DbConnectionImpl, TableCache } from '../sdk';
+import { DbConnectionImpl, TableCache } from '../sdk/db_connection_impl';
 
 export interface UseQueryCallbacks<RowType> {
   onInsert?: (row: RowType) => void;

@@ -1,5 +1,10 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "#ws": ["src/sdk/ws_browser.ts"]
+    },
+
     "target": "ESNext",
     "module": "ESNext",
 

@@ -2,7 +2,7 @@ import { EventEmitter } from './event_emitter.ts';
 import type { TableRuntimeTypeInfo } from './spacetime_module.ts';
 
 import { stdbLogger } from './logger.ts';
-import type { ComparablePrimitive } from 'spacetimedb';
+import type { ComparablePrimitive } from '../';
 import type { EventContextInterface } from './index.ts';
 
 export type Operation<

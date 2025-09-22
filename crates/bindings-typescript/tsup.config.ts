@@ -1,10 +1,10 @@
 // tsup.config.ts
 import { defineConfig, type Options } from 'tsup';
+import * as path from 'node:path';
 
 function commonEsbuildTweaks() {
   return (options: any) => {
-    // Prefer "exports"."source" when deps provide it; harmless otherwise.
-    options.conditions = ['source', 'import', 'default'];
+    options.conditions = ['development', 'import', 'default'];
     options.mainFields = ['browser', 'module', 'main'];
   };
 }
@@ -13,6 +13,9 @@ const outExtension = (ctx: { format: string }) => ({
   js: ctx.format === 'cjs' ? '.cjs' : ctx.format === 'esm' ? '.mjs' : '.js',
 });
 
+const WS_BROWSER = path.resolve(__dirname, 'src/sdk/ws_browser.ts');
+const WS_NODE = path.resolve(__dirname, 'src/sdk/ws_node.ts');
+
 export default defineConfig([
   // Root wrapper (SSR-friendly): dist/index.{mjs,cjs}
   {
@@ -20,19 +23,17 @@ export default defineConfig([
     format: ['esm', 'cjs'],
     target: 'es2022',
     outDir: 'dist',
-    dts: false, // types come from ./src in package.json
+    dts: false,
     sourcemap: true,
     clean: true,
     platform: 'neutral',
     treeshake: 'smallest',
     external: ['undici'],
-    // env variable used at build time to determine platform-specific code
-    // see: websocket_decompress_adapter.ts
-    env: {
-      BROWSER: 'false',
-    },
     outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
+    esbuildOptions: o => {
+      commonEsbuildTweaks()(o);
+      o.alias = { ...(o.alias || {}), '#ws': WS_NODE };
+    },
   },
 
   // Browser-flavored root wrapper: dist/index.browser.mjs
@@ -47,11 +48,11 @@ export default defineConfig([
     platform: 'browser',
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'true',
-    },
     outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
+    esbuildOptions: o => {
+      commonEsbuildTweaks()(o);
+      o.alias = { ...(o.alias || {}), '#ws': WS_BROWSER };
+    },
   },
 
   // React subpath (SSR-friendly): dist/react/index.{mjs,cjs}
@@ -66,7 +67,10 @@ export default defineConfig([
     platform: 'neutral',
     treeshake: 'smallest',
     outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
+    esbuildOptions: o => {
+      commonEsbuildTweaks()(o);
+      o.alias = { ...(o.alias || {}), '#ws': WS_NODE };
+    },
   },
 
   // React subpath (browser ESM): dist/browser/react/index.mjs
@@ -81,7 +85,10 @@ export default defineConfig([
     platform: 'browser',
     treeshake: 'smallest',
     outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
+    esbuildOptions: o => {
+      commonEsbuildTweaks()(o);
+      o.alias = { ...(o.alias || {}), '#ws': WS_BROWSER };
+    },
   },
 
   // SDK subpath (SSR-friendly): dist/sdk/index.{mjs,cjs}
@@ -96,11 +103,11 @@ export default defineConfig([
     platform: 'neutral',
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'false',
-    },
     outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
+    esbuildOptions: o => {
+      commonEsbuildTweaks()(o);
+      o.alias = { ...(o.alias || {}), '#ws': WS_NODE };
+    },
   },
 
   // SDK browser ESM: dist/sdk/index.browser.mjs
@@ -115,11 +122,11 @@ export default defineConfig([
     platform: 'browser',
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'true',
-    },
     outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
+    esbuildOptions: o => {
+      commonEsbuildTweaks()(o);
+      o.alias = { ...(o.alias || {}), '#ws': WS_BROWSER };
+    },
   },
 
   // Server subpath (SSR / node-friendly): dist/server/index.{mjs,cjs}
@@ -131,20 +138,17 @@ export default defineConfig([
     dts: false,
     sourcemap: true,
     clean: true,
-    platform: 'neutral', // flip to 'node' if you actually rely on Node builtins
+    platform: 'neutral',
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'false',
-    },
     outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
+    esbuildOptions: o => {
+      commonEsbuildTweaks()(o);
+      o.alias = { ...(o.alias || {}), '#ws': WS_NODE };
+    },
   },
 
-  // The below minified builds are not referenced in package.json and are
-  // just included in the build for measuring the size impact of minification.
-  // It is expected that consumers of the library will run their own
-  // minification as part of their app bundling process.
+  // --- size-only minified builds below ---
 
   // Minified browser build: dist/min/index.browser.mjs
   {
@@ -158,11 +162,11 @@ export default defineConfig([
     platform: 'browser',
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'true',
-    },
     outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
+    esbuildOptions: o => {
+      commonEsbuildTweaks()(o);
+      o.alias = { ...(o.alias || {}), '#ws': WS_BROWSER };
+    },
   },
 
   // Minified browser React build: dist/min/react/index.mjs
@@ -175,9 +179,13 @@ export default defineConfig([
     sourcemap: true,
     minify: 'terser',
     platform: 'browser',
+    external: ['undici'],
     treeshake: 'smallest',
     outExtension: ({ format }) => ({ js: format === 'cjs' ? '.cjs' : '.mjs' }),
-    esbuildOptions: commonEsbuildTweaks(),
+    esbuildOptions: o => {
+      commonEsbuildTweaks()(o);
+      o.alias = { ...(o.alias || {}), '#ws': WS_BROWSER };
+    },
   },
 
   // Minified browser SDK build: dist/min/sdk/index.browser.mjs
@@ -192,11 +200,11 @@ export default defineConfig([
     platform: 'browser',
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'true',
-    },
     outExtension: ({ format }) => ({ js: format === 'cjs' ? '.cjs' : '.mjs' }),
-    esbuildOptions: commonEsbuildTweaks(),
+    esbuildOptions: o => {
+      commonEsbuildTweaks()(o);
+      o.alias = { ...(o.alias || {}), '#ws': WS_BROWSER };
+    },
   },
 ]) satisfies
   | Options
