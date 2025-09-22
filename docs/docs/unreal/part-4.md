@@ -426,6 +426,8 @@ void ABlackholioPlayerController::Tick(float DeltaSeconds)
 }
 ```
 
+> **Reminder:** Be sure to rebuild your project after making changes to the code.
+
 Let's try it out! Press play and roam freely around the arena! Now we're cooking with gas.
 
 ### Collisions and Eating Food

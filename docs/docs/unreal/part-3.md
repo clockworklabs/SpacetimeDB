@@ -719,6 +719,8 @@ Start by making a C++ class for each entity you want in the scene. If the Unreal
 
 Next add blueprints for our these classes:
 
+![Add Circle](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-01-create-blueprint.png)
+
 1. **Circle Blueprint**  
    - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.  
    - Expand **All Classes**, search for `Circle`, highlight `Circle`, and click **Select**.  
@@ -741,8 +743,6 @@ Next add blueprints for our these classes:
    - Open **Window -> World Settings** in the top menu.  
    - Change **Player Controller Class** from **PlayerController** to `BP_BlackholioPlayerController`.  
    - Save the level.
-
-![Add Circle](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-01-create-blueprint.png)
 
 ### Set Up the Nameplate Blueprint
 
@@ -819,12 +819,15 @@ The PlayerPawn owns the circles and controls the camera by following the center 
 Open `BP_PlayerPawn` and make the following changes:
 
 1. Select **DefaultSceneRoot**, add a **Components -> Spring Arm** component.  
+2. Select **SpringArm**, add a **Components -> Camera** component.
+3. Select **SpringArm**
    - In the **Details** panel, set:  
      - **Location** to `0, 15000, 0`  
      - **Rotation** to `0, 0, -90`  
      - **Target Arm Length** to `200`
-2. Select **SpringArm**, add a **Components -> Camera** component.
-3. Click **Save** and **Compile**.
+4. Click **Save** and **Compile**.
+
+> **Note:** Make sure the **Camera** component's **Location** and **Rotation** are `0, 0, 0`
 
 ### Update Classes
 
@@ -1473,7 +1476,6 @@ void AGameManager::HandleConnect(UDbConnection* InConn, FSpacetimeDBIdentity Ide
 Finally, add the new functions at the end of `GameManager.cpp` to handle entity spawning:
 
 ```cpp
-// ...
 void AGameManager::OnCircleInsert(const FEventContext& Context, const FCircleType& NewRow)
 {
     if (EntityMap.Contains(NewRow.EntityId)) return;
@@ -1710,6 +1712,8 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
     Context.Reducers->EnterGame("TestPlayer");
 }
 ```
+
+> **Reminder:** Be sure to rebuild your project after making changes to the code.
 
 ### Trying It Out
 
