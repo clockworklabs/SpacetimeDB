@@ -241,7 +241,7 @@ Run `spacetime rename --help` for more detailed information.
 
 Generate client files for a spacetime module.
 
-**Usage:** `spacetime spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH>]`
+**Usage:** `spacetime spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR>]`
 
 Run `spacetime help publish` for more detailed information.
 
@@ -252,12 +252,14 @@ Run `spacetime help publish` for more detailed information.
 
   Default value: `.`
 * `-o`, `--out-dir <OUT_DIR>` — The system path (absolute or relative) to the generate output directory
+* `--uproject-dir <UPROJECT_DIR>` — Path to the Unreal project directory, replaces --out-dir for Unreal generation (only used with --lang unrealcpp)
 * `--namespace <NAMESPACE>` — The namespace that should be used
 
   Default value: `SpacetimeDB.Types`
+* `--module-name <MODULE_NAME>` — The module name that should be used for DLL export macros (required for lang unrealcpp)
 * `-l`, `--lang <LANG>` — The language to generate
 
-  Possible values: `csharp`, `typescript`, `rust`
+  Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
 * `--build-options <BUILD_OPTIONS>` — Options to pass to the build command, for example --build-options='--lint-dir='
 
   Default value: \`\`

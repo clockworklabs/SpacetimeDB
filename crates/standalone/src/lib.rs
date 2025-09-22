@@ -127,6 +127,8 @@ impl DurabilityProvider for StandaloneDurabilityProvider {
             |snapshot_rx| {
                 tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
                     snapshot_rx,
+                    None,
+                    None,
                     durability,
                 ));
             }
@@ -186,6 +188,7 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
                 id: 0,
                 unschedulable: false,
                 advertise_addr: Some("node:80".to_owned()),
+                pg_addr: Some("node:5432".to_owned()),
             }));
         }
         Ok(None)

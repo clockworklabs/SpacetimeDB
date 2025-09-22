@@ -304,7 +304,7 @@ impl InstanceCommon {
             Err(e) => {
                 log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
                 system_logger.warn(&format!("Database update failed: {e}"));
-                let (tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
                 stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
@@ -445,13 +445,14 @@ impl InstanceCommon {
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
             Ok(res) => match res.and_then(|()| {
-                lifecyle_modifications_to_tx(
-                    reducer_def.lifecycle,
-                    caller_identity,
-                    caller_connection_id,
-                    database_identity,
-                    &mut tx,
-                )
+                // If this is an OnDisconnect lifecycle event, remove the client from st_clients.
+                // We handle OnConnect events before running the reducer.
+                match reducer_def.lifecycle {
+                    Some(Lifecycle::OnDisconnect) => tx
+                        .delete_st_client(caller_identity, caller_connection_id, database_identity)
+                        .map_err(|e| e.to_string().into()),
+                    _ => Ok(()),
+                }
             }) {
                 Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
                 Err(err) => {
@@ -585,6 +586,7 @@ fn log_reducer_error(replica_ctx: &ReplicaContext, timestamp: Timestamp, reducer
     replica_ctx.logger.write(database_logger::LogLevel::Error, &record, &());
 }
 
+/*
 /// Detects lifecycle events for connecting/disconnecting a new client
 /// and inserts/removes into `st_clients` depending on which.
 fn lifecyle_modifications_to_tx(
@@ -601,6 +603,7 @@ fn lifecyle_modifications_to_tx(
     }
     .map_err(|e| e.to_string().into())
 }
+*/
 
 /// Commits the transaction
 /// and evaluates and broadcasts subscriptions updates.

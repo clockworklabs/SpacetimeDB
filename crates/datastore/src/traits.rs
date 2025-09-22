@@ -372,7 +372,7 @@ pub trait MutTx {
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String);
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, String);
 }
 
 /// Standard metadata associated with a database.

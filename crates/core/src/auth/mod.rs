@@ -15,6 +15,7 @@ pub struct JwtKeys {
     pub public: DecodingKey,
     pub public_pem: Box<[u8]>,
     pub private: EncodingKey,
+    pub private_pem: Box<[u8]>,
     pub kid: Option<String>,
 }
 
@@ -23,15 +24,17 @@ impl JwtKeys {
     /// respectively.
     ///
     /// The key files must be PEM encoded ECDSA P256 keys.
-    pub fn new(public_pem: impl Into<Box<[u8]>>, private_pem: &[u8]) -> anyhow::Result<Self> {
+    pub fn new(public_pem: impl Into<Box<[u8]>>, private_pem: impl Into<Box<[u8]>>) -> anyhow::Result<Self> {
         let public_pem = public_pem.into();
+        let private_pem = private_pem.into();
         let public = DecodingKey::from_ec_pem(&public_pem)?;
-        let private = EncodingKey::from_ec_pem(private_pem)?;
+        let private = EncodingKey::from_ec_pem(&private_pem)?;
 
         Ok(Self {
             public,
             private,
             public_pem,
+            private_pem,
             kid: None,
         })
     }
@@ -75,7 +78,7 @@ pub struct EcKeyPair {
 impl TryFrom<EcKeyPair> for JwtKeys {
     type Error = anyhow::Error;
     fn try_from(pair: EcKeyPair) -> anyhow::Result<Self> {
-        JwtKeys::new(pair.public_key_bytes, &pair.private_key_bytes)
+        JwtKeys::new(pair.public_key_bytes, pair.private_key_bytes)
     }
 }
 
