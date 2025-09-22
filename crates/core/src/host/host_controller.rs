@@ -852,6 +852,12 @@ impl Host {
                     )
                 })?;
         }
+        // We should have no clients left, but we do this just in case.
+        // This should only matter if we crashed with something in st_client_credentials,
+        // then restarted with an older version of the code that doesn't use st_client_credentials.
+        // That case would cause some permanently dangling st_client_credentials.
+        // Since we have no clients on startup, this should be safe to do regardless.
+        module_host.clear_all_clients().await?;
 
         scheduler_starter.start(&module_host)?;
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();

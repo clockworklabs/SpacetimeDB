@@ -6,6 +6,7 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
+use crate::system_tables::{ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, IndexError, TableError},
@@ -19,15 +20,13 @@ use crate::{
         ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID,
         ST_VAR_IDX,
     },
-    traits::{TxData, TxDeleteEntry, TxTableTruncated},
+    traits::TxData,
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
 use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
-use spacetimedb_lib::{
-    db::auth::{StAccess, StTableType},
-    Identity,
-};
+use spacetimedb_durability::TxOffset;
+use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -181,7 +180,7 @@ impl CommittedState {
                 table_id,
                 table_name: schema.table_name.clone(),
                 table_type: StTableType::System,
-                table_access: StAccess::Public,
+                table_access: schema.table_access,
                 table_primary_key: schema.primary_key.map(Into::into),
             };
             let row = ProductValue::from(row);
@@ -249,6 +248,10 @@ impl CommittedState {
         self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
 
         self.create_table(ST_ROW_LEVEL_SECURITY_ID, schemas[ST_ROW_LEVEL_SECURITY_IDX].clone());
+        self.create_table(
+            ST_CONNECTION_CREDENTIALS_ID,
+            schemas[ST_CONNECTION_CREDENTIALS_IDX].clone(),
+        );
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
@@ -294,8 +297,13 @@ impl CommittedState {
             let mut in_st_tables = self.schema_for_table_raw(table_id)?;
             // We normalize so that the orders will match when checking for equality.
             in_st_tables.normalize();
+            let in_memory = {
+                let mut s = in_memory.as_ref().clone();
+                s.normalize();
+                s
+            };
 
-            if *in_memory != in_st_tables {
+            if in_memory != in_st_tables {
                 return Err(anyhow!(
                     "System table schema mismatch for table id {table_id}. Expected: {schema:?}, found: {:?}",
                     in_memory
@@ -303,6 +311,7 @@ impl CommittedState {
                 .into());
             }
         }
+
         Ok(())
     }
 
@@ -601,23 +610,27 @@ impl CommittedState {
 
     pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
+        let mut truncates = IntSet::default();
 
         // First, apply deletes. This will free up space in the committed tables.
-        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables, tx_state.pending_schema_changes);
+        self.merge_apply_deletes(
+            &mut tx_data,
+            tx_state.delete_tables,
+            tx_state.pending_schema_changes,
+            &mut truncates,
+        );
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
-        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
+        self.merge_apply_inserts(
+            &mut tx_data,
+            tx_state.insert_tables,
+            tx_state.blob_store,
+            &mut truncates,
+        );
 
-        let truncated_tables = tx_data
-            .deletes()
-            .filter_map(|(table_id, tx, row)| {
-                (matches!(tx, TxTableTruncated::No) && row.is_empty()).then_some(*table_id)
-            })
-            .collect::<Vec<_>>();
-        for table_id in truncated_tables {
-            tx_data.set_truncate_for_table(table_id);
-        }
+        // Record any truncated tables in the `TxData`.
+        tx_data.add_truncates(truncates);
 
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
@@ -634,6 +647,7 @@ impl CommittedState {
         tx_data: &mut TxData,
         delete_tables: BTreeMap<TableId, DeleteTable>,
         pending_schema_changes: ThinVec<PendingSchemaChange>,
+        truncates: &mut IntSet<TableId>,
     ) {
         fn delete_rows(
             tx_data: &mut TxData,
@@ -642,6 +656,7 @@ impl CommittedState {
             blob_store: &mut dyn BlobStore,
             row_ptrs_len: usize,
             row_ptrs: impl Iterator<Item = RowPointer>,
+            truncates: &mut IntSet<TableId>,
         ) {
             let mut deletes = Vec::with_capacity(row_ptrs_len);
 
@@ -661,16 +676,25 @@ impl CommittedState {
 
             if !deletes.is_empty() {
                 let table_name = &*table.get_schema().table_name;
-                let truncated = table.row_count == 0;
                 tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
+                let truncated = table.row_count == 0;
+                if truncated {
+                    truncates.insert(table_id);
+                }
             }
         }
 
         for (table_id, row_ptrs) in delete_tables {
             match self.get_table_and_blob_store_mut(table_id) {
-                Ok((table, blob_store, ..)) => {
-                    delete_rows(tx_data, table_id, table, blob_store, row_ptrs.len(), row_ptrs.iter())
-                }
+                Ok((table, blob_store, ..)) => delete_rows(
+                    tx_data,
+                    table_id,
+                    table,
+                    blob_store,
+                    row_ptrs.len(),
+                    row_ptrs.iter(),
+                    truncates,
+                ),
                 Err(_) if !row_ptrs.is_empty() => panic!("Deletion for non-existent table {table_id:?}... huh?"),
                 Err(_) => {}
             }
@@ -681,8 +705,8 @@ impl CommittedState {
         // it will never be re-created.
         for change in pending_schema_changes {
             if let PendingSchemaChange::TableRemoved(table_id, mut table) = change {
-                tx_data.set_truncate_for_table(table_id);
                 let row_ptrs = table.scan_all_row_ptrs();
+                truncates.insert(table_id);
                 delete_rows(
                     tx_data,
                     table_id,
@@ -690,6 +714,7 @@ impl CommittedState {
                     &mut self.blob_store,
                     row_ptrs.len(),
                     row_ptrs.into_iter(),
+                    truncates,
                 );
             }
         }
@@ -700,6 +725,7 @@ impl CommittedState {
         tx_data: &mut TxData,
         insert_tables: BTreeMap<TableId, Table>,
         tx_blob_store: impl BlobStore,
+        truncates: &mut IntSet<TableId>,
     ) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
         //             rather than copying individual rows out of them.
@@ -728,6 +754,11 @@ impl CommittedState {
             if !inserts.is_empty() {
                 let table_name = &*commit_table.get_schema().table_name;
                 tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
+
+                // if table has inserted rows, it cannot be truncated
+                if truncates.contains(&table_id) {
+                    truncates.remove(&table_id);
+                }
             }
 
             let (schema, _indexes, pages) = tx_table.consume_for_merge();
@@ -743,12 +774,13 @@ impl CommittedState {
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.
-    pub(super) fn rollback(&mut self, seq_state: &mut SequencesState, tx_state: TxState) {
+    pub(super) fn rollback(&mut self, seq_state: &mut SequencesState, tx_state: TxState) -> TxOffset {
         // Roll back the changes in the reverse order in which they were made
         // so that e.g., the last change is undone first.
         for change in tx_state.pending_schema_changes.into_iter().rev() {
             self.rollback_pending_schema_change(seq_state, change);
         }
+        self.next_tx_offset.saturating_sub(1)
     }
 
     fn rollback_pending_schema_change(

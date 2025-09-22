@@ -6,7 +6,6 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::execution_context::{Workload, WorkloadType};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
@@ -23,18 +22,24 @@ use crate::{
         DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData, TxDatastore,
     },
 };
+use crate::{
+    execution_context::{Workload, WorkloadType},
+    system_tables::StTableRow,
+};
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{
+    algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, AlgebraicValue, ProductValue,
+};
+use spacetimedb_sats::{memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef};
@@ -220,7 +225,8 @@ impl Locking {
         }
 
         // Double check that our in-memory system table ids match the on-disk schemas.
-        committed_state.assert_system_table_schemas_match()?;
+        // committed_state.assert_system_table_schemas_match()?;
+
         // Set the sequence state. In practice we will end up doing this again after replaying
         // the commit log, but we do it here too just to avoid having an incorrectly restored
         // snapshot.
@@ -252,6 +258,11 @@ impl Locking {
     pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>> {
         let maybe_offset_and_path = Self::take_snapshot_internal(&self.committed_state, repo)?;
         Ok(maybe_offset_and_path.map(|(_, path)| path))
+    }
+
+    pub fn assert_system_tables_match(&self) -> Result<()> {
+        let committed_state = self.committed_state.read_arc();
+        committed_state.assert_system_table_schemas_match()
     }
 
     pub fn take_snapshot_internal(
@@ -932,7 +943,7 @@ impl MutTx for Locking {
         }
     }
 
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String) {
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, String) {
         tx.rollback()
     }
 
@@ -982,6 +993,7 @@ impl<F> Replay<F> {
             database_identity: &self.database_identity,
             committed_state: &mut committed_state,
             progress: &mut *self.progress.borrow_mut(),
+            dropped_table_names: IntMap::default(),
         };
         f(&mut visitor)
     }
@@ -1087,6 +1099,10 @@ struct ReplayVisitor<'a, F> {
     database_identity: &'a Identity,
     committed_state: &'a mut CommittedState,
     progress: &'a mut F,
+    // Since deletes are handled before truncation / drop, sometimes the schema
+    // info is gone. We save the name on the first delete of that table so metrics
+    // can still show a name.
+    dropped_table_names: IntMap<TableId, Box<str>>,
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
@@ -1143,6 +1159,14 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         let table_name = schema.table_name.clone();
         let row = ProductValue::decode(schema.get_row_type(), reader)?;
 
+        // If this is a delete from the `st_table` system table, save the name
+        if table_id == ST_TABLE_ID {
+            let ab = AlgebraicValue::Product(row.clone());
+            let st_table_row = StTableRow::deserialize(ValueDeserializer::from_ref(&ab)).unwrap();
+            self.dropped_table_names
+                .insert(st_table_row.table_id, st_table_row.table_name);
+        }
+
         self.committed_state
             .replay_delete_by_rel(table_id, &row)
             .with_context(|| {
@@ -1162,9 +1186,18 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
     }
 
     fn visit_truncate(&mut self, table_id: TableId) -> std::result::Result<(), Self::Error> {
-        let schema = self.committed_state.schema_for_table(table_id)?;
-        // TODO: avoid clone
-        let table_name = schema.table_name.clone();
+        let table_name = match self.committed_state.schema_for_table(table_id) {
+            // TODO: avoid clone
+            Ok(schema) => schema.table_name.clone(),
+
+            Err(_) => {
+                if let Some(name) = self.dropped_table_names.remove(&table_id) {
+                    name
+                } else {
+                    return Err(anyhow!("Error looking up name for truncated table {:?}", table_id).into());
+                }
+            }
+        };
 
         self.committed_state.replay_truncate(table_id).with_context(|| {
             format!(
@@ -1227,14 +1260,15 @@ mod tests {
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::system_tables::{
-        system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
-        StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow,
-        StTableRow, StVarFields, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
+        system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
+        StConstraintRow, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields,
+        StSequenceFields, StSequenceRow, StTableRow, StVarFields, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME,
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
         ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
         ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
     };
-    use crate::traits::{IsolationLevel, MutTx, TxTableTruncated};
+    use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
     use bsatn::to_vec;
     use core::{fmt, mem};
@@ -1684,6 +1718,7 @@ mod tests {
             TableRow { id: ST_VAR_ID.into(), name: ST_VAR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StVarFields::Name.into()) },
             TableRow { id: ST_SCHEDULED_ID.into(), name: ST_SCHEDULED_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StScheduledFields::ScheduleId.into()) },
             TableRow { id: ST_ROW_LEVEL_SECURITY_ID.into(), name: ST_ROW_LEVEL_SECURITY_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StRowLevelSecurityFields::Sql.into()) },
+            TableRow { id: ST_CONNECTION_CREDENTIALS_ID.into(), name: ST_CONNECTION_CREDENTIALS_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(StConnectionCredentialsFields::ConnectionId.into()) },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
@@ -1739,6 +1774,9 @@ mod tests {
 
             ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
             ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 1, name: "sql", ty: AlgebraicType::String },
+
+            ColRow { table: ST_CONNECTION_CREDENTIALS_ID.into(), pos: 0, name: "connection_id", ty: AlgebraicType::U128 },
+            ColRow { table: ST_CONNECTION_CREDENTIALS_ID.into(), pos: 1, name: "jwt_payload", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1754,6 +1792,7 @@ mod tests {
             IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
             IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
+            IndexRow { id: 13, table: ST_CONNECTION_CREDENTIALS_ID.into(), col: col(0), name: "st_connection_credentials_connection_id_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1783,6 +1822,7 @@ mod tests {
             ConstraintRow { constraint_id: 9, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(0), constraint_name: "st_scheduled_schedule_id_key", },
             ConstraintRow { constraint_id: 10, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(1), constraint_name: "st_scheduled_table_id_key", },
             ConstraintRow { constraint_id: 11, table_id: ST_ROW_LEVEL_SECURITY_ID.into(), unique_columns: col(1), constraint_name: "st_row_level_security_sql_key", },
+            ConstraintRow { constraint_id: 12, table_id: ST_CONNECTION_CREDENTIALS_ID.into(), unique_columns: col(0), constraint_name: "st_connection_credentials_connection_id_key", },
         ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2198,6 +2238,7 @@ mod tests {
             IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
             IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
+            IndexRow { id: 13, table: ST_CONNECTION_CREDENTIALS_ID.into(), col: col(0), name: "st_connection_credentials_connection_id_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -3198,12 +3239,12 @@ mod tests {
         // Now drop the table again and commit.
         assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
         let tx_data = commit(&datastore, tx)?;
-        let (_, truncated, deleted_rows) = tx_data
+        let (_, deleted_rows) = tx_data
             .deletes()
             .find(|(id, ..)| **id == table_id)
             .expect("should have deleted rows for `table_id`");
         assert_eq!(&**deleted_rows, [row]);
-        assert_eq!(truncated, TxTableTruncated::Yes);
+        assert!(tx_data.truncates().contains(&table_id), "table should be truncated");
 
         // In the next transaction, the table doesn't exist.
         assert!(
@@ -3407,9 +3448,12 @@ mod tests {
         let to_product = |col: &ColumnSchema| value_serialize(&StColumnRow::from(col.clone())).into_product().unwrap();
         let (_, inserts) = tx_data.inserts().find(|(id, _)| **id == ST_COLUMN_ID).unwrap();
         assert_eq!(&**inserts, [to_product(&columns[1])].as_slice());
-        let (_, truncated, deletes) = tx_data.deletes().find(|(id, ..)| **id == ST_COLUMN_ID).unwrap();
+        let (_, deletes) = tx_data.deletes().find(|(id, ..)| **id == ST_COLUMN_ID).unwrap();
         assert_eq!(&**deletes, [to_product(&columns_original[1])].as_slice());
-        assert_eq!(truncated, TxTableTruncated::No);
+        assert!(
+            !tx_data.truncates().contains(&ST_COLUMN_ID),
+            "table should not be truncated"
+        );
 
         // Check that we can successfully scan using the new schema type post commit.
         let tx = begin_tx(&datastore);

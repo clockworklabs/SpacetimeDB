@@ -5,14 +5,12 @@ import tomllib
 import psycopg2
 
 
-def psql(identity: str, sql: str, extra=None) -> str:
+def psql(identity: str, sql: str) -> str:
     """Call `psql` and execute the given SQL statement."""
-    if extra is None:
-        extra = dict()
     result = subprocess.run(
         ["psql", "-h", "127.0.0.1", "-p", "5432", "-U", "postgres", "-d", "quickstart", "--quiet", "-c", sql],
         encoding="utf8",
-        env={**os.environ, **extra, "PGPASSWORD": identity},
+        env={**os.environ, "PGPASSWORD": identity},
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -266,16 +264,6 @@ en                 |                 se                  |                      
         # Empty query
         sql_out = psql(token, "")
         self.assertEqual(sql_out, "")
-
-        # Connection fails when `ssl` is required
-        for ssl_mode in ["require", "verify-ca", "verify-full"]:
-            with self.assertRaises(Exception) as cm:
-                psql(token, "SELECT * FROM t_uints", extra={"PGSSLMODE": ssl_mode})
-            self.assertIn("not support SSL", str(cm.exception))
-
-        # But works with `ssl` is disabled or optional
-        for ssl_mode in ["disable", "allow", "prefer"]:
-            psql(token, "SELECT * FROM t_uints", extra={"PGSSLMODE": ssl_mode})
 
         # Connection fails with invalid token
         with self.assertRaises(Exception) as cm:

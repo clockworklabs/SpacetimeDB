@@ -10,6 +10,10 @@ use super::{
 };
 use crate::execution_context::ExecutionContext;
 use crate::execution_context::Workload;
+use crate::system_tables::{
+    system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow,
+    ST_CONNECTION_CREDENTIALS_ID,
+};
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
     error::{IndexError, SequenceError, TableError},
@@ -190,7 +194,8 @@ impl MutTxId {
     /// - The table metadata is inserted into the system tables.
     /// - The returned ID is unique and not `TableId::SENTINEL`.
     pub fn create_table(&mut self, mut table_schema: TableSchema) -> Result<TableId> {
-        if table_schema.table_id != TableId::SENTINEL {
+        let matching_system_table_schema = system_tables().iter().find(|s| **s == table_schema).cloned();
+        if table_schema.table_id != TableId::SENTINEL && matching_system_table_schema.is_none() {
             return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{:#?}`", table_schema).into());
             // checks for children are performed in the relevant `create_...` functions.
         }
@@ -202,7 +207,7 @@ impl MutTxId {
         // NOTE: Because `st_tables` has a unique index on `table_name`, this will
         // fail if the table already exists.
         let row = StTableRow {
-            table_id: TableId::SENTINEL,
+            table_id: table_schema.table_id,
             table_name: table_name.clone(),
             table_type: table_schema.table_type,
             table_access: table_schema.table_access,
@@ -237,7 +242,7 @@ impl MutTxId {
         if let Some(schedule) = schedule {
             let row = StScheduledRow {
                 table_id: schedule.table_id,
-                schedule_id: ScheduleId::SENTINEL,
+                schedule_id: schedule.schedule_id,
                 schedule_name: schedule.schedule_name,
                 reducer_name: schedule.reducer_name,
                 at_column: schedule.at_column,
@@ -619,9 +624,6 @@ impl MutTxId {
     /// - The index metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and is not `IndexId::SENTINEL`.
     pub fn create_index(&mut self, mut index_schema: IndexSchema, is_unique: bool) -> Result<IndexId> {
-        if index_schema.index_id != IndexId::SENTINEL {
-            return Err(anyhow::anyhow!("`index_id` must be `IndexId::SENTINEL` in `{:#?}`", index_schema).into());
-        }
         let table_id = index_schema.table_id;
         if table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", index_schema).into());
@@ -1084,13 +1086,6 @@ impl MutTxId {
     /// - The constraint metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and is not `constraintId::SENTINEL`.
     fn create_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<ConstraintId> {
-        if constraint.constraint_id != ConstraintId::SENTINEL {
-            return Err(anyhow::anyhow!(
-                "`constraint_id` must be `ConstraintId::SENTINEL` in `{:#?}`",
-                constraint
-            )
-            .into());
-        }
         if constraint.table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", constraint).into());
         }
@@ -1109,7 +1104,7 @@ impl MutTxId {
         // this will fail if the table already exists.
         let constraint_row = StConstraintRow {
             table_id,
-            constraint_id: ConstraintId::SENTINEL,
+            constraint_id: constraint.constraint_id,
             constraint_name: constraint.constraint_name.clone(),
             constraint_data: constraint.data.clone().into(),
         };
@@ -1295,13 +1290,14 @@ impl MutTxId {
         })
     }
 
-    /// Commits this transaction, applying its changes to the committed state.
+    /// Commits this transaction in memory, applying its changes to the committed state.
+    /// This doesn't handle the persistence layer at all.
     ///
     /// Returns:
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
+    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
 
@@ -1378,8 +1374,9 @@ impl MutTxId {
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn rollback(mut self) -> (TxMetrics, String) {
-        self.committed_state_write_lock
+    pub fn rollback(mut self) -> (TxOffset, TxMetrics, String) {
+        let offset = self
+            .committed_state_write_lock
             .rollback(&mut self.sequence_state_lock, self.tx_state);
 
         // Compute and keep enough info that we can
@@ -1396,7 +1393,7 @@ impl MutTxId {
             &self.committed_state_write_lock,
         );
         let reducer = self.ctx.into_reducer_name();
-        (tx_metrics, reducer)
+        (offset, tx_metrics, reducer)
     }
 
     /// Roll back this transaction, discarding its changes.
@@ -1494,12 +1491,49 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
-    pub fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+    pub fn insert_st_client(
+        &mut self,
+        identity: Identity,
+        connection_id: ConnectionId,
+        jwt_payload: &str,
+    ) -> Result<()> {
         let row = &StClientRow {
             identity: identity.into(),
             connection_id: connection_id.into(),
         };
-        self.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
+        self.insert_via_serialize_bsatn(ST_CLIENT_ID, row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!(
+                    "[{identity}]: insert_st_client: failed to insert client ({identity}, {connection_id}), error: {e}"
+                );
+            })?;
+        self.insert_st_client_credentials(connection_id, jwt_payload)
+    }
+
+    fn insert_st_client_credentials(&mut self, connection_id: ConnectionId, jwt_payload: &str) -> Result<()> {
+        let row = &StConnectionCredentialsRow {
+            connection_id: connection_id.into(),
+            jwt_payload: jwt_payload.to_owned(),
+        };
+        self.insert_via_serialize_bsatn(ST_CONNECTION_CREDENTIALS_ID, row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!("[{connection_id}]: insert_st_client_credentials: failed to insert client credentials for connection id ({connection_id}), error: {e}");
+            })
+    }
+
+    fn delete_st_client_credentials(&mut self, database_identity: Identity, connection_id: ConnectionId) -> Result<()> {
+        if let Err(e) = self.delete_col_eq(
+            ST_CONNECTION_CREDENTIALS_ID,
+            StConnectionCredentialsFields::ConnectionId.col_id(),
+            &ConnectionIdViaU128::from(connection_id).into(),
+        ) {
+            // This is possible on restart if the database was previously running a version
+            // before this system table was added.
+            log::error!("[{database_identity}]: delete_st_client_credentials: attempting to delete credentials for missing connection id ({connection_id}), error: {e}");
+        }
+        Ok(())
     }
 
     pub fn delete_st_client(
@@ -1523,11 +1557,11 @@ impl MutTxId {
             .next()
             .map(|row| row.pointer())
         {
-            self.delete(ST_CLIENT_ID, ptr).map(drop)
+            self.delete(ST_CLIENT_ID, ptr).map(drop)?
         } else {
             log::error!("[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident");
-            Ok(())
         }
+        self.delete_st_client_credentials(database_identity, connection_id)
     }
 
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(

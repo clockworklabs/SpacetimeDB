@@ -10,6 +10,7 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
+use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
@@ -19,11 +20,11 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
-use spacetimedb_datastore::system_tables::StModuleRow;
+use spacetimedb_datastore::system_tables::{system_tables, StModuleRow};
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
-    TxTableTruncated, UpdateFlags,
+    UpdateFlags,
 };
 use spacetimedb_datastore::{
     locking_tx_datastore::{
@@ -395,6 +396,7 @@ impl RelationalDB {
             snapshot_repo,
             metrics_recorder_queue,
         );
+        db.migrate_system_tables()?;
 
         if let Some(meta) = db.metadata()? {
             if meta.database_identity != database_identity {
@@ -417,6 +419,23 @@ impl RelationalDB {
         let connected_clients = db.connected_clients()?;
 
         Ok((db, connected_clients))
+    }
+
+    fn migrate_system_tables(&self) -> Result<(), DBError> {
+        let mut tx = self.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        for schema in system_tables() {
+            if !self.table_id_exists_mut(&tx, &schema.table_id) {
+                log::info!(
+                    "[{}] DATABASE: adding missing system table {}",
+                    self.database_identity,
+                    schema.table_name
+                );
+                let _ = self.create_table(&mut tx, schema.clone())?;
+            }
+        }
+        let _ = self.commit_tx(tx)?;
+        self.inner.assert_system_tables_match()?;
+        Ok(())
     }
 
     /// Mark the database as initialized with the given module parameters.
@@ -793,7 +812,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn rollback_mut_tx(&self, tx: MutTx) -> (TxMetrics, String) {
+    pub fn rollback_mut_tx(&self, tx: MutTx) -> (TxOffset, TxMetrics, String) {
         log::trace!("ROLLBACK MUT TX");
         self.inner.rollback_mut_tx(tx)
     }
@@ -871,18 +890,17 @@ impl RelationalDB {
                     rowdata: rowdata.clone(),
                 })
                 .collect();
+
+            let truncates: IntSet<TableId> = tx_data.truncates().collect();
+
             let deletes: Box<_> = tx_data
                 .deletes()
-                .filter(|(_, truncated, _)| *truncated == TxTableTruncated::No)
-                .map(|(table_id, _, rowdata)| Ops {
+                .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
                 })
-                .collect();
-            let truncates: Box<_> = tx_data
-                .deletes()
-                .filter(|(_, truncated, _)| *truncated == TxTableTruncated::Yes)
-                .map(|(table_id, ..)| *table_id)
+                // filter out deletes for tables that are truncated in the same transaction.
+                .filter(|ops| !truncates.contains(&ops.table_id))
                 .collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
@@ -893,7 +911,7 @@ impl RelationalDB {
                 mutations: Some(Mutations {
                     inserts,
                     deletes,
-                    truncates,
+                    truncates: truncates.into_iter().collect(),
                 }),
             };
 
@@ -1029,7 +1047,7 @@ impl RelationalDB {
         E: From<DBError>,
     {
         if res.is_err() {
-            let (tx_metrics, reducer) = self.rollback_mut_tx(tx);
+            let (_, tx_metrics, reducer) = self.rollback_mut_tx(tx);
             self.report_mut_tx_metrics(reducer, tx_metrics, None);
         } else {
             match self.commit_tx(tx).map_err(E::from)? {
@@ -1048,7 +1066,7 @@ impl RelationalDB {
     pub fn rollback_on_err<A, E>(&self, tx: MutTx, res: Result<A, E>) -> Result<(MutTx, A), E> {
         match res {
             Err(e) => {
-                let (tx_metrics, reducer) = self.rollback_mut_tx(tx);
+                let (_, tx_metrics, reducer) = self.rollback_mut_tx(tx);
                 self.report_mut_tx_metrics(reducer, tx_metrics, None);
 
                 Err(e)
@@ -3353,6 +3371,7 @@ mod tests {
         assert!(table_1_id > table_0_id);
     }
 
+    use crate::error::DBError;
     use fs_extra::dir::{copy, CopyOptions};
     use itertools::Itertools;
 
@@ -3434,5 +3453,79 @@ mod tests {
     #[test]
     fn load_1_2_quickstart_without_snapshot_test() -> ResultTest<()> {
         load_1_2_data(false)
+    }
+
+    /// This tests adding a new system table st_connection_credentials, which was not in 1.2.
+    /// We ensure that we can open data from a version without it, write to the table,
+    /// and then reopen the database and read from the table.
+    fn load_1_2_data_and_migrate(use_snapshot: bool) -> ResultTest<()> {
+        let data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/v1.2/replicas");
+        let tempdir = copy_fixture_dir(&data_dir);
+
+        let dir = ReplicaDir::from_path_unchecked(tempdir.path().join("replicas/22000001"));
+
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+        // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
+        let _rt = rt.enter();
+
+        let db_identity = Identity::from_hex("c2006c1c2ede44b44e9835dfe00e3e1edc3bc67024b504cb6a3b8491db5d98a3")?;
+        let owner_identity = Identity::from_hex("c2001c551217385bdeba5f1e1b5b19a28910852a94ce43428508e7a098760cea")?;
+        let (db, durability_handle) = TestDB::open_existing_durable(
+            &dir,
+            rt.handle().clone(),
+            22000001,
+            db_identity,
+            owner_identity,
+            use_snapshot,
+        )?;
+        let schemas = db.with_read_only(Workload::ForTests, |tx| db.get_all_tables(tx))?;
+        let user_table_names: Vec<String> = schemas
+            .iter()
+            .filter(|s| s.table_id.0 > 4000)
+            .sorted_by_key(|s| s.table_id.0)
+            .map(|s| s.table_name.clone().to_string())
+            .collect();
+        let expected_table_names = vec!["message", "user"];
+        // We have this assertion just to double check that we aren't accidentally opening an empty
+        // directory.
+        assert_eq!(user_table_names, expected_table_names);
+
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            tx.insert_st_client(Identity::ZERO, ConnectionId::ZERO, "invalid_jwt")
+                .unwrap();
+            Ok::<(), DBError>(())
+        })?;
+        // Now we are going to shut it down and reopen it, to ensure that the new table can be
+        // read from disk.
+        drop(db);
+        let handle = Arc::into_inner(durability_handle).expect("Durability handle should be dropped by db");
+        rt.block_on(handle.close()).expect("Failed to close durability handle");
+
+        let (db, _) = TestDB::open_existing_durable(
+            &dir,
+            rt.handle().clone(),
+            22000001,
+            db_identity,
+            owner_identity,
+            use_snapshot,
+        )?;
+
+        db.with_read_only(Workload::ForTests, |tx| {
+            let jwt = tx.get_jwt_payload(ConnectionId::ZERO).unwrap().unwrap();
+            assert_eq!(jwt, "invalid_jwt");
+            Ok::<(), DBError>(())
+        })?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn load_1_2_data_and_migrate_with_snapshot() -> ResultTest<()> {
+        load_1_2_data_and_migrate(true)
+    }
+
+    #[test]
+    fn load_1_2_data_and_migrate_without_snapshot() -> ResultTest<()> {
+        load_1_2_data_and_migrate(false)
     }
 }

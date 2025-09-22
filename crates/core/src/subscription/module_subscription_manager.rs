@@ -561,6 +561,13 @@ impl<T> SenderWithGauge<T> {
 /// itself.
 pub type TransactionOffset = oneshot::Receiver<TxOffset>;
 
+/// Create a TransactionOffset from a known TxOffset.
+pub fn from_tx_offset(offset: TxOffset) -> TransactionOffset {
+    let (tx, rx) = oneshot::channel();
+    let _ = tx.send(offset);
+    rx
+}
+
 /// Message sent by the [`SubscriptionManager`] to the [`SendWorker`].
 #[derive(Debug)]
 enum SendWorkerMessage {

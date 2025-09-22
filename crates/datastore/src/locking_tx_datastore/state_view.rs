@@ -1,12 +1,15 @@
 use super::mut_tx::{FilterDeleted, IndexScanRanged};
 use super::{committed_state::CommittedState, datastore::Result, tx_state::TxState};
-use crate::error::TableError;
+use crate::error::{DatastoreError, TableError};
 use crate::system_tables::{
-    StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields,
-    StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID,
-    ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
+    ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow,
+    StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow,
+    StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID,
+    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
 };
+use anyhow::anyhow;
 use core::ops::RangeBounds;
+use spacetimedb_lib::ConnectionId;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
@@ -142,6 +145,29 @@ pub trait StateView {
         }
 
         self.schema_for_table_raw(table_id).map(Arc::new)
+    }
+
+    fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>> {
+        log::info!("Getting JWT payload for connection id: {}", connection_id.to_hex());
+        let mut buf: Vec<u8> = Vec::new();
+        self.iter_by_col_eq(
+            ST_CONNECTION_CREDENTIALS_ID,
+            StConnectionCredentialsFields::ConnectionId,
+            &ConnectionIdViaU128::from(connection_id).into(),
+        )?
+            .next()
+            .map(|row| row.read_via_bsatn::<StConnectionCredentialsRow>(&mut buf).map(|r| r.jwt_payload))
+            .transpose()
+            .map_err(|e| {
+                log::error!(
+                    "[{connection_id}]: get_jwt_payload: failed to get JWT payload for connection id ({connection_id}), error: {e}"
+                );
+                DatastoreError::Other(
+                    anyhow!(
+                        "Failed to get JWT payload for connection id ({connection_id}): {e}"
+                    )
+                )
+            })
     }
 }
 
