@@ -103,9 +103,10 @@ jobs:
         run: |
           sudo mkdir /stdb
           sudo chmod 777 /stdb
-
+      
       - name: Run cargo test
-        run: cargo test --all
+        #Note: Unreal tests will be run separately
+        run: cargo test --all -- --skip unreal
 
       - name: Check that the test outputs are up-to-date
         run: bash tools/check-diff.sh
@@ -242,6 +243,90 @@ jobs:
           # happens very frequently on the `macos-runner`, but we haven't seen it on any others).
           cargo run --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
           "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
+
+  unreal_engine_tests:
+    name: Unreal Engine Tests
+    # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
+    # a custom runner.
+    runs-on: spacetimedb-runner
+    container:
+      image: ghcr.io/epicgames/unreal-engine:dev-5.6
+      credentials:
+        # Note(bfops): I don't think that `github.actor` needs to match the user that the token is for, because I'm using a token for my account and
+        # it seems to be totally happy.
+        # However, the token needs to be for a user that has access to the EpicGames org (see
+        # https://dev.epicgames.com/documentation/en-us/unreal-engine/downloading-source-code-in-unreal-engine?application_version=5.6)
+        username: ${{ github.actor }}
+        password: ${{ secrets.GHCR_TOKEN }}
+      # Run as root because otherwise we get permission denied for various directories inside the container. I tried doing dances to allow it to run
+      # without this (reassigning env vars and stuff), but was unable to get it to work and it felt like an uphill battle.
+      options: --user 0:0
+    steps:
+# Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
+# commits though.
+#      - name: Find Git ref
+#        env:
+#          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#        shell: bash
+#        run: |
+#          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+#          if test -n "${PR_NUMBER}"; then
+#            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+#          else
+#            GIT_REF="${{ github.ref }}"
+#          fi
+#          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Run Unreal Engine tests
+        working-directory: sdks/unreal
+        env:
+          UE_ROOT_PATH: /home/ue4/UnrealEngine
+        run: |
+
+          apt-get update
+          apt-get install -y acl curl ca-certificates
+
+          REPO="$GITHUB_WORKSPACE"
+          # Let ue4 read/write the workspace & tool caches without changing ownership
+          for p in "$REPO" "${RUNNER_TEMP:-/__t}" "${RUNNER_TOOL_CACHE:-/__t}"; do
+            [ -d "$p" ] && setfacl -R -m u:ue4:rwX -m d:u:ue4:rwX "$p" || true
+          done
+
+          # Rust tool caches live under the runner tool cache so they persist
+          export CARGO_HOME="${RUNNER_TOOL_CACHE:-/__t}/cargo"
+          export RUSTUP_HOME="${RUNNER_TOOL_CACHE:-/__t}/rustup"
+          mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
+          chown -R ue4:ue4 "$CARGO_HOME" "$RUSTUP_HOME"
+
+          # Make sure the UE build script is executable (and parents traversable)
+          UE_DIR="${UE_ROOT_PATH:-/home/ue4/UnrealEngine}"
+          chmod a+rx "$UE_DIR" "$UE_DIR/Engine" "$UE_DIR/Engine/Build" "$UE_DIR/Engine/Build/BatchFiles/Linux" || true
+          chmod a+rx "$UE_DIR/Engine/Build/BatchFiles/Linux/Build.sh" || true
+
+          # Run the build & tests as ue4 (who owns the UE tree)
+          sudo -E -H -u ue4 env \
+            HOME=/home/ue4 \
+            XDG_CONFIG_HOME=/home/ue4/.config \
+            CARGO_HOME="$CARGO_HOME" \
+            RUSTUP_HOME="$RUSTUP_HOME" \
+            PATH="$CARGO_HOME/bin:$PATH" \
+            bash -lc '
+              set -euxo pipefail
+              # Install rustup for ue4 if needed (uses the shared caches)
+              if ! command -v cargo >/dev/null 2>&1; then
+                curl -sSf https://sh.rustup.rs | sh -s -- -y
+              fi
+              rustup show >/dev/null
+              git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
+
+              cd "$GITHUB_WORKSPACE/sdks/unreal"
+              cargo --version
+              cargo test
+            '
 
   cli_docs:
     name: Check CLI docs
