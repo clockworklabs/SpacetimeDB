@@ -1231,7 +1231,7 @@ mod tests {
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
         ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
     };
-    use crate::traits::{IsolationLevel, MutTx, TxTableTruncated};
+    use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
     use bsatn::to_vec;
     use core::{fmt, mem};
@@ -3201,12 +3201,12 @@ mod tests {
         // Now drop the table again and commit.
         assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
         let tx_data = commit(&datastore, tx)?;
-        let (_, truncated, deleted_rows) = tx_data
+        let (_, deleted_rows) = tx_data
             .deletes()
             .find(|(id, ..)| **id == table_id)
             .expect("should have deleted rows for `table_id`");
         assert_eq!(&**deleted_rows, [row]);
-        assert_eq!(truncated, TxTableTruncated::Yes);
+        assert!(tx_data.truncates().contains(&table_id), "table should be truncated");
 
         // In the next transaction, the table doesn't exist.
         assert!(
@@ -3410,9 +3410,9 @@ mod tests {
         let to_product = |col: &ColumnSchema| value_serialize(&StColumnRow::from(col.clone())).into_product().unwrap();
         let (_, inserts) = tx_data.inserts().find(|(id, _)| **id == ST_COLUMN_ID).unwrap();
         assert_eq!(&**inserts, [to_product(&columns[1])].as_slice());
-        let (_, truncated, deletes) = tx_data.deletes().find(|(id, ..)| **id == ST_COLUMN_ID).unwrap();
+        let (_, deletes) = tx_data.deletes().find(|(id, ..)| **id == ST_COLUMN_ID).unwrap();
         assert_eq!(&**deletes, [to_product(&columns_original[1])].as_slice());
-        assert_eq!(truncated, TxTableTruncated::No);
+        // assert_eq!(truncated, TxTableTruncated::No);
 
         // Check that we can successfully scan using the new schema type post commit.
         let tx = begin_tx(&datastore);
