@@ -1,46 +1,76 @@
 import React, { useState } from 'react';
 import './App.css';
 import { DbConnection, Message, User } from './module_bindings';
-import { useSpacetimeDB, useTable } from '@clockworklabs/spacetimedb-sdk/react';
+import {
+  useSpacetimeDB,
+  useTable,
+  where,
+  eq,
+} from '@clockworklabs/spacetimedb-sdk/react';
+import { Identity, Timestamp } from '@clockworklabs/spacetimedb-sdk';
 
 export type PrettyMessage = {
   senderName: string;
   text: string;
+  sent: Timestamp;
+  kind: 'system' | 'user';
 };
 
 function App() {
-  const conn = useSpacetimeDB<DbConnection>();
-  const { identity, isActive: connected } = conn;
   const [newName, setNewName] = useState('');
   const [settingName, setSettingName] = useState(false);
-  const [systemMessage, setSystemMessage] = useState('');
+  const [systemMessages, setSystemMessages] = useState([] as Message[]);
   const [newMessage, setNewMessage] = useState('');
 
+  const conn = useSpacetimeDB<DbConnection>();
+  const { identity, isActive: connected } = conn;
+
+  // Subscribe to all messages in the chat
   const { rows: messages } = useTable<DbConnection, Message>('message');
-  const { rows: users } = useTable<DbConnection, User>('user', {
-    onInsert: user => {
-      if (user.online) {
+
+  // Subscribe to all online users in the chat
+  // so we can show who's online and demonstrate
+  // the `where` and `eq` query expressions
+  const { rows: onlineUsers } = useTable<DbConnection, User>(
+    'user',
+    where(eq('online', true)),
+    {
+      onInsert: user => {
+        // All users being inserted here are online
         const name = user.name || user.identity.toHexString().substring(0, 8);
-        setSystemMessage(prev => prev + `\n${name} has connected.`);
-      }
-    },
-    onUpdate: (oldUser, newUser) => {
-      const name =
-        newUser.name || newUser.identity.toHexString().substring(0, 8);
-      if (oldUser.online === false && newUser.online === true) {
-        setSystemMessage(prev => prev + `\n${name} has connected.`);
-      } else if (oldUser.online === true && newUser.online === false) {
-        setSystemMessage(prev => prev + `\n${name} has disconnected.`);
-      }
-    },
-    onDelete: user => {
-      const name = user.name || user.identity.toHexString().substring(0, 8);
-      setSystemMessage(prev => prev + `\n${name} has disconnected.`);
-    },
-  });
+        setSystemMessages(prev => [
+          ...prev,
+          {
+            sender: Identity.zero(),
+            text: `${name} has connected.`,
+            sent: Timestamp.now(),
+          },
+        ]);
+      },
+      onDelete: user => {
+        // All users being deleted here are offline
+        const name = user.name || user.identity.toHexString().substring(0, 8);
+        setSystemMessages(prev => [
+          ...prev,
+          {
+            sender: Identity.zero(),
+            text: `${name} has disconnected.`,
+            sent: Timestamp.now(),
+          },
+        ]);
+      },
+    }
+  );
+
+  const { rows: offlineUsers } = useTable<DbConnection, User>(
+    'user',
+    where(eq('online', false))
+  );
+  const users = [...onlineUsers, ...offlineUsers];
 
   const prettyMessages: PrettyMessage[] = Array.from(messages)
-    .sort((a, b) => (a.sent > b.sent ? 1 : -1))
+    .concat(systemMessages)
+    .sort((a, b) => (a.sent.toDate() > b.sent.toDate() ? 1 : -1))
     .map(message => {
       const user = users.find(
         u => u.identity.toHexString() === message.sender.toHexString()
@@ -48,6 +78,8 @@ function App() {
       return {
         senderName: user?.name || message.sender.toHexString().substring(0, 8),
         text: message.text,
+        sent: message.sent,
+        kind: Identity.zero().isEqual(message.sender) ? 'system' : 'user',
       };
     });
 
@@ -60,6 +92,7 @@ function App() {
       </div>
     );
   }
+
   const name = (() => {
     const user = users.find(u => u.identity.isEqual(identity));
     return user?.name || identity?.toHexString().substring(0, 8) || '';
@@ -97,7 +130,7 @@ function App() {
           <form onSubmit={onSubmitNewName}>
             <input
               type="text"
-              aria-label="name input"
+              aria-label="username input"
               value={newName}
               onChange={e => setNewName(e.target.value)}
             />
@@ -105,25 +138,79 @@ function App() {
           </form>
         )}
       </div>
-      <div className="message">
+      <div className="message-panel">
         <h1>Messages</h1>
         {prettyMessages.length < 1 && <p>No messages</p>}
+        <div className="messages">
+          {prettyMessages.map((message, key) => {
+            const sentDate = message.sent.toDate();
+            const now = new Date();
+            const isOlderThanDay =
+              now.getFullYear() !== sentDate.getFullYear() ||
+              now.getMonth() !== sentDate.getMonth() ||
+              now.getDate() !== sentDate.getDate();
+
+            const timeString = sentDate.toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+            const dateString = isOlderThanDay
+              ? sentDate.toLocaleDateString([], {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                }) + ' '
+              : '';
+
+            return (
+              <div
+                key={key}
+                className={
+                  message.kind === 'system' ? 'system-message' : 'user-message'
+                }
+              >
+                <p>
+                  <b>
+                    {message.kind === 'system' ? 'System' : message.senderName}
+                  </b>
+                  <span
+                    style={{
+                      fontSize: '0.8rem',
+                      marginLeft: '0.5rem',
+                      color: '#666',
+                    }}
+                  >
+                    {dateString}
+                    {timeString}
+                  </span>
+                </p>
+                <p>{message.text}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="online" style={{ whiteSpace: 'pre-wrap' }}>
+        <h1>Online</h1>
         <div>
-          {prettyMessages.map((message, key) => (
+          {onlineUsers.map((user, key) => (
             <div key={key}>
-              <p>
-                <b>{message.senderName}</b>
-              </p>
-              <p>{message.text}</p>
+              <p>{user.name || user.identity.toHexString().substring(0, 8)}</p>
             </div>
           ))}
         </div>
-      </div>
-      <div className="system" style={{ whiteSpace: 'pre-wrap' }}>
-        <h1>System</h1>
-        <div>
-          <p>{systemMessage}</p>
-        </div>
+        {offlineUsers.length > 0 && (
+          <div>
+            <h1>Offline</h1>
+            {offlineUsers.map((user, key) => (
+              <div key={key}>
+                <p>
+                  {user.name || user.identity.toHexString().substring(0, 8)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="new-message">
         <form

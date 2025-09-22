@@ -14,43 +14,254 @@ export interface UseQueryCallbacks<RowType> {
   onUpdate?: (oldRow: RowType, newRow: RowType) => void;
 }
 
-type WhereClause = {
-  key: string;
-  operator: '=';
-  value: string | number | boolean;
+export type Value = string | number | boolean;
+
+export type Expr<Column extends string> =
+  | { type: 'eq'; key: Column; value: Value }
+  | { type: 'and'; children: Expr<Column>[] }
+  | { type: 'or'; children: Expr<Column>[] };
+
+export const eq = <Column extends string>(
+  key: Column,
+  value: Value
+): Expr<Column> => ({ type: 'eq', key, value });
+
+export const and = <Column extends string>(
+  ...children: Expr<Column>[]
+): Expr<Column> => {
+  const flat: Expr<Column>[] = [];
+  for (const c of children) {
+    if (!c) continue;
+    if (c.type === 'and') flat.push(...c.children);
+    else flat.push(c);
+  }
+  const pruned = flat.filter(Boolean);
+  if (pruned.length === 0) return { type: 'and', children: [] };
+  if (pruned.length === 1) return pruned[0];
+  return { type: 'and', children: pruned };
 };
 
-export function eq<ColumnType extends string>(
-  key: ColumnType,
-  value: string | number | boolean
-): WhereClause {
-  return { key, operator: '=', value };
-}
+export const or = <Column extends string>(
+  ...children: Expr<Column>[]
+): Expr<Column> => {
+  const flat: Expr<Column>[] = [];
+  for (const c of children) {
+    if (!c) continue;
+    if (c.type === 'or') flat.push(...c.children);
+    else flat.push(c);
+  }
+  const pruned = flat.filter(Boolean);
+  if (pruned.length === 0) return { type: 'or', children: [] };
+  if (pruned.length === 1) return pruned[0];
+  return { type: 'or', children: pruned };
+};
 
-export function where(condition: WhereClause) {
-  return `${condition.key} ${condition.operator} ${JSON.stringify(condition.value)}`;
-}
+export const isEq = <Column extends string>(
+  e: Expr<Column>
+): e is Extract<Expr<Column>, { type: 'eq' }> => e.type === 'eq';
+export const isAnd = <Column extends string>(
+  e: Expr<Column>
+): e is Extract<Expr<Column>, { type: 'and' }> => e.type === 'and';
+export const isOr = <Column extends string>(
+  e: Expr<Column>
+): e is Extract<Expr<Column>, { type: 'or' }> => e.type === 'or';
 
-function matchesWhereClause(
-  row: Record<string, any>,
-  whereClause: WhereClause
+type RecordLike<Column extends string> = Record<Column, unknown>;
+
+export function evaluate<Column extends string>(
+  expr: Expr<Column>,
+  row: RecordLike<Column>
 ): boolean {
-  const { key, operator, value } = whereClause;
-  if (!(key in row)) {
-    return false;
-  }
-  switch (operator) {
-    case '=':
-      return row[key] === value;
-    default:
+  switch (expr.type) {
+    case 'eq': {
+      const v = row[expr.key];
+      if (
+        typeof v === 'string' ||
+        typeof v === 'number' ||
+        typeof v === 'boolean'
+      ) {
+        return v === expr.value;
+      }
       return false;
+    }
+    case 'and':
+      return (
+        expr.children.length === 0 || expr.children.every(c => evaluate(c, row))
+      );
+    case 'or':
+      return (
+        expr.children.length !== 0 && expr.children.some(c => evaluate(c, row))
+      );
   }
+}
+
+function formatValue(v: Value): string {
+  switch (typeof v) {
+    case 'string':
+      return `'${v.replace(/'/g, "''")}'`;
+    case 'number':
+      return Number.isFinite(v) ? String(v) : `'${String(v)}'`;
+    case 'boolean':
+      return v ? 'TRUE' : 'FALSE';
+  }
+}
+
+function escapeIdent(id: string): string {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(id)) return id;
+  return `"${id.replace(/"/g, '""')}"`;
+}
+
+function parenthesize(s: string): string {
+  if (!s.includes(' AND ') && !s.includes(' OR ')) return s;
+  return `(${s})`;
+}
+
+export function toString<Column extends string>(expr: Expr<Column>): string {
+  switch (expr.type) {
+    case 'eq':
+      return `${escapeIdent(expr.key)} = ${formatValue(expr.value)}`;
+    case 'and':
+      return parenthesize(expr.children.map(toString).join(' AND '));
+    case 'or':
+      return parenthesize(expr.children.map(toString).join(' OR '));
+  }
+}
+
+/**
+ * This is just the identity function to make things look like SQL.
+ * @param expr
+ * @returns
+ */
+export function where<Column extends string>(expr: Expr<Column>): Expr<Column> {
+  return expr;
 }
 
 type Snapshot<RowType> = {
   readonly rows: readonly RowType[];
   readonly state: 'loading' | 'ready';
 };
+
+type MembershipChange = 'enter' | 'leave' | 'stayIn' | 'stayOut';
+
+function classifyMembership<
+  Col extends string,
+  R extends Record<string, unknown>,
+>(where: Expr<Col> | undefined, oldRow: R, newRow: R): MembershipChange {
+  // No filter: everything is in, so updates are always "stayIn".
+  if (!where) {
+    return 'stayIn';
+  }
+
+  const oldIn = evaluate(where, oldRow);
+  const newIn = evaluate(where, newRow);
+
+  if (oldIn && !newIn) {
+    return 'leave';
+  }
+  if (!oldIn && newIn) {
+    return 'enter';
+  }
+  if (oldIn && newIn) {
+    return 'stayIn';
+  }
+  return 'stayOut';
+}
+
+/**
+ * Extracts the column names from a RowType whose values are of type Value.
+ * Note that this will exclude columns that are of type object, array, etc.
+ */
+type ColumnsFromRow<R> = {
+  [K in keyof R]-?: R[K] extends Value | undefined ? K : never;
+}[keyof R] &
+  string;
+
+/**
+ * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
+ *
+ * This hook returns a snapshot of the table's rows, filtered by an optional `where` clause, and provides a loading state
+ * until the initial subscription is applied. It also allows you to specify callbacks for row insertions, deletions, and updates.
+ *
+ * The hook must be used within a component tree wrapped by `SpacetimeDBProvider`.
+ *
+ * Overloads:
+ * - `useTable(tableName, where, callbacks?)`: Subscribe to a table with a filter and optional callbacks.
+ * - `useTable(tableName, callbacks?)`: Subscribe to a table without a filter, with optional callbacks.
+ *
+ * @template DbConnection The type of the SpacetimeDB connection.
+ * @template RowType The type of the table row.
+ * @template TableName The name of the table.
+ *
+ * @param tableName - The name of the table to subscribe to.
+ * @param whereClauseOrCallbacks - (Optional) Either a filter expression (where clause) or the callbacks object.
+ * @param callbacks - (Optional) Callbacks for row insert, delete, and update events.
+ *
+ * @returns A snapshot object containing the current rows and the subscription state (`'loading'` or `'ready'`).
+ *
+ * @throws Error if the hook is used outside of a `SpacetimeDBProvider`.
+ *
+ * @example
+ * ```tsx
+ * const { rows, state } = useTable('users', where(eq('isActive', true)), {
+ *   onInsert: (row) => console.log('Inserted:', row),
+ *   onDelete: (row) => console.log('Deleted:', row),
+ *   onUpdate: (oldRow, newRow) => console.log('Updated:', oldRow, newRow),
+ * });
+ * ```
+ */
+export function useTable<
+  DbConnection extends DbConnectionImpl,
+  RowType extends Record<string, any>,
+  TableName extends keyof DbConnection['db'] &
+    string = keyof DbConnection['db'] & string,
+>(
+  tableName: TableName,
+  where: Expr<ColumnsFromRow<RowType>>,
+  callbacks?: UseQueryCallbacks<RowType>
+): Snapshot<RowType>;
+
+/**
+ * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
+ *
+ * This hook returns a snapshot of the table's rows, filtered by an optional `where` clause, and provides a loading state
+ * until the initial subscription is applied. It also allows you to specify callbacks for row insertions, deletions, and updates.
+ *
+ * The hook must be used within a component tree wrapped by `SpacetimeDBProvider`.
+ *
+ * Overloads:
+ * - `useTable(tableName, where, callbacks?)`: Subscribe to a table with a filter and optional callbacks.
+ * - `useTable(tableName, callbacks?)`: Subscribe to a table without a filter, with optional callbacks.
+ *
+ * @template DbConnection The type of the SpacetimeDB connection.
+ * @template RowType The type of the table row.
+ * @template TableName The name of the table.
+ *
+ * @param tableName - The name of the table to subscribe to.
+ * @param whereClauseOrCallbacks - (Optional) Either a filter expression (where clause) or the callbacks object.
+ * @param callbacks - (Optional) Callbacks for row insert, delete, and update events.
+ *
+ * @returns A snapshot object containing the current rows and the subscription state (`'loading'` or `'ready'`).
+ *
+ * @throws Error if the hook is used outside of a `SpacetimeDBProvider`.
+ *
+ * @example
+ * ```tsx
+ * const { rows, state } = useTable('users', where(eq('isActive', true)), {
+ *   onInsert: (row) => console.log('Inserted:', row),
+ *   onDelete: (row) => console.log('Deleted:', row),
+ *   onUpdate: (oldRow, newRow) => console.log('Updated:', oldRow, newRow),
+ * });
+ * ```
+ */
+export function useTable<
+  DbConnection extends DbConnectionImpl,
+  RowType extends Record<string, any>,
+  TableName extends keyof DbConnection['db'] &
+    string = keyof DbConnection['db'] & string,
+>(
+  tableName: TableName,
+  callbacks?: UseQueryCallbacks<RowType>
+): Snapshot<RowType>;
 
 export function useTable<
   DbConnection extends DbConnectionImpl,
@@ -59,12 +270,18 @@ export function useTable<
     string = keyof DbConnection['db'] & string,
 >(
   tableName: TableName,
-  whereClauseOrCallbacks?: WhereClause | UseQueryCallbacks<RowType>,
+  whereClauseOrCallbacks?:
+    | Expr<ColumnsFromRow<RowType>>
+    | UseQueryCallbacks<RowType>,
   callbacks?: UseQueryCallbacks<RowType>
 ): Snapshot<RowType> {
-  let whereClause: WhereClause | undefined;
-  if (whereClauseOrCallbacks && 'key' in whereClauseOrCallbacks) {
-    whereClause = whereClauseOrCallbacks;
+  let whereClause: Expr<ColumnsFromRow<RowType>> | undefined;
+  if (
+    whereClauseOrCallbacks &&
+    typeof whereClauseOrCallbacks === 'object' &&
+    'type' in whereClauseOrCallbacks
+  ) {
+    whereClause = whereClauseOrCallbacks as Expr<ColumnsFromRow<RowType>>;
   } else {
     callbacks = whereClauseOrCallbacks as
       | UseQueryCallbacks<RowType>
@@ -78,7 +295,7 @@ export function useTable<
   } catch {
     throw new Error(
       'Could not find SpacetimeDB client! Did you forget to add a ' +
-        '`SpacetimeDBProvider`? `useTable` must be used in the React component tree' +
+        '`SpacetimeDBProvider`? `useTable` must be used in the React component tree ' +
         'under a `SpacetimeDBProvider` component.'
     );
   }
@@ -86,21 +303,19 @@ export function useTable<
 
   const query =
     `SELECT * FROM ${tableName}` +
-    (whereClause ? ` WHERE ${where(whereClause)}` : '');
+    (whereClause ? ` WHERE ${toString(whereClause)}` : '');
 
   const latestTransactionEvent = useRef<any>(null);
   const lastSnapshotRef = useRef<Snapshot<RowType> | null>(null);
 
-  const whereKey = whereClause
-    ? `${whereClause.key}|${whereClause.operator}|${JSON.stringify(whereClause.value)}`
-    : '';
+  const whereKey = whereClause ? toString(whereClause) : '';
 
   const computeSnapshot = useCallback((): Snapshot<RowType> => {
     const table = client.db[
       tableName as keyof typeof client.db
     ] as unknown as TableCache<RowType>;
     const result: readonly RowType[] = whereClause
-      ? table.iter().filter(row => matchesWhereClause(row, whereClause))
+      ? table.iter().filter(row => evaluate(whereClause, row))
       : table.iter();
     return {
       rows: result,
@@ -146,7 +361,7 @@ export function useTable<
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
       const onInsert = (ctx: any, row: RowType) => {
-        if (whereClause && !matchesWhereClause(row, whereClause)) {
+        if (whereClause && !evaluate(whereClause, row)) {
           return;
         }
         if (tableName === 'message') {
@@ -164,7 +379,7 @@ export function useTable<
       };
 
       const onDelete = (ctx: any, row: RowType) => {
-        if (whereClause && !matchesWhereClause(row, whereClause)) {
+        if (whereClause && !evaluate(whereClause, row)) {
           return;
         }
         if (tableName === 'message') {
@@ -182,15 +397,22 @@ export function useTable<
       };
 
       const onUpdate = (ctx: any, oldRow: RowType, newRow: RowType) => {
-        // If your filtering is based on newRow membership; adjust if you also care when it LEAVES the filter
-        const affected =
-          !whereClause ||
-          matchesWhereClause(oldRow, whereClause) ||
-          matchesWhereClause(newRow, whereClause);
-        if (!affected) {
-          return;
+        const change = classifyMembership(whereClause, oldRow, newRow);
+
+        switch (change) {
+          case 'leave':
+            callbacks?.onDelete?.(oldRow);
+            break;
+          case 'enter':
+            callbacks?.onInsert?.(newRow);
+            break;
+          case 'stayIn':
+            callbacks?.onUpdate?.(oldRow, newRow);
+            break;
+          case 'stayOut':
+            return; // no-op
         }
-        callbacks?.onUpdate?.(oldRow, newRow);
+
         if (
           ctx.event !== latestTransactionEvent.current ||
           !latestTransactionEvent.current
