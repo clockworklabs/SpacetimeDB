@@ -54,6 +54,12 @@
       "require": "./dist/sdk/index.cjs",
       "default": "./dist/sdk/index.mjs"
     },
+    "./react": {
+      "types": "./src/react/index.ts",
+      "import": "./dist/react/index.mjs",
+      "require": "./dist/react/index.cjs",
+      "default": "./dist/react/index.mjs"
+    },
     "./server": {
       "types": "./src/server/index.ts",
       "import": "./dist/server/index.mjs",
@@ -105,6 +111,23 @@
       "limit": "60 kB"
     },
     {
+      "name": "react esm min (brotli)",
+      "path": "dist/min/react/index.mjs",
+      "brotli": true,
+      "limit": "10 kB"
+    },
+    {
+      "name": "react esm min (uncompressed)",
+      "path": "dist/min/react/index.mjs",
+      "limit": "10 kB"
+    },
+    {
+      "name": "react esm min (gzip)",
+      "path": "dist/min/react/index.mjs",
+      "gzip": true,
+      "limit": "15 kB"
+    },
+    {
       "name": "sdk esm min (brotli)",
       "path": "dist/min/sdk/index.browser.mjs",
       "brotli": true,
@@ -127,9 +150,13 @@
     "prettier": "^3.3.3"
   },
   "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
     "undici": "^6.19.2"
   },
   "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
     "undici": {
       "optional": true
     }
@@ -137,6 +164,7 @@
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@size-limit/file": "^11.2.0",
+    "@types/react": "^19.1.13",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
     "@vitest/coverage-v8": "^3.2.4",

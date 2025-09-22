@@ -3,11 +3,11 @@
   /* 
     3 rows: 
       1) Profile
-      2) Main content (left = message, right = system)
+      2) Main content (left = message, right = online)
       3) New message
   */
   grid-template-rows: auto 1fr auto;
-  /* 2 columns: left for chat, right for system */
+  /* 2 columns: left for chat, right for online */
   grid-template-columns: 2fr 1fr;
 
   height: 100vh; /* fill viewport height */
@@ -42,7 +42,7 @@
 }
 
 /* ----- Chat Messages (Row 2, Col 1) ----- */
-.message {
+.message-panel {
   grid-row: 2 / 3;
   grid-column: 1 / 2;
 
@@ -54,12 +54,32 @@
   gap: 1rem;
 }
 
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.system-message {
+  background-color: var(--theme-color);
+  color: var(--theme-color-contrast);
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-style: italic;
+}
+
+.user-message {
+  background-color: var(--textbox-color);
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+}
+
 .message h1 {
   margin-right: 0.5rem;
 }
 
-/* ----- System Panel (Row 2, Col 2) ----- */
-.system {
+/* ----- Online Panel (Row 2, Col 2) ----- */
+.online {
   grid-row: 2 / 3;
   grid-column: 2 / 3;
 
