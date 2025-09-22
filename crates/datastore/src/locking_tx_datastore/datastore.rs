@@ -983,7 +983,7 @@ impl<F> Replay<F> {
             database_identity: &self.database_identity,
             committed_state: &mut committed_state,
             progress: &mut *self.progress.borrow_mut(),
-            truncated_tables: IntMap::default(),
+            dropped_table_names: IntMap::default(),
         };
         f(&mut visitor)
     }
@@ -1092,7 +1092,7 @@ struct ReplayVisitor<'a, F> {
     // Since deletes are handled before truncation / drop, sometimes the schema
     // info is gone. We save the name on the first delete of that table so metrics
     // can still show a name.
-    truncated_tables: IntMap<TableId, Box<str>>,
+    dropped_table_names: IntMap<TableId, Box<str>>,
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
@@ -1153,7 +1153,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         if table_id == ST_TABLE_ID {
             let ab = AlgebraicValue::Product(row.clone());
             let st_table_row = StTableRow::deserialize(ValueDeserializer::from_ref(&ab)).unwrap();
-            self.truncated_tables
+            self.dropped_table_names
                 .insert(st_table_row.table_id, st_table_row.table_name);
         }
 
@@ -1181,7 +1181,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
             Ok(schema) => schema.table_name.clone(),
 
             Err(_) => {
-                if let Some(name) = self.truncated_tables.remove(&table_id) {
+                if let Some(name) = self.dropped_table_names.remove(&table_id) {
                     name
                 } else {
                     return Err(anyhow!("Error looking up name for truncated table {:?}", table_id).into());
