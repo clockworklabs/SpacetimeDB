@@ -32,7 +32,8 @@
     "size": "pnpm -s build && size-limit",
     "generate:moduledef": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/lib/autogen",
     "generate:client-api": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-client-api-messages --example get_ws_schema > ws_schema.json && cargo run -p spacetimedb-cli generate --lang typescript --out-dir src/sdk/client_api --module-def ws_schema.json && rm ws_schema.json && find src/sdk/client_api -type f -exec perl -pi -e 's#spacetimedb#../../index#g' {} + && prettier --write src/sdk/client_api",
-    "generate": "pnpm generate:moduledef && pnpm generate:client-api",
+    "generate:test-app": "pnpm --filter @clockworklabs/test-app generate",
+    "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app",
     "prepublishOnly": "pnpm run build && pnpm run test && pnpm run size"
   },
   "main": "dist/index.cjs",
