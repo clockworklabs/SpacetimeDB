@@ -10,10 +10,10 @@ use tokio::sync::watch;
 
 /// A handle to a pool of Tokio executors for running database WASM code on.
 ///
-/// Each database has a [`DatabaseExecutor`],
+/// Each database has a [`SingleCoreExecutor`],
 /// a handle to a single-threaded Tokio runtime which is pinned to a specific CPU core.
-/// In multi-tenant environments, multiple databases' [`DatabaseExecutor`]s may be handles on the same runtime/core,
-/// and a [`DatabaseExecutor`] may occasionally be migrated to a different runtime/core to balance load.
+/// In multi-tenant environments, multiple databases' [`SingleCoreExecutor`]s may be handles on the same runtime/core,
+/// and a [`SingleCoreExecutor`] may occasionally be migrated to a different runtime/core to balance load.
 ///
 /// Construct a `JobCores` via [`Self::from_pinned_cores`] or [`Self::without_pinned_cores`].
 /// a `JobCores` constructed without core pinning, including `from_pinned_cores` on an empty set,
@@ -35,25 +35,25 @@ enum JobCoresInner {
 }
 
 struct PinnedCoresExecutorManager {
-    /// Channels to request that a [`DatabaseExecutor`] move to a different Tokio runtime.
+    /// Channels to request that a [`SingleCoreExecutor`] move to a different Tokio runtime.
     ///
-    /// Alongside each channel is the [`CoreId`] of the runtime to which that [`DatabaseExecutor`] is currently pinned.
+    /// Alongside each channel is the [`CoreId`] of the runtime to which that [`SingleCoreExecutor`] is currently pinned.
     /// This is used as an index into `self.cores` to make load-balancing decisions when freeing a database executor
     /// in [`Self::deallocate`].
-    database_executor_move: HashMap<DatabaseExecutorId, (CoreId, watch::Sender<runtime::Handle>)>,
+    database_executor_move: HashMap<SingleCoreExecutorId, (CoreId, watch::Sender<runtime::Handle>)>,
     cores: IndexMap<CoreId, CoreInfo>,
     /// An index into `cores` of the next core to put a new job onto.
     ///
     /// This acts as a partition point in `cores`; all cores in `..index` have
     /// one fewer job on them than the cores in `index..`.
     next_core: usize,
-    next_id: DatabaseExecutorId,
+    next_id: SingleCoreExecutorId,
 }
 
 /// Stores the [`tokio::Runtime`] pinned to a particular core,
-/// and remembers the [`DatabaseExecutorId`]s for all databases sharing that executor.
+/// and remembers the [`SingleCoreExecutorId`]s for all databases sharing that executor.
 struct CoreInfo {
-    jobs: SmallVec<[DatabaseExecutorId; 4]>,
+    jobs: SmallVec<[SingleCoreExecutorId; 4]>,
     tokio_runtime: runtime::Runtime,
 }
 
@@ -61,7 +61,7 @@ impl CoreInfo {
     fn spawn_executor(id: CoreId) -> CoreInfo {
         let runtime = runtime::Builder::new_multi_thread()
             .worker_threads(1)
-            // [`DatabaseExecutor`]s should only be executing Wasmtime WASM futures,
+            // [`SingleCoreExecutor`]s should only be executing Wasmtime WASM futures,
             // and so should never be doing [`Tokio::spawn_blocking`] or performing blocking I/O.
             // However, `max_blocking_threads` will panic if passed 0, so we set a limit of 1
             // and use `on_thread_start` to log an error when spawning a blocking task.
@@ -77,7 +77,7 @@ impl CoreInfo {
                     if already_spawned_worker.swap(true, Ordering::Relaxed) {
                         // We're spawning a blocking thread, naughty!
                         log::error!(
-                            "`JobCores` Tokio runtime for `DatabaseExecutor` use on core {id:?} spawned a blocking thread!"
+                            "`JobCores` Tokio runtime for `SingleCoreExecutor` use on core {id:?} spawned a blocking thread!"
                         );
                     } else {
                         // We're spawning our 1 worker, so pin it to the appropriate thread.
@@ -86,7 +86,7 @@ impl CoreInfo {
                 }
             })
             .build()
-            .expect("Failed to start Tokio executor for `DatabaseExecutor`");
+            .expect("Failed to start Tokio executor for `SingleCoreExecutor`");
         CoreInfo {
             jobs: SmallVec::new(),
             tokio_runtime: runtime,
@@ -95,31 +95,16 @@ impl CoreInfo {
 }
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-struct DatabaseExecutorId(usize);
+struct SingleCoreExecutorId(usize);
 
 impl JobCores {
-    /// Get a handle on a [`DatabaseExecutor`] to later run a database's jobs on.
-    pub fn take(&self) -> DatabaseExecutor {
+    /// Get a handle on a [`SingleCoreExecutor`] to later run a database's jobs on.
+    pub fn take(&self) -> SingleCoreExecutor {
         let database_executor_inner = match &self.inner {
-            JobCoresInner::NoPinning(handle) => DatabaseExecutorInner {
-                runtime: watch::channel(handle.clone()).1,
-                _guard: None,
-            },
-            JobCoresInner::PinnedCores(manager) => {
-                let manager_weak = Arc::downgrade(manager);
-                let (database_executor_id, move_runtime_rx) = manager.lock().unwrap().allocate();
-                DatabaseExecutorInner {
-                    runtime: move_runtime_rx,
-                    _guard: Some(LoadBalanceOnDropGuard {
-                        manager: manager_weak,
-                        database_executor_id,
-                    }),
-                }
-            }
+            JobCoresInner::NoPinning(handle) => SingleCoreExecutorInner::without_load_balancing(handle.clone()),
+            JobCoresInner::PinnedCores(manager) => SingleCoreExecutorInner::with_load_balancing(manager),
         };
-        DatabaseExecutor {
-            inner: Arc::new(database_executor_inner),
-        }
+        SingleCoreExecutor::from_inner(database_executor_inner)
     }
 
     /// Construct a [`JobCores`] which runs one Tokio runtime on each of the `cores`,
@@ -136,7 +121,7 @@ impl JobCores {
                 database_executor_move: HashMap::default(),
                 cores,
                 next_core: 0,
-                next_id: DatabaseExecutorId(0),
+                next_id: SingleCoreExecutorId(0),
             })))
         };
 
@@ -156,7 +141,7 @@ impl JobCores {
 }
 
 impl PinnedCoresExecutorManager {
-    fn allocate(&mut self) -> (DatabaseExecutorId, watch::Receiver<runtime::Handle>) {
+    fn allocate(&mut self) -> (SingleCoreExecutorId, watch::Receiver<runtime::Handle>) {
         let database_executor_id = self.next_id;
         self.next_id.0 += 1;
 
@@ -175,7 +160,7 @@ impl PinnedCoresExecutorManager {
     }
 
     /// Run when a `JobThread` exits.
-    fn deallocate(&mut self, id: DatabaseExecutorId) {
+    fn deallocate(&mut self, id: SingleCoreExecutorId) {
         let (freed_core_id, _) = self.database_executor_move.remove(&id).unwrap();
 
         let core_index = self.cores.get_index_of(&freed_core_id).unwrap();
@@ -227,11 +212,12 @@ impl PinnedCoresExecutorManager {
 /// When all handles on this database executor have been dropped,
 /// its use of the core to which it is pinned will be released,
 /// and other databases may be migrated to that core to balance load.
-pub struct DatabaseExecutor {
-    inner: Arc<DatabaseExecutorInner>,
+#[derive(Clone)]
+pub struct SingleCoreExecutor {
+    inner: Arc<SingleCoreExecutorInner>,
 }
 
-struct DatabaseExecutorInner {
+struct SingleCoreExecutorInner {
     /// Handle on the [`runtime::Runtime`] where this executor should run jobs.
     ///
     /// This will be occasionally updated by [`PinnedCoresExecutorManager::deallocate`]
@@ -243,7 +229,44 @@ struct DatabaseExecutorInner {
     _guard: Option<LoadBalanceOnDropGuard>,
 }
 
-impl DatabaseExecutor {
+impl SingleCoreExecutorInner {
+    fn without_load_balancing(handle: runtime::Handle) -> Self {
+        SingleCoreExecutorInner {
+            runtime: watch::channel(handle).1,
+            _guard: None,
+        }
+    }
+
+    fn with_load_balancing(manager: &Arc<Mutex<PinnedCoresExecutorManager>>) -> Self {
+        let manager_weak = Arc::downgrade(manager);
+        let (database_executor_id, move_runtime_rx) = manager.lock().unwrap().allocate();
+        SingleCoreExecutorInner {
+            runtime: move_runtime_rx,
+            _guard: Some(LoadBalanceOnDropGuard {
+                manager: manager_weak,
+                database_executor_id,
+            }),
+        }
+    }
+}
+
+impl SingleCoreExecutor {
+    fn from_inner(inner: SingleCoreExecutorInner) -> Self {
+        Self { inner: Arc::new(inner) }
+    }
+
+    /// Create a `SingleCoreExecutor` which runs jobs in [`tokio::runtime::Handle::current`].
+    ///
+    /// Callers should most likely instead construct a `SingleCoreExecutor` via [`JobCores::take`],
+    /// which will intelligently pin each database to a particular core.
+    /// This method should only be used for short-lived instances which do not perform intense computation,
+    /// e.g. to extract the schema by calling `describe_module`.
+    pub fn in_current_tokio_runtime() -> Self {
+        Self::from_inner(SingleCoreExecutorInner::without_load_balancing(
+            runtime::Handle::current(),
+        ))
+    }
+
     /// Run a job for this database executor.
     ///
     /// `f` must not perform any `Tokio::spawn_blocking` blocking operations.
@@ -252,7 +275,11 @@ impl DatabaseExecutor {
         F: Future<Output = R> + Send + 'static,
         R: Send + 'static,
     {
-        match self.inner.runtime.borrow().spawn(f).await {
+        // Clone the handle rather than holding the `watch::Ref` alive
+        // because `watch::Ref` is not `Send`.
+        let handle = runtime::Handle::clone(&*self.inner.runtime.borrow());
+
+        match handle.spawn(f).await {
             Ok(r) => r,
             Err(e) => std::panic::resume_unwind(e.into_panic()),
         }
@@ -266,13 +293,19 @@ impl DatabaseExecutor {
     {
         self.run_job(async { f() }).await
     }
+
+    pub fn downgrade(&self) -> WeakSingleCoreExecutor {
+        WeakSingleCoreExecutor {
+            inner: Arc::downgrade(&self.inner),
+        }
+    }
 }
 
 /// On drop, tells the [`JobCores`] that this database is no longer occupying its Tokio runtime,
 /// allowing databases from more-contended runtimes/cores to migrate there.
 struct LoadBalanceOnDropGuard {
     manager: Weak<Mutex<PinnedCoresExecutorManager>>,
-    database_executor_id: DatabaseExecutorId,
+    database_executor_id: SingleCoreExecutorId,
 }
 
 impl Drop for LoadBalanceOnDropGuard {
@@ -285,12 +318,13 @@ impl Drop for LoadBalanceOnDropGuard {
 
 /// A weak version of `JobThread` that does not hold the thread open.
 // used in crate::core::module_host::WeakModuleHost
-pub struct WeakDatabaseExecutor {
-    inner: Weak<DatabaseExecutorInner>,
+#[derive(Clone)]
+pub struct WeakSingleCoreExecutor {
+    inner: Weak<SingleCoreExecutorInner>,
 }
 
-impl WeakDatabaseExecutor {
-    pub fn upgrade(&self) -> Option<DatabaseExecutor> {
-        self.inner.upgrade().map(|inner| DatabaseExecutor { inner })
+impl WeakSingleCoreExecutor {
+    pub fn upgrade(&self) -> Option<SingleCoreExecutor> {
+        self.inner.upgrade().map(|inner| SingleCoreExecutor { inner })
     }
 }

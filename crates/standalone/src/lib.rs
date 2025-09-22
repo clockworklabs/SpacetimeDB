@@ -522,7 +522,7 @@ pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path:
         args.extend(["--jwt-key-dir".as_ref(), cert_dir.as_os_str()])
     }
     let args = start::cli().try_get_matches_from(args)?;
-    start::exec(&args, JobCores::default()).await
+    start::exec(&args, JobCores::without_pinned_cores(tokio::runtime::Handle::current())).await
 }
 
 #[cfg(test)]

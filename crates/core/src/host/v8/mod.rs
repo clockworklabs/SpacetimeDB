@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use super::module_common::{build_common_module_from_raw, ModuleCommon};
-use super::module_host::{CallReducerParams, DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime};
+use super::module_host::{CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
@@ -39,8 +39,8 @@ pub struct V8Runtime {
 }
 
 impl ModuleRuntime for V8Runtime {
-    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
-        V8_RUNTIME_GLOBAL.make_actor(mcc)
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<Module> {
+        V8_RUNTIME_GLOBAL.make_actor(mcc).map(Module::Js)
     }
 }
 
@@ -71,7 +71,7 @@ impl V8RuntimeInner {
         Self { _priv: () }
     }
 
-    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<JsModule> {
         #![allow(unreachable_code, unused_variables)]
 
         log::trace!(
@@ -93,49 +93,43 @@ impl V8RuntimeInner {
 }
 
 #[derive(Clone)]
-struct JsModule {
+pub struct JsModule {
     common: ModuleCommon,
 }
 
-impl DynModule for JsModule {
-    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+impl JsModule {
+    pub fn replica_ctx(&self) -> &Arc<ReplicaContext> {
         self.common.replica_ctx()
     }
 
-    fn scheduler(&self) -> &Scheduler {
+    pub fn scheduler(&self) -> &Scheduler {
         self.common.scheduler()
     }
-}
 
-impl Module for JsModule {
-    type Instance = JsInstance;
-
-    type InitialInstances<'a> = std::iter::Empty<JsInstance>;
-
-    fn initial_instances(&mut self) -> Self::InitialInstances<'_> {
+    pub fn initial_instances(&mut self) -> impl Iterator<Item = JsInstance> {
         std::iter::empty()
     }
 
-    fn info(&self) -> Arc<ModuleInfo> {
+    pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info().clone()
     }
 
-    fn create_instance(&self) -> Self::Instance {
+    pub fn create_instance(&self) -> JsInstance {
         todo!()
     }
 }
 
-struct JsInstance {
+pub struct JsInstance {
     common: InstanceCommon,
     replica_ctx: Arc<ReplicaContext>,
 }
 
-impl ModuleInstance for JsInstance {
-    fn trapped(&self) -> bool {
+impl JsInstance {
+    pub fn trapped(&self) -> bool {
         self.common.trapped
     }
 
-    fn update_database(
+    pub fn update_database(
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
@@ -146,7 +140,7 @@ impl ModuleInstance for JsInstance {
             .update_database(replica_ctx, program, old_module_info, policy)
     }
 
-    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
+    pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
         // TODO(centril): snapshots, module->host calls
         let mut isolate = Isolate::new(<_>::default());
         let scope = &mut HandleScope::new(&mut isolate);

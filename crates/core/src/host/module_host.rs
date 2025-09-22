@@ -17,15 +17,17 @@ use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::BuildableWebsocketFormat;
-use crate::util::jobs::{JobCore, JobThread, JobThreadClosed, WeakJobThread};
+use crate::util::jobs::{SingleCoreExecutor, WeakSingleCoreExecutor};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
 use derive_more::From;
+use futures::lock::Mutex;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
+use scopeguard::ScopeGuard;
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
@@ -46,7 +48,9 @@ use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
+use std::collections::VecDeque;
 use std::fmt;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -311,24 +315,61 @@ impl ReducersMap {
 /// A runtime that can create modules.
 pub trait ModuleRuntime {
     /// Creates a module based on the context `mcc`.
-    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module>;
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<Module>;
 }
 
-pub trait DynModule: Send + Sync + 'static {
-    fn replica_ctx(&self) -> &Arc<ReplicaContext>;
-    fn scheduler(&self) -> &Scheduler;
+pub enum Module {
+    Wasm(super::wasmtime::Module),
+    Js(super::v8::JsModule),
 }
 
-pub trait Module: DynModule {
-    type Instance: ModuleInstance;
-    type InitialInstances<'a>: IntoIterator<Item = Self::Instance> + 'a;
-    fn initial_instances(&mut self) -> Self::InitialInstances<'_>;
-    fn info(&self) -> Arc<ModuleInfo>;
-    fn create_instance(&self) -> Self::Instance;
+pub enum Instance {
+    Wasm(super::wasmtime::ModuleInstance),
+    Js(super::v8::JsInstance),
 }
 
-pub trait ModuleInstance: Send + 'static {
-    fn trapped(&self) -> bool;
+impl Module {
+    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+        match self {
+            Module::Wasm(module) => module.replica_ctx(),
+            Module::Js(module) => module.replica_ctx(),
+        }
+    }
+
+    fn scheduler(&self) -> &Scheduler {
+        match self {
+            Module::Wasm(module) => module.scheduler(),
+            Module::Js(module) => module.scheduler(),
+        }
+    }
+
+    fn initial_instances(&mut self) -> impl Iterator<Item = Instance> {
+        match self {
+            Module::Wasm(module) => itertools::Either::Left(module.initial_instances().into_iter().map(Instance::Wasm)),
+            Module::Js(module) => itertools::Either::Right(module.initial_instances().map(Instance::Js)),
+        }
+    }
+    fn info(&self) -> Arc<ModuleInfo> {
+        match self {
+            Module::Wasm(module) => module.info(),
+            Module::Js(module) => module.info(),
+        }
+    }
+    fn create_instance(&self) -> Instance {
+        match self {
+            Module::Wasm(module) => Instance::Wasm(module.create_instance()),
+            Module::Js(module) => Instance::Js(module.create_instance()),
+        }
+    }
+}
+
+impl Instance {
+    fn trapped(&self) -> bool {
+        match self {
+            Instance::Wasm(inst) => inst.trapped(),
+            Instance::Js(inst) => inst.trapped(),
+        }
+    }
 
     /// Update the module instance's database to match the schema of the module instance.
     fn update_database(
@@ -336,10 +377,22 @@ pub trait ModuleInstance: Send + 'static {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
-    ) -> anyhow::Result<UpdateDatabaseResult>;
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        match self {
+            Instance::Wasm(inst) => inst.update_database(program, old_module_info, policy),
+            Instance::Js(inst) => inst.update_database(program, old_module_info, policy),
+        }
+    }
 
-    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
+    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+        match self {
+            Instance::Wasm(inst) => inst.call_reducer(tx, params),
+            Instance::Js(inst) => inst.call_reducer(tx, params),
+        }
+    }
 }
+
+pub trait ModuleInstance: Send + 'static {}
 
 /// Creates the table for `table_def` in `stdb`.
 pub fn create_table_from_def(
@@ -358,7 +411,7 @@ pub fn create_table_from_def(
 fn init_database(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
-    inst: &mut dyn ModuleInstance,
+    inst: &mut Instance,
     program: Program,
 ) -> anyhow::Result<Option<ReducerCallResult>> {
     log::debug!("init database");
@@ -437,49 +490,45 @@ pub struct CallReducerParams {
     pub args: ArgsTuple,
 }
 
-// TODO: figure out how we want to handle traps. maybe it should just not return to the LendingPool and
-//       let the get_instance logic handle it?
-struct AutoReplacingModuleInstance<T: Module> {
-    inst: T::Instance,
-    module: Arc<T>,
+struct ModuleInstanceManager {
+    instances: VecDeque<Instance>,
+    module: Arc<Module>,
 }
 
-impl<T: Module> AutoReplacingModuleInstance<T> {
-    fn check_trap(&mut self) {
-        if self.inst.trapped() {
-            self.inst = self.module.create_instance()
+impl ModuleInstanceManager {
+    fn get_instance(&mut self) -> Instance {
+        if let Some(inst) = self.instances.pop_back() {
+            inst
+        } else {
+            // TODO: should we be calling `create_instance` on the `SingleCoreExecutor` rather than the calling thread?
+            self.module.create_instance()
         }
     }
-}
 
-impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
-    fn trapped(&self) -> bool {
-        self.inst.trapped()
-    }
-    fn update_database(
-        &mut self,
-        program: Program,
-        old_module_info: Arc<ModuleInfo>,
-        policy: MigrationPolicy,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database(program, old_module_info, policy);
-        self.check_trap();
-        ret
-    }
-    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        let ret = self.inst.call_reducer(tx, params);
-        self.check_trap();
-        ret
+    fn return_instance(&mut self, inst: Instance) {
+        if inst.trapped() {
+            // Don't return trapped instances;
+            // they may have left internal data structures in WASM linear memory in a bad state.
+            return;
+        }
+
+        self.instances.push_front(inst);
     }
 }
 
 #[derive(Clone)]
 pub struct ModuleHost {
     pub info: Arc<ModuleInfo>,
-    module: Arc<dyn DynModule>,
+    module: Arc<Module>,
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
-    job_tx: JobThread<dyn ModuleInstance>,
+    instance_manager: Arc<Mutex<ModuleInstanceManager>>,
+    executor: SingleCoreExecutor,
+
+    /// Marks whether this module has been closed by [`Self::exit`].
+    ///
+    /// When this is true, most operations will fail with [`NoSuchModule`].
+    closed: Arc<AtomicBool>,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -493,9 +542,11 @@ impl fmt::Debug for ModuleHost {
 
 pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
-    inner: Weak<dyn DynModule>,
+    inner: Weak<Module>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
-    tx: WeakJobThread<dyn ModuleInstance>,
+    instance_manager: Weak<Mutex<ModuleInstanceManager>>,
+    executor: WeakSingleCoreExecutor,
+    closed: Weak<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -556,24 +607,29 @@ pub enum ClientConnectedError {
 }
 
 impl ModuleHost {
-    pub(super) fn new(module: impl Module, on_panic: impl Fn() + Send + Sync + 'static, core: JobCore) -> Self {
+    pub(super) fn new(
+        module: Module,
+        on_panic: impl Fn() + Send + Sync + 'static,
+        executor: SingleCoreExecutor,
+    ) -> Self {
         let info = module.info();
         let module = Arc::new(module);
         let on_panic = Arc::new(on_panic);
 
         let module_clone = module.clone();
-        let job_tx = core.start(
-            move || AutoReplacingModuleInstance {
-                inst: module_clone.create_instance(),
-                module: module_clone,
-            },
-            |x| x as &mut dyn ModuleInstance,
-        );
+
+        let instance_manager = Arc::new(Mutex::new(ModuleInstanceManager {
+            instances: VecDeque::new(),
+            module: module_clone,
+        }));
+
         ModuleHost {
             info,
             module,
             on_panic,
-            job_tx,
+            instance_manager,
+            executor,
+            closed: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -587,6 +643,20 @@ impl ModuleHost {
         &self.info.subscriptions
     }
 
+    fn is_marked_closed(&self) -> bool {
+        // `self.closed` isn't used for any synchronization, it's just a shared flag,
+        // so `Ordering::Relaxed` is sufficient.
+        self.closed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn guard_closed(&self) -> Result<(), NoSuchModule> {
+        if self.is_marked_closed() {
+            Err(NoSuchModule)
+        } else {
+            Ok(())
+        }
+    }
+
     /// Run a function on the JobThread for this module.
     /// This would deadlock if it is called within another call to `on_module_thread`.
     /// Since this is async, and `f` is sync, deadlocking shouldn't be a problem.
@@ -595,20 +665,22 @@ impl ModuleHost {
         F: FnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
-        // Run the provided function on the module instance.
-        // This is a convenience method that ensures the module instance is available
-        // and handles any errors that may occur.
-        self.call(label, |_| f())
-            .await
-            .map_err(|_| anyhow::Error::from(NoSuchModule))
+        self.guard_closed()?;
+
+        let timer_guard = self.start_call_timer(label);
+
+        let res = self
+            .executor
+            .run_sync_job(move || {
+                drop(timer_guard);
+                f()
+            })
+            .await;
+
+        Ok(res)
     }
 
-    /// Run a function on the JobThread for this module which has access to the module instance.
-    async fn call<F, R>(&self, label: &str, f: F) -> Result<R, NoSuchModule>
-    where
-        F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
-        R: Send + 'static,
-    {
+    fn start_call_timer(&self, label: &str) -> ScopeGuard<(), impl FnOnce(())> {
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
             .reducer_wait_time
@@ -626,19 +698,28 @@ impl ModuleHost {
                 .observe(queue_length as f64);
         }
         // Ensure that we always decrement the gauge.
-        let timer_guard = scopeguard::guard((), move |_| {
+        scopeguard::guard((), move |_| {
             // Decrement the queue length gauge when we're done.
             // This is done in a defer so that it happens even if the reducer call panics.
             queue_length_gauge.dec();
             queue_timer.stop_and_record();
-        });
+        })
+    }
+
+    /// Run a function on the JobThread for this module which has access to the module instance.
+    async fn call<F, R>(&self, label: &str, f: F) -> Result<R, NoSuchModule>
+    where
+        F: FnOnce(&mut Instance) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
 
         // Operations on module instances (e.g. calling reducers) is blocking,
         // partially because the computation can potentialyl take a long time
         // and partially because interacting with the database requires taking
-        // a blocking lock. So, we run `f` inside of `asyncify()`, which runs
-        // the provided closure in a tokio blocking task, and bubbles up any
-        // panic that may occur.
+        // a blocking lock. So, we run `f` on a dedicated thread with `self.executor`.
+        // This will bubble up any panic that may occur.
 
         // If a reducer call panics, we **must** ensure to call `self.on_panic`
         // so that the module is discarded by the host controller.
@@ -646,13 +727,21 @@ impl ModuleHost {
             log::warn!("reducer {label} panicked");
             (self.on_panic)();
         });
-        self.job_tx
-            .run(move |inst| {
+
+        let mut instance = self.instance_manager.lock().await.get_instance();
+
+        let (res, instance) = self
+            .executor
+            .run_sync_job(move || {
                 drop(timer_guard);
-                f(inst)
+                let res = f(&mut instance);
+                (res, instance)
             })
-            .await
-            .map_err(|_: JobThreadClosed| NoSuchModule)
+            .await;
+
+        self.instance_manager.lock().await.return_instance(instance);
+
+        Ok(res)
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
@@ -762,14 +851,14 @@ impl ModuleHost {
             }
         })
         .await
-        .map_err(Into::<ReducerCallError>::into)?
+        .map_err(ReducerCallError::from)?
     }
 
     pub fn call_identity_disconnected_inner(
         &self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
-        inst: &mut dyn ModuleInstance,
+        inst: &mut Instance,
     ) -> Result<(), ReducerCallError> {
         let me = self.clone();
         let reducer_lookup = me.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
@@ -877,8 +966,8 @@ impl ModuleHost {
         self.call("call_identity_disconnected", move |inst| {
             me.call_identity_disconnected_inner(caller_identity, caller_connection_id, inst)
         })
-        .await
-        .map_err(Into::<ReducerCallError>::into)?
+        .await?
+        .map_err(Into::into)
     }
 
     async fn call_reducer_inner(
@@ -896,23 +985,23 @@ impl ModuleHost {
         let args = args.into_tuple(reducer_seed)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
-        self.call(&reducer_def.name, move |inst| {
-            inst.call_reducer(
-                None,
-                CallReducerParams {
-                    timestamp: Timestamp::now(),
-                    caller_identity,
-                    caller_connection_id,
-                    client,
-                    request_id,
-                    timer,
-                    reducer_id,
-                    args,
-                },
-            )
-        })
-        .await
-        .map_err(Into::into)
+        Ok(self
+            .call(&reducer_def.name, move |inst| {
+                inst.call_reducer(
+                    None,
+                    CallReducerParams {
+                        timestamp: Timestamp::now(),
+                        caller_identity,
+                        caller_connection_id,
+                        client,
+                        request_id,
+                        timer,
+                        reducer_id,
+                        args,
+                    },
+                )
+            })
+            .await?)
     }
     fn call_reducer_inner_with_inst(
         &self,
@@ -924,7 +1013,7 @@ impl ModuleHost {
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
         args: ReducerArgs,
-        module_instance: &mut dyn ModuleInstance,
+        module_instance: &mut Instance,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
         let args = args.into_tuple(reducer_seed)?;
@@ -1006,7 +1095,7 @@ impl ModuleHost {
         // scheduled reducer name not fetched yet, anyway this is only for logging purpose
         const REDUCER: &str = "scheduled_reducer";
         let module = self.info.clone();
-        self.call(REDUCER, move |inst: &mut dyn ModuleInstance| {
+        self.call(REDUCER, move |inst: &mut Instance| {
             let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
             match call_reducer_params(&mut tx) {
@@ -1038,8 +1127,7 @@ impl ModuleHost {
                 })),
             }
         })
-        .await
-        .unwrap_or_else(|e| Err(e.into()))
+        .await?
     }
 
     pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
@@ -1069,13 +1157,14 @@ impl ModuleHost {
     }
 
     pub async fn exit(&self) {
+        // As in `Self::marked_closed`, `Relaxed` is sufficient because we're not synchronizing any external state.
+        self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
         self.module.scheduler().close();
-        self.job_tx.close();
         self.exited().await;
     }
 
     pub async fn exited(&self) {
-        tokio::join!(self.module.scheduler().closed(), self.job_tx.closed());
+        self.module.scheduler().closed().await;
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, message: &str) {
@@ -1225,7 +1314,9 @@ impl ModuleHost {
             info: self.info.clone(),
             inner: Arc::downgrade(&self.module),
             on_panic: Arc::downgrade(&self.on_panic),
-            tx: self.job_tx.downgrade(),
+            instance_manager: Arc::downgrade(&self.instance_manager),
+            executor: self.executor.downgrade(),
+            closed: Arc::downgrade(&self.closed),
         }
     }
 
@@ -1242,12 +1333,16 @@ impl WeakModuleHost {
     pub fn upgrade(&self) -> Option<ModuleHost> {
         let inner = self.inner.upgrade()?;
         let on_panic = self.on_panic.upgrade()?;
-        let tx = self.tx.upgrade()?;
+        let instance_manager = self.instance_manager.upgrade()?;
+        let executor = self.executor.upgrade()?;
+        let closed = self.closed.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
             module: inner,
             on_panic,
-            job_tx: tx,
+            instance_manager,
+            executor,
+            closed,
         })
     }
 }

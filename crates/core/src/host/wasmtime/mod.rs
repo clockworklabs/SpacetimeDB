@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
-use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
+use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
 
 use crate::energy::{EnergyQuanta, ReducerBudget};
 use crate::error::NodesError;
@@ -13,11 +13,11 @@ use crate::module_host_context::ModuleCreationContext;
 mod wasm_instance_env;
 mod wasmtime_module;
 
-use wasmtime_module::WasmtimeModule;
+use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
 
 use self::wasm_instance_env::WasmInstanceEnv;
 
-use super::wasm_common::module_host_actor::InitializationError;
+use super::wasm_common::module_host_actor::{InitializationError, WasmModuleInstance};
 use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
 
 pub struct WasmtimeRuntime {
@@ -93,9 +93,13 @@ impl WasmtimeRuntime {
     }
 }
 
+pub type Module = WasmModuleHostActor<WasmtimeModule>;
+pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
+
 impl ModuleRuntime for WasmtimeRuntime {
-    fn make_actor(&self, mcc: ModuleCreationContext) -> anyhow::Result<impl super::module_host::Module> {
-        let module = Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
+    fn make_actor(&self, mcc: ModuleCreationContext) -> anyhow::Result<super::module_host::Module> {
+        let module =
+            wasmtime::Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
         let func_imports = module
             .imports()
@@ -111,7 +115,9 @@ impl ModuleRuntime for WasmtimeRuntime {
 
         let module = WasmtimeModule::new(module);
 
-        WasmModuleHostActor::new(mcc, module).map_err(Into::into)
+        WasmModuleHostActor::new(mcc, module)
+            .map_err(Into::into)
+            .map(super::module_host::Module::Wasm)
     }
 }
 
