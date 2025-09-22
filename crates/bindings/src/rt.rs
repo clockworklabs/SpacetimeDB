@@ -342,10 +342,6 @@ pub fn register_table<T: Table>() {
             table = table.with_schedule(schedule.reducer_name, schedule.scheduled_at_column);
         }
 
-        for col in T::get_default_col_values().iter_mut() {
-            table = table.with_default_column_value(col.col_id, col.value.clone())
-        }
-
         table.finish();
     })
 }
