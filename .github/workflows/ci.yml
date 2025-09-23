@@ -362,7 +362,6 @@ jobs:
 
       - name: Get pnpm store directory
         shell: bash
-        working-directory: sdks/typescript
         run: |
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 

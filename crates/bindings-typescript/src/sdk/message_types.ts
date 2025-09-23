@@ -1,8 +1,8 @@
-import { ConnectionId } from 'spacetimedb';
+import { ConnectionId } from '../';
 import type { UpdateStatus } from './client_api/index.ts';
-import { Identity } from 'spacetimedb';
+import { Identity } from '../';
 import type { TableUpdate } from './table_cache.ts';
-import { Timestamp } from 'spacetimedb';
+import { Timestamp } from '../';
 
 export type InitialSubscriptionMessage<RowType extends Record<string, any>> = {
   tag: 'InitialSubscription';

@@ -1,4 +1,7 @@
-import { DbConnectionBuilder, type DbConnectionImpl } from '../index';
+import {
+  DbConnectionBuilder,
+  type DbConnectionImpl,
+} from '../sdk/db_connection_impl';
 import * as React from 'react';
 import { SpacetimeDBContext } from './useSpacetimeDB';
 
