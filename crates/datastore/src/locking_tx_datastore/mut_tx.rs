@@ -420,13 +420,8 @@ impl MutTxId {
         TxTableForInsertion<'_>,
         (&mut Table, &mut dyn BlobStore, &mut IndexIdMap),
     )> {
-        let (commit_table, commit_bs, idx_map) = self.committed_state_write_lock.get_table_and_blob_store_mut(table_id);
-        // NOTE(centril): `TableError` is a fairly large type.
-        // Not making this lazy made `TableError::drop` show up in perf.
-        // TODO(centril): Box all the errors.
-        #[allow(clippy::unnecessary_lazy_evaluations)]
-        let commit_table = commit_table.ok_or_else(|| TableError::IdNotFoundState(table_id))?;
-
+        let (commit_table, commit_bs, idx_map, _) =
+            self.committed_state_write_lock.get_table_and_blob_store_mut(table_id)?;
         // Get the insert table, so we can write the row into it.
         let tx = self
             .tx_state
