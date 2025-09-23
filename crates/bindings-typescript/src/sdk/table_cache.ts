@@ -1,7 +1,4 @@
-import {
-  BinaryWriter,
-  type EventContextInterface,
-} from './db_connection_impl.ts';
+import { BinaryWriter } from './db_connection_impl.ts';
 import type { DbConnectionImpl } from './db_connection_impl.ts';
 import type { DbContext } from './db_context.ts';
 import { EventEmitter } from './event_emitter.ts';
