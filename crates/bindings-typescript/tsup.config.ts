@@ -3,8 +3,8 @@ import { defineConfig, type Options } from 'tsup';
 
 function commonEsbuildTweaks() {
   return (options: any) => {
-    // Prefer "exports"."source" when deps provide it; harmless otherwise.
-    options.conditions = ['source', 'import', 'default'];
+    // Prefer "exports"."development" when deps provide it; harmless otherwise.
+    options.conditions = ['development', 'import', 'default'];
     options.mainFields = ['browser', 'module', 'main'];
   };
 }
@@ -20,17 +20,12 @@ export default defineConfig([
     format: ['esm', 'cjs'],
     target: 'es2022',
     outDir: 'dist',
-    dts: false, // types come from ./src in package.json
+    dts: false,
     sourcemap: true,
     clean: true,
     platform: 'neutral',
     treeshake: 'smallest',
     external: ['undici'],
-    // env variable used at build time to determine platform-specific code
-    // see: websocket_decompress_adapter.ts
-    env: {
-      BROWSER: 'false',
-    },
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -47,9 +42,36 @@ export default defineConfig([
     platform: 'browser',
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'true',
-    },
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // React subpath (SSR-friendly): dist/react/index.{mjs,cjs}
+  {
+    entry: { index: 'src/react/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/react',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'neutral',
+    treeshake: 'smallest',
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // React subpath (browser ESM): dist/browser/react/index.mjs
+  {
+    entry: { index: 'src/react/index.ts' },
+    format: ['esm'],
+    target: 'es2022',
+    outDir: 'dist/browser/react',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'browser',
+    treeshake: 'smallest',
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -66,9 +88,6 @@ export default defineConfig([
     platform: 'neutral',
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'false',
-    },
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -85,9 +104,6 @@ export default defineConfig([
     platform: 'browser',
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'true',
-    },
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -104,9 +120,6 @@ export default defineConfig([
     platform: 'neutral', // flip to 'node' if you actually rely on Node builtins
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'false',
-    },
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -128,10 +141,23 @@ export default defineConfig([
     platform: 'browser',
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'true',
-    },
     outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // Minified browser React build: dist/min/react/index.mjs
+  {
+    entry: { index: 'src/react/index.ts' },
+    format: ['esm'],
+    target: 'es2022',
+    outDir: 'dist/min/react',
+    dts: false,
+    sourcemap: true,
+    minify: 'terser',
+    platform: 'browser',
+    external: ['undici'],
+    treeshake: 'smallest',
+    outExtension: ({ format }) => ({ js: format === 'cjs' ? '.cjs' : '.mjs' }),
     esbuildOptions: commonEsbuildTweaks(),
   },
 
@@ -147,9 +173,6 @@ export default defineConfig([
     platform: 'browser',
     treeshake: 'smallest',
     external: ['undici'],
-    env: {
-      BROWSER: 'true',
-    },
     outExtension: ({ format }) => ({ js: format === 'cjs' ? '.cjs' : '.mjs' }),
     esbuildOptions: commonEsbuildTweaks(),
   },
