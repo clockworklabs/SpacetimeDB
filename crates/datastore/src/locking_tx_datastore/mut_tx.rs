@@ -332,6 +332,8 @@ impl MutTxId {
     }
 
     pub fn drop_table(&mut self, table_id: TableId) -> Result<()> {
+        self.clear_table(table_id)?;
+
         let schema = &*self.schema_for_table(table_id)?;
 
         for row in &schema.indexes {
@@ -358,8 +360,10 @@ impl MutTxId {
             )?;
         }
 
-        // Delete the table and its rows and indexes from memory.
+        // Delete the table from memory, both in the tx an committed states.
         self.tx_state.insert_tables.remove(&table_id);
+        // No need to keep the delete tables.
+        // By seeing `PendingSchemaChange::TableRemoved`, `merge` knows that all rows were deleted.
         self.tx_state.delete_tables.remove(&table_id);
         let commit_table = self
             .committed_state_write_lock
@@ -1913,6 +1917,26 @@ impl MutTxId {
             table_id,
             row_pointer,
         )
+    }
+
+    // Clears the table for `table_id`, removing all rows.
+    pub fn clear_table(&mut self, table_id: TableId) -> Result<usize> {
+        // Get the commit table.
+        let (commit_table, commit_bs, ..) = self.committed_state_write_lock.get_table_and_blob_store(table_id)?;
+
+        // Get the insert table and delete all rows from it.
+        let (tx_table, tx_blob_store, delete_table) = self
+            .tx_state
+            .get_table_and_blob_store_or_create_from(table_id, commit_table);
+        let mut rows_removed = tx_table.clear(tx_blob_store);
+
+        // Mark every row in the committed state as deleted.
+        for row in commit_table.scan_rows(commit_bs) {
+            delete_table.insert(row.pointer());
+            rows_removed += 1;
+        }
+
+        Ok(rows_removed)
     }
 }
 

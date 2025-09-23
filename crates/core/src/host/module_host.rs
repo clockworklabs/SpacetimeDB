@@ -904,7 +904,8 @@ impl ModuleHost {
             let workload = Workload::Internal;
             stdb.with_auto_commit(workload, |mut_tx| {
                 stdb.clear_table(mut_tx, ST_CONNECTION_CREDENTIALS_ID)?;
-                stdb.clear_table(mut_tx, ST_CLIENT_ID)
+                stdb.clear_table(mut_tx, ST_CLIENT_ID)?;
+                Ok::<(), DBError>(())
             })
         })
         .await?

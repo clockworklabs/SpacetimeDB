@@ -1427,13 +1427,9 @@ impl RelationalDB {
     }
 
     /// Clear all rows from a table without dropping it.
-    pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
-        let relation = self
-            .iter_mut(tx, table_id)?
-            .map(|row_ref| row_ref.pointer())
-            .collect::<Vec<_>>();
-        self.delete(tx, table_id, relation);
-        Ok(())
+    pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<usize, DBError> {
+        let rows_deleted = tx.clear_table(table_id)?;
+        Ok(rows_deleted)
     }
 
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
