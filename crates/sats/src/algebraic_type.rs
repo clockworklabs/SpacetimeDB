@@ -7,6 +7,7 @@ use crate::de::Deserialize;
 use crate::meta_type::MetaType;
 use crate::product_type::{CONNECTION_ID_TAG, IDENTITY_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG};
 use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG};
+use crate::typespace::Typespace;
 use crate::{i256, u256};
 use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SpacetimeType, SumType, SumTypeVariant};
 use derive_more::From;
@@ -446,38 +447,41 @@ impl AlgebraicType {
         }
     }
 
-    pub fn type_check(&self, value: &AlgebraicValue) -> bool {
+    pub fn type_check(&self, value: &AlgebraicValue, typespace: &Typespace) -> bool {
         match value {
-            AlgebraicValue::Min | AlgebraicValue::Max => return false,
+            AlgebraicValue::Min | AlgebraicValue::Max => return true,
             _ => {}
         }
 
-        match self {
-            AlgebraicType::String => matches!(value, AlgebraicValue::String(_)),
-            AlgebraicType::Bool => matches!(value, AlgebraicValue::Bool(_)),
-            AlgebraicType::I8 => matches!(value, AlgebraicValue::I8(_)),
-            AlgebraicType::U8 => matches!(value, AlgebraicValue::U8(_)),
-            AlgebraicType::I16 => matches!(value, AlgebraicValue::I16(_)),
-            AlgebraicType::U16 => matches!(value, AlgebraicValue::U16(_)),
-            AlgebraicType::I32 => matches!(value, AlgebraicValue::I32(_)),
-            AlgebraicType::U32 => matches!(value, AlgebraicValue::U32(_)),
-            AlgebraicType::I64 => matches!(value, AlgebraicValue::I64(_)),
-            AlgebraicType::U64 => matches!(value, AlgebraicValue::U64(_)),
-            AlgebraicType::I128 => matches!(value, AlgebraicValue::I128(_)),
-            AlgebraicType::U128 => matches!(value, AlgebraicValue::U128(_)),
-            AlgebraicType::I256 => matches!(value, AlgebraicValue::I256(_)),
-            AlgebraicType::U256 => matches!(value, AlgebraicValue::U256(_)),
-            AlgebraicType::F32 => matches!(value, AlgebraicValue::F32(_)),
-            AlgebraicType::F64 => matches!(value, AlgebraicValue::F64(_)),
-
-            AlgebraicType::Sum(sum_ty) => sum_ty.type_check(value),
-            AlgebraicType::Product(product_ty) => product_ty.type_check(value),
-            AlgebraicType::Array(element_ty) => element_ty.type_check(value),
-
-            AlgebraicType::Ref(_) => {
-                // We cannot type check a Ref without the Typespace context
-                false
+        match (self, value) {
+            (AlgebraicType::Ref(r), _) => {
+                if let Some(resolved_ty) = typespace.get(*r) {
+                    resolved_ty.type_check(value, typespace)
+                } else {
+                    false
+                }
             }
+            (AlgebraicType::Sum(sum_ty), AlgebraicValue::Sum(sv)) => sum_ty.type_check(sv, typespace),
+            (AlgebraicType::Product(product_ty), AlgebraicValue::Product(pv)) => product_ty.type_check(pv, typespace),
+            (AlgebraicType::Array(array_ty), AlgebraicValue::Array(arr)) => array_ty.type_check(arr, typespace),
+
+            (AlgebraicType::String, AlgebraicValue::String(_)) => true,
+            (AlgebraicType::Bool, AlgebraicValue::Bool(_)) => true,
+            (AlgebraicType::I8, AlgebraicValue::I8(_)) => true,
+            (AlgebraicType::U8, AlgebraicValue::U8(_)) => true,
+            (AlgebraicType::I16, AlgebraicValue::I16(_)) => true,
+            (AlgebraicType::U16, AlgebraicValue::U16(_)) => true,
+            (AlgebraicType::I32, AlgebraicValue::I32(_)) => true,
+            (AlgebraicType::U32, AlgebraicValue::U32(_)) => true,
+            (AlgebraicType::I64, AlgebraicValue::I64(_)) => true,
+            (AlgebraicType::U64, AlgebraicValue::U64(_)) => true,
+            (AlgebraicType::I128, AlgebraicValue::I128(_)) => true,
+            (AlgebraicType::U128, AlgebraicValue::U128(_)) => true,
+            (AlgebraicType::I256, AlgebraicValue::I256(_)) => true,
+            (AlgebraicType::U256, AlgebraicValue::U256(_)) => true,
+            (AlgebraicType::F32, AlgebraicValue::F32(_)) => true,
+            (AlgebraicType::F64, AlgebraicValue::F64(_)) => true,
+            _ => false,
         }
     }
 }
@@ -745,6 +749,6 @@ mod tests {
             ("b", AlgebraicType::product([AlgebraicType::U16, AlgebraicType::U32])),
         ]);
 
-        at.type_check(&av);
+        at.type_check(&av, &Typespace::EMPTY);
     }
 }

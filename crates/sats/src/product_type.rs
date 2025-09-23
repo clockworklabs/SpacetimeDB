@@ -3,7 +3,10 @@ use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
 use crate::product_value::InvalidFieldError;
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SpacetimeType, ValueWithType, WithTypespace};
+use crate::{
+    AlgebraicType, AlgebraicValue, ProductTypeElement, ProductValue, SpacetimeType, Typespace, ValueWithType,
+    WithTypespace,
+};
 use core::ops::Deref;
 use spacetimedb_primitives::{ColId, ColList};
 
@@ -200,16 +203,13 @@ impl ProductType {
     }
 
     /// Returns whether `value` is compatible with this type.
-    pub fn type_check(&self, value: &AlgebraicValue) -> bool {
-        let AlgebraicValue::Product(pv) = value else {
-            return false;
-        };
-        pv.elements.len() == self.elements.len()
+    pub fn type_check(&self, value: &ProductValue, typespace: &Typespace) -> bool {
+        value.elements.len() == self.elements.len()
             && self
                 .elements
                 .iter()
-                .zip(&pv.elements)
-                .all(|(ty, val)| ty.algebraic_type.type_check(val))
+                .zip(&value.elements)
+                .all(|(ty, val)| ty.algebraic_type.type_check(val, typespace))
     }
 }
 

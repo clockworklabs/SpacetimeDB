@@ -514,11 +514,25 @@ impl MutTxId {
         column_schemas: Vec<ColumnSchema>,
         mut default_values: Vec<AlgebraicValue>,
     ) -> Result<TableId> {
-        let original_table_schema = Arc::unwrap_or_clone(self.schema_for_table(table_id)?);
+        let original_table_schema: TableSchema = (*self.schema_for_table(table_id)?).clone();
 
         // Only keep the default values of new columns.
-        let new_cols = column_schemas.len().saturating_sub(original_table_schema.columns.len());
-        default_values.drain(..default_values.len().saturating_sub(new_cols));
+        let new_cols = column_schemas
+            .len()
+            .checked_sub(original_table_schema.columns.len())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "new column schemas must be more than existing ones for table_id: {}",
+                    table_id
+                )
+            })?;
+        let older_defaults = default_values.len().checked_sub(new_cols).ok_or_else(|| {
+            anyhow::anyhow!(
+                "not enough default values provided for new columns for table_id: {}",
+                table_id
+            )
+        })?;
+        default_values.drain(..older_defaults);
 
         let ((tx_table, ..), _) = self.get_or_create_insert_table_mut(table_id)?;
 
@@ -592,7 +606,7 @@ impl MutTxId {
         table_schema: TableSchema,
         seq_values: HashMap<Box<str>, i128>,
     ) -> Result<TableId> {
-        let table_id = self.create_table(table_schema.clone())?;
+        let table_id = self.create_table(table_schema)?;
         let table_schema = self.schema_for_table(table_id)?;
 
         for seq in table_schema.sequences.iter() {

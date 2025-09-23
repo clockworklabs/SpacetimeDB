@@ -1,7 +1,7 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{impl_deserialize, impl_serialize, impl_st};
+use crate::{impl_deserialize, impl_serialize, impl_st, ArrayValue, Typespace};
 
 /// An array type is a homogeneous product type of dynamic length.
 ///
@@ -25,12 +25,9 @@ impl MetaType for ArrayType {
 }
 
 impl ArrayType {
-    pub fn type_check(&self, value: &crate::AlgebraicValue) -> bool {
-        match value {
-            crate::AlgebraicValue::Array(array_value) => {
-                array_value.iter_cloned().all(|elem| self.elem_ty.type_check(&elem))
-            }
-            _ => false,
-        }
+    pub fn type_check(&self, array_value: &ArrayValue, typespace: &Typespace) -> bool {
+        array_value
+            .iter_cloned()
+            .all(|elem| self.elem_ty.type_check(&elem, typespace))
     }
 }

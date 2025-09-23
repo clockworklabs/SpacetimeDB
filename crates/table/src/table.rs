@@ -31,7 +31,6 @@ use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
-use spacetimedb_sats::layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
@@ -41,6 +40,10 @@ use spacetimedb_sats::{
     satn::Satn,
     ser::{Serialize, Serializer},
     u256, AlgebraicValue, ProductType, ProductValue,
+};
+use spacetimedb_sats::{
+    layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size},
+    Typespace,
 };
 use spacetimedb_schema::{
     def::IndexAlgorithm,
@@ -453,7 +456,7 @@ impl Table {
             let default_value = default_values
                 .get(idx)
                 .ok_or_else(|| make_err(AddColumnsErrorReason::DefaultValueMissing(new_col.col_pos)))?;
-            if !new_col.col_type.type_check(default_value) {
+            if !new_col.col_type.type_check(default_value, Typespace::EMPTY) {
                 return Err(make_err(AddColumnsErrorReason::DefaultValueTypeMismatch(
                     new_col.col_pos,
                 )));
