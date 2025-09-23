@@ -449,7 +449,7 @@ impl AlgebraicType {
 
     pub fn type_check(&self, value: &AlgebraicValue, typespace: &Typespace) -> bool {
         match (self, value) {
-            (_, AlgebraicValue::Min | AlgebraicValue::Max) => true
+            (_, AlgebraicValue::Min | AlgebraicValue::Max) => true,
             (AlgebraicType::Ref(r), _) => {
                 if let Some(resolved_ty) = typespace.get(*r) {
                     resolved_ty.type_check(value, typespace)
