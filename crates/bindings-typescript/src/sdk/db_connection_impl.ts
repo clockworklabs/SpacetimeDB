@@ -10,6 +10,7 @@ import { BinaryWriter } from '../';
 import { BsatnRowList } from './client_api/bsatn_row_list_type.ts';
 import { ClientMessage } from './client_api/client_message_type.ts';
 import { DatabaseUpdate } from './client_api/database_update_type.ts';
+import { OneOffTable } from './client_api/one_off_table_type.ts';
 import { QueryUpdate } from './client_api/query_update_type.ts';
 import { ServerMessage } from './client_api/server_message_type.ts';
 import { TableUpdate as RawTableUpdate } from './client_api/table_update_type.ts';
@@ -559,7 +560,7 @@ export class DbConnectionImpl<
   }
 
   #applyTableState(
-    tableStates: clientApi.OneOffTable[],
+    tableStates: OneOffTable[],
     eventContext: EventContextInterface
   ): Map<TableCache, PendingCallback[]> {
     let tables: Map<TableCache, PendingCallback[]> = new Map();

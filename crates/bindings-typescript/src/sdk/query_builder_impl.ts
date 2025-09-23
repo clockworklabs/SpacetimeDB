@@ -5,7 +5,7 @@ import type {
   QueryEventContextInterface,
 } from './event_context';
 import { EventEmitter } from './event_emitter';
-import type { TimeDuration } from './time_duration';
+import type { TimeDuration } from '../';
 
 export class QueryBuilderImpl<
   DBView = any,
