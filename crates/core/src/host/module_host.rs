@@ -1111,17 +1111,9 @@ impl ModuleHost {
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, message: &str) {
-        self.replica_ctx().logger.write(
-            log_level,
-            &Record {
-                ts: chrono::Utc::now(),
-                target: None,
-                filename: Some("external"),
-                line_number: None,
-                message,
-            },
-            &(),
-        )
+        self.replica_ctx()
+            .logger
+            .write(log_level, &Record::injected(message), &())
     }
 
     /// Execute a one-off query and send the results to the given client.

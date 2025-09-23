@@ -61,6 +61,7 @@ pub enum LogLevel {
     Panic,
 }
 
+/// Keep this in sync with `spacetimedb_core::database_logger::Record`.
 #[serde_with::serde_as]
 #[derive(serde::Deserialize)]
 struct Record<'a> {
@@ -73,6 +74,8 @@ struct Record<'a> {
     #[serde(borrow)]
     filename: Option<Cow<'a, str>>,
     line_number: Option<u32>,
+    #[serde(borrow)]
+    function: Option<Cow<'a, str>>,
     #[serde(borrow)]
     message: Cow<'a, str>,
     trace: Option<Vec<BacktraceFrame<'a>>>,
@@ -195,9 +198,19 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         out.set_color(&color)?;
         write!(out, "{level:>5}: ")?;
         out.reset()?;
+        let mut need_space = false;
         let dimmed = ColorSpec::new().set_dimmed(true).clone();
+        if let Some(function) = record.function {
+            out.set_color(&dimmed)?;
+            write!(out, "{function}")?;
+            out.reset()?;
+            need_space = true;
+        }
         if let Some(filename) = record.filename {
             out.set_color(&dimmed)?;
+            if need_space {
+                write!(out, " ")?;
+            }
             write!(out, "{filename}")?;
             if let Some(line) = record.line_number {
                 write!(out, ":{line}")?;
