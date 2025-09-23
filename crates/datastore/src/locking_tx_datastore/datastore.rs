@@ -3241,7 +3241,7 @@ mod tests {
         let tx_data = commit(&datastore, tx)?;
         let (_, deleted_rows) = tx_data
             .deletes()
-            .find(|(id, ..)| **id == table_id)
+            .find(|(id, _)| **id == table_id)
             .expect("should have deleted rows for `table_id`");
         assert_eq!(&**deleted_rows, [row]);
         assert!(tx_data.truncates().contains(&table_id), "table should be truncated");

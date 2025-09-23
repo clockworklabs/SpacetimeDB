@@ -176,11 +176,11 @@ pub struct TxData {
     inserts: BTreeMap<TableId, Arc<[ProductValue]>>,
     /// The deleted rows per table.
     deletes: BTreeMap<TableId, Arc<[ProductValue]>>,
-
-    /// The set of `TableId`s for tables that have been truncated.
+    /// *Truncating* means that all rows in the table have been deleted.
+    /// In other words, a truncated table is a cleared table.
     ///
-    /// “Truncating” means that all rows in the table have been deleted, or the table
-    /// itself has been dropped
+    /// Note that when a table has an entry in `truncates`,
+    /// it will also have an entry in `deletes`.
     truncates: IntSet<TableId>,
     /// Map of all `TableId`s in both `inserts` and `deletes` to their
     /// corresponding table name.

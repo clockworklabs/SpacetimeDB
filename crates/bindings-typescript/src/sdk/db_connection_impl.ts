@@ -1,12 +1,12 @@
-import { ConnectionId } from 'spacetimedb';
+import { ConnectionId } from '../';
 import {
   AlgebraicType,
   type AlgebraicTypeVariants,
   type ComparablePrimitive,
-} from 'spacetimedb';
-import { parseValue } from 'spacetimedb';
-import { BinaryReader } from 'spacetimedb';
-import { BinaryWriter } from 'spacetimedb';
+} from '../';
+import { parseValue } from '../';
+import { BinaryReader } from '../';
+import { BinaryWriter } from '../';
 import { BsatnRowList } from './client_api/bsatn_row_list_type.ts';
 import { ClientMessage } from './client_api/client_message_type.ts';
 import { DatabaseUpdate } from './client_api/database_update_type.ts';
@@ -25,7 +25,7 @@ import {
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import { decompress } from './decompress.ts';
-import type { Identity } from 'spacetimedb';
+import type { Identity } from '../';
 import type {
   IdentityTokenMessage,
   Message,

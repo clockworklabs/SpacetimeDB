@@ -742,10 +742,7 @@ mod tests {
         let av = AlgebraicValue::sum(1, AlgebraicValue::from(product![0u16, 1u32]));
         let at = AlgebraicType::sum([
             ("a", AlgebraicType::U8),
-            (
-                "b",
-                AlgebraicType::product([AlgebraicType::U16, AlgebraicType::U32])
-            ),
+            ("b", AlgebraicType::product([AlgebraicType::U16, AlgebraicType::U32])),
         ]);
 
         at.type_check(&av);

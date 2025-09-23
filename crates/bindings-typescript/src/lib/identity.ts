@@ -55,4 +55,11 @@ export class Identity {
   static fromString(str: string): Identity {
     return new Identity(str);
   }
+
+  /**
+   * Zero identity (0x0000000000000000000000000000000000000000000000000000000000000000)
+   */
+  static zero(): Identity {
+    return new Identity(0n);
+  }
 }

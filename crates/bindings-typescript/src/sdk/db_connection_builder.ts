@@ -1,6 +1,6 @@
 import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
-import type { Identity } from 'spacetimedb';
+import type { Identity } from '../';
 import type RemoteModule from './spacetime_module';
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';

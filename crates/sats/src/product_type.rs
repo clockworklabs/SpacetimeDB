@@ -201,14 +201,15 @@ impl ProductType {
 
     /// Returns whether `value` is compatible with this type.
     pub fn type_check(&self, value: &AlgebraicValue) -> bool {
-        let AlgebraicValue::Product(pv) = value {
+        let AlgebraicValue::Product(pv) = value else {
             return false;
         };
-        pv.elements.len() == self.elements.len() &&
-        self.elements
-              .iter()
-              .zip(&pv.elements)
-              .all(|(ty, val)| ty.algebraic_type.type_check(val))
+        pv.elements.len() == self.elements.len()
+            && self
+                .elements
+                .iter()
+                .zip(&pv.elements)
+                .all(|(ty, val)| ty.algebraic_type.type_check(val))
     }
 }
 

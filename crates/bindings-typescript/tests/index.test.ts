@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { AlgebraicType, t } from '../src/index';
+import {
+  AlgebraicType,
+  ConnectionId,
+  Identity,
+  t,
+  type IdentityTokenMessage,
+} from '../src/index';
 
 describe('TypeBuilder', () => {
   it('builds the correct algebraic type for a point', () => {
@@ -129,5 +135,20 @@ describe('TypeBuilder', () => {
       },
     });
     expect(col.columnMetadata.isScheduleAt).toBe(true);
+  });
+});
+
+describe('Identity', () => {
+  it('imports something from the spacetimedb sdk', () => {
+    const _msg: IdentityTokenMessage = {
+      tag: 'IdentityToken',
+      identity: Identity.fromString(
+        '0xc200000000000000000000000000000000000000000000000000000000000000'
+      ),
+      token: 'some-token',
+      connectionId: ConnectionId.fromString(
+        '0x00000000000000000000000000000000'
+      ),
+    };
   });
 });

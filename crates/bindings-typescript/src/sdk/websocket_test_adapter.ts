@@ -1,4 +1,4 @@
-import { AlgebraicType, BinaryWriter } from 'spacetimedb';
+import { AlgebraicType, BinaryWriter } from '../';
 import { ServerMessage } from './client_api/index.ts';
 
 class WebsocketTestAdapter {
