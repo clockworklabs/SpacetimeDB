@@ -5812,6 +5812,7 @@ dependencies = [
  "fs2",
  "fs_extra",
  "futures",
+ "futures-util",
  "hashbrown 0.15.3",
  "hex",
  "hostname",

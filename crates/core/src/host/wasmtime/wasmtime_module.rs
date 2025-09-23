@@ -6,8 +6,8 @@ use crate::energy::ReducerBudget;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
 use crate::host::wasm_common::*;
-use crate::util::poll_once_executor::poll_once;
 use crate::util::string_from_utf8_lossy_owned;
+use futures_util::FutureExt;
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use wasmtime::{
     AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace, WasmParams,
@@ -94,15 +94,16 @@ const CALL_FAILURE: i32 = HOST_CALL_FAILURE.get() as i32;
 /// Our Wasmtime is configured for `async` execution, and will panic if we use the non-async [`TypedFunc::call`].
 /// The `async` config is necessary to allow procedures to suspend, e.g. when making HTTP calls or acquiring transactions.
 /// However, most of the WASM we execute, incl. reducers and startup functions, should never block/yield.
-/// Rather than crossing our fingers and trusting, we run [`TypedFunc::call_async`] in [`crate::util::poll_once_executor`],
-/// a custom "async executor" which invokes [`std::task::Future::poll`] exactly once.
+/// Rather than crossing our fingers and trusting, we run [`TypedFunc::call_async`] in [`FutureExt::now_or_never`],
+/// an "async executor" which invokes [`std::task::Future::poll`] exactly once.
 fn call_sync_typed_func<Args: WasmParams, Ret: WasmResults>(
     typed_func: &TypedFunc<Args, Ret>,
     store: &mut Store<WasmInstanceEnv>,
     args: Args,
 ) -> anyhow::Result<Ret> {
     let fut = typed_func.call_async(store, args);
-    poll_once(fut).expect("`call_async` of supposedly synchronous WASM function returned `Poll::Pending`")
+    fut.now_or_never()
+        .expect("`call_async` of supposedly synchronous WASM function returned `Poll::Pending`")
 }
 
 impl module_host_actor::WasmInstancePre for WasmtimeModule {
@@ -113,7 +114,8 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         let mut store = Store::new(self.module.module().engine(), env);
         let instance_fut = self.module.instantiate_async(&mut store);
 
-        let instance = poll_once(instance_fut)
+        let instance = instance_fut
+            .now_or_never()
             .expect("`instantiate_async` did not immediately return `Ready`")
             .map_err(InitializationError::Instantiation)?;
 
