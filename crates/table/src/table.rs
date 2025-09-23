@@ -320,7 +320,7 @@ pub struct AddColumnsError {
 #[derive(Error, Debug)]
 pub enum AddColumnsErrorReason {
     #[error("Default value type does not match column type for column {0}")]
-    DefaultValueTypeNotMatch(ColId),
+    DefaultValueTypeMismatch(ColId),
     #[error("Missing default value for column {0}")]
     DefaultValueMissing(ColId),
     #[error("New column schema missing existing columns")]
@@ -417,8 +417,8 @@ impl Table {
     /// Validates that the proposed `new_columns` schema is compatible with the
     /// existing table schema and that all newly added columns are initialized
     /// with default values.
-    ///`new_columns`: columns schema after adding new columns ordered by `ColId`s.
-    ///`default_values`: default values for newly added columns ordered by `ColId`s.
+    /// - `new_columns`: columns schema after adding new columns ordered by `ColId`s.
+    /// - `default_values`: default values for newly added columns ordered by `ColId`s.
     pub fn validate_add_columns_schema(
         &self,
         new_columns: &[ColumnSchema],
@@ -454,7 +454,7 @@ impl Table {
                 .get(idx)
                 .ok_or_else(|| make_err(AddColumnsErrorReason::DefaultValueMissing(new_col.col_pos)))?;
             if !new_col.col_type.type_check(default_value) {
-                return Err(make_err(AddColumnsErrorReason::DefaultValueTypeNotMatch(
+                return Err(make_err(AddColumnsErrorReason::DefaultValueTypeMismatch(
                     new_col.col_pos,
                 )));
             }

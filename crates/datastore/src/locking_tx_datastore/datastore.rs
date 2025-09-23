@@ -3549,7 +3549,7 @@ mod tests {
         let table = tx.table(rollback_table_id);
         assert!(table.is_none(), "new table shouldn't be created if rolledback");
 
-        // Add colum and actually commit this time
+        // Add column and actually commit this time.
         tx.insert_product_value(table_id, &initial_row).unwrap();
         let new_table_id = datastore.add_columns_to_table_mut_tx(&mut tx, table_id, new_columns.clone(), defaults)?;
 

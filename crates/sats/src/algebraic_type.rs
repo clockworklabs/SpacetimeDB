@@ -744,11 +744,7 @@ mod tests {
             ("a", AlgebraicType::U8),
             (
                 "b",
-                AlgebraicType::Product(crate::ProductType::new(
-                    [AlgebraicType::U16.into(), AlgebraicType::U32.into()]
-                        .to_vec()
-                        .into_boxed_slice(),
-                )),
+                AlgebraicType::product([AlgebraicType::U16, AlgebraicType::U32])
             ),
         ]);
 

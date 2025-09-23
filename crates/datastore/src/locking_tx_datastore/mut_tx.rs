@@ -516,7 +516,7 @@ impl MutTxId {
     ) -> Result<TableId> {
         let original_table_schema = Arc::unwrap_or_clone(self.schema_for_table(table_id)?);
 
-        // Only keep default value of new columns.
+        // Only keep the default values of new columns.
         let new_cols = column_schemas.len().saturating_sub(original_table_schema.columns.len());
         default_values.drain(..default_values.len().saturating_sub(new_cols));
 
@@ -553,7 +553,7 @@ impl MutTxId {
                     s.sequence_name.clone(),
                     self.sequence_state_lock
                         .get_sequence_mut(s.sequence_id)
-                        .expect("sequence just created")
+                        .expect("sequence exists in original schema and should in sequence state.")
                         .get_value(),
                 )
             })
