@@ -10,6 +10,7 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
+use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
@@ -23,7 +24,7 @@ use spacetimedb_datastore::system_tables::{system_tables, StModuleRow};
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
-    TxTableTruncated, UpdateFlags,
+    UpdateFlags,
 };
 use spacetimedb_datastore::{
     locking_tx_datastore::{
@@ -889,18 +890,17 @@ impl RelationalDB {
                     rowdata: rowdata.clone(),
                 })
                 .collect();
+
+            let truncates: IntSet<TableId> = tx_data.truncates().collect();
+
             let deletes: Box<_> = tx_data
                 .deletes()
-                .filter(|(_, truncated, _)| *truncated == TxTableTruncated::No)
-                .map(|(table_id, _, rowdata)| Ops {
+                .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
                 })
-                .collect();
-            let truncates: Box<_> = tx_data
-                .deletes()
-                .filter(|(_, truncated, _)| *truncated == TxTableTruncated::Yes)
-                .map(|(table_id, ..)| *table_id)
+                // filter out deletes for tables that are truncated in the same transaction.
+                .filter(|ops| !truncates.contains(&ops.table_id))
                 .collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
@@ -911,7 +911,7 @@ impl RelationalDB {
                 mutations: Some(Mutations {
                     inserts,
                     deletes,
-                    truncates,
+                    truncates: truncates.into_iter().collect(),
                 }),
             };
 

@@ -76,10 +76,9 @@ impl DeltaTableIndexes {
             indexes
         }
 
-        let deletes = data.deletes().map(|(table_id, _, rows)| (table_id, rows));
         Self {
             inserts: build_indexes_for_rows(tx, meta, data.inserts()),
-            deletes: build_indexes_for_rows(tx, meta, deletes),
+            deletes: build_indexes_for_rows(tx, meta, data.deletes()),
         }
     }
 }

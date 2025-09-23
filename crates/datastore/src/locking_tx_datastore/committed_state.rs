@@ -610,13 +610,27 @@ impl CommittedState {
 
     pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
+        let mut truncates = IntSet::default();
 
         // First, apply deletes. This will free up space in the committed tables.
-        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables, tx_state.pending_schema_changes);
+        self.merge_apply_deletes(
+            &mut tx_data,
+            tx_state.delete_tables,
+            tx_state.pending_schema_changes,
+            &mut truncates,
+        );
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
-        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
+        self.merge_apply_inserts(
+            &mut tx_data,
+            tx_state.insert_tables,
+            tx_state.blob_store,
+            &mut truncates,
+        );
+
+        // Record any truncated tables in the `TxData`.
+        tx_data.add_truncates(truncates);
 
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
@@ -633,6 +647,7 @@ impl CommittedState {
         tx_data: &mut TxData,
         delete_tables: BTreeMap<TableId, DeleteTable>,
         pending_schema_changes: ThinVec<PendingSchemaChange>,
+        truncates: &mut IntSet<TableId>,
     ) {
         fn delete_rows(
             tx_data: &mut TxData,
@@ -641,6 +656,7 @@ impl CommittedState {
             blob_store: &mut dyn BlobStore,
             row_ptrs_len: usize,
             row_ptrs: impl Iterator<Item = RowPointer>,
+            truncates: &mut IntSet<TableId>,
         ) {
             let mut deletes = Vec::with_capacity(row_ptrs_len);
 
@@ -660,16 +676,25 @@ impl CommittedState {
 
             if !deletes.is_empty() {
                 let table_name = &*table.get_schema().table_name;
+                tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
                 let truncated = table.row_count == 0;
-                tx_data.set_deletes_for_table(table_id, table_name, deletes.into(), truncated);
+                if truncated {
+                    truncates.insert(table_id);
+                }
             }
         }
 
         for (table_id, row_ptrs) in delete_tables {
             match self.get_table_and_blob_store_mut(table_id) {
-                Ok((table, blob_store, ..)) => {
-                    delete_rows(tx_data, table_id, table, blob_store, row_ptrs.len(), row_ptrs.iter())
-                }
+                Ok((table, blob_store, ..)) => delete_rows(
+                    tx_data,
+                    table_id,
+                    table,
+                    blob_store,
+                    row_ptrs.len(),
+                    row_ptrs.iter(),
+                    truncates,
+                ),
                 Err(_) if !row_ptrs.is_empty() => panic!("Deletion for non-existent table {table_id:?}... huh?"),
                 Err(_) => {}
             }
@@ -688,6 +713,7 @@ impl CommittedState {
                     &mut self.blob_store,
                     row_ptrs.len(),
                     row_ptrs.into_iter(),
+                    truncates,
                 );
             }
         }
@@ -698,6 +724,7 @@ impl CommittedState {
         tx_data: &mut TxData,
         insert_tables: BTreeMap<TableId, Table>,
         tx_blob_store: impl BlobStore,
+        truncates: &mut IntSet<TableId>,
     ) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
         //             rather than copying individual rows out of them.
@@ -726,6 +753,11 @@ impl CommittedState {
             if !inserts.is_empty() {
                 let table_name = &*commit_table.get_schema().table_name;
                 tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
+
+                // if table has inserted rows, it cannot be truncated
+                if truncates.contains(&table_id) {
+                    truncates.remove(&table_id);
+                }
             }
 
             let (schema, _indexes, pages) = tx_table.consume_for_merge();
