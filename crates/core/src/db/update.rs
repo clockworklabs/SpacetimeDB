@@ -1,6 +1,7 @@
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::sql::parser::RowLevelExpr;
+use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::db::auth::StTableType;
@@ -35,6 +36,7 @@ impl UpdateLogger for SystemLogger {
 // drop_* become transactional.
 pub fn update_database(
     stdb: &RelationalDB,
+    subscriptions: &ModuleSubscriptions,
     tx: &mut MutTxId,
     auth_ctx: AuthCtx,
     plan: MigratePlan,
@@ -57,7 +59,9 @@ pub fn update_database(
 
     match plan {
         MigratePlan::Manual(plan) => manual_migrate_database(stdb, tx, plan, logger, existing_tables),
-        MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, auth_ctx, plan, logger, existing_tables),
+        MigratePlan::Auto(plan) => {
+            auto_migrate_database(stdb, subscriptions, tx, auth_ctx, plan, logger, existing_tables)
+        }
     }
 }
 
@@ -83,6 +87,7 @@ macro_rules! log {
 /// Automatically migrate a database.
 fn auto_migrate_database(
     stdb: &RelationalDB,
+    subscriptions: &ModuleSubscriptions,
     tx: &mut MutTxId,
     auth_ctx: AuthCtx,
     plan: AutoMigratePlan,
@@ -264,7 +269,12 @@ fn auto_migrate_database(
                     .collect();
                 stdb.add_columns_to_table(tx, table_id, column_schemas, default_values)?;
             }
-            _ => anyhow::bail!("migration step not implemented: {step:?}"),
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::DisconnectAllUsers => {
+                // Disconnect all clients from subscriptions.
+                // Any dangling clients will be handled during the launch of module hosts,
+                // which invokes `ModuleHost::call_identity_disconnected`.
+                subscriptions.remove_all_subscribers();
+            }
         }
     }
 
@@ -349,7 +359,14 @@ mod test {
         // Try to update the db.
         let mut tx = begin_mut_tx(&stdb);
         let plan = ponder_migrate(&old, &new)?;
-        update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        update_database(
+            &stdb,
+            &ModuleSubscriptions::for_test_new_runtime(Arc::new(stdb.db.clone())).0,
+            &mut tx,
+            auth_ctx,
+            plan,
+            &TestLogger,
+        )?;
 
         // Expect the schema change.
         let idx_b_id = stdb

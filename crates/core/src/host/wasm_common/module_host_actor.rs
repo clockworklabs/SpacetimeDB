@@ -306,7 +306,14 @@ impl InstanceCommon {
         system_logger.info(&format!("Updated program to {program_hash}"));
 
         let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
-        let res = crate::db::update::update_database(stdb, &mut tx, auth_ctx, plan, system_logger);
+        let res = crate::db::update::update_database(
+            stdb,
+            &replica_ctx.subscriptions,
+            &mut tx,
+            auth_ctx,
+            plan,
+            system_logger,
+        );
 
         match res {
             Err(e) => {

@@ -853,6 +853,11 @@ impl ModuleSubscriptions {
         subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id));
     }
 
+    pub fn remove_all_subscribers(&self) {
+        let mut subscriptions = self.subscriptions.write();
+        subscriptions.remove_all_clients();
+    }
+
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
     ///
     /// The returned [`ExecutionMetrics`] are reported in this method via `report_tx_metrics`.
