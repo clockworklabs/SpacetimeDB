@@ -281,7 +281,7 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
 """
 
     def test_add_table_columns(self):
-        """This tests that a module with invalid schema changes cannot be published without -c or a migration."""
+        """This tests that a module with adding columns with defaults can be published"""
 
         logging.info("Initial publish complete, trying to do an invalid update.")
 
