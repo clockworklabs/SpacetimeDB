@@ -23,3 +23,14 @@ impl MetaType for ArrayType {
         AlgebraicType::ZERO_REF
     }
 }
+
+impl ArrayType {
+    pub fn type_check(&self, value: &crate::AlgebraicValue) -> bool {
+        match value {
+            crate::AlgebraicValue::Array(array_value) => {
+                array_value.iter_cloned().all(|elem| self.elem_ty.type_check(&elem))
+            }
+            _ => false,
+        }
+    }
+}

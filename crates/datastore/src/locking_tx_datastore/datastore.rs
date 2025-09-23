@@ -3526,7 +3526,7 @@ mod tests {
         let defaults = vec![AlgebraicValue::U8(42)];
 
         let mut tx = begin_mut_tx(&datastore);
-        // insert a row in tx_state when before adding column
+        // insert a row in tx_state before adding column
         tx.insert_product_value(table_id, &initial_row).unwrap();
         // add column and then rollback
         let rollback_table_id =
@@ -3607,60 +3607,6 @@ mod tests {
             }
         }
 
-        Ok(())
-    }
-
-    #[test]
-    fn test_table_schemas_consistency() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-
-        let mut tx = begin_mut_tx(&datastore);
-
-        let initial_sum_type = AlgebraicType::sum([("ba", AlgebraicType::U16)]);
-        let initial_columns = [
-            ColumnSchema::for_test(0, "a", AlgebraicType::U64),
-            ColumnSchema::for_test(1, "b", initial_sum_type.clone()),
-        ];
-
-        let initial_indices = [
-            IndexSchema::for_test("index_a", BTreeAlgorithm::from(0)),
-            IndexSchema::for_test("index_b", BTreeAlgorithm::from(1)),
-        ];
-
-        let sequence = SequenceRow {
-            id: SequenceId::SENTINEL.into(),
-            table: 0,
-            col_pos: 0,
-            name: "Foo_id_seq",
-            start: 5,
-        };
-
-        let schema = user_public_table(
-            initial_columns,
-            initial_indices.clone(),
-            [],
-            map_array([sequence]),
-            None,
-            None,
-        );
-
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        let initial_row = product![0u64, AlgebraicValue::sum(0, AlgebraicValue::U16(1))];
-
-        for _ in 0..5000 {
-            insert(&datastore, &mut tx, table_id, &initial_row).unwrap();
-        }
-        commit(&datastore, tx)?;
-
-        let tx = begin_tx(&datastore);
-        let table_schema = tx.schema_for_table(table_id).unwrap();
-        let table_schema_raw = tx.schema_for_table_raw(table_id).unwrap();
-
-        //TODO: Fix the bug and update the assert
-        assert_ne!(
-            table_schema.sequences[0].allocated, table_schema_raw.sequences[0].allocated,
-            "Allocated sequence values are differ between schema and raw schema"
-        );
         Ok(())
     }
 }

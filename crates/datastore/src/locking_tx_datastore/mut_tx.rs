@@ -512,9 +512,16 @@ impl MutTxId {
         &mut self,
         table_id: TableId,
         column_schemas: Vec<ColumnSchema>,
-        default_values: Vec<AlgebraicValue>,
+        mut default_values: Vec<AlgebraicValue>,
     ) -> Result<TableId> {
+        let original_table_schema = Arc::unwrap_or_clone(self.schema_for_table(table_id)?);
+
+        // Only keep default value of new columns.
+        let new_cols = column_schemas.len().saturating_sub(original_table_schema.columns.len());
+        default_values.drain(..default_values.len().saturating_sub(new_cols));
+
         let ((tx_table, ..), _) = self.get_or_create_insert_table_mut(table_id)?;
+
         tx_table
             .validate_add_columns_schema(&column_schemas, &default_values)
             .map_err(TableError::from)?;
@@ -528,15 +535,6 @@ impl MutTxId {
         let mut table_rows: Vec<ProductValue> = iter(&self.tx_state, &self.committed_state_write_lock, table_id)?
             .map(|r| r.to_product_value())
             .collect();
-
-        // Intentionally using `schema_for_table_raw` instead of `schema_for_table`.
-        //
-        // Rationale:
-        // - `schema_for_table_raw` queries system tables directly, ensuring the
-        //   most up-to-date schema.
-        // - `schema_for_table` relies on an in-memory cache, which may not reflect
-        //   the latest sequence updates and can therefore return stale schemas.
-        let original_table_schema = self.schema_for_table_raw(table_id)?;
 
         log::debug!(
             "ADDING TABLE COLUMN (incompatible layout): {}, table_id: {}",

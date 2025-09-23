@@ -453,7 +453,7 @@ impl Table {
             let default_value = default_values
                 .get(idx)
                 .ok_or_else(|| make_err(AddColumnsErrorReason::DefaultValueMissing(new_col.col_pos)))?;
-            if Some(new_col.col_type.clone()) != default_value.type_of() {
+            if !new_col.col_type.type_check(default_value) {
                 return Err(make_err(AddColumnsErrorReason::DefaultValueTypeNotMatch(
                     new_col.col_pos,
                 )));

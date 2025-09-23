@@ -173,6 +173,19 @@ impl SumType {
     pub fn get_variant_by_tag(&self, tag: u8) -> Option<&SumTypeVariant> {
         self.variants.get(tag as usize)
     }
+
+    pub fn type_check(&self, value: &AlgebraicValue) -> bool {
+        match value {
+            AlgebraicValue::Sum(sv) => {
+                if let Some(variant) = self.get_variant_by_tag(sv.tag) {
+                    variant.algebraic_type.type_check(&sv.value)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
 }
 
 impl From<Box<[SumTypeVariant]>> for SumType {
