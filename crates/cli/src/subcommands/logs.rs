@@ -64,7 +64,7 @@ pub enum LogLevel {
 /// Sentinel value used for injected system logs.
 ///
 /// Keep this in sync with the constants in `spacetimedb_core::database_logger::Record`.
-const SENTINEL: &'static str = "__spacetimedb__";
+const SENTINEL: &str = "__spacetimedb__";
 
 /// Keep this in sync with `spacetimedb_core::database_logger::Record`.
 #[serde_with::serde_as]
