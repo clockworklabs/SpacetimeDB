@@ -1,29 +1,19 @@
 #![allow(clippy::too_many_arguments)]
 
 use std::num::NonZeroU32;
-use std::time::Instant;
-
+use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
-use crate::host::wasm_common::instrumentation;
+use crate::host::wasm_common::instrumentation::{span, CallTimes};
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
-use crate::host::wasm_common::{
-    err_to_errno, instrumentation::CallTimes, AbiRuntimeError, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx,
-    TimingSpanSet,
-};
+use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
 use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{errno, ColId};
+use std::time::Instant;
 use wasmtime::{AsContext, Caller, StoreContextMut};
-
-use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
-
-#[cfg(not(feature = "spacetimedb-wasm-instance-env-times"))]
-use instrumentation::noop as span;
-#[cfg(feature = "spacetimedb-wasm-instance-env-times")]
-use instrumentation::op as span;
 
 /// A stream of bytes which the WASM module can read from
 /// using [`WasmInstanceEnv::bytes_source_read`].
@@ -302,20 +292,11 @@ impl WasmInstanceEnv {
     }
 
     fn convert_wasm_result<T: From<u16>>(func: AbiCall, err: WasmError) -> RtResult<T> {
-        Err(match err {
-            WasmError::Db(err) => match err_to_errno(&err) {
-                Some(errno) => {
-                    log::debug!(
-                        "abi call to {func} returned an errno: {errno} ({})",
-                        errno::strerror(errno).unwrap_or("<unknown>")
-                    );
-                    return Ok(errno.get().into());
-                }
-                None => anyhow::Error::from(AbiRuntimeError { func, err }),
-            },
-            WasmError::BufferTooSmall => return Ok(errno::BUFFER_TOO_SMALL.get().into()),
-            WasmError::Wasm(err) => err,
-        })
+        match err {
+            WasmError::Db(err) => err_to_errno_and_log(func, err),
+            WasmError::BufferTooSmall => Ok(errno::BUFFER_TOO_SMALL.get().into()),
+            WasmError::Wasm(err) => Err(err),
+        }
     }
 
     /// Call the function `run` with the name `func`.
@@ -1318,12 +1299,8 @@ impl WasmInstanceEnv {
             let Some(span) = caller.data_mut().timing_spans.take(TimingSpanIdx(span_id)) else {
                 return Ok(errno::NO_SUCH_CONSOLE_TIMER.get().into());
             };
-
             let function = caller.data().log_record_function();
-            caller
-                .data()
-                .instance_env
-                .console_timer_end(&span, function, &caller.as_context());
+            caller.data().instance_env.console_timer_end(&span, function);
             Ok(0)
         })
     }

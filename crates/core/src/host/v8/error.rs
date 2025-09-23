@@ -1,6 +1,10 @@
 //! Utilities for error handling when dealing with V8.
 
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace};
+
+use super::serialize_to_js;
 use core::fmt;
+use spacetimedb_sats::Serialize;
 use v8::{Exception, HandleScope, Local, StackFrame, StackTrace, TryCatch, Value};
 
 /// The result of trying to convert a [`Value`] in scope `'scope` to some type `T`.
@@ -55,6 +59,60 @@ impl<'scope, M: IntoJsString> IntoException<'scope> for RangeError<M> {
     fn into_exception(self, scope: &mut HandleScope<'scope>) -> ExceptionValue<'scope> {
         let msg = self.0.into_string(scope);
         ExceptionValue(Exception::range_error(scope, msg))
+    }
+}
+
+/// A catchable termination error thrown in callbacks to indicate a host error.
+#[derive(Serialize)]
+pub(super) struct TerminationError {
+    __terminated__: String,
+}
+
+impl TerminationError {
+    /// Convert `anyhow::Error` to a termination error.
+    pub(super) fn from_error<'scope>(
+        scope: &mut HandleScope<'scope>,
+        error: &anyhow::Error,
+    ) -> ExcResult<ExceptionValue<'scope>> {
+        let __terminated__ = format!("{error}");
+        let error = Self { __terminated__ };
+        serialize_to_js(scope, &error).map(ExceptionValue)
+    }
+}
+
+/// A catchable error code thrown in callbacks
+/// to indicate bad arguments to a syscall.
+#[derive(Serialize)]
+pub(super) struct CodeError {
+    __code_error__: u16,
+}
+
+impl CodeError {
+    /// Create a code error from a code.
+    pub(super) fn from_code<'scope>(
+        scope: &mut HandleScope<'scope>,
+        __code_error__: u16,
+    ) -> ExcResult<ExceptionValue<'scope>> {
+        let error = Self { __code_error__ };
+        serialize_to_js(scope, &error).map(ExceptionValue)
+    }
+}
+
+/// A catchable error code thrown in callbacks
+/// to indicate that a buffer was too small and the minimum size required.
+#[derive(Serialize)]
+pub(super) struct BufferTooSmall {
+    __buffer_too_small__: u32,
+}
+
+impl BufferTooSmall {
+    /// Create a code error from a code.
+    pub(super) fn from_requirement<'scope>(
+        scope: &mut HandleScope<'scope>,
+        __buffer_too_small__: u32,
+    ) -> ExcResult<ExceptionValue<'scope>> {
+        let error = Self { __buffer_too_small__ };
+        serialize_to_js(scope, &error).map(ExceptionValue)
     }
 }
 
@@ -134,14 +192,14 @@ impl fmt::Display for JsError {
 }
 
 /// A V8 stack trace that is independent of a `'scope`.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct JsStackTrace {
     frames: Box<[JsStackTraceFrame]>,
 }
 
 impl JsStackTrace {
     /// Converts a V8 [`StackTrace`] into one independent of `'scope`.
-    fn from_trace<'scope>(scope: &mut HandleScope<'scope>, trace: Local<'scope, StackTrace>) -> Self {
+    pub(super) fn from_trace<'scope>(scope: &mut HandleScope<'scope>, trace: Local<'scope, StackTrace>) -> Self {
         let frames = (0..trace.get_frame_count())
             .map(|index| {
                 let frame = trace.get_frame(scope, index).unwrap();
@@ -149,6 +207,12 @@ impl JsStackTrace {
             })
             .collect::<Box<[_]>>();
         Self { frames }
+    }
+
+    /// Construct a backtrace from `scope`.
+    pub(super) fn from_current_stack_trace(scope: &mut HandleScope<'_>) -> ExcResult<Self> {
+        let trace = StackTrace::current_stack_trace(scope, 1024).ok_or_else(exception_already_thrown)?;
+        Ok(Self::from_trace(scope, trace))
     }
 }
 
@@ -162,8 +226,26 @@ impl fmt::Display for JsStackTrace {
     }
 }
 
+impl BacktraceProvider for JsStackTrace {
+    fn capture(&self) -> Box<dyn ModuleBacktrace> {
+        Box::new(self.clone())
+    }
+}
+
+impl ModuleBacktrace for JsStackTrace {
+    fn frames(&self) -> Vec<BacktraceFrame<'_>> {
+        self.frames
+            .iter()
+            .map(|frame| BacktraceFrame {
+                module_name: frame.script_name.as_deref(),
+                func_name: frame.fn_name.as_deref(),
+            })
+            .collect()
+    }
+}
+
 /// A V8 stack trace frame that is independent of a `'scope`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct JsStackTraceFrame {
     line: usize,
     column: usize,
@@ -197,12 +279,22 @@ impl JsStackTraceFrame {
             is_user_js: frame.is_user_javascript(),
         }
     }
+
+    /// Returns the name of the function that was called.
+    fn fn_name(&self) -> &str {
+        self.fn_name.as_deref().unwrap_or("<anonymous>")
+    }
+
+    /// Returns the name of the script where the function resides.
+    fn script_name(&self) -> &str {
+        self.script_name.as_deref().unwrap_or("<unknown location>")
+    }
 }
 
 impl fmt::Display for JsStackTraceFrame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let fn_name = self.fn_name.as_deref().unwrap_or("<anonymous>");
-        let script_name = self.script_name.as_deref().unwrap_or("<unknown location>");
+        let fn_name = self.fn_name();
+        let script_name = self.script_name();
 
         // This isn't exactly the same format as chrome uses,
         // but it's close enough for now.
@@ -267,7 +359,8 @@ pub(super) fn catch_exception<'scope, T>(
     body: impl FnOnce(&mut HandleScope<'scope>) -> Result<T, ErrorOrException<ExceptionThrown>>,
 ) -> Result<T, ErrorOrException<JsError>> {
     let scope = &mut TryCatch::new(scope);
-    body(scope).map_err(|e| match e {
+    let ret = body(scope);
+    ret.map_err(|e| match e {
         ErrorOrException::Err(e) => ErrorOrException::Err(e),
         ErrorOrException::Exception(_) => ErrorOrException::Exception(JsError::from_caught(scope)),
     })
