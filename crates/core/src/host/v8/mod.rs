@@ -1,42 +1,40 @@
 #![allow(dead_code)]
 
-use super::module_common::{build_common_module_from_raw, ModuleCommon};
+use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallReducerParams, DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime};
 use super::UpdateDatabaseResult;
-use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
-use crate::host::module_common::run_describer;
-use crate::host::v8::de::{scratch_buf, v8_interned_string};
+use crate::host::v8::error::{BufferTooSmall, JsStackTrace};
+use crate::host::v8::syscall::{register_host_funs, FnRet};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     DescribeError, EnergyStats, ExecuteResult, ExecutionTimings, InstanceCommon, ReducerOp,
 };
-use crate::host::wasm_common::{RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
+use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::wasmtime::{epoch_ticker, ticks_in_duration, EPOCH_TICKS_PER_SECOND};
 use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
-use anyhow::Context as _;
 use core::ffi::c_void;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
-use core::{ptr, str};
+use core::{iter, ptr, str};
 use de::deserialize_js;
-use error::{catch_exception, exception_already_thrown, log_traceback, ExcResult, Throwable};
+use error::{catch_exception, exception_already_thrown, log_traceback, CodeError, TerminationError, Throwable};
 use from_value::cast;
 use key_cache::get_or_create_key_cache;
 use ser::serialize_to_js;
 use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::Serialize;
+use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use v8::{
-    Context, ContextOptions, ContextScope, Function, FunctionCallbackArguments, HandleScope, Isolate, IsolateHandle,
-    Local, Object, OwnedIsolate, ReturnValue, Value,
+    Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, IsolateHandle, Local, Object, OwnedIsolate,
+    Value,
 };
 
 mod de;
@@ -44,6 +42,7 @@ mod error;
 mod from_value;
 mod key_cache;
 mod ser;
+mod syscall;
 mod to_value;
 
 /// The V8 runtime, for modules written in e.g., JS or TypeScript.
@@ -73,21 +72,24 @@ struct V8RuntimeInner {
 }
 
 impl V8RuntimeInner {
+    /// Initializes the V8 platform and engine.
+    ///
+    /// Should only be called once but it isn't unsound to call it more times.
     fn init() -> Self {
         // Our current configuration:
         // - will pick a number of worker threads for background jobs based on the num CPUs.
         // - does not allow idle tasks
-        let platform = v8::new_default_platform(0, false).make_shared();
+        let platform = v8::new_single_threaded_default_platform(false).make_shared();
         // Initialize V8. Internally, this uses a global lock so it's safe that we don't.
         v8::V8::initialize_platform(platform);
         v8::V8::initialize();
 
         Self { _priv: () }
     }
+}
 
+impl ModuleRuntime for V8RuntimeInner {
     fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
-        #![allow(unreachable_code, unused_variables)]
-
         log::trace!(
             "Making new V8 module host actor for database {} with module {}",
             mcc.replica_ctx.database_identity,
@@ -130,10 +132,10 @@ impl DynModule for JsModule {
 impl Module for JsModule {
     type Instance = JsInstance;
 
-    type InitialInstances<'a> = std::iter::Empty<JsInstance>;
+    type InitialInstances<'a> = iter::Empty<JsInstance>;
 
     fn initial_instances(&mut self) -> Self::InitialInstances<'_> {
-        std::iter::empty()
+        iter::empty()
     }
 
     fn info(&self) -> Arc<ModuleInfo> {
@@ -145,12 +147,12 @@ impl Module for JsModule {
 
         let common = &self.common;
         let instance_env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
-        let instance = Some(JsInstanceEnv {
+        let instance = JsInstanceEnvSlot::new(JsInstanceEnv {
             instance_env,
             reducer_start: Instant::now(),
             call_times: CallTimes::new(),
-            iters: Default::default(),
-            reducer_name: String::from("<initializing>"),
+            iters: <_>::default(),
+            reducer_name: "<initializing>".into(),
             chunk_pool: <_>::default(),
             timing_spans: <_>::default(),
         });
@@ -169,16 +171,51 @@ impl Module for JsModule {
     }
 }
 
-const EXPECT_ENV: &str = "there should be a `JsInstanceEnv`";
+/// The [`JsInstance`]'s way of holding a [`JsInstanceEnv`]
+/// with possible temporary extraction.
+struct JsInstanceEnvSlot {
+    /// NOTE(centril): The `Option<_>` is due to moving the environment
+    /// into [`Isolate`]s and back.
+    instance: Option<JsInstanceEnv>,
+}
 
+impl JsInstanceEnvSlot {
+    /// Creates a new slot to hold `instance`.
+    fn new(instance: JsInstanceEnv) -> Self {
+        Self {
+            instance: Some(instance),
+        }
+    }
+
+    const EXPECT_ENV: &str = "there should be a `JsInstanceEnv`";
+
+    /// Provides exclusive access to the instance's environment,
+    /// assuming it hasn't been moved to an [`Isolate`].
+    fn get_mut(&mut self) -> &mut JsInstanceEnv {
+        self.instance.as_mut().expect(Self::EXPECT_ENV)
+    }
+
+    /// Moves the instance's environment to `isolate`,
+    /// assuming it hasn't already been moved there.
+    fn move_to_isolate(&mut self, isolate: &mut Isolate) {
+        isolate.set_slot(self.instance.take().expect(Self::EXPECT_ENV));
+    }
+
+    /// Steals the instance's environment back from `isolate`,
+    /// assuming `isolate` still has it in a slot.
+    fn take_from_isolate(&mut self, isolate: &mut Isolate) {
+        self.instance = isolate.remove_slot();
+    }
+}
+
+/// Access the `JsInstanceEnv` temporarily bound to an [`Isolate`].
+///
+/// This assumes that the slot has been set in the isolate already.
 fn env_on_isolate(isolate: &mut Isolate) -> &mut JsInstanceEnv {
-    isolate.get_slot_mut().expect(EXPECT_ENV)
+    isolate.get_slot_mut().expect(JsInstanceEnvSlot::EXPECT_ENV)
 }
 
-fn env_on_instance(inst: &mut JsInstance) -> &mut JsInstanceEnv {
-    inst.instance.as_mut().expect(EXPECT_ENV)
-}
-
+/// The environment of a [`JsInstance`].
 struct JsInstanceEnv {
     instance_env: InstanceEnv,
 
@@ -221,6 +258,13 @@ impl JsInstanceEnv {
         &self.reducer_name
     }
 
+    /// Returns the name of the most recent reducer to be run in this environment,
+    /// or `None` if no reducer is actively being invoked.
+    fn log_record_function(&self) -> Option<&str> {
+        let function = self.reducer_name();
+        (!function.is_empty()).then_some(function)
+    }
+
     /// Returns the name of the most recent reducer to be run in this environment.
     pub fn reducer_start(&self) -> Instant {
         self.reducer_start
@@ -240,11 +284,26 @@ impl JsInstanceEnv {
             wasm_instance_env_call_times,
         }
     }
+
+    /// Returns the [`ReplicaContext`] for this environment.
+    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+        &self.instance_env.replica_ctx
+    }
 }
 
 struct JsInstance {
+    /// Information common to instances of all runtimes.
+    ///
+    /// (The type is shared, the data is not.)
     common: InstanceCommon,
-    instance: Option<JsInstanceEnv>,
+
+    /// The environment of the instance.
+    instance: JsInstanceEnvSlot,
+
+    /// The module's program (JS code).
+    /// Used to startup the [`Isolate`]s.
+    ///
+    // TODO(v8): replace with snapshots.
     program: Arc<str>,
 }
 
@@ -259,43 +318,53 @@ impl ModuleInstance for JsInstance {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let replica_ctx = &env_on_instance(self).instance_env.replica_ctx.clone();
+        let replica_ctx = self.instance.get_mut().replica_ctx();
         self.common
             .update_database(replica_ctx, program, old_module_info, policy)
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
-        let replica_ctx = env_on_instance(self).instance_env.replica_ctx.clone();
+        let replica_ctx = &self.instance.get_mut().replica_ctx().clone();
 
         self.common
-            .call_reducer_with_tx(&replica_ctx, tx, params, log_traceback, |tx, op, budget| {
-                let callback_every = EPOCH_TICKS_PER_SECOND;
-                extern "C" fn callback(isolate: &mut Isolate, _: *mut c_void) {
+            .call_reducer_with_tx(replica_ctx, tx, params, log_traceback, |tx, op, budget| {
+                /// Called by a thread separate to V8 execution
+                /// every [`EPOCH_TICKS_PER_SECOND`] ticks (~every 1 second)
+                /// to log that the reducer is still running.
+                extern "C" fn cb_log_long_running(isolate: &mut Isolate, _: *mut c_void) {
                     let env = env_on_isolate(isolate);
                     let database = env.instance_env.replica_ctx.database_identity;
                     let reducer = env.reducer_name();
                     let dur = env.reducer_start().elapsed();
-                    tracing::warn!(reducer, ?database, "Wasm has been running for {dur:?}");
+                    tracing::warn!(reducer, ?database, "JavaScript has been running for {dur:?}");
                 }
 
-                // Prepare the isolate with the env.
+                // Start timer and prepare the isolate with the env.
                 let mut isolate = Isolate::new(<_>::default());
-                isolate.set_slot(self.instance.take().expect(EXPECT_ENV));
+                self.instance.get_mut().instance_env.start_reducer(op.timestamp);
+                self.instance.move_to_isolate(&mut isolate);
 
-                // TODO(v8): snapshots, module->host calls
+                // TODO(v8): snapshots
                 // Call the reducer.
-                env_on_isolate(&mut isolate).instance_env.start_reducer(op.timestamp);
-                let (mut isolate, (tx, call_result)) =
-                    with_script(isolate, &self.program, callback_every, callback, budget, |scope, _| {
+                let (mut isolate, (tx, call_result)) = with_script(
+                    isolate,
+                    &self.program,
+                    EPOCH_TICKS_PER_SECOND,
+                    cb_log_long_running,
+                    budget,
+                    |scope, _| {
                         let (tx, call_result) = env_on_isolate(scope)
                             .instance_env
                             .tx
                             .clone()
                             .set(tx, || call_call_reducer_from_op(scope, op));
                         (tx, call_result)
-                    });
-                let timings = env_on_isolate(&mut isolate).finish_reducer();
-                self.instance = isolate.remove_slot();
+                    },
+                );
+
+                // Steal back the env and finish timings.
+                self.instance.take_from_isolate(&mut isolate);
+                let timings = self.instance.get_mut().finish_reducer();
 
                 // Derive energy stats.
                 let used = duration_to_budget(timings.total_duration);
@@ -321,7 +390,7 @@ fn with_script<R>(
     isolate: OwnedIsolate,
     code: &str,
     callback_every: u64,
-    callback: IsolateCallback,
+    callback: InterruptCallback,
     budget: ReducerBudget,
     logic: impl for<'scope> FnOnce(&mut HandleScope<'scope>, Local<'scope, Value>) -> R,
 ) -> (OwnedIsolate, R) {
@@ -329,7 +398,7 @@ fn with_script<R>(
         let code = v8::String::new(scope, code).unwrap();
         let script_val = v8::Script::compile(scope, code, None).unwrap().run(scope).unwrap();
 
-        register_host_funs(scope);
+        register_host_funs(scope).unwrap();
 
         logic(scope, script_val)
     })
@@ -339,7 +408,7 @@ fn with_script<R>(
 pub(crate) fn with_scope<R>(
     mut isolate: OwnedIsolate,
     callback_every: u64,
-    callback: IsolateCallback,
+    callback: InterruptCallback,
     budget: ReducerBudget,
     logic: impl FnOnce(&mut HandleScope<'_>) -> R,
 ) -> (OwnedIsolate, R) {
@@ -361,7 +430,8 @@ pub(crate) fn with_scope<R>(
     (isolate, ret)
 }
 
-type IsolateCallback = extern "C" fn(&mut Isolate, *mut c_void);
+/// A callback passed to [`IsolateHandle::request_interrupt`].
+type InterruptCallback = extern "C" fn(&mut Isolate, *mut c_void);
 
 /// Spawns a thread that will terminate reducer execution
 /// when `budget` has been used up.
@@ -369,12 +439,14 @@ type IsolateCallback = extern "C" fn(&mut Isolate, *mut c_void);
 /// Every `callback_every` ticks, `callback` is called.
 fn run_reducer_timeout(
     callback_every: u64,
-    callback: IsolateCallback,
+    callback: InterruptCallback,
     budget: ReducerBudget,
     isolate_handle: IsolateHandle,
 ) -> Arc<AtomicBool> {
+    // When `execution_done_flag` is set, the ticker thread will stop.
     let execution_done_flag = Arc::new(AtomicBool::new(false));
     let execution_done_flag2 = execution_done_flag.clone();
+
     let timeout = budget_to_duration(budget);
     let max_ticks = ticks_in_duration(timeout);
 
@@ -418,25 +490,24 @@ fn duration_to_budget(_duration: Duration) -> ReducerBudget {
     ReducerBudget::ZERO
 }
 
+/// Returns the global object.
 fn global<'scope>(scope: &mut HandleScope<'scope>) -> Local<'scope, Object> {
     scope.get_current_context().global(scope)
 }
 
 /// Returns the global property `key`.
-fn get_global_property<'scope>(
-    scope: &mut HandleScope<'scope>,
-    key: Local<'scope, v8::String>,
-) -> ExcResult<Local<'scope, Value>> {
+fn get_global_property<'scope>(scope: &mut HandleScope<'scope>, key: Local<'scope, v8::String>) -> FnRet<'scope> {
     global(scope)
         .get(scope, key.into())
         .ok_or_else(exception_already_thrown)
 }
 
+/// Calls free function `fun` with `args`.
 fn call_free_fun<'scope>(
     scope: &mut HandleScope<'scope>,
     fun: Local<'scope, Function>,
     args: &[Local<'scope, Value>],
-) -> ExcResult<Local<'scope, Value>> {
+) -> FnRet<'scope> {
     let receiver = v8::undefined(scope).into();
     fun.call(scope, receiver, args).ok_or_else(exception_already_thrown)
 }
@@ -528,340 +599,6 @@ fn call_describe_module(scope: &mut HandleScope<'_>) -> anyhow::Result<RawModule
         Ok(raw_mod)
     })
     .map_err(Into::into)
-}
-
-fn table_id_from_name<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let name: &str = deserialize_js(scope, args.get(0))?;
-    let id = env_on_isolate(scope).instance_env.table_id_from_name(name).unwrap();
-    let ret = serialize_to_js(scope, &id)?;
-    Ok(ret)
-}
-
-fn index_id_from_name<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let name: &str = deserialize_js(scope, args.get(0))?;
-    let id = env_on_isolate(scope).instance_env.index_id_from_name(name).unwrap();
-    let ret = serialize_to_js(scope, &id)?;
-    Ok(ret)
-}
-
-fn datastore_table_row_count<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let table_id: TableId = deserialize_js(scope, args.get(0))?;
-    let count = env_on_isolate(scope)
-        .instance_env
-        .datastore_table_row_count(table_id)
-        .unwrap();
-    serialize_to_js(scope, &count)
-}
-
-fn datastore_table_scan_bsatn<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let table_id: TableId = deserialize_js(scope, args.get(0))?;
-
-    let env = env_on_isolate(scope);
-    // Collect the iterator chunks.
-    let chunks = env
-        .instance_env
-        .datastore_table_scan_bsatn_chunks(&mut env.chunk_pool, table_id)
-        .unwrap();
-
-    // Register the iterator and get back the index to write to `out`.
-    // Calls to the iterator are done through dynamic dispatch.
-    let idx = env.iters.insert(chunks.into_iter());
-
-    let ret = serialize_to_js(scope, &idx.0)?;
-    Ok(ret)
-}
-
-fn convert_u32_to_col_id(col_id: u32) -> anyhow::Result<ColId> {
-    let col_id: u16 = col_id.try_into().context("ABI violation, a `ColId` must be a `u16`")?;
-    Ok(col_id.into())
-}
-
-fn datastore_index_scan_range_bsatn<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let index_id: IndexId = deserialize_js(scope, args.get(0))?;
-
-    let prefix_elems: u32 = deserialize_js(scope, args.get(2))?;
-    let prefix_elems = convert_u32_to_col_id(prefix_elems).unwrap();
-
-    let prefix: &[u8] = if prefix_elems.idx() == 0 {
-        &[]
-    } else {
-        deserialize_js(scope, args.get(1))?
-    };
-
-    let rstart: &[u8] = deserialize_js(scope, args.get(3))?;
-    let rend: &[u8] = deserialize_js(scope, args.get(4))?;
-
-    let env = env_on_isolate(scope);
-
-    // Find the relevant rows.
-    let chunks = env
-        .instance_env
-        .datastore_index_scan_range_bsatn_chunks(&mut env.chunk_pool, index_id, prefix, prefix_elems, rstart, rend)
-        .unwrap();
-
-    // Insert the encoded + concatenated rows into a new buffer and return its id.
-    let idx = env.iters.insert(chunks.into_iter());
-
-    let ret = serialize_to_js(scope, &idx.0)?;
-    Ok(ret)
-}
-
-fn row_iter_bsatn_advance<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let row_iter_idx: u32 = deserialize_js(scope, args.get(0))?;
-    let row_iter_idx = RowIterIdx(row_iter_idx);
-    let buffer_max_len: u32 = deserialize_js(scope, args.get(1))?;
-
-    // Retrieve the iterator by `row_iter_idx`, or error.
-    let env = env_on_isolate(scope);
-    let iter = env.iters.get_mut(row_iter_idx).unwrap();
-
-    // Allocate a buffer with `buffer_max_len` capacity.
-    let mut buffer = vec![0; buffer_max_len as usize];
-    // Fill the buffer as much as possible.
-    let written = InstanceEnv::fill_buffer_from_iter(iter, &mut buffer, &mut env.chunk_pool);
-    buffer.truncate(written);
-
-    let ret = match (written, iter.as_slice().first()) {
-        // Nothing was written and the iterator is not exhausted.
-        (0, Some(_chunk)) => {
-            unimplemented!()
-        }
-        // The iterator is exhausted, destroy it, and tell the caller.
-        (_, None) => {
-            env.iters.take(row_iter_idx);
-            serialize_to_js(scope, &AdvanceRet { flag: -1, buffer })?
-        }
-        // Something was written, but the iterator is not exhausted.
-        (_, Some(_)) => serialize_to_js(scope, &AdvanceRet { flag: 0, buffer })?,
-    };
-    Ok(ret)
-}
-
-#[derive(Serialize)]
-struct AdvanceRet {
-    buffer: Vec<u8>,
-    flag: i32,
-}
-
-fn row_iter_bsatn_close<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let row_iter_idx: u32 = deserialize_js(scope, args.get(0))?;
-    let row_iter_idx = RowIterIdx(row_iter_idx);
-
-    // Retrieve the iterator by `row_iter_idx`, or error.
-    let env = env_on_isolate(scope);
-
-    // Retrieve the iterator by `row_iter_idx`, or error.
-    Ok(match env.iters.take(row_iter_idx) {
-        None => unimplemented!(),
-        // TODO(Centril): consider putting these into a pool for reuse.
-        Some(_) => serialize_to_js(scope, &0u32)?,
-    })
-}
-
-fn datastore_insert_bsatn<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let table_id: TableId = deserialize_js(scope, args.get(0))?;
-    let mut row: Vec<u8> = deserialize_js(scope, args.get(1))?;
-
-    // Insert the row into the DB and write back the generated column values.
-    let env: &mut JsInstanceEnv = env_on_isolate(scope);
-    let row_len = env.instance_env.insert(table_id, &mut row).unwrap();
-    row.truncate(row_len);
-
-    serialize_to_js(scope, &row)
-}
-
-fn datastore_update_bsatn<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let table_id: TableId = deserialize_js(scope, args.get(0))?;
-    let index_id: IndexId = deserialize_js(scope, args.get(1))?;
-    let mut row: Vec<u8> = deserialize_js(scope, args.get(2))?;
-
-    // Insert the row into the DB and write back the generated column values.
-    let env: &mut JsInstanceEnv = env_on_isolate(scope);
-    let row_len = env.instance_env.update(table_id, index_id, &mut row).unwrap();
-    row.truncate(row_len);
-
-    serialize_to_js(scope, &row)
-}
-
-fn datastore_delete_by_index_scan_range_bsatn<'s>(
-    scope: &mut HandleScope<'s>,
-    args: FunctionCallbackArguments<'s>,
-) -> FnRet<'s> {
-    let index_id: IndexId = deserialize_js(scope, args.get(0))?;
-
-    let prefix_elems: u32 = deserialize_js(scope, args.get(2))?;
-    let prefix_elems = convert_u32_to_col_id(prefix_elems).unwrap();
-
-    let prefix: &[u8] = if prefix_elems.idx() == 0 {
-        &[]
-    } else {
-        deserialize_js(scope, args.get(1))?
-    };
-
-    let rstart: &[u8] = deserialize_js(scope, args.get(3))?;
-    let rend: &[u8] = deserialize_js(scope, args.get(4))?;
-
-    let env = env_on_isolate(scope);
-
-    // Delete the relevant rows.
-    let num = env
-        .instance_env
-        .datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-        .unwrap();
-
-    serialize_to_js(scope, &num)
-}
-
-fn datastore_delete_all_by_eq_bsatn<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let table_id: TableId = deserialize_js(scope, args.get(0))?;
-    let relation: &[u8] = deserialize_js(scope, args.get(1))?;
-
-    let env = env_on_isolate(scope);
-    let num = env
-        .instance_env
-        .datastore_delete_all_by_eq_bsatn(table_id, relation)
-        .unwrap();
-
-    serialize_to_js(scope, &num)
-}
-
-fn volatile_nonatomic_schedule_immediate<'s>(
-    scope: &mut HandleScope<'s>,
-    args: FunctionCallbackArguments<'s>,
-) -> FnRet<'s> {
-    let name: String = deserialize_js(scope, args.get(0))?;
-    let args: Vec<u8> = deserialize_js(scope, args.get(1))?;
-
-    let env = env_on_isolate(scope);
-    env.instance_env
-        .scheduler
-        .volatile_nonatomic_schedule_immediate(name, crate::host::ReducerArgs::Bsatn(args.into()));
-
-    Ok(v8::undefined(scope).into())
-}
-
-fn console_log<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let level: u32 = deserialize_js(scope, args.get(0))?;
-
-    let msg = args.get(1).cast::<v8::String>();
-    let mut buf = scratch_buf::<128>();
-    let msg = msg.to_rust_cow_lossy(scope, &mut buf);
-    let frame: Local<'_, v8::StackFrame> = v8::StackTrace::current_stack_trace(scope, 2)
-        .ok_or_else(exception_already_thrown)?
-        .get_frame(scope, 1)
-        .ok_or_else(exception_already_thrown)?;
-    let mut buf = scratch_buf::<32>();
-    let filename = frame
-        .get_script_name(scope)
-        .map(|s| s.to_rust_cow_lossy(scope, &mut buf));
-    let record = Record {
-        // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start)
-        ts: chrono::Utc::now(),
-        target: None,
-        filename: filename.as_deref(),
-        line_number: Some(frame.get_line_number() as u32),
-        message: &msg,
-    };
-
-    let env = env_on_isolate(scope);
-    env.instance_env.console_log((level as u8).into(), &record, &Noop);
-
-    Ok(v8::undefined(scope).into())
-}
-
-struct Noop;
-impl BacktraceProvider for Noop {
-    fn capture(&self) -> Box<dyn ModuleBacktrace> {
-        Box::new(Noop)
-    }
-}
-impl ModuleBacktrace for Noop {
-    fn frames(&self) -> Vec<BacktraceFrame<'_>> {
-        Vec::new()
-    }
-}
-
-fn console_timer_start<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let name = args.get(0).cast::<v8::String>();
-    let mut buf = scratch_buf::<128>();
-    let name = name.to_rust_cow_lossy(scope, &mut buf).into_owned();
-
-    let env = env_on_isolate(scope);
-    let span_id = env.timing_spans.insert(TimingSpan::new(name)).0;
-    serialize_to_js(scope, &span_id)
-}
-
-fn console_timer_end<'s>(scope: &mut HandleScope<'s>, args: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let span_id: u32 = deserialize_js(scope, args.get(0))?;
-
-    let env = env_on_isolate(scope);
-    let span = env.timing_spans.take(TimingSpanIdx(span_id)).unwrap();
-    env.instance_env.console_timer_end(&span, &Noop);
-
-    serialize_to_js(scope, &0u32)
-}
-
-fn identity<'s>(scope: &mut HandleScope<'s>, _: FunctionCallbackArguments<'s>) -> FnRet<'s> {
-    let env = env_on_isolate(scope);
-    let identity = *env.instance_env.database_identity();
-    serialize_to_js(scope, &identity)
-}
-
-fn register_host_funs(scope: &mut HandleScope<'_>) {
-    register_host_fun(scope, "table_id_from_name", table_id_from_name);
-    register_host_fun(scope, "index_id_from_name", index_id_from_name);
-    register_host_fun(scope, "datastore_table_row_count", datastore_table_row_count);
-    register_host_fun(scope, "datastore_table_scan_bsatn", datastore_table_scan_bsatn);
-    register_host_fun(
-        scope,
-        "datastore_index_scan_range_bsatn",
-        datastore_index_scan_range_bsatn,
-    );
-    register_host_fun(scope, "row_iter_bsatn_advance", row_iter_bsatn_advance);
-    register_host_fun(scope, "row_iter_bsatn_close", row_iter_bsatn_close);
-    register_host_fun(scope, "datastore_insert_bsatn", datastore_insert_bsatn);
-    register_host_fun(scope, "datastore_update_bsatn", datastore_update_bsatn);
-    register_host_fun(
-        scope,
-        "datastore_delete_by_index_scan_range_bsatn",
-        datastore_delete_by_index_scan_range_bsatn,
-    );
-    register_host_fun(
-        scope,
-        "datastore_delete_all_by_eq_bsatn",
-        datastore_delete_all_by_eq_bsatn,
-    );
-    register_host_fun(
-        scope,
-        "volatile_nonatomic_schedule_immediate",
-        volatile_nonatomic_schedule_immediate,
-    );
-    register_host_fun(scope, "console_log", console_log);
-    register_host_fun(scope, "console_timer_start", console_timer_start);
-    register_host_fun(scope, "console_timer_end", console_timer_end);
-    register_host_fun(scope, "identity", identity);
-}
-
-type FnRet<'s> = ExcResult<Local<'s, Value>>;
-
-fn register_host_fun(
-    scope: &mut HandleScope<'_>,
-    name: &str,
-    fun: impl Copy + for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>) -> FnRet<'s>,
-) {
-    let name = v8_interned_string(scope, name).into();
-    let fun = Function::new(scope, adapt_fun(fun)).unwrap().into();
-    global(scope).set(scope, name, fun).unwrap();
-}
-
-fn adapt_fun(
-    fun: impl Copy + for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>) -> FnRet<'s>,
-) -> impl Copy + for<'s> Fn(&mut HandleScope<'s>, FunctionCallbackArguments<'s>, ReturnValue<Value>) {
-    move |scope, args, mut rv| {
-        if let Ok(value) = fun(scope, args) {
-            rv.set(value);
-        }
-    }
 }
 
 #[cfg(test)]
