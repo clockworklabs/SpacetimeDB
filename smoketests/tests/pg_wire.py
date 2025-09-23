@@ -143,13 +143,6 @@ pub fn test(ctx: &ReducerContext) {
     });
 }
 """
-    def connect_db(self, identity: str):
-        """Connect to the database using `psycopg2`."""
-        server = self.get_server_address()
-        conn = psycopg2.connect(host=server["host"], port=5432, user="postgres", password=identity, dbname="quickstart")
-        conn.set_session(autocommit=True)  # Disable automic transaction
-        return conn
-
 
     def psql(self, identity: str, sql: str) -> str:
         """Call `psql` and execute the given SQL statement."""
@@ -166,6 +159,13 @@ pub fn test(ctx: &ReducerContext) {
         if result.stderr:
             raise Exception(result.stderr.strip())
         return result.stdout.strip()
+
+    def connect_db(self, identity: str):
+        """Connect to the database using `psycopg2`."""
+        server = self.get_server_address()
+        conn = psycopg2.connect(host=server["host"], port=5432, user="postgres", password=identity, dbname="quickstart")
+        conn.set_session(autocommit=True)  # Disable automic transaction
+        return conn
 
     def assertSql(self, token: str, sql: str, expected):
         self.maxDiff = None
