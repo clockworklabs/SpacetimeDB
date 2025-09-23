@@ -749,6 +749,6 @@ mod tests {
             ("b", AlgebraicType::product([AlgebraicType::U16, AlgebraicType::U32])),
         ]);
 
-        at.type_check(&av, &Typespace::EMPTY);
+        at.type_check(&av, Typespace::EMPTY);
     }
 }
