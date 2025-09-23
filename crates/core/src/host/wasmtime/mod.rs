@@ -27,7 +27,23 @@ pub struct WasmtimeRuntime {
 
 const EPOCH_TICK_LENGTH: Duration = Duration::from_millis(10);
 
-const EPOCH_TICKS_PER_SECOND: u64 = Duration::from_secs(1).div_duration_f64(EPOCH_TICK_LENGTH) as u64;
+pub(crate) const EPOCH_TICKS_PER_SECOND: u64 = ticks_in_duration(Duration::from_secs(1));
+
+pub(crate) const fn ticks_in_duration(duration: Duration) -> u64 {
+    duration.div_duration_f64(EPOCH_TICK_LENGTH) as u64
+}
+
+pub(crate) fn epoch_ticker(mut on_tick: impl 'static + Send + FnMut() -> Option<()>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(EPOCH_TICK_LENGTH);
+        loop {
+            interval.tick().await;
+            let Some(()) = on_tick() else {
+                return;
+            };
+        }
+    });
+}
 
 impl WasmtimeRuntime {
     pub fn new(data_dir: Option<&ServerDataDir>) -> Self {
@@ -53,13 +69,10 @@ impl WasmtimeRuntime {
         let engine = Engine::new(&config).unwrap();
 
         let weak_engine = engine.weak();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(EPOCH_TICK_LENGTH);
-            loop {
-                interval.tick().await;
-                let Some(engine) = weak_engine.upgrade() else { break };
-                engine.increment_epoch();
-            }
+        epoch_ticker(move || {
+            let engine = weak_engine.upgrade()?;
+            engine.increment_epoch();
+            Some(())
         });
 
         let mut linker = Box::new(Linker::new(&engine));
