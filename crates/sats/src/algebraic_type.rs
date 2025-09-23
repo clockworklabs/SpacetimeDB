@@ -448,12 +448,8 @@ impl AlgebraicType {
     }
 
     pub fn type_check(&self, value: &AlgebraicValue, typespace: &Typespace) -> bool {
-        match value {
-            AlgebraicValue::Min | AlgebraicValue::Max => return true,
-            _ => {}
-        }
-
         match (self, value) {
+            (_, AlgebraicValue::Min | AlgebraicValue::Max) => true
             (AlgebraicType::Ref(r), _) => {
                 if let Some(resolved_ty) = typespace.get(*r) {
                     resolved_ty.type_check(value, typespace)
@@ -465,22 +461,22 @@ impl AlgebraicType {
             (AlgebraicType::Product(product_ty), AlgebraicValue::Product(pv)) => product_ty.type_check(pv, typespace),
             (AlgebraicType::Array(array_ty), AlgebraicValue::Array(arr)) => array_ty.type_check(arr, typespace),
 
-            (AlgebraicType::String, AlgebraicValue::String(_)) => true,
-            (AlgebraicType::Bool, AlgebraicValue::Bool(_)) => true,
-            (AlgebraicType::I8, AlgebraicValue::I8(_)) => true,
-            (AlgebraicType::U8, AlgebraicValue::U8(_)) => true,
-            (AlgebraicType::I16, AlgebraicValue::I16(_)) => true,
-            (AlgebraicType::U16, AlgebraicValue::U16(_)) => true,
-            (AlgebraicType::I32, AlgebraicValue::I32(_)) => true,
-            (AlgebraicType::U32, AlgebraicValue::U32(_)) => true,
-            (AlgebraicType::I64, AlgebraicValue::I64(_)) => true,
-            (AlgebraicType::U64, AlgebraicValue::U64(_)) => true,
-            (AlgebraicType::I128, AlgebraicValue::I128(_)) => true,
-            (AlgebraicType::U128, AlgebraicValue::U128(_)) => true,
-            (AlgebraicType::I256, AlgebraicValue::I256(_)) => true,
-            (AlgebraicType::U256, AlgebraicValue::U256(_)) => true,
-            (AlgebraicType::F32, AlgebraicValue::F32(_)) => true,
-            (AlgebraicType::F64, AlgebraicValue::F64(_)) => true,
+            (AlgebraicType::String, AlgebraicValue::String(_))
+            | (AlgebraicType::Bool, AlgebraicValue::Bool(_))
+            | (AlgebraicType::I8, AlgebraicValue::I8(_))
+            | (AlgebraicType::U8, AlgebraicValue::U8(_))
+            | (AlgebraicType::I16, AlgebraicValue::I16(_))
+            | (AlgebraicType::U16, AlgebraicValue::U16(_))
+            | (AlgebraicType::I32, AlgebraicValue::I32(_))
+            | (AlgebraicType::U32, AlgebraicValue::U32(_))
+            | (AlgebraicType::I64, AlgebraicValue::I64(_))
+            | (AlgebraicType::U64, AlgebraicValue::U64(_))
+            | (AlgebraicType::I128, AlgebraicValue::I128(_))
+            | (AlgebraicType::U128, AlgebraicValue::U128(_))
+            | (AlgebraicType::I256, AlgebraicValue::I256(_))
+            | (AlgebraicType::U256, AlgebraicValue::U256(_))
+            | (AlgebraicType::F32, AlgebraicValue::F32(_))
+            | (AlgebraicType::F64, AlgebraicValue::F64(_)) => true,
             _ => false,
         }
     }

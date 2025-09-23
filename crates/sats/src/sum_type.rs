@@ -175,11 +175,8 @@ impl SumType {
     }
 
     pub fn type_check(&self, sv: &SumValue, typespace: &Typespace) -> bool {
-        if let Some(variant) = self.get_variant_by_tag(sv.tag) {
-            variant.algebraic_type.type_check(&sv.value, typespace)
-        } else {
-            false
-        }
+        self.get_variant_by_tag(sv.tag)
+             .is_some_and(|var| var.algebraic_type.type_check(&sv.value, typespace))
     }
 }
 
