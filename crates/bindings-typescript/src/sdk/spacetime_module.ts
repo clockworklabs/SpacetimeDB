@@ -1,4 +1,4 @@
-import type { AlgebraicType } from 'spacetimedb';
+import type { AlgebraicType } from '../';
 import type { DbConnectionImpl } from './db_connection_impl';
 
 export interface TableRuntimeTypeInfo {
