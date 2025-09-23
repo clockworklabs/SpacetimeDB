@@ -4,14 +4,6 @@ import os
 import tomllib
 import psycopg2
 
-
-def connect_db(identity: str):
-    """Connect to the database using `psycopg2`."""
-    conn = psycopg2.connect(host="127.0.0.1", port=5432, user="postgres", password=identity, dbname="quickstart")
-    conn.set_session(autocommit=True)  # Disable automic transaction
-    return conn
-
-
 class SqlFormat(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = """
@@ -151,10 +143,17 @@ pub fn test(ctx: &ReducerContext) {
     });
 }
 """
+    def connect_db(self, identity: str):
+        """Connect to the database using `psycopg2`."""
+        server = self.get_server_address()
+        conn = psycopg2.connect(host=server["host"], port=5432, user="postgres", password=identity, dbname="quickstart")
+        conn.set_session(autocommit=True)  # Disable automic transaction
+        return conn
+
 
     def psql(self, identity: str, sql: str) -> str:
-        server = self.get_server_address()
         """Call `psql` and execute the given SQL statement."""
+        server = self.get_server_address()
         result = subprocess.run(
             ["psql", "-h", server["host"], "-p", "5432", "-U", "postgres", "-d", "quickstart", "--quiet", "-c", sql],
             encoding="utf8",
@@ -242,7 +241,7 @@ en                 |                 se                  |                      
         self.publish_module("quickstart", clear=True)
         self.call("test")
 
-        conn = connect_db(token)
+        conn = self.connect_db(token)
         # Check prepared statements (faked by `psycopg2`)
         with conn.cursor() as cur:
             cur.execute("select * from t_uints where u8 = %s and u16 = %s", (105, 1050))
