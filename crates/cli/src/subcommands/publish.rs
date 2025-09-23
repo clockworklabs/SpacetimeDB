@@ -56,6 +56,13 @@ pub fn cli() -> clap::Command {
                 .help("UNSTABLE: The number of replicas the database should have")
         )
         .arg(
+            Arg::new("break_clients")
+                .long("break-clients")
+                .action(SetTrue)
+                .hide(true)
+                .help("Allow breaking changes when publishing to an existing database identity. This will break existing clients.")
+        )
+        .arg(
             common_args::anonymous()
         )
         .arg(
@@ -87,6 +94,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
     let num_replicas = args.get_one::<u8>("num_replicas");
+    let break_clients_flag = args.get_flag("break_clients");
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
     // we want to use the default identity
@@ -151,7 +159,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 println!("{}", pre_publish_res.migrate_plan);
                 if pre_publish_res.break_clients
                     && !y_or_n(
-                        force,
+                        break_clients_flag,
                         "The above changes will BREAK existing clients. Do you want to proceed?",
                     )?
                 {
