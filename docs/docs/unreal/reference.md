@@ -741,5 +741,3 @@ void AMyActor::SendMessage(const FString& Text)
     }
 }
 ```
-
-Previous[Unreal Quickstart](unreal-quickstart.md)Next[Rust Quickstart](../rust/quickstart.md)
