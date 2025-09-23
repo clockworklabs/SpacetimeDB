@@ -706,6 +706,7 @@ impl CommittedState {
         for change in pending_schema_changes {
             if let PendingSchemaChange::TableRemoved(table_id, mut table) = change {
                 let row_ptrs = table.scan_all_row_ptrs();
+                truncates.insert(table_id);
                 delete_rows(
                     tx_data,
                     table_id,

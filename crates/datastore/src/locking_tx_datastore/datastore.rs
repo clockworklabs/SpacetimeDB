@@ -335,6 +335,16 @@ impl Locking {
     ) -> Result<()> {
         tx.alter_table_row_type(table_id, column_schemas)
     }
+
+    pub fn add_columns_to_table_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+        defaults: Vec<AlgebraicValue>,
+    ) -> Result<TableId> {
+        tx.add_columns_to_table(table_id, column_schemas, defaults)
+    }
 }
 
 impl DataRow for Locking {
@@ -1264,6 +1274,7 @@ mod tests {
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
+    use spacetimedb_execution::dml::MutDatastore as _;
     use spacetimedb_execution::Datastore;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
@@ -3228,11 +3239,12 @@ mod tests {
         // Now drop the table again and commit.
         assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
         let tx_data = commit(&datastore, tx)?;
-        let (_, deleted) = tx_data
+        let (_, deleted_rows) = tx_data
             .deletes()
             .find(|(id, _)| **id == table_id)
             .expect("should have deleted rows for `table_id`");
-        assert_eq!(&**deleted, [row]);
+        assert_eq!(&**deleted_rows, [row]);
+        assert!(tx_data.truncates().contains(&table_id), "table should be truncated");
 
         // In the next transaction, the table doesn't exist.
         assert!(
@@ -3453,8 +3465,148 @@ mod tests {
 
         Ok(())
     }
-
     // TODO: Add the following tests
     // - Create a tx that inserts 2000 rows with an auto_inc column
     // - Create a tx that inserts 2000 rows with an auto_inc column and then rolls back
+
+    #[test]
+    fn test_add_columns_to_table() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        let mut tx = begin_mut_tx(&datastore);
+
+        let initial_sum_type = AlgebraicType::sum([("ba", AlgebraicType::U16)]);
+        let initial_columns = [
+            ColumnSchema::for_test(0, "a", AlgebraicType::U64),
+            ColumnSchema::for_test(1, "b", initial_sum_type.clone()),
+        ];
+
+        let initial_indices = [
+            IndexSchema::for_test("index_a", BTreeAlgorithm::from(0)),
+            IndexSchema::for_test("index_b", BTreeAlgorithm::from(1)),
+        ];
+
+        let sequence = SequenceRow {
+            id: SequenceId::SENTINEL.into(),
+            table: 0,
+            col_pos: 0,
+            name: "Foo_id_seq",
+            start: 5,
+        };
+
+        let schema = user_public_table(
+            initial_columns,
+            initial_indices.clone(),
+            [],
+            map_array([sequence]),
+            None,
+            None,
+        );
+
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+
+        let mut columns_original = tx.get_schema(table_id).unwrap().columns.to_vec();
+
+        // Insert initial rows
+        let initial_row = product![0u64, AlgebraicValue::sum(0, AlgebraicValue::U16(1))];
+        insert(&datastore, &mut tx, table_id, &initial_row).unwrap();
+        insert(&datastore, &mut tx, table_id, &initial_row).unwrap();
+        commit(&datastore, tx)?;
+
+        // Alter Table: Add Variant and Column
+        //
+        // Change the `b` column, adding a variant.
+        let vars_ref = &mut columns_original[1].col_type.as_sum_mut().unwrap().variants;
+        let mut vars = Vec::from(mem::take(vars_ref));
+        vars.push(SumTypeVariant::new_named(AlgebraicType::U8, "bb"));
+        *vars_ref = vars.into();
+        // Add column `c`
+        let mut new_columns = columns_original.clone();
+        new_columns.push(ColumnSchema::for_test(2, "c", AlgebraicType::U8));
+        let defaults = vec![AlgebraicValue::U8(42)];
+
+        let mut tx = begin_mut_tx(&datastore);
+        // insert a row in tx_state before adding column
+        tx.insert_product_value(table_id, &initial_row).unwrap();
+        // add column and then rollback
+        let rollback_table_id =
+            datastore.add_columns_to_table_mut_tx(&mut tx, table_id, new_columns.clone(), defaults.clone())?;
+        let _ = tx.rollback();
+
+        let old_rows = [
+            product![5u64, AlgebraicValue::sum(0, 1u16.into())],
+            product![6u64, AlgebraicValue::sum(0, 1u16.into())],
+        ];
+
+        let mut tx = begin_mut_tx(&datastore);
+        // check rollback was successful
+        let rows = tx
+            .table_scan(table_id)
+            .unwrap()
+            .map(|row| row.to_product_value())
+            .collect::<Vec<_>>();
+        assert_eq!(rows, old_rows, "Rows shouldn't be changed if rolledback");
+        let table = tx.table(rollback_table_id);
+        assert!(table.is_none(), "new table shouldn't be created if rolledback");
+
+        // Add column and actually commit this time.
+        tx.insert_product_value(table_id, &initial_row).unwrap();
+        let new_table_id = datastore.add_columns_to_table_mut_tx(&mut tx, table_id, new_columns.clone(), defaults)?;
+
+        let tx_data = commit(&datastore, tx)?;
+
+        assert_ne!(
+            new_table_id, table_id,
+            "New table ID after migration should differ from old one"
+        );
+
+        //  Validate Commitlog Changes
+        let (_, deletes) = tx_data
+            .deletes()
+            .find(|(id, _)| **id == table_id)
+            .expect("Expected delete log for original table");
+
+        assert_eq!(
+            &**deletes, &old_rows,
+            "Unexpected delete entries after altering the table"
+        );
+
+        let inserted_rows = [
+            product![5u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![6u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![8u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+        ];
+
+        let (_, inserts) = tx_data
+            .inserts()
+            .find(|(id, _)| **id == new_table_id)
+            .expect("Expected insert log for new table");
+
+        assert_eq!(
+            &**inserts, &inserted_rows,
+            "Unexpected insert entries after altering the table"
+        );
+
+        // Insert Rows into New Table
+        let mut tx = begin_mut_tx(&datastore);
+
+        let new_row = product![0u64, AlgebraicValue::sum(0, 1u16.into()), 0u8];
+        tx.insert_product_value(new_table_id, &new_row).unwrap();
+        commit(&datastore, tx)?;
+
+        // test for auto_inc feields
+        let tx = begin_mut_tx(&datastore);
+        let rows = tx.table_scan(new_table_id).unwrap().map(|row| row.to_product_value());
+
+        let mut last_row_auto_inc = 0;
+        for row in rows {
+            let auto_inc_col = row.get_field(0, None)?;
+            if let AlgebraicValue::U64(val) = auto_inc_col {
+                assert!(val > &last_row_auto_inc, "Auto-increment value did not increase");
+                last_row_auto_inc = *val;
+            }
+        }
+
+        Ok(())
+    }
 }
