@@ -12,12 +12,13 @@ pub mod rt;
 #[doc(hidden)]
 pub mod table;
 
-use spacetimedb_lib::bsatn;
-use std::cell::RefCell;
-
 pub use log;
 #[cfg(feature = "rand")]
 pub use rand08 as rand;
+use spacetimedb_lib::bsatn;
+use std::cell::{OnceCell, RefCell};
+use std::ops::Deref;
+use std::sync::LazyLock;
 
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
@@ -732,6 +733,8 @@ pub struct ReducerContext {
     /// See the [`#[table]`](macro@crate::table) macro for more information.
     pub db: Local,
 
+    sender_auth: AuthCtx,
+
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
 }
@@ -744,6 +747,24 @@ impl ReducerContext {
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
+            sender_auth: AuthCtx::internal(),
+            rng: std::cell::OnceCell::new(),
+        }
+    }
+
+    #[doc(hidden)]
+    fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
+        let sender_auth = match connection_id {
+            Some(cid) => AuthCtx::from_connection_id(cid),
+            None => AuthCtx::internal(),
+        };
+        Self {
+            db,
+            sender,
+            timestamp,
+            connection_id,
+            sender_auth,
+            #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
         }
     }
@@ -795,6 +816,114 @@ impl DbContext for ReducerContext {
 /// These are generated methods that allow you to access specific tables.
 #[non_exhaustive]
 pub struct Local {}
+
+#[non_exhaustive]
+pub struct JwtClaims {
+    payload: String,
+    parsed: OnceCell<serde_json::Value>,
+    audience: OnceCell<Vec<String>>,
+}
+
+/// Authentication information for the caller of a reducer.
+pub struct AuthCtx {
+    is_internal: bool,
+    // I can't directly use a LazyLock without making this struct generic.
+    jwt: Box<dyn Deref<Target = Option<JwtClaims>>>,
+}
+
+impl AuthCtx {
+    fn new<F>(is_internal: bool, jwt_fn: F) -> Self
+    where
+        F: FnOnce() -> Option<JwtClaims> + 'static,
+    {
+        AuthCtx {
+            is_internal,
+            jwt: Box::new(LazyLock::new(jwt_fn)),
+        }
+    }
+
+    /// Create an AuthCtx for an internal call, with no JWT.
+    /// This represents a scheduled reducer.
+    pub fn internal() -> AuthCtx {
+        Self::new(true, || None)
+    }
+
+    /// Create an AuthCtx using the json claims from a JWT.
+    /// This can be used to write unit tests.
+    pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {
+        Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
+    }
+
+    /// Create an AuthCtx that reads the JWT for the given connection id.
+    fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
+        Self::new(false, move || {
+            spacetimedb_bindings_sys::get_jwt(connection_id.as_le_byte_array()).map(JwtClaims::new)
+        })
+    }
+
+    /// True if this reducer was spawned from inside the database.
+    pub fn is_internal(&self) -> bool {
+        self.is_internal
+    }
+
+    /// Check if there is a JWT without loading it.
+    /// If is_internal is true, this will be false.
+    pub fn has_jwt(&self) -> bool {
+        self.jwt.is_some()
+    }
+
+    /// Load the jwt.
+    pub fn jwt(&self) -> Option<&JwtClaims> {
+        self.jwt.as_ref().deref().as_ref()
+    }
+}
+
+impl JwtClaims {
+    fn new(jwt: String) -> Self {
+        Self {
+            payload: jwt,
+            parsed: OnceCell::new(),
+            audience: OnceCell::new(),
+        }
+    }
+
+    fn get_parsed(&self) -> &serde_json::Value {
+        self.parsed
+            .get_or_init(|| serde_json::from_str(&self.payload).expect("Failed to parse JWT payload"))
+    }
+
+    pub fn subject(&self) -> &str {
+        // TODO: Add more error messages here.
+        self.get_parsed().get("sub").unwrap().as_str().unwrap()
+    }
+
+    pub fn issuer(&self) -> &str {
+        self.get_parsed().get("iss").unwrap().as_str().unwrap()
+    }
+
+    fn extract_audience(&self) -> Vec<String> {
+        let aud = self.get_parsed().get("aud").unwrap();
+        match aud {
+            serde_json::Value::String(s) => vec![s.clone()],
+            serde_json::Value::Array(arr) => arr.iter().filter_map(|v| v.as_str().map(String::from)).collect(),
+            _ => panic!("Unexpected type for 'aud' claim in JWT"),
+        }
+    }
+
+    pub fn audience(&self) -> &[String] {
+        self.audience.get_or_init(|| self.extract_audience())
+    }
+
+    // A convenience method, since this may not be in the token.
+    pub fn identity(&self) -> Identity {
+        Identity::from_claims(self.issuer(), self.subject())
+    }
+
+    // We can expose the whole payload for users that want to parse custom claims.
+    pub fn raw_payload(&self) -> &str {
+        &self.payload
+    }
+}
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]
@@ -899,4 +1028,38 @@ macro_rules! __volatile_nonatomic_schedule_immediate_impl {
             $crate::rt::volatile_nonatomic_schedule_immediate::<_, _, $repeater>($repeater, ($($args,)*))
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_single_audience() {
+        let example_payload = r#"
+        {
+          "iss": "https://securetoken.google.com/my-project-id",
+          "aud": "my-project-id",
+          "auth_time": 1695560000,
+          "user_id": "abc123XYZ",
+          "sub": "abc123XYZ",
+          "iat": 1695560100,
+          "exp": 1695563700,
+          "email": "user@example.com",
+          "email_verified": true,
+          "firebase": {
+            "identities": {
+              "email": ["user@example.com"]
+            },
+            "sign_in_provider": "password"
+          },
+          "name": "Jane Doe",
+          "picture": "https://lh3.googleusercontent.com/a-/profile.jpg"
+        }
+        "#;
+        let auth = AuthCtx::from_jwt_payload(example_payload.to_string());
+        let audience = auth.jwt().unwrap().audience();
+        assert_eq!(audience.len(), 1);
+        assert_eq!(audience, &["my-project-id".to_string()]);
+    }
 }
