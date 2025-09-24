@@ -187,7 +187,7 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
+    pub(crate) fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
         self.replica_ctx.logger.write(level, record, bt);
         log::trace!(
             "MOD({}): {}",
@@ -197,7 +197,7 @@ impl InstanceEnv {
     }
 
     /// End a console timer by logging the span at INFO level.
-    pub fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
+    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
         let elapsed = span.start.elapsed();
         let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
 

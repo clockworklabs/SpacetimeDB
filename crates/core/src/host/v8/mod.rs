@@ -27,8 +27,6 @@ use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
-use spacetimedb_primitives::{ColId, IndexId, TableId};
-use spacetimedb_sats::Serialize;
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
