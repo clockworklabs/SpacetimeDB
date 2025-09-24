@@ -151,6 +151,12 @@ namespace SpacetimeDB
             {
                 var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
                 if (light) uri += "&light=true";
+                if (confirmedReads.HasValue)
+                {
+                    // Ensure to transmit the bool as lowercase.
+                    var enabled = confirmedReads.GetValueOrDefault() ? "true" : "false";
+                    uri += $"&confirmed={enabled}";
+                }
 
                 _socketId = new TaskCompletionSource<int>();
                 var callbackPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)OnSocketIdReceived);
@@ -177,9 +183,11 @@ namespace SpacetimeDB
             {
                 uri += "&light=true";
             }
-            if (!confirmedReads.HasValue)
+            if (confirmedReads.HasValue)
             {
-                uri += $"&confirmed={confirmedReads}";
+                // Ensure to transmit the bool as lowercase.
+                var enabled = confirmedReads.GetValueOrDefault() ? "true" : "false";
+                uri += $"&confirmed={enabled}";
             }
             var url = new Uri(uri);
             Ws.Options.AddSubProtocol(_options.Protocol);
