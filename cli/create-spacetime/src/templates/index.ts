@@ -17,12 +17,18 @@ export type TemplateKey = keyof typeof TEMPLATES;
 
 export const DEFAULT_TEMPLATE: TemplateKey = "rust";
 
-export const getTemplateChoices = () =>
-  Object.entries(TEMPLATES).map(([key, config]) => ({
+export const getTemplateChoices = () => [
+  ...Object.entries(TEMPLATES).map(([key, config]) => ({
     name: config.name,
     value: key,
-    short: config.serverLanguage.toUpperCase(),
-  }));
+    short: config.serverLanguage,
+  })),
+  {
+    name: "Other (GitHub)",
+    value: "custom",
+    short: "Other",
+  },
+];
 
 export const isValidTemplate = (key: string): key is TemplateKey => key in TEMPLATES;
 

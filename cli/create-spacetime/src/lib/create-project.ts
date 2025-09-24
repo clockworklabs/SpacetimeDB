@@ -5,7 +5,7 @@ import ora from "ora";
 import chalk from "chalk";
 import degit from "degit";
 
-import { getTemplate } from "../templates/index.js";
+import { getTemplate, isValidTemplate } from "../templates/index.js";
 import { PackageManager, getInstallCommand, getRunCommand } from "../utils/package.js";
 import {
   SPACETIME_VERSIONS,
@@ -34,17 +34,38 @@ export async function createProject(options: CreateProjectOptions): Promise<bool
   try {
     console.log(`\nCreating ${chalk.bold(name)} in ${chalk.bold(root)}...`);
 
-    await setupProject(root, name, template, useLocal, packageManager);
-    await installDependencies(root, packageManager);
+    if (isValidTemplate(template)) {
+      await setupProject(root, name, template, useLocal, packageManager);
+      await installDependencies(root, packageManager);
 
-    if (autoSetup) {
-      await setupSpacetimeDB(root, name, useLocal, packageManager);
+      if (autoSetup) {
+        await setupSpacetimeDB(root, name, useLocal, packageManager);
+      }
+
+      console.log();
+      console.log(chalk.green("Project created successfully."));
+      console.log();
+      printInstructions(name, root, packageManager, autoSetup, useLocal, template);
+    } else {
+      console.log(chalk.gray(`Downloading GitHub template: ${template}`));
+      await setupGitHubTemplate(root, name, template);
+
+      const clientDir = path.join(root, "client");
+      if (await fs.pathExists(clientDir)) {
+        await installDependencies(root, packageManager);
+      } else {
+        const packageJsonPath = path.join(root, "package.json");
+        if (await fs.pathExists(packageJsonPath)) {
+          await runCommand(packageManager, getInstallCommand(packageManager), root, 600000);
+        }
+      }
+
+      console.log(
+        chalk.gray("Auto-setup skipped for custom template. You may need to configure manually."),
+      );
+      console.log();
+      printInstructions(name, root, packageManager, autoSetup, useLocal, template);
     }
-
-    console.log();
-    console.log(chalk.green("Project created successfully."));
-
-    printInstructions(name, root, packageManager, autoSetup, useLocal);
     return true;
   } catch (error) {
     console.error(chalk.red("Failed to create project:"));
@@ -92,6 +113,29 @@ async function setupProject(
     await updateClientConfig(root, name, useLocal);
   } catch (error) {
     throw new Error(`Project configuration failed: ${error}`);
+  }
+}
+
+async function setupGitHubTemplate(root: string, name: string, templateInput: string) {
+  let repoPath = templateInput;
+  if (templateInput.startsWith("https://github.com/")) {
+    repoPath = templateInput.replace("https://github.com/", "");
+  }
+
+  try {
+    const emitter = degit(repoPath);
+    await emitter.clone(root);
+
+    const packageJsonPath = path.join(root, "package.json");
+    if (await fs.pathExists(packageJsonPath)) {
+      const packageJson = await fs.readJSON(packageJsonPath);
+      packageJson.name = name;
+      await fs.writeJSON(packageJsonPath, packageJson, { spaces: 2 });
+    }
+
+    console.log(chalk.green(`Successfully downloaded ${repoPath}`));
+  } catch {
+    throw new Error(`Failed to clone GitHub template "${repoPath}". Please use owner/repo format.`);
   }
 }
 
@@ -276,7 +320,7 @@ async function setupSpacetimeDB(
     if (!useLocal) {
       await updateDeployScript(root, moduleName, packageManager);
     }
-  } catch (error) {
+  } catch {
     spinner.stop();
     console.log(chalk.red(`SpacetimeDB setup failed (${target})`));
     console.log();
@@ -304,7 +348,7 @@ async function ensureLocalServer(spinner: any) {
       if (child && !child.killed) {
         try {
           child.kill();
-        } catch (error) {
+        } catch {
           // process cleanup failed, continue anyway
         }
       }
@@ -334,7 +378,7 @@ async function ensureLocalServer(spinner: any) {
     if (result.status !== 0) {
       console.warn(chalk.yellow("Warning: Could not log in to local server"));
     }
-  } catch (error) {
+  } catch {
     console.warn(chalk.yellow("Warning: Could not log in to local server"));
   }
 }
@@ -364,8 +408,17 @@ function printInstructions(
   packageManager: PackageManager,
   autoSetup: boolean,
   useLocal: boolean,
+  template: string,
 ) {
   const projectDir = path.relative(process.cwd(), root);
+
+  const isGitHubTemplate = !isValidTemplate(template);
+
+  if (isGitHubTemplate) {
+    console.log();
+    console.log(`Learn more at: ${chalk.bold("https://spacetimedb.com/docs/getting-started")}`);
+    return;
+  }
 
   let message = "To get started with development:\n\n";
 

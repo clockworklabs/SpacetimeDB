@@ -1,6 +1,6 @@
 {
   "name": "create-spacetime",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "type": "module",
   "author": {
     "name": "Clockwork Labs",
@@ -9,7 +9,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/clockworklabs/SpacetimeDB.git",
-    "directory": "templates/create-spacetime"
+    "directory": "cli/create-spacetime"
   },
   "engines": {
     "node": ">=18.0.0",
@@ -46,6 +46,7 @@
     "which": "^4.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@types/cross-spawn": "^6.0.6",
     "@types/degit": "^2.8.6",
     "@types/fs-extra": "^11.0.4",
@@ -53,10 +54,10 @@
     "@types/node": "^20.11.24",
     "@types/validate-npm-package-name": "^4.0.2",
     "@types/which": "^3.0.3",
-    "@typescript-eslint/eslint-plugin": "^7.18.0",
-    "@typescript-eslint/parser": "^7.18.0",
-    "eslint": "^8.57.0",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
     "prettier": "^3.2.5",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.0.0"
   }
 }

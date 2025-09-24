@@ -79,7 +79,7 @@ async function handleCreateProject(projectNameArg: string, options: any) {
               ? chalk.green("Successfully logged in to SpacetimeDB")
               : chalk.yellow("Login failed - default to local deployment"),
           );
-        } catch (error) {
+        } catch {
           console.log(chalk.yellow("Login failed - default to local deployment"));
         }
       } else {
@@ -89,12 +89,6 @@ async function handleCreateProject(projectNameArg: string, options: any) {
       console.log(chalk.gray("Skipping login (--yes mode) - default to local deployment"));
     }
     console.log();
-  }
-
-  if (options.template && !isValidTemplate(options.template)) {
-    console.error(chalk.red(`Invalid template: ${options.template}`));
-    console.error(chalk.yellow(`Valid templates: ${Object.keys(TEMPLATES).join(", ")}`));
-    process.exit(1);
   }
 
   const argTargetDir = formatTargetDir(projectNameArg);
@@ -125,7 +119,8 @@ async function handleCreateProject(projectNameArg: string, options: any) {
     console.log(`Template: ${chalk.bold(selectedTemplate)}`);
     console.log(`Package manager: ${chalk.bold(packageManager)}`);
     console.log(`Target: ${chalk.bold(useLocal ? "Local deployment" : "Maincloud")}`);
-    console.log(`Auto setup: ${chalk.bold(deps.spacetime ? "Yes" : "No")}`);
+    const supportsAutoSetup = deps.spacetime && isValidTemplate(selectedTemplate);
+    console.log(`Auto setup: ${chalk.bold(supportsAutoSetup ? "Yes" : "No")}`);
     console.log(`Path: ${chalk.bold(path.resolve(validatedName))}`);
     console.log();
     console.log(chalk.green("Nothing created (dry run mode)"));
@@ -169,6 +164,28 @@ async function handleCreateProject(projectNameArg: string, options: any) {
           choices: getTemplateChoices(),
           default: DEFAULT_TEMPLATE,
         });
+
+        questions.push({
+          type: "input",
+          name: "githubRepo",
+          message: "GitHub repository (full URL or owner/repo format):",
+          when: (answers: any) => answers.template === "custom",
+          validate: (input: string) => {
+            if (!input.trim()) {
+              return "Please enter a GitHub repository";
+            }
+
+            if (input.includes(" ")) {
+              return "Repository name cannot contain spaces";
+            }
+
+            if (!input.includes("/") && !input.startsWith("https://github.com/")) {
+              return `Please use owner/repo format`;
+            }
+
+            return true;
+          },
+        });
       }
 
       if (!options.local && deps.spacetime) {
@@ -188,13 +205,18 @@ async function handleCreateProject(projectNameArg: string, options: any) {
             return `Build and ${target === "maincloud" ? "deploy to Maincloud" : "publish locally"} after setup?`;
           },
           default: deps.spacetime,
+          // only asks autoSetup for default templates
+          when: (answers: any) => {
+            const selectedTemplate = options.template || answers.template;
+            return !selectedTemplate || isValidTemplate(selectedTemplate);
+          },
         });
       }
 
       if (questions.length > 0) {
         const result = await inquirer.prompt(questions);
         promptProjectName = result.projectName;
-        promptTemplate = result.template;
+        promptTemplate = result.template === "custom" ? result.githubRepo : result.template;
         promptAutoSetup = result.autoSetup;
       }
     }
@@ -275,7 +297,10 @@ async function init() {
     .description("Create a new SpacetimeDB project")
     .version(getPackageVersion())
     .argument("[project-name]", "Name of the project to create")
-    .option("-t, --template <template>", `Template to use (${Object.keys(TEMPLATES).join(", ")})`)
+    .option(
+      "-t, --template <template>",
+      `Template to use: ${Object.keys(TEMPLATES).join(", ")}, or GitHub repository (owner/repo format)`,
+    )
     .option("--local", "Use local SpacetimeDB server instead of cloud")
     .option("-y, --yes", "Skip interactive prompts and use defaults")
     .option("--dry-run", "Show what would be created without actually creating it")
