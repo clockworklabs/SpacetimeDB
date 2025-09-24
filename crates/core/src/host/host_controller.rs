@@ -28,7 +28,7 @@ use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability, TxOffset};
-use spacetimedb_lib::{hash_bytes, ConnectionId, Identity};
+use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_sats::hash::Hash;
@@ -842,12 +842,24 @@ impl Host {
             scheduler_starter,
         } = launched;
 
-        Self::handle_dangling_clients(
-            &replica_ctx.database_identity,
-            &module_host,
-            connected_clients.into_iter(),
-        )
-        .await?;
+        // Disconnect dangling clients.
+        for (identity, connection_id) in connected_clients {
+            module_host
+                .call_identity_disconnected(identity, connection_id)
+                .await
+                .with_context(|| {
+                    format!(
+                        "Error calling disconnect for {} {} on {}",
+                        identity, connection_id, replica_ctx.database_identity
+                    )
+                })?;
+        }
+        // We should have no clients left, but we do this just in case.
+        // This should only matter if we crashed with something in st_client_credentials,
+        // then restarted with an older version of the code that doesn't use st_client_credentials.
+        // That case would cause some permanently dangling st_client_credentials.
+        // Since we have no clients on startup, this should be safe to do regardless.
+        module_host.clear_all_clients().await?;
 
         scheduler_starter.start(&module_host)?;
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
@@ -859,31 +871,6 @@ impl Host {
             disk_metrics_recorder_task,
             tx_metrics_recorder_task,
         })
-    }
-
-    async fn handle_dangling_clients(
-        database_identity: &Identity,
-        module_host: &ModuleHost,
-        connected_clients: impl Iterator<Item = (Identity, ConnectionId)>,
-    ) -> anyhow::Result<()> {
-        for (identity, connection_id) in connected_clients {
-            module_host
-                .call_identity_disconnected(identity, connection_id)
-                .await
-                .with_context(|| {
-                    format!(
-                        "Error calling disconnect for {} {} on {}",
-                        identity, connection_id, database_identity
-                    )
-                })?;
-        }
-
-        // We should have no clients left, but we do this just in case.
-        // This should only matter if we crashed with something in st_client_credentials,
-        // then restarted with an older version of the code that doesn't use st_client_credentials.
-        // That case would cause some permanently dangling st_client_credentials.
-        // Since we have no clients on startup, this should be safe to do regardless.
-        module_host.clear_all_clients().await
     }
 
     /// Construct an in-memory instance of `database` running `program`,
