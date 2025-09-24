@@ -1,7 +1,6 @@
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::sql::parser::RowLevelExpr;
-use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::db::auth::StTableType;
@@ -24,6 +23,13 @@ impl UpdateLogger for SystemLogger {
     }
 }
 
+/// The result of a database update.
+/// Indicates whether clients should be disconnected when the update is complete.
+pub enum UpdateResult {
+    Success,
+    RequiresClientDisconnect,
+}
+
 /// Update the database according to the migration plan.
 ///
 /// The update is performed within the transactional context `tx`.
@@ -36,12 +42,11 @@ impl UpdateLogger for SystemLogger {
 // drop_* become transactional.
 pub fn update_database(
     stdb: &RelationalDB,
-    subscriptions: &ModuleSubscriptions,
     tx: &mut MutTxId,
     auth_ctx: AuthCtx,
     plan: MigratePlan,
     logger: &dyn UpdateLogger,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<UpdateResult> {
     let existing_tables = stdb.get_all_tables_mut(tx)?;
 
     // TODO: consider using `ErrorStream` here.
@@ -59,9 +64,7 @@ pub fn update_database(
 
     match plan {
         MigratePlan::Manual(plan) => manual_migrate_database(stdb, tx, plan, logger, existing_tables),
-        MigratePlan::Auto(plan) => {
-            auto_migrate_database(stdb, subscriptions, tx, auth_ctx, plan, logger, existing_tables)
-        }
+        MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, auth_ctx, plan, logger, existing_tables),
     }
 }
 
@@ -72,7 +75,7 @@ fn manual_migrate_database(
     _plan: ManualMigratePlan,
     _logger: &dyn UpdateLogger,
     _existing_tables: Vec<Arc<TableSchema>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<UpdateResult> {
     unimplemented!("Manual database migrations are not yet implemented")
 }
 
@@ -87,13 +90,12 @@ macro_rules! log {
 /// Automatically migrate a database.
 fn auto_migrate_database(
     stdb: &RelationalDB,
-    subscriptions: &ModuleSubscriptions,
     tx: &mut MutTxId,
     auth_ctx: AuthCtx,
     plan: AutoMigratePlan,
     logger: &dyn UpdateLogger,
     existing_tables: Vec<Arc<TableSchema>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<UpdateResult> {
     // We have already checked in `migrate_database` that `existing_tables` are compatible with the `old` definition in `plan`.
     // So we can look up tables in there using unwrap.
 
@@ -132,6 +134,7 @@ fn auto_migrate_database(
     }
 
     log::info!("Running database update steps: {}", stdb.database_identity());
+    let mut res = UpdateResult::Success;
 
     for step in plan.steps {
         match step {
@@ -270,16 +273,16 @@ fn auto_migrate_database(
                 stdb.add_columns_to_table(tx, table_id, column_schemas, default_values)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::DisconnectAllUsers => {
-                // Disconnect all clients from subscriptions.
-                // Any dangling clients will be handled during the launch of module hosts,
-                // which invokes `ModuleHost::call_identity_disconnected`.
-                subscriptions.remove_all_subscribers();
+                log!(logger, "Disconnecting all users");
+                // It does disconnect clients right away,
+                // but send response indicated that caller should drop clients
+                res = UpdateResult::RequiresClientDisconnect;
             }
         }
     }
 
     log::info!("Database update complete");
-    Ok(())
+    Ok(res)
 }
 
 #[cfg(test)]
@@ -359,14 +362,7 @@ mod test {
         // Try to update the db.
         let mut tx = begin_mut_tx(&stdb);
         let plan = ponder_migrate(&old, &new)?;
-        update_database(
-            &stdb,
-            &ModuleSubscriptions::for_test_new_runtime(Arc::new(stdb.db.clone())).0,
-            &mut tx,
-            auth_ctx,
-            plan,
-            &TestLogger,
-        )?;
+        update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
 
         // Expect the schema change.
         let idx_b_id = stdb

@@ -506,6 +506,7 @@ pub struct WeakModuleHost {
 pub enum UpdateDatabaseResult {
     NoUpdateNeeded,
     UpdatePerformed,
+    UpdatePerformedWithClientDisconnect,
     AutoMigrateError(ErrorStream<AutoMigrateError>),
     ErrorExecutingMigration(anyhow::Error),
 }
@@ -514,8 +515,15 @@ impl UpdateDatabaseResult {
     pub fn was_successful(&self) -> bool {
         matches!(
             self,
-            UpdateDatabaseResult::UpdatePerformed | UpdateDatabaseResult::NoUpdateNeeded
+            UpdateDatabaseResult::UpdatePerformed
+                | UpdateDatabaseResult::NoUpdateNeeded
+                | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect
         )
+    }
+
+    /// Check if hotswap was disabled due to the update.
+    pub fn hotswap_disabled(&self) -> bool {
+        matches!(self, UpdateDatabaseResult::UpdatePerformedWithClientDisconnect)
     }
 }
 
