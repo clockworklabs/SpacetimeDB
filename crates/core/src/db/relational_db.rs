@@ -10,6 +10,7 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
+use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
@@ -889,12 +890,17 @@ impl RelationalDB {
                     rowdata: rowdata.clone(),
                 })
                 .collect();
+
+            let truncates: IntSet<TableId> = tx_data.truncates().collect();
+
             let deletes: Box<_> = tx_data
                 .deletes()
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
                 })
+                // filter out deletes for tables that are truncated in the same transaction.
+                .filter(|ops| !truncates.contains(&ops.table_id))
                 .collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
@@ -905,7 +911,7 @@ impl RelationalDB {
                 mutations: Some(Mutations {
                     inserts,
                     deletes,
-                    truncates: [].into(),
+                    truncates: truncates.into_iter().collect(),
                 }),
             };
 
@@ -1080,6 +1086,18 @@ impl RelationalDB {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<(), DBError> {
         Ok(self.inner.alter_table_row_type_mut_tx(tx, table_id, column_schemas)?)
+    }
+
+    pub(crate) fn add_columns_to_table(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+        default_values: Vec<AlgebraicValue>,
+    ) -> Result<TableId, DBError> {
+        Ok(self
+            .inner
+            .add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)?)
     }
 
     /// Reports the `TxMetrics`s passed.
@@ -1427,13 +1445,9 @@ impl RelationalDB {
     }
 
     /// Clear all rows from a table without dropping it.
-    pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
-        let relation = self
-            .iter_mut(tx, table_id)?
-            .map(|row_ref| row_ref.pointer())
-            .collect::<Vec<_>>();
-        self.delete(tx, table_id, relation);
-        Ok(())
+    pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<usize, DBError> {
+        let rows_deleted = tx.clear_table(table_id)?;
+        Ok(rows_deleted)
     }
 
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {

@@ -7,6 +7,7 @@ use crate::de::Deserialize;
 use crate::meta_type::MetaType;
 use crate::product_type::{CONNECTION_ID_TAG, IDENTITY_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG};
 use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG};
+use crate::typespace::Typespace;
 use crate::{i256, u256};
 use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SpacetimeType, SumType, SumTypeVariant};
 use derive_more::From;
@@ -445,8 +446,41 @@ impl AlgebraicType {
             _ => true,
         }
     }
-}
 
+    pub fn type_check(&self, value: &AlgebraicValue, typespace: &Typespace) -> bool {
+        match (self, value) {
+            (_, AlgebraicValue::Min | AlgebraicValue::Max) => true,
+            (AlgebraicType::Ref(r), _) => {
+                if let Some(resolved_ty) = typespace.get(*r) {
+                    resolved_ty.type_check(value, typespace)
+                } else {
+                    false
+                }
+            }
+            (AlgebraicType::Sum(sum_ty), AlgebraicValue::Sum(sv)) => sum_ty.type_check(sv, typespace),
+            (AlgebraicType::Product(product_ty), AlgebraicValue::Product(pv)) => product_ty.type_check(pv, typespace),
+            (AlgebraicType::Array(array_ty), AlgebraicValue::Array(arr)) => array_ty.type_check(arr, typespace),
+
+            (AlgebraicType::String, AlgebraicValue::String(_))
+            | (AlgebraicType::Bool, AlgebraicValue::Bool(_))
+            | (AlgebraicType::I8, AlgebraicValue::I8(_))
+            | (AlgebraicType::U8, AlgebraicValue::U8(_))
+            | (AlgebraicType::I16, AlgebraicValue::I16(_))
+            | (AlgebraicType::U16, AlgebraicValue::U16(_))
+            | (AlgebraicType::I32, AlgebraicValue::I32(_))
+            | (AlgebraicType::U32, AlgebraicValue::U32(_))
+            | (AlgebraicType::I64, AlgebraicValue::I64(_))
+            | (AlgebraicType::U64, AlgebraicValue::U64(_))
+            | (AlgebraicType::I128, AlgebraicValue::I128(_))
+            | (AlgebraicType::U128, AlgebraicValue::U128(_))
+            | (AlgebraicType::I256, AlgebraicValue::I256(_))
+            | (AlgebraicType::U256, AlgebraicValue::U256(_))
+            | (AlgebraicType::F32, AlgebraicValue::F32(_))
+            | (AlgebraicType::F64, AlgebraicValue::F64(_)) => true,
+            _ => false,
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::AlgebraicType;
@@ -456,7 +490,7 @@ mod tests {
         algebraic_type::fmt::fmt_algebraic_type, algebraic_type::map_notation::fmt_algebraic_type as fmt_map,
         algebraic_type_ref::AlgebraicTypeRef, typespace::Typespace,
     };
-    use crate::{ValueWithType, WithTypespace};
+    use crate::{product, AlgebraicValue, ValueWithType, WithTypespace};
 
     #[test]
     fn never() {
@@ -701,5 +735,16 @@ mod tests {
         assert!(AlgebraicType::timestamp().is_special());
         assert!(AlgebraicType::time_duration().is_special());
         assert!(AlgebraicType::time_duration().is_time_duration());
+    }
+
+    #[test]
+    fn type_check() {
+        let av = AlgebraicValue::sum(1, AlgebraicValue::from(product![0u16, 1u32]));
+        let at = AlgebraicType::sum([
+            ("a", AlgebraicType::U8),
+            ("b", AlgebraicType::product([AlgebraicType::U16, AlgebraicType::U32])),
+        ]);
+
+        at.type_check(&av, Typespace::EMPTY);
     }
 }

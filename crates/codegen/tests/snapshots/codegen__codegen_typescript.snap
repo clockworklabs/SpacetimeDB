@@ -30,7 +30,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type AddPlayer = {
   name: string,
@@ -92,7 +92,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type AddPrivate = {
   name: string,
@@ -154,7 +154,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type Add = {
   name: string,
@@ -218,7 +218,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type AssertCallerIdentityIsModuleIdentity = {};
 /**
@@ -277,7 +277,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type Baz = {
   field: string,
@@ -340,7 +340,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type ClientConnected = {};
 /**
@@ -399,7 +399,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type DeletePlayer = {
   id: bigint,
@@ -461,7 +461,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type DeletePlayersByName = {
   name: string,
@@ -523,7 +523,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { Baz } from "./baz_type";
 // Mark import as potentially unused
 declare type __keep_Baz = Baz;
@@ -599,7 +599,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { Baz as BazType } from "./baz_type";
 // Mark import as potentially unused
 declare type __keep_BazType = BazType;
@@ -638,7 +638,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { HasSpecialStuff } from "./has_special_stuff_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
@@ -713,7 +713,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type HasSpecialStuff = {
   identity: __Identity,
@@ -780,7 +780,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 // Import and reexport all reducer arg types
 import { Add } from "./add_reducer.ts";
@@ -1433,7 +1433,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type ListOverAge = {
   age: number,
@@ -1495,7 +1495,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type LogModuleIdentity = {};
 /**
@@ -1554,7 +1554,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { Player } from "./player_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
@@ -1703,7 +1703,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import * as NamespaceTestCVariants from './namespace_test_c_variants'
 
 // The tagged union or sum type for the algebraic type `NamespaceTestC`.
@@ -1772,7 +1772,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type Foo = { tag: "Foo" };
 export type Bar = { tag: "Bar" };
@@ -1806,7 +1806,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import * as NamespaceTestFVariants from './namespace_test_f_variants'
 
 // The tagged union or sum type for the algebraic type `NamespaceTestF`.
@@ -1878,7 +1878,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type Foo = { tag: "Foo" };
 export type Bar = { tag: "Bar" };
@@ -1913,7 +1913,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { Person } from "./person_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
@@ -2018,7 +2018,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type Person = {
   id: number,
@@ -2085,7 +2085,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { PkMultiIdentity } from "./pk_multi_identity_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
@@ -2212,7 +2212,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type PkMultiIdentity = {
   id: number,
@@ -2277,7 +2277,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { Player } from "./player_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
@@ -2426,7 +2426,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type Player = {
   identity: __Identity,
@@ -2493,7 +2493,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type Point = {
   x: bigint,
@@ -2558,7 +2558,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { Point } from "./point_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
@@ -2633,7 +2633,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { PrivateTable } from "./private_table_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
@@ -2708,7 +2708,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type PrivateTable = {
   name: string,
@@ -2771,7 +2771,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type QueryPrivate = {};
 /**
@@ -2830,7 +2830,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { RepeatingTestArg } from "./repeating_test_arg_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
@@ -2935,7 +2935,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type RepeatingTestArg = {
   scheduledId: bigint,
@@ -3002,7 +3002,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 import { RepeatingTestArg } from "./repeating_test_arg_type";
 // Mark import as potentially unused
@@ -3068,7 +3068,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type SayHello = {};
 /**
@@ -3127,7 +3127,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { TestA } from "./test_a_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
@@ -3202,7 +3202,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type TestA = {
   x: number,
@@ -3269,7 +3269,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type TestB = {
   foo: string,
@@ -3332,7 +3332,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type TestBtreeIndexArgs = {};
 /**
@@ -3391,7 +3391,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { TestD } from "./test_d_type";
 import { NamespaceTestC } from "./namespace_test_c_type";
 // Mark import as potentially unused
@@ -3470,7 +3470,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { NamespaceTestC } from "./namespace_test_c_type";
 // Mark import as potentially unused
 declare type __keep_NamespaceTestC = NamespaceTestC;
@@ -3537,7 +3537,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { TestE } from "./test_e_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
@@ -3642,7 +3642,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 export type TestE = {
   id: bigint,
@@ -3707,7 +3707,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { TestFoobar } from "./test_foobar_type";
 import { Foobar } from "./foobar_type";
 // Mark import as potentially unused
@@ -3786,7 +3786,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 import { Foobar } from "./foobar_type";
 // Mark import as potentially unused
 declare type __keep_Foobar = Foobar;
@@ -3853,7 +3853,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from "@clockworklabs/spacetimedb-sdk";
+} from "spacetimedb";
 
 import { TestA } from "./test_a_type";
 // Mark import as potentially unused
