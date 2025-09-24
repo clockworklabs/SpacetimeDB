@@ -769,6 +769,10 @@ impl ReducerContext {
         }
     }
 
+    pub fn sender_auth(&self) -> &AuthCtx {
+        &self.sender_auth
+    }
+
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.
