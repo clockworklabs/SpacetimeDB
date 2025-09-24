@@ -68,6 +68,7 @@ const nav = {
     page('Unreal Reference', 'unreal/reference', 'unreal/reference.md'),
     section('SQL'),
     page('SQL Reference', 'sql', 'sql/index.md'),
+    page('PostgreSQL wire protocol (PGWire) ', 'sql/pg-wire', 'sql/pg-wire.md'),
     section('Subscriptions'),
     page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
     page(
