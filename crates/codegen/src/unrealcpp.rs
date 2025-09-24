@@ -1033,7 +1033,10 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "{{");
     writeln!(output, "\tGENERATED_BODY()");
     writeln!(output);
-    writeln!(output, "\tFContextBase() = default;");
+    writeln!(
+        output,
+        "\tFContextBase() : Db(nullptr), Reducers(nullptr), SetReducerFlags(nullptr), Conn(nullptr) {{}};"
+    );
     writeln!(output, "\tFContextBase(UDbConnection* InConn);");
     writeln!(output);
     writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
@@ -1058,6 +1061,44 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "\tUPROPERTY()");
     writeln!(output, "\tUDbConnection* Conn;");
     writeln!(output);
+    writeln!(output, "}};");
+    writeln!(output);
+
+    // BPLib for FContextBase - Needed to allow inheritance in Blueprint
+    writeln!(output, "UCLASS()");
+    writeln!(
+        output,
+        "class {api_macro} UContextBaseBpLib : public UBlueprintFunctionLibrary"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "\tGENERATED_BODY()");
+    writeln!(output);
+    writeln!(output, "private:");
+
+    writeln!(output, "\tUFUNCTION(BlueprintPure, Category=\"SpacetimeDB\")");
+    writeln!(
+        output,
+        "\tstatic URemoteTables* GetDb(const FContextBase& Ctx) {{ return Ctx.Db; }}"
+    );
+    writeln!(output);
+    writeln!(output, "\tUFUNCTION(BlueprintPure, Category=\"SpacetimeDB\")");
+    writeln!(
+        output,
+        "\tstatic URemoteReducers* GetReducers(const FContextBase& Ctx) {{ return Ctx.Reducers; }}"
+    );
+    writeln!(output);
+    writeln!(output, "\tUFUNCTION(BlueprintPure, Category=\"SpacetimeDB\")");
+    writeln!(
+        output,
+        "\tstatic USetReducerFlags* GetSetReducerFlags(const FContextBase& Ctx) {{ return Ctx.SetReducerFlags; }}"
+    );
+    writeln!(output);
+    writeln!(output, "\tUFUNCTION(BlueprintPure, Category=\"SpacetimeDB\")");
+    writeln!(
+        output,
+        "\tstatic bool IsActive(const FContextBase& Ctx) {{ return Ctx.IsActive(); }}"
+    );
+
     writeln!(output, "}};");
     writeln!(output);
 
@@ -1091,7 +1132,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output);
     writeln!(output, "public:");
     writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
-    writeln!(output, "    EReducerTag Tag;");
+    writeln!(output, "    EReducerTag Tag = static_cast<EReducerTag>(0);");
     writeln!(output);
     write!(output, "    TVariant<");
     {
@@ -3485,7 +3526,8 @@ fn autogen_cpp_struct(
     for (orig_name, ty) in product_type.into_iter() {
         let field_name = orig_name.deref().to_case(Case::Pascal);
         let ty_str = cpp_ty_fmt_with_module(module, ty, module_name).to_string();
-        let field_decl = format!("{ty_str} {field_name}");
+        let init_str = cpp_ty_init_fmt_impl(ty);
+        let field_decl = format!("{ty_str} {field_name}{init_str}");
 
         // Check if the type is blueprintable
         if is_blueprintable(module, ty) {
@@ -3818,7 +3860,10 @@ fn autogen_cpp_sum(
 
     writeln!(output);
 
-    writeln!(output, "    UPROPERTY(BlueprintReadOnly)\n    E{name}Tag Tag;\n");
+    writeln!(
+        output,
+        "    UPROPERTY(BlueprintReadOnly)\n    E{name}Tag Tag = static_cast<E{name}Tag>(0);\n"
+    );
 
     /* 4a. Static factories per variant -------------------------------- */
     for (variant_name, variant_type) in &sum_type.variants {
@@ -4153,6 +4198,43 @@ fn cpp_ty_fmt_impl<'a>(
             }
         }
 
+        AlgebraicTypeUse::Never => unreachable!("never type"),
+    })
+}
+
+// For UPROPERTY() Unreal expects initialization values for certain types
+// (e.g. bools default to true if not explicitly initialized to false).
+fn cpp_ty_init_fmt_impl<'a>(ty: &'a AlgebraicTypeUse) -> impl fmt::Display + 'a {
+    fmt_fn(move |f| match ty {
+        AlgebraicTypeUse::Primitive(p) => f.write_str(match p {
+            PrimitiveType::Bool => " = false;",
+            PrimitiveType::I8 => " = 0",
+            PrimitiveType::U8 => " = 0",
+            PrimitiveType::I16 => " = 0",
+            PrimitiveType::U16 => " = 0",
+            PrimitiveType::I32 => " = 0",
+            PrimitiveType::U32 => " = 0",
+            PrimitiveType::I64 => " = 0",
+            PrimitiveType::U64 => " = 0",
+            PrimitiveType::F32 => " = 0.f",
+            PrimitiveType::F64 => " = 0.f",
+            PrimitiveType::I128 => "",
+            PrimitiveType::U128 => "",
+            PrimitiveType::I256 => "",
+            PrimitiveType::U256 => "",
+        }),
+        AlgebraicTypeUse::Array(_elem) => f.write_str(""),
+        AlgebraicTypeUse::String => f.write_str(""),
+        AlgebraicTypeUse::Identity => f.write_str(""),
+        AlgebraicTypeUse::ConnectionId => f.write_str(""),
+        AlgebraicTypeUse::Timestamp => f.write_str(""),
+        AlgebraicTypeUse::TimeDuration => f.write_str(""),
+        AlgebraicTypeUse::ScheduleAt => f.write_str(""),
+        AlgebraicTypeUse::Unit => f.write_str(""),
+        // --------- references to user-defined types ---------
+        AlgebraicTypeUse::Ref(_r) => f.write_str(""),
+        // Options use the generated optional types
+        AlgebraicTypeUse::Option(_inner) => f.write_str(""),
         AlgebraicTypeUse::Never => unreachable!("never type"),
     })
 }

@@ -12,10 +12,10 @@ struct TESTCLIENT_API FUniqueU64Type
     GENERATED_BODY()
 
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 N;
+    uint64 N = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FORCEINLINE bool operator==(const FUniqueU64Type& Other) const
     {
