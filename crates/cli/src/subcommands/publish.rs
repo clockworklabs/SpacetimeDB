@@ -147,29 +147,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
 
         if !clear_database {
-            if let Some(pre_publish_res) = call_pre_publish(
+            builder = apply_pre_publish_if_needed(
+                builder,
                 &client,
                 &database_host,
                 &domain.to_string(),
                 &program_bytes,
                 &auth_header,
+                break_clients_flag,
             )
-            .await?
-            {
-                println!("{}", pre_publish_res.migrate_plan);
-                if pre_publish_res.break_clients
-                    && !y_or_n(
-                        break_clients_flag,
-                        "The above changes will BREAK existing clients. Do you want to proceed?",
-                    )?
-                {
-                    println!("Aborting");
-                    return Ok(());
-                }
-
-                builder = builder.query(&[("token", pre_publish_res.token)]);
-                builder = builder.query(&[("policy", "BreakClients")]);
-            }
+            .await?;
         };
 
         builder
@@ -264,6 +251,39 @@ pub fn pretty_print_style_from_env() -> PrettyPrintStyle {
         Ok(_) => PrettyPrintStyle::NoColor,
         Err(_) => PrettyPrintStyle::AnsiColor,
     }
+}
+
+/// Applies pre-publish logic: checking for migration plan, prompting user, and
+/// modifying the request builder accordingly.
+async fn apply_pre_publish_if_needed(
+    mut builder: reqwest::RequestBuilder,
+    client: &reqwest::Client,
+    base_url: &str,
+    domain: &String,
+    program_bytes: &[u8],
+    auth_header: &AuthHeader,
+    break_clients_flag: bool,
+) -> Result<reqwest::RequestBuilder, anyhow::Error> {
+    if let Some(pre) = call_pre_publish(client, base_url, &domain.to_string(), program_bytes, auth_header).await? {
+        println!("{}", pre.migrate_plan);
+
+        if pre.break_clients
+            && !y_or_n(
+                break_clients_flag,
+                "The above changes will BREAK existing clients. Do you want to proceed?",
+            )?
+        {
+            println!("Aborting");
+            // Early exit: return an error or a special signal. Here we bail out by returning Err.
+            return Err(anyhow::anyhow!("Publishing aborted by user"));
+        }
+
+        builder = builder
+            .query(&[("token", pre.token)])
+            .query(&[("policy", "BreakClients")]);
+    }
+
+    Ok(builder)
 }
 
 async fn call_pre_publish(
