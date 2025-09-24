@@ -165,6 +165,13 @@ impl WasmInstanceEnv {
         &self.reducer_name
     }
 
+    /// Returns the name of the most recent reducer to be run in this environment,
+    /// or `None` if no reducer is actively being invoked.
+    fn log_record_function(&self) -> Option<&str> {
+        let function = self.reducer_name();
+        (!function.is_empty()).then_some(function)
+    }
+
     /// Returns the name of the most recent reducer to be run in this environment.
     pub fn reducer_start(&self) -> Instant {
         self.reducer_start
@@ -1146,12 +1153,15 @@ impl WasmInstanceEnv {
             // The line number cannot be `u32::MAX` as this represents `Option::None`.
             let line_number = (line_number != u32::MAX).then_some(line_number);
 
+            let function = env.log_record_function();
+
             let record = Record {
                 // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start)
                 ts: chrono::Utc::now(),
                 target: target.as_deref(),
                 filename: filename.as_deref(),
                 line_number,
+                function,
                 message: &message,
             };
 
@@ -1192,12 +1202,14 @@ impl WasmInstanceEnv {
 
             let elapsed = span.start.elapsed();
             let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+            let function = caller.data().log_record_function();
 
             let record = Record {
                 ts: chrono::Utc::now(),
                 target: None,
                 filename: None,
                 line_number: None,
+                function,
                 message: &message,
             };
             caller.data().instance_env.console_log(

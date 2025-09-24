@@ -312,7 +312,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         }
     }
 
-    fn generate_globals_file(&self, module: &ModuleDef) -> OutputFile {
+    fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -484,10 +484,10 @@ setReducerFlagsConstructor: () => {{
             "export type ErrorContext = __ErrorContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;"
         );
 
-        OutputFile {
+        vec![OutputFile {
             filename: "index.ts".to_string(),
             code: output.into_inner(),
-        }
+        }]
     }
 }
 
@@ -705,7 +705,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         writeln!(out, "{ty},");
     }
     out.dedent(1);
-    writeln!(out, "}} from \"@clockworklabs/spacetimedb-sdk\";");
+    writeln!(out, "}} from \"spacetimedb\";");
 }
 
 fn print_file_header(output: &mut Indenter, include_version: bool) {

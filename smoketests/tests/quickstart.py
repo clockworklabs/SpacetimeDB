@@ -125,7 +125,7 @@ class BaseQuickstart(Smoketest):
             main = main.replace(src, dst)
         main += "\n" + self.extra_code
         server = self.get_server_address()
-        host = server["host"]
+        host = server["address"]
         protocol = server["protocol"]
         main = main.replace("http://localhost:3000", f"{protocol}://{host}")
         _write_file(client_path / self.client_file, main)

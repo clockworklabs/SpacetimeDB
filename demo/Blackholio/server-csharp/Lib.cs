@@ -322,7 +322,7 @@ public static partial class Module
 						var gravity_multiplier =
 							1f - time_before_recombining / SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC;
 						var vec = diff.Normalized
-							* MathF.Sqrt(radius_sum - distance_sqr)
+							* (radius_sum - MathF.Sqrt(distance_sqr))
 							* gravity_multiplier
 							* 0.05f
 							/ count;
@@ -483,9 +483,11 @@ public static partial class Module
 			}
 		}
 
+		var duration = new TimeDuration { Microseconds = (long)(SPLIT_RECOMBINE_DELAY_SEC * 1_000_000) };
+		var trigger_at = ctx.Timestamp + duration;
 		ctx.Db.circle_recombine_timer.Insert(new CircleRecombineTimer
 		{
-			scheduled_at = new ScheduleAt.Time(DateTimeOffset.Now.Add(TimeSpan.FromSeconds(SPLIT_RECOMBINE_DELAY_SEC))),
+			scheduled_at = new ScheduleAt.Time(trigger_at),
 			player_id = player.player_id,
 		});
 
