@@ -520,11 +520,6 @@ impl UpdateDatabaseResult {
                 | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect
         )
     }
-
-    /// Check if hotswap was disabled due to the update.
-    pub fn hotswap_disabled(&self) -> bool {
-        matches!(self, UpdateDatabaseResult::UpdatePerformedWithClientDisconnect)
-    }
 }
 
 #[derive(thiserror::Error, Debug)]

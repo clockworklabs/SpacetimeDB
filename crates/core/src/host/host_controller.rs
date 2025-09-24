@@ -19,7 +19,7 @@ use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 use parking_lot::Mutex;
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::IntMap;
@@ -414,13 +414,7 @@ impl HostController {
                 )
                 .await?;
 
-            // If hotswap is disabled, we drop the host after the update.
-            // which will drop all connected clients.
-            if !update_result.hotswap_disabled() {
-                *guard = Some(host);
-            } else {
-                debug!("dropping host after update with hotswap disabled");
-            }
+            *guard = Some(host);
 
             Ok::<_, anyhow::Error>(update_result)
         })
