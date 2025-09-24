@@ -228,11 +228,9 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
 
         logging.info("Rejected as expected.")
 
-
 class AddTableColumns(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table};
-
 
 #[derive(Debug)]
 #[spacetimedb::table(name = person)]
@@ -253,9 +251,8 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
 }
 """
 
-    MODULE_CODE_UPDATED = """
+    MODULE_UPDATED = """
 use spacetimedb::{log, ReducerContext, Table};
-
 
 #[derive(Debug)]
 #[spacetimedb::table(name = person)]
@@ -280,19 +277,61 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
 }
 """
 
+    MODULE_UPDATED_AGAIN = """
+use spacetimedb::{log, ReducerContext, Table};
+
+#[derive(Debug)]
+#[spacetimedb::table(name = person)]
+pub struct Person {
+    name: String,
+    age: u16,
+    #[default(19)]
+    mass: u16,
+    #[default(160)]
+    height: u32,
+}
+
+#[spacetimedb::reducer]
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name, age: 70, mass: 180, height: 72 });
+}
+
+#[spacetimedb::reducer]
+pub fn print_persons(ctx: &ReducerContext, prefix: String) {
+    for person in ctx.db.person().iter() {
+        log::info!("{}: {:?}", prefix, person);
+    }
+}
+"""
+
     def test_add_table_columns(self):
-        """This tests that a module with adding columns with defaults can be published"""
+        """This tests uploads a module with schema changes that add columns with defaults (twice)."""
+        # subscribe to monitor table changes
+        self.subscribe("select * from person", n=5)
 
-        logging.info("Initial publish complete, trying to do an invalid update.")
-
+        # insert under initial schema
         self.call("add_person", "Robert")
-        self.write_module_code(self.MODULE_CODE_UPDATED)
+
+        # first upgrade: add age & mass
+        self.write_module_code(self.MODULE_UPDATED)
         self.publish_module(self.database_identity, clear=False, break_clients=True)
+        self.call("print_persons", "UPDATE_1")
+        logs1 = self.logs(100)
+        self.assertIn("Disconnecting all users", logs1)
+        self.assertIn(
+            'UPDATE_1: Person { name: "Robert", age: 0, mass: 19 }',
+            logs1
+        )
 
-       
-        self.call("print_persons", "ADD COLUMNS")
-        logs = self.logs(100)
+        # insert new data under upgraded schema
+        self.call("add_person", "Robert2")
 
-        print(logs)
-        self.assertIn("ADD COLUMNS: Person { name: \"Robert\", age: 0, mass: 19 }", logs)
-
+        # second upgrade: add height
+        self.write_module_code(self.MODULE_UPDATED_AGAIN)
+        self.publish_module(self.database_identity, clear=False, break_clients=True)
+        self.call("print_persons", "UPDATE_2")
+        logs2 = self.logs(100)
+        self.assertIn(
+            'UPDATE_2: Person { name: "Robert2", age: 70, mass: 180, height: 160 }',
+            logs2
+        )
