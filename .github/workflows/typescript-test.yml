@@ -26,7 +26,7 @@ jobs:
 
       - name: Get pnpm store directory
         shell: bash
-        working-directory: sdks/typescript
+        working-directory: crates/bindings-typescript
         run: |
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
@@ -38,20 +38,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
       
-      - name: Build module library
+      - name: Build module library and SDK
         working-directory: crates/bindings-typescript
         run: pnpm build
 
-      - name: Run module library tests
+      - name: Run module library and SDK tests
         working-directory: crates/bindings-typescript 
-        run: pnpm test
-
-      - name: Build SDK
-        working-directory: sdks/typescript
-        run: pnpm build
-
-      - name: Run SDK tests
-        working-directory: sdks/typescript/packages/sdk
         run: pnpm test
 
       # - name: Extract SpacetimeDB branch name from file
@@ -104,12 +96,12 @@ jobs:
       - name: Generate client bindings
         working-directory: modules/quickstart-chat
         run: |
-          spacetime generate --lang typescript --out-dir ../../sdks/typescript/examples/quickstart-chat/src/module_bindings
-          cd ../../sdks/typescript
-          pnpm lint --write
+          spacetime generate --lang typescript --out-dir ../../crates/bindings-typescript/examples/quickstart-chat/src/module_bindings
+          cd ../../crates/bindings-typescript
+          pnpm format
 
       - name: Check for changes
-        working-directory: sdks/typescript
+        working-directory: crates/bindings-typescript
         run: |
           # This was copied from SpacetimeDB/tools/check-diff.sh.
           # It's required because `spacetime generate` creates lines with the SpacetimeDB commit
@@ -137,7 +129,7 @@ jobs:
       #     spacetime logs quickstart-chat
 
       - name: Check that quickstart-chat builds
-        working-directory: sdks/typescript/examples/quickstart-chat
+        working-directory: crates/bindings-typescript/examples/quickstart-chat
         run: pnpm build
 
       # - name: Run quickstart-chat tests

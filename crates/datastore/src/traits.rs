@@ -8,7 +8,7 @@ use super::system_tables::ModuleKind;
 use super::Result;
 use crate::execution_context::{ReducerContext, Workload};
 use crate::system_tables::ST_TABLE_ID;
-use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
@@ -176,6 +176,12 @@ pub struct TxData {
     inserts: BTreeMap<TableId, Arc<[ProductValue]>>,
     /// The deleted rows per table.
     deletes: BTreeMap<TableId, Arc<[ProductValue]>>,
+    /// *Truncating* means that all rows in the table have been deleted.
+    /// In other words, a truncated table is a cleared table.
+    ///
+    /// Note that when a table has an entry in `truncates`,
+    /// it will also have an entry in `deletes`.
+    truncates: IntSet<TableId>,
     /// Map of all `TableId`s in both `inserts` and `deletes` to their
     /// corresponding table name.
     // TODO: Store table name as ref counted string.
@@ -209,9 +215,15 @@ impl TxData {
     }
 
     /// Set `rows` as the deleted rows for `(table_id, table_name)`.
+    ///
+    /// When `truncated` is set, the table has been emptied in this transaction.
     pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
         self.deletes.insert(table_id, rows);
         self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+    }
+
+    pub fn add_truncates(&mut self, truncated_tables: impl IntoIterator<Item = TableId>) {
+        self.truncates.extend(truncated_tables);
     }
 
     /// Obtain an iterator over the inserted rows per table.
@@ -262,12 +274,16 @@ impl TxData {
         })
     }
 
+    pub fn truncates(&self) -> impl Iterator<Item = TableId> + '_ {
+        self.truncates.iter().copied()
+    }
+
     /// Check if this [`TxData`] contains any `inserted | deleted` rows or `connect/disconnect` operations.
     ///
     /// This is used to determine if a transaction should be written to disk.
     pub fn has_rows_or_connect_disconnect(&self, reducer_context: Option<&ReducerContext>) -> bool {
         self.inserts().any(|(_, inserted_rows)| !inserted_rows.is_empty())
-            || self.deletes().any(|(_, deleted_rows)| !deleted_rows.is_empty())
+            || self.deletes().any(|(.., deleted_rows)| !deleted_rows.is_empty())
             || matches!(
                 reducer_context.map(|rcx| rcx.name.strip_prefix("__identity_")),
                 Some(Some("connected__" | "disconnected__"))
@@ -372,7 +388,7 @@ pub trait MutTx {
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String);
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, String);
 }
 
 /// Standard metadata associated with a database.

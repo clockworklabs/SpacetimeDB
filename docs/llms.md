@@ -2278,10 +2278,13 @@ Install the SDK package into your project:
 
 ```bash
 # Using npm
-npm install @clockworklabs/spacetimedb-sdk
+npm install spacetimedb 
+
+# Or using pnpm
+pnpm add spacetimedb 
 
 # Or using yarn
-yarn add @clockworklabs/spacetimedb-sdk
+yarn add spacetimedb 
 ```
 
 #### 2. Generate Module Bindings
@@ -2299,7 +2302,7 @@ Import the necessary generated types and SDK components:
 
 ```typescript
 // Import SDK core types
-import { Identity, Status } from "@clockworklabs/spacetimedb-sdk";
+import { Identity, Status } from "spacetimedb";
 // Import generated connection class, event contexts, and table types
 import { DbConnection, EventContext, ReducerEventContext, Message, User } from "./module_bindings"; 
 // Reducer functions are accessed via conn.reducers
@@ -2311,7 +2314,7 @@ Use the generated `DbConnection` class and its builder pattern to establish a co
 
 ```typescript
 import { DbConnection, EventContext, ReducerEventContext, Message, User } from './module_bindings';
-import { Identity, Status } from '@clockworklabs/spacetimedb-sdk';
+import { Identity, Status } from 'spacetimedb';
 
 const HOST = "ws://localhost:3000";
 const DB_NAME = "quickstart-chat"; 

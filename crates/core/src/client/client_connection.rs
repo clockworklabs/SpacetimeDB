@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
@@ -22,6 +22,7 @@ use bytestring::ByteString;
 use derive_more::From;
 use futures::prelude::*;
 use prometheus::{Histogram, IntCounter, IntGauge};
+use spacetimedb_auth::identity::{ConnectionAuthCtx, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, Unsubscribe,
     UnsubscribeMulti,
@@ -253,6 +254,7 @@ impl ClientConnectionReceiver {
 #[derive(Debug)]
 pub struct ClientConnectionSender {
     pub id: ClientActorId,
+    pub auth: ConnectionAuthCtx,
     pub config: ClientConfig,
     sendtx: mpsc::Sender<ClientUpdate>,
     abort_handle: AbortHandle,
@@ -325,8 +327,17 @@ impl ClientConnectionSender {
 
         let receiver = ClientConnectionReceiver::new(config.confirmed_reads, MeteredReceiver::new(rx), offset_supply);
         let cancelled = AtomicBool::new(false);
+        let dummy_claims = SpacetimeIdentityClaims {
+            identity: id.identity,
+            subject: "".to_string(),
+            issuer: "".to_string(),
+            audience: vec![],
+            iat: SystemTime::now(),
+            exp: None,
+        };
         let sender = Self {
             id,
+            auth: ConnectionAuthCtx::try_from(dummy_claims).expect("dummy claims should always be valid"),
             config,
             sendtx,
             abort_handle,
@@ -650,9 +661,10 @@ impl ClientConnection {
     pub async fn call_client_connected_maybe_reject(
         module_rx: &mut watch::Receiver<ModuleHost>,
         id: ClientActorId,
+        auth: ConnectionAuthCtx,
     ) -> Result<Connected, ClientConnectedError> {
         let module = module_rx.borrow_and_update().clone();
-        module.call_identity_connected(id.identity, id.connection_id).await?;
+        module.call_identity_connected(auth, id.connection_id).await?;
         Ok(Connected { _private: () })
     }
 
@@ -664,6 +676,7 @@ impl ClientConnection {
     /// and pass the returned [`Connected`] as `_proof_of_client_connected_call`.
     pub async fn spawn<Fut>(
         id: ClientActorId,
+        auth: ConnectionAuthCtx,
         config: ClientConfig,
         replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
@@ -685,6 +698,7 @@ impl ClientConnection {
         // weird dance so that we can get an abort_handle into ClientConnection
         let module_info = module.info.clone();
         let database_identity = module_info.database_identity;
+        let client_identity = id.identity;
         let abort_handle = tokio::spawn(async move {
             let Ok(fut) = fut_rx.await else { return };
 
@@ -692,7 +706,6 @@ impl ClientConnection {
             module_info.metrics.ws_clients_spawned.inc();
             scopeguard::defer! {
                 let database_identity = module_info.database_identity;
-                let client_identity = id.identity;
                 log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
                 module_info.metrics.ws_clients_aborted.inc();
             };
@@ -710,6 +723,7 @@ impl ClientConnection {
 
         let sender = Arc::new(ClientConnectionSender {
             id,
+            auth,
             config,
             sendtx,
             abort_handle,

@@ -175,6 +175,20 @@ impl TableSchema {
         }
     }
 
+    /// Reset all the ids in this schema to sentinel values.
+    /// It is useful when cloning a schema to create a new table.
+    pub fn reset(&mut self) {
+        self.update_table_id(TableId::SENTINEL);
+        self.indexes.iter_mut().for_each(|i| i.index_id = IndexId::SENTINEL);
+        self.sequences
+            .iter_mut()
+            .for_each(|i| i.sequence_id = SequenceId::SENTINEL);
+        self.constraints
+            .iter_mut()
+            .for_each(|i| i.constraint_id = ConstraintId::SENTINEL);
+        self.row_type = columns_to_row_type(&self.columns);
+    }
+
     /// Convert a table schema into a list of columns.
     pub fn into_columns(self) -> Vec<ColumnSchema> {
         self.columns

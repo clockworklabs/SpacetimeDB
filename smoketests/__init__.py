@@ -216,7 +216,7 @@ class Smoketest(unittest.TestCase):
         logs = self.spacetime("logs", "--format=json", "-n", str(n), "--", self.database_identity)
         return list(map(json.loads, logs.splitlines()))
 
-    def publish_module(self, domain=None, *, clear=True, capture_stderr=True):
+    def publish_module(self, domain=None, *, clear=True, capture_stderr=True, num_replicas=None):
         print("publishing module", self.publish_module)
         publish_output = self.spacetime(
             "publish",
@@ -227,10 +227,11 @@ class Smoketest(unittest.TestCase):
             # because the server address is `node` which doesn't look like `localhost` or `127.0.0.1`
             # and so the publish step prompts for confirmation.
             "--yes",
+            *["--num-replicas", f"{num_replicas}"] if num_replicas is not None else [],
             capture_stderr=capture_stderr,
         )
         self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]
-        self.database_identity = domain if domain is not None else self.resolved_identity
+        self.database_identity = self.resolved_identity
 
     @classmethod
     def reset_config(cls):
@@ -300,10 +301,14 @@ class Smoketest(unittest.TestCase):
             server_config = next((c for c in config['server_configs'] if c['nickname'] == server_name), None)
             if server_config is None:
                 raise Exception(f"Unable to find server in config with nickname {server_name}")
-            host = server_config['host']
+            address = server_config['host']
+            host = address
+            port = None
+            if ":" in host:
+                host, port = host.split(":", 1)
             protocol = server_config['protocol']
 
-            return dict(host=host, protocol=protocol, token=token)
+            return dict(address=address, host=host, port=port, protocol=protocol, token=token)
 
     # Make an HTTP call with `method` to `path`.
     #
@@ -311,7 +316,7 @@ class Smoketest(unittest.TestCase):
     # Otherwise, throw an `Exception` constructed with two arguments, the response object and the body.
     def api_call(self, method, path, body=None, headers={}):
         server = self.get_server_address()
-        host = server["host"]
+        host = server["address"]
         protocol = server["protocol"]
         token = server["token"]
         conn = None

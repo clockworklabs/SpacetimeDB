@@ -1,9 +1,10 @@
-from .. import COMPOSE_FILE, Smoketest, requires_docker, spacetime, parse_sql_result
-from ..docker import DockerManager
-
 import time
-from typing import Callable
 import unittest
+from typing import Callable
+import json
+
+from .. import COMPOSE_FILE, Smoketest, random_string, requires_docker, spacetime, parse_sql_result
+from ..docker import DockerManager
 
 def retry(func: Callable, max_retries: int = 3, retry_delay: int = 2):
     """Retry a function on failure with delay."""
@@ -112,6 +113,18 @@ where replication_state.database_id={database_id} \
         # Wait for at least one tick to ensure buffers are flushed.
         # TODO: Replace with confirmed read.
         time.sleep(0.6)
+
+    def wait_counter_value(self, id, value, max_attempts=10, delay=1):
+        """Wait for the value for `id` in the counter table to reach `value`"""
+
+        for _ in range(max_attempts):
+            rows = self.sql(f"select * from counter where id={id}")
+            if len(rows) >= 1 and int(rows[0]['value']) >= value:
+                return
+            else:
+                time.sleep(delay)
+
+        raise ValueError(f"Counter {id} below {value}")
 
 
     def fail_leader(self, action='kill'):
@@ -239,6 +252,9 @@ fn send_message(ctx: &ReducerContext, text: String) {
 
     def collect_counter_rows(self):
         return int_vals(self.cluster.sql("select * from counter"))
+
+    def call_control(self, reducer, *args):
+        self.spacetime("call", "spacetime-control", reducer, *map(json.dumps, args))
 
 
 class LeaderElection(ReplicationTest):
@@ -393,3 +409,79 @@ class QuorumLoss(ReplicationTest):
         with self.assertRaises(Exception):
             for i in range(1001):
                 self.call("send_message", "terminal")
+
+
+class EnableReplication(ReplicationTest):
+    AUTOPUBLISH = False
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.expected_counter_rows = []
+
+    def run_counter(self, id, n = 100):
+        self.start(id, n)
+        self.cluster.wait_counter_value(id, n)
+        self.expected_counter_rows.append({"id": id, "value": n})
+        self.assertEqual(self.collect_counter_rows(), self.expected_counter_rows)
+
+    def test_enable_replication(self):
+        """Tests enabling and disabling replication"""
+
+        self.add_me_as_admin()
+        name = random_string()
+        n = 100
+
+        self.publish_module(name, num_replicas = 1)
+        self.cluster.wait_for_leader_change(None)
+
+        # start un-replicated
+        self.run_counter(1, n)
+        # enable replication
+        self.call_control("enable_replication", {"Name": name}, 3)
+        self.run_counter(2, n)
+        # disable replication
+        self.call_control("disable_replication", {"Name": name })
+        self.run_counter(3, n)
+        # enable it one more time
+        self.call_control("enable_replication", {"Name": name}, 3)
+        self.run_counter(4, n)
+
+
+class EnableReplicationSuspended(ReplicationTest):
+    AUTOPUBLISH = False
+
+    def test_enable_replication_on_suspended_database(self):
+        """Tests that we can enable replication on a suspended database"""
+
+        self.add_me_as_admin()
+        name = random_string()
+
+        self.publish_module(name, num_replicas = 1)
+        self.cluster.wait_for_leader_change(None)
+        self.cluster.ensure_leader_health(1)
+
+        id = self.cluster.get_db_id()
+
+        self.call_control("suspend_database", {"Name": name})
+        # Database is now unreachable.
+        with self.assertRaises(Exception):
+            self.call("send_message", "hi")
+
+        self.call_control("enable_replication", {"Name": name}, 3)
+        # Still unreachable until we call unsuspend.
+        with self.assertRaises(Exception):
+            self.call("send_message", "hi")
+
+        self.call_control("unsuspend_database", {"Name": name})
+        self.cluster.wait_for_leader_change(None)
+        self.cluster.ensure_leader_health(2)
+
+        # We can't direcly observe that there are indeed three replicas running,
+        # so as a sanity check inspect the event log.
+        rows = self.cluster.read_controldb(
+            f"select message from staged_enable_replication_event where database_id={id}")
+        self.assertEqual(rows, [
+            {'message': '"bootstrap requested"'},
+            {'message': '"bootstrap complete"'},
+        ])
