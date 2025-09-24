@@ -937,15 +937,6 @@ fn console_log<'scope>(scope: &mut HandleScope<'scope>, args: FunctionCallbackAr
         .get_script_name(scope)
         .map(|s| s.to_rust_cow_lossy(scope, &mut buf));
 
-    let record = Record {
-        // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start)
-        ts: chrono::Utc::now(),
-        target: None,
-        filename: filename.as_deref(),
-        line_number: Some(frame.get_line_number() as u32),
-        message: &msg,
-    };
-
     let level = (level as u8).into();
     let trace = if level == LogLevel::Panic {
         JsStackTrace::from_current_stack_trace(scope)?
@@ -954,6 +945,18 @@ fn console_log<'scope>(scope: &mut HandleScope<'scope>, args: FunctionCallbackAr
     };
 
     let env = env_on_isolate(scope);
+
+    let function = env.log_record_function();
+    let record = Record {
+        // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start)
+        ts: chrono::Utc::now(),
+        target: None,
+        filename: filename.as_deref(),
+        line_number: Some(frame.get_line_number() as u32),
+        function,
+        message: &msg,
+    };
+
     env.instance_env.console_log(level, &record, &trace);
 
     Ok(v8::undefined(scope).into())
@@ -1036,7 +1039,8 @@ fn console_timer_end<'scope>(
         let exc = CodeError::from_code(scope, errno::NO_SUCH_CONSOLE_TIMER.get())?;
         return Err(exc.throw(scope));
     };
-    env.instance_env.console_timer_end(&span);
+    let function = env.log_record_function();
+    env.instance_env.console_timer_end(&span, function);
 
     Ok(v8::undefined(scope).into())
 }
