@@ -981,14 +981,30 @@ impl Host {
 
         let update_result =
             update_module(&replica_ctx.relational_db, &module, program, old_module_info, policy).await?;
-        trace!("update result: {update_result:?}");
+
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
-        if update_result.was_successful() && !update_result.hotswap_disabled() {
-            self.scheduler = scheduler;
-            scheduler_starter.start(&module)?;
-            let old_module = self.module.send_replace(module);
-            old_module.exit().await;
+        match update_result {
+            UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
+                self.scheduler = scheduler;
+                scheduler_starter.start(&module)?;
+                let old_module = self.module.send_replace(module);
+                old_module.exit().await;
+            }
+
+            // To disconnect clients, drop `self.module` (a `watch::Sender`) so that subscribed
+            // clients observe that the module is gone and will close their connections.
+            // The `ws_client_actor` in `spacetimedb_client_api::routes::subscribe` handles
+            // cleanup of client state on disconnection, so we don’t need to perform it here.
+            UpdateDatabaseResult::UpdatePerformedWithClientDisconnect => {
+                let old_module = self.module.borrow().clone();
+                self.module = watch::Sender::new(module.clone());
+
+                self.scheduler = scheduler;
+                scheduler_starter.start(&module)?;
+                old_module.exit().await;
+            }
+            _ => {}
         }
 
         Ok(update_result)
