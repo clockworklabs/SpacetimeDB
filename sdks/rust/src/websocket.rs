@@ -107,6 +107,10 @@ fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme, UriError> {
 pub(crate) struct WsParams {
     pub compression: Compression,
     pub light: bool,
+    /// `Some(true)` to enable confirmed reads for the connection,
+    /// `Some(false)` to disable them.
+    /// `None` to not set the parameter and let the server choose.
+    pub confirmed: Option<bool>,
 }
 
 fn make_uri(host: Uri, db_name: &str, connection_id: Option<ConnectionId>, params: WsParams) -> Result<Uri, UriError> {
@@ -150,6 +154,12 @@ fn make_uri(host: Uri, db_name: &str, connection_id: Option<ConnectionId>, param
     // Specify the `light` mode if requested.
     if params.light {
         path.push_str("&light=true");
+    }
+
+    // Enable confirmed reads if requested.
+    if let Some(confirmed) = params.confirmed {
+        path.push_str("&confirmed=");
+        path.push_str(if confirmed { "true" } else { "false" });
     }
 
     parts.path_and_query = Some(path.parse().map_err(|source: InvalidUri| UriError::InvalidUri {

@@ -25,8 +25,8 @@ mod wasm_common;
 
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
-    extract_schema, DurabilityProvider, ExternalDurability, ExternalStorage, HostController, ProgramStorage,
-    ReducerCallResult, ReducerOutcome, StartSnapshotWatcher,
+    extract_schema, ExternalDurability, ExternalStorage, HostController, MigratePlanResult, ProgramStorage,
+    ReducerCallResult, ReducerOutcome,
 };
 pub use module_host::{ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;

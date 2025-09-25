@@ -17,10 +17,10 @@
     "unist-util-visit": "^5.0.0"
   },
   "scripts": {
-    "build": "tsc --project ./tsconfig.json && pnpm fix-markdown && prettier --write docs/nav.js",
+    "build": "tsc --project ./tsconfig.build.json && pnpm fix-markdown && prettier --write docs/nav.js",
     "fix-markdown": "scripts/markdown-fix.mjs docs/cli-reference.md",
-    "format": "pnpm fix-markdown && prettier --write .",
-    "lint": "prettier . --check --verbose",
+    "format": "pnpm fix-markdown && prettier . --write --ignore-path .prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path .prettierignore",
     "check-links": "tsx scripts/checkLinks.ts"
   },
   "author": "Clockwork Labs",

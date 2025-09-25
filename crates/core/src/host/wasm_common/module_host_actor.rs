@@ -1,6 +1,6 @@
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
-use spacetimedb_schema::auto_migrate::ponder_migrate;
+use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::span::EnteredSpan;
@@ -233,9 +233,11 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.instance.instance_env().replica_ctx;
-        self.common.update_database(replica_ctx, program, old_module_info)
+        self.common
+            .update_database(replica_ctx, program, old_module_info, policy)
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
@@ -277,15 +279,24 @@ impl InstanceCommon {
         replica_ctx: &ReplicaContext,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db;
 
-        let plan = ponder_migrate(&old_module_info.module_def, &self.info.module_def);
-        let plan = match plan {
+        let plan: MigratePlan = match policy.try_migrate(
+            self.info.database_identity,
+            old_module_info.module_hash,
+            &old_module_info.module_def,
+            self.info.module_hash,
+            &self.info.module_def,
+        ) {
             Ok(plan) => plan,
-            Err(errs) => {
-                return Ok(UpdateDatabaseResult::AutoMigrateError(errs));
+            Err(e) => {
+                return match e {
+                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e)),
+                    _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
+                }
             }
         };
 
@@ -301,12 +312,12 @@ impl InstanceCommon {
             Err(e) => {
                 log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
                 system_logger.warn(&format!("Database update failed: {e}"));
-                let (tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
                 stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(()) => {
-                if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+                if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
                     stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                 }
                 system_logger.info("Database updated");
@@ -442,13 +453,14 @@ impl InstanceCommon {
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
             Ok(res) => match res.and_then(|()| {
-                lifecyle_modifications_to_tx(
-                    reducer_def.lifecycle,
-                    caller_identity,
-                    caller_connection_id,
-                    database_identity,
-                    &mut tx,
-                )
+                // If this is an OnDisconnect lifecycle event, remove the client from st_clients.
+                // We handle OnConnect events before running the reducer.
+                match reducer_def.lifecycle {
+                    Some(Lifecycle::OnDisconnect) => tx
+                        .delete_st_client(caller_identity, caller_connection_id, database_identity)
+                        .map_err(|e| e.to_string().into()),
+                    _ => Ok(()),
+                }
             }) {
                 Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
                 Err(err) => {
@@ -572,16 +584,17 @@ fn maybe_log_long_running_reducer(reducer_name: &str, total_duration: Duration) 
 
 /// Logs an error `message` for `reducer` at `timestamp` into `replica_ctx`.
 fn log_reducer_error(replica_ctx: &ReplicaContext, timestamp: Timestamp, reducer: &str, message: &str) {
-    let record = database_logger::Record {
+    use database_logger::Record;
+
+    let record = Record {
         ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
-        target: Some(reducer),
-        filename: None,
-        line_number: None,
-        message,
+        function: Some(reducer),
+        ..Record::injected(message)
     };
     replica_ctx.logger.write(database_logger::LogLevel::Error, &record, &());
 }
 
+/*
 /// Detects lifecycle events for connecting/disconnecting a new client
 /// and inserts/removes into `st_clients` depending on which.
 fn lifecyle_modifications_to_tx(
@@ -598,6 +611,7 @@ fn lifecyle_modifications_to_tx(
     }
     .map_err(|e| e.to_string().into())
 }
+*/
 
 /// Commits the transaction
 /// and evaluates and broadcasts subscriptions updates.
@@ -612,7 +626,7 @@ fn commit_and_broadcast_event(
         .commit_and_broadcast_event(client, event, tx)
         .unwrap()
     {
-        Ok((event, _)) => event,
+        Ok(res) => res.event,
         Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
     }
 }

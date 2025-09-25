@@ -7,6 +7,9 @@ license-file = "LICENSE"
 
 description = "Traits and single-node implementation of durability for SpacetimeDB."
 
+[features]
+test = []
+
 [dependencies]
 anyhow.workspace = true
 itertools.workspace = true
@@ -14,6 +17,7 @@ log.workspace = true
 spacetimedb-commitlog.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-sats.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 

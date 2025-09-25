@@ -27,6 +27,7 @@ fn validate_name(name: String) -> Result<String, String> {
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
     let name = validate_name(name)?;
     if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+        log::info!("User {} sets name to {name}", ctx.sender);
         ctx.db.user().identity().update(User {
             name: Some(name),
             ..user
@@ -51,6 +52,7 @@ pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     // - Rate-limit messages per-user.
     // - Reject messages from unnamed user.
     let text = validate_message(text)?;
+    log::info!("User {}: {text}", ctx.sender);
     ctx.db.message().insert(Message {
         sender: ctx.sender,
         text,

@@ -5,16 +5,15 @@ pub mod version;
 
 use crate::control_db::ControlDb;
 use crate::subcommands::{extract_schema, start};
-use anyhow::{ensure, Context, Ok};
+use anyhow::{ensure, Context as _, Ok};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
-use spacetimedb::db::{self, relational_db};
+use spacetimedb::db;
+use spacetimedb::db::persistence::LocalPersistenceProvider;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
-use spacetimedb::host::{
-    DiskStorage, DurabilityProvider, ExternalDurability, HostController, StartSnapshotWatcher, UpdateDatabaseResult,
-};
+use spacetimedb::host::{DiskStorage, HostController, MigratePlanResult, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::util::jobs::JobCores;
@@ -28,6 +27,7 @@ use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
+use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
 use std::sync::Arc;
 
@@ -69,15 +69,13 @@ impl StandaloneEnv {
         let energy_monitor = Arc::new(NullEnergyMonitor);
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
-        let durability_provider = Arc::new(StandaloneDurabilityProvider {
-            data_dir: data_dir.clone(),
-        });
+        let persistence_provider = Arc::new(LocalPersistenceProvider::new(data_dir.clone()));
         let host_controller = HostController::new(
             data_dir,
             config.db_config,
             program_store.clone(),
             energy_monitor,
-            durability_provider,
+            persistence_provider,
             db_cores,
         );
         let client_actor_index = ClientActorIndex::new();
@@ -108,28 +106,6 @@ impl StandaloneEnv {
 
     pub fn page_pool(&self) -> &PagePool {
         &self.host_controller.page_pool
-    }
-}
-
-struct StandaloneDurabilityProvider {
-    data_dir: Arc<ServerDataDir>,
-}
-
-#[async_trait]
-impl DurabilityProvider for StandaloneDurabilityProvider {
-    async fn durability(&self, replica_id: u64) -> anyhow::Result<(ExternalDurability, Option<StartSnapshotWatcher>)> {
-        let commitlog_dir = self.data_dir.replica(replica_id).commit_log();
-        let (durability, disk_size) = relational_db::local_durability(commitlog_dir).await?;
-        let start_snapshot_watcher = {
-            let durability = durability.clone();
-            |snapshot_rx| {
-                tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
-                    snapshot_rx,
-                    durability,
-                ));
-            }
-        };
-        Ok(((durability, disk_size), Some(Box::new(start_snapshot_watcher))))
     }
 }
 
@@ -184,6 +160,7 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
                 id: 0,
                 unschedulable: false,
                 advertise_addr: Some("node:80".to_owned()),
+                pg_addr: Some("node:5432".to_owned()),
             }));
         }
         Ok(None)
@@ -239,6 +216,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         &self,
         publisher: &Identity,
         spec: spacetimedb_client_api::DatabaseDef,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
 
@@ -295,7 +273,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .await?
                     .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
                 let update_result = leader
-                    .update(database, spec.host_type, spec.program_bytes.into())
+                    .update(database, spec.host_type, spec.program_bytes.into(), policy)
                     .await?;
                 if update_result.was_successful() {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
@@ -342,6 +320,30 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
                 anyhow::Ok(Some(update_result))
             }
+        }
+    }
+
+    async fn migrate_plan(
+        &self,
+        spec: spacetimedb_client_api::DatabaseDef,
+        style: PrettyPrintStyle,
+    ) -> anyhow::Result<MigratePlanResult> {
+        let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
+
+        match existing_db {
+            Some(db) => {
+                let host = self
+                    .leader(db.id)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
+                self.host_controller
+                    .migrate_plan(db, spec.host_type, host.replica_id, spec.program_bytes.into(), style)
+                    .await
+            }
+            None => anyhow::bail!(
+                "Database `{}` does not exist",
+                spec.database_identity.to_abbreviated_hex()
+            ),
         }
     }
 
