@@ -37,11 +37,9 @@ use instrumentation::op as span;
 /// so the `BytesSource` becomes useless once read to the end.
 struct BytesSource {
     /// The actual bytes which will be returned by calls to `byte_source_read`.
-    bytes: bytes::Bytes,
-    /// The index in `self.bytes` of the next byte to be read by `byte_source_read`.
     ///
-    /// When this is one past the end of `self.bytes`, this `ByteSource` is expended and should be discarded.
-    cursor: usize,
+    /// When this becomes empty, this `ByteSource` is expended and should be discarded.
+    bytes: bytes::Bytes,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -176,7 +174,7 @@ impl WasmInstanceEnv {
             ))
         } else {
             let id = self.alloc_bytes_source_id()?;
-            self.bytes_sources.insert(id, BytesSource { bytes, cursor: 0 });
+            self.bytes_sources.insert(id, BytesSource { bytes });
             Ok(id)
         }
     }
@@ -1126,19 +1124,17 @@ impl WasmInstanceEnv {
 
             // Derive the portion that we can read and what remains,
             // based on what is left to read and the capacity.
-            let left_to_read = &bytes_source.bytes[bytes_source.cursor..];
-            let can_read_len = buffer_len.min(left_to_read.len());
-            let (can_read, remainder) = left_to_read.split_at(can_read_len);
+            let can_read_len = buffer_len.min(bytes_source.bytes.len());
+            let can_read = bytes_source.bytes.split_to(can_read_len);
             // Copy to the `buffer` and write written bytes count to `buffer_len`.
-            buffer[..can_read_len].copy_from_slice(can_read);
+            buffer[..can_read_len].copy_from_slice(&can_read);
             (can_read_len as u32).write_to(mem, buffer_len_ptr)?;
 
             // Destroy the source if exhausted, or advance `cursor`.
-            if remainder.is_empty() {
+            if bytes_source.bytes.is_empty() {
                 env.free_bytes_source(source);
                 Ok(-1i32)
             } else {
-                bytes_source.cursor += can_read_len;
                 Ok(0)
             }
         })
@@ -1175,9 +1171,9 @@ impl WasmInstanceEnv {
                 return Ok(errno::NO_SUCH_BYTES.get().into());
             };
 
-            let total_len = bytes_source.bytes.len();
-            let remaining = total_len.saturating_sub(bytes_source.cursor);
-            let remaining: u32 = remaining
+            let remaining: u32 = bytes_source
+                .bytes
+                .len()
                 .try_into()
                 .context("Bytes object in `BytesSource` had length greater than range of u32")?;
 
