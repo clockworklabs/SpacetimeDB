@@ -16,7 +16,7 @@ use tokio::sync::watch;
 /// and a [`SingleCoreExecutor`] may occasionally be migrated to a different runtime/core to balance load.
 ///
 /// Construct a `JobCores` via [`Self::from_pinned_cores`] or [`Self::without_pinned_cores`].
-/// a `JobCores` constructed without core pinning, including `from_pinned_cores` on an empty set,
+/// A `JobCores` constructed without core pinning, including `from_pinned_cores` on an empty set,
 /// will use the "global" Tokio executor to run database jobs,
 /// rather than creating multiple un-pinned single-threaded runtimes.
 ///

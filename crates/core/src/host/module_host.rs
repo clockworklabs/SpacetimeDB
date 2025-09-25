@@ -717,7 +717,7 @@ impl ModuleHost {
         let timer_guard = self.start_call_timer(label);
 
         // Operations on module instances (e.g. calling reducers) is blocking,
-        // partially because the computation can potentialyl take a long time
+        // partially because the computation can potentially take a long time
         // and partially because interacting with the database requires taking
         // a blocking lock. So, we run `f` on a dedicated thread with `self.executor`.
         // This will bubble up any panic that may occur.
