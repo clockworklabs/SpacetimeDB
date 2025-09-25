@@ -128,7 +128,7 @@ public static class Module
             default:
                 throw new UnknownException(ret);
         }
-        
+
         var buffer = new byte[len];
         var written = 0U;
         while (true)
