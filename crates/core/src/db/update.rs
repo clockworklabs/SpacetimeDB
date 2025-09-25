@@ -25,6 +25,7 @@ impl UpdateLogger for SystemLogger {
 
 /// The result of a database update.
 /// Indicates whether clients should be disconnected when the update is complete.
+#[must_use]
 pub enum UpdateResult {
     Success,
     RequiresClientDisconnect,
