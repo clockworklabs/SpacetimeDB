@@ -33,6 +33,7 @@ zstd-framed.workspace = true
 spacetimedb-core = { path = "../core", features = ["test"] }
 spacetimedb-schema = { path = "../schema" }
 spacetimedb-datastore = { path = "../datastore", features = ["test"] }
+spacetimedb-durability = { workspace = true, features = ["test"] }
 
 anyhow.workspace = true
 env_logger.workspace = true
