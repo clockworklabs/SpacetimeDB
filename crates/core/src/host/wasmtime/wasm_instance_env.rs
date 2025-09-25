@@ -12,7 +12,7 @@ use crate::host::wasm_common::{
 };
 use crate::host::AbiCall;
 use anyhow::Context as _;
-use spacetimedb_lib::Timestamp;
+use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
@@ -22,6 +22,7 @@ use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use instrumentation::noop as span;
 #[cfg(feature = "spacetimedb-wasm-instance-env-times")]
 use instrumentation::op as span;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 
 /// A `WasmInstanceEnv` provides the connection between a module
 /// and the database.
@@ -1217,6 +1218,61 @@ impl WasmInstanceEnv {
                 &caller.as_context(),
             );
             Ok(0)
+        })
+    }
+
+    pub fn jwt_len(
+        caller: Caller<'_, Self>,
+        connection_id: WasmPtr<ConnectionId>,
+        out_ptr: WasmPtr<u32>,
+    ) -> RtResult<()> {
+        Self::with_span(caller, AbiCall::JwtLength, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let cid = ConnectionId::read_from(mem, connection_id)?;
+            let length = env
+                .instance_env
+                .tx
+                .get()?
+                .get_jwt_payload(cid)?
+                .map(|p| p.len() as u32)
+                .unwrap_or(0u32);
+            length.write_to(mem, out_ptr)?;
+            Ok(())
+        })
+    }
+
+    pub fn get_jwt(
+        caller: Caller<'_, Self>,
+        connection_id: WasmPtr<ConnectionId>,
+        target_ptr: WasmPtr<u8>,
+        target_ptr_len: WasmPtr<u32>,
+    ) -> RtResult<()> {
+        log::info!("Calling get_jwt");
+        Self::with_span(caller, AbiCall::GetJwt, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let cid = ConnectionId::read_from(mem, connection_id)?;
+            let jwt = match env.instance_env.tx.get()?.get_jwt_payload(cid)? {
+                None => {
+                    // Consider logging here, since this should only happen during an upgrade.
+                    0u32.write_to(mem, target_ptr_len)?;
+                    return Ok(());
+                }
+                Some(jwt) => jwt,
+            };
+            let jwt_len = jwt.len();
+            // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
+            let buffer_len = u32::read_from(mem, target_ptr_len)?;
+            if buffer_len < jwt_len as u32 {
+                return Err(anyhow::anyhow!("buffer too small to hold JWT payload"));
+            }
+            // Write the length of the JWT payload to the target pointer.
+            (jwt_len as u32).write_to(mem, target_ptr_len)?;
+
+            // Write the JWT payload to the target pointer.
+            // Get a mutable view to the `buffer`.
+            let buffer = mem.deref_slice_mut(target_ptr, buffer_len)?;
+            buffer[..jwt_len].copy_from_slice(jwt.as_bytes());
+            Ok(())
         })
     }
 
