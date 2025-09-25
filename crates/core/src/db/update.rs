@@ -363,7 +363,8 @@ mod test {
         // Try to update the db.
         let mut tx = begin_mut_tx(&stdb);
         let plan = ponder_migrate(&old, &new)?;
-        update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        matches!(res, UpdateResult::Success);
 
         // Expect the schema change.
         let idx_b_id = stdb
