@@ -7,9 +7,6 @@ license-file = "LICENSE"
 
 description = "Traits and single-node implementation of durability for SpacetimeDB."
 
-[features]
-test = []
-
 [dependencies]
 anyhow.workspace = true
 itertools.workspace = true

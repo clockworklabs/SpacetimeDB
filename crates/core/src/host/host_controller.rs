@@ -3,7 +3,6 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_logger::DatabaseLogger;
-use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
@@ -27,7 +26,7 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_durability::{self as durability};
+use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_paths::FromPathUnchecked;
@@ -54,6 +53,13 @@ type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
 
 pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn);
+
+pub type StartSnapshotWatcher = Box<dyn FnOnce(watch::Receiver<TxOffset>)>;
+
+#[async_trait]
+pub trait DurabilityProvider: Send + Sync + 'static {
+    async fn durability(&self, replica_id: u64) -> anyhow::Result<(ExternalDurability, Option<StartSnapshotWatcher>)>;
+}
 
 #[async_trait]
 pub trait ExternalStorage: Send + Sync + 'static {
@@ -92,8 +98,8 @@ pub struct HostController {
     program_storage: ProgramStorage,
     /// The [`EnergyMonitor`] used by this controller.
     energy_monitor: Arc<dyn EnergyMonitor>,
-    /// Provides persistence services for each replica.
-    persistence: Arc<dyn PersistenceProvider>,
+    /// Provides implementations of [`Durability`] for each replica.
+    durability: Arc<dyn DurabilityProvider>,
     /// The page pool all databases will use by cloning the ref counted pool.
     pub page_pool: PagePool,
     /// The runtimes for running our modules.
@@ -175,7 +181,7 @@ impl HostController {
         default_config: db::Config,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
-        persistence: Arc<dyn PersistenceProvider>,
+        durability: Arc<dyn DurabilityProvider>,
         db_cores: JobCores,
     ) -> Self {
         Self {
@@ -183,7 +189,7 @@ impl HostController {
             default_config,
             program_storage,
             energy_monitor,
-            persistence,
+            durability,
             runtimes: HostRuntimes::new(Some(&data_dir)),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
@@ -745,7 +751,7 @@ impl Host {
             program_storage,
             energy_monitor,
             runtimes,
-            persistence,
+            durability,
             page_pool,
             ..
         } = host_controller;
@@ -760,18 +766,23 @@ impl Host {
                 database.owner_identity,
                 EmptyHistory::new(),
                 None,
+                None,
                 Some(tx_metrics_queue),
                 page_pool.clone(),
             )?,
             db::Storage::Disk => {
+                let snapshot_repo =
+                    relational_db::open_snapshot_repo(replica_dir.snapshots(), database.database_identity, replica_id)?;
                 let (history, _) = relational_db::local_durability(replica_dir.commit_log()).await?;
-                let persistence = persistence.persistence(&database, replica_id).await?;
+                let (durability, start_snapshot_watcher) = durability.durability(replica_id).await?;
+
                 let (db, clients) = RelationalDB::open(
                     &replica_dir,
                     database.database_identity,
                     database.owner_identity,
                     history,
-                    Some(persistence),
+                    Some(durability),
+                    Some(snapshot_repo),
                     Some(tx_metrics_queue),
                     page_pool.clone(),
                 )
@@ -785,7 +796,10 @@ impl Host {
                         "Failed to open database: {e:#}"
                     );
                 })?;
-
+                if let Some(start_snapshot_watcher) = start_snapshot_watcher {
+                    let watcher = db.subscribe_to_snapshots().expect("we passed snapshot_repo");
+                    start_snapshot_watcher(watcher)
+                }
                 (db, clients)
             }
         };
@@ -887,6 +901,7 @@ impl Host {
             database.database_identity,
             database.owner_identity,
             EmptyHistory::new(),
+            None,
             None,
             None,
             page_pool,
