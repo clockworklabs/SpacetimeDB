@@ -304,8 +304,5 @@ internal static partial class FFI
 #pragma warning restore SYSLIB1054
 
     [DllImport(StdbNamespace10_1)]
-    public static extern Errno bytes_source_remaining_length(
-        BytesSource source,
-        ref uint len
-    );
+    public static extern Errno bytes_source_remaining_length(BytesSource source, ref uint len);
 }
