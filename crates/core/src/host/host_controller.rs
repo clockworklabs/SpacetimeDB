@@ -595,6 +595,8 @@ async fn make_module_host(
     //       threads, but those aren't for computation. Also, wasmtime uses rayon
     //       to run compilation in parallel, so it'll need to run stuff in rayon anyway.
     asyncify(move || {
+        let database_identity = replica_ctx.database_identity;
+
         let mcc = ModuleCreationContext {
             replica_ctx,
             scheduler,
@@ -607,12 +609,12 @@ async fn make_module_host(
             HostType::Wasm => {
                 let actor = runtimes.wasmtime.make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister, executor)
+                ModuleHost::new(actor, unregister, executor, database_identity)
             }
             HostType::Js => {
                 let actor = runtimes.v8.make_actor(mcc)?;
                 trace!("v8::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister, executor)
+                ModuleHost::new(actor, unregister, executor, database_identity)
             }
         };
         Ok((program, module_host))
