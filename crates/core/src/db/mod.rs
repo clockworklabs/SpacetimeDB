@@ -7,9 +7,7 @@ use crate::subscription::ExecutionCounters;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_datastore::{locking_tx_datastore::datastore::TxMetrics, traits::TxData};
 
-pub mod persistence;
 pub mod relational_db;
-pub mod snapshot;
 pub mod update;
 
 /// Whether SpacetimeDB is run in memory, or persists objects and
