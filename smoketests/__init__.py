@@ -301,10 +301,14 @@ class Smoketest(unittest.TestCase):
             server_config = next((c for c in config['server_configs'] if c['nickname'] == server_name), None)
             if server_config is None:
                 raise Exception(f"Unable to find server in config with nickname {server_name}")
-            host = server_config['host']
+            address = server_config['host']
+            host = address
+            port = None
+            if ":" in host:
+                host, port = host.split(":", 1)
             protocol = server_config['protocol']
 
-            return dict(host=host, protocol=protocol, token=token)
+            return dict(address=address, host=host, port=port, protocol=protocol, token=token)
 
     # Make an HTTP call with `method` to `path`.
     #
@@ -312,7 +316,7 @@ class Smoketest(unittest.TestCase):
     # Otherwise, throw an `Exception` constructed with two arguments, the response object and the body.
     def api_call(self, method, path, body=None, headers={}):
         server = self.get_server_address()
-        host = server["host"]
+        host = server["address"]
         protocol = server["protocol"]
         token = server["token"]
         conn = None

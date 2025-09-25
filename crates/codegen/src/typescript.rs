@@ -705,7 +705,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         writeln!(out, "{ty},");
     }
     out.dedent(1);
-    writeln!(out, "}} from \"@clockworklabs/spacetimedb-sdk\";");
+    writeln!(out, "}} from \"spacetimedb\";");
 }
 
 fn print_file_header(output: &mut Indenter, include_version: bool) {

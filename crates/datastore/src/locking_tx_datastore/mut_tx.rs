@@ -59,6 +59,7 @@ use spacetimedb_table::{
     table_index::TableIndex,
 };
 use std::{
+    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -332,6 +333,8 @@ impl MutTxId {
     }
 
     pub fn drop_table(&mut self, table_id: TableId) -> Result<()> {
+        self.clear_table(table_id)?;
+
         let schema = &*self.schema_for_table(table_id)?;
 
         for row in &schema.indexes {
@@ -358,8 +361,10 @@ impl MutTxId {
             )?;
         }
 
-        // Delete the table and its rows and indexes from memory.
+        // Delete the table from memory, both in the tx an committed states.
         self.tx_state.insert_tables.remove(&table_id);
+        // No need to keep the delete tables.
+        // By seeing `PendingSchemaChange::TableRemoved`, `merge` knows that all rows were deleted.
         self.tx_state.delete_tables.remove(&table_id);
         let commit_table = self
             .committed_state_write_lock
@@ -416,13 +421,8 @@ impl MutTxId {
         TxTableForInsertion<'_>,
         (&mut Table, &mut dyn BlobStore, &mut IndexIdMap),
     )> {
-        let (commit_table, commit_bs, idx_map) = self.committed_state_write_lock.get_table_and_blob_store_mut(table_id);
-        // NOTE(centril): `TableError` is a fairly large type.
-        // Not making this lazy made `TableError::drop` show up in perf.
-        // TODO(centril): Box all the errors.
-        #[allow(clippy::unnecessary_lazy_evaluations)]
-        let commit_table = commit_table.ok_or_else(|| TableError::IdNotFoundState(table_id))?;
-
+        let (commit_table, commit_bs, idx_map, _) =
+            self.committed_state_write_lock.get_table_and_blob_store_mut(table_id)?;
         // Get the insert table, so we can write the row into it.
         let tx = self
             .tx_state
@@ -493,6 +493,134 @@ impl MutTxId {
         self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
 
         Ok(())
+    }
+
+    /// Change the row type of the table identified by `table_id`.
+    ///
+    /// This is an incompatible change that requires a new table to be created.
+    /// The existing rows are copied over to the new table,
+    /// with `default_values` appended to each row.
+    ///
+    /// `column_schemas` must contain all the old columns in same order as before,
+    /// followed by the new columns to be added.
+    /// All new columns must have a default value in `default_values`.
+    ///
+    /// After calling this method, Table referred by `table_id` is dropped,
+    /// and a new table is created with the same name but a new `table_id`.
+    /// The new `table_id` is returned.
+    pub(crate) fn add_columns_to_table(
+        &mut self,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+        mut default_values: Vec<AlgebraicValue>,
+    ) -> Result<TableId> {
+        let original_table_schema: TableSchema = (*self.schema_for_table(table_id)?).clone();
+
+        // Only keep the default values of new columns.
+        let new_cols = column_schemas
+            .len()
+            .checked_sub(original_table_schema.columns.len())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "new column schemas must be more than existing ones for table_id: {}",
+                    table_id
+                )
+            })?;
+        let older_defaults = default_values.len().checked_sub(new_cols).ok_or_else(|| {
+            anyhow::anyhow!(
+                "not enough default values provided for new columns for table_id: {}",
+                table_id
+            )
+        })?;
+        default_values.drain(..older_defaults);
+
+        let ((tx_table, ..), _) = self.get_or_create_insert_table_mut(table_id)?;
+
+        tx_table
+            .validate_add_columns_schema(&column_schemas, &default_values)
+            .map_err(TableError::from)?;
+
+        // Copy all rows as `ProductValue` before dropping the table.
+        // This approach isn't ideal, as allocating a large contiguous block of memory
+        // can lead to memory overflow errors.
+        // Ideally, we should use iterators to avoid this, but that's not sufficient on its own.
+        // `CommittedState::merge_apply_inserts` also allocates a similar `Vec` to hold the data.
+        // So, if we really find this problematic in practice, this should be fixed in both places.
+        let mut table_rows: Vec<ProductValue> = iter(&self.tx_state, &self.committed_state_write_lock, table_id)?
+            .map(|r| r.to_product_value())
+            .collect();
+
+        log::debug!(
+            "ADDING TABLE COLUMN (incompatible layout): {}, table_id: {}",
+            original_table_schema.table_name,
+            table_id
+        );
+
+        // Store sequence values to restore them later with new table.
+        // Using a map from name to value as the new sequence ids will be different.
+        // and I am not sure if we should rely on the order of sequences in the table schema.
+        let seq_values: HashMap<Box<str>, i128> = original_table_schema
+            .sequences
+            .iter()
+            .map(|s| {
+                (
+                    s.sequence_name.clone(),
+                    self.sequence_state_lock
+                        .get_sequence_mut(s.sequence_id)
+                        .expect("sequence exists in original schema and should in sequence state.")
+                        .get_value(),
+                )
+            })
+            .collect();
+
+        // Drop existing table first due to unique constraints on table name in `st_table`
+        self.drop_table(table_id)?;
+
+        // Update existing (dropped) table schema with provided columns, reset Ids.
+        let mut updated_table_schema = original_table_schema;
+        updated_table_schema.columns = column_schemas;
+        updated_table_schema.reset();
+        let new_table_id = self.create_table_and_update_seq(updated_table_schema, seq_values)?;
+
+        // Populate rows with default values for new columns
+        for product_value in table_rows.iter_mut() {
+            let mut row_elements = product_value.elements.to_vec();
+            row_elements.extend(default_values.iter().cloned());
+            product_value.elements = row_elements.into();
+        }
+
+        let (new_table, tx_blob_store) = self
+            .tx_state
+            .get_table_and_blob_store(new_table_id)
+            .ok_or(TableError::IdNotFoundState(new_table_id))?;
+
+        for row in table_rows {
+            new_table.insert(&self.committed_state_write_lock.page_pool, tx_blob_store, &row)?;
+        }
+
+        Ok(new_table_id)
+    }
+
+    fn create_table_and_update_seq(
+        &mut self,
+        table_schema: TableSchema,
+        seq_values: HashMap<Box<str>, i128>,
+    ) -> Result<TableId> {
+        let table_id = self.create_table(table_schema)?;
+        let table_schema = self.schema_for_table(table_id)?;
+
+        for seq in table_schema.sequences.iter() {
+            let new_seq = self
+                .sequence_state_lock
+                .get_sequence_mut(seq.sequence_id)
+                .expect("sequence just created");
+            let value = *seq_values
+                .get(&seq.sequence_name)
+                .ok_or_else(|| SequenceError::NotFound(seq.sequence_id))?;
+            new_seq.update_value(value);
+        }
+
+        Ok(table_id)
     }
 
     /// Create an index.
@@ -1913,6 +2041,26 @@ impl MutTxId {
             table_id,
             row_pointer,
         )
+    }
+
+    // Clears the table for `table_id`, removing all rows.
+    pub fn clear_table(&mut self, table_id: TableId) -> Result<usize> {
+        // Get the commit table.
+        let (commit_table, commit_bs, ..) = self.committed_state_write_lock.get_table_and_blob_store(table_id)?;
+
+        // Get the insert table and delete all rows from it.
+        let (tx_table, tx_blob_store, delete_table) = self
+            .tx_state
+            .get_table_and_blob_store_or_create_from(table_id, commit_table);
+        let mut rows_removed = tx_table.clear(tx_blob_store);
+
+        // Mark every row in the committed state as deleted.
+        for row in commit_table.scan_rows(commit_bs) {
+            delete_table.insert(row.pointer());
+            rows_removed += 1;
+        }
+
+        Ok(rows_removed)
     }
 }
 

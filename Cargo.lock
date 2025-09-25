@@ -6250,6 +6250,7 @@ dependencies = [
  "rand 0.9.1",
  "second-stack",
  "serde",
+ "serde_json",
  "sha3",
  "smallvec",
  "spacetimedb-bindings-macro 1.4.0",

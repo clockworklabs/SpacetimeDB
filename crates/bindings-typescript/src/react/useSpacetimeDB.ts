@@ -1,5 +1,5 @@
 import { createContext, useContext, type Context } from 'react';
-import type { DbConnectionImpl } from '../index';
+import type { DbConnectionImpl } from '../sdk/db_connection_impl';
 
 export const SpacetimeDBContext: Context<DbConnectionImpl | undefined> =
   createContext<DbConnectionImpl | undefined>(undefined);

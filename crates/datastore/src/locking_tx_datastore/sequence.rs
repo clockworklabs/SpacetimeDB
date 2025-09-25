@@ -69,6 +69,23 @@ impl Sequence {
         }
     }
 
+    /// Update the current value of the sequence.
+    /// This is used on very specific occasions,
+    /// such as cloning a sequence
+    pub(super) fn update_value(&mut self, new_value: i128) {
+        if new_value < self.schema.min_value || new_value > self.schema.max_value {
+            panic!(
+                "Invalid sequence update: new value {} is out of bounds for sequence with min_value {} and max_value {}",
+                new_value, self.schema.min_value, self.schema.max_value
+            );
+        }
+        self.value = new_value;
+    }
+
+    pub(super) fn get_value(&self) -> i128 {
+        self.value
+    }
+
     pub(super) fn id(&self) -> SequenceId {
         self.schema.sequence_id
     }

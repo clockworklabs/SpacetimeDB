@@ -1,7 +1,7 @@
-import { ConnectionId } from 'spacetimedb';
-import { Timestamp } from 'spacetimedb';
+import { ConnectionId } from '../';
+import { Timestamp } from '../';
 import type { UpdateStatus } from './client_api/index.ts';
-import { Identity } from 'spacetimedb';
+import { Identity } from '../';
 
 export type ReducerInfoType = { name: string; args?: any } | never;
 

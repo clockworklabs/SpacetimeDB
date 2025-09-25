@@ -3,8 +3,7 @@
   "references": [
     { "path": "crates/bindings-typescript" },
     { "path": "crates/bindings-typescript/test-app" },
+    { "path": "crates/bindings-typescript/examples/quickstart-chat" },
     { "path": "docs" },
-    { "path": "sdks/typescript" },
-    { "path": "sdks/typescript/examples/quickstart-chat" },
   ]
 }
