@@ -17,4 +17,4 @@ export const TIMEOUTS = {
   SERVER_START_DELAY: 3000,
 } as const;
 
-export const SPACETIME_SDK_PACKAGE = "@clockworklabs/spacetimedb-sdk";
+export const SPACETIME_SDK_PACKAGE = "spacetimedb";
