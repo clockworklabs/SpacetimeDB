@@ -305,7 +305,7 @@ internal static partial class FFI
 
     [DllImport(StdbNamespace10_1)]
     public static partial Errno bytes_source_remaining_length(
-        BytesSource(source),
+        BytesSource source,
         ref uint len
     );
 }
