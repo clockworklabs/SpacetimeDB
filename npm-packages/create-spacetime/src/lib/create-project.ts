@@ -208,11 +208,11 @@ async function configureRustServer(serverDir: string, name: string) {
       content = content.replace(/log\.workspace = true/g, 'log = "0.4"');
       content = content.replace(
         /spacetimedb = \{ path = ".*" \}/g,
-        `spacetimedb = "${SPACETIME_VERSIONS.CLI}"`,
+        `spacetimedb = "${SPACETIME_VERSIONS.RUNTIME}"`,
       );
       content = content.replace(
         /spacetimedb-lib = \{ path = ".*" \}/g,
-        `spacetimedb-lib = "${SPACETIME_VERSIONS.CLI}"`,
+        `spacetimedb-lib = "${SPACETIME_VERSIONS.RUNTIME}"`,
       );
       await fs.writeFile(cargoPath, content);
     }

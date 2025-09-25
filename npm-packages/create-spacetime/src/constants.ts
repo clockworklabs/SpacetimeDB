@@ -2,7 +2,7 @@ export const DEFAULT_TARGET_DIR = "my-spacetime-app";
 
 export const SPACETIME_VERSIONS = {
   SDK: "^1.4.0",
-  CLI: "1.4.*",
+  RUNTIME: "1.4.*",
 } as const;
 
 export const SERVER_CONFIG = {
