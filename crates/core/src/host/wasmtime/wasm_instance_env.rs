@@ -275,7 +275,7 @@ impl WasmInstanceEnv {
         // Drop any outstanding bytes sources and reset the ID counter,
         // so that we don't leak either the IDs or the buffers themselves.
         self.bytes_sources = IntMap::default();
-        self.next_bytes_source_id = NonZeroU32::from(1).unwrap();
+        self.next_bytes_source_id = NonZeroU32::new(1).unwrap();
 
         (timings, self.take_standard_bytes_sink())
     }
