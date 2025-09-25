@@ -2,6 +2,7 @@ use super::{ClientConfig, DataMessage, Protocol};
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
+use crate::subscription::websocket_building::{brotli_compress, decide_compression, gzip_compress};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use derive_more::From;
@@ -155,10 +156,10 @@ pub fn serialize(
             });
 
             // Conditionally compress the message.
-            let (in_use, msg_bytes) = match ws::decide_compression(srv_msg.len(), config.compression) {
+            let (in_use, msg_bytes) = match decide_compression(srv_msg.len(), config.compression) {
                 Compression::None => buffer.uncompressed(),
-                Compression::Brotli => buffer.compress_with_tag(SERVER_MSG_COMPRESSION_TAG_BROTLI, ws::brotli_compress),
-                Compression::Gzip => buffer.compress_with_tag(SERVER_MSG_COMPRESSION_TAG_GZIP, ws::gzip_compress),
+                Compression::Brotli => buffer.compress_with_tag(SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress),
+                Compression::Gzip => buffer.compress_with_tag(SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
             };
             (in_use, msg_bytes.into())
         }

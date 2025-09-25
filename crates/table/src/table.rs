@@ -1,3 +1,5 @@
+use crate::blob_store::NullBlobStore;
+
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::{write_row_to_pages, write_row_to_pages_bsatn, Error},
@@ -29,7 +31,6 @@ use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
-use spacetimedb_sats::layout::{AlgebraicTypeLayout, PrimitiveType, RowTypeLayout, Size};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
@@ -39,6 +40,10 @@ use spacetimedb_sats::{
     satn::Satn,
     ser::{Serialize, Serializer},
     u256, AlgebraicValue, ProductType, ProductValue,
+};
+use spacetimedb_sats::{
+    layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size},
+    Typespace,
 };
 use spacetimedb_schema::{
     def::IndexAlgorithm,
@@ -261,13 +266,70 @@ pub enum ReadViaBsatnError {
     DecodeError(#[from] DecodeError),
 }
 
+/// Error that can occur when attempting to [`Table::change_columns_to`] a different row type.
+///
+/// This will usually be [`Box`]ed, as it's large enough to trigger
+/// [Clippy's `result_large_err` lint](https://rust-lang.github.io/rust-clippy/master/index.html#result_large_err).
+///
+/// Seeing this error represents a bug in SpacetimeDB, as incompatible column-type-changing migrations
+/// are supposed to be detected by the checks in [`spacetimedb_schema::auto_migrate`].
 #[derive(Error, Debug)]
-#[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`")]
+#[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
 pub struct ChangeColumnsError {
     table_id: TableId,
     table_name: Box<str>,
     old: Vec<ColumnSchema>,
     new: Vec<ColumnSchema>,
+    reason: ChangeColumnsErrorReason,
+}
+
+/// More specific reason that a [`Table::change_columns_to`] resulted in a [`ChangeColumnsError`],
+/// contained in that error alongside the table metadata and new and old schemas.
+#[derive(Error, Debug)]
+pub enum ChangeColumnsErrorReason {
+    #[error("Layout of schedule table's at column changed from {old:?} to {new:?}")]
+    ScheduleAtColumnChanged {
+        index: usize,
+        old: AlgebraicTypeLayout,
+        new: AlgebraicTypeLayout,
+    },
+    #[error("Layout of schedule table's id column changed from {old:?} to {new:?}")]
+    ScheduleIdColumnChanged {
+        index: usize,
+        old: AlgebraicTypeLayout,
+        new: AlgebraicTypeLayout,
+    },
+    #[error(transparent)]
+    IncompatibleRowLayout(#[from] IncompatibleTypeLayoutError),
+}
+
+/// Error that can occur when attempting to [`Table::validate_add_columns_schema`].
+///
+/// Like [`ChangeColumnsError`], this should never normally be seen at runtime.
+/// Any such error indicates a **bug in SpacetimeDB**, since incompatible
+/// "add column" migrations should be caught earlier by the checks in
+/// [`spacetimedb_schema::auto_migrate`].
+#[derive(Error, Debug)]
+#[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
+pub struct AddColumnsError {
+    table_id: TableId,
+    table_name: Box<str>,
+    old: Vec<ColumnSchema>,
+    new: Vec<ColumnSchema>,
+    default_values: Vec<AlgebraicValue>,
+    reason: AddColumnsErrorReason,
+}
+
+#[derive(Error, Debug)]
+pub enum AddColumnsErrorReason {
+    #[error("Default value type does not match column type for column {0}")]
+    DefaultValueTypeMismatch(ColId),
+    #[error("Missing default value for column {0}")]
+    DefaultValueMissing(ColId),
+    #[error("New column schema missing existing columns")]
+    MissingExistingColumns,
+    #[error(transparent)]
+    ExistingColumnsTypeMismatched(#[from] ChangeColumnsErrorReason),
 }
 
 /// Computes the parts of a table definition, that are row type dependent, from the row type.
@@ -298,37 +360,110 @@ impl Table {
     pub fn change_columns_to(
         &mut self,
         column_schemas: Vec<ColumnSchema>,
-    ) -> Result<Vec<ColumnSchema>, ChangeColumnsError> {
-        fn validate(
-            this: &Table,
-            new_row_layout: &RowTypeLayout,
-            column_schemas: &[ColumnSchema],
-        ) -> Result<(), ChangeColumnsError> {
-            // Validate that the old row type layout can be changed to the new.
-            let schema = this.get_schema();
-            let row_layout = this.row_layout();
+    ) -> Result<Vec<ColumnSchema>, Box<ChangeColumnsError>> {
+        unsafe { self.change_columns_to_unchecked(column_schemas, Self::validate_row_type_layout) }
+    }
 
-            // Require that a scheduler table doesn't change the `id` and `at` fields.
-            let schedule_compat = schema.schedule.as_ref().zip(schema.pk()).is_none_or(|(schedule, pk)| {
-                let at_col = schedule.at_column.idx();
-                let id_col = pk.col_pos.idx();
-                row_layout[at_col] == new_row_layout[at_col] && row_layout[id_col] == new_row_layout[id_col]
-            });
+    /// Validate that the old row type layout can be changed to the new.
+    // Intentionally fail fast rather than combining errors with [`spacetimedb_data_structures::error_stream`]
+    // because we've (at least theoretically) already passed through
+    // `spacetimedb_schema::auto_migrate::ensure_old_ty_upgradable_to_new` to get here,
+    // and that method has proper pretty error reporting with `ErrorStream`.
+    // The error here is for internal debugging.
+    fn validate_row_type_layout(
+        &self,
+        new_row_layout: &RowTypeLayout,
+        column_schemas: &[ColumnSchema],
+    ) -> Result<(), Box<ChangeColumnsError>> {
+        let schema = self.get_schema();
+        let row_layout = self.row_layout();
 
-            // The `row_layout` must also be compatible with the new.
-            if schedule_compat && row_layout.is_compatible_with(new_row_layout) {
-                return Ok(());
-            }
-
-            Err(ChangeColumnsError {
+        let make_err = |reason| {
+            Box::new(ChangeColumnsError {
                 table_id: schema.table_id,
                 table_name: schema.table_name.clone(),
                 old: schema.columns().to_vec(),
                 new: column_schemas.to_vec(),
+                reason,
             })
+        };
+
+        // Require that a scheduler table doesn't change the `id` and `at` fields.
+        if let Some((schedule, pk)) = schema.schedule.as_ref().zip(schema.pk()) {
+            let at_col = schedule.at_column.idx();
+            if row_layout[at_col] != new_row_layout[at_col] {
+                return Err(make_err(ChangeColumnsErrorReason::ScheduleAtColumnChanged {
+                    index: at_col,
+                    old: row_layout[at_col].clone(),
+                    new: new_row_layout[at_col].clone(),
+                }));
+            }
+
+            let id_col = pk.col_pos.idx();
+            if row_layout[id_col] != new_row_layout[id_col] {
+                return Err(make_err(ChangeColumnsErrorReason::ScheduleIdColumnChanged {
+                    index: id_col,
+                    old: row_layout[id_col].clone(),
+                    new: new_row_layout[id_col].clone(),
+                }));
+            }
         }
 
-        unsafe { self.change_columns_to_unchecked(column_schemas, validate) }
+        // The `row_layout` must also be compatible with the new.
+        if let Err(reason) = row_layout.ensure_compatible_with(new_row_layout) {
+            return Err(make_err((*reason).into()));
+        }
+
+        Ok(())
+    }
+
+    /// Validates that the proposed `new_columns` schema is compatible with the
+    /// existing table schema and that all newly added columns are initialized
+    /// with default values.
+    /// - `new_columns`: columns schema after adding new columns ordered by `ColId`s.
+    /// - `default_values`: default values for newly added columns ordered by `ColId`s.
+    pub fn validate_add_columns_schema(
+        &self,
+        new_columns: &[ColumnSchema],
+        default_values: &[AlgebraicValue],
+    ) -> Result<(), Box<AddColumnsError>> {
+        let schema = self.get_schema();
+        let existing_columns = &schema.columns;
+
+        let make_err = |reason| {
+            Box::new(AddColumnsError {
+                table_id: schema.table_id,
+                table_name: schema.table_name.clone(),
+                old: schema.columns().to_vec(),
+                new: new_columns.to_vec(),
+                default_values: default_values.to_vec(),
+                reason,
+            })
+        };
+
+        // Ensure we have at least as many (prefix) as the existing columns.
+        let Some(old_cols_in_new_schema) = &new_columns.get(..existing_columns.len()) else {
+            return Err(make_err(AddColumnsErrorReason::MissingExistingColumns));
+        };
+
+        // Ensure that the existing prefix is compatible with the new prefix.
+        let new_row_layout: RowTypeLayout = columns_to_row_type(old_cols_in_new_schema).into();
+        self.validate_row_type_layout(&new_row_layout, new_columns)
+            .map_err(|e| make_err(e.reason.into()))?;
+
+        // Validate that all new columns have default values and thier types match.
+        for (idx, new_col) in new_columns.iter().skip(existing_columns.len()).enumerate() {
+            let default_value = default_values
+                .get(idx)
+                .ok_or_else(|| make_err(AddColumnsErrorReason::DefaultValueMissing(new_col.col_pos)))?;
+            if !new_col.col_type.type_check(default_value, Typespace::EMPTY) {
+                return Err(make_err(AddColumnsErrorReason::DefaultValueTypeMismatch(
+                    new_col.col_pos,
+                )));
+            }
+        }
+
+        Ok(())
     }
 
     /// Change the columns of `self` to those in `column_schemas`
@@ -1086,10 +1221,10 @@ impl Table {
 
     /// Deletes the row identified by `ptr` from the table.
     ///
-    /// Returns the number of blob bytes deleted. This method does not update statistics by itself.
+    /// This method does update statistics.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) -> BlobNumBytes {
+    unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
         // Delete row from indices.
         // Do this before the actual deletion, as `index.delete` needs a `RowRef`
         // so it can extract the appropriate value.
@@ -1097,7 +1232,9 @@ impl Table {
         unsafe { self.delete_from_indices(blob_store, ptr) };
 
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        unsafe { self.delete_internal(blob_store, ptr) }
+        let blob_bytes_deleted = unsafe { self.delete_internal(blob_store, ptr) };
+
+        self.update_statistics_deleted_row(blob_bytes_deleted);
     }
 
     /// Delete `row_ref` from all the indices of this table until `index_id` is reached.
@@ -1149,8 +1286,7 @@ impl Table {
         let ret = before(row_ref);
 
         // SAFETY: We've checked above that `self.is_row_present(ptr)`.
-        let blob_bytes_deleted = unsafe { self.delete_unchecked(blob_store, ptr) };
-        self.update_statistics_deleted_row(blob_bytes_deleted);
+        unsafe { self.delete_unchecked(blob_store, ptr) };
 
         Some(ret)
     }
@@ -1190,11 +1326,8 @@ impl Table {
 
         // If an equal row was present, delete it.
         if let Some(existing_row_ptr) = existing_row_ptr {
-            let blob_bytes_deleted = unsafe {
-                // SAFETY: `find_same_row` ensures that the pointer is valid.
-                self.delete_unchecked(blob_store, existing_row_ptr)
-            };
-            self.update_statistics_deleted_row(blob_bytes_deleted);
+            // SAFETY: `find_same_row` ensures that the pointer is valid.
+            unsafe { self.delete_unchecked(blob_store, existing_row_ptr) };
         }
 
         // Remove the temporary row we inserted in the beginning.
@@ -1205,6 +1338,17 @@ impl Table {
         }
 
         Ok(existing_row_ptr)
+    }
+
+    /// Clears this table, removing all present rows from it.
+    pub fn clear(&mut self, blob_store: &mut dyn BlobStore) -> usize {
+        let ptrs = self.scan_all_row_ptrs();
+        let len = ptrs.len();
+        for ptr in ptrs {
+            // SAFETY: `ptr` came rom `self.scan_rows(...)`, so it's present.
+            unsafe { self.delete_unchecked(blob_store, ptr) };
+        }
+        len
     }
 
     /// Returns the row type for rows in this table.
@@ -1307,7 +1451,7 @@ impl Table {
         Some(index)
     }
 
-    /// Returns an iterator over all the rows of `self`, yielded as [`RefRef`]s.
+    /// Returns an iterator over all the rows of `self`, yielded as [`RowRef`]s.
     pub fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
         TableScanIter {
             current_page: None, // Will be filled by the iterator.
@@ -1315,6 +1459,13 @@ impl Table {
             table: self,
             blob_store,
         }
+    }
+
+    /// Returns a list of all present row pointers.
+    pub fn scan_all_row_ptrs(&self) -> Vec<RowPointer> {
+        let mut ptrs = Vec::with_capacity(self.row_count as usize);
+        ptrs.extend(self.scan_rows(&NullBlobStore).map(|row| row.pointer()));
+        ptrs
     }
 
     /// Returns this table combined with the index for [`IndexId`], if any.

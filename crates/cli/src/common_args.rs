@@ -29,3 +29,11 @@ pub fn yes() -> Arg {
         .action(SetTrue)
         .help("Run non-interactively wherever possible. This will answer \"yes\" to almost all prompts, but will sometimes answer \"no\" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).")
 }
+
+pub fn confirmed() -> Arg {
+    Arg::new("confirmed")
+        .required(false)
+        .long("confirmed")
+        .action(SetTrue)
+        .help("Instruct the server to deliver only updates of confirmed transactions")
+}

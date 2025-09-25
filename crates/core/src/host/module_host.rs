@@ -16,6 +16,7 @@ use crate::sql::parser::RowLevelExpr;
 use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
+use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::util::jobs::{JobCore, JobThread, JobThreadClosed, WeakJobThread};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -25,12 +26,16 @@ use derive_more::From;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
-use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
+use scopeguard::ScopeGuard;
+use spacetimedb_auth::identity::ConnectionAuthCtx;
+use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
+use spacetimedb_durability::DurableOffset;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
@@ -40,7 +45,7 @@ use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
-use spacetimedb_schema::auto_migrate::AutoMigrateError;
+use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -48,6 +53,7 @@ use spacetimedb_vm::relation::RelValue;
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
+use tokio::sync::oneshot;
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -134,7 +140,7 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    pub fn encode<F: WebsocketFormat>(&self) -> (F::QueryUpdate, u64, usize) {
+    pub fn encode<F: BuildableWebsocketFormat>(&self) -> (F::QueryUpdate, u64, usize) {
         let (deletes, nr_del) = F::encode_list(self.deletes.iter());
         let (inserts, nr_ins) = F::encode_list(self.inserts.iter());
         let num_rows = nr_del + nr_ins;
@@ -333,6 +339,7 @@ pub trait ModuleInstance: Send + 'static {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
@@ -394,7 +401,7 @@ fn init_database(
 
     let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
         None => {
-            if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+            if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
                 stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
             }
             None
@@ -457,8 +464,9 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database(program, old_module_info);
+        let ret = self.inst.update_database(program, old_module_info, policy);
         self.check_trap();
         ret
     }
@@ -539,8 +547,6 @@ pub enum InitDatabaseError {
     Other(anyhow::Error),
 }
 
-// FIXME: reduce type size
-#[expect(clippy::large_enum_variant)]
 #[derive(thiserror::Error, Debug)]
 pub enum ClientConnectedError {
     #[error(transparent)]
@@ -684,12 +690,36 @@ impl ModuleHost {
     /// In this case, the caller should terminate the connection.
     pub async fn call_identity_connected(
         &self,
-        caller_identity: Identity,
+        caller_auth: ConnectionAuthCtx,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ClientConnectedError> {
         let me = self.clone();
         self.call("call_identity_connected", move |inst| {
             let reducer_lookup = me.info.module_def.lifecycle_reducer(Lifecycle::OnConnect);
+            let stdb = &me.module.replica_ctx().relational_db;
+            let workload = Workload::Reducer(ReducerContext {
+                name: "call_identity_connected".to_owned(),
+                caller_identity: caller_auth.claims.identity,
+                caller_connection_id,
+                timestamp: Timestamp::now(),
+                arg_bsatn: Bytes::new(),
+            });
+            let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload);
+            let mut mut_tx = scopeguard::guard(mut_tx, |mut_tx| {
+                // If we crash before committing, we need to ensure that the transaction is rolled back.
+                // This is necessary to avoid leaving the database in an inconsistent state.
+                log::debug!("call_identity_connected: rolling back transaction");
+                let (_, metrics, reducer_name) = mut_tx.rollback();
+                stdb.report_mut_tx_metrics(reducer_name, metrics, None);
+            });
+
+            mut_tx
+                .insert_st_client(
+                    caller_auth.claims.identity,
+                    caller_connection_id,
+                    &caller_auth.jwt_payload,
+                )
+                .map_err(DBError::from)?;
 
             if let Some((reducer_id, reducer_def)) = reducer_lookup {
                 // The module defined a lifecycle reducer to handle new connections.
@@ -697,7 +727,8 @@ impl ModuleHost {
                 // If the call fails (as in, something unexpectedly goes wrong with WASM execution),
                 // abort the connection: we can't really recover.
                 let reducer_outcome = me.call_reducer_inner_with_inst(
-                    caller_identity,
+                    Some(ScopeGuard::into_inner(mut_tx)),
+                    caller_auth.claims.identity,
                     Some(caller_connection_id),
                     None,
                     None,
@@ -728,35 +759,20 @@ impl ModuleHost {
                 }
             } else {
                 // The module doesn't define a client_connected reducer.
-                // Commit a transaction to update `st_clients`
-                // and to ensure we always have those events paired in the commitlog.
+                // We need to commit the transaction to update st_clients and st_connection_credentials.
                 //
                 // This is necessary to be able to disconnect clients after a server crash.
-                let reducer_name = reducer_lookup
-                    .as_ref()
-                    .map(|(_, def)| &*def.name)
-                    .unwrap_or("__identity_connected__");
 
-                let workload = Workload::Reducer(ReducerContext {
-                    name: reducer_name.to_owned(),
-                    caller_identity,
-                    caller_connection_id,
-                    timestamp: Timestamp::now(),
-                    arg_bsatn: Bytes::new(),
-                });
-
-                let stdb = me.module.replica_ctx().relational_db.clone();
-                stdb.with_auto_commit(workload, |mut_tx| {
-                    mut_tx
-                        .insert_st_client(caller_identity, caller_connection_id)
-                        .map_err(DBError::from)
-                })
-                .inspect_err(|e| {
-                    log::error!(
-                        "`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}"
-                    )
-                })
-                .map_err(Into::into)
+                // TODO: Is this being broadcast? Does it need to be, or are st_client table subscriptions
+                // not allowed?
+                // I (jsdt) don't think it was being broadcast previously. See:
+                // https://github.com/clockworklabs/SpacetimeDB/issues/3130
+                stdb.finish_tx(ScopeGuard::into_inner(mut_tx), Ok(()))
+                    .map_err(|e: DBError| {
+                        log::error!("`call_identity_connected`: finish transaction failed: {e:#?}");
+                        ClientConnectedError::DBError(e)
+                    })?;
+                Ok(())
             }
         })
         .await
@@ -810,6 +826,7 @@ impl ModuleHost {
             // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
             // that `st_client` is updated appropriately.
             let result = me.call_reducer_inner_with_inst(
+                None,
                 caller_identity,
                 Some(caller_connection_id),
                 None,
@@ -879,6 +896,22 @@ impl ModuleHost {
         .map_err(Into::<ReducerCallError>::into)?
     }
 
+    /// Empty the system tables tracking clients without running any lifecycle reducers.
+    pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
+        let me = self.clone();
+        self.call("clear_all_clients", move |_| {
+            let stdb = &me.module.replica_ctx().relational_db;
+            let workload = Workload::Internal;
+            stdb.with_auto_commit(workload, |mut_tx| {
+                stdb.clear_table(mut_tx, ST_CONNECTION_CREDENTIALS_ID)?;
+                stdb.clear_table(mut_tx, ST_CLIENT_ID)?;
+                Ok::<(), DBError>(())
+            })
+        })
+        .await?
+        .map_err(anyhow::Error::from)
+    }
+
     async fn call_reducer_inner(
         &self,
         caller_identity: Identity,
@@ -914,6 +947,7 @@ impl ModuleHost {
     }
     fn call_reducer_inner_with_inst(
         &self,
+        tx: Option<MutTxId>,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
@@ -929,7 +963,7 @@ impl ModuleHost {
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(module_instance.call_reducer(
-            None,
+            tx,
             CallReducerParams {
                 timestamp: Timestamp::now(),
                 caller_identity,
@@ -987,7 +1021,7 @@ impl ModuleHost {
             _ => None,
         };
         if let Some(log_message) = log_message {
-            self.inject_logs(LogLevel::Error, &log_message)
+            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
         }
 
         res
@@ -1058,9 +1092,10 @@ impl ModuleHost {
         &self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         self.call("<update_database>", move |inst| {
-            inst.update_database(program, old_module_info)
+            inst.update_database(program, old_module_info, policy)
         })
         .await?
     }
@@ -1075,15 +1110,12 @@ impl ModuleHost {
         tokio::join!(self.module.scheduler().closed(), self.job_tx.closed());
     }
 
-    pub fn inject_logs(&self, log_level: LogLevel, message: &str) {
+    pub fn inject_logs(&self, log_level: LogLevel, reducer_name: &str, message: &str) {
         self.replica_ctx().logger.write(
             log_level,
             &Record {
-                ts: chrono::Utc::now(),
-                target: None,
-                filename: Some("external"),
-                line_number: None,
-                message,
+                function: Some(reducer_name),
+                ..Record::injected(message)
             },
             &(),
         )
@@ -1093,7 +1125,7 @@ impl ModuleHost {
     /// This only returns an error if there is a db-level problem.
     /// An error with the query itself will be sent to the client.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn one_off_query<F: WebsocketFormat>(
+    pub async fn one_off_query<F: BuildableWebsocketFormat>(
         &self,
         caller_identity: Identity,
         query: String,
@@ -1110,74 +1142,79 @@ impl ModuleHost {
         log::debug!("One-off query: {query}");
         let metrics = self
             .on_module_thread("one_off_query", move || {
-                db.with_read_only(Workload::Sql, |tx| {
-                    // We wrap the actual query in a closure so we can use ? to handle errors without making
-                    // the entire transaction abort with an error.
-                    let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
-                        let tx = SchemaViewer::new(tx, &auth);
+                let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
+                let tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
+                    let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
+                    let _ = tx_offset_sender.send(tx_offset);
+                    db.report_read_tx_metrics(reducer, tx_metrics);
+                });
 
-                        let (
-                            // A query may compile down to several plans.
-                            // This happens when there are multiple RLS rules per table.
-                            // The original query is the union of these plans.
-                            plans,
-                            _,
-                            table_name,
-                            _,
-                        ) = compile_subscription(&query, &tx, &auth)?;
+                // We wrap the actual query in a closure so we can use ? to handle errors without making
+                // the entire transaction abort with an error.
+                let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
+                    let tx = SchemaViewer::new(&*tx, &auth);
 
-                        // Optimize each fragment
-                        let optimized = plans
-                            .into_iter()
-                            .map(|plan| plan.optimize())
-                            .collect::<Result<Vec<_>, _>>()?;
+                    let (
+                        // A query may compile down to several plans.
+                        // This happens when there are multiple RLS rules per table.
+                        // The original query is the union of these plans.
+                        plans,
+                        _,
+                        table_name,
+                        _,
+                    ) = compile_subscription(&query, &tx, &auth)?;
 
-                        check_row_limit(
-                            &optimized,
-                            &db,
-                            &tx,
-                            // Estimate the number of rows this query will scan
-                            |plan, tx| estimate_rows_scanned(tx, plan),
-                            &auth,
-                        )?;
+                    // Optimize each fragment
+                    let optimized = plans
+                        .into_iter()
+                        .map(|plan| plan.optimize())
+                        .collect::<Result<Vec<_>, _>>()?;
 
-                        let optimized = optimized
-                            .into_iter()
-                            // Convert into something we can execute
-                            .map(PipelinedProject::from)
-                            .collect::<Vec<_>>();
+                    check_row_limit(
+                        &optimized,
+                        &db,
+                        &tx,
+                        // Estimate the number of rows this query will scan
+                        |plan, tx| estimate_rows_scanned(tx, plan),
+                        &auth,
+                    )?;
 
-                        // Execute the union and return the results
-                        execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
-                            .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
-                            .context("One-off queries are not allowed to modify the database")
-                    })();
+                    let optimized = optimized
+                        .into_iter()
+                        // Convert into something we can execute
+                        .map(PipelinedProject::from)
+                        .collect::<Vec<_>>();
 
-                    let total_host_execution_duration = timer.elapsed().into();
-                    let (message, metrics): (SerializableMessage, Option<ExecutionMetrics>) = match result {
-                        Ok((rows, metrics)) => (
-                            into_message(OneOffQueryResponseMessage {
-                                message_id,
-                                error: None,
-                                results: vec![rows],
-                                total_host_execution_duration,
-                            }),
-                            Some(metrics),
-                        ),
-                        Err(err) => (
-                            into_message(OneOffQueryResponseMessage {
-                                message_id,
-                                error: Some(format!("{err}")),
-                                results: vec![],
-                                total_host_execution_duration,
-                            }),
-                            None,
-                        ),
-                    };
+                    // Execute the union and return the results
+                    execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
+                        .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
+                        .context("One-off queries are not allowed to modify the database")
+                })();
 
-                    subscriptions.send_client_message(client, message, tx)?;
-                    Ok::<Option<ExecutionMetrics>, anyhow::Error>(metrics)
-                })
+                let total_host_execution_duration = timer.elapsed().into();
+                let (message, metrics): (SerializableMessage, Option<ExecutionMetrics>) = match result {
+                    Ok((rows, metrics)) => (
+                        into_message(OneOffQueryResponseMessage {
+                            message_id,
+                            error: None,
+                            results: vec![rows],
+                            total_host_execution_duration,
+                        }),
+                        Some(metrics),
+                    ),
+                    Err(err) => (
+                        into_message(OneOffQueryResponseMessage {
+                            message_id,
+                            error: Some(format!("{err}")),
+                            results: vec![],
+                            total_host_execution_duration,
+                        }),
+                        None,
+                    ),
+                };
+
+                subscriptions.send_client_message(client, message, (&*tx, tx_offset_receiver))?;
+                Ok::<Option<ExecutionMetrics>, anyhow::Error>(metrics)
             })
             .await??;
 
@@ -1223,6 +1260,10 @@ impl ModuleHost {
 
     pub fn database_info(&self) -> &Database {
         &self.replica_ctx().database
+    }
+
+    pub fn durable_tx_offset(&self) -> Option<DurableOffset> {
+        self.replica_ctx().relational_db.durable_tx_offset()
     }
 
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {

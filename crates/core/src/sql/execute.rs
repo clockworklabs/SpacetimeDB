@@ -9,6 +9,7 @@ use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::ArgsTuple;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{check_row_limit, DbProgram, TxMode};
@@ -26,6 +27,7 @@ use spacetimedb_schema::relation::FieldName;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
+use tokio::sync::oneshot;
 
 pub struct StmtResult {
     pub schema: ProductType,
@@ -172,6 +174,11 @@ pub fn execute_sql_tx<'a>(
 }
 
 pub struct SqlResult {
+    /// The offset of the SQL operation's transaction.
+    ///
+    /// Used to determine visibility of the transaction wrt the durability
+    /// requirements requested by the caller.
+    pub tx_offset: TransactionOffset,
     pub rows: Vec<ProductValue>,
     /// These metrics will be reported via `report_tx_metrics`.
     /// They should not be reported separately to avoid double counting.
@@ -200,9 +207,12 @@ pub fn run(
             // and hence there are no deltas to process.
             let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
 
-            // Release the tx on drop, so that we record metrics.
+            let (tx_offset_send, tx_offset) = oneshot::channel();
+            // Release the tx on drop, so that we record metrics
+            // and set the transaction offset.
             let mut tx = scopeguard::guard(tx, |tx| {
-                let (tx_metrics_downgrade, reducer) = db.release_tx(tx);
+                let (offset, tx_metrics_downgrade, reducer) = db.release_tx(tx);
+                let _ = tx_offset_send.send(offset);
                 db.report_tx_metrics(
                     reducer,
                     Some(Arc::new(tx_data)),
@@ -232,6 +242,7 @@ pub fn run(
             tx.metrics.merge(metrics);
 
             Ok(SqlResult {
+                tx_offset,
                 rows,
                 metrics: tx.metrics,
             })
@@ -252,10 +263,17 @@ pub fn run(
             if subs.is_none() {
                 let metrics = tx.metrics;
                 return db.commit_tx(tx).map(|tx_opt| {
-                    if let Some((tx_data, tx_metrics, reducer)) = tx_opt {
-                        db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+                    let (tx_offset, tx_data, tx_metrics, reducer) = tx_opt.unwrap();
+
+                    let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
+                    let _ = tx_offset_sender.send(tx_offset);
+
+                    db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+                    SqlResult {
+                        tx_offset: tx_offset_receiver,
+                        rows: vec![],
+                        metrics,
                     }
-                    SqlResult { rows: vec![], metrics }
                 });
             }
 
@@ -289,7 +307,11 @@ pub fn run(
                 Err(WriteConflict) => {
                     todo!("See module_host_actor::call_reducer_with_tx")
                 }
-                Ok(_) => Ok(SqlResult { rows: vec![], metrics }),
+                Ok(res) => Ok(SqlResult {
+                    tx_offset: res.tx_offset,
+                    rows: vec![],
+                    metrics,
+                }),
             }
         }
     }
@@ -1126,6 +1148,11 @@ pub(crate) mod tests {
         Ok(())
     }
 
+    /// Test we are protected against stack overflows when:
+    /// 1. The query is too large (too many characters)
+    /// 2. The AST is too deep
+    ///
+    /// Exercise the limit [`recursion::MAX_RECURSION_EXPR`]
     #[test]
     fn test_large_query_no_panic() -> ResultTest<()> {
         let db = TestDB::durable()?;
@@ -1138,16 +1165,43 @@ pub(crate) mod tests {
             )
             .unwrap();
 
-        let mut query = "select * from test where ".to_string();
-        for x in 0..1_000 {
-            for y in 0..1_000 {
-                let fragment = format!("((x = {x}) and y = {y}) or");
-                query.push_str(&fragment);
+        let build_query = |total| {
+            let mut sql = "select * from test where ".to_string();
+            for x in 1..total {
+                let fragment = format!("x = {x} or ");
+                sql.push_str(&fragment.repeat((total - 1) as usize));
             }
-        }
-        query.push_str("((x = 1000) and (y = 1000))");
+            sql.push_str("(y = 0)");
+            sql
+        };
+        let run = |db: &RelationalDB, sep: char, sql_text: &str| {
+            run_for_testing(db, sql_text).map_err(|e| e.to_string().split(sep).next().unwrap_or_default().to_string())
+        };
+        let sql = build_query(1_000);
+        assert_eq!(
+            run(&db, ':', &sql),
+            Err("SQL query exceeds maximum allowed length".to_string())
+        );
 
-        assert!(run_for_testing(&db, &query).is_err());
+        let sql = build_query(41); // This causes stack overflow without the limit
+        assert_eq!(run(&db, ',', &sql), Err("Recursion limit exceeded".to_string()));
+
+        let sql = build_query(40); // The max we can with the current limit
+        assert!(run(&db, ',', &sql).is_ok(), "Expected query to run without panic");
+
+        // Check no overflow with lot of joins
+        let mut sql = "SELECT test.* FROM test ".to_string();
+        // We could push up to 700 joins without overflow as long we don't have any conditions,
+        // but here execution become too slow.
+        // TODO: Move this test to the `Plan`
+        for i in 0..200 {
+            sql.push_str(&format!("JOIN test AS m{i} ON test.x = m{i}.y "));
+        }
+
+        assert!(
+            run(&db, ',', &sql).is_ok(),
+            "Query with many joins and conditions should not overflow"
+        );
         Ok(())
     }
 

@@ -30,6 +30,8 @@ smallvec.workspace = true
 hashbrown.workspace = true
 enum-as-inner.workspace = true
 enum-map.workspace = true
+insta.workspace = true
+termcolor.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["test"] }

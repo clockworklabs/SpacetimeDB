@@ -2,17 +2,19 @@ use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches};
 use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
-use http::uri::Scheme;
+use reqwest::Url;
 use serde_json::Value;
 use spacetimedb_client_api_messages::websocket::{self as ws, JsonFormat};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
 use spacetimedb_lib::ser::serde::SerializeWrapper;
+use std::io;
 use std::time::Duration;
+use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::tungstenite::{Error as WsError, Message as WsMessage};
 
 use crate::api::ClientApi;
 use crate::common_args;
@@ -63,6 +65,7 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
         )
+        .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::yes())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
@@ -128,25 +131,26 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
+    let confirmed = args.get_flag("confirmed");
 
     let conn = parse_req(config, args).await?;
     let api = ClientApi::new(conn);
     let module_def = api.module_def().await?;
 
+    let mut url = Url::parse(&api.con.db_uri("subscribe"))?;
     // Change the URI scheme from `http(s)` to `ws(s)`.
-    let mut uri = http::Uri::try_from(api.con.db_uri("subscribe"))?.into_parts();
-    uri.scheme = uri.scheme.map(|s| {
-        if s == Scheme::HTTP {
-            "ws".parse().unwrap()
-        } else if s == Scheme::HTTPS {
-            "wss".parse().unwrap()
-        } else {
-            s
-        }
-    });
+    url.set_scheme(match url.scheme() {
+        "http" => "ws",
+        "https" => "wss",
+        unknown => unreachable!("Invalid URL scheme in `Connection::db_uri`: {unknown}"),
+    })
+    .unwrap();
+    if confirmed {
+        url.query_pairs_mut().append_pair("confirmed", "true");
+    }
 
     // Create the websocket request.
-    let mut req = http::Uri::from_parts(uri)?.into_client_request()?;
+    let mut req = url.into_client_request()?;
     req.headers_mut().insert(
         header::SEC_WEBSOCKET_PROTOCOL,
         http::HeaderValue::from_static(ws::TEXT_PROTOCOL),
@@ -155,7 +159,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     if let Some(auth_header) = api.con.auth_header.to_header() {
         req.headers_mut().insert(header::AUTHORIZATION, auth_header);
     }
-    let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
+    let mut ws = tokio_tungstenite::connect_async(req).await.map(|(ws, _)| ws)?;
 
     let task = async {
         subscribe(&mut ws, queries.cloned().map(Into::into).collect()).await?;
@@ -163,27 +167,80 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         consume_transaction_updates(&mut ws, num, &module_def).await
     };
 
-    let needs_shutdown = if let Some(timeout) = timeout {
+    let res = if let Some(timeout) = timeout {
         let timeout = Duration::from_secs(timeout.into());
         match tokio::time::timeout(timeout, task).await {
-            Ok(res) => res?,
-            Err(_elapsed) => true,
+            Ok(res) => res,
+            Err(_elapsed) => {
+                eprintln!("timed out after {}s", timeout.as_secs());
+                Ok(())
+            }
         }
     } else {
-        task.await?
+        task.await
     };
 
-    if needs_shutdown {
-        ws.close(None).await?;
-    }
+    // Close the connection gracefully.
+    // This will return an error if the server already closed,
+    // or the connection is in a bad state.
+    // The error (if any) relevant to the user is already stored in `res`,
+    // so we can ignore errors here -- graceful close is basically a
+    // courtesy to the server.
+    let _ = ws.close(None).await;
+    // The server closing the connection is not considered an error,
+    // but any other error is.
+    res.or_else(|e| {
+        if e.is_server_closed_connection() {
+            Ok(())
+        } else {
+            Err(e)
+        }
+    })
+    .map_err(anyhow::Error::from)
+}
 
-    Ok(())
+#[derive(Debug, Error)]
+enum Error {
+    #[error("error sending subscription queries")]
+    Subscribe {
+        #[source]
+        source: WsError,
+    },
+    #[error("protocol error: {details}")]
+    Protocol { details: &'static str },
+    #[error("websocket error: {source}")]
+    Websocket {
+        #[source]
+        source: WsError,
+    },
+    #[error("encountered failed transaction: {reason}")]
+    TransactionFailure { reason: Box<str> },
+    #[error("error formatting response: {source:#}")]
+    Reformat {
+        #[source]
+        source: anyhow::Error,
+    },
+    #[error(transparent)]
+    Serde(#[from] serde_json::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+impl Error {
+    fn is_server_closed_connection(&self) -> bool {
+        matches!(
+            self,
+            Self::Websocket {
+                source: WsError::ConnectionClosed
+            }
+        )
+    }
 }
 
 /// Send the subscribe message.
-async fn subscribe<S>(ws: &mut S, query_strings: Box<[Box<str>]>) -> Result<(), S::Error>
+async fn subscribe<S>(ws: &mut S, query_strings: Box<[Box<str>]>) -> Result<(), Error>
 where
-    S: Sink<WsMessage> + Unpin,
+    S: Sink<WsMessage, Error = WsError> + Unpin,
 {
     let msg = serde_json::to_string(&SerializeWrapper::new(ws::ClientMessage::<()>::Subscribe(
         ws::Subscribe {
@@ -192,35 +249,39 @@ where
         },
     )))
     .unwrap();
-    ws.send(msg.into()).await
+    ws.send(msg.into()).await.map_err(|source| Error::Subscribe { source })
 }
 
 /// Await the initial [`ServerMessage::SubscriptionUpdate`].
 /// If `module_def` is `Some`, print a JSON representation to stdout.
-async fn await_initial_update<S>(ws: &mut S, module_def: Option<&RawModuleDefV9>) -> anyhow::Result<()>
+async fn await_initial_update<S>(ws: &mut S, module_def: Option<&RawModuleDefV9>) -> Result<(), Error>
 where
-    S: TryStream<Ok = WsMessage> + Unpin,
-    S::Error: std::error::Error + Send + Sync + 'static,
+    S: TryStream<Ok = WsMessage, Error = WsError> + Unpin,
 {
     const RECV_TX_UPDATE: &str = "protocol error: received transaction update before initial subscription update";
 
-    while let Some(msg) = ws.try_next().await? {
+    while let Some(msg) = ws.try_next().await.map_err(|source| Error::Websocket { source })? {
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
             ws::ServerMessage::InitialSubscription(sub) => {
                 if let Some(module_def) = module_def {
-                    let formatted = reformat_update(&sub.database_update, module_def)?;
-                    let output = serde_json::to_string(&formatted)? + "\n";
+                    let output = format_output_json(&sub.database_update, module_def)?;
                     tokio::io::stdout().write_all(output.as_bytes()).await?
                 }
                 break;
             }
-            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate { status, .. }) => anyhow::bail!(match status {
-                ws::UpdateStatus::Failed(msg) => msg,
-                _ => RECV_TX_UPDATE.into(),
-            }),
+            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate { status, .. }) => {
+                return Err(match status {
+                    ws::UpdateStatus::Failed(msg) => Error::TransactionFailure { reason: msg },
+                    _ => Error::Protocol {
+                        details: RECV_TX_UPDATE,
+                    },
+                })
+            }
             ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { .. }) => {
-                anyhow::bail!(RECV_TX_UPDATE)
+                return Err(Error::Protocol {
+                    details: RECV_TX_UPDATE,
+                })
             }
             _ => continue,
         }
@@ -231,41 +292,47 @@ where
 
 /// Print `num` [`ServerMessage::TransactionUpdate`] messages as JSON.
 /// If `num` is `None`, keep going indefinitely.
-async fn consume_transaction_updates<S>(
-    ws: &mut S,
-    num: Option<u32>,
-    module_def: &RawModuleDefV9,
-) -> anyhow::Result<bool>
+async fn consume_transaction_updates<S>(ws: &mut S, num: Option<u32>, module_def: &RawModuleDefV9) -> Result<(), Error>
 where
-    S: TryStream<Ok = WsMessage> + Unpin,
-    S::Error: std::error::Error + Send + Sync + 'static,
+    S: TryStream<Ok = WsMessage, Error = WsError> + Unpin,
 {
     let mut stdout = tokio::io::stdout();
     let mut num_received = 0;
     loop {
         if num.is_some_and(|n| num_received >= n) {
-            break Ok(true);
+            return Ok(());
         }
-        let Some(msg) = ws.try_next().await? else {
+        let Some(msg) = ws.try_next().await.map_err(|source| Error::Websocket { source })? else {
             eprintln!("disconnected by server");
-            break Ok(false);
+            return Err(Error::Websocket {
+                source: WsError::ConnectionClosed,
+            });
         };
 
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
             ws::ServerMessage::InitialSubscription(_) => {
-                anyhow::bail!("protocol error: received a second initial subscription update")
+                return Err(Error::Protocol {
+                    details: "received a second initial subscription update",
+                })
             }
             ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { update, .. })
             | ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
                 status: ws::UpdateStatus::Committed(update),
                 ..
             }) => {
-                let output = serde_json::to_string(&reformat_update(&update, module_def)?)? + "\n";
+                let output = format_output_json(&update, module_def)?;
                 stdout.write_all(output.as_bytes()).await?;
                 num_received += 1;
             }
             _ => continue,
         }
     }
+}
+
+fn format_output_json(msg: &ws::DatabaseUpdate<JsonFormat>, schema: &RawModuleDefV9) -> Result<String, Error> {
+    let formatted = reformat_update(msg, schema).map_err(|source| Error::Reformat { source })?;
+    let output = serde_json::to_string(&formatted)? + "\n";
+
+    Ok(output)
 }

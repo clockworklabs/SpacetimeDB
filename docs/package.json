@@ -1,0 +1,28 @@
+{
+  "name": "spacetime-docs",
+  "version": "1.0.0",
+  "description": "This repository contains the markdown files which are used to display documentation on our [website](https://spacetimedb.com/docs).",
+  "main": "index.js",
+  "dependencies": {
+    "github-slugger": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prettier": "^3.3.3",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.0.0"
+  },
+  "scripts": {
+    "build": "tsc --project ./tsconfig.build.json && pnpm fix-markdown && prettier --write docs/nav.js",
+    "fix-markdown": "scripts/markdown-fix.mjs docs/cli-reference.md",
+    "format": "pnpm fix-markdown && prettier . --write --ignore-path .prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path .prettierignore",
+    "check-links": "tsx scripts/checkLinks.ts"
+  },
+  "author": "Clockwork Labs",
+  "license": "ISC"
+}

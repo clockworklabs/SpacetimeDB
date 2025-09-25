@@ -6,7 +6,6 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::execution_context::{Workload, WorkloadType};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
@@ -23,18 +22,24 @@ use crate::{
         DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData, TxDatastore,
     },
 };
+use crate::{
+    execution_context::{Workload, WorkloadType},
+    system_tables::StTableRow,
+};
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{
+    algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, AlgebraicValue, ProductValue,
+};
+use spacetimedb_sats::{memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef};
@@ -111,7 +116,12 @@ impl Locking {
         commit_state.bootstrap_system_tables(database_identity)?;
         // The database tables are now initialized with the correct data.
         // Now we have to build our in memory structures.
-        commit_state.build_sequence_state(&mut datastore.sequence_state.lock())?;
+        {
+            let sequence_state = commit_state.build_sequence_state()?;
+            // Reset our sequence state so that they start in the right places.
+            *datastore.sequence_state.lock() = sequence_state;
+        }
+
         // We don't want to build indexes here; we'll build those later,
         // in `rebuild_state_after_replay`.
         // We actively do not want indexes to exist during replay,
@@ -128,14 +138,14 @@ impl Locking {
     /// There may eventually be better way to do this, but this will have to do for now.
     pub fn rebuild_state_after_replay(&self) -> Result<()> {
         let mut committed_state = self.committed_state.write_arc();
-        let mut sequence_state = self.sequence_state.lock();
         // `build_missing_tables` must be called before indexes.
         // Honestly this should maybe just be one big procedure.
         // See John Carmack's philosophy on this.
         committed_state.reschema_tables()?;
         committed_state.build_missing_tables()?;
         committed_state.build_indexes()?;
-        committed_state.build_sequence_state(&mut sequence_state)?;
+        // Figure out where to pick up for each sequence.
+        *self.sequence_state.lock() = committed_state.build_sequence_state()?;
         Ok(())
     }
 
@@ -160,8 +170,6 @@ impl Locking {
     /// - Populate those tables with all rows in `snapshot`.
     /// - Construct a [`HashMapBlobStore`] containing all the large blobs referenced by `snapshot`,
     ///   with reference counts specified in `snapshot`.
-    /// - Do [`CommittedState::reset_system_table_schemas`] to fix-up auto_inc IDs in the system tables,
-    ///   to ensure those schemas match what [`Self::bootstrap`] would install.
     /// - Notably, **do not** construct indexes or sequences.
     ///   This should be done by [`Self::rebuild_state_after_replay`],
     ///   after replaying the suffix of the commitlog.
@@ -216,8 +224,17 @@ impl Locking {
                 .set(table_size as i64);
         }
 
-        // Fix up auto_inc IDs in the cached system table schemas.
-        committed_state.reset_system_table_schemas()?;
+        // Double check that our in-memory system table ids match the on-disk schemas.
+        // committed_state.assert_system_table_schemas_match()?;
+
+        // Set the sequence state. In practice we will end up doing this again after replaying
+        // the commit log, but we do it here too just to avoid having an incorrectly restored
+        // snapshot.
+        {
+            let sequence_state = committed_state.build_sequence_state()?;
+            // Reset our sequence state so that they start in the right places.
+            *datastore.sequence_state.lock() = sequence_state;
+        }
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
@@ -241,6 +258,11 @@ impl Locking {
     pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>> {
         let maybe_offset_and_path = Self::take_snapshot_internal(&self.committed_state, repo)?;
         Ok(maybe_offset_and_path.map(|(_, path)| path))
+    }
+
+    pub fn assert_system_tables_match(&self) -> Result<()> {
+        let committed_state = self.committed_state.read_arc();
+        committed_state.assert_system_table_schemas_match()
     }
 
     pub fn take_snapshot_internal(
@@ -313,6 +335,16 @@ impl Locking {
     ) -> Result<()> {
         tx.alter_table_row_type(table_id, column_schemas)
     }
+
+    pub fn add_columns_to_table_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+        defaults: Vec<AlgebraicValue>,
+    ) -> Result<TableId> {
+        tx.add_columns_to_table(table_id, column_schemas, defaults)
+    }
 }
 
 impl DataRow for Locking {
@@ -355,9 +387,10 @@ impl Tx for Locking {
     /// allowing new mutable transactions to start if this was the last read-only transaction.
     ///
     /// Returns:
+    /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String) {
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String) {
         tx.release()
     }
 }
@@ -666,7 +699,9 @@ impl MutTxDatastore for Locking {
 /// Various measurements, needed for metrics, of the work performed by a transaction.
 #[must_use = "TxMetrics should be reported"]
 pub struct TxMetrics {
-    table_stats: HashMap<TableId, TableStats>,
+    /// The transaction metrics for a particular table.
+    /// The value `None` for a [`TableId`] means that it was deleted.
+    table_stats: HashMap<TableId, Option<TableStats>>,
     workload: WorkloadType,
     database_identity: Identity,
     elapsed_time: Duration,
@@ -715,17 +750,12 @@ impl TxMetrics {
                 let mut table_stats =
                     <HashMap<_, _, _> as HashCollectionExt>::with_capacity(tx_data.num_tables_affected());
                 for (table_id, _) in tx_data.table_ids_and_names() {
-                    let table = committed_state
-                        .get_table(table_id)
-                        .expect("should have a table in committed state for one in tx data");
-                    table_stats.insert(
-                        table_id,
-                        TableStats {
-                            row_count: table.row_count,
-                            bytes_occupied_overestimate: table.bytes_occupied_overestimate(),
-                            num_indices: table.num_indices(),
-                        },
-                    );
+                    let stats = committed_state.get_table(table_id).map(|table| TableStats {
+                        row_count: table.row_count,
+                        bytes_occupied_overestimate: table.bytes_occupied_overestimate(),
+                        num_indices: table.num_indices(),
+                    });
+                    table_stats.insert(table_id, stats);
                 }
                 table_stats
             })
@@ -775,63 +805,106 @@ impl TxMetrics {
 
         get_exec_counter(self.workload).record(&self.exec_metrics);
 
+        // TODO(centril): simplify this by exposing `tx_data.for_table(table_id)`.
         if let Some(tx_data) = tx_data {
             // Update table rows and table size gauges,
             // and sets them to zero if no table is present.
             for (table_id, table_name) in tx_data.table_ids_and_names() {
-                let stats = self.table_stats.get(&table_id).unwrap();
-
-                DB_METRICS
-                    .rdb_num_table_rows
-                    .with_label_values(db, &table_id.0, table_name)
-                    .set(stats.row_count as i64);
-                DB_METRICS
-                    .rdb_table_size
-                    .with_label_values(db, &table_id.0, table_name)
-                    .set(stats.bytes_occupied_overestimate as i64);
+                if let Some(stats) = self.table_stats.get(&table_id).unwrap() {
+                    DB_METRICS
+                        .rdb_num_table_rows
+                        .with_label_values(db, &table_id.0, table_name)
+                        .set(stats.row_count as i64);
+                    DB_METRICS
+                        .rdb_table_size
+                        .with_label_values(db, &table_id.0, table_name)
+                        .set(stats.bytes_occupied_overestimate as i64);
+                } else {
+                    // Table was dropped, remove the metrics.
+                    let _ = DB_METRICS
+                        .rdb_num_table_rows
+                        .remove_label_values(db, &table_id.0, table_name);
+                    let _ = DB_METRICS
+                        .rdb_table_size
+                        .remove_label_values(db, &table_id.0, table_name);
+                }
             }
 
             // Record inserts.
             for (table_id, table_name, inserts) in tx_data.inserts_with_table_name() {
-                let stats = self.table_stats.get(table_id).unwrap();
-                let num_inserts = inserts.len() as u64;
-                let num_indices = stats.num_indices as u64;
+                if let Some(stats) = self.table_stats.get(table_id).unwrap() {
+                    let num_inserts = inserts.len() as u64;
+                    let num_indices = stats.num_indices as u64;
 
-                // Increment rows inserted counter.
-                DB_METRICS
-                    .rdb_num_rows_inserted
-                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                    .inc_by(num_inserts);
-
-                // We don't have sparse indexes, so we can just multiply by the number of indexes.
-                if stats.num_indices > 0 {
-                    // Increment index rows inserted counter
+                    // Increment rows inserted counter.
                     DB_METRICS
-                        .rdb_num_index_entries_inserted
+                        .rdb_num_rows_inserted
                         .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                        .inc_by(num_inserts * num_indices);
+                        .inc_by(num_inserts);
+
+                    // We don't have sparse indexes, so we can just multiply by the number of indexes.
+                    if stats.num_indices > 0 {
+                        // Increment index rows inserted counter
+                        DB_METRICS
+                            .rdb_num_index_entries_inserted
+                            .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                            .inc_by(num_inserts * num_indices);
+                    }
+                } else {
+                    // Table was dropped, remove the metrics.
+                    let _ = DB_METRICS.rdb_num_rows_inserted.remove_label_values(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id.0,
+                        table_name,
+                    );
+                    let _ = DB_METRICS.rdb_num_index_entries_inserted.remove_label_values(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id.0,
+                        table_name,
+                    );
                 }
             }
 
             // Record deletes.
             for (table_id, table_name, deletes) in tx_data.deletes_with_table_name() {
-                let stats = self.table_stats.get(table_id).unwrap();
-                let num_deletes = deletes.len() as u64;
-                let num_indices = stats.num_indices as u64;
+                if let Some(stats) = self.table_stats.get(table_id).unwrap() {
+                    let num_deletes = deletes.len() as u64;
+                    let num_indices = stats.num_indices as u64;
 
-                // Increment rows deleted counter.
-                DB_METRICS
-                    .rdb_num_rows_deleted
-                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                    .inc_by(num_deletes);
-
-                // We don't have sparse indexes, so we can just multiply by the number of indexes.
-                if num_indices > 0 {
-                    // Increment index rows deleted counter.
+                    // Increment rows deleted counter.
                     DB_METRICS
-                        .rdb_num_index_entries_deleted
+                        .rdb_num_rows_deleted
                         .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                        .inc_by(num_deletes * num_indices);
+                        .inc_by(num_deletes);
+
+                    // We don't have sparse indexes, so we can just multiply by the number of indexes.
+                    if num_indices > 0 {
+                        // Increment index rows deleted counter.
+                        DB_METRICS
+                            .rdb_num_index_entries_deleted
+                            .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                            .inc_by(num_deletes * num_indices);
+                    }
+                } else {
+                    // Table was dropped, remove the metrics.
+                    let _ = DB_METRICS.rdb_num_rows_deleted.remove_label_values(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id.0,
+                        table_name,
+                    );
+                    let _ = DB_METRICS.rdb_num_index_entries_deleted.remove_label_values(
+                        workload,
+                        db,
+                        reducer,
+                        &table_id.0,
+                        table_name,
+                    );
                 }
             }
         }
@@ -870,11 +943,11 @@ impl MutTx for Locking {
         }
     }
 
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String) {
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, String) {
         tx.rollback()
     }
 
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, TxMetrics, String)>> {
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>> {
         Ok(Some(tx.commit()))
     }
 }
@@ -914,12 +987,13 @@ pub struct Replay<F> {
 }
 
 impl<F> Replay<F> {
-    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<F>) -> T) -> T {
+    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<'_, F>) -> T) -> T {
         let mut committed_state = self.committed_state.write_arc();
         let mut visitor = ReplayVisitor {
             database_identity: &self.database_identity,
             committed_state: &mut committed_state,
             progress: &mut *self.progress.borrow_mut(),
+            dropped_table_names: IntMap::default(),
         };
         f(&mut visitor)
     }
@@ -1025,6 +1099,10 @@ struct ReplayVisitor<'a, F> {
     database_identity: &'a Identity,
     committed_state: &'a mut CommittedState,
     progress: &'a mut F,
+    // Since deletes are handled before truncation / drop, sometimes the schema
+    // info is gone. We save the name on the first delete of that table so metrics
+    // can still show a name.
+    dropped_table_names: IntMap<TableId, Box<str>>,
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
@@ -1081,12 +1159,20 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         let table_name = schema.table_name.clone();
         let row = ProductValue::decode(schema.get_row_type(), reader)?;
 
+        // If this is a delete from the `st_table` system table, save the name
+        if table_id == ST_TABLE_ID {
+            let ab = AlgebraicValue::Product(row.clone());
+            let st_table_row = StTableRow::deserialize(ValueDeserializer::from_ref(&ab)).unwrap();
+            self.dropped_table_names
+                .insert(st_table_row.table_id, st_table_row.table_name);
+        }
+
         self.committed_state
             .replay_delete_by_rel(table_id, &row)
             .with_context(|| {
                 format!(
-                    "Error deleting row {:?} during transaction {:?} playback",
-                    row, self.committed_state.next_tx_offset
+                    "Error deleting row {:?} from table {:?} during transaction {:?} playback",
+                    row, table_name, self.committed_state.next_tx_offset
                 )
             })?;
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
@@ -1099,8 +1185,35 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         Ok(row)
     }
 
-    fn visit_truncate(&mut self, _table_id: TableId) -> std::result::Result<(), Self::Error> {
-        Err(anyhow!("visit: truncate not yet supported").into())
+    fn visit_truncate(&mut self, table_id: TableId) -> std::result::Result<(), Self::Error> {
+        let table_name = match self.committed_state.schema_for_table(table_id) {
+            // TODO: avoid clone
+            Ok(schema) => schema.table_name.clone(),
+
+            Err(_) => {
+                if let Some(name) = self.dropped_table_names.remove(&table_id) {
+                    name
+                } else {
+                    return Err(anyhow!("Error looking up name for truncated table {:?}", table_id).into());
+                }
+            }
+        };
+
+        self.committed_state.replay_truncate(table_id).with_context(|| {
+            format!(
+                "Error truncating table {:?} during transaction {:?} playback",
+                table_id, self.committed_state.next_tx_offset
+            )
+        })?;
+
+        // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+        // and therefore has performance implications and must not be disabled.
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(self.database_identity, &table_id.into(), &table_name)
+            .set(0);
+
+        Ok(())
     }
 
     fn visit_tx_start(&mut self, offset: u64) -> std::result::Result<(), Self::Error> {
@@ -1147,9 +1260,10 @@ mod tests {
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::system_tables::{
-        system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
-        StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow,
-        StTableRow, StVarFields, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
+        system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
+        StConstraintRow, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields,
+        StSequenceFields, StSequenceRow, StTableRow, StVarFields, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME,
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
         ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
         ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
@@ -1160,6 +1274,7 @@ mod tests {
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
+    use spacetimedb_execution::dml::MutDatastore as _;
     use spacetimedb_execution::Datastore;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
@@ -1178,7 +1293,8 @@ mod tests {
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.
-    const FIRST_NON_SYSTEM_ID: u32 = ST_RESERVED_SEQUENCE_RANGE + 1;
+    /// N.B. This used to be one higher (before 1.4) because of how we treated `allocated`.
+    const FIRST_NON_SYSTEM_ID: u32 = ST_RESERVED_SEQUENCE_RANGE;
 
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
@@ -1369,7 +1485,7 @@ mod tests {
                 start: value.start,
                 min_value: 1,
                 max_value: i128::MAX,
-                allocated: 0,
+                allocated: value.start,
             }
         }
     }
@@ -1385,7 +1501,6 @@ mod tests {
                 start: value.start,
                 min_value: 1,
                 max_value: i128::MAX,
-                allocated: 0,
             }
         }
     }
@@ -1425,7 +1540,8 @@ mod tests {
     }
 
     fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<TxData> {
-        Ok(datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`").0)
+        let (_, tx_data, _, _) = datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`");
+        Ok(tx_data)
     }
 
     #[rustfmt::skip]
@@ -1492,7 +1608,6 @@ mod tests {
             increment: 1,
             min_value: 1,
             max_value: i128::MAX,
-            allocated: 0,
         };
         user_public_table(
             map_array(basic_table_schema_cols()),
@@ -1603,6 +1718,7 @@ mod tests {
             TableRow { id: ST_VAR_ID.into(), name: ST_VAR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StVarFields::Name.into()) },
             TableRow { id: ST_SCHEDULED_ID.into(), name: ST_SCHEDULED_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StScheduledFields::ScheduleId.into()) },
             TableRow { id: ST_ROW_LEVEL_SECURITY_ID.into(), name: ST_ROW_LEVEL_SECURITY_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StRowLevelSecurityFields::Sql.into()) },
+            TableRow { id: ST_CONNECTION_CREDENTIALS_ID.into(), name: ST_CONNECTION_CREDENTIALS_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(StConnectionCredentialsFields::ConnectionId.into()) },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
@@ -1658,6 +1774,9 @@ mod tests {
 
             ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
             ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 1, name: "sql", ty: AlgebraicType::String },
+
+            ColRow { table: ST_CONNECTION_CREDENTIALS_ID.into(), pos: 0, name: "connection_id", ty: AlgebraicType::U128 },
+            ColRow { table: ST_CONNECTION_CREDENTIALS_ID.into(), pos: 1, name: "jwt_payload", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1673,8 +1792,9 @@ mod tests {
             IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
             IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
+            IndexRow { id: 13, table: ST_CONNECTION_CREDENTIALS_ID.into(), col: col(0), name: "st_connection_credentials_connection_id_idx_btree", },
         ]));
-        let start = FIRST_NON_SYSTEM_ID as i128;
+        let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
         assert_eq!(query.scan_st_sequences()?, map_array_fn(
             [
@@ -1685,7 +1805,7 @@ mod tests {
                 SequenceRow { id: 4, table: ST_SCHEDULED_ID.into(), col_pos: 0, name: "st_scheduled_schedule_id_seq", start },
             ],
             |row| StSequenceRow {
-                allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
+                allocated: start - 1,
                 ..StSequenceRow::from(row)
             }
         ));
@@ -1702,6 +1822,7 @@ mod tests {
             ConstraintRow { constraint_id: 9, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(0), constraint_name: "st_scheduled_schedule_id_key", },
             ConstraintRow { constraint_id: 10, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(1), constraint_name: "st_scheduled_table_id_key", },
             ConstraintRow { constraint_id: 11, table_id: ST_ROW_LEVEL_SECURITY_ID.into(), unique_columns: col(1), constraint_name: "st_row_level_security_sql_key", },
+            ConstraintRow { constraint_id: 12, table_id: ST_CONNECTION_CREDENTIALS_ID.into(), unique_columns: col(0), constraint_name: "st_connection_credentials_connection_id_key", },
         ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -1724,8 +1845,14 @@ mod tests {
             );
 
             assert_eq!(
-                schema.indexes,
+                schema
+                    .indexes
+                    .clone()
+                    .into_iter()
+                    .sorted_by_key(|x| x.index_id)
+                    .collect::<Vec<_>>(),
                 idx.iter()
+                    .sorted_by_key(|x| x.index_id)
                     .filter(|x| x.table_id == st.table_id)
                     .cloned()
                     .map(Into::into)
@@ -1735,8 +1862,14 @@ mod tests {
             );
 
             assert_eq!(
-                schema.sequences,
+                schema
+                    .sequences
+                    .clone()
+                    .into_iter()
+                    .sorted_by_key(|x| x.sequence_id)
+                    .collect::<Vec<_>>(),
                 seq.iter()
+                    .sorted_by_key(|x| x.sequence_id)
                     .filter(|x| x.table_id == st.table_id)
                     .cloned()
                     .map(Into::into)
@@ -1746,8 +1879,14 @@ mod tests {
             );
 
             assert_eq!(
-                schema.constraints,
+                schema
+                    .constraints
+                    .clone()
+                    .into_iter()
+                    .sorted_by_key(|x| x.constraint_id)
+                    .collect::<Vec<_>>(),
                 ct.iter()
+                    .sorted_by_key(|x| x.constraint_id)
                     .filter(|x| x.table_id == st.table_id)
                     .cloned()
                     .map(Into::into)
@@ -1902,7 +2041,7 @@ mod tests {
         verify_schemas_consistent(&mut tx, table_id);
 
         let expected_indexes = [IndexRow {
-            id: ST_RESERVED_SEQUENCE_RANGE + dropped_indexes + 1,
+            id: FIRST_NON_SYSTEM_ID + dropped_indexes,
             table: FIRST_NON_SYSTEM_ID,
             col: col_list![0],
             name: "Foo_id_idx_btree",
@@ -2099,6 +2238,7 @@ mod tests {
             IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
             IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
+            IndexRow { id: 13, table: ST_CONNECTION_CREDENTIALS_ID.into(), col: col(0), name: "st_connection_credentials_connection_id_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -2261,7 +2401,6 @@ mod tests {
             increment: 1,
             min_value: 1,
             max_value: i128::MAX,
-            allocated: 0,
         };
         let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
         assert_matches!(
@@ -2776,7 +2915,7 @@ mod tests {
         let tx_data_2 = commit(&datastore, tx)?;
         // Ensure that none of the commits deleted rows in our table.
         for tx_data in [&tx_data_1, &tx_data_2] {
-            assert_eq!(tx_data.deletes().find(|(tid, _)| **tid == table_id), None);
+            assert_eq!(tx_data.deletes().find(|(tid, ..)| **tid == table_id), None);
         }
         // Ensure that the first commit added the row but that the second didn't.
         for (tx_data, expected_rows) in [(&tx_data_1, vec![row.clone()]), (&tx_data_2, vec![])] {
@@ -3066,7 +3205,7 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
 
         // Insert a row and commit.
-        let row = random_row();
+        let row: ProductValue = random_row();
         insert(&datastore, &mut tx, table_id, &row)?;
         commit(&datastore, tx)?;
 
@@ -3089,13 +3228,33 @@ mod tests {
         let _ = datastore.rollback_mut_tx(tx);
 
         // Ensure the table still exists in the next transaction.
-        let tx = begin_mut_tx(&datastore);
+        let mut tx = begin_mut_tx(&datastore);
         assert_eq!(tx.pending_schema_changes(), []);
         assert!(
             datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should still exist",
         );
-        assert_eq!(all_rows(&datastore, &tx, table_id), [row]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), [row.clone()]);
+
+        // Now drop the table again and commit.
+        assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
+        let tx_data = commit(&datastore, tx)?;
+        let (_, deleted_rows) = tx_data
+            .deletes()
+            .find(|(id, _)| **id == table_id)
+            .expect("should have deleted rows for `table_id`");
+        assert_eq!(&**deleted_rows, [row]);
+        assert!(tx_data.truncates().contains(&table_id), "table should be truncated");
+
+        // In the next transaction, the table doesn't exist.
+        assert!(
+            !datastore.table_id_exists_mut_tx(&begin_mut_tx(&datastore), &table_id),
+            "Table should be removed",
+        );
+        assert!(
+            !datastore.table_id_exists_tx(&begin_tx(&datastore), &table_id),
+            "Table should be removed",
+        );
 
         Ok(())
     }
@@ -3284,7 +3443,17 @@ mod tests {
                 AlgebraicType::sum([("ba", AlgebraicType::U16), ("bb", AlgebraicType::U8)])
             ]
         );
-        commit(&datastore, tx)?;
+        let tx_data = commit(&datastore, tx)?;
+        // Ensure the change has been persisted in the commitlog.
+        let to_product = |col: &ColumnSchema| value_serialize(&StColumnRow::from(col.clone())).into_product().unwrap();
+        let (_, inserts) = tx_data.inserts().find(|(id, _)| **id == ST_COLUMN_ID).unwrap();
+        assert_eq!(&**inserts, [to_product(&columns[1])].as_slice());
+        let (_, deletes) = tx_data.deletes().find(|(id, ..)| **id == ST_COLUMN_ID).unwrap();
+        assert_eq!(&**deletes, [to_product(&columns_original[1])].as_slice());
+        assert!(
+            !tx_data.truncates().contains(&ST_COLUMN_ID),
+            "table should not be truncated"
+        );
 
         // Check that we can successfully scan using the new schema type post commit.
         let tx = begin_tx(&datastore);
@@ -3296,8 +3465,148 @@ mod tests {
 
         Ok(())
     }
-
     // TODO: Add the following tests
     // - Create a tx that inserts 2000 rows with an auto_inc column
     // - Create a tx that inserts 2000 rows with an auto_inc column and then rolls back
+
+    #[test]
+    fn test_add_columns_to_table() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        let mut tx = begin_mut_tx(&datastore);
+
+        let initial_sum_type = AlgebraicType::sum([("ba", AlgebraicType::U16)]);
+        let initial_columns = [
+            ColumnSchema::for_test(0, "a", AlgebraicType::U64),
+            ColumnSchema::for_test(1, "b", initial_sum_type.clone()),
+        ];
+
+        let initial_indices = [
+            IndexSchema::for_test("index_a", BTreeAlgorithm::from(0)),
+            IndexSchema::for_test("index_b", BTreeAlgorithm::from(1)),
+        ];
+
+        let sequence = SequenceRow {
+            id: SequenceId::SENTINEL.into(),
+            table: 0,
+            col_pos: 0,
+            name: "Foo_id_seq",
+            start: 5,
+        };
+
+        let schema = user_public_table(
+            initial_columns,
+            initial_indices.clone(),
+            [],
+            map_array([sequence]),
+            None,
+            None,
+        );
+
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+
+        let mut columns_original = tx.get_schema(table_id).unwrap().columns.to_vec();
+
+        // Insert initial rows
+        let initial_row = product![0u64, AlgebraicValue::sum(0, AlgebraicValue::U16(1))];
+        insert(&datastore, &mut tx, table_id, &initial_row).unwrap();
+        insert(&datastore, &mut tx, table_id, &initial_row).unwrap();
+        commit(&datastore, tx)?;
+
+        // Alter Table: Add Variant and Column
+        //
+        // Change the `b` column, adding a variant.
+        let vars_ref = &mut columns_original[1].col_type.as_sum_mut().unwrap().variants;
+        let mut vars = Vec::from(mem::take(vars_ref));
+        vars.push(SumTypeVariant::new_named(AlgebraicType::U8, "bb"));
+        *vars_ref = vars.into();
+        // Add column `c`
+        let mut new_columns = columns_original.clone();
+        new_columns.push(ColumnSchema::for_test(2, "c", AlgebraicType::U8));
+        let defaults = vec![AlgebraicValue::U8(42)];
+
+        let mut tx = begin_mut_tx(&datastore);
+        // insert a row in tx_state before adding column
+        tx.insert_product_value(table_id, &initial_row).unwrap();
+        // add column and then rollback
+        let rollback_table_id =
+            datastore.add_columns_to_table_mut_tx(&mut tx, table_id, new_columns.clone(), defaults.clone())?;
+        let _ = tx.rollback();
+
+        let old_rows = [
+            product![5u64, AlgebraicValue::sum(0, 1u16.into())],
+            product![6u64, AlgebraicValue::sum(0, 1u16.into())],
+        ];
+
+        let mut tx = begin_mut_tx(&datastore);
+        // check rollback was successful
+        let rows = tx
+            .table_scan(table_id)
+            .unwrap()
+            .map(|row| row.to_product_value())
+            .collect::<Vec<_>>();
+        assert_eq!(rows, old_rows, "Rows shouldn't be changed if rolledback");
+        let table = tx.table(rollback_table_id);
+        assert!(table.is_none(), "new table shouldn't be created if rolledback");
+
+        // Add column and actually commit this time.
+        tx.insert_product_value(table_id, &initial_row).unwrap();
+        let new_table_id = datastore.add_columns_to_table_mut_tx(&mut tx, table_id, new_columns.clone(), defaults)?;
+
+        let tx_data = commit(&datastore, tx)?;
+
+        assert_ne!(
+            new_table_id, table_id,
+            "New table ID after migration should differ from old one"
+        );
+
+        //  Validate Commitlog Changes
+        let (_, deletes) = tx_data
+            .deletes()
+            .find(|(id, _)| **id == table_id)
+            .expect("Expected delete log for original table");
+
+        assert_eq!(
+            &**deletes, &old_rows,
+            "Unexpected delete entries after altering the table"
+        );
+
+        let inserted_rows = [
+            product![5u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![6u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![8u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+        ];
+
+        let (_, inserts) = tx_data
+            .inserts()
+            .find(|(id, _)| **id == new_table_id)
+            .expect("Expected insert log for new table");
+
+        assert_eq!(
+            &**inserts, &inserted_rows,
+            "Unexpected insert entries after altering the table"
+        );
+
+        // Insert Rows into New Table
+        let mut tx = begin_mut_tx(&datastore);
+
+        let new_row = product![0u64, AlgebraicValue::sum(0, 1u16.into()), 0u8];
+        tx.insert_product_value(new_table_id, &new_row).unwrap();
+        commit(&datastore, tx)?;
+
+        // test for auto_inc feields
+        let tx = begin_mut_tx(&datastore);
+        let rows = tx.table_scan(new_table_id).unwrap().map(|row| row.to_product_value());
+
+        let mut last_row_auto_inc = 0;
+        for row in rows {
+            let auto_inc_col = row.get_field(0, None)?;
+            if let AlgebraicValue::U64(val) = auto_inc_col {
+                assert!(val > &last_row_auto_inc, "Auto-increment value did not increase");
+                last_row_auto_inc = *val;
+            }
+        }
+
+        Ok(())
+    }
 }

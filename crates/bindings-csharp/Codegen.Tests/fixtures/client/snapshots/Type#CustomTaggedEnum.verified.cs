@@ -18,15 +18,15 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomTaggedEnum>
     {
-        internal static readonly SpacetimeDB.BSATN.I32 IntVariant = new();
-        internal static readonly SpacetimeDB.BSATN.String StringVariant = new();
+        internal static readonly SpacetimeDB.BSATN.I32 IntVariantRW = new();
+        internal static readonly SpacetimeDB.BSATN.String StringVariantRW = new();
 
         public CustomTaggedEnum Read(System.IO.BinaryReader reader)
         {
             return reader.ReadByte() switch
             {
-                0 => new IntVariant(IntVariant.Read(reader)),
-                1 => new StringVariant(StringVariant.Read(reader)),
+                0 => new IntVariant(IntVariantRW.Read(reader)),
+                1 => new StringVariant(StringVariantRW.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
@@ -40,11 +40,11 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
             {
                 case IntVariant(var inner):
                     writer.Write((byte)0);
-                    IntVariant.Write(writer, inner);
+                    IntVariantRW.Write(writer, inner);
                     break;
                 case StringVariant(var inner):
                     writer.Write((byte)1);
-                    StringVariant.Write(writer, inner);
+                    StringVariantRW.Write(writer, inner);
                     break;
             }
         }
@@ -55,8 +55,8 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
             registrar.RegisterType<CustomTaggedEnum>(_ => new SpacetimeDB.BSATN.AlgebraicType.Sum(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new(nameof(IntVariant), IntVariant.GetAlgebraicType(registrar)),
-                    new(nameof(StringVariant), StringVariant.GetAlgebraicType(registrar))
+                    new("IntVariant", IntVariantRW.GetAlgebraicType(registrar)),
+                    new("StringVariant", StringVariantRW.GetAlgebraicType(registrar))
                 }
             ));
 

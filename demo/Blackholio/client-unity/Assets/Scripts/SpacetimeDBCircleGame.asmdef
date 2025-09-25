@@ -1,0 +1,18 @@
+{
+    "name": "Blackholio",
+    "rootNamespace": "",
+    "references": [
+        "GUID:51b18aaff8cb8384da535c99b8b52a6b",
+        "GUID:6055be8ebefd69e48b49212b09b47b2f",
+        "GUID:21b0c8d1703a94250bfac916590cea4f"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

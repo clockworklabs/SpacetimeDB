@@ -1,20 +1,19 @@
-use std::sync::Arc;
-
+use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilder as _};
+use crate::{error::DBError, worker_metrics::WORKER_METRICS};
 use anyhow::Result;
 use module_subscription_manager::Plan;
 use prometheus::IntCounter;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, SingleQueryUpdate, TableUpdate, WebsocketFormat,
+    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, SingleQueryUpdate, TableUpdate,
+};
+use spacetimedb_datastore::{
+    db_metrics::DB_METRICS, execution_context::WorkloadType, locking_tx_datastore::datastore::MetricsRecorder,
 };
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
-
-use crate::{error::DBError, worker_metrics::WORKER_METRICS};
-use spacetimedb_datastore::{
-    db_metrics::DB_METRICS, execution_context::WorkloadType, locking_tx_datastore::datastore::MetricsRecorder,
-};
+use std::sync::Arc;
 
 pub mod delta;
 pub mod execution_unit;
@@ -24,6 +23,7 @@ pub mod query;
 #[allow(clippy::module_inception)] // it's right this isn't ideal :/
 pub mod subscription;
 pub mod tx;
+pub mod websocket_building;
 
 #[derive(Debug)]
 pub struct ExecutionCounters {
@@ -95,22 +95,24 @@ impl MetricsRecorder for ExecutionCounters {
 pub fn execute_plan<Tx, F>(plan_fragments: &[PipelinedProject], tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
-    F: WebsocketFormat,
+    F: BuildableWebsocketFormat,
 {
-    let mut rows = vec![];
+    let mut count = 0;
+    let mut list = F::ListBuilder::default();
     let mut metrics = ExecutionMetrics::default();
 
     for fragment in plan_fragments {
         fragment.execute(tx, &mut metrics, &mut |row| {
-            rows.push(row);
+            count += 1;
+            list.push(row);
             Ok(())
         })?;
     }
 
-    let (list, n) = F::encode_list(rows.into_iter());
+    let list = list.finish();
     metrics.bytes_scanned += list.num_bytes();
     metrics.bytes_sent_to_clients += list.num_bytes();
-    Ok((list, n, metrics))
+    Ok((list, count, metrics))
 }
 
 /// When collecting a table update are we inserting or deleting rows?
@@ -131,7 +133,7 @@ pub fn collect_table_update<Tx, F>(
 ) -> Result<(TableUpdate<F>, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
-    F: WebsocketFormat,
+    F: BuildableWebsocketFormat,
 {
     execute_plan::<Tx, F>(plan_fragments, tx).map(|(rows, num_rows, metrics)| {
         let empty = F::List::default();
@@ -164,7 +166,7 @@ pub fn execute_plans<Tx, F>(
 ) -> Result<(DatabaseUpdate<F>, ExecutionMetrics), DBError>
 where
     Tx: Datastore + DeltaStore + Sync,
-    F: WebsocketFormat,
+    F: BuildableWebsocketFormat,
 {
     plans
         .par_iter()
