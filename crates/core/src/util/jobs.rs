@@ -19,6 +19,7 @@ use tokio::sync::watch;
 /// a `JobCores` constructed without core pinning, including `from_pinned_cores` on an empty set,
 /// will use the "global" Tokio executor to run database jobs,
 /// rather than creating multiple un-pinned single-threaded runtimes.
+/// This means that long-running reducers or queries may block Tokio worker threads.
 ///
 /// This handle is cheaply cloneable, but at least one handle must be kept alive.
 /// If all instances of it are dropped, the per-thread [`runtime::Runtime`]s will be dropped,
@@ -141,6 +142,19 @@ impl JobCores {
 }
 
 impl PinnedCoresExecutorManager {
+    /// Get a [`runtime::Handle`] for running database operations on,
+    /// and store state in `self` necessary to move that database to a new runtime
+    /// for load-balancing purposes.
+    ///
+    /// The returned [`SingleCoreExecutorId`] is an index into internal data structures in `self` (namely, `self.cores`)
+    /// which should be passed to [`Self::deallocate`] when the database is no longer using this executor.
+    /// This is done automatically by [`LoadBalanceOnDropGuard`].
+    ///
+    /// The returned `watch::Receiver<runtime::Handle>` stores the Tokio [`runtime::Handle`]
+    /// on which the database should run its compute-intensive jobs.
+    /// This may occasionally be replaced with a new [`runtime::Handle`] to balance databases among available cores,
+    /// so databases should read from the [`watch::Receiver`] when spawning each job,
+    /// and should not spawn long-lived background tasks such as ones which loop over a channel.
     fn allocate(&mut self) -> (SingleCoreExecutorId, watch::Receiver<runtime::Handle>) {
         let database_executor_id = self.next_id;
         self.next_id.0 += 1;
@@ -159,7 +173,10 @@ impl PinnedCoresExecutorManager {
         (database_executor_id, move_runtime_rx)
     }
 
-    /// Run when a `JobThread` exits.
+    /// Mark the executor at `id` as no longer in use, free internal state which tracks it,
+    /// and move other executors to different cores as necessary to maintain a balanced distribution.
+    ///
+    /// Called by [`LoadBalanceOnDropGuard`] when a [`SingleCoreExecutor`] is no longer in use.
     fn deallocate(&mut self, id: SingleCoreExecutorId) {
         let (freed_core_id, _) = self.database_executor_move.remove(&id).unwrap();
 

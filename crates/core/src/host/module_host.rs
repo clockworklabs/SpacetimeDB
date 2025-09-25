@@ -491,6 +491,14 @@ pub struct CallReducerParams {
     pub args: ArgsTuple,
 }
 
+/// Holds a [`Module`] and a set of [`Instance`]s from it,
+/// and allocates the [`Instance`]s to be used for function calls.
+///
+/// Capable of managing and allocating multiple instances of the same module,
+/// but this functionality is currently unused, as only one reducer runs at a time.
+/// When we introduce procedures, it will be necessary to have multiple instances,
+/// as each procedure invocation will have its own sandboxed instance,
+/// and multiple procedures can run concurrently with up to one reducer.
 struct ModuleInstanceManager {
     instances: VecDeque<Instance>,
     module: Arc<Module>,
@@ -509,7 +517,8 @@ impl ModuleInstanceManager {
     fn return_instance(&mut self, inst: Instance) {
         if inst.trapped() {
             // Don't return trapped instances;
-            // they may have left internal data structures in WASM linear memory in a bad state.
+            // they may have left internal data structures in the guest `Instance`
+            // (WASM linear memory, V8 global scope) in a bad state.
             return;
         }
 
@@ -810,7 +819,7 @@ impl ModuleHost {
             if let Some((reducer_id, reducer_def)) = reducer_lookup {
                 // The module defined a lifecycle reducer to handle new connections.
                 // Call this reducer.
-                // If the call fails (as in, something unexpectedly goes wrong with WASM execution),
+                // If the call fails (as in, something unexpectedly goes wrong with guest execution),
                 // abort the connection: we can't really recover.
                 let reducer_outcome = me.call_reducer_inner_with_inst(
                     Some(ScopeGuard::into_inner(mut_tx)),
