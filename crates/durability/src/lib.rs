@@ -6,7 +6,7 @@ use tokio::sync::watch;
 pub use spacetimedb_commitlog::{error, payload::Txdata, Decoder, Transaction};
 
 mod imp;
-pub use imp::*;
+pub use imp::{local, Local};
 
 /// Transaction offset.
 ///
