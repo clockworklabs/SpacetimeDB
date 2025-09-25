@@ -8,7 +8,7 @@ use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
 use crate::identity::Identity;
-use crate::messages::control_db::Database;
+use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
@@ -56,7 +56,6 @@ use std::fmt;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
-use strum::Display;
 use tokio::sync::oneshot;
 
 #[derive(Debug, Default, Clone, From)]
@@ -322,13 +321,6 @@ pub trait ModuleRuntime {
     fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<Module>;
 }
 
-/// Used as a metrics label on `spacetime_module_create_instance_time`.
-#[derive(Clone, Copy, Display, Hash, PartialEq, Eq, strum::AsRefStr)]
-pub enum ModuleType {
-    Wasm,
-    Js,
-}
-
 pub enum Module {
     Wasm(super::wasmtime::Module),
     Js(super::v8::JsModule),
@@ -372,10 +364,10 @@ impl Module {
             Module::Js(module) => Instance::Js(module.create_instance()),
         }
     }
-    fn module_type(&self) -> ModuleType {
+    fn host_type(&self) -> HostType {
         match self {
-            Module::Wasm(_) => ModuleType::Wasm,
-            Module::Js(_) => ModuleType::Wasm,
+            Module::Wasm(_) => HostType::Wasm,
+            Module::Js(_) => HostType::Js,
         }
     }
 }
@@ -523,7 +515,7 @@ struct ModuleInstanceManager {
 /// which calls `remove_label_values` to clean up on drop.
 struct CreateInstanceTimeMetric {
     metric: Histogram,
-    module_type: ModuleType,
+    host_type: HostType,
     database_identity: Identity,
 }
 
@@ -531,7 +523,7 @@ impl Drop for CreateInstanceTimeMetric {
     fn drop(&mut self) {
         let _ = WORKER_METRICS
             .module_create_instance_time_seconds
-            .remove_label_values(&self.database_identity, &self.module_type);
+            .remove_label_values(&self.database_identity, &self.host_type);
     }
 }
 
@@ -543,12 +535,12 @@ impl CreateInstanceTimeMetric {
 
 impl ModuleInstanceManager {
     fn new(module: Arc<Module>, database_identity: Identity) -> Self {
-        let module_type = module.module_type();
+        let host_type = module.host_type();
         let create_instance_time_metric = CreateInstanceTimeMetric {
             metric: WORKER_METRICS
                 .module_create_instance_time_seconds
-                .with_label_values(&database_identity, &module_type),
-            module_type,
+                .with_label_values(&database_identity, &host_type),
+            host_type,
             database_identity,
         };
         Self {

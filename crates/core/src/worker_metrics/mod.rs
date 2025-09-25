@@ -1,5 +1,5 @@
 use crate::hash::Hash;
-use crate::host::module_host::ModuleType;
+use crate::messages::control_db::HostType;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_datastore::execution_context::WorkloadType;
@@ -316,7 +316,7 @@ metrics_group!(
 
         #[name = spacetime_module_create_instance_time_seconds]
         #[help = "Time taken to construct a WASM instance or V8 isolate to run module code"]
-        #[labels(db: Identity, module_type: ModuleType)]
+        #[labels(db: Identity, module_type: HostType)]
         // As of writing (pgoldman 2025-09-25), calls to `create_instance` are rare,
         // as they happen only when an instance traps (panics).
         // However, this is not once-per-process, unlike the above replay metrics.
