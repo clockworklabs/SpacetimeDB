@@ -535,6 +535,18 @@ const NO_SUCH_BYTES: u16 = errno::NO_SUCH_BYTES.get();
 fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
     const INVALID: i16 = NO_SUCH_BYTES as i16;
 
+    let len = {
+        let mut len = 0;
+        let ret = unsafe { sys::raw::bytes_source_remaining_length(source, &raw mut len) };
+        match ret {
+            0 => len,
+            INVALID => panic!("invalid source passed"),
+            _ => unreachable!(),
+        }
+    };
+
+    buf.reserve(buf.len().saturating_sub(len as usize));
+
     loop {
         // Write into the spare capacity of the buffer.
         let buf_ptr = buf.spare_capacity_mut();

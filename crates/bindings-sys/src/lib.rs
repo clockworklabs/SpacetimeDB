@@ -590,6 +590,35 @@ pub mod raw {
         pub fn identity(out_ptr: *mut u8);
     }
 
+    // See comment on previous `extern "C"` block re: ABI version.
+    #[link(wasm_import_module = "spacetime_10.1")]
+    extern "C" {
+        /// Read the remaining length of a [`BytesSource`] and write it to `out`.
+        ///
+        /// Note that the host automatically frees byte sources which are exhausted.
+        /// Such sources are invalid, and this method will return an error when passed one.
+        /// Callers of [`bytes_source_read`] should check for a return of -1
+        /// before invoking this function on the same `source`.
+        ///
+        /// Also note that the special [`BytesSource::INVALID`] (zero) is always invalid.
+        /// Callers should check for that value before invoking this function.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - `out` is NULL or `ou` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NO_SUCH_BYTES`, when `source` is not a valid bytes source.
+        ///
+        /// If this function returns an error, `out` is not written.
+        pub fn bytes_source_remaining_length(source: BytesSource, out: *mut u32) -> i16;
+    }
+
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>

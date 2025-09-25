@@ -116,7 +116,20 @@ public static class Module
         {
             return [];
         }
-        var buffer = new byte[0x20_000];
+
+        uint32_t len = 0;
+        var ret = FFI.bytes_source_remaining_length(source, ref len);
+        switch (ret)
+        {
+            case Errno.OK:
+                break;
+            case Errno.NO_SUCH_BYTES:
+                throw new NoSuchBytesException();
+            default:
+                throw new UnknownException(ret);
+        }
+        
+        var buffer = new byte[len];
         var written = 0U;
         while (true)
         {
