@@ -1,4 +1,4 @@
-const CLIENT_REPO = "clockworklabs/spacetimedb-typescript-sdk/examples/quickstart-chat";
+const CLIENT_REPO = "clockworklabs/SpacetimeDB/crates/bindings-typescript/examples/quickstart-chat";
 
 export const TEMPLATES = {
   rust: {

@@ -223,7 +223,7 @@ async function configureRustServer(serverDir: string, name: string) {
 
 async function updateClientConfig(root: string, moduleName: string, useLocal: boolean) {
   const targetUri = useLocal ? SERVER_CONFIG.LOCAL_URI : SERVER_CONFIG.MAINCLOUD_URI;
-  const appPath = path.join(root, "client/src/App.tsx");
+  const appPath = path.join(root, "client/src/main.tsx");
 
   try {
     if (await fs.pathExists(appPath)) {

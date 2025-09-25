@@ -3,4 +3,4 @@ packages:
   - 'crates/bindings-typescript/test-app'
   - 'crates/bindings-typescript/examples/quickstart-chat'
   - 'docs'
-  - 'cli/create-spacetime'
+  - 'npm-packages/create-spacetime'
