@@ -7,11 +7,15 @@ use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
 use fs2::FileExt;
+use futures::channel::mpsc;
+use futures::StreamExt;
+use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
+use spacetimedb_datastore::locking_tx_datastore::committed_state::CommittedState;
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
@@ -61,8 +65,6 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch;
 
-pub use super::persistence::{DiskSizeFn, Durability, Persistence};
-pub use super::snapshot::SnapshotWorker;
 pub use durability::{DurableOffset, TxOffset};
 
 // NOTE(cloutiertyler): We should be using the associated types, but there is
@@ -72,7 +74,15 @@ pub type Tx = TxId; //<Locking as spacetimedb_datastore::traits::Tx>::Tx;
 
 type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 
-/// The type of transactions committed by [RelationalDB].
+/// A function to determine the size on disk of the durable state of the
+/// local database instance. This is used for metrics and energy accounting
+/// purposes.
+///
+/// It is not part of the [`Durability`] trait because it must report disk
+/// usage of the local instance only, even if exclusively remote durability is
+/// configured or the database is in follower state.
+pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
+
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 
 /// We've added a module version field to the system tables, but we don't yet
@@ -91,6 +101,8 @@ pub const ONLY_MODULE_VERSION: &str = "0.0.1";
 /// calling [`crate::host::ModuleHost::call_identity_connected_disconnected`]
 /// for each entry in [`ConnectedClients`].
 pub type ConnectedClients = HashSet<(Identity, ConnectionId)>;
+
+pub type Durability = dyn durability::Durability<TxData = Txdata>;
 
 #[derive(Clone)]
 pub struct RelationalDB {
@@ -119,6 +131,92 @@ pub struct RelationalDB {
     _lock: LockFile,
 }
 
+#[derive(Clone)]
+struct SnapshotWorker {
+    /// Send end of the [`Self::snapshot_loop`]'s `trigger` receiver.
+    ///
+    /// Send a message along this queue to request that the `snapshot_loop` asynchronously capture a snapshot.
+    request_snapshot: mpsc::UnboundedSender<()>,
+    /// An rx we keep around so that users can subscribe to snapshot updates.
+    notify_rx: watch::Receiver<TxOffset>,
+}
+
+impl SnapshotWorker {
+    fn new(committed_state: Arc<RwLock<CommittedState>>, repo: Arc<SnapshotRepository>) -> Self {
+        let (request_snapshot, trigger) = mpsc::unbounded();
+        let latest_snapshot = repo.latest_snapshot().ok().flatten().unwrap_or(0);
+        let (notify_tx, notify_rx) = watch::channel(latest_snapshot);
+        tokio::spawn(
+            SnapshotWorkerActor {
+                trigger,
+                committed_state,
+                repo,
+                notify_tx,
+            }
+            .run(),
+        );
+        SnapshotWorker {
+            request_snapshot,
+            notify_rx,
+        }
+    }
+}
+
+struct SnapshotWorkerActor {
+    trigger: mpsc::UnboundedReceiver<()>,
+    committed_state: Arc<RwLock<CommittedState>>,
+    repo: Arc<SnapshotRepository>,
+    notify_tx: watch::Sender<TxOffset>,
+}
+
+impl SnapshotWorkerActor {
+    /// The snapshot loop takes a snapshot after each `trigger` message received.
+    async fn run(mut self) {
+        while let Some(()) = self.trigger.next().await {
+            self.take_snapshot().await
+        }
+    }
+
+    async fn take_snapshot(&self) {
+        let start_time = std::time::Instant::now();
+        let committed_state = self.committed_state.clone();
+        let snapshot_repo = self.repo.clone();
+        let res = asyncify(move || {
+            Locking::take_snapshot_internal(&committed_state, &snapshot_repo).inspect(|opts| {
+                if let Some(opts) = opts {
+                    Locking::compress_older_snapshot_internal(&snapshot_repo, opts.0);
+                }
+            })
+        })
+        .await;
+        match res {
+            Err(e) => {
+                log::error!(
+                    "Error capturing snapshot of database {:?}: {e:?}",
+                    self.repo.database_identity()
+                );
+            }
+
+            Ok(None) => {
+                log::warn!(
+                    "SnapshotWorker::take_snapshot: refusing to take snapshot of database {} at TX offset -1",
+                    self.repo.database_identity()
+                );
+            }
+
+            Ok(Some((tx_offset, _path))) => {
+                log::info!(
+                    "Captured snapshot of database {:?} at TX offset {} in {:?}",
+                    self.repo.database_identity(),
+                    tx_offset,
+                    start_time.elapsed()
+                );
+                self.notify_tx.send_replace(tx_offset);
+            }
+        }
+    }
+}
+
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
 // TODO(config): Allow DBs to specify how frequently to snapshot.
 // TODO(bikeshedding): Snapshot based on number of bytes written to commitlog, not tx offsets.
@@ -142,13 +240,15 @@ impl RelationalDB {
         database_identity: Identity,
         owner_identity: Identity,
         inner: Locking,
-        persistence: Option<Persistence>,
+        durability: Option<(Arc<Durability>, DiskSizeFn)>,
+        snapshot_repo: Option<Arc<SnapshotRepository>>,
         metrics_recorder_queue: Option<MetricsRecorderQueue>,
     ) -> Self {
+        let (durability, disk_size_fn) = durability.unzip();
+        let snapshot_worker =
+            snapshot_repo.map(|repo| SnapshotWorker::new(inner.committed_state.clone(), repo.clone()));
         let workload_type_to_exec_counters =
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
-
-        let (durability, disk_size_fn, snapshot_worker) = Persistence::unzip(persistence);
 
         Self {
             inner,
@@ -257,7 +357,8 @@ impl RelationalDB {
         database_identity: Identity,
         owner_identity: Identity,
         history: impl durability::History<TxData = Txdata>,
-        mut persistence: Option<Persistence>,
+        durability: Option<(Arc<Durability>, DiskSizeFn)>,
+        snapshot_repo: Option<Arc<SnapshotRepository>>,
         metrics_recorder_queue: Option<MetricsRecorderQueue>,
         page_pool: PagePool,
     ) -> Result<(Self, ConnectedClients), DBError> {
@@ -268,9 +369,11 @@ impl RelationalDB {
         // Check the latest durable TX and restore from a snapshot no newer than it,
         // so that you drop TXes which were committed but not durable before the restart.
         // TODO: delete or mark as invalid snapshots newer than this.
-        let durable_tx_offset = persistence
+        let durable_tx_offset = durability
             .as_ref()
-            .map(|p| p.durable_tx_offset())
+            .map(|pair| pair.0.clone())
+            .as_deref()
+            .map(|durability| durability.durable_tx_offset().get())
             .transpose()?
             .flatten();
         let (min_commitlog_offset, _) = history.tx_range_hint();
@@ -281,14 +384,11 @@ impl RelationalDB {
 
         let inner = Self::restore_from_snapshot_or_bootstrap(
             database_identity,
-            persistence.as_ref().and_then(|p| p.snapshot_repo()),
+            snapshot_repo.as_deref(),
             durable_tx_offset,
             min_commitlog_offset,
             page_pool,
         )?;
-        if let Some(persistence) = &mut persistence {
-            persistence.set_snapshot_state(inner.committed_state.clone());
-        }
 
         apply_history(&inner, database_identity, history)?;
 
@@ -303,7 +403,8 @@ impl RelationalDB {
             database_identity,
             owner_identity,
             inner,
-            persistence,
+            durability,
+            snapshot_repo,
             metrics_recorder_queue,
         );
         db.migrate_system_tables()?;
@@ -873,7 +974,7 @@ impl RelationalDB {
         if let Some(snapshot_worker) = &self.snapshot_worker {
             if let Some(tx_offset) = tx_data.tx_offset() {
                 if tx_offset % SNAPSHOT_FREQUENCY == 0 {
-                    snapshot_worker.request_snapshot();
+                    snapshot_worker.request_snapshot.unbounded_send(()).unwrap();
                 }
             }
         }
@@ -885,7 +986,7 @@ impl RelationalDB {
     /// returns a `watch::Receiver` that updates with the latest [`TxOffset`] a snapshot
     /// was taken at.
     pub fn subscribe_to_snapshots(&self) -> Option<watch::Receiver<TxOffset>> {
-        self.snapshot_worker.as_ref().map(|snap| snap.subscribe())
+        self.snapshot_worker.as_ref().map(|snap| snap.notify_rx.clone())
     }
 
     /// Run a fallible function in a transaction.
@@ -1584,7 +1685,11 @@ pub async fn local_durability(commitlog_dir: CommitLogDir) -> io::Result<(LocalD
 /// Watches snapshot creation events and compresses all commitlog segments older
 /// than the snapshot.
 ///
-/// Suitable **only** for non-replicated databases.
+/// Intended to be spawned as a [StartSnapshotWatcher], provided by a
+/// [DurabilityProvider]. Suitable **only** for non-replicated databases.
+///
+/// [StartSnapshotWatcher]: crate::host::host_controller::StartSnapshotWatcher
+/// [DurabilityProvider]: crate::host::host_controller::DurabilityProvider
 pub async fn snapshot_watching_commitlog_compressor(
     mut snapshot_rx: watch::Receiver<u64>,
     mut clog_tx: Option<tokio::sync::mpsc::Sender<u64>>,
@@ -1664,8 +1769,6 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
-    use crate::db::snapshot::SnapshotWorker;
-
     use super::*;
     use core::ops::Deref;
     use durability::EmptyHistory;
@@ -1812,22 +1915,18 @@ pub mod tests_utils {
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
             let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log()))?;
             let history = local.clone();
-            let snapshots = want_snapshot_repo
-                .then(|| open_snapshot_repo(root.snapshots(), db_identity, replica_id).map(SnapshotWorker::new))
+            let durability = local.clone() as Arc<Durability>;
+            let snapshot_repo = want_snapshot_repo
+                .then(|| open_snapshot_repo(root.snapshots(), db_identity, replica_id))
                 .transpose()?;
-
-            let persistence = Persistence {
-                durability: local.clone(),
-                disk_size: disk_size_fn,
-                snapshots,
-            };
 
             let (db, _) = RelationalDB::open(
                 root,
                 db_identity,
                 owner_identity,
                 history,
-                Some(persistence),
+                Some((durability, disk_size_fn)),
+                snapshot_repo,
                 None,
                 PagePool::new_for_test(),
             )?;
@@ -1848,7 +1947,7 @@ pub mod tests_utils {
             expected_num_clients: usize,
         ) -> Result<Self, DBError> {
             let dir = TempReplicaDir::new()?;
-            let db = Self::open_db(&dir, history, None, None, expected_num_clients)?;
+            let db = Self::open_db(&dir, history, None, None, None, expected_num_clients)?;
             Ok(Self {
                 db,
                 durable: None,
@@ -1937,7 +2036,7 @@ pub mod tests_utils {
         }
 
         fn in_memory_internal(root: &ReplicaDir) -> Result<RelationalDB, DBError> {
-            Self::open_db(root, EmptyHistory::new(), None, None, 0)
+            Self::open_db(root, EmptyHistory::new(), None, None, None, 0)
         }
 
         fn durable_internal(
@@ -1947,14 +2046,11 @@ pub mod tests_utils {
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
             let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log()))?;
             let history = local.clone();
-            let persistence = Persistence {
-                durability: local.clone(),
-                disk_size: disk_size_fn,
-                snapshots: want_snapshot_repo
-                    .then(|| open_snapshot_repo(root.snapshots(), Identity::ZERO, 0).map(SnapshotWorker::new))
-                    .transpose()?,
-            };
-            let db = Self::open_db(root, history, Some(persistence), None, 0)?;
+            let durability = local.clone() as Arc<Durability>;
+            let snapshot_repo = want_snapshot_repo
+                .then(|| open_snapshot_repo(root.snapshots(), Identity::ZERO, 0))
+                .transpose()?;
+            let db = Self::open_db(root, history, Some((durability, disk_size_fn)), snapshot_repo, None, 0)?;
 
             Ok((db, local))
         }
@@ -1962,7 +2058,8 @@ pub mod tests_utils {
         pub fn open_db(
             root: &ReplicaDir,
             history: impl durability::History<TxData = Txdata>,
-            persistence: Option<Persistence>,
+            durability: Option<(Arc<Durability>, DiskSizeFn)>,
+            snapshot_repo: Option<Arc<SnapshotRepository>>,
             metrics_recorder_queue: Option<MetricsRecorderQueue>,
             expected_num_clients: usize,
         ) -> Result<RelationalDB, DBError> {
@@ -1971,7 +2068,8 @@ pub mod tests_utils {
                 Self::DATABASE_IDENTITY,
                 Self::OWNER,
                 history,
-                persistence,
+                durability,
+                snapshot_repo,
                 metrics_recorder_queue,
                 PagePool::new_for_test(),
             )?;
@@ -2120,7 +2218,7 @@ mod tests {
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
     };
-    use spacetimedb_fs_utils::compression::CompressType;
+    use spacetimedb_fs_utils::compression::{CompressCount, CompressType};
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
@@ -2129,7 +2227,6 @@ mod tests {
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
     use spacetimedb_schema::schema::RowLevelSecuritySchema;
-    use spacetimedb_snapshot::CompressionStats;
     #[cfg(unix)]
     use spacetimedb_snapshot::Snapshot;
     use spacetimedb_table::read_column::ReadColumn;
@@ -2220,6 +2317,7 @@ mod tests {
             Identity::ZERO,
             Identity::ZERO,
             EmptyHistory::new(),
+            None,
             None,
             None,
             PagePool::new_for_test(),
@@ -3143,9 +3241,7 @@ mod tests {
         assert_eq!(&offsets, &[1, 2, 3]);
         // Simulate we take except the last snapshot
         let last_compress = 2;
-        let mut stats = CompressionStats::default();
-        repo.compress_snapshots(&mut stats, ..3)?;
-        assert_eq!(stats.compression_timings.len(), 2);
+        assert_eq!(repo.compress_older_snapshots(3)?, CompressCount { none: 0, zstd: 2 });
         let size_compress_on = repo.size_on_disk()?;
         assert!(size_compress_on.total_size < size_compress_off.total_size);
         // Verify we hard-linked the second snapshot
@@ -3157,7 +3253,7 @@ mod tests {
             let mut hard_linked_off = 0;
 
             let (snapshot, compress) = Snapshot::read_from_file(&snapshot_dir.snapshot_file(last_compress))?;
-            assert!(compress.is_compressed());
+            assert_eq!(compress, CompressType::Zstd);
             let repo = SnapshotRepository::object_repo(&snapshot_dir)?;
             for (_, path) in snapshot.files(&repo) {
                 match path.metadata()?.nlink() {
@@ -3207,7 +3303,7 @@ mod tests {
         let out = TempDir::with_prefix("snapshot_test")?;
         let dir = SnapshotsPath::from_path_unchecked(out.path());
 
-        let (_, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, CompressType::zstd(), false);
+        let (_, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, CompressType::Zstd, false);
 
         stdb.take_snapshot(&repo)?;
         let size = repo.size_on_disk()?;
