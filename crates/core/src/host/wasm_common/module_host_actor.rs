@@ -181,9 +181,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     pub fn scheduler(&self) -> &Scheduler {
         self.common.scheduler()
     }
-    pub fn initial_instances(&mut self) -> Option<WasmModuleInstance<T::Instance>> {
-        self.initial_instance.take().map(|x| *x)
-    }
 
     pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info()

@@ -106,10 +106,6 @@ impl JsModule {
         self.common.scheduler()
     }
 
-    pub fn initial_instances(&mut self) -> impl Iterator<Item = JsInstance> {
-        std::iter::empty()
-    }
-
     pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info().clone()
     }

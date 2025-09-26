@@ -346,12 +346,6 @@ impl Module {
         }
     }
 
-    fn initial_instances(&mut self) -> impl Iterator<Item = Instance> {
-        match self {
-            Module::Wasm(module) => itertools::Either::Left(module.initial_instances().into_iter().map(Instance::Wasm)),
-            Module::Js(module) => itertools::Either::Right(module.initial_instances().map(Instance::Js)),
-        }
-    }
     fn info(&self) -> Arc<ModuleInfo> {
         match self {
             Module::Wasm(module) => module.info(),
