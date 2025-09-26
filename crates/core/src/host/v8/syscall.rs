@@ -1,12 +1,14 @@
-use super::de::{deserialize_js, scratch_buf, v8_interned_string};
-use super::error::ExcResult;
+use super::de::{deserialize_js, scratch_buf};
+use super::error::{ExcResult, ExceptionThrown};
 use super::ser::serialize_to_js;
-use super::{env_on_isolate, exception_already_thrown};
+use super::string_const::{str_from_ident, StringConst};
+use super::{
+    env_on_isolate, exception_already_thrown, global, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace,
+    TerminationError, Throwable,
+};
 use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
-use crate::host::v8::error::ExceptionThrown;
-use crate::host::v8::{global, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace, TerminationError, Throwable};
 use crate::host::wasm_common::instrumentation::span;
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, TimingSpanIdx};
 use crate::host::AbiCall;
@@ -19,7 +21,9 @@ use v8::{Function, FunctionCallbackArguments, Local, PinScope, Value};
 pub(super) fn register_host_funs(scope: &mut PinScope<'_, '_>) -> ExcResult<()> {
     macro_rules! register {
         ($wrapper:ident, $abi_call:expr, $fun:ident) => {
-            register_host_fun(scope, stringify!($fun), |s, a| $wrapper($abi_call, s, a, $fun))?;
+            register_host_fun(scope, str_from_ident!($fun), |s, a| {
+                $wrapper($abi_call, s, a, $fun)
+            })?;
         };
     }
 
@@ -73,10 +77,10 @@ pub(super) type FnRet<'scope> = ExcResult<Local<'scope, Value>>;
 /// where the function has `name` and `body`
 fn register_host_fun(
     scope: &mut PinScope<'_, '_>,
-    name: &str,
+    name: &'static StringConst,
     body: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> FnRet<'scope>,
 ) -> ExcResult<()> {
-    let name = v8_interned_string(scope, name).into();
+    let name = name.string(scope).into();
     let fun = Function::new(scope, adapt_fun(body))
         .ok_or_else(exception_already_thrown)?
         .into();
