@@ -131,6 +131,7 @@
             get
             {
                 if (value is null) {return "null";}
+                if (value is bool) {return value.ToString()?.ToLower();}
                 var str = value.ToString();
                 if (value is string)
                 {
