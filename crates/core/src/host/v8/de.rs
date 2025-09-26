@@ -11,11 +11,11 @@ use derive_more::From;
 use spacetimedb_sats::de::{self, ArrayVisitor, DeserializeSeed, ProductVisitor, SliceVisitor, SumVisitor};
 use spacetimedb_sats::{i256, u256};
 use std::borrow::{Borrow, Cow};
-use v8::{Array, HandleScope, Local, Name, Object, Uint8Array, Value};
+use v8::{Array, Local, Name, Object, PinScope, Uint8Array, Value};
 
 /// Deserializes a `T` from `val` in `scope`, using `seed` for any context needed.
 pub(super) fn deserialize_js_seed<'de, T: DeserializeSeed<'de>>(
-    scope: &mut HandleScope<'de>,
+    scope: &mut PinScope<'de, '_>,
     val: Local<'_, Value>,
     seed: T,
 ) -> ExcResult<T::Output> {
@@ -27,21 +27,21 @@ pub(super) fn deserialize_js_seed<'de, T: DeserializeSeed<'de>>(
 
 /// Deserializes a `T` from `val` in `scope`.
 pub(super) fn deserialize_js<'de, T: de::Deserialize<'de>>(
-    scope: &mut HandleScope<'de>,
+    scope: &mut PinScope<'de, '_>,
     val: Local<'_, Value>,
 ) -> ExcResult<T> {
     deserialize_js_seed(scope, val, PhantomData)
 }
 
 /// Deserializes from V8 values.
-struct Deserializer<'this, 'scope> {
-    common: DeserializerCommon<'this, 'scope>,
+struct Deserializer<'this, 'scope, 'isolate> {
+    common: DeserializerCommon<'this, 'scope, 'isolate>,
     input: Local<'scope, Value>,
 }
 
-impl<'this, 'scope> Deserializer<'this, 'scope> {
+impl<'this, 'scope, 'isolate> Deserializer<'this, 'scope, 'isolate> {
     /// Creates a new deserializer from `input` in `scope`.
-    fn new(scope: &'this mut HandleScope<'scope>, input: Local<'_, Value>, key_cache: &'this mut KeyCache) -> Self {
+    fn new(scope: &'this mut PinScope<'scope, 'isolate>, input: Local<'_, Value>, key_cache: &'this mut KeyCache) -> Self {
         let input = Local::new(scope, input);
         let common = DeserializerCommon { scope, key_cache };
         Deserializer { input, common }
@@ -51,15 +51,15 @@ impl<'this, 'scope> Deserializer<'this, 'scope> {
 /// Things shared between various [`Deserializer`]s.
 ///
 /// The lifetime `'scope` is that of the scope of values deserialized.
-struct DeserializerCommon<'this, 'scope> {
+struct DeserializerCommon<'this, 'scope, 'isolate> {
     /// The scope of values to deserialize.
-    scope: &'this mut HandleScope<'scope>,
+    scope: &'this mut PinScope<'scope, 'isolate>,
     /// A cache for frequently used strings.
     key_cache: &'this mut KeyCache,
 }
 
-impl<'scope> DeserializerCommon<'_, 'scope> {
-    fn reborrow(&mut self) -> DeserializerCommon<'_, 'scope> {
+impl<'scope, 'isolate> DeserializerCommon<'_, 'scope, 'isolate> {
+    fn reborrow(&mut self) -> DeserializerCommon<'_, 'scope, 'isolate> {
         DeserializerCommon {
             scope: self.scope,
             key_cache: self.key_cache,
@@ -76,7 +76,7 @@ enum Error<'scope> {
 }
 
 impl<'scope> Throwable<'scope> for Error<'scope> {
-    fn throw(self, scope: &mut HandleScope<'scope>) -> ExceptionThrown {
+    fn throw(self, scope: &PinScope<'scope, '_>) -> ExceptionThrown {
         match self {
             Self::Unthrown(exception) => exception.throw(scope),
             Self::Thrown(thrown) => thrown,
@@ -118,7 +118,7 @@ macro_rules! deserialize_primitive {
     };
 }
 
-impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'scope> {
+impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'scope, '_> {
     type Error = Error<'scope>;
 
     // Deserialization of primitive types defers to `FromValue`.
@@ -156,7 +156,7 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
     }
 
     fn deserialize_sum<V: SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        let scope = &mut *self.common.scope;
+        let scope = &*self.common.scope;
         let sum_name = visitor.sum_name().unwrap_or("<unknown>");
 
         // We expect a canonical representation of a sum value in JS to be
@@ -187,7 +187,7 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
     fn deserialize_str<V: SliceVisitor<'de, str>>(self, visitor: V) -> Result<V::Output, Self::Error> {
         let val = cast!(self.common.scope, self.input, v8::String, "`string`")?;
         let mut buf = scratch_buf::<64>();
-        match val.to_rust_cow_lossy(self.common.scope, &mut buf) {
+        match val.to_rust_cow_lossy(&mut *self.common.scope, &mut buf) {
             Cow::Borrowed(s) => visitor.visit(s),
             Cow::Owned(string) => visitor.visit_owned(string),
         }
@@ -212,8 +212,8 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
 
 /// Provides access to the field names and values in a JS object
 /// under the assumption that it's a product.
-struct ProductAccess<'this, 'scope> {
-    common: DeserializerCommon<'this, 'scope>,
+struct ProductAccess<'this, 'scope, 'isolate> {
+    common: DeserializerCommon<'this, 'scope, 'isolate>,
     /// The input object being deserialized.
     object: Local<'scope, Object>,
     /// A field's value, to deserialize next in [`NamedProductAccess::get_field_value_seed`].
@@ -223,7 +223,7 @@ struct ProductAccess<'this, 'scope> {
 }
 
 // Creates an interned [`v8::String`].
-pub(super) fn v8_interned_string<'scope>(scope: &mut HandleScope<'scope>, field: &str) -> Local<'scope, v8::String> {
+pub(super) fn v8_interned_string<'scope>(scope: &PinScope<'scope, '_>, field: &str) -> Local<'scope, v8::String> {
     // Internalized v8 strings are significantly faster than "normal" v8 strings
     // since v8 deduplicates re-used strings minimizing new allocations
     // see: https://github.com/v8/v8/blob/14ac92e02cc3db38131a57e75e2392529f405f2f/include/v8.h#L3165-L3171
@@ -232,7 +232,7 @@ pub(super) fn v8_interned_string<'scope>(scope: &mut HandleScope<'scope>, field:
 
 /// Normalizes `field` into an interned `v8::String`.
 pub(super) fn intern_field_name<'scope>(
-    scope: &mut HandleScope<'scope>,
+    scope: &PinScope<'scope, '_>,
     field: Option<&str>,
     index: usize,
 ) -> Local<'scope, Name> {
@@ -243,11 +243,11 @@ pub(super) fn intern_field_name<'scope>(
     v8_interned_string(scope, &field).into()
 }
 
-impl<'de, 'scope: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 'scope> {
+impl<'de, 'scope: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 'scope, '_> {
     type Error = Error<'scope>;
 
     fn get_field_ident<V: de::FieldNameVisitor<'de>>(&mut self, visitor: V) -> Result<Option<V::Output>, Self::Error> {
-        let scope = &mut *self.common.scope;
+        let scope = &*self.common.scope;
         let mut field_names = visitor.field_names();
         while let Some(field) = field_names.nth(self.index) {
             // Get and advance the current index.
@@ -296,17 +296,17 @@ impl<'de, 'scope: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 'scope>
 
 /// Used in `Deserializer::deserialize_sum` to translate a `tag` property of a JS object
 /// to a variant and to provide a deserializer for its value/payload.
-struct SumAccess<'this, 'scope> {
-    common: DeserializerCommon<'this, 'scope>,
+struct SumAccess<'this, 'scope, 'isolate> {
+    common: DeserializerCommon<'this, 'scope, 'isolate>,
     /// The tag of the sum value.
     tag: Local<'scope, v8::String>,
     /// The value of the sum value.
     value: Local<'scope, Value>,
 }
 
-impl<'de, 'this, 'scope: 'de> de::SumAccess<'de> for SumAccess<'this, 'scope> {
+impl<'de, 'this, 'scope: 'de, 'isolate> de::SumAccess<'de> for SumAccess<'this, 'scope, 'isolate> {
     type Error = Error<'scope>;
-    type Variant = Deserializer<'this, 'scope>;
+    type Variant = Deserializer<'this, 'scope, 'isolate>;
 
     fn variant<V: de::VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         // Read the `tag` property in JS.
@@ -328,7 +328,7 @@ impl<'de, 'this, 'scope: 'de> de::SumAccess<'de> for SumAccess<'this, 'scope> {
     }
 }
 
-impl<'de, 'this, 'scope: 'de> de::VariantAccess<'de> for Deserializer<'this, 'scope> {
+impl<'de, 'this, 'scope: 'de> de::VariantAccess<'de> for Deserializer<'this, 'scope, '_> {
     type Error = Error<'scope>;
 
     fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
@@ -338,18 +338,18 @@ impl<'de, 'this, 'scope: 'de> de::VariantAccess<'de> for Deserializer<'this, 'sc
 
 /// Used by an `ArrayVisitor` to deserialize every element of a JS array
 /// to a SATS array.
-struct ArrayAccess<'this, 'scope, T> {
-    common: DeserializerCommon<'this, 'scope>,
+struct ArrayAccess<'this, 'scope, 'isolate, T> {
+    common: DeserializerCommon<'this, 'scope, 'isolate>,
     arr: Local<'scope, Array>,
     seeds: RepeatN<T>,
     index: u32,
 }
 
-impl<'de, 'this, 'scope, T> ArrayAccess<'this, 'scope, T>
+impl<'de, 'this, 'scope, 'isolate, T> ArrayAccess<'this, 'scope, 'isolate, T>
 where
     T: DeserializeSeed<'de> + Clone,
 {
-    fn new(arr: Local<'scope, Array>, common: DeserializerCommon<'this, 'scope>, seed: T) -> Self {
+    fn new(arr: Local<'scope, Array>, common: DeserializerCommon<'this, 'scope, 'isolate>, seed: T) -> Self {
         Self {
             arr,
             common,
@@ -359,7 +359,7 @@ where
     }
 }
 
-impl<'de, 'scope: 'de, T: DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAccess<'_, 'scope, T> {
+impl<'de, 'scope: 'de, T: DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAccess<'_, 'scope, '_, T> {
     type Element = T::Output;
     type Error = Error<'scope>;
 
