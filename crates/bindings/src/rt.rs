@@ -535,6 +535,11 @@ const NO_SUCH_BYTES: u16 = errno::NO_SUCH_BYTES.get();
 fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
     const INVALID: i16 = NO_SUCH_BYTES as i16;
 
+    // For reducer arguments, the `buf` will almost certainly already be large enough,
+    // as it comes from `IterBuf`, which start at 64KiB.
+    // But reading the remaining length and calling `buf.reserve` is a negligible cost,
+    // and in the future we may want to use this method to read other `BytesSource`s into other buffers.
+    // I (pgoldman 2025-09-26) also value having it as an example of correct usage of `bytes_source_remaining_length`.
     let len = {
         let mut len = 0;
         let ret = unsafe { sys::raw::bytes_source_remaining_length(source, &raw mut len) };
@@ -544,9 +549,14 @@ fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
             _ => unreachable!(),
         }
     };
-
     buf.reserve(buf.len().saturating_sub(len as usize));
 
+    // Because we've reserved space in our buffer already, this loop should be unnecessary.
+    // We expect the first call to `bytes_source_read` to always return `-1`.
+    // I (pgoldman 2025-09-26) am leaving the loop here because there's no downside to it,
+    // and in the future we may want to support `BytesSource`s which don't have a known length ahead of time
+    // (i.e. put arbitrary streams in `BytesSource` on the host side rather than just `Bytes` buffers),
+    // at which point the loop will become useful again.
     loop {
         // Write into the spare capacity of the buffer.
         let buf_ptr = buf.spare_capacity_mut();

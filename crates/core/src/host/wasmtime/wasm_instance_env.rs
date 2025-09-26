@@ -171,6 +171,11 @@ impl WasmInstanceEnv {
         if bytes.is_empty() {
             Ok(BytesSourceId::INVALID)
         } else if bytes.len() > u32::MAX as usize {
+            // There's no inherent reason we need to error here,
+            // other than that it makes it impossible to report the length in `bytes_source_remaining_length`
+            // and that all of our usage of `BytesSource`s as of writing (pgoldman 2025-09-26)
+            // are to immediately slurp the whole thing into a buffer in guest memory,
+            // which can't hold buffers this big because it's WASM32.
             Err(anyhow::anyhow!(
                 "`create_bytes_source`: `Bytes` has length {}, which is greater than `u32::MAX` {}",
                 bytes.len(),
@@ -1179,6 +1184,11 @@ impl WasmInstanceEnv {
                 .bytes
                 .len()
                 .try_into()
+                // TODO: Change this into an `errno::BYTES_SOURCE_LENGTH_UNKNOWN` rather than a trap,
+                // so that we can support very large `BytesSource`s, streams, and other file-like things that aren't just `Bytes`.
+                // This is not currently (pgoldman 2025-09-26) a useful thing to do,
+                // as all of our uses of `BytesSource` are to slurp the whole source into a single buffer in guest memory,
+                // `File::read_to_end`-style, and we don't have any use for large or streaming `BytesSource`s.
                 .context("Bytes object in `BytesSource` had length greater than range of u32")?;
 
             u32::write_to(remaining, mem, out)

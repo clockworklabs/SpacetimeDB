@@ -131,6 +131,12 @@ public static class Module
 
         var buffer = new byte[len];
         var written = 0U;
+        // Because we've reserved space in our buffer already, this loop should be unnecessary.
+        // We expect the first call to `bytes_source_read` to always return `-1`.
+        // I (pgoldman 2025-09-26) am leaving the loop here because there's no downside to it,
+        // and in the future we may want to support `BytesSource`s which don't have a known length ahead of time
+        // (i.e. put arbitrary streams in `BytesSource` on the host side rather than just `Bytes` buffers),
+        // at which point the loop will become useful again.
         while (true)
         {
             // Write into the spare capacity of the buffer.
