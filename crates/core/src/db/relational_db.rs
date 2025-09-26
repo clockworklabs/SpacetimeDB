@@ -20,7 +20,7 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
-use spacetimedb_datastore::system_tables::{system_tables, StModuleRow};
+use spacetimedb_datastore::system_tables::{system_tables, StClientFields, StClientRow, StModuleRow, ST_CLIENT_ID};
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
@@ -498,6 +498,31 @@ impl RelationalDB {
             self.inner
                 .connected_clients(tx)?
                 .collect::<Result<ConnectedClients, _>>()
+        })
+        .map_err(DBError::from)
+    }
+
+    /// Returns `Ok(Some(pointer))` if the given client is currently connected to the database,
+    /// `Ok(None)` if not, and `Err(_)` on error.
+    pub fn st_client_row(
+        &self,
+        identity: Identity,
+        connection_id: ConnectionId,
+    ) -> Result<Option<RowPointer>, DBError> {
+        let row = StClientRow {
+            identity: identity.into(),
+            connection_id: connection_id.into(),
+        };
+
+        self.with_read_only(Workload::Internal, |tx| {
+            self.inner
+                .iter_by_col_range_tx(
+                    tx,
+                    ST_CLIENT_ID,
+                    col_list![StClientFields::Identity, StClientFields::ConnectionId],
+                    &AlgebraicValue::product(row),
+                )
+                .map(|mut it| it.next().map(|row_ref| row_ref.pointer()))
         })
         .map_err(DBError::from)
     }

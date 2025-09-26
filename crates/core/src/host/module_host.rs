@@ -782,22 +782,47 @@ impl ModuleHost {
         .map_err(Into::<ReducerCallError>::into)?
     }
 
+    /// Invokes the `client_disconnected` reducer, if present,
+    /// then deletes the client’s rows from `st_client` and `st_connection_credentials`.
+    /// If the reducer fails, the rows are still deleted.
+    /// Calling this on an already-disconnected client is a no-op.
     pub fn call_identity_disconnected_inner(
         &self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
         inst: &mut dyn ModuleInstance,
     ) -> Result<(), ReducerCallError> {
-        let me = self.clone();
-        let reducer_lookup = me.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
+        let reducer_lookup = self.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
+        let reducer_name = reducer_lookup
+            .as_ref()
+            .map(|(_, def)| &*def.name)
+            .unwrap_or("__identity_disconnected__");
 
+        match self
+            .module
+            .replica_ctx()
+            .relational_db
+            .st_client_row(caller_identity, caller_connection_id)
+        {
+            Ok(None) => {
+                log::debug!(
+                    "client: {caller_identity} with connection_id: {caller_connection_id} already disconnected"
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(InvalidReducerArguments {
+                    err: e.into(),
+                    reducer: reducer_name.into(),
+                }
+                .into())
+            }
+            _ => {} // Ok(true) – client is connected; proceed
+        }
+
+        let me = self.clone();
         // A fallback transaction that deletes the client from `st_client`.
         let fallback = || {
-            let reducer_name = reducer_lookup
-                .as_ref()
-                .map(|(_, def)| &*def.name)
-                .unwrap_or("__identity_disconnected__");
-
             let workload = Workload::Reducer(ReducerContext {
                 name: reducer_name.to_owned(),
                 caller_identity,
