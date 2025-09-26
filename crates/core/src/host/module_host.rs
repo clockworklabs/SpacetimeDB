@@ -798,41 +798,37 @@ impl ModuleHost {
             .map(|(_, def)| &*def.name)
             .unwrap_or("__identity_disconnected__");
 
-        match self
-            .module
-            .replica_ctx()
-            .relational_db
-            .st_client_row(caller_identity, caller_connection_id)
-        {
-            Ok(None) => {
-                log::debug!(
-                    "client: {caller_identity} with connection_id: {caller_connection_id} already disconnected"
-                );
-                return Ok(());
-            }
-            Err(e) => {
-                return Err(InvalidReducerArguments {
-                    err: e.into(),
-                    reducer: reducer_name.into(),
-                }
-                .into())
-            }
-            _ => {} // Ok(true) – client is connected; proceed
-        }
+        let is_client_exist = |mut_tx: &MutTxId| {
+            mut_tx
+                .st_client_row(caller_identity, caller_connection_id)
+                .map(|row_opt| row_opt.is_some())
+        };
 
-        let me = self.clone();
-        // A fallback transaction that deletes the client from `st_client`.
-        let fallback = || {
-            let workload = Workload::Reducer(ReducerContext {
+        let workload = || {
+            Workload::Reducer(ReducerContext {
                 name: reducer_name.to_owned(),
                 caller_identity,
                 caller_connection_id,
                 timestamp: Timestamp::now(),
                 arg_bsatn: Bytes::new(),
-            });
-            let stdb = me.module.replica_ctx().relational_db.clone();
+            })
+        };
+
+        let me = self.clone();
+        let stdb = me.module.replica_ctx().relational_db.clone();
+
+        // A fallback transaction that deletes the client from `st_client`.
+        let fallback = || {
             let database_identity = me.info.database_identity;
-            stdb.with_auto_commit(workload, |mut_tx| {
+            stdb.with_auto_commit(workload(), |mut_tx| {
+                if !is_client_exist(mut_tx)? {
+                    // The client is already gone. Nothing to do.
+                    log::debug!(
+                        "`call_identity_disconnected`: no row in `st_client` for ({caller_identity}, {caller_connection_id}), nothing to do",
+                    );
+                    return Ok(());
+                }
+
                 mut_tx
                     .delete_st_client(caller_identity, caller_connection_id, database_identity)
                     .map_err(DBError::from)
@@ -850,11 +846,25 @@ impl ModuleHost {
         };
 
         if let Some((reducer_id, reducer_def)) = reducer_lookup {
+            let stdb = me.module.replica_ctx().relational_db.clone();
+            let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload());
+
+            if !is_client_exist(&mut_tx).map_err(|e| InvalidReducerArguments {
+                err: e.into(),
+                reducer: reducer_name.into(),
+            })? {
+                // The client is already gone. Nothing to do.
+                log::debug!(
+                    "`call_identity_disconnected`: no row in `st_client` for ({caller_identity}, {caller_connection_id}), nothing to do",
+                );
+                return Ok(());
+            }
+
             // The module defined a lifecycle reducer to handle disconnects. Call it.
             // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
             // that `st_client` is updated appropriately.
             let result = me.call_reducer_inner_with_inst(
-                None,
+                Some(mut_tx),
                 caller_identity,
                 Some(caller_connection_id),
                 None,

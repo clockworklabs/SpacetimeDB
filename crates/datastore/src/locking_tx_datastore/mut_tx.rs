@@ -1576,6 +1576,23 @@ impl MutTxId {
         self.delete_st_client_credentials(database_identity, connection_id)
     }
 
+    /// Look up a client row by identity and connection ID in the `st_clients` system table.
+    ///
+    /// `Ok(None)` if no such row exists.
+    pub fn st_client_row(&self, identity: Identity, connection_id: ConnectionId) -> Result<Option<RowPointer>> {
+        let row = StClientRow {
+            identity: identity.into(),
+            connection_id: connection_id.into(),
+        };
+
+        self.iter_by_col_eq(
+            ST_CLIENT_ID,
+            col_list![StClientFields::Identity, StClientFields::ConnectionId],
+            &AlgebraicValue::product(row),
+        )
+        .map(|mut it| it.next().map(|row_ref| row_ref.pointer()))
+    }
+
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
         &'a mut self,
         table_id: TableId,
