@@ -18,10 +18,10 @@ struct SPACETIMEDBSDK_API FCallReducerType
     TArray<uint8> Args;
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 RequestId;
+    uint32 RequestId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    uint8 Flags;
+    uint8 Flags = 0;
 
     FORCEINLINE bool operator==(const FCallReducerType& Other) const
     {

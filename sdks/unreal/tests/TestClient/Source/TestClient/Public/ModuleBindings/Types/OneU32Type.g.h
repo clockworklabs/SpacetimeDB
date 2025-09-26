@@ -12,7 +12,7 @@ struct TESTCLIENT_API FOneU32Type
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 N;
+    uint32 N = 0;
 
     FORCEINLINE bool operator==(const FOneU32Type& Other) const
     {

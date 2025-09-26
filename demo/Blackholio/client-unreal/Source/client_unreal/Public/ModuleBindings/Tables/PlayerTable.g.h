@@ -100,7 +100,7 @@ public:
 
     void PostInitialize();
 
-    /** Update function for player table*/
+    /** Update function for logged_out_player table*/
     FTableAppliedDiff<FPlayerType> Update(TArray<FWithBsatn<FPlayerType>> InsertsRef, TArray<FWithBsatn<FPlayerType>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -138,7 +138,7 @@ public:
     FOnPlayerDelete OnDelete;
 
 private:
-    const FString TableName = TEXT("player");
+    const FString TableName = TEXT("logged_out_player");
 
     TSharedPtr<UClientCache<FPlayerType>> Data;
 };

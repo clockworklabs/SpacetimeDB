@@ -13,7 +13,7 @@ struct SPACETIMEDBSDK_API FSubscribeRowsType
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 TableId;
+    uint32 TableId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FString TableName;

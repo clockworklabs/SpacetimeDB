@@ -16,7 +16,7 @@ struct TESTCLIENT_API FPkU256Type
     FSpacetimeDBUInt256 N;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FORCEINLINE bool operator==(const FPkU256Type& Other) const
     {

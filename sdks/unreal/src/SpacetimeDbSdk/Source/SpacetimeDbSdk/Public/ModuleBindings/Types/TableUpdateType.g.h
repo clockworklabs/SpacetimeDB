@@ -13,13 +13,13 @@ struct SPACETIMEDBSDK_API FTableUpdateType
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 TableId;
+    uint32 TableId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FString TableName;
 
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 NumRows;
+    uint64 NumRows = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     TArray<FCompressableQueryUpdateType> Updates;

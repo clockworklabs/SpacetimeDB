@@ -24,10 +24,10 @@ struct SPACETIMEDBSDK_API FCompressableQueryUpdateType
 public:
     FCompressableQueryUpdateType() = default;
 
-    TVariant<TArray<uint8>, FQueryUpdateType> MessageData;
+    TVariant<FQueryUpdateType, TArray<uint8>> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
-    ECompressableQueryUpdateTag Tag;
+    ECompressableQueryUpdateTag Tag = static_cast<ECompressableQueryUpdateTag>(0);
 
     static FCompressableQueryUpdateType Uncompressed(const FQueryUpdateType& Value)
     {

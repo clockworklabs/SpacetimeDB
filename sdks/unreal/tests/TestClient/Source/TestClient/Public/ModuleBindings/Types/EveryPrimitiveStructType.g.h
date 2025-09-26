@@ -13,16 +13,16 @@ struct TESTCLIENT_API FEveryPrimitiveStructType
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    uint8 A;
+    uint8 A = 0;
 
     // NOTE: uint16 field not exposed to Blueprint due to non-blueprintable elements
-    uint16 B;
+    uint16 B = 0;
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 C;
+    uint32 C = 0;
 
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 D;
+    uint64 D = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FSpacetimeDBUInt128 E;
@@ -31,16 +31,16 @@ struct TESTCLIENT_API FEveryPrimitiveStructType
     FSpacetimeDBUInt256 F;
 
     // NOTE: int8 field not exposed to Blueprint due to non-blueprintable elements
-    int8 G;
+    int8 G = 0;
 
     // NOTE: int16 field not exposed to Blueprint due to non-blueprintable elements
-    int16 H;
+    int16 H = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    int32 I;
+    int32 I = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    int64 J;
+    int64 J = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FSpacetimeDBInt128 K;
@@ -49,13 +49,13 @@ struct TESTCLIENT_API FEveryPrimitiveStructType
     FSpacetimeDBInt256 L;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    bool M;
+    bool M = false;;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    float N;
+    float N = 0.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    double O;
+    double O = 0.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FString P;

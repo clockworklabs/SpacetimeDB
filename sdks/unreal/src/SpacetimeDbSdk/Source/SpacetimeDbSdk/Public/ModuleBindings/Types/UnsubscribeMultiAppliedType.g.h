@@ -14,10 +14,10 @@ struct SPACETIMEDBSDK_API FUnsubscribeMultiAppliedType
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 RequestId;
+    uint32 RequestId = 0;
 
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 TotalHostExecutionDurationMicros;
+    uint64 TotalHostExecutionDurationMicros = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FQueryIdType QueryId;

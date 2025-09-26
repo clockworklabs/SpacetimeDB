@@ -12,10 +12,10 @@ struct TESTCLIENT_API FIndexedTable2Type
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 PlayerId;
+    uint32 PlayerId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    float PlayerSnazz;
+    float PlayerSnazz = 0.f;
 
     FORCEINLINE bool operator==(const FIndexedTable2Type& Other) const
     {

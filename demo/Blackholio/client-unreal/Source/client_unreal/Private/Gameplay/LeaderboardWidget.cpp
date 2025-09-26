@@ -81,7 +81,7 @@ void ULeaderboardWidget::CollectPlayers(TArray<FLeaderboardEntry>& Out) const
 	// 4) Keep top 10
 	if (Out.Num() > 10)
 	{
-		Out.SetNum(10, /*bAllowShrinking*/ false);
+		Out.SetNum(10, EAllowShrinking::No);
 	}
 
 	// 5) Append local player if not already present and has Mass > 0

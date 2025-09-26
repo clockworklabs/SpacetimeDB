@@ -4,17 +4,17 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Types/UnsubscribeMultiAppliedType.g.h"
 #include "ModuleBindings/Types/UnsubscribeAppliedType.g.h"
-#include "ModuleBindings/Types/SubscriptionErrorType.g.h"
-#include "Kismet/BlueprintFunctionLibrary.h"
-#include "ModuleBindings/Types/InitialSubscriptionType.g.h"
-#include "ModuleBindings/Types/TransactionUpdateType.g.h"
-#include "ModuleBindings/Types/OneOffQueryResponseType.g.h"
+#include "ModuleBindings/Types/UnsubscribeMultiAppliedType.g.h"
 #include "ModuleBindings/Types/SubscribeAppliedType.g.h"
+#include "ModuleBindings/Types/TransactionUpdateLightType.g.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
 #include "ModuleBindings/Types/SubscribeMultiAppliedType.g.h"
 #include "ModuleBindings/Types/IdentityTokenType.g.h"
-#include "ModuleBindings/Types/TransactionUpdateLightType.g.h"
+#include "ModuleBindings/Types/OneOffQueryResponseType.g.h"
+#include "ModuleBindings/Types/InitialSubscriptionType.g.h"
+#include "ModuleBindings/Types/TransactionUpdateType.g.h"
+#include "ModuleBindings/Types/SubscriptionErrorType.g.h"
 #include "ServerMessageType.g.generated.h"
 
 UENUM(BlueprintType)
@@ -40,10 +40,10 @@ struct SPACETIMEDBSDK_API FServerMessageType
 public:
     FServerMessageType() = default;
 
-    TVariant<FTransactionUpdateLightType, FIdentityTokenType, FTransactionUpdateType, FSubscriptionErrorType, FOneOffQueryResponseType, FSubscribeMultiAppliedType, FUnsubscribeMultiAppliedType, FUnsubscribeAppliedType, FInitialSubscriptionType, FSubscribeAppliedType> MessageData;
+    TVariant<FIdentityTokenType, FUnsubscribeMultiAppliedType, FTransactionUpdateLightType, FOneOffQueryResponseType, FSubscribeAppliedType, FTransactionUpdateType, FSubscriptionErrorType, FSubscribeMultiAppliedType, FUnsubscribeAppliedType, FInitialSubscriptionType> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
-    EServerMessageTag Tag;
+    EServerMessageTag Tag = static_cast<EServerMessageTag>(0);
 
     static FServerMessageType InitialSubscription(const FInitialSubscriptionType& Value)
     {

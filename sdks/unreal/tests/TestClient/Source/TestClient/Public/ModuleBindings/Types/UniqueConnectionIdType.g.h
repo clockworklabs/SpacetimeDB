@@ -16,7 +16,7 @@ struct TESTCLIENT_API FUniqueConnectionIdType
     FSpacetimeDBConnectionId A;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FORCEINLINE bool operator==(const FUniqueConnectionIdType& Other) const
     {

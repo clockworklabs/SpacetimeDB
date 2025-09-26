@@ -12,10 +12,10 @@ struct TESTCLIENT_API FUniqueU8Type
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    uint8 N;
+    uint8 N = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FORCEINLINE bool operator==(const FUniqueU8Type& Other) const
     {

@@ -15,13 +15,13 @@ struct SPACETIMEDBSDK_API FReducerCallInfoType
     FString ReducerName;
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 ReducerId;
+    uint32 ReducerId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     TArray<uint8> Args;
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 RequestId;
+    uint32 RequestId = 0;
 
     FORCEINLINE bool operator==(const FReducerCallInfoType& Other) const
     {

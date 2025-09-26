@@ -97,7 +97,7 @@ public:
 
     void PostInitialize();
 
-    /** Update function for circle table*/
+    /** Update function for logged_out_circle table*/
     FTableAppliedDiff<FCircleType> Update(TArray<FWithBsatn<FCircleType>> InsertsRef, TArray<FWithBsatn<FCircleType>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -135,7 +135,7 @@ public:
     FOnCircleDelete OnDelete;
 
 private:
-    const FString TableName = TEXT("circle");
+    const FString TableName = TEXT("logged_out_circle");
 
     TSharedPtr<UClientCache<FCircleType>> Data;
 };
