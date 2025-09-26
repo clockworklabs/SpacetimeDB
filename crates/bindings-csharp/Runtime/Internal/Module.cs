@@ -41,14 +41,12 @@ partial class RawModuleDefV9
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         RowLevelSecurity.Add(rls);
 
-    internal void RegisterTableDefaultValue(string table, ushort colId, string value) {
-        var byteArray = Encoding.UTF8.GetBytes(value);
-        var byteList = new List<byte>(byteArray);
+    internal void RegisterTableDefaultValue(string table, ushort colId, byte[] value) {
+        var byteList = new List<byte>(value);
         MiscExports.Add(new RawMiscModuleExportV9.ColumnDefaultValue(
             new RawColumnDefaultValueV9(table, colId, byteList)
         ));
     }
-        
 }
 
 public static class Module
@@ -118,7 +116,7 @@ public static class Module
         }
     }
 
-    public static void RegisterTableDefaultValue(string table, ushort colId, string value) => moduleDef.RegisterTableDefaultValue(table, colId, value);
+    public static void RegisterTableDefaultValue(string table, ushort colId, byte[] value) => moduleDef.RegisterTableDefaultValue(table, colId, value);
 
     private static byte[] Consume(this BytesSource source)
     {

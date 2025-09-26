@@ -126,7 +126,19 @@
         /// <summary>
         /// The default value for the column.
         /// </summary>
-        public string? Value { get; } = value?.ToString();
+        public string? Value
+        {
+            get
+            {
+                if (value is null) {return "null";}
+                var str = value.ToString();
+                if (value is string)
+                {
+                    str = $"\"{str}\"";
+                }
+                return str;
+            }
+        }
 
         internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Default;
     }

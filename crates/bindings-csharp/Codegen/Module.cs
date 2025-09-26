@@ -196,42 +196,6 @@ record ColumnDeclaration : MemberDeclaration
         {
             diag.Report(ErrorDescriptor.IncompatibleDefaultAttributesCombination, field);
         }
-        
-        if (ColumnDefaultValue != null)
-        {
-            try
-            {
-                // Try to convert the string value to the field's type
-                var fieldType = field.Type;
-                var value = ColumnDefaultValue;
-        
-                // Handle different types appropriately
-                if (fieldType.SpecialType == SpecialType.System_String)
-                {
-                    // String values are already in the correct format
-                }
-                else if (fieldType.SpecialType == SpecialType.System_Boolean)
-                {
-                    if (!bool.TryParse(value, out _))
-                        throw new FormatException();
-                }
-                else if (fieldType.SpecialType == SpecialType.System_Int32)
-                {
-                    if (!int.TryParse(value, out _))
-                        throw new FormatException();
-                }
-                // Add other type validations as needed
-                else
-                {
-                    // For custom types or unsupported types
-                    diag.Report(ErrorDescriptor.InvalidDefaultValueType, field);
-                }
-            }
-            catch (Exception)
-            {
-                diag.Report(ErrorDescriptor.InvalidDefaultValueFormat, field);
-            }
-        }
     }
 
     public ColumnAttrs GetAttrs(TableView view) =>
@@ -691,7 +655,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     /// <param name="tableName">Name of the table containing the field</param>
     /// <param name="columnId">Index of the column in the table</param>
     /// <param name="value">String representation of the default value</param>
-    public record struct FieldDefaultValue(string tableName, string columnId, string value);
+    /// <param name="BSATNTypeName">BSATN Type name of the default value</param>
+    public record struct FieldDefaultValue(string tableName, string columnId, string value, string BSATNTypeName);
 
     /// <summary>
     /// Generates default values for table fields with the [Default] attribute.
@@ -721,12 +686,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var withDefaultValues = fieldsWithDefaultValues as ColumnDeclaration[] ?? fieldsWithDefaultValues.ToArray();
             foreach (var fieldsWithDefaultValue in withDefaultValues)
             {
-                if (fieldsWithDefaultValue.ColumnDefaultValue != null)
+                if (fieldsWithDefaultValue.ColumnDefaultValue != null && fieldsWithDefaultValue.Type.BSATNName != "")
                 {
                     yield return new FieldDefaultValue(
                         view.Name, 
                         fieldsWithDefaultValue.ColumnIndex.ToString(),
-                        fieldsWithDefaultValue.ColumnDefaultValue
+                        fieldsWithDefaultValue.ColumnDefaultValue,
+                        fieldsWithDefaultValue.Type.BSATNName
                     );
                 }
             }
@@ -1174,9 +1140,16 @@ public class Module : IIncrementalGenerator
                             {{string.Join(
                                 "\n",
                                 columnDefaultValues.Select(d => 
-                                    $"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, \"{d.value}\");")
+                                    "{\n"
+                                         +$"var value = new {d.BSATNTypeName}();\n"
+                                         +"var stream = new MemoryStream();\n"
+                                         +"var writer = new BinaryWriter(stream);\n"
+                                         +$"value.Write(writer, {d.value});\n"   
+                                         +"var array = stream.ToArray();\n" 
+                                         +$"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, array);"
+                                         + "\n}\n")
                             )}}
-                        } 
+                        }
 
                     // Exports only work from the main assembly, so we need to generate forwarding methods.
                     #if EXPERIMENTAL_WASM_AOT
