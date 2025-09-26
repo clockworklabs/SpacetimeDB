@@ -1,7 +1,9 @@
 namespace SpacetimeDB.Internal;
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
 
@@ -38,6 +40,16 @@ partial class RawModuleDefV9
 
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         RowLevelSecurity.Add(rls);
+
+    internal void RegisterTableDefaultValue(string table, ushort colId, byte[] value)
+    {
+        var byteList = new List<byte>(value);
+        MiscExports.Add(
+            new RawMiscModuleExportV9.ColumnDefaultValue(
+                new RawColumnDefaultValueV9(table, colId, byteList)
+            )
+        );
+    }
 }
 
 public static class Module
@@ -93,10 +105,8 @@ public static class Module
 
     public static void RegisterTable<T, View>()
         where T : IStructuralReadWrite, new()
-        where View : ITableView<View, T>, new()
-    {
+        where View : ITableView<View, T>, new() =>
         moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
-    }
 
     public static void RegisterClientVisibilityFilter(Filter rlsFilter)
     {
@@ -109,6 +119,9 @@ public static class Module
             throw new Exception($"Unimplemented row level security type: {rlsFilter}");
         }
     }
+
+    public static void RegisterTableDefaultValue(string table, ushort colId, byte[] value) =>
+        moduleDef.RegisterTableDefaultValue(table, colId, value);
 
     private static byte[] Consume(this BytesSource source)
     {
