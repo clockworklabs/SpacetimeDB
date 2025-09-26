@@ -5823,6 +5823,7 @@ dependencies = [
  "log",
  "memchr",
  "nix 0.30.1",
+ "nohash-hasher",
  "once_cell",
  "openssl",
  "parking_lot 0.12.3",
