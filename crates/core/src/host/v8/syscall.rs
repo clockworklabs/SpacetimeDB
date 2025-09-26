@@ -188,7 +188,7 @@ fn with_span<'scope, R>(
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// table_id_from_name(name: string) -> u32 throws {
 ///     __code_error__: NOT_IN_TRANSACTION | NO_SUCH_TABLE
 /// }
@@ -224,7 +224,7 @@ fn table_id_from_name(scope: &mut HandleScope<'_>, args: FunctionCallbackArgumen
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// index_id_from_name(name: string) -> u32 throws {
 ///     __code_error__: NOT_IN_TRANSACTION | NO_SUCH_INDEX
 /// }
@@ -260,7 +260,7 @@ fn index_id_from_name(scope: &mut HandleScope<'_>, args: FunctionCallbackArgumen
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// datastore_table_row_count(table_id: u32) -> u64 throws {
 ///     __code_error__: NOT_IN_TRANSACTION | NO_SUCH_TABLE
 /// }
@@ -298,7 +298,7 @@ fn datastore_table_row_count(scope: &mut HandleScope<'_>, args: FunctionCallback
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// datastore_table_scan_bsatn(table_id: u32) -> u32 throws {
 ///     __code_error__: NOT_IN_TRANSACTION | NO_SUCH_TABLE
 /// }
@@ -379,7 +379,7 @@ fn datastore_table_scan_bsatn(scope: &mut HandleScope<'_>, args: FunctionCallbac
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// datastore_index_scan_range_bsatn(
 ///     index_id: u32,
 ///     prefix: u8[],
@@ -479,7 +479,7 @@ fn no_such_iter(scope: &mut HandleScope<'_>) -> ExceptionThrown {
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// row_iter_bsatn_advance(iter: u32, buffer_max_len: u32) -> (boolean, u8[]) throws
 ///     { __code_error__: NO_SUCH_ITER } | { __buffer_too_small__: number }
 /// ```
@@ -553,7 +553,7 @@ fn row_iter_bsatn_advance<'scope>(
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// row_iter_bsatn_close(iter: u32) -> undefined throws {
 ///     __code_error__: NO_SUCH_ITER
 /// }
@@ -614,7 +614,7 @@ fn row_iter_bsatn_close<'scope>(
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// datastore_insert_bsatn(table_id: u32, row: u8[]) -> u8[] throws {
 ///     __code_error__:
 ///           NOT_IN_TRANSACTION
@@ -687,7 +687,7 @@ fn datastore_insert_bsatn(scope: &mut HandleScope<'_>, args: FunctionCallbackArg
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// datastore_update_bsatn(table_id: u32, index_id: u32, row: u8[]) -> u8[] throws {
 ///     __code_error__:
 ///         NOT_IN_TRANSACTION
@@ -760,7 +760,7 @@ fn datastore_update_bsatn(scope: &mut HandleScope<'_>, args: FunctionCallbackArg
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// datastore_index_scan_range_bsatn(
 ///     index_id: u32,
 ///     prefix: u8[],
@@ -838,7 +838,7 @@ fn datastore_delete_by_index_scan_range_bsatn(
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// datastore_delete_all_by_eq_bsatn(table_id: u32, relation: u8[]) -> u32 throws {
 ///    __code_error__: NOT_IN_TRANSACTION | NO_SUCH_INDEX | BSATN_DECODE_ERROR
 /// }
@@ -884,7 +884,7 @@ fn datastore_delete_all_by_eq_bsatn(
 
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// volatile_nonatomic_schedule_immediate(reducer_name: string, args: u8[]) -> undefined
 /// ```
 fn volatile_nonatomic_schedule_immediate<'scope>(
@@ -909,7 +909,7 @@ fn volatile_nonatomic_schedule_immediate<'scope>(
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// console_log(level: u8, message: string) -> u32
 /// ```
 ///
@@ -971,7 +971,7 @@ fn console_log<'scope>(scope: &mut HandleScope<'scope>, args: FunctionCallbackAr
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// console_timer_start(name: string) -> u32
 /// ```
 ///
@@ -1005,7 +1005,7 @@ fn console_timer_start<'scope>(
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// console_timer_end(span_id: u32) -> undefined throws {
 ///     __code_error__: NO_SUCH_CONSOLE_TIMER
 /// }
@@ -1049,7 +1049,7 @@ fn console_timer_end<'scope>(
 ///
 /// # Signature
 ///
-/// ```
+/// ```ignore
 /// identity() -> { __identity__: u256 }
 /// ```
 ///
