@@ -88,6 +88,28 @@ const nav = {
       'how-to/reject-client-connections',
       'how-to/reject-client-connections.md'
     ),
+    section('SpacetimeAuth'),
+    page('Overview', 'spacetimeauth', 'spacetimeauth/index.md'),
+    page(
+      'Creating a project',
+      'spacetimeauth/create-project',
+      'spacetimeauth/create-project.md'
+    ),
+    page(
+      'Configuring a project',
+      'spacetimeauth/configure-project',
+      'spacetimeauth/configure-project.md'
+    ),
+    page(
+      'Testing authentication',
+      'spacetimeauth/testing-authentication',
+      'spacetimeauth/testing-authentication.md'
+    ),
+    page(
+      'React',
+      'spacetimeauth/react-integration',
+      'spacetimeauth/react-integration.md'
+    ),
     section('HTTP API'),
     page('Authorization', 'http/authorization', 'http/authorization.md'),
     page('`/identity`', 'http/identity', 'http/identity.md'),
