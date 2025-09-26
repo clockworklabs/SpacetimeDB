@@ -1,25 +1,35 @@
+function getUint8Array(
+  buffer: DataView,
+  byteOffset: number,
+  length: number
+): Uint8Array {
+  return new Uint8Array(buffer.buffer, buffer.byteOffset + byteOffset, length);
+}
+
 export default class BinaryReader {
   #buffer: DataView;
   #offset: number = 0;
 
   constructor(input: Uint8Array) {
-    this.#buffer = new DataView(input.buffer);
-    this.#offset = input.byteOffset;
+    this.#buffer = new DataView(
+      input.buffer,
+      input.byteOffset,
+      input.byteLength
+    );
+    this.#offset = 0;
   }
 
   get offset(): number {
     return this.#offset;
   }
 
+  get remaining(): number {
+    return this.#buffer.byteLength - (this.#buffer.byteOffset + this.#offset);
+  }
+
   readUInt8Array(): Uint8Array {
     const length = this.readU32();
-    const value: Uint8Array = new Uint8Array(
-      this.#buffer.buffer,
-      this.#offset,
-      length
-    );
-    this.#offset += length;
-    return value;
+    return this.readBytes(length);
   }
 
   readBool(): boolean {
@@ -35,13 +45,9 @@ export default class BinaryReader {
   }
 
   readBytes(length: number): Uint8Array {
-    const value: DataView = new DataView(
-      this.#buffer.buffer,
-      this.#offset,
-      length
-    );
+    const value = getUint8Array(this.#buffer, this.#offset, length);
     this.#offset += length;
-    return new Uint8Array(value.buffer);
+    return value;
   }
 
   readI8(): number {
@@ -151,12 +157,7 @@ export default class BinaryReader {
   }
 
   readString(): string {
-    const length = this.readU32();
-    const uint8Array = new Uint8Array(
-      this.#buffer.buffer,
-      this.#offset,
-      length
-    );
+    const uint8Array = this.readUInt8Array();
     const decoder = new TextDecoder('utf-8');
     const value = decoder.decode(uint8Array);
     this.#offset += length;
