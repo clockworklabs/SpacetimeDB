@@ -455,7 +455,7 @@ function pushReducer(
     lifecycle, // <- lifecycle flag lands here
   });
 
-  REDUCERS.set(name, fn);
+  REDUCERS.push(fn);
 }
 
 type Reducer<S extends UntypedSchemaDef, Params extends RowObj> = (
@@ -463,7 +463,7 @@ type Reducer<S extends UntypedSchemaDef, Params extends RowObj> = (
   payload: ParamsAsObject<Params>
 ) => void;
 
-const REDUCERS: Map<string, Reducer<any, any>> = new Map();
+export const REDUCERS: Reducer<any, any>[] = [];
 
 /*****************************************************************
  * reducer() – leave behavior the same; delegate to pushReducer()
@@ -766,10 +766,11 @@ type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
  */
 export type Table<TableDef extends UntypedTableDef> = {
   /** Returns the number of rows in the TX state. */
-  count(): number;
+  count(): bigint;
 
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
   iter(): IterableIterator<RowType<TableDef>>;
+  [Symbol.iterator](): IterableIterator<RowType<TableDef>>;
 
   /** Insert and return the inserted row (auto-increment fields filled). May throw on error. */
   insert(row: RowType<TableDef>): RowType<TableDef>;
