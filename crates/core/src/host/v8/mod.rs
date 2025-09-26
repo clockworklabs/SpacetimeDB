@@ -31,8 +31,7 @@ use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use v8::{
-    Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, IsolateHandle, Local, Object, OwnedIsolate,
-    Value,
+    scope, Context, ContextScope, Function, Isolate, IsolateHandle, Local, Object, OwnedIsolate, PinScope, Value,
 };
 
 mod de;
@@ -390,7 +389,7 @@ fn with_script<R>(
     callback_every: u64,
     callback: InterruptCallback,
     budget: ReducerBudget,
-    logic: impl for<'scope> FnOnce(&mut HandleScope<'scope>, Local<'scope, Value>) -> R,
+    logic: impl for<'scope> FnOnce(&mut PinScope<'scope, '_>, Local<'scope, Value>) -> R,
 ) -> (OwnedIsolate, R) {
     with_scope(isolate, callback_every, callback, budget, |scope| {
         let code = v8::String::new(scope, code).unwrap();
@@ -408,19 +407,21 @@ pub(crate) fn with_scope<R>(
     callback_every: u64,
     callback: InterruptCallback,
     budget: ReducerBudget,
-    logic: impl FnOnce(&mut HandleScope<'_>) -> R,
+    logic: impl FnOnce(&mut PinScope<'_, '_>) -> R,
 ) -> (OwnedIsolate, R) {
     isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
     let isolate_handle = isolate.thread_safe_handle();
-    let mut scope_1 = HandleScope::new(&mut isolate);
-    let context = Context::new(&mut scope_1, ContextOptions::default());
-    let mut scope_2 = ContextScope::new(&mut scope_1, context);
+
+    let with_isolate = |isolate: &mut OwnedIsolate| -> R {
+        scope!(let scope, isolate);
+        let context = Context::new(scope, Default::default());
+        let scope = &mut ContextScope::new(scope, context);
+        logic(scope)
+    };
 
     let timeout_thread_cancel_flag = run_reducer_timeout(callback_every, callback, budget, isolate_handle);
 
-    let ret = logic(&mut scope_2);
-    drop(scope_2);
-    drop(scope_1);
+    let ret = with_isolate(&mut isolate);
 
     // Cancel the execution timeout in `run_reducer_timeout`.
     timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
@@ -489,12 +490,12 @@ fn duration_to_budget(_duration: Duration) -> ReducerBudget {
 }
 
 /// Returns the global object.
-fn global<'scope>(scope: &mut HandleScope<'scope>) -> Local<'scope, Object> {
+fn global<'scope>(scope: &PinScope<'scope, '_>) -> Local<'scope, Object> {
     scope.get_current_context().global(scope)
 }
 
 /// Returns the global property `key`.
-fn get_global_property<'scope>(scope: &mut HandleScope<'scope>, key: Local<'scope, v8::String>) -> FnRet<'scope> {
+fn get_global_property<'scope>(scope: &PinScope<'scope, '_>, key: Local<'scope, v8::String>) -> FnRet<'scope> {
     global(scope)
         .get(scope, key.into())
         .ok_or_else(exception_already_thrown)
@@ -502,7 +503,7 @@ fn get_global_property<'scope>(scope: &mut HandleScope<'scope>, key: Local<'scop
 
 /// Calls free function `fun` with `args`.
 fn call_free_fun<'scope>(
-    scope: &mut HandleScope<'scope>,
+    scope: &PinScope<'scope, '_>,
     fun: Local<'scope, Function>,
     args: &[Local<'scope, Value>],
 ) -> FnRet<'scope> {
@@ -511,7 +512,7 @@ fn call_free_fun<'scope>(
 }
 
 // Calls the `__call_reducer__` function on the global proxy object using `op`.
-fn call_call_reducer_from_op(scope: &mut HandleScope<'_>, op: ReducerOp<'_>) -> anyhow::Result<Result<(), Box<str>>> {
+fn call_call_reducer_from_op(scope: &mut PinScope<'_, '_>, op: ReducerOp<'_>) -> anyhow::Result<Result<(), Box<str>>> {
     call_call_reducer(
         scope,
         op.id.into(),
@@ -524,7 +525,7 @@ fn call_call_reducer_from_op(scope: &mut HandleScope<'_>, op: ReducerOp<'_>) -> 
 
 // Calls the `__call_reducer__` function on the global proxy object.
 fn call_call_reducer(
-    scope: &mut HandleScope<'_>,
+    scope: &mut PinScope<'_, '_>,
     reducer_id: u32,
     sender: &Identity,
     conn_id: &ConnectionId,
@@ -578,7 +579,7 @@ fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
 }
 
 // Calls the `__describe_module__` function on the global proxy object to extract a [`RawModuleDef`].
-fn call_describe_module(scope: &mut HandleScope<'_>) -> anyhow::Result<RawModuleDef> {
+fn call_describe_module(scope: &mut PinScope<'_, '_>) -> anyhow::Result<RawModuleDef> {
     // Get a cached version of the `__describe_module__` property.
     let key_cache = get_or_create_key_cache(scope);
     let describe_module_key = key_cache.borrow_mut().describe_module(scope);
@@ -607,7 +608,7 @@ mod test {
 
     fn with_script<R>(
         code: &str,
-        logic: impl for<'scope> FnOnce(&mut HandleScope<'scope>, Local<'scope, Value>) -> R,
+        logic: impl for<'scope> FnOnce(&mut PinScope<'scope, '_>, Local<'scope, Value>) -> R,
     ) -> R {
         with_scope(|scope| {
             let code = v8::String::new(scope, code).unwrap();
