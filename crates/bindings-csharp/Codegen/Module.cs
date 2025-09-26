@@ -688,12 +688,24 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             {
                 if (fieldsWithDefaultValue.ColumnDefaultValue != null && fieldsWithDefaultValue.Type.BSATNName != "")
                 {
-                    yield return new FieldDefaultValue(
-                        view.Name, 
-                        fieldsWithDefaultValue.ColumnIndex.ToString(),
-                        fieldsWithDefaultValue.ColumnDefaultValue,
-                        fieldsWithDefaultValue.Type.BSATNName
-                    );
+                    if (fieldsWithDefaultValue.Type.BSATNName.StartsWith("SpacetimeDB.BSATN.Enum"))
+                    {
+                        yield return new FieldDefaultValue(
+                            view.Name, 
+                            fieldsWithDefaultValue.ColumnIndex.ToString(),
+                            $"({fieldsWithDefaultValue.Type.Name}){fieldsWithDefaultValue.ColumnDefaultValue}",
+                            fieldsWithDefaultValue.Type.BSATNName
+                        );
+                    }
+                    else
+                    {
+                        yield return new FieldDefaultValue(
+                            view.Name,
+                            fieldsWithDefaultValue.ColumnIndex.ToString(),
+                            fieldsWithDefaultValue.ColumnDefaultValue,
+                            fieldsWithDefaultValue.Type.BSATNName
+                        );
+                    }
                 }
             }
         }
