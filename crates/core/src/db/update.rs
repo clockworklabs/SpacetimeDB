@@ -275,7 +275,7 @@ fn auto_migrate_database(
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::DisconnectAllUsers => {
                 log!(logger, "Disconnecting all users");
-                // It does disconnect clients right away,
+                // It does not disconnect clients right away,
                 // but send response indicated that caller should drop clients
                 res = UpdateResult::RequiresClientDisconnect;
             }
