@@ -349,6 +349,32 @@ metrics_group!(
         #[labels(db: Identity)]
         #[buckets(0.001, 0.01, 0.1, 1.0, 5.0, 10.0)]
         pub snapshot_compression_time_inner: HistogramVec,
+
+        #[name = spacetime_snapshot_compression_time_per_snapshot_sec]
+        #[help = "The time (in seconds) it took to compress a single snapshot"]
+        #[labels(db: Identity)]
+        #[buckets(0.001, 0.01, 0.1, 1.0, 5.0, 10.0)]
+        pub snapshot_compression_time_single: HistogramVec,
+
+        #[name = spacetime_snapshot_compression_skipped]
+        #[help = "The number of snapshots skipped in a single compression pass because they were already compressed"]
+        #[labels(db: Identity)]
+        pub snapshot_compression_skipped: IntGaugeVec,
+
+        #[name = spacetime_snapshot_compression_compressed]
+        #[help = "The number of snapshots compressed in a single compression pass"]
+        #[labels(db: Identity)]
+        pub snapshot_compression_compressed: IntGaugeVec,
+
+        #[name = spacetime_snapshot_compression_objects_compressed]
+        #[help = "The number of snapshot objects compressed in a single compression pass"]
+        #[labels(db: Identity)]
+        pub snapshot_compression_objects_compressed: IntGaugeVec,
+
+        #[name = spacetime_snapshot_compression_objects_hardlinked]
+        #[help = "The number of snapshot objects hardlinked in a single compression pass"]
+        #[labels(db: Identity)]
+        pub snapshot_compression_objects_hardlinked: IntGaugeVec,
     }
 );
 

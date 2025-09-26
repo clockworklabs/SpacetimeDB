@@ -1664,6 +1664,7 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
+    use crate::db::snapshot;
     use crate::db::snapshot::SnapshotWorker;
 
     use super::*;
@@ -1813,7 +1814,10 @@ pub mod tests_utils {
             let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log()))?;
             let history = local.clone();
             let snapshots = want_snapshot_repo
-                .then(|| open_snapshot_repo(root.snapshots(), db_identity, replica_id).map(SnapshotWorker::new))
+                .then(|| {
+                    open_snapshot_repo(root.snapshots(), db_identity, replica_id)
+                        .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Disabled))
+                })
                 .transpose()?;
 
             let persistence = Persistence {
@@ -1951,7 +1955,10 @@ pub mod tests_utils {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots: want_snapshot_repo
-                    .then(|| open_snapshot_repo(root.snapshots(), Identity::ZERO, 0).map(SnapshotWorker::new))
+                    .then(|| {
+                        open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)
+                            .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Disabled))
+                    })
                     .transpose()?,
             };
             let db = Self::open_db(root, history, Some(persistence), None, 0)?;
@@ -2120,7 +2127,7 @@ mod tests {
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
     };
-    use spacetimedb_fs_utils::compression::{CompressCount, CompressType};
+    use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
@@ -2129,6 +2136,7 @@ mod tests {
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
     use spacetimedb_schema::schema::RowLevelSecuritySchema;
+    use spacetimedb_snapshot::CompressionStats;
     #[cfg(unix)]
     use spacetimedb_snapshot::Snapshot;
     use spacetimedb_table::read_column::ReadColumn;
@@ -3142,7 +3150,9 @@ mod tests {
         assert_eq!(&offsets, &[1, 2, 3]);
         // Simulate we take except the last snapshot
         let last_compress = 2;
-        assert_eq!(repo.compress_older_snapshots(3)?, CompressCount { none: 0, zstd: 2 });
+        let mut stats = CompressionStats::default();
+        repo.compress_snapshots(&mut stats, ..3)?;
+        assert_eq!(stats.compressed(), 2);
         let size_compress_on = repo.size_on_disk()?;
         assert!(size_compress_on.total_size < size_compress_off.total_size);
         // Verify we hard-linked the second snapshot
@@ -3154,7 +3164,7 @@ mod tests {
             let mut hard_linked_off = 0;
 
             let (snapshot, compress) = Snapshot::read_from_file(&snapshot_dir.snapshot_file(last_compress))?;
-            assert_eq!(compress, CompressType::Zstd);
+            assert!(compress.is_compressed());
             let repo = SnapshotRepository::object_repo(&snapshot_dir)?;
             for (_, path) in snapshot.files(&repo) {
                 match path.metadata()?.nlink() {
@@ -3204,7 +3214,7 @@ mod tests {
         let out = TempDir::with_prefix("snapshot_test")?;
         let dir = SnapshotsPath::from_path_unchecked(out.path());
 
-        let (_, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, CompressType::Zstd, false);
+        let (_, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, CompressType::zstd(), false);
 
         stdb.take_snapshot(&repo)?;
         let size = repo.size_on_disk()?;

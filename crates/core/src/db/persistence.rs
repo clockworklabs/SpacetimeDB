@@ -9,7 +9,7 @@ use crate::{messages::control_db::Database, util::asyncify};
 
 use super::{
     relational_db::{self, Txdata},
-    snapshot::{SnapshotDatabaseState, SnapshotWorker},
+    snapshot::{self, SnapshotDatabaseState, SnapshotWorker},
 };
 
 /// [spacetimedb_durability::Durability] impls with a [`Txdata`] transaction
@@ -137,7 +137,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
         let snapshot_worker =
             asyncify(move || relational_db::open_snapshot_repo(snapshot_dir, database_identity, replica_id))
                 .await
-                .map(SnapshotWorker::new)?;
+                .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Enabled))?;
 
         tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
             snapshot_worker.subscribe(),
