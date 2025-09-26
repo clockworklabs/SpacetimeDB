@@ -59,7 +59,6 @@ pub fn cli() -> clap::Command {
             Arg::new("break_clients")
                 .long("break-clients")
                 .action(SetTrue)
-                .hide(true)
                 .help("Allow breaking changes when publishing to an existing database identity. This will break existing clients.")
         )
         .arg(
@@ -275,7 +274,7 @@ async fn apply_pre_publish_if_needed(
         {
             println!("Aborting");
             // Early exit: return an error or a special signal. Here we bail out by returning Err.
-            return Err(anyhow::anyhow!("Publishing aborted by user"));
+            anyhow::bail!("Publishing aborted by user");
         }
 
         builder = builder
@@ -308,11 +307,11 @@ async fn call_pre_publish(
     }
 
     if !res.status().is_success() {
-        return Err(anyhow::anyhow!(
+        anyhow::bail!(
             "Pre-publish check failed with status {}: {}",
             res.status(),
             res.text().await?
-        ));
+        );
     }
 
     let pre_publish_result: PrePublishResult = res.json_or_error().await?;
