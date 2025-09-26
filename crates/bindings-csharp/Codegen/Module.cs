@@ -688,6 +688,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             {
                 if (fieldsWithDefaultValue.ColumnDefaultValue != null && fieldsWithDefaultValue.Type.BSATNName != "")
                 {
+                    // For enums, we'll need to wrap the default value in the enum type.
                     if (fieldsWithDefaultValue.Type.BSATNName.StartsWith("SpacetimeDB.BSATN.Enum"))
                     {
                         yield return new FieldDefaultValue(
@@ -1134,6 +1135,8 @@ public class Module : IIncrementalGenerator
                     #endif
                         public static void Main() {
                           SpacetimeDB.Internal.Module.SetReducerContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ReducerContext(identity, connectionId, random, time));
+                          var __memoryStream = new MemoryStream();
+                          var __writer = new BinaryWriter(__memoryStream);
 
                             {{string.Join(
                                 "\n",
@@ -1154,10 +1157,10 @@ public class Module : IIncrementalGenerator
                                 columnDefaultValues.Select(d => 
                                     "{\n"
                                          +$"var value = new {d.BSATNTypeName}();\n"
-                                         +"var stream = new MemoryStream();\n"
-                                         +"var writer = new BinaryWriter(stream);\n"
-                                         +$"value.Write(writer, {d.value});\n"   
-                                         +"var array = stream.ToArray();\n" 
+                                         +"__memoryStream.Position = 0;\n"
+                                         +"__memoryStream.SetLength(0);\n"
+                                         +$"value.Write(__writer, {d.value});\n"   
+                                         +"var array = __memoryStream.ToArray();\n" 
                                          +$"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, array);"
                                          + "\n}\n")
                             )}}
