@@ -2,7 +2,7 @@
 
 use super::error::{exception_already_thrown, ExcResult, ExceptionThrown, ExceptionValue, Throwable, TypeError};
 use super::from_value::{cast, FromValue};
-use super::key_cache::{get_or_create_key_cache, KeyCache};
+use super::string_const::{TAG, VALUE};
 use core::fmt;
 use core::iter::{repeat_n, RepeatN};
 use core::marker::PhantomData;
@@ -19,9 +19,7 @@ pub(super) fn deserialize_js_seed<'de, T: DeserializeSeed<'de>>(
     val: Local<'_, Value>,
     seed: T,
 ) -> ExcResult<T::Output> {
-    let key_cache = get_or_create_key_cache(scope);
-    let key_cache = &mut *key_cache.borrow_mut();
-    let de = Deserializer::new(scope, val, key_cache);
+    let de = Deserializer::new(scope, val);
     seed.deserialize(de).map_err(|e| e.throw(scope))
 }
 
@@ -41,9 +39,9 @@ struct Deserializer<'this, 'scope, 'isolate> {
 
 impl<'this, 'scope, 'isolate> Deserializer<'this, 'scope, 'isolate> {
     /// Creates a new deserializer from `input` in `scope`.
-    fn new(scope: &'this mut PinScope<'scope, 'isolate>, input: Local<'_, Value>, key_cache: &'this mut KeyCache) -> Self {
+    fn new(scope: &'this mut PinScope<'scope, 'isolate>, input: Local<'_, Value>) -> Self {
         let input = Local::new(scope, input);
-        let common = DeserializerCommon { scope, key_cache };
+        let common = DeserializerCommon { scope };
         Deserializer { input, common }
     }
 }
@@ -54,16 +52,11 @@ impl<'this, 'scope, 'isolate> Deserializer<'this, 'scope, 'isolate> {
 struct DeserializerCommon<'this, 'scope, 'isolate> {
     /// The scope of values to deserialize.
     scope: &'this mut PinScope<'scope, 'isolate>,
-    /// A cache for frequently used strings.
-    key_cache: &'this mut KeyCache,
 }
 
 impl<'scope, 'isolate> DeserializerCommon<'_, 'scope, 'isolate> {
     fn reborrow(&mut self) -> DeserializerCommon<'_, 'scope, 'isolate> {
-        DeserializerCommon {
-            scope: self.scope,
-            key_cache: self.key_cache,
-        }
+        DeserializerCommon { scope: self.scope }
     }
 }
 
@@ -161,7 +154,7 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
 
         // We expect a canonical representation of a sum value in JS to be
         // `{ tag: "foo", value: a_value_for_foo }`.
-        let tag_field = self.common.key_cache.tag(scope);
+        let tag_field = TAG.string(scope);
         let object = cast!(scope, self.input, Object, "object for sum type `{}`", sum_name)?;
 
         // Extract the `tag` field. It needs to contain a string.
@@ -171,7 +164,7 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
         let tag = cast!(scope, tag, v8::String, "string for sum tag of `{}`", sum_name)?;
 
         // Extract the `value` field.
-        let value_field = self.common.key_cache.value(scope);
+        let value_field = VALUE.string(scope);
         let value = object
             .get(scope, value_field.into())
             .ok_or_else(exception_already_thrown)?;

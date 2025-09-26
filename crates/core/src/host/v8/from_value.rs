@@ -17,10 +17,7 @@ pub(super) trait FromValue: Sized {
 macro_rules! impl_from_value {
     ($ty:ty, ($val:ident, $scope:ident) => $logic:expr) => {
         impl FromValue for $ty {
-            fn from_value<'scope>(
-                $val: Local<'_, Value>,
-                $scope: &PinScope<'scope, '_>,
-            ) -> ValueResult<'scope, Self> {
+            fn from_value<'scope>($val: Local<'_, Value>, $scope: &PinScope<'scope, '_>) -> ValueResult<'scope, Self> {
                 $logic
             }
         }

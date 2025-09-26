@@ -4,24 +4,24 @@ use super::module_common::{build_common_module_from_raw, run_describer, ModuleCo
 use super::module_host::{CallReducerParams, DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime};
 use super::UpdateDatabaseResult;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
-use crate::host::v8::error::{BufferTooSmall, JsStackTrace};
-use crate::host::v8::syscall::{register_host_funs, FnRet};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     DescribeError, EnergyStats, ExecuteResult, ExecutionTimings, InstanceCommon, ReducerOp,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::wasmtime::{epoch_ticker, ticks_in_duration, EPOCH_TICKS_PER_SECOND};
-use crate::host::ArgsTuple;
-use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
+use crate::host::{ArgsTuple, Scheduler};
+use crate::{module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
 use core::ffi::c_void;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 use core::{iter, ptr, str};
 use de::deserialize_js;
-use error::{catch_exception, exception_already_thrown, log_traceback, CodeError, TerminationError, Throwable};
+use error::{
+    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CodeError, JsStackTrace,
+    TerminationError, Throwable,
+};
 use from_value::cast;
-use key_cache::get_or_create_key_cache;
 use ser::serialize_to_js;
 use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
@@ -30,6 +30,8 @@ use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
+use string_const::str_from_ident;
+use syscall::{register_host_funs, FnRet};
 use v8::{
     scope, Context, ContextScope, Function, Isolate, IsolateHandle, Local, Object, OwnedIsolate, PinScope, Value,
 };
@@ -37,8 +39,8 @@ use v8::{
 mod de;
 mod error;
 mod from_value;
-mod key_cache;
 mod ser;
+mod string_const;
 mod syscall;
 mod to_value;
 
@@ -532,9 +534,7 @@ fn call_call_reducer(
     timestamp: i64,
     reducer_args: &ArgsTuple,
 ) -> anyhow::Result<Result<(), Box<str>>> {
-    // Get a cached version of the `__call_reducer__` property.
-    let key_cache = get_or_create_key_cache(scope);
-    let call_reducer_key = key_cache.borrow_mut().call_reducer(scope);
+    let call_reducer_key = str_from_ident!(__call_reducer__).string(scope);
 
     catch_exception(scope, |scope| {
         // Serialize the arguments.
@@ -580,9 +580,7 @@ fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
 
 // Calls the `__describe_module__` function on the global proxy object to extract a [`RawModuleDef`].
 fn call_describe_module(scope: &mut PinScope<'_, '_>) -> anyhow::Result<RawModuleDef> {
-    // Get a cached version of the `__describe_module__` property.
-    let key_cache = get_or_create_key_cache(scope);
-    let describe_module_key = key_cache.borrow_mut().describe_module(scope);
+    let describe_module_key = str_from_ident!(__describe_module__).string(scope);
 
     catch_exception(scope, |scope| {
         // Get the function on the global proxy object and convert to a function.
