@@ -75,7 +75,9 @@ pub struct NodeStatus {
     /// SEE: <https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/node-v1/#NodeStatus>
     pub state: String,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, strum::AsRefStr, strum::Display,
+)]
 #[repr(i32)]
 pub enum HostType {
     Wasm = 0,
