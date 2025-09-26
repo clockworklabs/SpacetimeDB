@@ -664,7 +664,9 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                 )
                     .into());
             }
-            UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {}
+            UpdateDatabaseResult::NoUpdateNeeded
+            | UpdateDatabaseResult::UpdatePerformed
+            | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect => {}
         }
     }
 

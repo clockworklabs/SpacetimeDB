@@ -316,13 +316,18 @@ impl InstanceCommon {
                 stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
-            Ok(()) => {
+            Ok(res) => {
                 if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
                     stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                 }
                 system_logger.info("Database updated");
                 log::info!("Database updated, {}", stdb.database_identity());
-                Ok(UpdateDatabaseResult::UpdatePerformed)
+                match res {
+                    crate::db::update::UpdateResult::Success => Ok(UpdateDatabaseResult::UpdatePerformed),
+                    crate::db::update::UpdateResult::RequiresClientDisconnect => {
+                        Ok(UpdateDatabaseResult::UpdatePerformedWithClientDisconnect)
+                    }
+                }
             }
         }
     }
