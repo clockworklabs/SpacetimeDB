@@ -216,7 +216,7 @@ class Smoketest(unittest.TestCase):
         logs = self.spacetime("logs", "--format=json", "-n", str(n), "--", self.database_identity)
         return list(map(json.loads, logs.splitlines()))
 
-    def publish_module(self, domain=None, *, clear=True, capture_stderr=True, num_replicas=None):
+    def publish_module(self, domain=None, *, clear=True, capture_stderr=True, num_replicas=None, break_clients=False):
         print("publishing module", self.publish_module)
         publish_output = self.spacetime(
             "publish",
@@ -228,6 +228,7 @@ class Smoketest(unittest.TestCase):
             # and so the publish step prompts for confirmation.
             "--yes",
             *["--num-replicas", f"{num_replicas}"] if num_replicas is not None else [],
+            *["--break-clients"] if break_clients else [],
             capture_stderr=capture_stderr,
         )
         self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]
