@@ -607,7 +607,7 @@ pub mod raw {
         ///
         /// Traps if:
         ///
-        /// - `out` is NULL or `ou` is not in bounds of WASM memory.
+        /// - `out` is NULL or `out` is not in bounds of WASM memory.
         ///
         /// # Errors
         ///

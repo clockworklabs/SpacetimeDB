@@ -42,11 +42,12 @@ struct BytesSource {
     bytes: bytes::Bytes,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 /// Identifier for a [`BytesSource`] stored in the `bytes_sources` of a [`WasmInstanceEnv`].
 ///
 /// The special sentinel [`Self::INVALID`] (zero) is used for a never-readable [`BytesSource`].
-/// We pass this to guests for a [`BytesSource`] with a length of zero.
+/// We pass this to guests for a [`BytesSource`] with a length of zero
+/// so that they can avoid host calls.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(super) struct BytesSourceId(pub(super) u32);
 
 // `nohash_hasher` recommends impling `Hash` explicitly rather than using the derive macro,
@@ -157,10 +158,13 @@ impl WasmInstanceEnv {
         let id = self.next_bytes_source_id;
         self.next_bytes_source_id = id
             .checked_add(1)
-            .context("Allocating next `BytesSourceId` overflowed u32")?;
+            .context("Allocating next `BytesSourceId` overflowed `u32`")?;
         Ok(BytesSourceId(id.into()))
     }
 
+    /// Binds `bytes` to the environment and assigns it an ID.
+    ///
+    /// If `bytes` is empty, `BytesSourceId::INVALID` is returned.
     fn create_bytes_source(&mut self, bytes: bytes::Bytes) -> RtResult<BytesSourceId> {
         // Pass an invalid source when the bytes were empty.
         // This allows the module to avoid allocating and make a system call in those cases.
@@ -168,7 +172,7 @@ impl WasmInstanceEnv {
             Ok(BytesSourceId::INVALID)
         } else if bytes.len() > u32::MAX as usize {
             Err(anyhow::anyhow!(
-                "`create_bytes_source`: `Bytes` has length {}, which is greater than u32::MAX {}",
+                "`create_bytes_source`: `Bytes` has length {}, which is greater than `u32::MAX` {}",
                 bytes.len(),
                 u32::MAX,
             ))
@@ -1154,7 +1158,7 @@ impl WasmInstanceEnv {
     ///
     /// Traps if:
     ///
-    /// - `out` is NULL or `ou` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out` is not in bounds of WASM memory.
     ///
     /// # Errors
     ///
