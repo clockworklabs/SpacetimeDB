@@ -275,6 +275,11 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
         log::info!("{}: {:?}", prefix, person);
     }
 }
+
+#[spacetimedb::reducer(client_disconnected)]
+pub fn identity_disconnected(ctx: &ReducerContext) {
+    log::info!("FIRST_UPDATE: client disconnected");
+}
 """
 
     MODULE_UPDATED_AGAIN = """
@@ -305,33 +310,48 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
 """
 
     def test_add_table_columns(self):
-        """This tests uploads a module with schema changes that add columns with defaults (twice)."""
-        # subscribe to monitor table changes
-        self.subscribe("select * from person", n=5)
+        """Verify schema upgrades that add columns with defaults (twice)."""
 
-        # insert under initial schema
+        # Subscribe to person table changes multiple times to simulate active clients
+        for _ in range(20):
+            self.subscribe("select * from person", n=5)
+
+        # Insert under initial schema
         self.call("add_person", "Robert")
 
-        # first upgrade: add age & mass
+        # First upgrade: add age & mass columns
         self.write_module_code(self.MODULE_UPDATED)
         self.publish_module(self.database_identity, clear=False, break_clients=True)
-        self.call("print_persons", "UPDATE_1")
+        self.call("print_persons", "FIRST_UPDATE")
+
         logs1 = self.logs(100)
+
+        # Validate disconnect + schema migration logs
         self.assertIn("Disconnecting all users", logs1)
         self.assertIn(
-            'UPDATE_1: Person { name: "Robert", age: 0, mass: 19 }',
-            logs1
+            'FIRST_UPDATE: Person { name: "Robert", age: 0, mass: 19 }',
+            logs1,
+        )
+        disconnect_count = logs1.count("FIRST_UPDATE: client disconnected")
+        self.assertEqual(
+            disconnect_count,
+        # this is always +1, I believe its due to test setup's own connection
+            21,
+            msg=f"Unexpected disconnect counts: {disconnect_count}",
         )
 
-        # insert new data under upgraded schema
+        # Insert new data under upgraded schema
         self.call("add_person", "Robert2")
 
-        # second upgrade: add height
+        # Second upgrade
         self.write_module_code(self.MODULE_UPDATED_AGAIN)
         self.publish_module(self.database_identity, clear=False, break_clients=True)
         self.call("print_persons", "UPDATE_2")
+
         logs2 = self.logs(100)
+
+        # Validate new schema with height
         self.assertIn(
             'UPDATE_2: Person { name: "Robert2", age: 70, mass: 180, height: 160 }',
-            logs2
+            logs2,
         )
