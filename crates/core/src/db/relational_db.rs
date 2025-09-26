@@ -502,8 +502,9 @@ impl RelationalDB {
         .map_err(DBError::from)
     }
 
-    /// Returns `Ok(Some(pointer))` if the given client is currently connected to the database,
-    /// `Ok(None)` if not, and `Err(_)` on error.
+    /// Look up a client row by identity and connection ID in the `st_clients` system table.
+    ///
+    /// `Ok(None)` if no such row exists.
     pub fn st_client_row(
         &self,
         identity: Identity,
