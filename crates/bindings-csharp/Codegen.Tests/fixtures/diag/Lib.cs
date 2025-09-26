@@ -368,18 +368,41 @@ public partial struct TestDefaultFieldValues
     [Unique]
     public int? UniqueField;
 
-    [Default("A default string set by attribute")] public string DefaultString = "";
-    [Default(true)] public bool DefaultBool = false;
-    [Default(2U)] public uint DefaultUInt = 1U;
-    [Default(2)] public ushort DefaultUInt16 = 1;
-    [Default(2L)] public ulong DefaultUInt64 = 1L;
-    [Default(2)] public sbyte DefaultSByte = 1;
-    [Default(2)] public short DefaultInt16 = 1;
-    [Default(2)] public int DefaultInt32 = 1;
-    [Default(2)] public long DefaultInt64 = 1;
-    [Default(2.0f)] public float DefaultFloat = 1.0f;
-    [Default(2.0)] public double DefaultDouble = 1.0;
-    [Default(MyEnum.SetByAttribute)] public MyEnum DefaultEnum = MyEnum.SetDuringInit;
+    [Default("A default string set by attribute")]
+    public string DefaultString = "";
+
+    [Default(true)]
+    public bool DefaultBool = false;
+
+    [Default(2U)]
+    public uint DefaultUInt = 1U;
+
+    [Default(2)]
+    public ushort DefaultUInt16 = 1;
+
+    [Default(2L)]
+    public ulong DefaultUInt64 = 1L;
+
+    [Default(2)]
+    public sbyte DefaultSByte = 1;
+
+    [Default(2)]
+    public short DefaultInt16 = 1;
+
+    [Default(2)]
+    public int DefaultInt32 = 1;
+
+    [Default(2)]
+    public long DefaultInt64 = 1;
+
+    [Default(2.0f)]
+    public float DefaultFloat = 1.0f;
+
+    [Default(2.0)]
+    public double DefaultDouble = 1.0;
+
+    [Default(MyEnum.SetByAttribute)]
+    public MyEnum DefaultEnum = MyEnum.SetDuringInit;
 }
 
 [SpacetimeDB.Type]
@@ -387,7 +410,7 @@ public enum MyEnum
 {
     Unset,
     SetDuringInit,
-    SetByAttribute
+    SetByAttribute,
 }
 
 [SpacetimeDB.Table]

@@ -150,10 +150,8 @@ internal static class ErrorDescriptor
                 $"Field {field.Name} is marked as [ClientVisibilityFilter] but it is not public static readonly",
             field => field
         );
-    
-    public static readonly ErrorDescriptor<
-        IFieldSymbol
-    > IncompatibleDefaultAttributesCombination =
+
+    public static readonly ErrorDescriptor<IFieldSymbol> IncompatibleDefaultAttributesCombination =
         new(
             group,
             "Invalid Combination: AutoInc, Unique or PrimaryKey cannot have a Default value",
@@ -166,8 +164,7 @@ internal static class ErrorDescriptor
         new(
             group,
             "Invalid Default Value Type",
-            field => 
-                $"Default value for field {field.Name} cannot be converted to provided type",
+            field => $"Default value for field {field.Name} cannot be converted to provided type",
             field => field
         );
 
@@ -175,8 +172,7 @@ internal static class ErrorDescriptor
         new(
             group,
             "Invalid Default Value Format",
-            field => 
-                $"Default value for field {field.Name} has invalid format for provided type ",
+            field => $"Default value for field {field.Name} has invalid format for provided type ",
             field => field
         );
 }

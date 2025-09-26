@@ -19,11 +19,12 @@ readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null, string
 {
     // Maps attribute type names to their corresponding attribute types
     private static readonly ImmutableDictionary<string, System.Type> AttrTypes = ImmutableArray
-        .Create(typeof(AutoIncAttribute),
+        .Create(
+            typeof(AutoIncAttribute),
             typeof(PrimaryKeyAttribute),
             typeof(UniqueAttribute),
             typeof(DefaultAttribute)
-            )
+        )
         .ToImmutableDictionary(t => t.FullName!);
 
     /// <summary>
@@ -47,7 +48,7 @@ readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null, string
             var defaultAttr = attrData.ParseAs<DefaultAttribute>(attrType);
             return new(defaultAttr.Mask, defaultAttr.Table, defaultAttr.Value);
         }
-        
+
         // Handle standard column attributes (PrimaryKey, Unique, AutoInc)
         var attr = attrData.ParseAs<ColumnAttribute>(attrType);
         return new(attr.Mask, attr.Table);
@@ -105,15 +106,14 @@ record ColumnDeclaration : MemberDeclaration
                 .Select(a => new ViewIndex(new ColumnRef(index, field.Name), a, diag))
                 .ToImmutableArray()
         );
-        
-        ColumnDefaultValue = 
-            field
-                .GetAttributes()
-                .Select(ColumnAttr.Parse)
-                .Where(a => a.Mask == ColumnAttrs.Default)
-                .Select(a => a.Value)
-                .ToList().FirstOrDefault()
-            ;
+
+        ColumnDefaultValue = field
+            .GetAttributes()
+            .Select(ColumnAttr.Parse)
+            .Where(a => a.Mask == ColumnAttrs.Default)
+            .Select(a => a.Value)
+            .ToList()
+            .FirstOrDefault();
 
         var type = field.Type;
 
@@ -186,13 +186,14 @@ record ColumnDeclaration : MemberDeclaration
             diag.Report(ErrorDescriptor.UniqueNotEquatable, field);
         }
 
-        if (attrs.HasFlag(ColumnAttrs.Default) && 
-                (
-                    attrs.HasFlag(ColumnAttrs.AutoInc) ||
-                    attrs.HasFlag(ColumnAttrs.PrimaryKey) ||
-                    attrs.HasFlag(ColumnAttrs.Unique)
-                 )
+        if (
+            attrs.HasFlag(ColumnAttrs.Default)
+            && (
+                attrs.HasFlag(ColumnAttrs.AutoInc)
+                || attrs.HasFlag(ColumnAttrs.PrimaryKey)
+                || attrs.HasFlag(ColumnAttrs.Unique)
             )
+        )
         {
             diag.Report(ErrorDescriptor.IncompatibleDefaultAttributesCombination, field);
         }
@@ -648,7 +649,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             );
         }
     }
-    
+
     /// <summary>
     /// Represents a default value for a table field, used during table creation.
     /// </summary>
@@ -656,7 +657,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     /// <param name="columnId">Index of the column in the table</param>
     /// <param name="value">String representation of the default value</param>
     /// <param name="BSATNTypeName">BSATN Type name of the default value</param>
-    public record struct FieldDefaultValue(string tableName, string columnId, string value, string BSATNTypeName);
+    public record struct FieldDefaultValue(
+        string tableName,
+        string columnId,
+        string value,
+        string BSATNTypeName
+    );
 
     /// <summary>
     /// Generates default values for table fields with the [Default] attribute.
@@ -673,26 +679,30 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         foreach (var view in Views)
         {
             var members = string.Join(", ", Members.Select(m => m.Name));
-            var fieldsWithDefaultValues = Members.Where(m => m.GetAttrs(view).HasFlag(ColumnAttrs.Default));
-            var defaultValueAttributes = string.Join(", ", 
+            var fieldsWithDefaultValues = Members.Where(m =>
+                m.GetAttrs(view).HasFlag(ColumnAttrs.Default)
+            );
+            var defaultValueAttributes = string.Join(
+                ", ",
                 Members
                     .Where(m => m.GetAttrs(view).HasFlag(ColumnAttrs.Default))
-                    .Select(m => 
-                        m.Attrs
-                            .FirstOrDefault(a => a.Mask == ColumnAttrs.Default)
-                    )
+                    .Select(m => m.Attrs.FirstOrDefault(a => a.Mask == ColumnAttrs.Default))
             );
 
-            var withDefaultValues = fieldsWithDefaultValues as ColumnDeclaration[] ?? fieldsWithDefaultValues.ToArray();
+            var withDefaultValues =
+                fieldsWithDefaultValues as ColumnDeclaration[] ?? fieldsWithDefaultValues.ToArray();
             foreach (var fieldsWithDefaultValue in withDefaultValues)
             {
-                if (fieldsWithDefaultValue.ColumnDefaultValue != null && fieldsWithDefaultValue.Type.BSATNName != "")
+                if (
+                    fieldsWithDefaultValue.ColumnDefaultValue != null
+                    && fieldsWithDefaultValue.Type.BSATNName != ""
+                )
                 {
                     // For enums, we'll need to wrap the default value in the enum type.
                     if (fieldsWithDefaultValue.Type.BSATNName.StartsWith("SpacetimeDB.BSATN.Enum"))
                     {
                         yield return new FieldDefaultValue(
-                            view.Name, 
+                            view.Name,
                             fieldsWithDefaultValue.ColumnIndex.ToString(),
                             $"({fieldsWithDefaultValue.Type.Name}){fieldsWithDefaultValue.ColumnDefaultValue}",
                             fieldsWithDefaultValue.Type.BSATNName
@@ -1062,15 +1072,15 @@ public class Module : IIncrementalGenerator
             (f) => f.FullName,
             (f) => f.FullName
         );
-        
+
         var columnDefaultValues = CollectDistinct(
             "ColumnDefaultValues",
             context,
             tables
                 .SelectMany((t, ct) => t.GenerateDefaultValues())
                 .WithTrackingName("SpacetimeDB.Table.GenerateDefaultValues"),
-            v => v.tableName+"_"+v.columnId,
-            v => v.tableName+"_"+v.columnId
+            v => v.tableName + "_" + v.columnId,
+            v => v.tableName + "_" + v.columnId
         );
 
         // Register the generated source code with the compilation context as part of module publishing
