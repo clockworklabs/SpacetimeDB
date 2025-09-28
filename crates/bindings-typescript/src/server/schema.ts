@@ -15,7 +15,14 @@
 // import type Typespace from '../lib/autogen/typespace_type';
 // import type { ColumnBuilder } from './type_builders';
 // import t from "./type_builders";
-import { AlgebraicType, ProductType, ProductTypeElement, t } from '..';
+import {
+  AlgebraicType,
+  ConnectionId,
+  Identity,
+  ProductType,
+  t,
+  Timestamp,
+} from '..';
 import Lifecycle from '../lib/autogen/lifecycle_type';
 import type RawConstraintDefV9 from '../lib/autogen/raw_constraint_def_v_9_type';
 import RawIndexAlgorithm from '../lib/autogen/raw_index_algorithm_type';
@@ -25,12 +32,11 @@ import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
 import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
+import type { AutoIncOverflow, UniqueAlreadyExists } from './rt';
 import type {
   ColumnBuilder,
   ColumnMetadata,
-  Infer,
   InferTypeOfRow,
-  ProductColumnBuilder,
   TypeBuilder,
 } from './type_builders';
 
@@ -672,12 +678,15 @@ type UntypedSchemaDef = {
 /**
  * Reducer context parametrized by the inferred Schema
  */
-export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = {
+export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
+  sender: Identity;
+  timestamp: Timestamp;
+  connection_id: ConnectionId | null;
   db: DbView<SchemaDef>;
-};
+}>;
 
 export type DbView<SchemaDef extends UntypedSchemaDef> = {
-  [Tbl in SchemaDef['tables'][number] as Tbl['name']]: Table<Tbl>;
+  readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: Table<Tbl>;
 };
 
 export type ModuleDef<S extends UntypedSchemaDef> = {
@@ -794,23 +803,11 @@ type TryInsertError<TableDef extends UntypedTableDef> =
   | CheckAnyMetadata<
       TableDef,
       { isUnique: true } | { isPrimaryKey: true },
-      UniqueConstraintViolation
+      UniqueAlreadyExists
     >
   | CheckAnyMetadata<TableDef, { isAutoIncrement: true }, AutoIncOverflow>;
 
-export class UniqueConstraintViolation extends Error {
-  name = 'UniqueConstraintViolation';
-}
-
-export class AutoIncOverflow extends Error {
-  name = 'AutoIncOverflow';
-}
-
 type Result<T, E> = { ok: true; val: T } | { ok: false; err: E };
-
-type DbContext<S extends UntypedSchemaDef> = {
-  db: DbView<S>;
-};
 
 const x = schema(table({ name: 'hello' }, { x: t.i32() }));
 // const y = x.schemaType.hello.x;
