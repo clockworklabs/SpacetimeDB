@@ -2,8 +2,17 @@ import { AlgebraicType } from '../lib/algebraic_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
+import { ConnectionId } from '../lib/connection_id';
+import { Identity } from '../lib/identity';
+import { Timestamp } from '../lib/timestamp';
 import { BinaryReader, BinaryWriter } from '../sdk';
-import { MODULE_DEF, REDUCERS, type DbView, type Table } from './schema';
+import {
+  MODULE_DEF,
+  REDUCERS,
+  type DbView,
+  type ReducerCtx,
+  type Table,
+} from './schema';
 
 type u8 = number;
 type u16 = number;
@@ -52,7 +61,6 @@ declare global {
   function console_timer_end(span_id: u32): void;
   function identity(): { __identity__: u256 };
 
-  // function A
   function __call_reducer__(
     reducer_id: u32,
     sender: u256,
@@ -61,6 +69,35 @@ declare global {
     args: Uint8Array
   ): void;
 }
+
+const { freeze } = Object;
+
+const _syscalls = {
+  table_id_from_name,
+  index_id_from_name,
+  datastore_table_row_count,
+  datastore_table_scan_bsatn,
+  datastore_index_scan_range_bsatn,
+  row_iter_bsatn_advance,
+  row_iter_bsatn_close,
+  datastore_insert_bsatn,
+  datastore_update_bsatn,
+  datastore_delete_by_index_scan_range_bsatn,
+  datastore_delete_all_by_eq_bsatn,
+  volatile_nonatomic_schedule_immediate,
+  console_log,
+  console_timer_start,
+  console_timer_end,
+  identity,
+};
+
+const sys = freeze(
+  Object.fromEntries(
+    Object.entries(_syscalls).map(([name, syscall]) => {
+      return [name, wrapSyscall(syscall)];
+    })
+  ) as typeof _syscalls
+);
 
 globalThis.__call_reducer__ = function __call_reducer__(
   reducer_id,
@@ -76,7 +113,13 @@ globalThis.__call_reducer__ = function __call_reducer__(
     new BinaryReader(args_buf),
     args_type
   );
-  REDUCERS[reducer_id]({ db: getDbView() }, args);
+  const ctx: ReducerCtx<any> = freeze({
+    sender: new Identity(sender),
+    timestamp: new Timestamp(timestamp),
+    connection_id: ConnectionId.nullIfZero(new ConnectionId(conn_id)),
+    db: getDbView(),
+  });
+  REDUCERS[reducer_id](ctx, args);
 };
 
 let DB_VIEW: DbView<any> | null = null;
@@ -86,15 +129,18 @@ function getDbView() {
 }
 
 function makeDbView(module_def: RawModuleDefV9): DbView<any> {
-  const dbView: DbView<any> = {};
-  for (const table of module_def.tables) {
-    dbView[table.name] = makeTableView(module_def.typespace, table);
-  }
-  return dbView;
+  return freeze(
+    Object.fromEntries(
+      module_def.tables.map(table => [
+        table.name,
+        makeTableView(module_def.typespace, table),
+      ])
+    )
+  );
 }
 
 function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
-  const table_id = table_id_from_name(table.name);
+  const table_id = sys.table_id_from_name(table.name);
   const rowType = typespace.types[table.productTypeRef];
   if (rowType.tag !== 'Product') throw 'impossible';
 
@@ -112,14 +158,21 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
   const hasAutoIncrement = sequences.length > 0;
 
   const iter = () =>
-    new TableIterator(datastore_table_scan_bsatn(table_id), rowType);
+    new TableIterator(sys.datastore_table_scan_bsatn(table_id), rowType);
 
   const try_insert: Table<any>['try_insert'] = row => {
     const writer = new BinaryWriter(baseSize);
     AlgebraicType.serializeValue(writer, rowType, row);
-    const ret = datastore_insert_bsatn(table_id, writer.getBuffer());
+    let ret_buf;
+    try {
+      ret_buf = sys.datastore_insert_bsatn(table_id, writer.getBuffer());
+    } catch (e) {
+      if (e instanceof UniqueAlreadyExists || e instanceof AutoIncOverflow)
+        return { ok: false, err: e };
+      throw e;
+    }
     if (hasAutoIncrement) {
-      const reader = new BinaryReader(ret);
+      const reader = new BinaryReader(ret_buf);
       for (const { colName, read } of sequences) {
         row[colName] = read(reader);
       }
@@ -128,8 +181,8 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
     return { ok: true, val: row };
   };
 
-  return {
-    count: () => datastore_table_row_count(table_id),
+  return freeze({
+    count: () => sys.datastore_table_row_count(table_id),
     iter,
     [Symbol.iterator]: iter,
     insert: row => {
@@ -143,7 +196,7 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
       AlgebraicType.serializeValue(writer, rowType, row);
       return false;
     },
-  };
+  });
 }
 
 function bsatnBaseSize(typespace: Typespace, ty: AlgebraicType): number {
@@ -223,7 +276,7 @@ class TableIterator implements IterableIterator<any, undefined> {
     let buf_max_len = 0x10000;
     while (true) {
       try {
-        const [done, buf] = row_iter_bsatn_advance(this.#id, buf_max_len);
+        const [done, buf] = sys.row_iter_bsatn_advance(this.#id, buf_max_len);
         if (done) this.#id = -1;
         this.#reader = new BinaryReader(buf);
         return;
@@ -240,7 +293,181 @@ class TableIterator implements IterableIterator<any, undefined> {
   [Symbol.dispose]() {
     if (this.#id >= 0) {
       this.#id = -1;
-      row_iter_bsatn_close(this.#id);
+      sys.row_iter_bsatn_close(this.#id);
     }
   }
 }
+
+function wrapSyscall<F extends (...args: any[]) => any>(
+  func: F
+): (...args: Parameters<F>) => ReturnType<F> {
+  const name = func.name;
+  return {
+    [name](...args: Parameters<F>) {
+      try {
+        return func(...args);
+      } catch (e) {
+        if (
+          e !== null &&
+          typeof e === 'object' &&
+          hasOwn(e, '__code_error__') &&
+          typeof e.__code_error__ == 'number'
+        ) {
+          throw new SpacetimeError(e.__code_error__);
+        }
+        throw e;
+      }
+    },
+  }[name];
+}
+
+export class SpacetimeError {
+  public readonly code: u16;
+  public readonly message: string;
+  constructor(code: u16) {
+    const proto = Object.getPrototypeOf(this);
+    let cls;
+    if (error_protoypes.has(proto)) {
+      cls = proto.constructor;
+      if (code !== cls.CODE)
+        throw new TypeError(`invalid error code for ${cls.name}`);
+    } else if (proto === SpacetimeError.prototype) {
+      cls = errno_to_class.get(code);
+      if (!cls) throw new RangeError(`unknown error code ${code}`);
+    } else {
+      throw new TypeError('cannot subclass SpacetimeError');
+    }
+    Object.setPrototypeOf(this, cls.prototype);
+    this.code = cls.CODE;
+    this.message = cls.MESSAGE;
+  }
+}
+
+export class HostCallFailure extends SpacetimeError {
+  static CODE = 1;
+  static MESSAGE = 'ABI called by host returned an error';
+  constructor() {
+    super(HostCallFailure.CODE);
+  }
+}
+export class NotInTransaction extends SpacetimeError {
+  static CODE = 2;
+  static MESSAGE = 'ABI call can only be made while in a transaction';
+  constructor() {
+    super(NotInTransaction.CODE);
+  }
+}
+export class BsatnDecodeError extends SpacetimeError {
+  static CODE = 3;
+  static MESSAGE = "Couldn't decode the BSATN to the expected type";
+  constructor() {
+    super(BsatnDecodeError.CODE);
+  }
+}
+export class NoSuchTable extends SpacetimeError {
+  static CODE = 4;
+  static MESSAGE = 'No such table';
+  constructor() {
+    super(NoSuchTable.CODE);
+  }
+}
+export class NoSuchIndex extends SpacetimeError {
+  static CODE = 5;
+  static MESSAGE = 'No such index';
+  constructor() {
+    super(NoSuchIndex.CODE);
+  }
+}
+export class NoSuchIter extends SpacetimeError {
+  static CODE = 6;
+  static MESSAGE = 'The provided row iterator is not valid';
+  constructor() {
+    super(NoSuchIter.CODE);
+  }
+}
+export class NoSuchConsoleTimer extends SpacetimeError {
+  static CODE = 7;
+  static MESSAGE = 'The provided console timer does not exist';
+  constructor() {
+    super(NoSuchConsoleTimer.CODE);
+  }
+}
+export class NoSuchBytes extends SpacetimeError {
+  static CODE = 8;
+  static MESSAGE = 'The provided bytes source or sink is not valid';
+  constructor() {
+    super(NoSuchBytes.CODE);
+  }
+}
+export class NoSpace extends SpacetimeError {
+  static CODE = 9;
+  static MESSAGE = 'The provided sink has no more space left';
+  constructor() {
+    super(NoSpace.CODE);
+  }
+}
+export class BufferTooSmall extends SpacetimeError {
+  static CODE = 11;
+  static MESSAGE = 'The provided buffer is not large enough to store the data';
+  constructor() {
+    super(BufferTooSmall.CODE);
+  }
+}
+export class UniqueAlreadyExists extends SpacetimeError {
+  static CODE = 12;
+  static MESSAGE = 'Value with given unique identifier already exists';
+  constructor() {
+    super(UniqueAlreadyExists.CODE);
+  }
+}
+export class ScheduleAtDelayTooLong extends SpacetimeError {
+  static CODE = 13;
+  static MESSAGE = 'Specified delay in scheduling row was too long';
+  constructor() {
+    super(ScheduleAtDelayTooLong.CODE);
+  }
+}
+export class IndexNotUnique extends SpacetimeError {
+  static CODE = 14;
+  static MESSAGE = 'The index was not unique';
+  constructor() {
+    super(IndexNotUnique.CODE);
+  }
+}
+export class NoSuchRow extends SpacetimeError {
+  static CODE = 15;
+  static MESSAGE = 'The row was not found, e.g., in an update call';
+  constructor() {
+    super(NoSuchRow.CODE);
+  }
+}
+export class AutoIncOverflow extends SpacetimeError {
+  static CODE = 16;
+  static MESSAGE = 'The auto-increment sequence overflowed';
+  constructor() {
+    super(AutoIncOverflow.CODE);
+  }
+}
+
+const error_subclasses = [
+  HostCallFailure,
+  NotInTransaction,
+  BsatnDecodeError,
+  NoSuchTable,
+  NoSuchIndex,
+  NoSuchIter,
+  NoSuchConsoleTimer,
+  NoSuchBytes,
+  NoSpace,
+  BufferTooSmall,
+  UniqueAlreadyExists,
+  ScheduleAtDelayTooLong,
+  IndexNotUnique,
+  NoSuchRow,
+];
+
+const error_protoypes = new Set(error_subclasses.map(cls => cls.prototype));
+
+const errno_to_class = new Map(
+  error_subclasses.map(cls => [cls.CODE as number, cls])
+);
