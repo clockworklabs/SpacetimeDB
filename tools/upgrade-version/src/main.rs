@@ -47,14 +47,15 @@ fn main() -> anyhow::Result<()> {
         .arg(
             Arg::new("spacetime-path")
                 .value_parser(clap::value_parser!(PathBuf))
-                .default_value("../..")
                 .long("spacetime-path")
-                .help("The path to SpacetimeDB"),
+                .help("The path to SpacetimeDB. If not provided, uses the current directory."),
         )
         .get_matches();
 
     let version = matches.get_one::<String>("upgrade_version").unwrap();
-    env::set_current_dir(matches.get_one::<PathBuf>("spacetime-path").unwrap()).ok();
+    if let Some(path) = matches.get_one::<PathBuf>("spacetime-path") {
+        env::set_current_dir(path).ok();
+    }
 
     let current_dir = env::current_dir().expect("No current directory!");
     let dir_name = current_dir.file_name().expect("No current directory!");
