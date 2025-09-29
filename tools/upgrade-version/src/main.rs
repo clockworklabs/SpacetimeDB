@@ -75,15 +75,20 @@ fn main() -> anyhow::Result<()> {
         .arg(
             Arg::new("typescript")
                 .long("typescript")
-                .value_parser(clap::value_parser!(bool))
+                .action(clap::ArgAction::SetTrue)
                 .help("Also bump the version of the TypeScript SDK (crates/bindings-typescript/package.json)"),
         )
         .arg(
             Arg::new("rust-and-cli")
                 .long("rust-and-cli")
-                .value_parser(clap::value_parser!(bool))
-                .default_value("true")
+                .action(clap::ArgAction::SetTrue)
                 .help("Whether to update Rust workspace TOMLs, CLI template, and license files (default: true)"),
+        )
+        .arg(
+            Arg::new("csharp")
+                .long("csharp")
+                .action(clap::ArgAction::SetTrue)
+                .help("Also bump versions in C# SDK and templates"),
         )
         .get_matches();
 
@@ -98,7 +103,7 @@ fn main() -> anyhow::Result<()> {
         anyhow::bail!("You must execute this binary from inside of the SpacetimeDB directory, or use --spacetime-path");
     }
 
-    if matches.get_one::<bool>("rust-and-cli").unwrap() {
+    if matches.get_flag("rust-and-cli") {
         // root Cargo.toml
         edit_toml("Cargo.toml", |doc| {
             doc["workspace"]["package"]["version"] = toml_edit::value(version);
@@ -126,10 +131,102 @@ fn main() -> anyhow::Result<()> {
         cmd!("cargo", "check").run().expect("Cargo check failed!");
     }
 
-    if matches.get_one::<bool>("typescript").unwrap() {
-        // Update the TypeScript SDK version field without reformatting the file.
-        // If the repository layout changes, update this path accordingly.
+    if matches.get_flag("typescript") {
         rewrite_json_version_inplace("crates/bindings-typescript/package.json", version)?;
+    }
+
+    if matches.get_flag("csharp") {
+        // Compute various version forms
+        let v = Version::parse(version).expect("Invalid semver provided to upgrade-version");
+        let wildcard_patch = format!("{}.{}.*", v.major, v.minor);
+        let assembly_version = format!("{}.{}.{}", v.major, v.minor, v.patch);
+
+        // Helpers for XML edits
+        fn rewrite_xml_tag_value(path: &str, tag: &str, new_value: &str) -> anyhow::Result<()> {
+            let contents = fs::read_to_string(path)?;
+            let re = Regex::new(&format!(r"(?ms)(<\s*{}\s*>\s*)([^<]*?)(\s*<\s*/\s*{}\s*>)", tag, tag)).unwrap();
+            let mut replaced = false;
+            let updated = re.replacen(&contents, 1, |caps: &regex::Captures| {
+                replaced = true;
+                format!("{}{}{}", &caps[1], new_value, &caps[3])
+            });
+            if replaced {
+                fs::write(path, updated.as_ref())?;
+            }
+            Ok(())
+        }
+
+        fn rewrite_csproj_package_ref_version(path: &str, package: &str, new_version: &str) -> anyhow::Result<()> {
+            let contents = fs::read_to_string(path)?;
+            let mut changed = false;
+            // Version as attribute
+            let re_attr = Regex::new(&format!(
+                r#"(?ms)(<PackageReference[^>]*?Include="{}"[^>]*?\sVersion=")(.*?)(")"#,
+                regex::escape(package)
+            ))
+            .unwrap();
+            let updated_attr = re_attr.replace_all(&contents, |caps: &regex::Captures| {
+                changed = true;
+                format!("{}{}{}", &caps[1], new_version, &caps[3])
+            });
+
+            // Version as child element
+            let re_child = Regex::new(&format!(
+                r#"(?ms)(<PackageReference[^>]*?Include="{}"[^>]*?>.*?<Version>)([^<]*?)(</Version>)"#,
+                regex::escape(package)
+            ))
+            .unwrap();
+            let updated = re_child.replace_all(updated_attr.as_ref(), |caps: &regex::Captures| {
+                changed = true;
+                format!("{}{}{}", &caps[1], new_version, &caps[3])
+            });
+
+            if changed {
+                fs::write(path, updated.as_ref())?;
+            }
+            Ok(())
+        }
+
+        // 1) Client SDK csproj
+        let client_sdk = "sdks/csharp/SpacetimeDB.ClientSDK.csproj";
+        rewrite_xml_tag_value(client_sdk, "Version", version)?;
+        rewrite_xml_tag_value(client_sdk, "AssemblyVersion", &assembly_version)?;
+        // Update SpacetimeDB.BSATN.Runtime dependency to major.minor.*
+        rewrite_csproj_package_ref_version(client_sdk, "SpacetimeDB.BSATN.Runtime", &wildcard_patch)?;
+
+        // Also bump the C# SDK package.json version (preserve formatting)
+        rewrite_json_version_inplace("sdks/csharp/package.json", version)?;
+
+        // 2) StdbModule.csproj files: SpacetimeDB.Runtime dependency -> major.minor
+        let stdb_modules: &[&str] = &[
+            "demo/Blackholio/server-csharp/StdbModule.csproj",
+            "sdks/csharp/examples~/quickstart-chat/server/StdbModule.csproj",
+            "sdks/csharp/examples~/regression-tests/server/StdbModule.csproj",
+        ];
+        for path in stdb_modules {
+            rewrite_csproj_package_ref_version(path, "SpacetimeDB.Runtime", &wildcard_patch)?;
+        }
+
+        // 3) Version in BSATN.Runtime.csproj, Runtime.csproj, BSATN.Codegen.csproj, Codegen.csproj
+        rewrite_xml_tag_value(
+            "crates/bindings-csharp/BSATN.Runtime/BSATN.Runtime.csproj",
+            "Version",
+            version,
+        )?;
+        rewrite_xml_tag_value("crates/bindings-csharp/Runtime/Runtime.csproj", "Version", version)?;
+        rewrite_xml_tag_value(
+            "crates/bindings-csharp/BSATN.Codegen/BSATN.Codegen.csproj",
+            "Version",
+            version,
+        )?;
+        rewrite_xml_tag_value("crates/bindings-csharp/Codegen/Codegen.csproj", "Version", version)?;
+
+        // 4) Template StdbModule._csproj: SpacetimeDB.Runtime dependency -> major.minor.*
+        rewrite_csproj_package_ref_version(
+            "crates/cli/src/subcommands/project/csharp/StdbModule._csproj",
+            "SpacetimeDB.Runtime",
+            &wildcard_patch,
+        )?;
     }
 
     Ok(())
