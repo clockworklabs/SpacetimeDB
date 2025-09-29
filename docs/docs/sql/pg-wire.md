@@ -27,31 +27,36 @@ implemented, or behave differently:
   `user_name@database_name` ignores `user_name`; only `database_name` is used. Authentication is based on the *auth
   token*
   provided via the `password` field.
-- **SSL/TLS**: SSL is supported only for `maincloud` deployments (without mutual TLS). Other deployments (such as
-  `standalone`) do not support SSL/TLS connections.
+- **SSL/TLS**: SSL is supported only for `SpacetimeDB Cloud` deployments (without mutual TLS). Other deployments (such
+  as `SpacetimeDB Standalone`) do not support SSL/TLS connections.
 - **System Tables and Views**: SpacetimeDB provides its own system tables (e.g., `SELECT * FROM st_table`) for
   introspection. These are not PostgreSQL-compatible, so tools relying on PostgreSQL system catalogs will not work.
 - **Port and Host**:
-    - In `standalone` deployments, specify the port with `spacetime start --pg-port <port>`. Without this flag,
-      connections using the PostgreSQL protocol are not enabled.
-    - In `maincloud` deployments, the port is always `5432`.
+    - In `SpacetimeDB Standalone` deployments, specify the port with `spacetime start --pg-port <port>`. Without this
+      flag, connections using the PostgreSQL protocol are not enabled.
+    - In `SpacetimeDB Cloud` deployments, the port is always `5432`.
 - **Transactions**: User-defined transactions (`BEGIN TRANSACTION`, `COMMIT`, etc.) are not supported. Each SQL
   statement executes in its own transaction context. Client libraries should disable automatic transaction handling.
+- **Special Data Types**:  Some SpacetimeDB data types map to PostgreSQL types as:
+    - Simple enums are displayed as `Enum`.
+    - Algebraic Data Types (ADTs) & records are displayed as `JSON`.
+    - `Duration` is displayed as `Interval`.
+    - `Identity`, `ConnectionId`, `U8`, `[U8]`, `Bytes` & `Hex` is displayed as `Bytea`.
 
 ## Connection Parameters
 
 To connect to SpacetimeDB using a PostgreSQL client, use the following parameters:
 
 - **Host**:
-    - `localhost` for `standalone` or `local` deployments
-    - `maincloud.spacetimedb.com` for `maincloud` deployments
+    - `localhost` for `SpacetimeDB Standalone` deployments
+    - `maincloud.spacetimedb.com` for `SpacetimeDB Cloud` deployments
 - **Port**:
-    - `5432` for `maincloud`
-    - The value passed with `--pg-port` for `standalone`
+    - `5432` for `SpacetimeDB Cloud`
+    - The value passed with `--pg-port` for `SpacetimeDB Standalone`
 - **Database**: The target SpacetimeDB database
 - **User**: Any string (ignored by SpacetimeDB)
 - **Password**: The `auth token`
-- **SSL Mode**: `require` (only for `maincloud`)
+- **SSL Mode**: `require` (only for `SpacetimeDB Cloud`)
 
 ### Auth Token
 
@@ -83,25 +88,44 @@ eval "$(spacetime login show --token | python3 ~/token.py)"
 
 ## Examples
 
-Assume you are using the `quickstart-chat` database created in
+In the following example, we assume you are using the `quickstart-chat` database created in
 the [Rust Module Quickstart](/docs/modules/rust/quickstart) or [C# Module Quickstart](/docs/modules/c-sharp/quickstart),
 and have set the `auth token` as shown above.
 
 ### Using `psql`
 
-Standalone or local deployment:
+SpacetimeDB Standalone deployment:
 
 ```bash
 psql "host=localhost port=5432 user=any dbname=quickstart-chat"
 ```
 
-Maincloud deployment:
+SpacetimeDB Cloud deployment:
 
 ```bash
 psql "host=maincloud.spacetimedb.com port=5432 user=any dbname=quickstart-chat sslmode=require"
 ```
 
 > **Note**: Introspection commands such as `\dt` will not work, as SpacetimeDB does not support PostgreSQL schemas.
+
+Now for example:
+
+```psql
+quickstart=> select * from message;
+                               sender                               |               sent               | text
+--------------------------------------------------------------------+----------------------------------+-------
+ \xc200da2d6ddb6c0beef0bbaafacffe5f0649c86b8d19411e3219066a6d0e5123 | 2025-09-29T22:29:14.271647+00:00 | hello
+(1 row)
+
+quickstart=> update message set text = 'world';
+updated: 1, server: 1.72ms
+
+quickstart=> select text from message;
+ text
+-------
+ world
+(1 row)
+```
 
 ### Using Python (`psycopg2`)
 
@@ -110,12 +134,12 @@ import psycopg2
 import os
 
 conn = psycopg2.connect(
-    host="localhost",  # or "maincloud.spacetimedb.com" for maincloud
+    host="localhost",  # or "maincloud.spacetimedb.com" for SpacetimeDB Cloud
     port=5432,
     dbname="quickstart-chat",
     user="any",
     password=os.getenv("PGPASSWORD"),
-    sslmode="disable"  # use "require" for maincloud
+    sslmode="disable"  # use "require" for SpacetimeDB Cloud
 )
 conn.set_session(autocommit=True)  # disable transactions
 
@@ -209,8 +233,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let connector = MakeRustlsConnect::new(config);
 
     let (client, connection) = tokio_postgres::connect(
+        // Note: use "maincloud.spacetimedb.com" and sslmode=require for SpacetimeDB Cloud
         &format!(
-            "host=localhost port=5432 user=any sslmode=require dbname=quickstart-chat password={password}"
+            "host=localhost port=5432 user=any sslmode=disable dbname=quickstart-chat password={password}"
         ),
         connector,
     ).await?;
