@@ -1,6 +1,6 @@
 import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
-import type { Identity } from 'spacetimedb';
+import type { Identity } from '../';
 import type RemoteModule from './spacetime_module';
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
@@ -20,6 +20,7 @@ export class DbConnectionBuilder<
   #emitter: EventEmitter<ConnectionEvent> = new EventEmitter();
   #compression: 'gzip' | 'none' = 'gzip';
   #lightMode: boolean = false;
+  #confirmedReads?: boolean;
   #createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
 
   /**
@@ -104,6 +105,31 @@ export class DbConnectionBuilder<
    */
   withLightMode(lightMode: boolean): this {
     this.#lightMode = lightMode;
+    return this;
+  }
+
+  /**
+   * Sets the connection to use confirmed reads.
+   *
+   * When enabled, the server will send query results only after they are
+   * confirmed to be durable.
+   *
+   * What durable means depends on the server configuration: a single node
+   * server may consider a transaction durable once it is `fsync`'ed to disk,
+   * whereas a cluster may require that some number of replicas have
+   * acknowledge that they have stored the transactions.
+   *
+   * Note that enabling confirmed reads will increase the latency between a
+   * reducer call and the corresponding subscription update arriving at the
+   * client.
+   *
+   * If this method is not called, not preference is sent to the server, and
+   * the server will choose the default.
+   *
+   * @param confirmedReads `true` to enable confirmed reads, `false` to disable.
+   */
+  withConfirmedReads(confirmedReads: boolean): this {
+    this.#confirmedReads = confirmedReads;
     return this;
   }
 
@@ -228,6 +254,7 @@ export class DbConnectionBuilder<
         emitter: this.#emitter,
         compression: this.#compression,
         lightMode: this.#lightMode,
+        confirmedReads: this.#confirmedReads,
         createWSFn: this.#createWSFn,
         remoteModule: this.remoteModule,
       })

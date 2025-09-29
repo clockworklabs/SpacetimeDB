@@ -28,10 +28,12 @@ pnpm install
 We also need to install the `spacetime-client-sdk` package:
 
 ```bash
-pnpm install @clockworklabs/spacetimedb-sdk
+pnpm install spacetimedb 
 ```
 
 > If you are using another package manager like `yarn` or `npm`, the same steps should work with the appropriate commands for those tools.
+
+> WARNING! The `@clockworklabs/spacetimedb-sdk` package has been deprecated in favor of the `spacetimedb` package as of SpacetimeDB version 1.4.0. If you are using the old SDK package, you will need to switch to `spacetimedb`. You will also need a SpacetimeDB CLI version of 1.4.0+ to generate bindings for the new `spacetimedb` package.
 
 You can now `pnpm run dev` to see the Vite template app running at `http://localhost:5173`.
 
@@ -54,8 +56,8 @@ import {
   useTable,
   where,
   eq,
-} from '@clockworklabs/spacetimedb-sdk/react';
-import { Identity, Timestamp } from '@clockworklabs/spacetimedb-sdk';
+} from 'spacetimedb/react';
+import { Identity, Timestamp } from 'spacetimedb';
 import './App.css';
 
 export type PrettyMessage = {
@@ -484,8 +486,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
-import { Identity } from '@clockworklabs/spacetimedb-sdk';
-import { SpacetimeDBProvider } from '@clockworklabs/spacetimedb-sdk/react';
+import { Identity } from 'spacetimedb';
+import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection, ErrorContext } from './module_bindings/index.ts';
 ```
 
