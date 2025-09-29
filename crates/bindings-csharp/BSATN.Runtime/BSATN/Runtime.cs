@@ -177,25 +177,31 @@ public readonly struct Enum<T> : IReadWrite<T>
         }
     }
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-        registrar.RegisterType<T>(
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar)
+    {
+        return registrar.RegisterType<T>(
             (_) =>
-                new AlgebraicType.Sum(
+            {
 #if NET8_0_OR_GREATER
+                return new AlgebraicType.Sum(
                     [
                         .. System
                             .Enum.GetNames<T>()
                             .Select(name => new AggregateElement(name, AlgebraicType.Unit)),
                     ]
+                );
 #else
-                    [
-                        .. System
-                            .Enum.GetNames(typeof(T))
-                            .Select(name => new AggregateElement(name, AlgebraicType.Unit)),
-                    ]
+                var names = System.Enum.GetNames(typeof(T));
+                var elements = new AggregateElement[names.Length];
+                for (var i = 0; i < names.Length; i++)
+                {
+                    elements[i] = new AggregateElement(names[i], AlgebraicType.Unit);
+                }
+                return new AlgebraicType.Sum(elements);
 #endif
-                )
+            }
         );
+    }
 }
 
 public readonly struct RefOption<Inner, InnerRW> : IReadWrite<Inner?>
