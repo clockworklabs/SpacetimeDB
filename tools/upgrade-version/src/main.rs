@@ -75,8 +75,15 @@ fn main() -> anyhow::Result<()> {
         .arg(
             Arg::new("typescript")
                 .long("typescript")
-                .help("Also bump the version of the TypeScript SDK (crates/bindings-typescript/package.json)")
-                .action(clap::ArgAction::SetTrue),
+                .value_parser(clap::value_parser!(bool))
+                .help("Also bump the version of the TypeScript SDK (crates/bindings-typescript/package.json)"),
+        )
+        .arg(
+            Arg::new("rust-and-cli")
+                .long("rust-and-cli")
+                .value_parser(clap::value_parser!(bool))
+                .default_value("true")
+                .help("Whether to update Rust workspace TOMLs, CLI template, and license files (default: true)"),
         )
         .get_matches();
 
@@ -91,37 +98,39 @@ fn main() -> anyhow::Result<()> {
         anyhow::bail!("You must execute this binary from inside of the SpacetimeDB directory, or use --spacetime-path");
     }
 
-    // root Cargo.toml
-    edit_toml("Cargo.toml", |doc| {
-        doc["workspace"]["package"]["version"] = toml_edit::value(version);
-        for (key, dep) in doc["workspace"]["dependencies"]
-            .as_table_like_mut()
-            .expect("workspace.dependencies is not a table")
-            .iter_mut()
-        {
-            if key.get().starts_with("spacetime") {
-                dep["version"] = toml_edit::value(version)
+    if matches.get_one::<bool>("rust-and-cli").unwrap() {
+        // root Cargo.toml
+        edit_toml("Cargo.toml", |doc| {
+            doc["workspace"]["package"]["version"] = toml_edit::value(version);
+            for (key, dep) in doc["workspace"]["dependencies"]
+                .as_table_like_mut()
+                .expect("workspace.dependencies is not a table")
+                .iter_mut()
+            {
+                if key.get().starts_with("spacetime") {
+                    dep["version"] = toml_edit::value(version)
+                }
             }
-        }
-    })?;
+        })?;
 
-    edit_toml("crates/cli/src/subcommands/project/rust/Cargo._toml", |doc| {
-        // Only set major.minor for the spacetimedb dependency, drop the patch component.
-        // See https://github.com/clockworklabs/SpacetimeDB/issues/2724.
-        let v = Version::parse(version).expect("Invalid semver provided to upgrade-version");
-        let major_minor = format!("{}.{}", v.major, v.minor);
-        doc["dependencies"]["spacetimedb"] = toml_edit::value(major_minor);
-    })?;
+        edit_toml("crates/cli/src/subcommands/project/rust/Cargo._toml", |doc| {
+            // Only set major.minor for the spacetimedb dependency, drop the patch component.
+            // See https://github.com/clockworklabs/SpacetimeDB/issues/2724.
+            let v = Version::parse(version).expect("Invalid semver provided to upgrade-version");
+            let major_minor = format!("{}.{}", v.major, v.minor);
+            doc["dependencies"]["spacetimedb"] = toml_edit::value(major_minor);
+        })?;
 
-    if matches.get_flag("typescript") {
+        process_license_file("LICENSE.txt", version);
+        process_license_file("licenses/BSL.txt", version);
+        cmd!("cargo", "check").run().expect("Cargo check failed!");
+    }
+
+    if matches.get_one::<bool>("typescript").unwrap() {
         // Update the TypeScript SDK version field without reformatting the file.
         // If the repository layout changes, update this path accordingly.
         rewrite_json_version_inplace("crates/bindings-typescript/package.json", version)?;
     }
-
-    process_license_file("LICENSE.txt", version);
-    process_license_file("licenses/BSL.txt", version);
-    cmd!("cargo", "check").run().expect("Cargo check failed!");
 
     Ok(())
 }
