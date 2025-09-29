@@ -2,7 +2,7 @@
 // See `serde` version `v1.0.169` for the parts where MIT / Apache-2.0 applies.
 
 mod impls;
-#[cfg(feature = "serde")]
+#[cfg(any(test, feature = "serde"))]
 pub mod serde;
 
 #[doc(hidden)]
@@ -158,6 +158,11 @@ pub trait Deserializer<'de>: Sized {
 pub trait Error: Sized {
     /// Raised when there is general error when deserializing a type.
     fn custom(msg: impl fmt::Display) -> Self;
+
+    /// Deserializing named products are not supported for this visitor.
+    fn named_products_not_supported() -> Self {
+        Self::custom("named products not supported")
+    }
 
     /// The product length was not as promised.
     fn invalid_product_length<'de, T: ProductVisitor<'de>>(len: usize, expected: &T) -> Self {

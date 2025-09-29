@@ -4,7 +4,7 @@ use crate::table::IndexAlgo;
 use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
-use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
+use spacetimedb_lib::de::{self, Deserialize, Error as _, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
@@ -202,7 +202,7 @@ impl<'de, A: Args<'de>> de::ProductVisitor<'de> for ArgsVisitor<A> {
         A::visit_seq_product(prod)
     }
     fn visit_named_product<Acc: de::NamedProductAccess<'de>>(self, _prod: Acc) -> Result<Self::Output, Acc::Error> {
-        Err(de::Error::custom("named products not supported"))
+        Err(Acc::Error::named_products_not_supported())
     }
 }
 
