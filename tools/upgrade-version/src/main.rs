@@ -4,6 +4,7 @@ use chrono::{Datelike, Local};
 use clap::{Arg, Command};
 use duct::cmd;
 use regex::Regex;
+use semver::Version;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -78,7 +79,11 @@ fn main() -> anyhow::Result<()> {
     })?;
 
     edit_toml("crates/cli/src/subcommands/project/rust/Cargo._toml", |doc| {
-        doc["dependencies"]["spacetimedb"] = toml_edit::value(version);
+        // Only set major.minor for the spacetimedb dependency, drop the patch component.
+        // See https://github.com/clockworklabs/SpacetimeDB/issues/2724.
+        let v = Version::parse(version).expect("Invalid semver provided to upgrade-version");
+        let major_minor = format!("{}.{}", v.major, v.minor);
+        doc["dependencies"]["spacetimedb"] = toml_edit::value(major_minor);
     })?;
 
     process_license_file("LICENSE.txt", version);
