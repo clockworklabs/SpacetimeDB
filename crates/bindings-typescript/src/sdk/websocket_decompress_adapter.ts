@@ -73,6 +73,7 @@ export class WebsocketDecompressAdapter {
     authToken,
     compression,
     lightMode,
+    confirmedReads,
   }: {
     url: URL;
     wsProtocol: string;
@@ -80,6 +81,7 @@ export class WebsocketDecompressAdapter {
     authToken?: string;
     compression: 'gzip' | 'none';
     lightMode: boolean;
+    confirmedReads?: boolean;
   }): Promise<WebsocketDecompressAdapter> {
     const headers = new Headers();
 
@@ -114,6 +116,9 @@ export class WebsocketDecompressAdapter {
     );
     if (lightMode) {
       databaseUrl.searchParams.set('light', 'true');
+    }
+    if (confirmedReads !== undefined) {
+      databaseUrl.searchParams.set('confirmed', confirmedReads.toString());
     }
 
     const ws = new WS(databaseUrl.toString(), wsProtocol);

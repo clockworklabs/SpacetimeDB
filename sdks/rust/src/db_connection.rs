@@ -975,8 +975,10 @@ but you must call one of them, or else the connection will never progress.
     /// Note that enabling confirmed reads will increase the latency between a
     /// reducer call and the corresponding subscription update arriving at the
     /// client.
+    ///
+    /// If this method is not called, the server chooses the default.
     pub fn with_confirmed_reads(mut self, confirmed: bool) -> Self {
-        self.params.confirmed = confirmed;
+        self.params.confirmed = Some(confirmed);
         self
     }
 
