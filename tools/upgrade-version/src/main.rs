@@ -144,7 +144,7 @@ fn main() -> anyhow::Result<()> {
         // Helpers for XML edits
         fn rewrite_xml_tag_value(path: &str, tag: &str, new_value: &str) -> anyhow::Result<()> {
             let contents = fs::read_to_string(path)?;
-            let re = Regex::new(&format!(r"(?ms)(<\s*{}\s*>\s*)([^<]*?)(\s*<\s*/\s*{}\s*>)", tag, tag)).unwrap();
+            let re = Regex::new(r"(?ms)(<\s*{tag}\s*>\s*)([^<]*?)(\s*<\s*/\s*{tag}\s*>)").unwrap();
             let mut replaced = false;
             let updated = re.replacen(&contents, 1, |caps: &regex::Captures| {
                 replaced = true;
