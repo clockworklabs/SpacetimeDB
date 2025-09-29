@@ -466,7 +466,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
-    public record struct View(string viewName, string tableName, string view, string getter);
+    public record struct View(string ViewName, string TableName, string ViewCode, string GetterCode);
 
     public IEnumerable<View> GenerateViews()
     {
@@ -539,7 +539,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
-    public record Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
+    public record struct Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
     {
         public ViewIndex ToIndex() => new(new ColumnRef(Pos, Col.Name));
     }
@@ -853,8 +853,8 @@ public class Module : IIncrementalGenerator
             tables
                 .SelectMany((t, ct) => t.GenerateViews())
                 .WithTrackingName("SpacetimeDB.Table.GenerateViews"),
-            v => v.viewName,
-            v => v.tableName
+            v => v.ViewName,
+            v => v.TableName
         );
 
         var rlsFilters = context
@@ -919,11 +919,11 @@ public class Module : IIncrementalGenerator
                         }
 
                         namespace Internal.TableHandles {
-                            {{string.Join("\n", tableViews.Select(v => v.view))}}
+                            {{string.Join("\n", tableViews.Select(v => v.ViewCode))}}
                         }
 
                         public sealed class Local {
-                            {{string.Join("\n", tableViews.Select(v => v.getter))}}
+                            {{string.Join("\n", tableViews.Select(v => v.GetterCode))}}
                         }
                     }
 
@@ -949,7 +949,7 @@ public class Module : IIncrementalGenerator
                             )}}
                             {{string.Join(
                                 "\n",
-                                tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{t.viewName}>();")
+                                tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.TableName}, SpacetimeDB.Internal.TableHandles.{t.ViewName}>();")
                             )}}
                             {{string.Join(
                                 "\n",

@@ -594,16 +594,16 @@ public abstract record BaseTypeDeclaration<M>
 
             write = "value.WriteFields(writer);";
 
-            var declHashName = (MemberDeclaration decl) => $"___hash{decl.Name}";
+            string DeclHashName(MemberDeclaration decl) => $"___hash{decl.Name}";
 
             getHashCode = $$"""
-                {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Name, declHashName(decl))))}}
-                return {{JoinOrValue(
-                    " ^\n            ",
-                    bsatnDecls.Select(declHashName),
-                    "0" // if there are no members, the hash is 0.
-                )}};
-                """;
+                            {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Name, DeclHashName(decl))))}}
+                            return {{JoinOrValue(
+                                " ^\n            ",
+                                bsatnDecls.Select((Func<MemberDeclaration, string>?)DeclHashName),
+                                "0" // if there are no members, the hash is 0.
+                            )}};
+                            """;
         }
 
         extensions.Contents.Append(
@@ -643,7 +643,7 @@ public abstract record BaseTypeDeclaration<M>
             // If we are a reference type, various equality methods need to take nullable references.
             // If we are a value type, everything is pleasantly by-value.
             var fullNameMaybeRef = $"{FullName}{(Scope.IsStruct ? "" : "?")}";
-            var declEqualsName = (MemberDeclaration decl) => $"___eq{decl.Name}";
+            string DeclEqualsName(MemberDeclaration decl) => $"___eq{decl.Name}";
 
             extensions.Contents.Append(
                 $$"""
@@ -652,10 +652,10 @@ public abstract record BaseTypeDeclaration<M>
                 public bool Equals({{fullNameMaybeRef}} that)
                 {
                     {{(Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        ")}}
-                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Name}", $"that.{decl.Name}", declEqualsName(decl))))}}
+                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Name}", $"that.{decl.Name}", DeclEqualsName(decl))))}}
                     return {{JoinOrValue(
                         " &&\n        ",
-                        bsatnDecls.Select(declEqualsName),
+                        bsatnDecls.Select((Func<MemberDeclaration, string>?)DeclEqualsName),
                         "true" // if there are no elements, the structs are equal :)
                     )}};
                 }

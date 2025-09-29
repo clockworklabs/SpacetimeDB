@@ -129,7 +129,11 @@ public readonly struct Enum<T> : IReadWrite<T>
     /// Note: the [Type] macro rejects enums with explicitly set values (see Codegen.Tests),
     /// so this array is guaranteed to be continuous and indexed starting from 0.
     /// </summary>
-    private static readonly T[] TagToValue = Enum.GetValues(typeof(T)).Cast<T>().ToArray();
+#if NET8_0_OR_GREATER
+    private static readonly T[] TagToValue = System.Enum.GetValues<T>();
+#else
+    private static readonly T[] TagToValue = System.Enum.GetValues(typeof(T)).Cast<T>().ToArray();
+#endif
 
     public T Read(BinaryReader reader)
     {
@@ -177,9 +181,11 @@ public readonly struct Enum<T> : IReadWrite<T>
         registrar.RegisterType<T>(
             (_) =>
                 new AlgebraicType.Sum(
-                    Enum.GetNames(typeof(T))
-                        .Select(name => new AggregateElement(name, AlgebraicType.Unit))
-                        .ToArray()
+#if NET8_0_OR_GREATER
+                    [.. System.Enum.GetNames<T>().Select(name => new AggregateElement(name, AlgebraicType.Unit))]
+#else
+                    [.. System.Enum.GetNames(typeof(T)).Select(name => new AggregateElement(name, AlgebraicType.Unit))]
+#endif
                 )
         );
 }
