@@ -31,7 +31,6 @@ use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
-use spacetimedb_sats::layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
@@ -41,6 +40,10 @@ use spacetimedb_sats::{
     satn::Satn,
     ser::{Serialize, Serializer},
     u256, AlgebraicValue, ProductType, ProductValue,
+};
+use spacetimedb_sats::{
+    layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size},
+    Typespace,
 };
 use spacetimedb_schema::{
     def::IndexAlgorithm,
@@ -300,6 +303,35 @@ pub enum ChangeColumnsErrorReason {
     IncompatibleRowLayout(#[from] IncompatibleTypeLayoutError),
 }
 
+/// Error that can occur when attempting to [`Table::validate_add_columns_schema`].
+///
+/// Like [`ChangeColumnsError`], this should never normally be seen at runtime.
+/// Any such error indicates a **bug in SpacetimeDB**, since incompatible
+/// "add column" migrations should be caught earlier by the checks in
+/// [`spacetimedb_schema::auto_migrate`].
+#[derive(Error, Debug)]
+#[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`: {reason}")]
+pub struct AddColumnsError {
+    table_id: TableId,
+    table_name: Box<str>,
+    old: Vec<ColumnSchema>,
+    new: Vec<ColumnSchema>,
+    default_values: Vec<AlgebraicValue>,
+    reason: AddColumnsErrorReason,
+}
+
+#[derive(Error, Debug)]
+pub enum AddColumnsErrorReason {
+    #[error("Default value type does not match column type for column {0}")]
+    DefaultValueTypeMismatch(ColId),
+    #[error("Missing default value for column {0}")]
+    DefaultValueMissing(ColId),
+    #[error("New column schema missing existing columns")]
+    MissingExistingColumns,
+    #[error(transparent)]
+    ExistingColumnsTypeMismatched(#[from] ChangeColumnsErrorReason),
+}
+
 /// Computes the parts of a table definition, that are row type dependent, from the row type.
 fn table_row_type_dependents(row_type: ProductType) -> (RowTypeLayout, StaticLayoutInTable, VarLenVisitorProgram) {
     let row_layout: RowTypeLayout = row_type.into();
@@ -329,60 +361,109 @@ impl Table {
         &mut self,
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<Vec<ColumnSchema>, Box<ChangeColumnsError>> {
-        /// Validate that the old row type layout can be changed to the new.
-        // Intentionally fail fast rather than combining errors with [`spacetimedb_data_structures::error_stream`]
-        // because we've (at least theoretically) already passed through
-        // `spacetimedb_schema::auto_migrate::ensure_old_ty_upgradable_to_new` to get here,
-        // and that method has proper pretty error reporting with `ErrorStream`.
-        // The error here is for internal debugging.
-        fn validate(
-            this: &Table,
-            new_row_layout: &RowTypeLayout,
-            column_schemas: &[ColumnSchema],
-        ) -> Result<(), Box<ChangeColumnsError>> {
-            let schema = this.get_schema();
-            let row_layout = this.row_layout();
+        unsafe { self.change_columns_to_unchecked(column_schemas, Self::validate_row_type_layout) }
+    }
 
-            let make_err = |reason| {
-                Box::new(ChangeColumnsError {
-                    table_id: schema.table_id,
-                    table_name: schema.table_name.clone(),
-                    old: schema.columns().to_vec(),
-                    new: column_schemas.to_vec(),
-                    reason,
-                })
-            };
+    /// Validate that the old row type layout can be changed to the new.
+    // Intentionally fail fast rather than combining errors with [`spacetimedb_data_structures::error_stream`]
+    // because we've (at least theoretically) already passed through
+    // `spacetimedb_schema::auto_migrate::ensure_old_ty_upgradable_to_new` to get here,
+    // and that method has proper pretty error reporting with `ErrorStream`.
+    // The error here is for internal debugging.
+    fn validate_row_type_layout(
+        &self,
+        new_row_layout: &RowTypeLayout,
+        column_schemas: &[ColumnSchema],
+    ) -> Result<(), Box<ChangeColumnsError>> {
+        let schema = self.get_schema();
+        let row_layout = self.row_layout();
 
-            // Require that a scheduler table doesn't change the `id` and `at` fields.
-            if let Some((schedule, pk)) = schema.schedule.as_ref().zip(schema.pk()) {
-                let at_col = schedule.at_column.idx();
-                if row_layout[at_col] != new_row_layout[at_col] {
-                    return Err(make_err(ChangeColumnsErrorReason::ScheduleAtColumnChanged {
-                        index: at_col,
-                        old: row_layout[at_col].clone(),
-                        new: new_row_layout[at_col].clone(),
-                    }));
-                }
+        let make_err = |reason| {
+            Box::new(ChangeColumnsError {
+                table_id: schema.table_id,
+                table_name: schema.table_name.clone(),
+                old: schema.columns().to_vec(),
+                new: column_schemas.to_vec(),
+                reason,
+            })
+        };
 
-                let id_col = pk.col_pos.idx();
-                if row_layout[id_col] != new_row_layout[id_col] {
-                    return Err(make_err(ChangeColumnsErrorReason::ScheduleIdColumnChanged {
-                        index: id_col,
-                        old: row_layout[id_col].clone(),
-                        new: new_row_layout[id_col].clone(),
-                    }));
-                }
+        // Require that a scheduler table doesn't change the `id` and `at` fields.
+        if let Some((schedule, pk)) = schema.schedule.as_ref().zip(schema.pk()) {
+            let at_col = schedule.at_column.idx();
+            if row_layout[at_col] != new_row_layout[at_col] {
+                return Err(make_err(ChangeColumnsErrorReason::ScheduleAtColumnChanged {
+                    index: at_col,
+                    old: row_layout[at_col].clone(),
+                    new: new_row_layout[at_col].clone(),
+                }));
             }
 
-            // The `row_layout` must also be compatible with the new.
-            if let Err(reason) = row_layout.ensure_compatible_with(new_row_layout) {
-                return Err(make_err((*reason).into()));
+            let id_col = pk.col_pos.idx();
+            if row_layout[id_col] != new_row_layout[id_col] {
+                return Err(make_err(ChangeColumnsErrorReason::ScheduleIdColumnChanged {
+                    index: id_col,
+                    old: row_layout[id_col].clone(),
+                    new: new_row_layout[id_col].clone(),
+                }));
             }
-
-            Ok(())
         }
 
-        unsafe { self.change_columns_to_unchecked(column_schemas, validate) }
+        // The `row_layout` must also be compatible with the new.
+        if let Err(reason) = row_layout.ensure_compatible_with(new_row_layout) {
+            return Err(make_err((*reason).into()));
+        }
+
+        Ok(())
+    }
+
+    /// Validates that the proposed `new_columns` schema is compatible with the
+    /// existing table schema and that all newly added columns are initialized
+    /// with default values.
+    /// - `new_columns`: columns schema after adding new columns ordered by `ColId`s.
+    /// - `default_values`: default values for newly added columns ordered by `ColId`s.
+    pub fn validate_add_columns_schema(
+        &self,
+        new_columns: &[ColumnSchema],
+        default_values: &[AlgebraicValue],
+    ) -> Result<(), Box<AddColumnsError>> {
+        let schema = self.get_schema();
+        let existing_columns = &schema.columns;
+
+        let make_err = |reason| {
+            Box::new(AddColumnsError {
+                table_id: schema.table_id,
+                table_name: schema.table_name.clone(),
+                old: schema.columns().to_vec(),
+                new: new_columns.to_vec(),
+                default_values: default_values.to_vec(),
+                reason,
+            })
+        };
+
+        // Ensure we have at least as many (prefix) as the existing columns.
+        let Some(old_cols_in_new_schema) = &new_columns.get(..existing_columns.len()) else {
+            return Err(make_err(AddColumnsErrorReason::MissingExistingColumns));
+        };
+
+        // Ensure that the existing prefix is compatible with the new prefix.
+        let new_row_layout: RowTypeLayout = columns_to_row_type(old_cols_in_new_schema).into();
+        self.validate_row_type_layout(&new_row_layout, new_columns)
+            .map_err(|e| make_err(e.reason.into()))?;
+
+        // Validate that all new columns have default values and thier types match.
+        for (idx, new_col) in new_columns.iter().skip(existing_columns.len()).enumerate() {
+            let default_value = default_values
+                .get(idx)
+                .ok_or_else(|| make_err(AddColumnsErrorReason::DefaultValueMissing(new_col.col_pos)))?;
+            if !new_col.col_type.type_check(default_value, Typespace::EMPTY) {
+                return Err(make_err(AddColumnsErrorReason::DefaultValueTypeMismatch(
+                    new_col.col_pos,
+                )));
+            }
+        }
+
+        Ok(())
     }
 
     /// Change the columns of `self` to those in `column_schemas`

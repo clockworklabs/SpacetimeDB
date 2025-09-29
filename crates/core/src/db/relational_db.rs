@@ -3,6 +3,7 @@ use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
 use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
 use crate::util::{asyncify, spawn_rayon};
+use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
 use fs2::FileExt;
@@ -378,6 +379,9 @@ impl RelationalDB {
         let (min_commitlog_offset, _) = history.tx_range_hint();
 
         log::info!("[{database_identity}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
+
+        let start_time = std::time::Instant::now();
+
         let inner = Self::restore_from_snapshot_or_bootstrap(
             database_identity,
             snapshot_repo.as_deref(),
@@ -387,6 +391,13 @@ impl RelationalDB {
         )?;
 
         apply_history(&inner, database_identity, history)?;
+
+        let elapsed_time = start_time.elapsed();
+        WORKER_METRICS
+            .replay_total_time_seconds
+            .with_label_values(&database_identity)
+            .set(elapsed_time.as_secs_f64());
+
         let db = Self::new(
             lock,
             database_identity,
@@ -532,13 +543,20 @@ impl RelationalDB {
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
             log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {snapshot_offset}");
             let start = std::time::Instant::now();
+
             let snapshot = snapshot_repo
                 .read_snapshot(snapshot_offset, page_pool)
                 .map_err(Box::new)?;
+
+            let elapsed_time = start.elapsed();
+
+            WORKER_METRICS
+                .replay_snapshot_read_time_seconds
+                .with_label_values(database_identity)
+                .set(elapsed_time.as_secs_f64());
+
             log::info!(
-                "[{database_identity}] DATABASE: read snapshot of tx_offset {} in {:?}",
-                snapshot_offset,
-                start.elapsed(),
+                "[{database_identity}] DATABASE: read snapshot of tx_offset {snapshot_offset} in {elapsed_time:?}",
             );
 
             Ok(snapshot)
@@ -554,10 +572,12 @@ impl RelationalDB {
             let snapshot_offset = snapshot.tx_offset;
             Locking::restore_from_snapshot(snapshot, page_pool)
                 .inspect(|_| {
+                    let elapsed_time = start.elapsed();
+
+                    WORKER_METRICS.replay_snapshot_restore_time_seconds.with_label_values(database_identity).set(elapsed_time.as_secs_f64());
+
                     log::info!(
-                        "[{database_identity}] DATABASE: restored from snapshot of tx_offset {} in {:?}",
-                        snapshot_offset,
-                        start.elapsed(),
+                        "[{database_identity}] DATABASE: restored from snapshot of tx_offset {snapshot_offset} in {elapsed_time:?}",
                     )
                 })
                 .inspect_err(|e| {
@@ -1088,6 +1108,18 @@ impl RelationalDB {
         Ok(self.inner.alter_table_row_type_mut_tx(tx, table_id, column_schemas)?)
     }
 
+    pub(crate) fn add_columns_to_table(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+        default_values: Vec<AlgebraicValue>,
+    ) -> Result<TableId, DBError> {
+        Ok(self
+            .inner
+            .add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)?)
+    }
+
     /// Reports the `TxMetrics`s passed.
     ///
     /// Should only be called after the tx lock has been fully released.
@@ -1590,11 +1622,26 @@ where
         }
     };
 
+    let time_before = std::time::Instant::now();
+
     let mut replay = datastore.replay(progress);
-    let start = replay.next_tx_offset();
+    let start_tx_offset = replay.next_tx_offset();
     history
-        .fold_transactions_from(start, &mut replay)
+        .fold_transactions_from(start_tx_offset, &mut replay)
         .map_err(anyhow::Error::from)?;
+
+    let time_elapsed = time_before.elapsed();
+    WORKER_METRICS
+        .replay_commitlog_time_seconds
+        .with_label_values(&database_identity)
+        .set(time_elapsed.as_secs_f64());
+
+    let end_tx_offset = replay.next_tx_offset();
+    WORKER_METRICS
+        .replay_commitlog_num_commits
+        .with_label_values(&database_identity)
+        .set((end_tx_offset - start_tx_offset) as _);
+
     log::info!("[{database_identity}] DATABASE: applied transaction history");
     datastore.rebuild_state_after_replay()?;
     log::info!("[{database_identity}] DATABASE: rebuilt state after replay");

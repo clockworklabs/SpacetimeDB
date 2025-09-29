@@ -1021,7 +1021,7 @@ impl ModuleHost {
             _ => None,
         };
         if let Some(log_message) = log_message {
-            self.inject_logs(LogLevel::Error, &log_message)
+            self.inject_logs(LogLevel::Error, reducer_name, &log_message)
         }
 
         res
@@ -1110,15 +1110,12 @@ impl ModuleHost {
         tokio::join!(self.module.scheduler().closed(), self.job_tx.closed());
     }
 
-    pub fn inject_logs(&self, log_level: LogLevel, message: &str) {
+    pub fn inject_logs(&self, log_level: LogLevel, reducer_name: &str, message: &str) {
         self.replica_ctx().logger.write(
             log_level,
             &Record {
-                ts: chrono::Utc::now(),
-                target: None,
-                filename: Some("external"),
-                line_number: None,
-                message,
+                function: Some(reducer_name),
+                ..Record::injected(message)
             },
             &(),
         )

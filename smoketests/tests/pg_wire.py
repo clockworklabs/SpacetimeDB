@@ -4,30 +4,6 @@ import os
 import tomllib
 import psycopg2
 
-
-def psql(identity: str, sql: str) -> str:
-    """Call `psql` and execute the given SQL statement."""
-    result = subprocess.run(
-        ["psql", "-h", "127.0.0.1", "-p", "5432", "-U", "postgres", "-d", "quickstart", "--quiet", "-c", sql],
-        encoding="utf8",
-        env={**os.environ, "PGPASSWORD": identity},
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-
-    if result.stderr:
-        raise Exception(result.stderr.strip())
-    return result.stdout.strip()
-
-
-def connect_db(identity: str):
-    """Connect to the database using `psycopg2`."""
-    conn = psycopg2.connect(host="127.0.0.1", port=5432, user="postgres", password=identity, dbname="quickstart")
-    conn.set_session(autocommit=True)  # Disable automic transaction
-    return conn
-
-
 class SqlFormat(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = """
@@ -168,9 +144,32 @@ pub fn test(ctx: &ReducerContext) {
 }
 """
 
+    def psql(self, identity: str, sql: str) -> str:
+        """Call `psql` and execute the given SQL statement."""
+        server = self.get_server_address()
+        result = subprocess.run(
+            ["psql", "-h", server["host"], "-p", "5432", "-U", "postgres", "-d", "quickstart", "--quiet", "-c", sql],
+            encoding="utf8",
+            env={**os.environ, "PGPASSWORD": identity},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        if result.stderr:
+            raise Exception(result.stderr.strip())
+        return result.stdout.strip()
+
+    def connect_db(self, identity: str):
+        """Connect to the database using `psycopg2`."""
+        server = self.get_server_address()
+        conn = psycopg2.connect(host=server["host"], port=5432, user="postgres", password=identity, dbname="quickstart")
+        conn.set_session(autocommit=True)  # Disable automic transaction
+        return conn
+
     def assertSql(self, token: str, sql: str, expected):
         self.maxDiff = None
-        sql_out = psql(token, sql)
+        sql_out = self.psql(token, sql)
         sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
         expected = "\n".join([line.rstrip() for line in expected.splitlines()])
         print(sql_out)
@@ -242,7 +241,7 @@ en                 |                 se                  |                      
         self.publish_module("quickstart", clear=True)
         self.call("test")
 
-        conn = connect_db(token)
+        conn = self.connect_db(token)
         # Check prepared statements (faked by `psycopg2`)
         with conn.cursor() as cur:
             cur.execute("select * from t_uints where u8 = %s and u16 = %s", (105, 1050))
@@ -262,20 +261,20 @@ en                 |                 se                  |                      
         self.publish_module("quickstart", clear=True)
 
         # Empty query
-        sql_out = psql(token, "")
+        sql_out = self.psql(token, "")
         self.assertEqual(sql_out, "")
 
         # Connection fails with invalid token
         with self.assertRaises(Exception) as cm:
-            psql("invalid_token", "SELECT * FROM t_uints")
+            self.psql("invalid_token", "SELECT * FROM t_uints")
         self.assertIn("Invalid token", str(cm.exception))
 
         # Returns error for unsupported `sql` statements
         with self.assertRaises(Exception) as cm:
-            psql(token, "SELECT CASE a WHEN 1 THEN 'one' ELSE 'other' END FROM t_uints")
+            self.psql(token, "SELECT CASE a WHEN 1 THEN 'one' ELSE 'other' END FROM t_uints")
         self.assertIn("Unsupported", str(cm.exception))
 
         # And prepared statements
         with self.assertRaises(Exception) as cm:
-            psql(token, "SELECT * FROM t_uints where u8 = $1")
+            self.psql(token, "SELECT * FROM t_uints where u8 = $1")
         self.assertIn("Unsupported", str(cm.exception))

@@ -61,6 +61,12 @@ pub enum LogLevel {
     Panic,
 }
 
+/// Sentinel value used for injected system logs.
+///
+/// Keep this in sync with the constants in `spacetimedb_core::database_logger::Record`.
+const SENTINEL: &str = "__spacetimedb__";
+
+/// Keep this in sync with `spacetimedb_core::database_logger::Record`.
 #[serde_with::serde_as]
 #[derive(serde::Deserialize)]
 struct Record<'a> {
@@ -73,6 +79,8 @@ struct Record<'a> {
     #[serde(borrow)]
     filename: Option<Cow<'a, str>>,
     line_number: Option<u32>,
+    #[serde(borrow)]
+    function: Option<Cow<'a, str>>,
     #[serde(borrow)]
     message: Cow<'a, str>,
     trace: Option<Vec<BacktraceFrame<'a>>>,
@@ -195,16 +203,36 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         out.set_color(&color)?;
         write!(out, "{level:>5}: ")?;
         out.reset()?;
+        let mut need_space_before_filename = false;
+        let mut need_colon_sep = false;
         let dimmed = ColorSpec::new().set_dimmed(true).clone();
-        if let Some(filename) = record.filename {
-            out.set_color(&dimmed)?;
-            write!(out, "{filename}")?;
-            if let Some(line) = record.line_number {
-                write!(out, ":{line}")?;
+        if let Some(function) = record.function {
+            if function != SENTINEL {
+                out.set_color(&dimmed)?;
+                write!(out, "{function}")?;
+                out.reset()?;
+                need_space_before_filename = true;
+                need_colon_sep = true;
             }
-            out.reset()?;
         }
-        writeln!(out, ": {}", record.message)?;
+        if let Some(filename) = record.filename {
+            if filename != SENTINEL {
+                out.set_color(&dimmed)?;
+                if need_space_before_filename {
+                    write!(out, " ")?;
+                }
+                write!(out, "{filename}")?;
+                if let Some(line) = record.line_number {
+                    write!(out, ":{line}")?;
+                }
+                out.reset()?;
+                need_colon_sep = true;
+            }
+        }
+        if need_colon_sep {
+            write!(out, ": ")?;
+        }
+        writeln!(out, "{}", record.message)?;
         if let Some(trace) = &record.trace {
             for frame in trace {
                 write!(out, "    in ")?;
