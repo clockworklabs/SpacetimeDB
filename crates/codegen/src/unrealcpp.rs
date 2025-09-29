@@ -609,10 +609,10 @@ impl Lang for UnrealCpp<'_> {
         // First, collect and generate all optional types
         let optional_types = collect_optional_types(module);
         for optional_name in optional_types {
-            let module_name_pascal = self.module_name.to_case(Case::Pascal);
-            let filename = format!(
-                "Source/{module_name_pascal}/Public/ModuleBindings/Optionals/{module_name_pascal}{optional_name}.g.h"
-            );
+            let module_name = &self.module_name;
+            let module_name_pascal = module_name.to_case(Case::Pascal);
+            let filename =
+                format!("Source/{module_name}/Public/ModuleBindings/Optionals/{module_name_pascal}{optional_name}.g.h");
 
             let content = generate_optional_type(&optional_name, module, &self.get_api_macro(), self.module_name);
             files.push(OutputFile {
@@ -4207,7 +4207,7 @@ fn cpp_ty_fmt_impl<'a>(
 fn cpp_ty_init_fmt_impl<'a>(ty: &'a AlgebraicTypeUse) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
         AlgebraicTypeUse::Primitive(p) => f.write_str(match p {
-            PrimitiveType::Bool => " = false;",
+            PrimitiveType::Bool => " = false",
             PrimitiveType::I8 => " = 0",
             PrimitiveType::U8 => " = 0",
             PrimitiveType::I16 => " = 0",
@@ -4216,8 +4216,8 @@ fn cpp_ty_init_fmt_impl<'a>(ty: &'a AlgebraicTypeUse) -> impl fmt::Display + 'a 
             PrimitiveType::U32 => " = 0",
             PrimitiveType::I64 => " = 0",
             PrimitiveType::U64 => " = 0",
-            PrimitiveType::F32 => " = 0.f",
-            PrimitiveType::F64 => " = 0.f",
+            PrimitiveType::F32 => " = 0.0f",
+            PrimitiveType::F64 => " = 0.0",
             PrimitiveType::I128 => "",
             PrimitiveType::U128 => "",
             PrimitiveType::I256 => "",
