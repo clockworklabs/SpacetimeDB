@@ -798,11 +798,7 @@ impl ModuleHost {
             .map(|(_, def)| &*def.name)
             .unwrap_or("__identity_disconnected__");
 
-        let is_client_exist = |mut_tx: &MutTxId| {
-            mut_tx
-                .st_client_row(caller_identity, caller_connection_id)
-                .map(|row_opt| row_opt.is_some())
-        };
+        let is_client_exist = |mut_tx: &MutTxId| mut_tx.st_client_row(caller_identity, caller_connection_id).is_some();
 
         let workload = || {
             Workload::Reducer(ReducerContext {
@@ -821,7 +817,7 @@ impl ModuleHost {
         let fallback = || {
             let database_identity = me.info.database_identity;
             stdb.with_auto_commit(workload(), |mut_tx| {
-                if !is_client_exist(mut_tx)? {
+                if !is_client_exist(mut_tx) {
                     // The client is already gone. Nothing to do.
                     log::debug!(
                         "`call_identity_disconnected`: no row in `st_client` for ({caller_identity}, {caller_connection_id}), nothing to do",
@@ -849,10 +845,7 @@ impl ModuleHost {
             let stdb = me.module.replica_ctx().relational_db.clone();
             let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload());
 
-            if !is_client_exist(&mut_tx).map_err(|e| InvalidReducerArguments {
-                err: e.into(),
-                reducer: reducer_name.into(),
-            })? {
+            if !is_client_exist(&mut_tx) {
                 // The client is already gone. Nothing to do.
                 log::debug!(
                     "`call_identity_disconnected`: no row in `st_client` for ({caller_identity}, {caller_connection_id}), nothing to do",

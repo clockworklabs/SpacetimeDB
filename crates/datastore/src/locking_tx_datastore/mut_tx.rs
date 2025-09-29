@@ -1577,9 +1577,7 @@ impl MutTxId {
     }
 
     /// Look up a client row by identity and connection ID in the `st_clients` system table.
-    ///
-    /// `Ok(None)` if no such row exists.
-    pub fn st_client_row(&self, identity: Identity, connection_id: ConnectionId) -> Result<Option<RowPointer>> {
+    pub fn st_client_row(&self, identity: Identity, connection_id: ConnectionId) -> Option<RowPointer> {
         let row = StClientRow {
             identity: identity.into(),
             connection_id: connection_id.into(),
@@ -1590,7 +1588,9 @@ impl MutTxId {
             col_list![StClientFields::Identity, StClientFields::ConnectionId],
             &AlgebraicValue::product(row),
         )
-        .map(|mut it| it.next().map(|row_ref| row_ref.pointer()))
+        .expect("failed to read from st_client system table")
+        .next()
+        .map(|row| row.pointer())
     }
 
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
