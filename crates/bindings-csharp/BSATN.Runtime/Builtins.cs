@@ -357,7 +357,7 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public readonly TimeSpan ToTimeSpanSinceUnixEpoch() => (TimeSpan)ToTimeDurationSinceUnixEpoch();
 
     public readonly TimeDuration TimeDurationSince(Timestamp earlier) =>
-        new TimeDuration(checked(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch));
+        new(checked(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch));
 
     public static Timestamp operator +(Timestamp point, TimeDuration interval) =>
         new(checked(point.MicrosecondsSinceUnixEpoch + interval.Microseconds));

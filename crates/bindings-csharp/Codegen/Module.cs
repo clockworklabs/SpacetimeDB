@@ -544,7 +544,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
-    public record struct Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
+    public readonly record struct Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
     {
         public ViewIndex ToIndex() => new(new ColumnRef(Pos, Col.Name));
     }
