@@ -127,8 +127,10 @@ const BOOK_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FRO
         )
 
         logging.info("Initial publish complete")
-        # initial module code is already published by test framework
 
+        sub = self.subscribe("select * from person", n=4)
+
+        # initial module code is already published by test framework
         self.call("add_person", "Robert", "Student")
         self.call("add_person", "Julie", "Student")
         self.call("add_person", "Samantha", "Student")
@@ -146,6 +148,11 @@ const BOOK_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FRO
         self.publish_module(self.database_identity, clear=False)
 
         logging.info("Updated")
+        self.call("add_person", "Husserl", "Student")
+
+        # If subscription, we should get 4 rows corresponding to 4 reducer calls (including before and after update)
+        sub = sub();
+        self.assertEqual(len(sub), 4)
 
         # Check the row-level SQL filter is added correctly
         self.assertSql(
@@ -313,8 +320,10 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
         """Verify schema upgrades that add columns with defaults (twice)."""
 
         # Subscribe to person table changes multiple times to simulate active clients
-        for _ in range(20):
-            self.subscribe("select * from person", n=5)
+        NUM_SUBSCRIBERS = 20
+        subs = [None] * NUM_SUBSCRIBERS
+        for i in range(NUM_SUBSCRIBERS):
+            subs[i]= self.subscribe("select * from person", n=5)
 
         # Insert under initial schema
         self.call("add_person", "Robert")
@@ -333,15 +342,22 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
             logs1,
         )
         disconnect_count = logs1.count("FIRST_UPDATE: client disconnected")
-        self.assertEqual(
-            disconnect_count,
-        # this is always +1, I believe its due to test setup's own connection
-            21,
-            msg=f"Unexpected disconnect counts: {disconnect_count}",
-        )
 
         # Insert new data under upgraded schema
         self.call("add_person", "Robert2")
+
+        self.assertEqual(
+            disconnect_count,
+        # +1 is due to reducer call above
+            NUM_SUBSCRIBERS + 1, 
+            msg=f"Unexpected disconnect counts: {disconnect_count}",
+        )
+
+        # Validate all subscribers received only single update before disconnect
+        for i in range(NUM_SUBSCRIBERS):
+            sub = subs[i]()
+            self.assertEqual(len(sub), 1, msg=f"Subscriber {i} received unexpected rows: {sub}")
+
 
         # Second upgrade
         self.write_module_code(self.MODULE_UPDATED_AGAIN)
