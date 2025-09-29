@@ -58,7 +58,7 @@ void AGameManager::BeginPlay()
 	FOnDisconnectDelegate DisconnectDelegate;
 	BIND_DELEGATE_SAFE(DisconnectDelegate, this, AGameManager, HandleDisconnect);
 	FOnConnectErrorDelegate ConnectErrorDelegate;
-	BIND_DELEGATE_SAFE(ConnectErrorDelegate, this, AGameManager, HandleConnect);
+	BIND_DELEGATE_SAFE(ConnectErrorDelegate, this, AGameManager, HandleConnectError);
 
 	UCredentials::Init(FString::Printf(TEXT("%s-%s"), *TokenFilePath, *ServerUri));
 	FString Token = UCredentials::LoadToken();
