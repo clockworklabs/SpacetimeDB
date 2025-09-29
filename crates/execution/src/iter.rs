@@ -792,6 +792,8 @@ pub struct HashJoinIter<'a> {
     rhs_ptr: usize,
     /// The lhs probe field
     lhs_field: &'a TupleField,
+    /// Is the join outer
+    outer: bool,
 }
 
 impl<'a> HashJoinIter<'a> {
@@ -820,6 +822,7 @@ impl<'a> HashJoinIter<'a> {
             lhs_tuple: None,
             rhs_ptr: 0,
             lhs_field: &join.lhs_field,
+            outer: join.outer,
         })
     }
 }
@@ -839,11 +842,15 @@ impl<'a> Iterator for HashJoinIter<'a> {
             })
             .or_else(|| {
                 self.lhs.find_map(|tuple| {
-                    self.rhs.get(&tuple.project(self.lhs_field)).and_then(|ptrs| {
+                    if let Some(ptrs) = self.rhs.get(&tuple.project(self.lhs_field)) {
                         self.rhs_ptr = 1;
                         self.lhs_tuple = Some(tuple.clone());
                         ptrs.first().map(|ptr| (tuple, ptr.clone()))
-                    })
+                    } else {
+                        if self.outer {
+                            Some((tuple, Row::Null))
+                        } else { None }
+                    }
                 })
             })
     }
