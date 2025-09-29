@@ -44,9 +44,17 @@ internal static partial class FFI
     // For now this must match the name of the `.c` file (`bindings.c`).
     // In the future C# will allow to specify Wasm import namespace in
     // `LibraryImport` directly.
-    const string StdbNamespace =
+    const string StdbNamespace10_0 =
 #if EXPERIMENTAL_WASM_AOT
         "spacetime_10.0"
+#else
+        "bindings"
+#endif
+    ;
+
+    const string StdbNamespace10_1 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.1"
 #else
         "bindings"
 #endif
@@ -126,30 +134,30 @@ internal static partial class FFI
         public static readonly RowIter INVALID = new(0);
     }
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus table_id_from_name(
         [In] byte[] name,
         uint name_len,
         out TableId out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus index_id_from_name(
         [In] byte[] name,
         uint name_len,
         out IndexId out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_table_row_count(TableId table_id, out ulong out_);
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_table_scan_bsatn(
         TableId table_id,
         out RowIter out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_index_scan_range_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> prefix,
@@ -162,24 +170,24 @@ internal static partial class FFI
         out RowIter out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial Errno row_iter_bsatn_advance(
         RowIter iter_handle,
         [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,
         ref uint buffer_len
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus row_iter_bsatn_close(RowIter iter_handle);
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_insert_bsatn(
         TableId table_id,
         Span<byte> row,
         ref uint row_len
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_update_bsatn(
         TableId table_id,
         IndexId index_id,
@@ -187,7 +195,7 @@ internal static partial class FFI
         ref uint row_len
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_delete_by_index_scan_range_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> prefix,
@@ -200,7 +208,7 @@ internal static partial class FFI
         out uint out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_delete_all_by_eq_bsatn(
         TableId table_id,
         [In] byte[] relation,
@@ -208,14 +216,14 @@ internal static partial class FFI
         out uint out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial Errno bytes_source_read(
         BytesSource source,
         Span<byte> buffer,
         ref uint buffer_len
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus bytes_sink_write(
         BytesSink sink,
         ReadOnlySpan<byte> buffer,
@@ -232,7 +240,7 @@ internal static partial class FFI
         Panic = 5,
     }
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial void console_log(
         LogLevel level,
         [In] byte[] target,
@@ -269,13 +277,13 @@ internal static partial class FFI
         }
     }
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial ConsoleTimerId console_timer_start([In] byte[] name, uint name_len);
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus console_timer_end(ConsoleTimerId stopwatch_id);
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport(StdbNamespace10_0)]
     public static partial void volatile_nonatomic_schedule_immediate(
         [In] byte[] name,
         uint name_len,
@@ -291,7 +299,10 @@ internal static partial class FFI
     // which prevents source-generated PInvokes from working with types from other assemblies, and
     // `Identity` lives in another assembly (`BSATN.Runtime`). Luckily, `DllImport` is enough here.
 #pragma warning disable SYSLIB1054 // Suppress "Use 'LibraryImportAttribute' instead of 'DllImportAttribute'" warning.
-    [DllImport(StdbNamespace)]
+    [DllImport(StdbNamespace10_0)]
     public static extern void identity(out Identity dest);
 #pragma warning restore SYSLIB1054
+
+    [DllImport(StdbNamespace10_1)]
+    public static extern Errno bytes_source_remaining_length(BytesSource source, ref uint len);
 }
