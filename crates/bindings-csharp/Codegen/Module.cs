@@ -466,7 +466,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
-    public record struct View(string ViewName, string TableName, string ViewCode, string GetterCode);
+    public record struct View(
+        string ViewName,
+        string TableName,
+        string ViewCode,
+        string GetterCode
+    );
 
     public IEnumerable<View> GenerateViews()
     {

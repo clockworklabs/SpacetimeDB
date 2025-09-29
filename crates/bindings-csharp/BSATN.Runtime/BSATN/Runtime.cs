@@ -182,9 +182,17 @@ public readonly struct Enum<T> : IReadWrite<T>
             (_) =>
                 new AlgebraicType.Sum(
 #if NET8_0_OR_GREATER
-                    [.. System.Enum.GetNames<T>().Select(name => new AggregateElement(name, AlgebraicType.Unit))]
+                    [
+                        .. System
+                            .Enum.GetNames<T>()
+                            .Select(name => new AggregateElement(name, AlgebraicType.Unit)),
+                    ]
 #else
-                    [.. System.Enum.GetNames(typeof(T)).Select(name => new AggregateElement(name, AlgebraicType.Unit))]
+                    [
+                        .. System
+                            .Enum.GetNames(typeof(T))
+                            .Select(name => new AggregateElement(name, AlgebraicType.Unit)),
+                    ]
 #endif
                 )
         );
