@@ -186,13 +186,17 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let service = router(&ctx, db_routes, extra).with_state(ctx.clone());
 
-    let tcp = TcpListener::bind(listen_addr).await?;
+    let tcp = TcpListener::bind(listen_addr).await.context(format!(
+        "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"
+    ))?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
     log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
 
     if let Some(pg_port) = pg_port {
         let server_addr = listen_addr.split(':').next().unwrap();
-        let tcp_pg = TcpListener::bind(format!("{server_addr}:{pg_port}")).await?;
+        let tcp_pg = TcpListener::bind(format!("{server_addr}:{pg_port}")).await.context(format!(
+            "failed to bind the SpacetimeDB PostgreSQL wire protocol server to {server_addr}:{pg_port}, please check that the port is valid and not already in use"
+        ))?;
 
         let notify = Arc::new(tokio::sync::Notify::new());
         let shutdown_notify = notify.clone();
