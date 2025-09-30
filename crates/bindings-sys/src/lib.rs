@@ -1138,8 +1138,7 @@ pub fn get_jwt(connection_id: [u8; 16]) -> Option<String> {
         let ret = unsafe { raw::bytes_source_remaining_length(source, &raw mut len) };
         match ret {
             0 => len,
-            INVALID => panic!("invalid source passed"),
-            _ => unreachable!(),
+            _ => panic!("invalid source"),
         }
     };
     let mut buf = vec![0u8; len as usize];
