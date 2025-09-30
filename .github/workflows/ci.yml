@@ -42,7 +42,7 @@ jobs:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
 
-      # Copy global.json to the current directory so that the dotnet things use it
+      # Copy global.json to the current directory so that the dotnet commands pick it up
       - run: cp modules/global.json global.json
 
       - uses: actions/setup-dotnet@v4
@@ -99,7 +99,7 @@ jobs:
 
       - uses: dsherret/rust-toolchain-file@v1
 
-      # Copy global.json to the current directory so that the dotnet things use it
+      # Copy global.json to the current directory so that the dotnet commands pick it up
       - run: cp modules/global.json global.json
 
       - uses: actions/setup-dotnet@v3
