@@ -25,6 +25,7 @@ jobs:
         uses: actions/setup-dotnet@v3
         with:
           global-json-file: modules/global.json
+          dotnet-version: '8.x'
 
       - name: Override NuGet packages
         run: |
@@ -43,8 +44,6 @@ jobs:
       - name: Run .NET tests
         working-directory: sdks/csharp
         run: dotnet test -warnaserror
-        with:
-          dotnet-version: '8.x'
 
       - name: Verify C# formatting
         working-directory: sdks/csharp
