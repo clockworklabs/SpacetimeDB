@@ -1,2 +1,5 @@
 [build]
 rustflags = ["--cfg", "tokio_unstable"]
+
+[alias]
+bump-versions = "run -p upgrade-version --"
