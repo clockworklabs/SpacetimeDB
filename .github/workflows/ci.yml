@@ -120,7 +120,9 @@ jobs:
       - name: C# bindings tests
         working-directory: crates/bindings-csharp
         run: |
+          which dotnet
           dotnet --version
+          dotnet --list-sdks
           dotnet test -warnaserror
         env:
           DOTNET_MULTILEVEL_LOOKUP: 0   # don't probe machine-wide SDKs (avoids falling onto 9.x)
