@@ -24,7 +24,7 @@ jobs:
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
         with:
-          global-json-file: modules/global.json
+          global-json-file: global.json
 
       - name: Override NuGet packages
         run: |
