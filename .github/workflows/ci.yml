@@ -122,9 +122,8 @@ jobs:
         run: |
           set -x
           which dotnet
-          ls "$DOTNET_ROOT"
+          find "$DOTNET_ROOT" -name '*8.0.400*'
           dotnet --version
-          "$DOTNET_ROOT"/dotnet --version
           dotnet --list-sdks
           dotnet test -warnaserror
         env:
