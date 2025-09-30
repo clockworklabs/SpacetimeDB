@@ -21,4 +21,5 @@ cargo run -p spacetimedb-standalone -- start \
             --data-dir ${STDB_PATH} \
             --jwt-pub-key-path "${STDB_PATH}/id_ecdsa.pub" \
             --jwt-priv-key-path "${STDB_PATH}/id_ecdsa" \
+            --pg-port 5432 \
             -l 127.0.0.1:3000 --enable-tracy
