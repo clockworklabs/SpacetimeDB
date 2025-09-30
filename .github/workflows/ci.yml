@@ -95,7 +95,7 @@ jobs:
 
       - uses: dsherret/rust-toolchain-file@v1
 
-      - uses: actions/setup-dotnet@v3
+      - uses: actions/setup-dotnet@v4
         with:
           global-json-file: modules/global.json
           dotnet-version: '8.x'
@@ -120,6 +120,8 @@ jobs:
       - name: C# bindings tests
         working-directory: crates/bindings-csharp
         run: dotnet test -warnaserror
+        env:
+          DOTNET_MULTILEVEL_LOOKUP: 0   # don't probe machine-wide SDKs (avoids falling onto 9.x)
 
   lints:
     name: Lints
