@@ -258,13 +258,22 @@ public static partial class BSATNRuntimeTests
     }
 
     [Type]
-    public partial record BasicDataRecord(int X, string Y, int? Z, string? W)
+    public partial record BasicDataRecord
     {
-        public BasicDataRecord()
-            : this(default, "", default, default) { }
+        public int X;
+        public string Y = "";
+        public int? Z;
+        public string? W;
+
+        public BasicDataRecord() { }
 
         public BasicDataRecord((int x, string y, int? z, string? w) data)
-            : this(data.x, data.y, data.z, data.w) { }
+        {
+            X = data.x;
+            Y = data.y;
+            Z = data.z;
+            W = data.w;
+        }
     }
 
     static readonly Gen<int> GenSmallInt = Gen.Int[-5, 5];
