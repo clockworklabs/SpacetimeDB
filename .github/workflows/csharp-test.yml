@@ -26,16 +26,13 @@ jobs:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
-        
-        # Copy global.json to the current directory so that the dotnet things use it
-      - run: cp modules/global.json global.json
 
       # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
         with:
-          global-json-file: global.json
+          global-json-file: modules/global.json
 
       - name: Override NuGet packages
         run: |
