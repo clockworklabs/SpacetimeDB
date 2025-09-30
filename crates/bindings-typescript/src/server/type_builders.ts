@@ -884,7 +884,7 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
  * The type of index types that can be applied to a column.
  * `undefined` is the default
  */
-type IndexTypes = 'btree' | 'hash' | undefined;
+export type IndexTypes = 'btree' | 'direct' | undefined;
 
 /**
  * Metadata describing column constraints and index type

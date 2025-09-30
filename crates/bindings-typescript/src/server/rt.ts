@@ -1,4 +1,4 @@
-import { AlgebraicType } from '../lib/algebraic_type';
+import { AlgebraicType, ProductType } from '../lib/algebraic_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
@@ -12,7 +12,17 @@ import {
   type DbView,
   type ReducerCtx,
   type Table,
+  type UntypedTableDef,
+  type RowType,
+  type TryInsertError,
+  type Result,
+  type TableMethods,
+  type Index,
+  type UniqueIndex,
+  type RangedIndex,
+  type IndexVal,
 } from './schema';
+import type { InferTypeOfTypeBuilder, ColumnBuilder } from './type_builders';
 
 type u8 = number;
 type u16 = number;
@@ -51,10 +61,13 @@ declare global {
     rstart: Uint8Array,
     rend: Uint8Array
   ): u32;
-  function datastore_delete_all_by_eq_bsatn(table_id: u32, relation: u8[]): u32;
+  function datastore_delete_all_by_eq_bsatn(
+    table_id: u32,
+    relation: Uint8Array
+  ): u32;
   function volatile_nonatomic_schedule_immediate(
     reducer_name: string,
-    args: u8[]
+    args: Uint8Array
   ): void;
   function console_log(level: u8, message: string): void;
   function console_timer_start(name: string): u32;
@@ -160,7 +173,16 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
   const iter = () =>
     new TableIterator(sys.datastore_table_scan_bsatn(table_id), rowType);
 
-  const try_insert: Table<any>['try_insert'] = row => {
+  const integrate_generated_columns = hasAutoIncrement
+    ? (row: RowType<any>, ret_buf: Uint8Array) => {
+        const reader = new BinaryReader(ret_buf);
+        for (const { colName, read } of sequences) {
+          row[colName] = read(reader);
+        }
+      }
+    : null;
+
+  const tryInsert: Table<any>['tryInsert'] = row => {
     const writer = new BinaryWriter(baseSize);
     AlgebraicType.serializeValue(writer, rowType, row);
     let ret_buf;
@@ -171,32 +193,158 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
         return { ok: false, err: e };
       throw e;
     }
-    if (hasAutoIncrement) {
-      const reader = new BinaryReader(ret_buf);
-      for (const { colName, read } of sequences) {
-        row[colName] = read(reader);
-      }
-    }
+    integrate_generated_columns?.(row, ret_buf);
 
     return { ok: true, val: row };
   };
 
-  return freeze({
+  const tableMethods: TableMethods<any> = {
     count: () => sys.datastore_table_row_count(table_id),
     iter,
-    [Symbol.iterator]: iter,
-    insert: row => {
-      const res = try_insert(row);
+    [Symbol.iterator]: () => iter(),
+    insert: (row: RowType<any>): RowType<any> => {
+      const res = tryInsert(row);
       if (res.ok) return res.val;
       throw res.err;
     },
-    try_insert,
-    delete: row => {
-      const writer = new BinaryWriter(baseSize);
+    tryInsert,
+    delete: (row: RowType<any>): boolean => {
+      const writer = new BinaryWriter(4 + baseSize);
+      writer.writeU32(1);
       AlgebraicType.serializeValue(writer, rowType, row);
-      return false;
+      const count = sys.datastore_delete_all_by_eq_bsatn(
+        table_id,
+        writer.getBuffer()
+      );
+      return count > 0;
     },
-  });
+  };
+
+  const tableView = tableMethods as Table<any>;
+
+  for (const indexDef of table.indexes) {
+    const index_id = sys.index_id_from_name(indexDef.name!);
+
+    let column_ids: number[];
+    switch (indexDef.algorithm.tag) {
+      case 'BTree':
+        column_ids = indexDef.algorithm.value;
+        break;
+      case 'Hash':
+        throw new Error('impossible');
+      case 'Direct':
+        column_ids = [indexDef.algorithm.value];
+        break;
+    }
+    const numColumns = column_ids.length;
+    const isMultiIndex = numColumns > 1;
+
+    const columnSet = new Set(column_ids);
+    const isUnique = table.constraints
+      .filter(x => x.data.tag === 'Unique')
+      .map(x => columnSet.isSubsetOf(new Set(x.data.value.columns)));
+
+    const indexType = AlgebraicType.Product({
+      elements: column_ids.map(id => rowType.value.elements[id]),
+    });
+
+    const baseSize = bsatnBaseSize(typespace, indexType);
+
+    const serializePrefix = (writer: BinaryWriter, prefix: any[]) => {
+      if (prefix.length > numColumns - 1)
+        throw new TypeError('too many elements in prefix');
+      let i = 0;
+      for (const val of prefix) {
+        const elemType = indexType.value.elements[i++].algebraicType;
+        AlgebraicType.serializeValue(writer, elemType, val);
+      }
+      return writer;
+    };
+
+    type IndexScanArgs = [
+      prefix: Uint8Array,
+      prefix_elems: u16,
+      rstart: Uint8Array,
+      rend: Uint8Array,
+    ];
+
+    let index: Index<any, any>;
+    if (isUnique) {
+      const serializeBound = (col_val: any[]): IndexScanArgs => {
+        if (col_val.length !== numColumns)
+          throw new TypeError('wrong number of elements');
+
+        const writer = new BinaryWriter(baseSize + 1);
+        serializePrefix(writer, col_val.slice(0, numColumns - 1));
+        const prefix_elems = numColumns - 1;
+        const rstartOffset = writer.offset;
+        writer.writeU8(0);
+        AlgebraicType.serializeValue(
+          writer,
+          indexType.value.elements[numColumns - 1].algebraicType,
+          col_val[numColumns - 1]
+        );
+        const buffer = writer.getBuffer();
+        const prefix = buffer.slice(0, rstartOffset);
+        const rstart = buffer.slice(rstartOffset);
+        return [prefix, prefix_elems, rstart, rstart];
+      };
+      index = {
+        find: (col_val: IndexVal<any, any>): RowType<any> | null => {
+          if (numColumns === 1) col_val = [col_val];
+          const args = serializeBound(col_val);
+          const iter = new TableIterator(
+            sys.datastore_index_scan_range_bsatn(index_id, ...args),
+            rowType
+          );
+          const { value, done } = iter.next();
+          if (done) return null;
+          if (!iter.next().done)
+            throw new Error(
+              '`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows'
+            );
+          return value;
+        },
+        delete: (col_val: IndexVal<any, any>): boolean => {
+          if (numColumns === 1) col_val = [col_val];
+          const args = serializeBound(col_val);
+          const num = sys.datastore_delete_by_index_scan_range_bsatn(
+            index_id,
+            ...args
+          );
+          return num > 0;
+        },
+        update: (row: RowType<any>): RowType<any> => {
+          const writer = new BinaryWriter(baseSize);
+          AlgebraicType.serializeValue(writer, rowType, row);
+          const ret_buf = sys.datastore_update_bsatn(
+            table_id,
+            index_id,
+            writer.getBuffer()
+          );
+          integrate_generated_columns?.(row, ret_buf);
+          return row;
+        },
+      } as UniqueIndex<any, any>;
+    } else {
+      index = {
+        filter: (range: any): IterableIterator<RowType<any>> => {
+          throw new Error('Function not implemented.');
+        },
+        delete: (range: any): bigint => {
+          throw new Error('Function not implemented.');
+        },
+      } as RangedIndex<any, any>;
+    }
+
+    if (Object.hasOwn(tableView, indexDef.name!)) {
+      freeze(Object.assign(tableView[indexDef.name!], index));
+    } else {
+      tableView[indexDef.name!] = freeze(index) as any;
+    }
+  }
+
+  return freeze(tableView);
 }
 
 function bsatnBaseSize(typespace: Typespace, ty: AlgebraicType): number {
