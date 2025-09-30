@@ -61,7 +61,7 @@ namespace SpacetimeDB.Types
                 this.Text = "";
             }
 
-            string IReducerArgs.ReducerName => "SendMessage";
+            string IReducerArgs.ReducerName => "send_message";
         }
     }
 
