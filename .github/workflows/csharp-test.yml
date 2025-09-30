@@ -15,19 +15,13 @@ jobs:
       cancel-in-progress: true
     timeout-minutes: 30
     steps:
-      - name: Maximize build space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 512
-          swap-size-mb: 1024
-          remove-dotnet: 'true'
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Build
+      - run: df -h
+      - name: "node-cleanup"
         run: |
-          echo "Free space:"
-          df -h
+          sudo rm -rf /usr/local/lib/android
+          sudo docker image prune --all --force
+          sudo docker builder prune -a
+      - run: df -h
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
