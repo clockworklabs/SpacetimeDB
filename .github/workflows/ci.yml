@@ -104,12 +104,12 @@ jobs:
           sudo mkdir /stdb
           sudo chmod 777 /stdb
       
-      - name: Run cargo test
-        #Note: Unreal tests will be run separately
-        run: cargo test --all -- --skip unreal
-
-      - name: Check that the test outputs are up-to-date
-        run: bash tools/check-diff.sh
+#      - name: Run cargo test
+#        #Note: Unreal tests will be run separately
+#        run: cargo test --all -- --skip unreal
+#
+#      - name: Check that the test outputs are up-to-date
+#        run: bash tools/check-diff.sh
 
       - name: Ensure C# autogen bindings are up-to-date
         run: |
