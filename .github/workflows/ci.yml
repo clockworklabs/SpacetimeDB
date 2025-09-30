@@ -102,7 +102,7 @@ jobs:
       # Copy global.json to the current directory so that the dotnet things use it
       - run: cp modules/global.json global.json
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
 
