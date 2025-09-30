@@ -12,12 +12,12 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void ClientConnectedHandler(ReducerEventContext ctx);
-        public event ClientConnectedHandler? OnClientConnected;
+        public delegate void IdentityConnectedHandler(ReducerEventContext ctx);
+        public event IdentityConnectedHandler? OnIdentityConnected;
 
-        public bool InvokeClientConnected(ReducerEventContext ctx, Reducer.ClientConnected args)
+        public bool InvokeIdentityConnected(ReducerEventContext ctx, Reducer.IdentityConnected args)
         {
-            if (OnClientConnected == null)
+            if (OnIdentityConnected == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -29,7 +29,7 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnClientConnected(
+            OnIdentityConnected(
                 ctx
             );
             return true;
@@ -40,9 +40,9 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class ClientConnected : Reducer, IReducerArgs
+        public sealed partial class IdentityConnected : Reducer, IReducerArgs
         {
-            string IReducerArgs.ReducerName => "ClientConnected";
+            string IReducerArgs.ReducerName => "identity_connected";
         }
     }
 }
