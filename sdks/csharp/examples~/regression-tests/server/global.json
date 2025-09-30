@@ -1,6 +1,1 @@
-{
-  "sdk": {
-    "version": "8.0.*",
-    "rollForward": "latestMinor"
-  }
-}
+../../../../../global.json
