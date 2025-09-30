@@ -119,6 +119,8 @@ jobs:
       - name: C# bindings tests
         working-directory: crates/bindings-csharp
         run: dotnet test -warnaserror
+        with:
+          dotnet-version: '8.x'
 
   lints:
     name: Lints
