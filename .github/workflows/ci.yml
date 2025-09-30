@@ -98,6 +98,7 @@ jobs:
       - uses: actions/setup-dotnet@v3
         with:
           global-json-file: modules/global.json
+          dotnet-version: '8.x'
 
       - name: Create /stdb dir
         run: |
@@ -118,8 +119,6 @@ jobs:
 
       - name: C# bindings tests
         working-directory: crates/bindings-csharp
-        with:
-          dotnet-version: '8.x'
         run: dotnet test -warnaserror
 
   lints:
