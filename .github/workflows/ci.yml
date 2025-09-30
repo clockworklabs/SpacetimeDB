@@ -120,6 +120,7 @@ jobs:
       - name: C# bindings tests
         working-directory: crates/bindings-csharp
         run: |
+          set -x
           which dotnet
           ls "$DOTNET_ROOT"
           dotnet --version
