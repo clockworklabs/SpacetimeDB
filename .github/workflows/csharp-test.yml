@@ -78,7 +78,6 @@ jobs:
           cargo install --force --path crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
           ln -sf $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
-          spacetime --version
         env:
           # Share the target directory with our local project to avoid rebuilding same SpacetimeDB crates twice.
           CARGO_TARGET_DIR: demo/Blackholio/server-rust/target
@@ -86,8 +85,7 @@ jobs:
       - name: Check quickstart-chat bindings are up to date
         working-directory: sdks/csharp/examples~/quickstart-chat
         run: |
-          spacetime --version
-          spacetime generate --lang csharp --out-dir client/module_bindings --project-path server
+          bash tools~/gen-quickstart.sh "${GITHUB_WORKSPACE}"
           # This was copied from tools/check-diff.sh.
           # It's required because `spacetime generate` creates lines with the SpacetimeDB commit
           # version, which would make this `git diff` check very brittle if included.
