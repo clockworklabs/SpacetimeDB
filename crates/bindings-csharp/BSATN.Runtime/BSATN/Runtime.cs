@@ -132,7 +132,18 @@ public readonly struct Enum<T> : IReadWrite<T>
 #if NET8_0_OR_GREATER
     private static readonly T[] TagToValue = System.Enum.GetValues<T>();
 #else
-    private static readonly T[] TagToValue = System.Enum.GetValues(typeof(T)).Cast<T>().ToArray();
+    private static readonly T[] TagToValue = CreateTagToValue();
+
+    private static T[] CreateTagToValue()
+    {
+        var values = System.Enum.GetValues(typeof(T));
+        var result = new T[values.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            result[i] = (T)values.GetValue(i);
+        }
+        return result;
+    }
 #endif
 
     public T Read(BinaryReader reader)

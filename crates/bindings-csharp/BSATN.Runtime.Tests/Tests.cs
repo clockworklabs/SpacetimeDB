@@ -246,25 +246,15 @@ public static partial class BSATNRuntimeTests
     }
 
     [Type]
-    public partial struct BasicDataStruct(int X, string Y, int? Z, string? W) { }
-
-    [Type]
-    public partial record BasicDataRecord
+    public partial struct BasicDataStruct(int x, string y, int? z, string? w)
     {
-        public int X;
-        public string Y = "";
-        public int? Z;
-        public string? W;
+        public int X = x;
+        public string Y = y;
+        public int? Z = z;
+        public string? W = w;
 
-        public BasicDataRecord() { }
-
-        public BasicDataRecord((int x, string y, int? z, string? w) data)
-        {
-            X = data.x;
-            Y = data.y;
-            Z = data.z;
-            W = data.w;
-        }
+        public BasicDataStruct((int x, string y, int? z, string? w) data)
+            : this(data.x, data.y, data.z, data.w) { }
     }
 
     static readonly Gen<int> GenSmallInt = Gen.Int[-5, 5];
