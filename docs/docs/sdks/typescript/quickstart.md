@@ -39,7 +39,7 @@ You can now `pnpm run dev` to see the Vite template app running at `http://local
 
 ## Basic layout
 
-The app we're going to create is a basic chat application. We are going to start by creating a layout for our app. The webpage page will contain four sections:
+The app we're going to create is a basic chat application. We will begin by creating a layout for our app. The webpage will contain four sections:
 
 1. A profile section, where we can set our name.
 2. A message section, where we can see all the messages.
@@ -364,7 +364,7 @@ Let's also make it pretty. Replace the contents of `client/src/App.css` with the
 }
 ```
 
-Next we need to replace the global styles in `client/src/index.css` as well:
+Next, we need to replace the global styles in `client/src/index.css` as well:
 
 ```css
 /* ----- CSS Reset & Global Settings ----- */
@@ -445,11 +445,11 @@ textarea:focus {
 }
 ```
 
-Now when you run `pnpm run dev` and open `http://localhost:5173`, you should see a basic chat app that does not yet send or receive messages.
+Now, when you run `pnpm run dev` and open `http://localhost:5173`, you should see a basic chat app that does not yet send or receive messages.
 
 ## Generate your module types
 
-The `spacetime` CLI's `generate` command will generate client-side interfaces for the tables, reducers and types defined in your server module.
+The `spacetime` CLI's `generate` command generates client-side interfaces for the tables, reducers, and types defined in your server module.
 
 In your `quickstart-chat` directory, run:
 
@@ -479,7 +479,7 @@ module_bindings
 With `spacetime generate` we have generated TypeScript types derived from the types you specified in your module, which we can conveniently use in our client. We've placed these in the `module_bindings` folder.
 Now that we've set up our UI and generated our types, let's connect to SpacetimeDB.
 
-The main entry to the SpacetimeDB API is the `DbConnection`, a type which manages a connection to a remote database. Let's import it and a few other types into our `client/src/main.tsx` below our other imports:
+The main entry to the SpacetimeDB API is the `DbConnection`, a type that manages a connection to a remote database. Let's import it and a few other types into our `client/src/main.tsx` below our other imports:
 
 ```tsx
 import { StrictMode } from 'react';
@@ -493,7 +493,7 @@ import { DbConnection, ErrorContext } from './module_bindings/index.ts';
 
 Note that we are importing `DbConnection` from our `module_bindings` so that it has all the type information about our tables and types.
 
-We've also imported the `SpacetimeDBProvider` React component which will allow us to seemlessly connect our SpacetimeDB state directly to our React state.
+We've also imported the `SpacetimeDBProvider` React component which will allow us to connect our SpacetimeDB state directly to our React state seamlessly.
 
 ## Create your SpacetimeDB client
 
@@ -538,7 +538,7 @@ createRoot(document.getElementById('root')!).render(
 );
 ```
 
-Here we are configuring our SpacetimeDB connection by specifying the server URI, database name, and a few callbacks including the `onConnect` callback. When `onConnect` is called after connecting, we store the connection state, our `Identity`, and our SpacetimeDB credentials in our React state. If there is an error connecting, we print that error to the console as well.
+Here we are configuring our SpacetimeDB connection by specifying the server URI, database name, and a few callbacks including the `onConnect` callback. When `onConnect` is called after connecting, we store the connection state, our `Identity`, and our SpacetimeDB credentials in our React state. If there is an error connecting, we also print that error to the console.
 
 We are also using `localStorage` to store our SpacetimeDB credentials. This way, we can reconnect to SpacetimeDB with the same `Identity` and token if we refresh the page. The first time we connect, we won't have any credentials stored, so we pass `undefined` to the `withToken` method. This will cause SpacetimeDB to generate new credentials for us.
 
@@ -546,7 +546,7 @@ If you chose a different name for your database, replace `quickstart-chat` with 
 
 Our React hooks will subscribe to the data in SpacetimeDB. When we subscribe, SpacetimeDB will run our subscription queries and store the result in a local "client cache". This cache will be updated in real-time as the data in the table changes on the server.
 
-We pass our connection configuration directly to the `SpacetimeDBProvider` which will manage our connection to SpacetimeDB.
+We pass our connection configuration directly to the `SpacetimeDBProvider`, which will manage our connection to SpacetimeDB.
 
 ### Accessing the Data
 
@@ -598,7 +598,7 @@ Let's now prettify our messages in our render function by sorting them by their 
     });
 ```
 
-That's all we have to do to hook up our SpacetimeDB state to our React state. SpacetimeDB will make sure that any change on the server gets pushed down to our application and rerendered on screen in real-time.
+That's all we have to do to hook up our SpacetimeDB state to our React state. SpacetimeDB ensures that any changes on the server are pushed down to our application and rerendered on screen in real-time.
 
 Let's also update our render function to show a loading message while we're connecting to SpacetimeDB. Add this just below our `prettyMessages` declaration:
 
@@ -623,7 +623,7 @@ Finally, let's also compute the name of the user from the `Identity` in our `nam
 
 ### Calling Reducers
 
-Let's hook up our callbacks so we can send some messages and see them displayed in the app after being synchronized by SpacetimeDB. We need to update the `onSubmitNewName` and `onSubmitMessage` callbacks to send the appropriate reducer to the module.
+Let's hook up our callbacks so we can send some messages and see them displayed in the app after they are synchronised by SpacetimeDB. We need to update the `onSubmitNewName` and `onSubmitMessage` callbacks to send the appropriate reducer to the module.
 
 Modify the `onSubmitNewName` callback by adding a call to the `setName` reducer:
 
@@ -635,7 +635,7 @@ Modify the `onSubmitNewName` callback by adding a call to the `setName` reducer:
   };
 ```
 
-Next modify the `onSubmitMessage` callback by adding a call to the `sendMessage` reducer:
+Next, modify the `onSubmitMessage` callback by adding a call to the `sendMessage` reducer:
 
 ```tsx
   const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
@@ -656,20 +656,20 @@ pnpm run dev
 
 > Don't forget! You may need to publish your server module if you haven't yet.
 
-Send some messages and update your username and watch it change in real-time. Note that when you update your username it also updates immediately for all prior messages. This is because the messages store the user's `Identity` directly, instead of their username, so we can retroactively apply their username to all prior messages.
+Send some messages and update your username and watch it change in real-time. Note that when you update your username, it also updates immediately for all prior messages. This is because the messages store the user's `Identity` directly, instead of their username, so we can retroactively apply their username to all prior messages.
 
 Try opening a few incognito windows to see what it's like with multiple users!
 
 ### Notify about new users
 
-We can also register `onInsert`, `onUpdate`, and `onDelete` callbacks for the purpose of handling events, not just state. For example, we might want to show a notification any time a new user connects to the database.
+We can also register `onInsert`, `onUpdate`, and `onDelete` callbacks to handle events, not just state. For example, we might want to show a notification any time a new user connects to the database.
 
 Note that these callbacks can fire in two contexts:
 
 - After a reducer runs, when the client's cache is updated about changes to subscribed rows.
 - After calling `subscribe`, when the client's cache is initialized with all existing matching rows.
 
-Our current `useTable` filters just online users, but we can print a system message any time a user enters or leaves the room by subscribing to callbacks on the `onlineUsers` React hook.
+Our current `useTable` only filters online users, but we can print a system message anytime a user enters or leaves the room by subscribing to callbacks on the `onlineUsers` React hook.
 
 Update your `onlineUsers` React hook to add the following callbacks:
 
@@ -711,7 +711,7 @@ Update your `onlineUsers` React hook to add the following callbacks:
 
 These callbacks will be called any time the state of the `useTable` result changes to add or remove a row, while respecting your `where` filter.
 
-Here we post a system message saying a new user has connected if the user is being added to the `user` table and they're online, or if an existing user's online status is being set to "online".
+Here, we post a system message indicating that a new user has connected if the user is being added to the `user` table and they're online, or if an existing user's online status is being updated to "online".
 
 Next, let's add the system messages to our list of `Message`s so they can be interleaved with the chat messages. Modify `prettyMessages` to concat the `systemMessages` as well:
 
@@ -732,13 +732,14 @@ Next, let's add the system messages to our list of `Message`s so they can be int
     });
 ```
 
-Finally, let's also subscribe to offline users so we can show offline users in the side bar as well. Replace `const offlineUsers: User[] = [];` with:
+Finally, let's also subscribe to offline users so we can show them in the sidebar as well. Replace `const offlineUsers: User[] = [];` with:
   
 ```tsx
 const { rows: offlineUsers } = useTable<DbConnection, User>(
   'user',
   where(eq('online', false))
 );
+```
 
 ## Conclusion
 
