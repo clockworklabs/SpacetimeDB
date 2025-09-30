@@ -16,6 +16,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - run: df -h
+      # Free up disk space because otherwise we run out during the test
       - name: "node-cleanup"
         run: |
           sudo rm -rf /usr/local/lib/android
