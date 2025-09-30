@@ -260,7 +260,8 @@ public static partial class BSATNRuntimeTests
     [Type]
     public partial record BasicDataRecord(int X, string Y, int? Z, string? W)
     {
-        public BasicDataRecord() { }
+        public BasicDataRecord()
+            : this(default, "", default, default) { }
 
         public BasicDataRecord((int x, string y, int? z, string? w) data)
             : this(data.x, data.y, data.z, data.w) { }
