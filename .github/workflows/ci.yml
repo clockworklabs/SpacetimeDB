@@ -41,9 +41,13 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
+
+      # Copy global.json to the current directory so that the dotnet things use it
+      - run: cp modules/global.json global.json
+
       - uses: actions/setup-dotnet@v4
         with:
-          global-json-file: modules/global.json
+          global-json-file: global.json
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
@@ -95,8 +99,8 @@ jobs:
 
       - uses: dsherret/rust-toolchain-file@v1
 
-      - run: |
-          cp modules/global.json global.json
+      # Copy global.json to the current directory so that the dotnet things use it
+      - run: cp modules/global.json global.json
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -106,30 +110,22 @@ jobs:
         run: |
           sudo mkdir /stdb
           sudo chmod 777 /stdb
-#      
-#      - name: Run cargo test
-#        #Note: Unreal tests will be run separately
-#        run: cargo test --all -- --skip unreal
-#
-#      - name: Check that the test outputs are up-to-date
-#        run: bash tools/check-diff.sh
-#
-#      - name: Ensure C# autogen bindings are up-to-date
-#        run: |
-#          cargo run -p spacetimedb-codegen --example regen-csharp-moduledef
-#          bash tools/check-diff.sh crates/bindings-csharp
+      
+      - name: Run cargo test
+        #Note: Unreal tests will be run separately
+        run: cargo test --all -- --skip unreal
+
+      - name: Check that the test outputs are up-to-date
+        run: bash tools/check-diff.sh
+
+      - name: Ensure C# autogen bindings are up-to-date
+        run: |
+          cargo run -p spacetimedb-codegen --example regen-csharp-moduledef
+          bash tools/check-diff.sh crates/bindings-csharp
 
       - name: C# bindings tests
         working-directory: crates/bindings-csharp
-        run: |
-          set -x
-          which dotnet
-          find "$DOTNET_ROOT" -name '*8.0.400*'
-          dotnet --version
-          dotnet --list-sdks
-          dotnet test -warnaserror
-        env:
-          DOTNET_MULTILEVEL_LOOKUP: 0   # don't probe machine-wide SDKs (avoids falling onto 9.x)
+        run: dotnet test -warnaserror
 
   lints:
     name: Lints
