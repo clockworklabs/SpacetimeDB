@@ -589,14 +589,40 @@ pub mod raw {
         /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
         pub fn identity(out_ptr: *mut u8);
 
-        /// Check the size of the jwt associated with the given connection.
-        /// Returns 0 if there is no jwt for the connection.
-        pub fn jwt_len(connection_id_ptr: *const u8, out_ptr: *mut u32);
+    }
 
-        /// Write the jwt payload for the given connection id to the out_ptr.
-        /// target_ptr_len will be set to the number of bytes written to the buffer.
-        /// If the buffer is too small, or the connection has no jwt, target_ptr_len will be set to 0.
-        pub fn get_jwt(connection_id_ptr: *const u8, target_ptr: *mut u8, target_ptr_len: *mut u32);
+    // See comment on previous `extern "C"` block re: ABI version.
+    #[link(wasm_import_module = "spacetime_10.1")]
+    extern "C" {
+        /// Read the remaining length of a [`BytesSource`] and write it to `out`.
+        ///
+        /// Note that the host automatically frees byte sources which are exhausted.
+        /// Such sources are invalid, and this method will return an error when passed one.
+        /// Callers of [`bytes_source_read`] should check for a return of -1
+        /// before invoking this function on the same `source`.
+        ///
+        /// Also note that the special [`BytesSource::INVALID`] (zero) is always invalid.
+        /// Callers should check for that value before invoking this function.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - `out` is NULL or `out` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NO_SUCH_BYTES`, when `source` is not a valid bytes source.
+        ///
+        /// If this function returns an error, `out` is not written.
+        pub fn bytes_source_remaining_length(source: BytesSource, out: *mut u32) -> i16;
+
+        /// Find the jwt payload for the given connection id, and write the
+        /// BytesSourceId to the given pointer.
+        /// If this is not found, BytesSourceId::INVALID (aka 0) will be written.
+        pub fn get_jwt(connection_id_ptr: *const u8, bytes_source_id: *mut BytesSource);
     }
 
     /// What strategy does the database index use?
@@ -1099,31 +1125,32 @@ pub fn identity() -> [u8; 32] {
 }
 
 #[inline]
-pub fn jwt_length(connection_id: [u8; 16]) -> Option<u32> {
-    let mut v: u32 = 0;
-    unsafe { raw::jwt_len(connection_id.as_ptr(), &mut v) }
-    if v == 0 {
-        None
-    } else {
-        Some(v)
-    }
-}
-
-#[inline]
 pub fn get_jwt(connection_id: [u8; 16]) -> Option<String> {
-    let Some(jwt_len) = jwt_length(connection_id) else {
-        return None; // No JWT found.
-    };
-    let mut buf = vec![0u8; jwt_len as usize];
-
-    let mut v: u32 = buf.len() as u32;
+    let mut source: raw::BytesSource = raw::BytesSource::INVALID;
     unsafe {
-        raw::get_jwt(connection_id.as_ptr(), buf.as_mut_ptr(), &mut v);
+        raw::get_jwt(connection_id.as_ptr(), &mut source);
     }
-    if v == 0 {
+    if source == raw::BytesSource::INVALID {
         return None; // No JWT found.
     }
-    Some(std::str::from_utf8(&buf[..v as usize]).unwrap().to_string())
+    let len = {
+        let mut len = 0;
+        let ret = unsafe { raw::bytes_source_remaining_length(source, &raw mut len) };
+        match ret {
+            0 => len,
+            INVALID => panic!("invalid source passed"),
+            _ => unreachable!(),
+        }
+    };
+    let mut buf = vec![0u8; len as usize];
+    let mut bytes_read = len as usize;
+    let ret = unsafe { raw::bytes_source_read(source, buf.as_mut_ptr(), &mut bytes_read) };
+    // We should have exhausted the source.
+    assert_eq!(ret, -1);
+    // We should get exactly `len` bytes.
+    assert_eq!(bytes_read, len as usize);
+
+    Some(std::str::from_utf8(&buf[..bytes_read]).unwrap().to_string())
 }
 
 pub struct RowIter {

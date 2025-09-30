@@ -392,11 +392,12 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::datastore_btree_scan_bsatn,
             "spacetime_10.0"::datastore_delete_by_btree_scan_bsatn,
             "spacetime_10.0"::identity,
-            "spacetime_10.0"::get_jwt,
-            "spacetime_10.0"::jwt_len,
 
             // unstable:
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
+
+            "spacetime_10.1"::bytes_source_remaining_length,
+            "spacetime_10.1"::get_jwt,
         }
     };
 }
