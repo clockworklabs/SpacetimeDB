@@ -33,12 +33,14 @@ import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
 import type { AutoIncOverflow, UniqueAlreadyExists } from './rt';
-import type {
+import {
   ColumnBuilder,
-  ColumnMetadata,
-  InferTypeOfRow,
-  TypeBuilder,
+  type ColumnMetadata,
+  type IndexTypes,
+  type InferTypeOfRow,
+  type TypeBuilder,
 } from './type_builders';
+import type { Prettify } from './type_util';
 
 /*****************************************************************
  * the run‑time catalogue that we are filling
@@ -59,9 +61,10 @@ type ColList = ColId[];
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.
  */
-type TableHandle<
+type TableSchema<
   TableName extends string,
   Row extends Record<string, ColumnBuilder<any, any, any>>,
+  Idx extends readonly PendingIndex<keyof Row & string>[],
 > = {
   /**
    * The TypeScript phantom type. This is not stored at runtime,
@@ -83,6 +86,8 @@ type TableHandle<
    * The {@link RawTableDefV9} of the configured table
    */
   readonly tableDef: RawTableDefV9;
+
+  readonly idxs: Idx;
 };
 
 type RowObj = Record<
@@ -99,14 +104,10 @@ type CoerceColumn<
 > =
   Col extends TypeBuilder<infer T, infer U> ? ColumnBuilder<T, U, object> : Col;
 
-type TableOpts<
-  TableName extends string,
-  Row extends RowObj,
-  Idx extends PendingIndex<keyof Row & string>[] | undefined = undefined,
-> = {
-  name: TableName;
+type TableOpts<Row extends RowObj> = {
+  name: string;
   public?: boolean;
-  indexes?: Idx; // declarative multi‑column indexes
+  indexes?: PendingIndex<keyof Row & string>[]; // declarative multi‑column indexes
   scheduled?: string; // reducer name for cron‑like tables
 };
 
@@ -117,11 +118,19 @@ type TableOpts<
 type PendingIndex<AllowedCol extends string> = {
   name?: string;
   accessor_name?: string;
+  is_unique?: boolean;
   algorithm:
     | { tag: 'BTree'; value: { columns: readonly AllowedCol[] } }
-    | { tag: 'Hash'; value: { columns: readonly AllowedCol[] } }
+    // | { tag: 'Hash'; value: { columns: readonly AllowedCol[] } }
     | { tag: 'Direct'; value: { column: AllowedCol } };
 };
+
+type OptsIndices<Opts extends TableOpts<any>> = Opts extends {
+  indexes: infer Ixs extends NonNullable<any[]>;
+}
+  ? Ixs
+  : CoerceArray<[]>;
+type CoerceArray<X extends PendingIndex<any>[]> = X;
 
 /**
  * Defines a database table with schema and options
@@ -139,14 +148,10 @@ type PendingIndex<AllowedCol extends string> = {
  * );
  * ```
  */
-export function table<
-  const TableName extends string,
-  Row extends RowObj,
-  Idx extends PendingIndex<keyof Row & string>[] | undefined = undefined,
->(
-  opts: TableOpts<TableName, Row, Idx>,
+export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
+  opts: Opts,
   row: Row
-): TableHandle<TableName, CoerceRow<Row>> {
+): TableSchema<Opts['name'], CoerceRow<Row>, OptsIndices<Opts>> {
   const {
     name,
     public: isPublic = false,
@@ -172,36 +177,37 @@ export function table<
 
   let scheduleAtCol: ColId | undefined;
 
-  for (const [name, builder] of Object.entries(row) as [
-    keyof Row & string,
-    ColumnBuilder<any, any>,
-  ][]) {
-    const meta: any = builder.columnMetadata;
+  for (const [name, builder] of Object.entries(row)) {
+    const meta: ColumnMetadata =
+      'columnMetadata' in builder ? builder.columnMetadata : {};
 
     /* primary key */
-    if (meta.primaryKey) pk.push(colIds.get(name)!);
+    if (meta.isPrimaryKey) pk.push(colIds.get(name)!);
+
+    const isUnique = meta.isUnique || meta.isPrimaryKey;
 
     /* implicit 1‑column indexes */
-    if (meta.index) {
-      const algo = (meta.index ?? 'btree') as 'BTree' | 'Hash' | 'Direct';
+    if (meta.indexType || isUnique) {
+      const algo = meta.indexType ?? 'btree';
       const id = colIds.get(name)!;
-      indexes.push(
-        algo === 'Direct'
-          ? {
-              name: 'TODO',
-              accessorName: 'TODO',
-              algorithm: RawIndexAlgorithm.Direct(id),
-            }
-          : {
-              name: 'TODO',
-              accessorName: 'TODO',
-              algorithm: { tag: algo, value: [id] },
-            }
-      );
+      let algorithm: RawIndexAlgorithm;
+      switch (algo) {
+        case 'btree':
+          algorithm = RawIndexAlgorithm.BTree([id]);
+          break;
+        case 'direct':
+          algorithm = RawIndexAlgorithm.Direct(id);
+          break;
+      }
+      indexes.push({
+        name: 'TODO',
+        accessorName: 'TODO',
+        algorithm,
+      });
     }
 
     /* uniqueness */
-    if (meta.unique) {
+    if (isUnique) {
       constraints.push({
         name: 'TODO',
         data: { tag: 'Unique', value: { columns: [colIds.get(name)!] } },
@@ -209,7 +215,7 @@ export function table<
     }
 
     /* auto increment */
-    if (meta.autoInc) {
+    if (meta.isAutoIncrement) {
       sequences.push({
         name: 'TODO',
         start: 0n, // TODO
@@ -221,27 +227,24 @@ export function table<
     }
 
     /* scheduleAt */
-    if (meta.scheduleAt) scheduleAtCol = colIds.get(name)!;
+    if (meta.isScheduleAt) scheduleAtCol = colIds.get(name)!;
   }
 
   /** 3. convert explicit multi‑column indexes coming from options.indexes */
-  for (const pending of (userIndexes ?? []) as PendingIndex<
-    keyof Row & string
-  >[]) {
+  for (const pending of userIndexes ?? []) {
     const converted: RawIndexDefV9 = {
       name: pending.name,
       accessorName: pending.accessor_name,
-      algorithm: ((): RawIndexAlgorithm => {
-        if (pending.algorithm.tag === 'Direct')
-          return {
-            tag: 'Direct',
-            value: colIds.get(pending.algorithm.value.column)!,
-          };
-        return {
-          tag: pending.algorithm.tag,
-          value: pending.algorithm.value.columns.map(c => colIds.get(c)!),
-        };
-      })(),
+      algorithm:
+        pending.algorithm.tag === 'Direct'
+          ? {
+              tag: 'Direct',
+              value: colIds.get(pending.algorithm.value.column)!,
+            }
+          : {
+              tag: pending.algorithm.tag,
+              value: pending.algorithm.value.columns.map(c => colIds.get(c)!),
+            },
     };
     indexes.push(converted);
   }
@@ -275,20 +278,19 @@ export function table<
       // If it's a ColumnBuilder, use .typeBuilder.algebraicType, else use .algebraicType directly
       const algebraicType =
         'typeBuilder' in columnBuilder
-          ? (columnBuilder as ColumnBuilder<any, any, any>).typeBuilder
-              .algebraicType
-          : (columnBuilder as TypeBuilder<any, any>).algebraicType;
+          ? columnBuilder.typeBuilder.algebraicType
+          : columnBuilder.algebraicType;
       return { name: columnName, algebraicType };
     }),
   });
 
-  const handle: TableHandle<TableName, CoerceRow<Row>> = {
+  return {
     tableName: name, // stays the literal "users" | "posts"
     rowSpacetimeType: productType,
     tableDef,
+    idxs: userIndexes as OptsIndices<Opts>,
     rowType: {} as CoerceRow<Row>,
   };
-  return handle;
 }
 
 class Schema<S extends UntypedSchemaDef> {
@@ -302,16 +304,16 @@ class Schema<S extends UntypedSchemaDef> {
   }
 }
 
-// Create interfaces for each table to enable better navigation
-type TableHandleTupleToObject<T extends readonly TableHandle<any, any>[]> = {
-  readonly [i in keyof T]: {
-    name: T[i]['tableName'];
-    columns: T[i]['rowType'];
+/** @returns {UntypedSchemaDef} */
+type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
+  tables: {
+    /** @type {UntypedTableDef} */
+    readonly [i in keyof T]: {
+      name: T[i]['tableName'];
+      columns: T[i]['rowType'];
+      indexes: T[i]['idxs'];
+    };
   };
-};
-
-type TupleToSchema<T extends readonly TableHandle<any, any>[]> = {
-  tables: TableHandleTupleToObject<T>;
 };
 
 type InferSchema<SchemaDef extends Schema<any>> =
@@ -329,9 +331,9 @@ type InferSchema<SchemaDef extends Schema<any>> =
  * );
  * ```
  */
-export function schema<const H extends readonly TableHandle<any, any>[]>(
+export function schema<const H extends readonly TableSchema<any, any, any>[]>(
   ...handles: H
-): Schema<TupleToSchema<H>>;
+): Schema<TablesToSchema<H>>;
 
 /**
  * Creates a schema from table definitions
@@ -345,23 +347,25 @@ export function schema<const H extends readonly TableHandle<any, any>[]>(
  * );
  * ```
  */
-export function schema<const H extends readonly TableHandle<any, any>[]>(
+export function schema<const H extends readonly TableSchema<any, any, any>[]>(
   ...handles: H
-): Schema<TupleToSchema<H>>;
+): Schema<TablesToSchema<H>>;
 
 /**
  * Creates a schema from table definitions (array overload)
  * @param handles - Array of table handles created by table() function
  * @returns ColumnBuilder representing the complete database schema
  */
-export function schema<const H extends readonly TableHandle<any, any>[]>(
+export function schema<const H extends readonly TableSchema<any, any, any>[]>(
   handles: H
-): Schema<TupleToSchema<H>>;
+): Schema<TablesToSchema<H>>;
 
 export function schema(
-  ...args: [readonly TableHandle<any, any>[]] | readonly TableHandle<any, any>[]
+  ...args:
+    | [readonly TableSchema<any, any, any>[]]
+    | readonly TableSchema<any, any, any>[]
 ): Schema<UntypedSchemaDef> {
-  const handles: readonly TableHandle<any, any>[] =
+  const handles: readonly TableSchema<any, any, any>[] =
     args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
 
   // typespace: Typespace;
@@ -724,12 +728,13 @@ export function reducer<
   pushReducer(name, params, fn);
 }
 
-type UntypedTableDef = {
+export type UntypedTableDef = {
   name: string;
-  columns: Record<string, ColumnBuilder<any, any, any>>;
+  columns: Record<string, ColumnBuilder<any, any, ColumnMetadata>>;
+  indexes: PendingIndex<any>[];
 };
 
-type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
+export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
   TableDef['columns']
 >;
 
@@ -773,7 +778,11 @@ type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
  * - UCV: unique-constraint violation error type (never if none)
  * - AIO: auto-increment overflow error type (never if none)
  */
-export type Table<TableDef extends UntypedTableDef> = {
+export type Table<TableDef extends UntypedTableDef> = Prettify<
+  TableMethods<TableDef> & Indexes<TableDef, TableIndexes<TableDef>>
+>;
+
+export type TableMethods<TableDef extends UntypedTableDef> = {
   /** Returns the number of rows in the TX state. */
   count(): bigint;
 
@@ -785,7 +794,7 @@ export type Table<TableDef extends UntypedTableDef> = {
   insert(row: RowType<TableDef>): RowType<TableDef>;
 
   /** Like insert, but returns a Result instead of throwing. */
-  try_insert(
+  tryInsert(
     row: RowType<TableDef>
   ): Result<RowType<TableDef>, TryInsertError<TableDef>>;
 
@@ -793,13 +802,119 @@ export type Table<TableDef extends UntypedTableDef> = {
   delete(row: RowType<TableDef>): boolean;
 };
 
+export type TableIndexes<TableDef extends UntypedTableDef> = {
+  [k in keyof TableDef['columns'] & string]: ColumnIndex<
+    k,
+    TableDef['columns'][k]['columnMetadata']
+  >;
+} & {
+  [I in TableDef['indexes'][number] as I['name'] & {}]: {
+    name: I['name'];
+    unique: AllUnique<TableDef, IndexColumns<I>>;
+    algorithm: Lowercase<I['algorithm']['tag']>;
+    columns: IndexColumns<I>;
+  };
+};
+
+type AllUnique<
+  TableDef extends UntypedTableDef,
+  Columns extends Array<keyof TableDef['columns']>,
+> = {
+  [i in keyof Columns]: ColumnIsUnique<
+    TableDef['columns'][Columns[i]]['columnMetadata']
+  >;
+} extends true[]
+  ? true
+  : false;
+
+type IndexColumns<I extends PendingIndex<any>> = I['algorithm'] extends {
+  value: { columns: infer C extends string[] };
+}
+  ? C
+  : I['algorithm'] extends { value: { column: infer C extends string } }
+    ? [C]
+    : never;
+
+type CollapseTuple<A extends any[]> = A extends [infer T] ? T : A;
+
+type UntypedIndex<AllowedCol extends string> = {
+  name: string;
+  unique: boolean;
+  algorithm: 'btree' | 'direct';
+  columns: AllowedCol[];
+};
+
+export type Indexes<
+  TableDef extends UntypedTableDef,
+  I extends Record<string, UntypedIndex<keyof TableDef['columns'] & string>>,
+> = {
+  [k in keyof I]: Index<TableDef, I[k]>;
+};
+
+export type Index<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = I['unique'] extends true
+  ? UniqueIndex<TableDef, I>
+  : RangedIndex<TableDef, I>;
+
+export type UniqueIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = {
+  find(col_val: IndexVal<TableDef, I>): RowType<TableDef> | null;
+  delete(col_val: IndexVal<TableDef, I>): boolean;
+  update(col_val: RowType<TableDef>): RowType<TableDef>;
+};
+
+export type RangedIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = {
+  filter(range: /*TODO:*/ any): IterableIterator<RowType<TableDef>>;
+  delete(range: /*TODO:*/ any): bigint;
+};
+
+export type IndexVal<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = _IndexVal<TableDef, I['columns']>;
+
+type _IndexVal<
+  TableDef extends UntypedTableDef,
+  Columns extends string[],
+> = CollapseTuple<{
+  [i in keyof Columns]: TableDef['columns'][Columns[i]]['typeBuilder']['type'];
+}>;
+
+type ColumnIndex<Name extends string, M extends ColumnMetadata> = Prettify<
+  {
+    name: Name;
+    unique: ColumnIsUnique<M>;
+    columns: [Name];
+    algorithm: 'btree' | 'direct';
+  } & (M extends {
+    indexType: infer I extends NonNullable<IndexTypes>;
+  }
+    ? { algorithm: I }
+    : ColumnIsUnique<M> extends true
+      ? { algorithm: 'btree' }
+      : never)
+>;
+
+type ColumnIsUnique<M extends ColumnMetadata> = M extends
+  | { isUnique: true }
+  | { isPrimaryKey: true }
+  ? true
+  : false;
+
 type CheckAnyMetadata<
   TableDef extends UntypedTableDef,
   Metadata extends ColumnMetadata,
   T,
 > = Values<TableDef['columns']>['columnMetadata'] extends Metadata ? T : never;
 
-type TryInsertError<TableDef extends UntypedTableDef> =
+export type TryInsertError<TableDef extends UntypedTableDef> =
   | CheckAnyMetadata<
       TableDef,
       { isUnique: true } | { isPrimaryKey: true },
@@ -807,9 +922,12 @@ type TryInsertError<TableDef extends UntypedTableDef> =
     >
   | CheckAnyMetadata<TableDef, { isAutoIncrement: true }, AutoIncOverflow>;
 
-type Result<T, E> = { ok: true; val: T } | { ok: false; err: E };
+export type Result<T, E> = { ok: true; val: T } | { ok: false; err: E };
 
-const x = schema(table({ name: 'hello' }, { x: t.i32() }));
+const x = schema(table({ name: 'hello' }, { xaaa: t.i32().primaryKey() }));
+
+let y!: Prettify<DbView<(typeof x)['schemaType']>>;
+// y.hello.idx.xaaa.find();
 // const y = x.schemaType.hello.x;
 // type Y = Infer<import('./type_builders').I32Builder>;
 // type A = import('./type_builders').I32Builder;
