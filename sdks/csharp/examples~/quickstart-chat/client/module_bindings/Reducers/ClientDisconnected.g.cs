@@ -12,17 +12,12 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void SetNameHandler(ReducerEventContext ctx, string name);
-        public event SetNameHandler? OnSetName;
+        public delegate void ClientDisconnectedHandler(ReducerEventContext ctx);
+        public event ClientDisconnectedHandler? OnClientDisconnected;
 
-        public void SetName(string name)
+        public bool InvokeClientDisconnected(ReducerEventContext ctx, Reducer.ClientDisconnected args)
         {
-            conn.InternalCallReducer(new Reducer.SetName(name), this.SetCallReducerFlags.SetNameFlags);
-        }
-
-        public bool InvokeSetName(ReducerEventContext ctx, Reducer.SetName args)
-        {
-            if (OnSetName == null)
+            if (OnClientDisconnected == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -34,9 +29,8 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnSetName(
-                ctx,
-                args.Name
+            OnClientDisconnected(
+                ctx
             );
             return true;
         }
@@ -46,28 +40,9 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class SetName : Reducer, IReducerArgs
+        public sealed partial class ClientDisconnected : Reducer, IReducerArgs
         {
-            [DataMember(Name = "name")]
-            public string Name;
-
-            public SetName(string Name)
-            {
-                this.Name = Name;
-            }
-
-            public SetName()
-            {
-                this.Name = "";
-            }
-
-            string IReducerArgs.ReducerName => "SetName";
+            string IReducerArgs.ReducerName => "ClientDisconnected";
         }
-    }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags SetNameFlags;
-        public void SetName(CallReducerFlags flags) => SetNameFlags = flags;
     }
 }
