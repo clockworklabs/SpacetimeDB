@@ -257,6 +257,15 @@ public static partial class BSATNRuntimeTests
             : this(data.x, data.y, data.z, data.w) { }
     }
 
+    [Type]
+    public partial record BasicDataRecord(int X, string Y, int? Z, string? W)
+    {
+        public BasicDataRecord() { }
+
+        public BasicDataRecord((int x, string y, int? z, string? w) data)
+            : this(data.x, data.y, data.z, data.w) { }
+    }
+
     static readonly Gen<int> GenSmallInt = Gen.Int[-5, 5];
     static readonly Gen<string> GenSmallString = Gen.String[Gen.Char.AlphaNumeric, 0, 2];
     static readonly Gen<int?> GenNullableInt = Gen.Nullable<int>(GenSmallInt);
