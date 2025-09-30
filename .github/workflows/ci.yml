@@ -121,7 +121,9 @@ jobs:
         working-directory: crates/bindings-csharp
         run: |
           which dotnet
+          ls "$DOTNET_ROOT"
           dotnet --version
+          "$DOTNET_ROOT"/dotnet --version
           dotnet --list-sdks
           dotnet test -warnaserror
         env:
