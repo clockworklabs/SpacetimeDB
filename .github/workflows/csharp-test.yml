@@ -8,7 +8,7 @@ on:
 
 jobs:
   unity-testsuite:
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-runner
     # Cancel any previous testsuites running on the same PR and/or ref.
     concurrency:
       group: unity-test-${{ github.event.pull_request.number || github.ref }}
@@ -24,7 +24,7 @@ jobs:
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
         with:
-          global-json-file: modules/global.json
+          global-json-file: global.json
 
       - name: Override NuGet packages
         run: |
