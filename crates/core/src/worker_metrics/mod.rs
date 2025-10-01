@@ -312,6 +312,69 @@ metrics_group!(
         #[help = "Number of commits replayed after restoring from a snapshot upon restart"]
         #[labels(db: Identity)]
         pub replay_commitlog_num_commits: IntGaugeVec,
+
+        #[name = spacetime_snapshot_creation_time_total_sec]
+        #[help = "The time (in seconds) it took to take and store a database snapshot, including scheduling overhead"]
+        #[labels(db: Identity)]
+        // Snapshot creation should take in the order of milliseconds,
+        // but log data suggests that there are outliers.
+        // So let's track a wide range of buckets to get a better picture.
+        //
+        // We also track the timing without `asyncify` scheduling overhead
+        // (`snapshot_creation_time_inner`), and the snapshot compression
+        // timing with / without scheduling overhead (`snapshot_compression_time_total`
+        // and `snapshot_compression_time_inner`, respectively).
+        //
+        // Compression may have contributed to observed outliers, but is no
+        // longer included in the snapshot creation timing.
+        #[buckets(0.0005, 0.001, 0.005, 0.01, 0.1, 1.0, 5.0, 10.0)]
+        pub snapshot_creation_time_total: HistogramVec,
+
+        #[name = spacetime_snapshot_creation_time_inner_sec]
+        #[help = "The time (in seconds) it took to take and store a database snapshot, excluding scheduling overhead"]
+        #[labels(db: Identity)]
+        #[buckets(0.0005, 0.001, 0.005, 0.01, 0.1, 1.0, 5.0, 10.0)]
+        pub snapshot_creation_time_inner: HistogramVec,
+
+        #[name = spacetime_snapshot_compression_time_total_sec]
+        #[help = "The time (in seconds) it took to do a compression pass on the snapshot repository, including scheduling overhead"]
+        #[labels(db: Identity)]
+        // Not sure what range to expect, but certainly slower than snapshot
+        // creation.
+        #[buckets(0.001, 0.01, 0.1, 1.0, 5.0, 10.0)]
+        pub snapshot_compression_time_total: HistogramVec,
+
+        #[name = spacetime_snapshot_compression_time_inner_sec]
+        #[help = "The time (in seconds) it took to do a compression pass on the snapshot repository, excluding scheduling overhead"]
+        #[labels(db: Identity)]
+        #[buckets(0.001, 0.01, 0.1, 1.0, 5.0, 10.0)]
+        pub snapshot_compression_time_inner: HistogramVec,
+
+        #[name = spacetime_snapshot_compression_time_per_snapshot_sec]
+        #[help = "The time (in seconds) it took to compress a single snapshot"]
+        #[labels(db: Identity)]
+        #[buckets(0.001, 0.01, 0.1, 1.0, 5.0, 10.0)]
+        pub snapshot_compression_time_single: HistogramVec,
+
+        #[name = spacetime_snapshot_compression_skipped]
+        #[help = "The number of snapshots skipped in a single compression pass because they were already compressed"]
+        #[labels(db: Identity)]
+        pub snapshot_compression_skipped: IntGaugeVec,
+
+        #[name = spacetime_snapshot_compression_compressed]
+        #[help = "The number of snapshots compressed in a single compression pass"]
+        #[labels(db: Identity)]
+        pub snapshot_compression_compressed: IntGaugeVec,
+
+        #[name = spacetime_snapshot_compression_objects_compressed]
+        #[help = "The number of snapshot objects compressed in a single compression pass"]
+        #[labels(db: Identity)]
+        pub snapshot_compression_objects_compressed: IntGaugeVec,
+
+        #[name = spacetime_snapshot_compression_objects_hardlinked]
+        #[help = "The number of snapshot objects hardlinked in a single compression pass"]
+        #[labels(db: Identity)]
+        pub snapshot_compression_objects_hardlinked: IntGaugeVec,
     }
 );
 
