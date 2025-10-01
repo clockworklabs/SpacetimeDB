@@ -121,12 +121,12 @@ declare global {
     timestamp: bigint,
     args: Uint8Array
   ): void;
-  function __describe_module__(): RawModuleDef;
+  function __describe_module__(): Uint8Array;
 }
 
 const { freeze } = Object;
 
-const _syscalls = {
+const _syscalls = () => ({
   table_id_from_name,
   index_id_from_name,
   datastore_table_row_count,
@@ -143,15 +143,9 @@ const _syscalls = {
   console_timer_start,
   console_timer_end,
   identity,
-};
+});
 
-const sys = freeze(
-  Object.fromEntries(
-    Object.entries(_syscalls).map(([name, syscall]) => {
-      return [name, wrapSyscall(syscall)];
-    })
-  ) as typeof _syscalls
-);
+const sys = {} as ReturnType<typeof _syscalls>;
 
 globalThis.__call_reducer__ = function __call_reducer__(
   reducer_id,
@@ -177,7 +171,18 @@ globalThis.__call_reducer__ = function __call_reducer__(
 };
 
 globalThis.__describe_module__ = function __describe_module__() {
-  return RawModuleDef.V9(MODULE_DEF);
+  for (const [name, syscall] of Object.entries(_syscalls())) {
+    (sys as any)[name] = wrapSyscall(syscall);
+  }
+  freeze(sys);
+
+  const writer = new BinaryWriter(128);
+  AlgebraicType.serializeValue(
+    writer,
+    RawModuleDef.getTypeScriptAlgebraicType(),
+    RawModuleDef.V9(MODULE_DEF)
+  );
+  return writer.getBuffer();
 };
 
 let DB_VIEW: DbView<any> | null = null;

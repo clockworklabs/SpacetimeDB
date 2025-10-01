@@ -27,7 +27,7 @@ type ColList = ColId[];
 type TableSchema<
   TableName extends string,
   Row extends Record<string, ColumnBuilder<any, any, any>>,
-  Idx extends readonly PendingIndex<keyof Row & string>[],
+  Idx extends readonly IndexOpts<keyof Row & string>[],
 > = {
   /**
    * The TypeScript phantom type. This is not stored at runtime,
@@ -70,7 +70,7 @@ type CoerceColumn<
 type TableOpts<Row extends RowObj> = {
   name: string;
   public?: boolean;
-  indexes?: PendingIndex<keyof Row & string>[]; // declarative multi‑column indexes
+  indexes?: IndexOpts<keyof Row & string>[]; // declarative multi‑column indexes
   scheduled?: string; // reducer name for cron‑like tables
 };
 
@@ -78,22 +78,19 @@ type TableOpts<Row extends RowObj> = {
  * Index helper type used *inside* {@link table} to enforce that only
  * existing column names are referenced.
  */
-type PendingIndex<AllowedCol extends string> = {
+type IndexOpts<AllowedCol extends string> = {
   name?: string;
-  accessor_name?: string;
-  is_unique?: boolean;
-  algorithm:
-    | { tag: 'BTree'; value: { columns: readonly AllowedCol[] } }
-    // | { tag: 'Hash'; value: { columns: readonly AllowedCol[] } }
-    | { tag: 'Direct'; value: { column: AllowedCol } };
-};
+} & (
+  | { algorithm: 'btree'; columns: readonly AllowedCol[] }
+  | { algorithm: 'direct'; column: AllowedCol }
+);
 
 type OptsIndices<Opts extends TableOpts<any>> = Opts extends {
   indexes: infer Ixs extends NonNullable<any[]>;
 }
   ? Ixs
   : CoerceArray<[]>;
-type CoerceArray<X extends PendingIndex<any>[]> = X;
+type CoerceArray<X extends IndexOpts<any>[]> = X;
 
 /**
  * Defines a database table with schema and options
@@ -181,9 +178,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     if (meta.isAutoIncrement) {
       sequences.push({
         name: undefined,
-        start: 0n,
-        minValue: 0n,
-        maxValue: 0n,
+        start: undefined,
+        minValue: undefined,
+        maxValue: undefined,
         column: colIds.get(name)!,
         increment: 1n,
       });
@@ -194,22 +191,20 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   }
 
   /** 3. convert explicit multi‑column indexes coming from options.indexes */
-  for (const pending of userIndexes ?? []) {
-    const converted: RawIndexDefV9 = {
-      name: pending.name,
-      accessorName: pending.accessor_name,
-      algorithm:
-        pending.algorithm.tag === 'Direct'
-          ? {
-              tag: 'Direct',
-              value: colIds.get(pending.algorithm.value.column)!,
-            }
-          : {
-              tag: pending.algorithm.tag,
-              value: pending.algorithm.value.columns.map(c => colIds.get(c)!),
-            },
-    };
-    indexes.push(converted);
+  for (const indexOpts of userIndexes ?? []) {
+    let algorithm: RawIndexAlgorithm;
+    switch (indexOpts.algorithm) {
+      case 'btree':
+        algorithm = {
+          tag: 'BTree',
+          value: indexOpts.columns.map(c => colIds.get(c)!),
+        };
+        break;
+      case 'direct':
+        algorithm = { tag: 'Direct', value: colIds.get(indexOpts.column)! };
+        break;
+    }
+    indexes.push({ name: undefined, accessorName: indexOpts.name, algorithm });
   }
 
   // Temporarily set the type ref to 0. We will set this later
@@ -493,7 +488,7 @@ export function reducer<
 export type UntypedTableDef = {
   name: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata>>;
-  indexes: PendingIndex<any>[];
+  indexes: IndexOpts<any>[];
 };
 
 export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
@@ -540,7 +535,7 @@ export type TableIndexes<TableDef extends UntypedTableDef> = {
   [I in TableDef['indexes'][number] as I['name'] & {}]: {
     name: I['name'];
     unique: AllUnique<TableDef, IndexColumns<I>>;
-    algorithm: Lowercase<I['algorithm']['tag']>;
+    algorithm: Lowercase<I['algorithm']>;
     columns: IndexColumns<I>;
   };
 };
@@ -556,12 +551,10 @@ type AllUnique<
   ? true
   : false;
 
-type IndexColumns<I extends PendingIndex<any>> = I['algorithm'] extends {
-  value: { columns: infer C extends string[] };
-}
-  ? C
-  : I['algorithm'] extends { value: { column: infer C extends string } }
-    ? [C]
+type IndexColumns<I extends IndexOpts<any>> = I extends { columns: string[] }
+  ? I['columns']
+  : I extends { column: string }
+    ? [I['column']]
     : never;
 
 type CollapseTuple<A extends any[]> = A extends [infer T] ? T : A;
