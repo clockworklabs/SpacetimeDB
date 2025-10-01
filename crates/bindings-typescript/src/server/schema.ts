@@ -121,12 +121,12 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   /** 1. column catalogue + helpers */
   const colIds = new Map<keyof Row & string, ColId>();
-  const colIdList: ColList = [];
+  const colNameList: string[] = [];
 
   let nextCol: number = 0;
   for (const colName of Object.keys(row) as (keyof Row & string)[]) {
     colIds.set(colName, nextCol++);
-    colIdList.push(colIds.get(colName)!);
+    colNameList.push(colName);
   }
 
   /** 2. gather primary keys, per‑column indexes, uniques, sequences */
@@ -205,6 +205,15 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         break;
     }
     indexes.push({ name: undefined, accessorName: indexOpts.name, algorithm });
+  }
+
+  for (const index of indexes) {
+    const cols =
+      index.algorithm.tag === 'Direct'
+        ? [index.algorithm.value]
+        : index.algorithm.value;
+    const colS = cols.map(i => colNameList[i]).join('_');
+    index.name = `${name}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`;
   }
 
   // Temporarily set the type ref to 0. We will set this later

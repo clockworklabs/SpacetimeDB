@@ -158,9 +158,6 @@ export default class BinaryReader {
 
   readString(): string {
     const uint8Array = this.readUInt8Array();
-    const decoder = new TextDecoder('utf-8');
-    const value = decoder.decode(uint8Array);
-    this.#offset += length;
-    return value;
+    return new TextDecoder('utf-8').decode(uint8Array);
   }
 }

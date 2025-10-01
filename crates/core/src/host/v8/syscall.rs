@@ -220,8 +220,8 @@ fn with_span<'scope, R>(
 /// Throws a `TypeError` if:
 /// - `name` is not `string`.
 fn table_id_from_name(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<TableId> {
-    let name: &str = deserialize_js(scope, args.get(0))?;
-    Ok(env_on_isolate(scope).instance_env.table_id_from_name(name)?)
+    let name: String = deserialize_js(scope, args.get(0))?;
+    Ok(env_on_isolate(scope).instance_env.table_id_from_name(&name)?)
 }
 
 /// Module ABI that finds the `IndexId` for an index name.
@@ -256,8 +256,8 @@ fn table_id_from_name(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArgume
 /// Throws a `TypeError`:
 /// - if `name` is not `string`.
 fn index_id_from_name(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<IndexId> {
-    let name: &str = deserialize_js(scope, args.get(0))?;
-    Ok(env_on_isolate(scope).instance_env.index_id_from_name(name)?)
+    let name: String = deserialize_js(scope, args.get(0))?;
+    Ok(env_on_isolate(scope).instance_env.index_id_from_name(&name)?)
 }
 
 /// Module ABI that returns the number of rows currently in table identified by `table_id`.
@@ -434,13 +434,13 @@ fn datastore_index_scan_range_bsatn(
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<u32> {
     let index_id: IndexId = deserialize_js(scope, args.get(0))?;
-    let mut prefix: &[u8] = deserialize_js(scope, args.get(1))?;
+    let mut prefix: Vec<u8> = deserialize_js(scope, args.get(1))?;
     let prefix_elems: ColId = deserialize_js(scope, args.get(2))?;
-    let rstart: &[u8] = deserialize_js(scope, args.get(3))?;
-    let rend: &[u8] = deserialize_js(scope, args.get(4))?;
+    let rstart: Vec<u8> = deserialize_js(scope, args.get(3))?;
+    let rend: Vec<u8> = deserialize_js(scope, args.get(4))?;
 
     if prefix_elems.idx() == 0 {
-        prefix = &[];
+        prefix = Vec::new();
     }
 
     let env = env_on_isolate(scope);
@@ -449,10 +449,10 @@ fn datastore_index_scan_range_bsatn(
     let chunks = env.instance_env.datastore_index_scan_range_bsatn_chunks(
         &mut env.chunk_pool,
         index_id,
-        prefix,
+        &prefix,
         prefix_elems,
-        rstart,
-        rend,
+        &rstart,
+        &rend,
     )?;
 
     // Insert the encoded + concatenated rows into a new buffer and return its id.
@@ -813,13 +813,13 @@ fn datastore_delete_by_index_scan_range_bsatn(
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<u32> {
     let index_id: IndexId = deserialize_js(scope, args.get(0))?;
-    let mut prefix: &[u8] = deserialize_js(scope, args.get(1))?;
+    let mut prefix: Vec<u8> = deserialize_js(scope, args.get(1))?;
     let prefix_elems: ColId = deserialize_js(scope, args.get(2))?;
-    let rstart: &[u8] = deserialize_js(scope, args.get(3))?;
-    let rend: &[u8] = deserialize_js(scope, args.get(4))?;
+    let rstart: Vec<u8> = deserialize_js(scope, args.get(3))?;
+    let rend: Vec<u8> = deserialize_js(scope, args.get(4))?;
 
     if prefix_elems.idx() == 0 {
-        prefix = &[];
+        prefix = Vec::new();
     }
 
     let env = env_on_isolate(scope);
@@ -827,7 +827,7 @@ fn datastore_delete_by_index_scan_range_bsatn(
     // Delete the relevant rows.
     Ok(env
         .instance_env
-        .datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)?)
+        .datastore_delete_by_index_scan_range_bsatn(index_id, &prefix, prefix_elems, &rstart, &rend)?)
 }
 
 /// Module ABI that deletes those rows, in the table identified by `table_id`,
@@ -880,10 +880,10 @@ fn datastore_delete_all_by_eq_bsatn(
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<u32> {
     let table_id: TableId = deserialize_js(scope, args.get(0))?;
-    let relation: &[u8] = deserialize_js(scope, args.get(1))?;
+    let relation: Vec<u8> = deserialize_js(scope, args.get(1))?;
 
     let env = env_on_isolate(scope);
-    Ok(env.instance_env.datastore_delete_all_by_eq_bsatn(table_id, relation)?)
+    Ok(env.instance_env.datastore_delete_all_by_eq_bsatn(table_id, &relation)?)
 }
 
 /// # Signature

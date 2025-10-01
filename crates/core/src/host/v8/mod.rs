@@ -421,12 +421,12 @@ pub(crate) fn with_scope<R>(
         logic(scope)
     };
 
-    let timeout_thread_cancel_flag = run_reducer_timeout(callback_every, callback, budget, isolate_handle);
+    // let timeout_thread_cancel_flag = run_reducer_timeout(callback_every, callback, budget, isolate_handle);
 
     let ret = with_isolate(&mut isolate);
 
     // Cancel the execution timeout in `run_reducer_timeout`.
-    timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
+    // timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
 
     (isolate, ret)
 }
@@ -542,7 +542,7 @@ fn call_call_reducer(
         let sender = serialize_to_js(scope, &sender.to_u256())?;
         let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
         let timestamp = serialize_to_js(scope, &timestamp)?;
-        let reducer_args = serialize_to_js(scope, &reducer_args.tuple.elements)?;
+        let reducer_args = serialize_to_js(scope, reducer_args.get_bsatn())?;
         let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
         // Get the function on the global proxy object and convert to a function.

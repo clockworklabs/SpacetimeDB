@@ -146,6 +146,13 @@ const _syscalls = () => ({
 });
 
 const sys = {} as ReturnType<typeof _syscalls>;
+function initSys() {
+  if (Object.isFrozen(sys)) return;
+  for (const [name, syscall] of Object.entries(_syscalls())) {
+    (sys as any)[name] = wrapSyscall(syscall);
+  }
+  freeze(sys);
+}
 
 globalThis.__call_reducer__ = function __call_reducer__(
   reducer_id,
@@ -154,6 +161,7 @@ globalThis.__call_reducer__ = function __call_reducer__(
   timestamp,
   args_buf
 ) {
+  initSys();
   const args_type = AlgebraicType.Product(
     MODULE_DEF.reducers[reducer_id].params
   );
@@ -168,14 +176,11 @@ globalThis.__call_reducer__ = function __call_reducer__(
     db: getDbView(),
   });
   REDUCERS[reducer_id](ctx, args);
+  return { tag: 'ok' };
 };
 
 globalThis.__describe_module__ = function __describe_module__() {
-  for (const [name, syscall] of Object.entries(_syscalls())) {
-    (sys as any)[name] = wrapSyscall(syscall);
-  }
-  freeze(sys);
-
+  initSys();
   return RawModuleDef.V9(MODULE_DEF);
 };
 
@@ -512,7 +517,10 @@ class TableIterator implements IterableIterator<any, undefined> {
     let buf_max_len = 0x10000;
     while (true) {
       try {
-        const [done, buf] = sys.row_iter_bsatn_advance(this.#id, buf_max_len);
+        const { 0: done, 1: buf } = sys.row_iter_bsatn_advance(
+          this.#id,
+          buf_max_len
+        );
         if (done) this.#id = -1;
         this.#reader = new BinaryReader(buf);
         return;
