@@ -302,6 +302,37 @@ class Schema<S extends UntypedSchemaDef> {
     this.tablesDef = { tables };
     this.typespace = typespace;
   }
+
+  // these just forward to the free functions, but having them be methods
+  // on a Schema<S> helps infer the S
+
+  // TODO: copy the documentation from the free functions
+
+  reducer<Params extends ParamsObj | RowObj>(
+    name: string,
+    params: Params,
+    fn: Reducer<S, Params>
+  ): void {
+    reducer(name, params, fn);
+  }
+
+  init<Params extends ParamsObj>(params: Params, fn: Reducer<S, Params>): void {
+    init(params, fn);
+  }
+
+  clientConnected<Params extends ParamsObj>(
+    params: Params,
+    fn: Reducer<S, Params>
+  ): void {
+    clientConnected(params, fn);
+  }
+
+  clientDisconnected<Params extends ParamsObj>(
+    params: Params,
+    fn: Reducer<S, Params>
+  ): void {
+    clientDisconnected(params, fn);
+  }
 }
 
 /** @returns {UntypedSchemaDef} */
@@ -316,7 +347,7 @@ type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
   };
 };
 
-type InferSchema<SchemaDef extends Schema<any>> =
+export type InferSchema<SchemaDef extends Schema<any>> =
   SchemaDef extends Schema<infer S> ? S : never;
 
 /**
@@ -511,30 +542,6 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
 export type DbView<SchemaDef extends UntypedSchemaDef> = {
   readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: Table<Tbl>;
 };
-
-export type ModuleDef<S extends UntypedSchemaDef> = {
-  reducer<Params extends ParamsObj | RowObj>(
-    name: string,
-    params: Params,
-    fn: Reducer<S, Params>
-  ): void;
-
-  init<Params extends ParamsObj>(params: Params, fn: Reducer<S, Params>): void;
-
-  clientConnected<Params extends ParamsObj>(
-    params: Params,
-    fn: Reducer<S, Params>
-  ): void;
-
-  clientDisconnected<Params extends ParamsObj>(
-    params: Params,
-    fn: Reducer<S, Params>
-  ): void;
-};
-
-export function moduleDef<S extends UntypedSchemaDef>(): ModuleDef<S> {
-  return { reducer, init, clientConnected, clientDisconnected };
-}
 
 export function reducer<
   S extends UntypedSchemaDef,
