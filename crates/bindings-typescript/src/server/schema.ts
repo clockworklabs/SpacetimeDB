@@ -200,8 +200,8 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
           break;
       }
       indexes.push({
-        name: 'TODO',
-        accessorName: 'TODO',
+        name: undefined,
+        accessorName: name,
         algorithm,
       });
     }
@@ -209,7 +209,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     /* uniqueness */
     if (isUnique) {
       constraints.push({
-        name: 'TODO',
+        name: undefined,
         data: { tag: 'Unique', value: { columns: [colIds.get(name)!] } },
       });
     }
@@ -217,10 +217,10 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     /* auto increment */
     if (meta.isAutoIncrement) {
       sequences.push({
-        name: 'TODO',
-        start: 0n, // TODO
-        minValue: 0n, // TODO
-        maxValue: 0n, // TODO
+        name: undefined,
+        start: 0n,
+        minValue: 0n,
+        maxValue: 0n,
         column: colIds.get(name)!,
         increment: 1n,
       });
@@ -249,7 +249,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     indexes.push(converted);
   }
 
-  // TODO: Temporarily set the type ref to 0. We will set this later
+  // Temporarily set the type ref to 0. We will set this later
   // in the schema function.
   const productTypeRef = 0;
 
@@ -264,7 +264,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     schedule:
       scheduled && scheduleAtCol !== undefined
         ? {
-            name: 'TODO',
+            name: undefined,
             reducerName: scheduled,
             scheduledAtColumn: scheduleAtCol,
           }
@@ -368,12 +368,6 @@ export function schema(
   const handles: readonly TableSchema<any, any, any>[] =
     args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
 
-  // typespace: Typespace;
-  // tables: RawTableDefV9[];
-  // reducers: RawReducerDefV9[];
-  // types: RawTypeDefV9[];
-  // miscExports: RawMiscModuleExportV9[];
-  // rowLevelSecurity: RawRowLevelSecurityDefV9[];
   const tableDefs = handles.map(h => h.tableDef);
 
   // Traverse the tables in order. For each newly encountered
@@ -405,14 +399,11 @@ export function schema(
 /**
  * shared helpers
  */
-type Merge<M1, M2> = M1 & Omit<M2, keyof M1>;
 type Values<T> = T[keyof T];
 
 /*****************************************************************
  *  Type helpers
  *****************************************************************/
-type ColumnType<C> = C extends ColumnBuilder<infer JS, any> ? JS : never;
-
 type ParamsObj = Record<string, TypeBuilder<any, any>>;
 
 /*****************************************************************
@@ -420,8 +411,6 @@ type ParamsObj = Record<string, TypeBuilder<any, any>>;
  *****************************************************************/
 type ParamsAsObject<ParamDef extends ParamsObj | RowObj> =
   InferTypeOfRow<ParamDef>;
-
-// type ParamsOrRowAsObject<Params
 
 /*****************************************************************
  * procedure()
@@ -505,179 +494,9 @@ export function clientDisconnected<
   pushReducer('on_disconnect', params, fn, Lifecycle.OnDisconnect);
 }
 
-// /*****************************************************************
-//  * Example usage with explicit interfaces for better navigation
-//  *****************************************************************/
-// const point = t.object({
-//   x: t.f64(),
-//   y: t.f64(),
-// });
-// type Point = Infer<typeof point>;
-
-// const user = {
-//   id: t.string().primaryKey(),
-//   name: t.string().index('btree'),
-//   email: t.string(),
-//   age: t.number(),
-// };
-// type User = Infer<typeof user>;
-
-// const player = {
-//   id: t.u32().primaryKey().autoInc(),
-//   name: t.string().index('btree'),
-//   score: t.number(),
-//   level: t.number(),
-//   foo: t.number().unique(),
-//   bar: t.object({
-//     x: t.f64(),
-//     y: t.f64(),
-//   }),
-//   baz: t.enum({
-//     Foo: t.f64(),
-//     Bar: t.f64(),
-//     Baz: t.string(),
-//   }),
-// };
-
-// const sendMessageSchedule = t.object({
-//   scheduleId: t.u64().primaryKey(),
-//   scheduledAt: t.scheduleAt(),
-//   text: t.string(),
-// });
-
-// // Create the schema with named references
-// const s = schema(
-//   table({
-//     name: 'player',
-//     public: true,
-//     indexes: [
-//       t.index({ name: 'my_index' }).btree({ columns: ['name', 'score'] }),
-//     ],
-//   }, player),
-//   table({ name: 'logged_out_user' }, user),
-//   table({ name: 'user' }, user),
-//   table({
-//     name: 'send_message_schedule',
-//     scheduled: 'move_player',
-//   }, sendMessageSchedule)
-// );
-
-// // Export explicit type alias for the schema
-// export type Schemar = InferSchema<typeof s>;
-
-// const foo = reducer<Schemar>('move_player', { user, point, player }, (ctx, { user, point, player }) => {
-//   ctx.db.send_message_schedule.insert({
-//     scheduleId: 1,
-//     scheduledAt: ScheduleAt.Interval(234_000n),
-//     text: 'Move player'
-//   });
-
-//   ctx.db.player.insert(player);
-
-//   if (player.baz.tag === 'Foo') {
-//     player.baz.value += 1;
-//   } else if (player.baz.tag === 'Bar') {
-//     player.baz.value += 2;
-//   } else if (player.baz.tag === 'Baz') {
-//     player.baz.value += '!';
-//   }
-// });
-
-// const bar = reducer<Schemar>('foobar', {}, (ctx) => {
-//   bar(ctx, {});
-// })
-
-// init('init', {}, (_ctx) => {
-
-// })
-
-// // Result<T, E> like Rust
-// export type Result<T, E> =
-//   | { ok: true; value: T }
-//   | { ok: false; error: E };
-
-//   // /* ───── generic index‑builder to be used in table options ───── */
-//   // index<IdxName extends string = string>(opts?: {
-//   //   name?: IdxName;
-//   // }): {
-//   //   btree<Cols extends readonly string[]>(def: {
-//   //     columns: Cols;
-//   //   }): PendingIndex<(typeof def.columns)[number]>;
-//   //   hash<Cols extends readonly string[]>(def: {
-//   //     columns: Cols;
-//   //   }): PendingIndex<(typeof def.columns)[number]>;
-//   //   direct<Col extends string>(def: { column: Col }): PendingIndex<Col>;
-//   // } {
-//   //   const common = { name: opts?.name };
-//   //   return {
-//   //     btree<Cols extends readonly string[]>(def: { columns: Cols }) {
-//   //       return {
-//   //         ...common,
-//   //         algorithm: {
-//   //           tag: 'BTree',
-//   //           value: { columns: def.columns },
-//   //         },
-//   //       } as PendingIndex<(typeof def.columns)[number]>;
-//   //     },
-//   //     hash<Cols extends readonly string[]>(def: { columns: Cols }) {
-//   //       return {
-//   //         ...common,
-//   //         algorithm: {
-//   //           tag: 'Hash',
-//   //           value: { columns: def.columns },
-//   //         },
-//   //       } as PendingIndex<(typeof def.columns)[number]>;
-//   //     },
-//   //     direct<Col extends string>(def: { column: Col }) {
-//   //       return {
-//   //         ...common,
-//   //         algorithm: {
-//   //           tag: 'Direct',
-//   //           value: { column: def.column },
-//   //         },
-//   //       } as PendingIndex<Col>;
-//   //     },
-//   //   };
-//   // },
-
-// // type TableOpts<
-// //   N extends string,
-// //   Def extends Record<string, ColumnBuilder<any,any,any>>,
-// //   Idx extends PendingIndex<keyof Def & string>[] | undefined = undefined,
-// // > = {
-// //   name: N;
-// //   public?: boolean;
-// //   indexes?: Idx; // declarative multi‑column indexes
-// //   scheduled?: string; // reducer name for cron‑like tables
-// // };
-
-// // export function table<
-// //   const Name extends string,
-// //   Def extends Record<string, ColumnBuilder<any,any,any>>,
-// //   Row extends ProductColumnBuilder<Def>,
-// //   Idx extends PendingIndex<keyof Def & string>[] | undefined = undefined,
-// // >(opts: TableOpts<Name, Def, Idx>, row: Row): TableHandle<InferTypeOfRow<Row>, Name> {
-
-// type UntypedTablesTuple = TableHandle<any, any>[];
-// function schema<TablesTuple extends UntypedTablesTuple>(...tablesTuple: TablesTuple): Schema<TablesTuple> {
-//   return {
-//     tables: tablesTuple
-//   }
-// }
-
 type UntypedSchemaDef = {
   tables: readonly UntypedTableDef[];
 };
-
-// type Schema<Tables> = {
-//   tables: Tables,
-// }
-
-// type TableHandle<TableName extends string, Row> = {
-//   readonly __table_name__: TableName;
-//   readonly __row_type__: Row;
-//   readonly __row_spacetime_type__: AlgebraicType;
-// };
 
 /**
  * Reducer context parametrized by the inferred Schema
@@ -737,39 +556,6 @@ export type UntypedTableDef = {
 export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
   TableDef['columns']
 >;
-
-// // export type Infer<S> = S extends ColumnBuilder<infer JS, any> ? JS : never;
-
-// type TableNamesInSchemaDef<SchemaDef extends UntypedSchemaDef> =
-//   keyof SchemaDef & string;
-
-// type TableByName<
-//   SchemaDef extends UntypedSchemaDef,
-//   TableName extends TableNamesInSchemaDef<SchemaDef>,
-// > = SchemaDef[TableName];
-
-// type RowFromTable<TableDef extends UntypedTableDef> =
-//   TableDef["row"];
-
-// /**
-//  * Reducer context parametrized by the inferred Schema
-//  */
-// type ReducerContext<SchemaDef extends UntypedSchemaDef> = {
-//   db: DbView<SchemaDef>;
-// };
-
-// type AnyTable = Table<any>;
-// type AnySchema = Record<TableName, Row>;
-
-// type Outer = {
-
-// }
-
-// type ReducerBuilder<S> = {
-
-// }
-
-// type Local = {};
 
 /**
  * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
@@ -960,42 +746,3 @@ export type TryInsertError<TableDef extends UntypedTableDef> =
   | CheckAnyMetadata<TableDef, { isAutoIncrement: true }, AutoIncOverflow>;
 
 export type Result<T, E> = { ok: true; val: T } | { ok: false; err: E };
-
-const x = schema(table({ name: 'hello' }, { xaaa: t.i32().primaryKey() }));
-
-let y!: Prettify<DbView<(typeof x)['schemaType']>>;
-// y.hello.idx.xaaa.find();
-// const y = x.schemaType.hello.x;
-// type Y = Infer<import('./type_builders').I32Builder>;
-// type A = import('./type_builders').I32Builder;
-// type Z = A['type'];
-
-const s = schema(
-  table(
-    { name: 'users' },
-    {
-      id: t.string().primaryKey(),
-    }
-  ),
-  table(
-    { name: 'posts' },
-    {
-      id: t.string().primaryKey(),
-      title: t.string().index(),
-      content: t.string(),
-      authorId: t.string(),
-    }
-  )
-);
-
-type S = InferSchema<typeof s>;
-
-reducer('foo', { x: t.i32() }, (ctx: ReducerCtx<S>, { x }) => {
-  type AssertEquals<T, U> =
-    (<G>() => G extends T ? 1 : 2) extends <G>() => G extends U ? 1 : 2
-      ? true
-      : false;
-
-  const _t1: AssertEquals<typeof x, number> = true;
-  x;
-});
