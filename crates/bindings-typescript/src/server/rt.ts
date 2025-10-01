@@ -1,4 +1,5 @@
 import { AlgebraicType, ProductType } from '../lib/algebraic_type';
+import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
@@ -84,6 +85,7 @@ declare global {
     timestamp: bigint,
     args: Uint8Array
   ): void;
+  function __describe_module__(): RawModuleDef;
 }
 
 const { freeze } = Object;
@@ -136,6 +138,10 @@ globalThis.__call_reducer__ = function __call_reducer__(
     db: getDbView(),
   });
   REDUCERS[reducer_id](ctx, args);
+};
+
+globalThis.__describe_module__ = function __describe_module__() {
+  return RawModuleDef.V9(MODULE_DEF);
 };
 
 let DB_VIEW: DbView<any> | null = null;
