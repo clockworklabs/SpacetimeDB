@@ -1,6 +1,5 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::num::NonZeroU32;
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
@@ -12,6 +11,7 @@ use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{errno, ColId};
+use std::num::NonZeroU32;
 use std::time::Instant;
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
