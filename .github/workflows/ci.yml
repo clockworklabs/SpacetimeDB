@@ -231,7 +231,7 @@ jobs:
       - name: Install packages
         if: ${{ matrix.runner == 'arm-runner' }}
         shell: bash
-        run: sudo apt install libssl-dev
+        run: sudo apt install -y libssl-dev
 
       - name: Build spacetimedb-update
         run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
