@@ -21,7 +21,7 @@ implemented, or behave differently:
 
 - **Protocol Version**: Only *PGWire* protocol *version 3.0* is supported, and only the *Simple Query Protocol*, and
   without parameterized queries.
-- **SQL Features**: Only the subset of SQL features documented in the [SQL documentation](index.md) are
+- **SQL Features**: Only the subset of SQL features documented in the [SQL documentation](/docs/sql/) are
   supported. Subscription queries do not update in real time.
 - **Authentication**: SpacetimeDB does not implement database users or roles. The connection string
   `user_name@database_name` ignores `user_name`; only `database_name` is used. Authentication is based on the *auth
