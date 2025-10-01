@@ -564,3 +564,61 @@ function wrapSyscall<F extends (...args: any[]) => any>(
     },
   }[name];
 }
+
+function fmtLog(...data: any[]) {
+  return data.join(' ');
+}
+
+const console_level_error = 0;
+const console_level_warn = 1;
+const console_level_info = 2;
+const console_level_debug = 3;
+const console_level_trace = 4;
+const console_level_panic = 101;
+
+const console = {
+  __proto__: {},
+  [Symbol.toStringTag]: 'console',
+  assert: (condition = false, ...data: any[]) => {
+    if (!condition) {
+      sys.console_log(console_level_error, fmtLog(...data));
+    }
+  },
+  clear: () => {},
+  debug: (...data: any[]) => {
+    sys.console_log(console_level_debug, fmtLog(...data));
+  },
+  error: (...data: any[]) => {
+    sys.console_log(console_level_error, fmtLog(...data));
+  },
+  info: (...data: any[]) => {
+    sys.console_log(console_level_info, fmtLog(...data));
+  },
+  log: (...data: any[]) => {
+    sys.console_log(console_level_info, fmtLog(...data));
+  },
+  table: (tabularData: any, properties: any) => {
+    sys.console_log(console_level_info, fmtLog(tabularData));
+  },
+  trace: (...data: any[]) => {
+    sys.console_log(console_level_trace, fmtLog(...data));
+  },
+  warn: (...data: any[]) => {
+    sys.console_log(console_level_warn, fmtLog(...data));
+  },
+  dir: (item: any, options: any) => {},
+  dirxml: (...data: any[]) => {},
+  // Counting
+  count: (label = 'default') => {},
+  countReset: (label = 'default') => {},
+  // Grouping
+  group: (...data: any[]) => {},
+  groupCollapsed: (...data: any[]) => {},
+  groupEnd: () => {},
+  // Timing
+  time: (label = 'default') => {},
+  timeLog: (label = 'default', ...data: any[]) => {},
+  timeEnd: (label = 'default') => {},
+};
+// @ts-ignore
+globalThis.console = console;
