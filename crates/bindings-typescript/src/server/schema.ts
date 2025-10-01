@@ -871,21 +871,58 @@ export type RangedIndex<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
 > = {
-  filter(range: /*TODO:*/ any): IterableIterator<RowType<TableDef>>;
-  delete(range: /*TODO:*/ any): bigint;
+  filter(
+    range: IndexScanRangeBounds<TableDef, I>
+  ): IterableIterator<RowType<TableDef>>;
+  delete(range: IndexScanRangeBounds<TableDef, I>): number;
 };
 
 export type IndexVal<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> = _IndexVal<TableDef, I['columns']>;
+> = CollapseTuple<_IndexVal<TableDef, I['columns']>>;
 
-type _IndexVal<
-  TableDef extends UntypedTableDef,
-  Columns extends string[],
-> = CollapseTuple<{
+type _IndexVal<TableDef extends UntypedTableDef, Columns extends string[]> = {
   [i in keyof Columns]: TableDef['columns'][Columns[i]]['typeBuilder']['type'];
-}>;
+};
+
+export type IndexScanRangeBounds<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = _IndexScanRangeBounds<_IndexVal<TableDef, I['columns']>>;
+
+// only allow omitting an array if the index is single-column - otherwise there's ambiguity
+type _IndexScanRangeBounds<Columns extends any[]> = Columns extends [infer Term]
+  ? Term | Range<Term>
+  : _IndexScanRangeBoundsCase<Columns>;
+
+type _IndexScanRangeBoundsCase<Columns extends any[]> = Columns extends [
+  ...infer Prefix,
+  infer Term,
+]
+  ? [...Prefix, Term | Range<Term>] | _IndexScanRangeBounds<Prefix>
+  : never;
+
+export class Range<T> {
+  #from: Bound<T>;
+  #to: Bound<T>;
+  public constructor(from?: Bound<T> | null, to?: Bound<T> | null) {
+    this.#from = from ?? { tag: 'unbounded' };
+    this.#to = to ?? { tag: 'unbounded' };
+  }
+
+  public get from(): Bound<T> {
+    return this.#from;
+  }
+  public get to(): Bound<T> {
+    return this.#to;
+  }
+}
+
+export type Bound<T> =
+  | { tag: 'included'; value: T }
+  | { tag: 'excluded'; value: T }
+  | { tag: 'unbounded' };
 
 type ColumnIndex<Name extends string, M extends ColumnMetadata> = Prettify<
   {
@@ -944,7 +981,7 @@ const s = schema(
     { name: 'posts' },
     {
       id: t.string().primaryKey(),
-      title: t.string(),
+      title: t.string().index(),
       content: t.string(),
       authorId: t.string(),
     }
