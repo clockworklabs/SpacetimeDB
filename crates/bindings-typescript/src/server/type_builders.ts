@@ -3,7 +3,6 @@ import {
   ConnectionId,
   Identity,
   ScheduleAt,
-  SumTypeVariant,
   TimeDuration,
   Timestamp,
   type AlgebraicTypeVariants,

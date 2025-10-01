@@ -1,38 +1,13 @@
-// import {
-//   AlgebraicType,
-//   ProductType,
-//   ProductTypeElement,
-// } from '../algebraic_type';
-// import type RawConstraintDefV9 from '../lib/autogen/raw_constraint_def_v_9_type';
-// import RawIndexAlgorithm from '../lib/autogen/raw_index_algorithm_type';
-// import type RawIndexDefV9 from '../lib/autogen/raw_index_def_v_9_type';
-// import { RawModuleDefV9 } from "../lib/autogen/raw_module_def_v_9_type";
-// import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
-// import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
-// import Lifecycle from '../lib/autogen/lifecycle_type';
-// import ScheduleAt from '../schedule_at';
-// import RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
-// import type Typespace from '../lib/autogen/typespace_type';
-// import type { ColumnBuilder } from './type_builders';
-// import t from "./type_builders";
-import {
-  AlgebraicType,
-  ConnectionId,
-  Identity,
-  ProductType,
-  t,
-  Timestamp,
-} from '..';
+import { AlgebraicType, ConnectionId, Identity, Timestamp } from '..';
 import Lifecycle from '../lib/autogen/lifecycle_type';
 import type RawConstraintDefV9 from '../lib/autogen/raw_constraint_def_v_9_type';
 import RawIndexAlgorithm from '../lib/autogen/raw_index_algorithm_type';
 import type RawIndexDefV9 from '../lib/autogen/raw_index_def_v_9_type';
-import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
-import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
 import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
-import type { AutoIncOverflow, UniqueAlreadyExists } from './rt';
+import type { AutoIncOverflow, UniqueAlreadyExists } from './errors';
+import { MODULE_DEF, pushReducer } from './rt';
 import {
   ColumnBuilder,
   type ColumnMetadata,
@@ -41,18 +16,6 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import type { Prettify } from './type_util';
-
-/*****************************************************************
- * the run‑time catalogue that we are filling
- *****************************************************************/
-export const MODULE_DEF: RawModuleDefV9 = {
-  typespace: { types: [] },
-  tables: [],
-  reducers: [],
-  types: [],
-  miscExports: [],
-  rowLevelSecurity: [],
-};
 
 type AlgebraicTypeRef = number;
 type ColId = number;
@@ -90,7 +53,7 @@ type TableSchema<
   readonly idxs: Idx;
 };
 
-type RowObj = Record<
+export type RowObj = Record<
   string,
   TypeBuilder<any, any> | ColumnBuilder<any, any, any>
 >;
@@ -463,37 +426,10 @@ export function procedure<
   /* nothing to push yet — left for your misc export section */
 }
 
-/*****************************************************************
- * internal: pushReducer() helper used by reducer() and lifecycle wrappers
- *****************************************************************/
-function pushReducer(
-  name: string,
-  params: RowObj,
-  fn: Reducer<any, any>,
-  lifecycle?: RawReducerDefV9['lifecycle']
-): void {
-  const paramType: ProductType = {
-    elements: Object.entries(params).map(([n, c]) => ({
-      name: n,
-      algebraicType: ('typeBuilder' in c ? c.typeBuilder : c).algebraicType,
-    })),
-  };
-
-  MODULE_DEF.reducers.push({
-    name,
-    params: paramType,
-    lifecycle, // <- lifecycle flag lands here
-  });
-
-  REDUCERS.push(fn);
-}
-
-type Reducer<S extends UntypedSchemaDef, Params extends RowObj> = (
+export type Reducer<S extends UntypedSchemaDef, Params extends RowObj> = (
   ctx: ReducerCtx<S>,
   payload: ParamsAsObject<Params>
 ) => void;
-
-export const REDUCERS: Reducer<any, any>[] = [];
 
 /*****************************************************************
  * reducer() – leave behavior the same; delegate to pushReducer()
