@@ -128,7 +128,7 @@ const BOOK_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FRO
 
         logging.info("Initial publish complete")
 
-        // Start a subscription before publishing the module, to test that the subscription remains intact after re-publishing.
+        # Start a subscription before publishing the module, to test that the subscription remains intact after re-publishing.
         sub = self.subscribe("select * from person", n=4)
 
         # initial module code is already published by test framework
