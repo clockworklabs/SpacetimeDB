@@ -8,7 +8,7 @@ on:
 
 jobs:
   unity-testsuite:
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-runner
     # Cancel any previous testsuites running on the same PR and/or ref.
     concurrency:
       group: unity-test-${{ github.event.pull_request.number || github.ref }}
@@ -24,7 +24,7 @@ jobs:
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
         with:
-          global-json-file: modules/global.json
+          global-json-file: global.json
 
       - name: Override NuGet packages
         run: |
@@ -85,7 +85,7 @@ jobs:
       - name: Check quickstart-chat bindings are up to date
         working-directory: sdks/csharp/examples~/quickstart-chat
         run: |
-          spacetime generate --lang csharp --out-dir client/module_bindings --project-path server
+          bash ../../tools~/gen-quickstart.sh "${GITHUB_WORKSPACE}"
           # This was copied from tools/check-diff.sh.
           # It's required because `spacetime generate` creates lines with the SpacetimeDB commit
           # version, which would make this `git diff` check very brittle if included.
