@@ -5,16 +5,19 @@ use log::info;
 use pretty_assertions::assert_matches;
 use rand::seq::IndexedRandom as _;
 use spacetimedb::{
-    db::relational_db::{
-        tests_utils::{TempReplicaDir, TestDB},
-        SNAPSHOT_FREQUENCY,
+    db::{
+        relational_db::{
+            tests_utils::{TempReplicaDir, TestDB},
+            Persistence, SNAPSHOT_FREQUENCY,
+        },
+        snapshot::{self, SnapshotWorker},
     },
     error::DBError,
     Identity,
 };
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::datastore::Locking;
-use spacetimedb_durability::{EmptyHistory, TxOffset};
+use spacetimedb_durability::{EmptyHistory, NoDurability, TxOffset};
 use spacetimedb_fs_utils::dir_trie::DirTrie;
 use spacetimedb_lib::{
     bsatn,
@@ -229,7 +232,13 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     let start = Instant::now();
     let mut watch = spawn_blocking(|| {
         let tmp = TempReplicaDir::new()?;
-        let db = TestDB::open_db(&tmp, EmptyHistory::new(), None, Some(repo), None, 0)?;
+
+        let persistence = Persistence {
+            durability: Arc::new(NoDurability::default()),
+            disk_size: Arc::new(|| Ok(0)),
+            snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled)),
+        };
+        let db = TestDB::open_db(&tmp, EmptyHistory::new(), Some(persistence), None, 0)?;
         let watch = db.subscribe_to_snapshots().unwrap();
 
         let table_id = db.with_auto_commit(Workload::Internal, |tx| {
@@ -263,7 +272,11 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     Ok(snapshot_offset)
 }
 
-fn table(name: &str, columns: ProductType, f: impl FnOnce(RawTableDefBuilder) -> RawTableDefBuilder) -> TableSchema {
+fn table(
+    name: &str,
+    columns: ProductType,
+    f: impl FnOnce(RawTableDefBuilder<'_>) -> RawTableDefBuilder,
+) -> TableSchema {
     let mut builder = RawModuleDefV9Builder::new();
     f(builder.build_table_with_new_type(name, columns, true));
     let raw = builder.finish();
