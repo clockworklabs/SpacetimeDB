@@ -13,11 +13,11 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class User
     {
-        [DataMember(Name = "identity")]
+        [DataMember(Name = "Identity")]
         public SpacetimeDB.Identity Identity;
-        [DataMember(Name = "name")]
+        [DataMember(Name = "Name")]
         public string? Name;
-        [DataMember(Name = "online")]
+        [DataMember(Name = "Online")]
         public bool Online;
 
         public User(

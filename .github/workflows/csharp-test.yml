@@ -93,7 +93,7 @@ jobs:
       - name: Check quickstart-chat bindings are up to date
         working-directory: sdks/csharp/examples~/quickstart-chat
         run: |
-          spacetime generate --lang csharp --out-dir client/module_bindings --project-path server
+          bash ../../tools~/gen-quickstart.sh "${GITHUB_WORKSPACE}"
           # This was copied from tools/check-diff.sh.
           # It's required because `spacetime generate` creates lines with the SpacetimeDB commit
           # version, which would make this `git diff` check very brittle if included.
