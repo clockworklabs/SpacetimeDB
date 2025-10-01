@@ -10,7 +10,7 @@ use spacetimedb::{
             tests_utils::{TempReplicaDir, TestDB},
             Persistence, SNAPSHOT_FREQUENCY,
         },
-        snapshot::SnapshotWorker,
+        snapshot::{self, SnapshotWorker},
     },
     error::DBError,
     Identity,
@@ -236,7 +236,7 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
         let persistence = Persistence {
             durability: Arc::new(NoDurability::default()),
             disk_size: Arc::new(|| Ok(0)),
-            snapshots: Some(SnapshotWorker::new(repo)),
+            snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled)),
         };
         let db = TestDB::open_db(&tmp, EmptyHistory::new(), Some(persistence), None, 0)?;
         let watch = db.subscribe_to_snapshots().unwrap();
