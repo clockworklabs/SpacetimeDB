@@ -21,6 +21,9 @@ import {
   type UniqueIndex,
   type RangedIndex,
   type IndexVal,
+  type IndexScanRangeBounds,
+  Range,
+  type Bound,
 } from './schema';
 import type { InferTypeOfTypeBuilder, ColumnBuilder } from './type_builders';
 
@@ -237,7 +240,6 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
         break;
     }
     const numColumns = column_ids.length;
-    const isMultiIndex = numColumns > 1;
 
     const columnSet = new Set(column_ids);
     const isUnique = table.constraints
@@ -250,13 +252,16 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
 
     const baseSize = bsatnBaseSize(typespace, indexType);
 
-    const serializePrefix = (writer: BinaryWriter, prefix: any[]) => {
+    const serializePrefix = (
+      writer: BinaryWriter,
+      prefix: any[],
+      prefix_elems: number
+    ) => {
       if (prefix.length > numColumns - 1)
         throw new TypeError('too many elements in prefix');
-      let i = 0;
-      for (const val of prefix) {
-        const elemType = indexType.value.elements[i++].algebraicType;
-        AlgebraicType.serializeValue(writer, elemType, val);
+      for (let i = 0; i < prefix_elems; i++) {
+        const elemType = indexType.value.elements[i].algebraicType;
+        AlgebraicType.serializeValue(writer, elemType, prefix[i]);
       }
       return writer;
     };
@@ -275,8 +280,8 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
           throw new TypeError('wrong number of elements');
 
         const writer = new BinaryWriter(baseSize + 1);
-        serializePrefix(writer, col_val.slice(0, numColumns - 1));
         const prefix_elems = numColumns - 1;
+        serializePrefix(writer, col_val, prefix_elems);
         const rstartOffset = writer.offset;
         writer.writeU8(0);
         AlgebraicType.serializeValue(
@@ -327,12 +332,54 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
         },
       } as UniqueIndex<any, any>;
     } else {
+      const serializeRange = (range: any[]): IndexScanArgs => {
+        if (range.length > numColumns) throw new TypeError('too many elements');
+
+        const writer = new BinaryWriter(baseSize + 1);
+        const prefix_elems = range.length - 1;
+        serializePrefix(writer, range, prefix_elems);
+        const rstartOffset = writer.offset;
+        const term = range[range.length - 1];
+        const termType =
+          indexType.value.elements[range.length - 1].algebraicType;
+        let rstart: Uint8Array, rend: Uint8Array;
+        if (term instanceof Range) {
+          const writeBound = (bound: Bound<any>) => {
+            const tags = { included: 0, excluded: 1, unbounded: 2 };
+            writer.writeU8(tags[bound.tag]);
+            if (bound.tag !== 'unbounded')
+              AlgebraicType.serializeValue(writer, termType, bound.value);
+          };
+          writeBound(term.from);
+          const rendOffset = writer.offset;
+          writeBound(term.to);
+          rstart = writer.getBuffer().slice(rstartOffset, rendOffset);
+          rend = writer.getBuffer().slice(rendOffset);
+        } else {
+          writer.writeU8(0);
+          AlgebraicType.serializeValue(writer, termType, term);
+          rstart = rend = writer.getBuffer().slice(rstartOffset);
+        }
+        const buffer = writer.getBuffer();
+        const prefix = buffer.slice(0, rstartOffset);
+        return [prefix, prefix_elems, rstart, rend];
+      };
       index = {
         filter: (range: any): IterableIterator<RowType<any>> => {
-          throw new Error('Function not implemented.');
+          if (numColumns === 1) range = [range];
+          const args = serializeRange(range);
+          return new TableIterator(
+            sys.datastore_index_scan_range_bsatn(index_id, ...args),
+            rowType
+          );
         },
-        delete: (range: any): bigint => {
-          throw new Error('Function not implemented.');
+        delete: (range: any): u32 => {
+          if (numColumns === 1) range = [range];
+          const args = serializeRange(range);
+          return sys.datastore_delete_by_index_scan_range_bsatn(
+            index_id,
+            ...args
+          );
         },
       } as RangedIndex<any, any>;
     }
