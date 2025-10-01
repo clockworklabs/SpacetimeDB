@@ -5983,6 +5983,7 @@ dependencies = [
  "bytes",
  "bytestring",
  "chrono",
+ "convert_case 0.6.0",
  "core_affinity",
  "criterion",
  "crossbeam-channel",
