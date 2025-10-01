@@ -3,6 +3,7 @@
 use super::error::{exception_already_thrown, ExcResult, ExceptionThrown, ExceptionValue, Throwable, TypeError};
 use super::from_value::{cast, FromValue};
 use super::string_const::{TAG, VALUE};
+use convert_case::{Case, Casing};
 use core::fmt;
 use core::iter::{repeat_n, RepeatN};
 use core::marker::PhantomData;
@@ -132,6 +133,10 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
     deserialize_primitive!(deserialize_f32, f32);
 
     fn deserialize_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
+        if visitor.product_len() == 0 && self.input.is_null_or_undefined() {
+            return visitor.visit_seq_product(de::UnitAccess::new());
+        }
+
         let object = cast!(
             self.common.scope,
             self.input,
@@ -150,6 +155,15 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
 
     fn deserialize_sum<V: SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
         let scope = &*self.common.scope;
+
+        if visitor.is_option() {
+            return if self.input.is_null_or_undefined() {
+                visitor.visit_sum(de::NoneAccess::new())
+            } else {
+                visitor.visit_sum(de::SomeAccess::new(self))
+            };
+        }
+
         let sum_name = visitor.sum_name().unwrap_or("<unknown>");
 
         // We expect a canonical representation of a sum value in JS to be
@@ -230,8 +244,8 @@ pub(super) fn intern_field_name<'scope>(
     index: usize,
 ) -> Local<'scope, Name> {
     let field = match field {
-        Some(field) => Cow::Borrowed(field),
-        None => Cow::Owned(format!("{index}")),
+        Some(field) => field.to_case(Case::Camel),
+        None => format!("{index}"),
     };
     v8_interned_string(scope, &field).into()
 }

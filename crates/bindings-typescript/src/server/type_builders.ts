@@ -1526,7 +1526,7 @@ export class SumColumnBuilder<
  *
  * @see {@link TypeBuilder}
  */
-const t = {
+export const t = {
   /**
    * Creates a new `Bool` {@link AlgebraicType} to be used in table definitions
    * Represented as `boolean` in TypeScript.
