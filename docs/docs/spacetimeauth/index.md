@@ -22,8 +22,6 @@ then be used with any SpacetimeDB SDK to authenticate and authorize users.
 - Discord
 - Twitch
 - Kick
-- (Coming soon) Steam: authenticate users via Steam and verify game or DLC ownership
-- More to come!
 
 ### User & role management
 
@@ -33,7 +31,7 @@ then be used with any SpacetimeDB SDK to authenticate and authorize users.
 ### Customization
 
 - Customizable theme for login pages
-- (Coming soon) Customizable templates for emails
+- Enable/disable anonymous and magic link authentication
 
 ## Terminology
 

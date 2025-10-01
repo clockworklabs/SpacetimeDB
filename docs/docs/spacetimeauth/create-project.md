@@ -32,8 +32,6 @@ your project:
   A default client is created for you when you create a new project.
 - **Users**: A list of all users in your project, with options to search, filter,
   and manage users.
-- **Roles (Coming soon)**: A list of all roles in your project, with
-  options to create, update, and delete roles.
 - **Identity Providers**: A list of all identity providers (e.g. Google, GitHub,
   etc.) that can be used to authenticate users in your project.
 - **Customization**: Live editor to customize colors, logos, and authentication methods.
