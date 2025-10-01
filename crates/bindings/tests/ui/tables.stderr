@@ -61,11 +61,11 @@ error[E0277]: the trait bound `Test: Deserialize<'de>` is not satisfied
             &'de [u8]
             &'de str
             ()
-            AlgebraicType
-            AlgebraicTypeRef
-            Alpha
-            Arc<[T]>
-            ArrayType
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+            (T0, T1, T2, T3, T4, T5)
           and $N others
 note: required by a bound in `spacetimedb::spacetimedb_lib::de::SeqProductAccess::next_element`
  --> $WORKSPACE/crates/sats/src/de.rs
@@ -83,11 +83,11 @@ error[E0277]: the trait bound `Test: Deserialize<'_>` is not satisfied
             &'de [u8]
             &'de str
             ()
-            AlgebraicType
-            AlgebraicTypeRef
-            Alpha
-            Arc<[T]>
-            ArrayType
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+            (T0, T1, T2, T3, T4, T5)
           and $N others
 note: required by a bound in `get_field_value`
  --> $WORKSPACE/crates/sats/src/de.rs
@@ -104,12 +104,12 @@ error[E0277]: the trait bound `Test: Serialize` is not satisfied
   = help: the following other types implement trait `Serialize`:
             &T
             ()
-            AlgebraicType
-            AlgebraicTypeRef
-            AlgebraicValue
-            Alpha
-            Arc<T>
-            ArrayType
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+            (T0, T1, T2, T3, T4, T5)
+            (T0, T1, T2, T3, T4, T5, T6)
           and $N others
 note: required by a bound in `spacetimedb::spacetimedb_lib::ser::SerializeNamedProduct::serialize_element`
  --> $WORKSPACE/crates/sats/src/ser.rs
@@ -129,11 +129,11 @@ error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering ope
              &ConnectionId
              &Identity
              &Lifecycle
-             &RawMiscModuleExportV9
              &TableAccess
              &TableType
              &bool
              &ethnum::int::I256
+             &ethnum::uint::U256
            and $N others
 note: required by a bound in `UniqueColumn::<Tbl, <Col as Column>::ColType, Col>::find`
   --> src/table.rs
@@ -156,11 +156,11 @@ error[E0277]: the trait bound `Alpha: IndexScanRangeBounds<(Alpha,), SingleBound
              &ConnectionId
              &Identity
              &Lifecycle
-             &RawMiscModuleExportV9
              &TableAccess
              &TableType
              &bool
              &ethnum::int::I256
+             &ethnum::uint::U256
            and $N others
    = note: required for `Alpha` to implement `IndexScanRangeBounds<(Alpha,), SingleBound>`
 note: required by a bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`

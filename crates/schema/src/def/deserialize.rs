@@ -2,10 +2,9 @@
 
 use crate::def::{ProcedureDef, ReducerDef};
 use spacetimedb_lib::{
-    sats::{self, de, ser, ProductValue},
+    sats::{self, de, impl_serialize, ser, ProductValue},
     ProductType,
 };
-use spacetimedb_sats::impl_serialize;
 
 pub trait ArgsSeed: for<'de> de::DeserializeSeed<'de, Output = ProductValue> {
     fn params(&self) -> &ProductType;

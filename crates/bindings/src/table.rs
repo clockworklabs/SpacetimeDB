@@ -3,8 +3,11 @@ use core::borrow::Borrow;
 use core::convert::Infallible;
 use core::fmt;
 use core::marker::PhantomData;
-use spacetimedb_lib::buffer::{BufReader, Cursor, DecodeError};
 pub use spacetimedb_lib::db::raw_def::v9::TableAccess;
+use spacetimedb_lib::{
+    buffer::{BufReader, Cursor, DecodeError},
+    AlgebraicValue,
+};
 use spacetimedb_lib::{FilterableValue, IndexScanRangeBoundsTerminator};
 pub use spacetimedb_primitives::{ColId, IndexId};
 
@@ -128,6 +131,8 @@ pub trait TableInternal: Sized {
 
     /// Returns the ID of this table.
     fn table_id() -> TableId;
+
+    fn get_default_col_values() -> Vec<ColumnDefault>;
 }
 
 /// Describe a named index with an index type over a set of columns identified by their IDs.
@@ -146,6 +151,12 @@ pub enum IndexAlgo<'a> {
 pub struct ScheduleDesc<'a> {
     pub reducer_or_procedure_name: &'a str,
     pub scheduled_at_column: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct ColumnDefault {
+    pub col_id: u16,
+    pub value: AlgebraicValue,
 }
 
 /// A row operation was attempted that would violate a unique constraint.

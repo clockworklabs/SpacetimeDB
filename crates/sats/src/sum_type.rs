@@ -2,7 +2,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{AlgebraicType, AlgebraicValue, SpacetimeType, SumTypeVariant};
+use crate::{AlgebraicType, AlgebraicValue, SpacetimeType, SumTypeVariant, SumValue, Typespace};
 
 /// The tag used for the `Interval` variant of the special `ScheduleAt` sum type.
 pub const SCHEDULE_AT_INTERVAL_TAG: &str = "Interval";
@@ -172,6 +172,11 @@ impl SumType {
     /// Returns the sum type variant with the given `tag`.
     pub fn get_variant_by_tag(&self, tag: u8) -> Option<&SumTypeVariant> {
         self.variants.get(tag as usize)
+    }
+
+    pub fn type_check(&self, sv: &SumValue, typespace: &Typespace) -> bool {
+        self.get_variant_by_tag(sv.tag)
+            .is_some_and(|var| var.algebraic_type.type_check(&sv.value, typespace))
     }
 }
 

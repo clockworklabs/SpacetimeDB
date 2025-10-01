@@ -9,16 +9,13 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
-fn process_license_file(upgrade_version: &str) {
-    let path = "LICENSE.txt";
+fn process_license_file(path: &str, version: &str) {
     let file = fs::read_to_string(path).unwrap();
 
-    let version_re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([\d\.]+)$").unwrap();
-    let file = version_re.replace_all(&file, |caps: &regex::Captures| {
-        format!("{}{}", &caps[1], upgrade_version)
-    });
+    let version_re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([\d\.]+)\r?$").unwrap();
+    let file = version_re.replace_all(&file, |caps: &regex::Captures| format!("{}{}", &caps[1], version));
 
-    let date_re = Regex::new(r"(?m)^Change Date:\s+\d{4}-\d{2}-\d{2}$").unwrap();
+    let date_re = Regex::new(r"(?m)^Change Date:\s+\d{4}-\d{2}-\d{2}\r?$").unwrap();
     let new_date = Local::now()
         .with_year(Local::now().year() + 5)
         .unwrap()
@@ -83,7 +80,8 @@ fn main() -> anyhow::Result<()> {
         doc["dependencies"]["spacetimedb"] = toml_edit::value(version);
     })?;
 
-    process_license_file(version);
+    process_license_file("LICENSE.txt", version);
+    process_license_file("licenses/BSL.txt", version);
     cmd!("cargo", "check").run().expect("Cargo check failed!");
 
     Ok(())

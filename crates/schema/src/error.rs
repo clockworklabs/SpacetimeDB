@@ -3,7 +3,7 @@ use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawIdentifier, RawScopedTypeNa
 use spacetimedb_lib::{ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList, ColSet};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
-use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef};
+use spacetimedb_sats::{bsatn::DecodeError, AlgebraicType, AlgebraicTypeRef};
 use std::borrow::Cow;
 use std::fmt;
 
@@ -137,6 +137,16 @@ pub enum ValidationError {
         expected: PrettyAlgebraicType,
         actual: PrettyAlgebraicType,
     },
+    #[error("Failed to deserialize default value for table {table} column {col_id}: {err}")]
+    ColumnDefaultValueMalformed {
+        table: RawIdentifier,
+        col_id: ColId,
+        err: DecodeError,
+    },
+    #[error("Multiple default values for table {table} column {col_id}")]
+    MultipleColumnDefaultValues { table: RawIdentifier, col_id: ColId },
+    #[error("Table {table} not found")]
+    TableNotFound { table: RawIdentifier },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

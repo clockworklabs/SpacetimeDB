@@ -528,7 +528,7 @@ mod tests {
         assert_eq!(delivery_def.columns[2].ty, AlgebraicType::U64);
         assert_eq!(delivery_def.schedule.as_ref().unwrap().at_column, 1.into());
         assert_eq!(
-            &delivery_def.schedule.as_ref().unwrap().reducer_name[..],
+            &delivery_def.schedule.as_ref().unwrap().function_name[..],
             "check_deliveries"
         );
         assert_eq!(delivery_def.primary_key, Some(ColId(2)));

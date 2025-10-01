@@ -14,6 +14,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::AlgebraicTypeRef;
+use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_sats::ProductType;
 use spacetimedb_sats::ProductTypeElement;
 use spacetimedb_sats::SpacetimeType;
@@ -372,10 +373,26 @@ pub struct RawRowLevelSecurityDefV9 {
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[non_exhaustive]
 pub enum RawMiscModuleExportV9 {
+    ColumnDefaultValue(RawColumnDefaultValueV9),
     /// A procedure definition.
     // Included here because procedures were added after the format of [`RawModuleDefV9`] was already stabilized.
     // If/when we define `RawModuleDefV10`, this should be moved out of `misc_exports` and into its own field.
     Procedure(RawProcedureDefV9),
+}
+
+/// Marks a particular table's column as having a particular default.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawColumnDefaultValueV9 {
+    /// Identifies which table that has the default value.
+    /// This corresponds to `name` in `RawTableDefV9`.
+    pub table: RawIdentifier,
+    /// Identifies which column of `table` that has the default value.
+    pub col_id: ColId,
+    /// A BSATN-encoded [`AlgebraicValue`] valid at the table column's type.
+    /// (We cannot use `AlgebraicValue` directly as it isn't `Spacetimetype`.)
+    pub value: Box<[u8]>,
 }
 
 /// A type declaration.
@@ -852,6 +869,19 @@ impl RawTableDefBuilder<'_> {
             reducer_name,
             scheduled_at_column,
         });
+        self
+    }
+
+    /// Adds a default value for the `column`.
+    pub fn with_default_column_value(self, column: impl Into<ColId>, value: AlgebraicValue) -> Self {
+        // Added to `misc_exports` for backwards-compatibility reasons.
+        self.module_def
+            .misc_exports
+            .push(RawMiscModuleExportV9::ColumnDefaultValue(RawColumnDefaultValueV9 {
+                table: self.table.name.clone(),
+                col_id: column.into(),
+                value: spacetimedb_sats::bsatn::to_vec(&value).unwrap().into(),
+            }));
         self
     }
 

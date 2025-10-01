@@ -3,10 +3,7 @@
 
 use crate::{
     energy::EnergyMonitor,
-    host::{
-        module_host::{DynModule, ModuleInfo},
-        Scheduler,
-    },
+    host::{module_host::ModuleInfo, Scheduler},
     module_host_context::ModuleCreationContext,
     replica_context::ReplicaContext,
 };
@@ -79,12 +76,12 @@ impl ModuleCommon {
     }
 }
 
-impl DynModule for ModuleCommon {
-    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+impl ModuleCommon {
+    pub fn replica_ctx(&self) -> &Arc<ReplicaContext> {
         &self.replica_context
     }
 
-    fn scheduler(&self) -> &Scheduler {
+    pub fn scheduler(&self) -> &Scheduler {
         &self.scheduler
     }
 }

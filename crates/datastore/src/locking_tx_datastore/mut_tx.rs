@@ -10,6 +10,10 @@ use super::{
 };
 use crate::execution_context::ExecutionContext;
 use crate::execution_context::Workload;
+use crate::system_tables::{
+    system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow,
+    ST_CONNECTION_CREDENTIALS_ID,
+};
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
     error::{IndexError, SequenceError, TableError},
@@ -25,6 +29,7 @@ use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
 use spacetimedb_lib::{
@@ -54,6 +59,7 @@ use spacetimedb_table::{
     table_index::TableIndex,
 };
 use std::{
+    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -188,7 +194,8 @@ impl MutTxId {
     /// - The table metadata is inserted into the system tables.
     /// - The returned ID is unique and not `TableId::SENTINEL`.
     pub fn create_table(&mut self, mut table_schema: TableSchema) -> Result<TableId> {
-        if table_schema.table_id != TableId::SENTINEL {
+        let matching_system_table_schema = system_tables().iter().find(|s| **s == table_schema).cloned();
+        if table_schema.table_id != TableId::SENTINEL && matching_system_table_schema.is_none() {
             return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{:#?}`", table_schema).into());
             // checks for children are performed in the relevant `create_...` functions.
         }
@@ -200,7 +207,7 @@ impl MutTxId {
         // NOTE: Because `st_tables` has a unique index on `table_name`, this will
         // fail if the table already exists.
         let row = StTableRow {
-            table_id: TableId::SENTINEL,
+            table_id: table_schema.table_id,
             table_name: table_name.clone(),
             table_type: table_schema.table_type,
             table_access: table_schema.table_access,
@@ -216,16 +223,8 @@ impl MutTxId {
 
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
 
-        // Insert the columns into `st_columns`
-        for col in table_schema.columns() {
-            let row = StColumnRow {
-                table_id: col.table_id,
-                col_pos: col.col_pos,
-                col_name: col.col_name.clone(),
-                col_type: col.col_type.clone().into(),
-            };
-            self.insert_via_serialize_bsatn(ST_COLUMN_ID, &row)?;
-        }
+        // Insert the columns into `st_column`.
+        self.insert_st_column(table_schema.columns())?;
 
         let schedule = table_schema.schedule.clone();
         let mut schema_internal = table_schema;
@@ -243,7 +242,7 @@ impl MutTxId {
         if let Some(schedule) = schedule {
             let row = StScheduledRow {
                 table_id: schedule.table_id,
-                schedule_id: ScheduleId::SENTINEL,
+                schedule_id: schedule.schedule_id,
                 schedule_name: schedule.schedule_name,
                 reducer_name: schedule.function_name,
                 at_column: schedule.at_column,
@@ -277,6 +276,15 @@ impl MutTxId {
         log::trace!("TABLE CREATED: {table_name}, table_id: {table_id}");
 
         Ok(table_id)
+    }
+
+    /// Insert `columns` into `st_column`.
+    fn insert_st_column(&mut self, columns: &[ColumnSchema]) -> Result<()> {
+        columns.iter().try_for_each(|col| {
+            let row: StColumnRow = col.clone().into();
+            self.insert_via_serialize_bsatn(ST_COLUMN_ID, &row)?;
+            Ok(())
+        })
     }
 
     fn create_table_internal(&mut self, schema: Arc<TableSchema>) {
@@ -319,7 +327,14 @@ impl MutTxId {
         Ok(RowTypeForTable::Arc(self.schema_for_table(table_id)?))
     }
 
+    /// Drops all the columns of `table_id` in `st_column`.
+    fn drop_st_column(&mut self, table_id: TableId) -> Result<()> {
+        self.delete_col_eq(ST_COLUMN_ID, StColumnFields::TableId.col_id(), &table_id.into())
+    }
+
     pub fn drop_table(&mut self, table_id: TableId) -> Result<()> {
+        self.clear_table(table_id)?;
+
         let schema = &*self.schema_for_table(table_id)?;
 
         for row in &schema.indexes {
@@ -336,7 +351,7 @@ impl MutTxId {
 
         // Drop the table and their columns
         self.delete_col_eq(ST_TABLE_ID, StTableFields::TableId.col_id(), &table_id.into())?;
-        self.delete_col_eq(ST_COLUMN_ID, StColumnFields::TableId.col_id(), &table_id.into())?;
+        self.drop_st_column(table_id)?;
 
         if let Some(schedule) = &schema.schedule {
             self.delete_col_eq(
@@ -346,8 +361,10 @@ impl MutTxId {
             )?;
         }
 
-        // Delete the table and its rows and indexes from memory.
+        // Delete the table from memory, both in the tx an committed states.
         self.tx_state.insert_tables.remove(&table_id);
+        // No need to keep the delete tables.
+        // By seeing `PendingSchemaChange::TableRemoved`, `merge` knows that all rows were deleted.
         self.tx_state.delete_tables.remove(&table_id);
         let commit_table = self
             .committed_state_write_lock
@@ -404,13 +421,8 @@ impl MutTxId {
         TxTableForInsertion<'_>,
         (&mut Table, &mut dyn BlobStore, &mut IndexIdMap),
     )> {
-        let (commit_table, commit_bs, idx_map) = self.committed_state_write_lock.get_table_and_blob_store_mut(table_id);
-        // NOTE(centril): `TableError` is a fairly large type.
-        // Not making this lazy made `TableError::drop` show up in perf.
-        // TODO(centril): Box all the errors.
-        #[allow(clippy::unnecessary_lazy_evaluations)]
-        let commit_table = commit_table.ok_or_else(|| TableError::IdNotFoundState(table_id))?;
-
+        let (commit_table, commit_bs, idx_map, _) =
+            self.committed_state_write_lock.get_table_and_blob_store_mut(table_id)?;
         // Get the insert table, so we can write the row into it.
         let tx = self
             .tx_state
@@ -464,15 +476,151 @@ impl MutTxId {
         column_schemas.iter_mut().for_each(|c| c.table_id = table_id);
 
         // Try to change the tables into what we want.
-        let old_column_schemas = tx_table.change_columns_to(column_schemas).map_err(TableError::from)?;
+        let old_column_schemas = tx_table
+            .change_columns_to(column_schemas.clone())
+            .map_err(TableError::from)?;
         // SAFETY: `commit_table` should have a schema identical to that of `tx_table`
         // prior to changing it just now.
         unsafe { commit_table.set_layout_and_schema_to(tx_table) };
+
+        // Update system tables.
+        // We'll simply remove all rows in `st_columns` and then add the new ones.
+        // The datastore takes care of not persisting any no-op delete/inserts to the commitlog.
+        self.drop_st_column(table_id)?;
+        self.insert_st_column(&column_schemas)?;
 
         // Remember the pending change so we can undo if necessary.
         self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
 
         Ok(())
+    }
+
+    /// Change the row type of the table identified by `table_id`.
+    ///
+    /// This is an incompatible change that requires a new table to be created.
+    /// The existing rows are copied over to the new table,
+    /// with `default_values` appended to each row.
+    ///
+    /// `column_schemas` must contain all the old columns in same order as before,
+    /// followed by the new columns to be added.
+    /// All new columns must have a default value in `default_values`.
+    ///
+    /// After calling this method, Table referred by `table_id` is dropped,
+    /// and a new table is created with the same name but a new `table_id`.
+    /// The new `table_id` is returned.
+    pub(crate) fn add_columns_to_table(
+        &mut self,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+        mut default_values: Vec<AlgebraicValue>,
+    ) -> Result<TableId> {
+        let original_table_schema: TableSchema = (*self.schema_for_table(table_id)?).clone();
+
+        // Only keep the default values of new columns.
+        let new_cols = column_schemas
+            .len()
+            .checked_sub(original_table_schema.columns.len())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "new column schemas must be more than existing ones for table_id: {}",
+                    table_id
+                )
+            })?;
+        let older_defaults = default_values.len().checked_sub(new_cols).ok_or_else(|| {
+            anyhow::anyhow!(
+                "not enough default values provided for new columns for table_id: {}",
+                table_id
+            )
+        })?;
+        default_values.drain(..older_defaults);
+
+        let ((tx_table, ..), _) = self.get_or_create_insert_table_mut(table_id)?;
+
+        tx_table
+            .validate_add_columns_schema(&column_schemas, &default_values)
+            .map_err(TableError::from)?;
+
+        // Copy all rows as `ProductValue` before dropping the table.
+        // This approach isn't ideal, as allocating a large contiguous block of memory
+        // can lead to memory overflow errors.
+        // Ideally, we should use iterators to avoid this, but that's not sufficient on its own.
+        // `CommittedState::merge_apply_inserts` also allocates a similar `Vec` to hold the data.
+        // So, if we really find this problematic in practice, this should be fixed in both places.
+        let mut table_rows: Vec<ProductValue> = iter(&self.tx_state, &self.committed_state_write_lock, table_id)?
+            .map(|r| r.to_product_value())
+            .collect();
+
+        log::debug!(
+            "ADDING TABLE COLUMN (incompatible layout): {}, table_id: {}",
+            original_table_schema.table_name,
+            table_id
+        );
+
+        // Store sequence values to restore them later with new table.
+        // Using a map from name to value as the new sequence ids will be different.
+        // and I am not sure if we should rely on the order of sequences in the table schema.
+        let seq_values: HashMap<Box<str>, i128> = original_table_schema
+            .sequences
+            .iter()
+            .map(|s| {
+                (
+                    s.sequence_name.clone(),
+                    self.sequence_state_lock
+                        .get_sequence_mut(s.sequence_id)
+                        .expect("sequence exists in original schema and should in sequence state.")
+                        .get_value(),
+                )
+            })
+            .collect();
+
+        // Drop existing table first due to unique constraints on table name in `st_table`
+        self.drop_table(table_id)?;
+
+        // Update existing (dropped) table schema with provided columns, reset Ids.
+        let mut updated_table_schema = original_table_schema;
+        updated_table_schema.columns = column_schemas;
+        updated_table_schema.reset();
+        let new_table_id = self.create_table_and_update_seq(updated_table_schema, seq_values)?;
+
+        // Populate rows with default values for new columns
+        for product_value in table_rows.iter_mut() {
+            let mut row_elements = product_value.elements.to_vec();
+            row_elements.extend(default_values.iter().cloned());
+            product_value.elements = row_elements.into();
+        }
+
+        let (new_table, tx_blob_store) = self
+            .tx_state
+            .get_table_and_blob_store(new_table_id)
+            .ok_or(TableError::IdNotFoundState(new_table_id))?;
+
+        for row in table_rows {
+            new_table.insert(&self.committed_state_write_lock.page_pool, tx_blob_store, &row)?;
+        }
+
+        Ok(new_table_id)
+    }
+
+    fn create_table_and_update_seq(
+        &mut self,
+        table_schema: TableSchema,
+        seq_values: HashMap<Box<str>, i128>,
+    ) -> Result<TableId> {
+        let table_id = self.create_table(table_schema)?;
+        let table_schema = self.schema_for_table(table_id)?;
+
+        for seq in table_schema.sequences.iter() {
+            let new_seq = self
+                .sequence_state_lock
+                .get_sequence_mut(seq.sequence_id)
+                .expect("sequence just created");
+            let value = *seq_values
+                .get(&seq.sequence_name)
+                .ok_or_else(|| SequenceError::NotFound(seq.sequence_id))?;
+            new_seq.update_value(value);
+        }
+
+        Ok(table_id)
     }
 
     /// Create an index.
@@ -488,9 +636,6 @@ impl MutTxId {
     /// - The index metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and is not `IndexId::SENTINEL`.
     pub fn create_index(&mut self, mut index_schema: IndexSchema, is_unique: bool) -> Result<IndexId> {
-        if index_schema.index_id != IndexId::SENTINEL {
-            return Err(anyhow::anyhow!("`index_id` must be `IndexId::SENTINEL` in `{:#?}`", index_schema).into());
-        }
         let table_id = index_schema.table_id;
         if table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", index_schema).into());
@@ -826,8 +971,8 @@ fn get_next_sequence_value(
         let mut seq_row = StSequenceRow::try_from(old_seq_row_ref)?;
 
         let sequence = get_sequence_mut(seq_state, seq_id)?;
-        seq_row.allocated = sequence.nth_value(SEQUENCE_ALLOCATION_STEP as usize);
-        sequence.set_allocation(seq_row.allocated);
+        let new_allocated = sequence.allocate_steps(SEQUENCE_ALLOCATION_STEP as usize);
+        seq_row.allocated = new_allocated;
         seq_row
     };
 
@@ -882,7 +1027,7 @@ impl MutTxId {
             sequence_name: seq.sequence_name,
             table_id,
             col_pos: seq.col_pos,
-            allocated: seq.allocated,
+            allocated: seq.start,
             increment: seq.increment,
             start: seq.start,
             min_value: seq.min_value,
@@ -896,7 +1041,7 @@ impl MutTxId {
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         // This won't clone-write when creating a table but likely to otherwise.
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_sequence(schema.clone()));
-        self.sequence_state_lock.insert(Sequence::new(schema));
+        self.sequence_state_lock.insert(Sequence::new(schema, None));
         self.push_schema_change(PendingSchemaChange::SequenceAdded(table_id, seq_id));
 
         log::trace!("SEQUENCE CREATED: id = {seq_id}");
@@ -953,13 +1098,6 @@ impl MutTxId {
     /// - The constraint metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and is not `constraintId::SENTINEL`.
     fn create_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<ConstraintId> {
-        if constraint.constraint_id != ConstraintId::SENTINEL {
-            return Err(anyhow::anyhow!(
-                "`constraint_id` must be `ConstraintId::SENTINEL` in `{:#?}`",
-                constraint
-            )
-            .into());
-        }
         if constraint.table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", constraint).into());
         }
@@ -978,7 +1116,7 @@ impl MutTxId {
         // this will fail if the table already exists.
         let constraint_row = StConstraintRow {
             table_id,
-            constraint_id: ConstraintId::SENTINEL,
+            constraint_id: constraint.constraint_id,
             constraint_name: constraint.constraint_name.clone(),
             constraint_data: constraint.data.clone().into(),
         };
@@ -1164,13 +1302,15 @@ impl MutTxId {
         })
     }
 
-    /// Commits this transaction, applying its changes to the committed state.
+    /// Commits this transaction in memory, applying its changes to the committed state.
+    /// This doesn't handle the persistence layer at all.
     ///
     /// Returns:
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn commit(mut self) -> (TxData, TxMetrics, String) {
+    pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
+        let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
 
         // Compute and keep enough info that we can
@@ -1188,7 +1328,20 @@ impl MutTxId {
         );
         let reducer = self.ctx.into_reducer_name();
 
-        (tx_data, tx_metrics, reducer)
+        // If the transaction didn't consume an offset (i.e. it was empty),
+        // report the previous offset.
+        //
+        // Note that technically the tx could have run against an empty database,
+        // in which case we'd wrongly return zero (a non-existent transaction).
+        // This doesn not happen in practice, however, as [RelationalDB::set_initialized]
+        // creates a transaction.
+        let tx_offset = if tx_offset == self.committed_state_write_lock.next_tx_offset {
+            tx_offset.saturating_sub(1)
+        } else {
+            tx_offset
+        };
+
+        (tx_offset, tx_data, tx_metrics, reducer)
     }
 
     /// Commits this transaction, applying its changes to the committed state.
@@ -1233,8 +1386,9 @@ impl MutTxId {
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    pub fn rollback(mut self) -> (TxMetrics, String) {
-        self.committed_state_write_lock
+    pub fn rollback(mut self) -> (TxOffset, TxMetrics, String) {
+        let offset = self
+            .committed_state_write_lock
             .rollback(&mut self.sequence_state_lock, self.tx_state);
 
         // Compute and keep enough info that we can
@@ -1251,7 +1405,7 @@ impl MutTxId {
             &self.committed_state_write_lock,
         );
         let reducer = self.ctx.into_reducer_name();
-        (tx_metrics, reducer)
+        (offset, tx_metrics, reducer)
     }
 
     /// Roll back this transaction, discarding its changes.
@@ -1349,12 +1503,49 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
-    pub fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+    pub fn insert_st_client(
+        &mut self,
+        identity: Identity,
+        connection_id: ConnectionId,
+        jwt_payload: &str,
+    ) -> Result<()> {
         let row = &StClientRow {
             identity: identity.into(),
             connection_id: connection_id.into(),
         };
-        self.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
+        self.insert_via_serialize_bsatn(ST_CLIENT_ID, row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!(
+                    "[{identity}]: insert_st_client: failed to insert client ({identity}, {connection_id}), error: {e}"
+                );
+            })?;
+        self.insert_st_client_credentials(connection_id, jwt_payload)
+    }
+
+    fn insert_st_client_credentials(&mut self, connection_id: ConnectionId, jwt_payload: &str) -> Result<()> {
+        let row = &StConnectionCredentialsRow {
+            connection_id: connection_id.into(),
+            jwt_payload: jwt_payload.to_owned(),
+        };
+        self.insert_via_serialize_bsatn(ST_CONNECTION_CREDENTIALS_ID, row)
+            .map(|_| ())
+            .inspect_err(|e| {
+                log::error!("[{connection_id}]: insert_st_client_credentials: failed to insert client credentials for connection id ({connection_id}), error: {e}");
+            })
+    }
+
+    fn delete_st_client_credentials(&mut self, database_identity: Identity, connection_id: ConnectionId) -> Result<()> {
+        if let Err(e) = self.delete_col_eq(
+            ST_CONNECTION_CREDENTIALS_ID,
+            StConnectionCredentialsFields::ConnectionId.col_id(),
+            &ConnectionIdViaU128::from(connection_id).into(),
+        ) {
+            // This is possible on restart if the database was previously running a version
+            // before this system table was added.
+            log::error!("[{database_identity}]: delete_st_client_credentials: attempting to delete credentials for missing connection id ({connection_id}), error: {e}");
+        }
+        Ok(())
     }
 
     pub fn delete_st_client(
@@ -1378,11 +1569,11 @@ impl MutTxId {
             .next()
             .map(|row| row.pointer())
         {
-            self.delete(ST_CLIENT_ID, ptr).map(drop)
+            self.delete(ST_CLIENT_ID, ptr).map(drop)?
         } else {
             log::error!("[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident");
-            Ok(())
         }
+        self.delete_st_client_credentials(database_identity, connection_id)
     }
 
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
@@ -1850,6 +2041,26 @@ impl MutTxId {
             table_id,
             row_pointer,
         )
+    }
+
+    // Clears the table for `table_id`, removing all rows.
+    pub fn clear_table(&mut self, table_id: TableId) -> Result<usize> {
+        // Get the commit table.
+        let (commit_table, commit_bs, ..) = self.committed_state_write_lock.get_table_and_blob_store(table_id)?;
+
+        // Get the insert table and delete all rows from it.
+        let (tx_table, tx_blob_store, delete_table) = self
+            .tx_state
+            .get_table_and_blob_store_or_create_from(table_id, commit_table);
+        let mut rows_removed = tx_table.clear(tx_blob_store);
+
+        // Mark every row in the committed state as deleted.
+        for row in commit_table.scan_rows(commit_bs) {
+            delete_table.insert(row.pointer());
+            rows_removed += 1;
+        }
+
+        Ok(rows_removed)
     }
 }
 

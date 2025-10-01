@@ -1,4 +1,5 @@
 use crate::hash::Hash;
+use crate::messages::control_db::HostType;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_datastore::execution_context::WorkloadType;
@@ -284,6 +285,45 @@ metrics_group!(
         #[help = "The number of server -> client WebSocket messages waiting in any client's outgoing queue"]
         #[labels(db: Identity)]
         pub total_outgoing_queue_length: IntGaugeVec,
+
+        #[name = spacetime_replay_total_time_seconds]
+        #[help = "Total time spent replaying a database upon restart, including snapshot read, snapshot restore and commitlog replay"]
+        #[labels(db: Identity)]
+        // We expect a small number of observations per label
+        // (exactly one, for non-replicated databases, and one per leader change for replicated databases)
+        // so we'll just store a `Gauge` with the most recent observation for each database.
+        pub replay_total_time_seconds: GaugeVec,
+
+        #[name = spacetime_replay_snapshot_read_time_seconds]
+        #[help = "Time spent reading a snapshot from disk before restoring the snapshot upon restart"]
+        #[labels(db: Identity)]
+        pub replay_snapshot_read_time_seconds: GaugeVec,
+
+        #[name = spacetime_replay_snapshot_restore_time_seconds]
+        #[help = "Time spent restoring a database from a snapshot after reading the snapshot and before commitlog replay upon restart"]
+        #[labels(db: Identity)]
+        pub replay_snapshot_restore_time_seconds: GaugeVec,
+
+        #[name = spacetime_replay_commitlog_time_seconds]
+        #[help = "Time spent replaying the commitlog after restoring from a snapshot upon restart"]
+        #[labels(db: Identity)]
+        pub replay_commitlog_time_seconds: GaugeVec,
+
+        #[name = spacetime_replay_commitlog_num_commits]
+        #[help = "Number of commits replayed after restoring from a snapshot upon restart"]
+        #[labels(db: Identity)]
+        pub replay_commitlog_num_commits: IntGaugeVec,
+
+        #[name = spacetime_module_create_instance_time_seconds]
+        #[help = "Time taken to construct a WASM instance or V8 isolate to run module code"]
+        #[labels(db: Identity, module_type: HostType)]
+        // As of writing (pgoldman 2025-09-25), calls to `create_instance` are rare,
+        // as they happen only when an instance traps (panics).
+        // However, this is not once-per-process, unlike the above replay metrics.
+        // I (pgoldman 2025-09-25) am not sure what range or distribution of values to expect,
+        // so I'm making up some buckets based on what I imagine are the upper and lower bounds of plausibility.
+        #[buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 50, 100)]
+        pub module_create_instance_time_seconds: HistogramVec,
     }
 );
 

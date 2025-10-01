@@ -2,7 +2,7 @@
 // See `serde` version `v1.0.169` for the parts where MIT / Apache-2.0 applies.
 
 mod impls;
-#[cfg(feature = "serde")]
+#[cfg(any(test, feature = "serde"))]
 pub mod serde;
 
 #[doc(hidden)]
@@ -158,6 +158,11 @@ pub trait Deserializer<'de>: Sized {
 pub trait Error: Sized {
     /// Raised when there is general error when deserializing a type.
     fn custom(msg: impl fmt::Display) -> Self;
+
+    /// Deserializing named products are not supported for this visitor.
+    fn named_products_not_supported() -> Self {
+        Self::custom("named products not supported")
+    }
 
     /// The product length was not as promised.
     fn invalid_product_length<'de, T: ProductVisitor<'de>>(len: usize, expected: &T) -> Self {
@@ -329,8 +334,8 @@ pub trait NamedProductAccess<'de> {
     /// The error type that can be returned if some error occurs during deserialization.
     type Error: Error;
 
-    /// Deserializes field name of type `V::Output` from the input using a visitor
-    /// provided by the deserializer.
+    /// Deserializes field name of type `V::Output`
+    /// from the input using a visitor provided by the deserializer.
     fn get_field_ident<V: FieldNameVisitor<'de>>(&mut self, visitor: V) -> Result<Option<V::Output>, Self::Error>;
 
     /// Deserializes field value of type `T` from the input.
@@ -368,8 +373,9 @@ pub trait FieldNameVisitor<'de> {
 
     /// Deserializes the name of a field using `index`.
     ///
-    /// The `name` is provided for error messages.
-    fn visit_seq<E: Error>(self, index: usize, name: &str) -> Result<Self::Output, E>;
+    /// Should only be called when `index` is already known to exist
+    /// and is expected to panic otherwise.
+    fn visit_seq(self, index: usize) -> Self::Output;
 }
 
 /// A visitor walking through a [`Deserializer`] for sums.
@@ -719,5 +725,31 @@ impl<'de, E: Error> VariantAccess<'de> for NoneAccess<E> {
                 ValueDeserializeError::MismatchedType => E::custom("mismatched type"),
                 ValueDeserializeError::Custom(err) => E::custom(err),
             })
+    }
+}
+
+/// Deserializes `some` variant of an optional value.
+pub struct SomeAccess<D>(D);
+
+impl<D> SomeAccess<D> {
+    /// Returns a new [`SomeAccess`] with a given deserializer for the `some` variant.
+    pub fn new(de: D) -> Self {
+        Self(de)
+    }
+}
+
+impl<'de, D: Deserializer<'de>> SumAccess<'de> for SomeAccess<D> {
+    type Error = D::Error;
+    type Variant = Self;
+
+    fn variant<V: VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+        visitor.visit_name("some").map(|var| (var, self))
+    }
+}
+
+impl<'de, D: Deserializer<'de>> VariantAccess<'de> for SomeAccess<D> {
+    type Error = D::Error;
+    fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
+        seed.deserialize(self.0)
     }
 }

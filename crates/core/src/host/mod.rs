@@ -24,7 +24,7 @@ mod wasm_common;
 
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
-    extract_schema, DurabilityProvider, ExternalDurability, ExternalStorage, HostController, ProcedureCallResult,
+    extract_schema, DurabilityProvider, ExternalDurability, ExternalStorage, HostController, MigratePlanResult, ProcedureCallResult,
     ProgramStorage, ReducerCallResult, ReducerOutcome, StartSnapshotWatcher,
 };
 pub use module_host::{

@@ -10,6 +10,7 @@ use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ord
 use spacetimedb_lib::db::raw_def::v9::RawProcedureDefV9;
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
+use spacetimedb_sats::{bsatn::de::Deserializer, de::DeserializeSeed, WithTypespace};
 
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
@@ -53,12 +54,22 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         })
         .collect_all_errors();
 
-    let procedures = misc_exports
+    let (procedures, non_procedure_misc_exports) =
+        misc_exports
+            .into_iter()
+            .partition::<Vec<RawMiscModuleExportV9>, _>(|misc_export| {
+                matches!(misc_export, RawMiscModuleExportV9::Procedure(_))
+            });
+
+    let procedures = procedures
         .into_iter()
-        .map(|misc_export| {
-            let RawMiscModuleExportV9::Procedure(procedure) = misc_export else {
-                unreachable!("`RawMiscModuleExportV9` has only one variant, `::Procedure`");
+        .map(|procedure| {
+            let RawMiscModuleExportV9::Procedure(procedure) = procedure else {
+                unreachable!("Already partitioned procedures separate from other `RawMiscModuleExportV9` variants");
             };
+            procedure
+        })
+        .map(|procedure| {
             validator
                 .validate_procedure_def(procedure)
                 .map(|procedure_def| (procedure_def.name.clone(), procedure_def))
@@ -96,6 +107,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
             .and_then(|(mut tables, types, reducers, procedures)| {
                 (
                     check_scheduled_functions_exist(&mut tables, &reducers, &procedures),
+                    check_non_procedure_misc_exports(non_procedure_misc_exports, &validator, &mut tables),
                     check_function_names_are_unique(&reducers, &procedures),
                 )
                     .combine_errors()?;
@@ -414,6 +426,44 @@ impl ModuleValidator<'_> {
         })
     }
 
+    fn validate_column_default_value(
+        &self,
+        tables: &HashMap<Identifier, TableDef>,
+        cdv: &RawColumnDefaultValueV9,
+    ) -> Result<AlgebraicValue> {
+        let table_name = identifier(cdv.table.clone())?;
+
+        // Extract the table. We cannot make progress otherwise.
+        let table = tables.get(&table_name).ok_or_else(|| ValidationError::TableNotFound {
+            table: cdv.table.clone(),
+        })?;
+
+        // Get the column that a default is being added to.
+        let Some(col) = table.columns.get(cdv.col_id.idx()) else {
+            return Err(ValidationError::ColumnNotFound {
+                table: cdv.table.clone(),
+                def: cdv.table.clone(),
+                column: cdv.col_id,
+            }
+            .into());
+        };
+
+        // First time the type of the default value is known, so decode it.
+        let mut reader = &cdv.value[..];
+        let ty = WithTypespace::new(self.typespace, &col.ty);
+        let field_value: Result<AlgebraicValue> =
+            ty.deserialize(Deserializer::new(&mut reader)).map_err(|decode_error| {
+                ValidationError::ColumnDefaultValueMalformed {
+                    table: cdv.table.clone(),
+                    col_id: cdv.col_id,
+                    err: decode_error,
+                }
+                .into()
+            });
+
+        field_value
+    }
+
     /// Validate a type definition.
     fn validate_type_def(&mut self, type_def: RawTypeDefV9) -> Result<TypeDef> {
         let RawTypeDefV9 {
@@ -567,6 +617,7 @@ impl TableValidator<'_, '_> {
             ty_for_generate,
             col_id,
             table_name,
+            default_value: None, // filled in later
         })
     }
 
@@ -688,13 +739,12 @@ impl TableValidator<'_, '_> {
             RawIndexAlgorithm::Direct { column } => self.validate_col_id(&name, column).and_then(|column| {
                 let field = &self.product_type.elements[column.idx()];
                 let ty = &field.algebraic_type;
-                use AlgebraicType::*;
                 let is_bad_type = match ty {
-                    U8 | U16 | U32 | U64 => false,
-                    Ref(r) => self.module_validator.typespace[*r]
+                    AlgebraicType::U8 | AlgebraicType::U16 | AlgebraicType::U32 | AlgebraicType::U64 => false,
+                    AlgebraicType::Ref(r) => self.module_validator.typespace[*r]
                         .as_sum()
                         .is_none_or(|s| !s.is_simple_enum()),
-                    Sum(sum) if sum.is_simple_enum() => false,
+                    AlgebraicType::Sum(sum) if sum.is_simple_enum() => false,
                     _ => true,
                 };
                 if is_bad_type {
@@ -996,6 +1046,59 @@ fn check_function_names_are_unique(
         .collect_all_errors()
 }
 
+fn check_non_procedure_misc_exports(
+    misc_exports: Vec<RawMiscModuleExportV9>,
+    validator: &ModuleValidator,
+    tables: &mut IdentifierMap<TableDef>,
+) -> Result<()> {
+    misc_exports
+        .into_iter()
+        .map(|export| match export {
+            RawMiscModuleExportV9::ColumnDefaultValue(cdv) => process_column_default_value(&cdv, validator, tables),
+            _ => unimplemented!("unknown misc export"),
+        })
+        .collect_all_errors::<()>()
+}
+
+fn process_column_default_value(
+    cdv: &RawColumnDefaultValueV9,
+    validator: &ModuleValidator,
+    tables: &mut IdentifierMap<TableDef>,
+) -> Result<()> {
+    // Validate the default value
+    let validated_value = validator.validate_column_default_value(tables, cdv)?;
+
+    let table_name = identifier(cdv.table.clone())?;
+    let table = tables
+        .get_mut(&table_name)
+        .ok_or_else(|| ValidationError::TableNotFound {
+            table: cdv.table.clone(),
+        })?;
+
+    let column = table
+        .columns
+        .get_mut(cdv.col_id.idx())
+        .ok_or_else(|| ValidationError::ColumnNotFound {
+            table: cdv.table.clone(),
+            def: cdv.table.clone(),
+            column: cdv.col_id,
+        })?;
+
+    // Ensure there's only one default value.
+    if column.default_value.is_some() {
+        return Err(ValidationError::MultipleColumnDefaultValues {
+            table: cdv.table.clone(),
+            col_id: cdv.col_id,
+        }
+        .into());
+    }
+
+    // Set the default value
+    column.default_value = Some(validated_value);
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::def::validate::tests::{
@@ -1003,7 +1106,8 @@ mod tests {
     };
     use crate::def::{validate::Result, ModuleDef};
     use crate::def::{
-        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, IndexDef, SequenceDef, UniqueConstraintData,
+        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, FunctionKind, IndexDef, SequenceDef,
+        UniqueConstraintData,
     };
     use crate::error::*;
     use crate::type_for_generate::ClientCodegenError;
@@ -1014,7 +1118,7 @@ mod tests {
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::{ColId, ColList, ColSet};
-    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType};
+    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SumValue};
     use v9::{Lifecycle, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess, TableType};
 
     /// This test attempts to exercise every successful path in the validation code.
@@ -1035,6 +1139,8 @@ mod tests {
 
         let schedule_at_type = builder.add_type::<ScheduleAt>();
 
+        let red_delicious = AlgebraicValue::Sum(SumValue::new(2, ()));
+
         builder
             .build_table_with_new_type(
                 "Apples",
@@ -1051,6 +1157,8 @@ mod tests {
             .with_unique_constraint(2)
             .with_index(btree(3), "Apples_type_btree")
             .with_unique_constraint(3)
+            .with_default_column_value(2, AlgebraicValue::U16(37))
+            .with_default_column_value(3, red_delicious.clone())
             .finish();
 
         builder
@@ -1118,12 +1226,16 @@ mod tests {
         assert_eq!(apples_def.columns.len(), 4);
         assert_eq!(apples_def.columns[0].name, expect_identifier("id"));
         assert_eq!(apples_def.columns[0].ty, AlgebraicType::U64);
+        assert_eq!(apples_def.columns[0].default_value, None);
         assert_eq!(apples_def.columns[1].name, expect_identifier("name"));
         assert_eq!(apples_def.columns[1].ty, AlgebraicType::String);
+        assert_eq!(apples_def.columns[1].default_value, None);
         assert_eq!(apples_def.columns[2].name, expect_identifier("count"));
         assert_eq!(apples_def.columns[2].ty, AlgebraicType::U16);
+        assert_eq!(apples_def.columns[2].default_value, Some(AlgebraicValue::U16(37)));
         assert_eq!(apples_def.columns[3].name, expect_identifier("type"));
         assert_eq!(apples_def.columns[3].ty, sum_type_ref.into());
+        assert_eq!(apples_def.columns[3].default_value, Some(red_delicious));
         assert_eq!(expect_resolve(&def.typespace, &apples_def.columns[3].ty), sum_type);
 
         assert_eq!(apples_def.primary_key, None);
@@ -1212,8 +1324,12 @@ mod tests {
         assert_eq!(delivery_def.columns[2].ty, AlgebraicType::U64);
         assert_eq!(delivery_def.schedule.as_ref().unwrap().at_column, 1.into());
         assert_eq!(
-            &delivery_def.schedule.as_ref().unwrap().reducer_name[..],
+            &delivery_def.schedule.as_ref().unwrap().function_name[..],
             "check_deliveries"
+        );
+        assert_eq!(
+            delivery_def.schedule.as_ref().unwrap().function_kind,
+            FunctionKind::Reducer
         );
         assert_eq!(delivery_def.primary_key, Some(ColId(2)));
 
@@ -1662,9 +1778,9 @@ mod tests {
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::MissingScheduledReducer { schedule, reducer } => {
+        expect_error_matching!(result, ValidationError::MissingScheduledFunction { schedule, function} => {
             &schedule[..] == "Deliveries_sched" &&
-            reducer == &expect_identifier("check_deliveries")
+                function == &expect_identifier("check_deliveries")
         });
     }
 
@@ -1690,8 +1806,9 @@ mod tests {
         builder.add_reducer("check_deliveries", ProductType::from([("a", AlgebraicType::U64)]), None);
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::IncorrectScheduledReducerParams { reducer, expected, actual } => {
-            &reducer[..] == "check_deliveries" &&
+        expect_error_matching!(result, ValidationError::IncorrectScheduledFunctionParams {function_name, function_kind, expected, actual } => {
+            &function_name[..] == "check_deliveries" &&
+                *function_kind == FunctionKind::Reducer &&
             expected.0 == AlgebraicType::product([AlgebraicType::Ref(deliveries_product_type)]) &&
             actual.0 == ProductType::from([("a", AlgebraicType::U64)]).into()
         });

@@ -8,14 +8,14 @@ partial struct TestUniqueNotEquatable
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        UniqueField = BSATN.UniqueField.Read(reader);
-        PrimaryKeyField = BSATN.PrimaryKeyField.Read(reader);
+        UniqueField = BSATN.UniqueFieldRW.Read(reader);
+        PrimaryKeyField = BSATN.PrimaryKeyFieldRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.UniqueField.Write(writer, UniqueField);
-        BSATN.PrimaryKeyField.Write(writer, PrimaryKeyField);
+        BSATN.UniqueFieldRW.Write(writer, UniqueField);
+        BSATN.PrimaryKeyFieldRW.Write(writer, PrimaryKeyField);
     }
 
     object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
@@ -31,8 +31,8 @@ partial struct TestUniqueNotEquatable
         internal static readonly SpacetimeDB.BSATN.ValueOption<
             int,
             SpacetimeDB.BSATN.I32
-        > UniqueField = new();
-        internal static readonly SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues> PrimaryKeyField =
+        > UniqueFieldRW = new();
+        internal static readonly SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues> PrimaryKeyFieldRW =
             new();
 
         public TestUniqueNotEquatable Read(System.IO.BinaryReader reader)
@@ -54,8 +54,8 @@ partial struct TestUniqueNotEquatable
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(UniqueField), UniqueField.GetAlgebraicType(registrar)),
-                        new(nameof(PrimaryKeyField), PrimaryKeyField.GetAlgebraicType(registrar))
+                        new("UniqueField", UniqueFieldRW.GetAlgebraicType(registrar)),
+                        new("PrimaryKeyField", PrimaryKeyFieldRW.GetAlgebraicType(registrar))
                     }
                 )
             );

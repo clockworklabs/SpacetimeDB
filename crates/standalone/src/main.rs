@@ -76,5 +76,6 @@ fn main() -> anyhow::Result<()> {
     cores.tokio.configure(&mut builder);
     let rt = builder.build().unwrap();
     cores.rayon.configure(rt.handle());
-    rt.block_on(async_main(cores.databases))
+    let database_cores = cores.databases.make_database_runners(rt.handle());
+    rt.block_on(async_main(database_cores))
 }

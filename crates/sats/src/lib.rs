@@ -34,7 +34,7 @@ pub mod typespace;
 #[cfg(any(test, feature = "proptest"))]
 pub mod proptest;
 
-#[cfg(feature = "serde")]
+#[cfg(any(test, feature = "serde"))]
 pub mod serde {
     pub use crate::de::serde::{deserialize_from as deserialize, SerdeDeserializer};
     pub use crate::ser::serde::{serialize_to as serialize, SerdeSerializer};
@@ -159,6 +159,23 @@ impl<'a, T: Value> ValueWithType<'a, T> {
 impl<'a, T: Value> ValueWithType<'a, Box<[T]>> {
     pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'a, T>> + use<'_, 'a, T> {
         self.value().iter().map(|val| ValueWithType { ty: self.ty, val })
+    }
+}
+
+impl<T: Value + PartialEq> PartialEq<T> for ValueWithType<'_, T> {
+    fn eq(&self, other: &T) -> bool {
+        self.val == other
+    }
+}
+
+use core::fmt;
+
+impl<T: fmt::Debug + Value<Type: fmt::Debug>> fmt::Debug for ValueWithType<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ValueWithType")
+            .field("type", self.ty())
+            .field("value", self.value())
+            .finish()
     }
 }
 

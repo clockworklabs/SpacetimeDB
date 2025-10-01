@@ -35,7 +35,11 @@ const nav: Nav = {
 
     section('Deploying'),
     page('Maincloud', 'deploying/maincloud', 'deploying/maincloud.md'),
-    page('Self-Hosting SpacetimeDB', 'deploying/spacetimedb-standalone', 'deploying/spacetimedb-standalone.md'),
+    page(
+      'Self-Hosting SpacetimeDB',
+      'deploying/spacetimedb-standalone',
+      'deploying/spacetimedb-standalone.md'
+    ),
 
     section('Unity Tutorial - Basic Multiplayer'),
     page('Overview', 'unity', 'unity/index.md'),
@@ -43,6 +47,13 @@ const nav: Nav = {
     page('2 - Connecting to SpacetimeDB', 'unity/part-2', 'unity/part-2.md'),
     page('3 - Gameplay', 'unity/part-3', 'unity/part-3.md'),
     page('4 - Moving and Colliding', 'unity/part-4', 'unity/part-4.md'),
+
+    section('Unreal Tutorial - Basic Multiplayer'),
+    page('Overview', 'unreal', 'unreal/index.md'),
+    page('1 - Setup', 'unreal/part-1', 'unreal/part-1.md'),
+    page('2 - Connecting to SpacetimeDB', 'unreal/part-2', 'unreal/part-2.md'),
+    page('3 - Gameplay', 'unreal/part-3', 'unreal/part-3.md'),
+    page('4 - Moving and Colliding', 'unreal/part-4', 'unreal/part-4.md'),
 
     section('CLI Reference'),
     page('CLI Reference', 'cli-reference', 'cli-reference.md'),
@@ -83,20 +94,33 @@ const nav: Nav = {
       'sdks/typescript/quickstart.md'
     ),
     page('TypeScript Reference', 'sdks/typescript', 'sdks/typescript/index.md'),
+    page('Unreal Reference', 'unreal/reference', 'unreal/reference.md'),
 
     section('SQL'),
     page('SQL Reference', 'sql', 'sql/index.md'),
 
     section('Subscriptions'),
     page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
-    page('Subscription Semantics', 'subscriptions/semantics', 'subscriptions/semantics.md'),
+    page(
+      'Subscription Semantics',
+      'subscriptions/semantics',
+      'subscriptions/semantics.md'
+    ),
 
     section('Row Level Security'),
     page('Row Level Security', 'rls', 'rls/index.md'),
 
     section('How To'),
-    page('Incremental Migrations', 'how-to/incremental-migrations', 'how-to/incremental-migrations.md'),
-    page('Reject Client Connections', 'how-to/reject-client-connections', 'how-to/reject-client-connections.md'),
+    page(
+      'Incremental Migrations',
+      'how-to/incremental-migrations',
+      'how-to/incremental-migrations.md'
+    ),
+    page(
+      'Reject Client Connections',
+      'how-to/reject-client-connections',
+      'how-to/reject-client-connections.md'
+    ),
 
     section('HTTP API'),
     page('Authorization', 'http/authorization', 'http/authorization.md'),

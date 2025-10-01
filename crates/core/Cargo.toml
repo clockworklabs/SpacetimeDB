@@ -58,6 +58,7 @@ enum-map.workspace = true
 flate2.workspace = true
 fs2.workspace = true
 futures.workspace = true
+futures-util.workspace = true
 hashbrown = { workspace = true, features = ["rayon", "serde"] }
 hex.workspace = true
 hostname.workspace = true
@@ -138,7 +139,7 @@ test = ["spacetimedb-commitlog/test", "spacetimedb-datastore/test"]
 perfmap = []
 
 [dev-dependencies]
-spacetimedb-lib = { path = "../lib", features = ["proptest"] }
+spacetimedb-lib = { path = "../lib", features = ["proptest", "test"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
 spacetimedb-datastore = { path = "../datastore/", features = ["test"] }
@@ -153,6 +154,7 @@ pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
 reqwest.workspace = true
+fs_extra.workspace = true
 
 [lints]
 workspace = true

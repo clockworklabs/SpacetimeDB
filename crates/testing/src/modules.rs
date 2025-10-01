@@ -12,6 +12,7 @@ use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::{generate_random_connection_id, WebSocketOptions};
 use spacetimedb_paths::{RootDir, SpacetimePaths};
+use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
 use tokio::runtime::{Builder, Runtime};
 
@@ -186,13 +187,13 @@ impl CompiledModule {
             },
             &certs,
             paths.data_dir.into(),
-            JobCores::default(),
+            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
         )
         .await
         .unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
-        let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().identity;
+        let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;
         let connection_id = generate_random_connection_id();
 
         let program_bytes = self.program_bytes().to_owned();
@@ -205,6 +206,7 @@ impl CompiledModule {
                 num_replicas: None,
                 host_type: HostType::Wasm,
             },
+            MigrationPolicy::Compatible,
         )
         .await
         .unwrap();

@@ -5,7 +5,7 @@ Business Source License 1.1
 Parameters
 
 Licensor:             Clockwork Laboratories, Inc.
-Licensed Work:        SpacetimeDB 1.3.0
+Licensed Work:        SpacetimeDB 1.4.0
                       The Licensed Work is
                       (c) 2023 Clockwork Laboratories, Inc.
                       
@@ -21,7 +21,7 @@ Additional Use Grant: You may make use of the Licensed Work provided your
                       Licensed Work by creating tables whose schemas are
                       controlled by such third parties.
 
-Change Date:          2030-07-30
+Change Date:          2030-09-22
 
 Change License:       GNU Affero General Public License v3.0 with a linking
                       exception
@@ -37,6 +37,34 @@ under an Open Source License, as stated in this License.
 
 License text copyright (c) 2017 MariaDB Corporation Ab, All Rights Reserved.
 “Business Source License” is a trademark of MariaDB Corporation Ab.
+
+-----------------------------------------------------------------------------
+
+Base License and Subdirectory Specific Licenses
+
+1. Repository-Wide License
+Except as provided in Section 2 below, the contents of this repository are licensed under the Business Source License (“BSL”), which includes a change date resulting in a licensing change to the GNU Affero General Public License v3.0 with Linking Exception on that date. See the full text of the BSL and AGPL with Linking Exception in this file below.
+
+2. Subdirectory-Specific Licenses
+Certain subdirectories within this repository are licensed under different terms.
+
+If a subdirectory contains its own LICENSE or LICENSE.txt file, the terms in that file apply exclusively to all files and subfolders within that subdirectory.
+
+In the event of any conflict between this base license and a subdirectory’s license, the base license will govern for that subdirectory’s contents.
+
+3. Contributor Acknowledgement
+By contributing to this repository, you agree that:
+
+Your contributions will be licensed under the license applicable to the directory or subdirectory in which your contribution is made.
+
+If you contribute to multiple subdirectories, the applicable license for each subdirectory will apply to your contributions in that subdirectory.
+
+4. Reading the Applicable License
+Before using, modifying, or distributing code from this repository, you must read:
+
+This base LICENSE.txt file for the overall repository license.
+
+Any LICENSE or LICENSE.txt file in a subdirectory that you intend to use or contribute to.
 
 -----------------------------------------------------------------------------
 

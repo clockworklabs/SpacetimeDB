@@ -7,7 +7,7 @@ use crate::auth::{
     SpacetimeIdentityToken,
 };
 use crate::routes::subscribe::generate_random_connection_id;
-use crate::util::{ByteStringBody, NameOrIdentity};
+pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
@@ -20,14 +20,20 @@ use http::StatusCode;
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::{
-    ClientConnectedError, ProcedureCallError, ReducerArgs, ReducerCallError, ReducerOutcome, UpdateDatabaseResult,
+    ClientConnectedError, MigratePlanResult, ProcedureCallError, ReducerArgs, ReducerCallError, ReducerOutcome,
+    UpdateDatabaseResult,
 };
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
-use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PublishOp, PublishResult};
+use spacetimedb_client_api_messages::name::{
+    self, DatabaseName, DomainName, MigrationPolicy, PrettyPrintStyle, PrintPlanResult, PublishOp, PublishResult,
+};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{sats, AlgebraicValue, Timestamp};
+use spacetimedb_lib::sats::{self, timestamp::Timestamp, AlgebraicValue, ProductValue};
+use spacetimedb_schema::auto_migrate::{
+    MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
+};
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
@@ -52,7 +58,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     if content_type != headers::ContentType::json() {
         return Err(axum::extract::rejection::MissingJsonContentType::default().into());
     }
-    let caller_identity = auth.identity;
+    let caller_identity = auth.claims.identity;
 
     let args = ReducerArgs::Json(body);
 
@@ -79,7 +85,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     // Call the database's `client_connected` reducer, if any.
     // If it fails or rejects the connection, bail.
     module
-        .call_identity_connected(caller_identity, connection_id)
+        .call_identity_connected(auth.into(), connection_id)
         .await
         .map_err(client_connected_error_to_response)?;
 
@@ -204,7 +210,7 @@ async fn procedure<S: ControlStateDelegate + NodeDelegate>(
     if content_type != headers::ContentType::json() {
         return Err(axum::extract::rejection::MissingJsonContentType::default().into());
     }
-    let caller_identity = auth.identity;
+    let caller_identity = auth.claims.identity;
 
     let args = ReducerArgs::Json(body);
 
@@ -230,7 +236,7 @@ async fn procedure<S: ControlStateDelegate + NodeDelegate>(
     // Call the database's `client_connected` reducer, if any.
     // If it fails or rejects the connection, bail.
     module
-        .call_identity_connected(caller_identity, connection_id)
+        .call_identity_connected(auth.into(), connection_id)
         .await
         .map_err(client_connected_error_to_response)?;
 
@@ -331,7 +337,7 @@ where
     };
 
     Ok((
-        TypedHeader(SpacetimeIdentity(auth.identity)),
+        TypedHeader(SpacetimeIdentity(auth.claims.identity)),
         TypedHeader(SpacetimeIdentityToken(auth.creds)),
         response_json,
     ))
@@ -406,13 +412,13 @@ where
         .await?
         .ok_or(NO_SUCH_DATABASE)?;
 
-    if database.owner_identity != auth.identity {
+    if database.owner_identity != auth.claims.identity {
         return Err((
             StatusCode::BAD_REQUEST,
             format!(
                 "Identity does not own database, expected: {} got: {}",
                 database.owner_identity.to_hex(),
-                auth.identity.to_hex()
+                auth.claims.identity.to_hex()
             ),
         )
             .into());
@@ -484,19 +490,24 @@ pub(crate) async fn worker_ctx_find_database(
 
 #[derive(Deserialize)]
 pub struct SqlParams {
-    name_or_identity: NameOrIdentity,
+    pub name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
-pub struct SqlQueryParams {}
+pub struct SqlQueryParams {
+    /// If `true`, return the query result only after its transaction offset
+    /// is confirmed to be durable.
+    #[serde(default)]
+    pub confirmed: bool,
+}
 
-pub async fn sql<S>(
-    State(worker_ctx): State<S>,
-    Path(SqlParams { name_or_identity }): Path<SqlParams>,
-    Query(SqlQueryParams {}): Query<SqlQueryParams>,
-    Extension(auth): Extension<SpacetimeAuth>,
-    body: String,
-) -> axum::response::Result<impl IntoResponse>
+pub async fn sql_direct<S>(
+    worker_ctx: S,
+    SqlParams { name_or_identity }: SqlParams,
+    SqlQueryParams { confirmed }: SqlQueryParams,
+    caller_identity: Identity,
+    sql: String,
+) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
     S: NodeDelegate + ControlStateDelegate,
 {
@@ -508,7 +519,7 @@ where
         .await?
         .ok_or(NO_SUCH_DATABASE)?;
 
-    let auth = AuthCtx::new(database.owner_identity, auth.identity);
+    let auth = AuthCtx::new(database.owner_identity, caller_identity);
     log::debug!("auth: {auth:?}");
 
     let host = worker_ctx
@@ -516,7 +527,21 @@ where
         .await
         .map_err(log_and_500)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    let json = host.exec_sql(auth, database, body).await?;
+
+    host.exec_sql(auth, database, confirmed, sql).await
+}
+
+pub async fn sql<S>(
+    State(worker_ctx): State<S>,
+    Path(name_or_identity): Path<SqlParams>,
+    Query(params): Query<SqlQueryParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    body: String,
+) -> axum::response::Result<impl IntoResponse>
+where
+    S: NodeDelegate + ControlStateDelegate,
+{
+    let json = sql_direct(worker_ctx, name_or_identity, params, auth.claims.identity, body).await?;
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
 
@@ -575,9 +600,18 @@ pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
     num_replicas: Option<usize>,
+    /// [`Hash`] of [`MigrationToken`]` to be checked if `MigrationPolicy::BreakClients` is set.
+    ///
+    /// Users obtain such a hash via the `/database/:name_or_identity/pre-publish POST` route.
+    /// This is a safeguard to require explicit approval for updates which will break clients.
+    token: Option<spacetimedb_lib::Hash>,
+    #[serde(default)]
+    policy: MigrationPolicy,
 }
 
+use spacetimedb_client_api_messages::http::SqlStmtResult;
 use std::env;
+
 fn require_spacetime_auth_for_creation() -> bool {
     env::var("TEMP_REQUIRE_SPACETIME_AUTH").is_ok_and(|v| !v.is_empty())
 }
@@ -587,10 +621,13 @@ fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
     if !require_spacetime_auth_for_creation() {
         return Ok(());
     }
-    if auth.issuer.trim_end_matches('/') == "https://auth.spacetimedb.com" {
+    if auth.claims.issuer.trim_end_matches('/') == "https://auth.spacetimedb.com" {
         Ok(())
     } else {
-        log::trace!("Rejecting creation request because auth issuer is {}", auth.issuer);
+        log::trace!(
+            "Rejecting creation request because auth issuer is {}",
+            auth.claims.issuer
+        );
         Err((
             StatusCode::UNAUTHORIZED,
             "To create a database, you must be logged in with a SpacetimeDB account.",
@@ -602,7 +639,12 @@ fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PublishDatabaseParams { name_or_identity }): Path<PublishDatabaseParams>,
-    Query(PublishDatabaseQueryParams { clear, num_replicas }): Query<PublishDatabaseQueryParams>,
+    Query(PublishDatabaseQueryParams {
+        clear,
+        num_replicas,
+        token,
+        policy,
+    }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
@@ -610,16 +652,20 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     // so, unless you are the owner, this will fail.
 
     let (database_identity, db_name) = match &name_or_identity {
-        Some(noa) => match noa.try_resolve(&ctx).await? {
+        Some(noa) => match noa.try_resolve(&ctx).await.map_err(log_and_500)? {
             Ok(resolved) => (resolved, noa.name()),
             Err(name) => {
                 // `name_or_identity` was a `NameOrIdentity::Name`, but no record
                 // exists yet. Create it now with a fresh identity.
                 allow_creation(&auth)?;
                 let database_auth = SpacetimeAuth::alloc(&ctx).await?;
-                let database_identity = database_auth.identity;
+                let database_identity = database_auth.claims.identity;
                 let tld: name::Tld = name.clone().into();
-                let tld = match ctx.register_tld(&auth.identity, tld).await.map_err(log_and_500)? {
+                let tld = match ctx
+                    .register_tld(&auth.claims.identity, tld)
+                    .await
+                    .map_err(log_and_500)?
+                {
                     name::RegisterTldResult::Success { domain }
                     | name::RegisterTldResult::AlreadyRegistered { domain } => domain,
                     name::RegisterTldResult::Unauthorized { .. } => {
@@ -631,7 +677,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                     }
                 };
                 let res = ctx
-                    .create_dns_record(&auth.identity, &tld.into(), &database_identity)
+                    .create_dns_record(&auth.claims.identity, &tld.into(), &database_identity)
                     .await
                     .map_err(log_and_500)?;
                 match res {
@@ -647,10 +693,25 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         },
         None => {
             let database_auth = SpacetimeAuth::alloc(&ctx).await?;
-            let database_identity = database_auth.identity;
+            let database_identity = database_auth.claims.identity;
             (database_identity, None)
         }
     };
+
+    let policy: SchemaMigrationPolicy = match policy {
+        MigrationPolicy::BreakClients => {
+            if let Some(token) = token {
+                Ok(SchemaMigrationPolicy::BreakClients(token))
+            } else {
+                Err((
+                    StatusCode::BAD_REQUEST,
+                    "Migration policy is set to `BreakClients`, but no migration token was provided.",
+                ))
+            }
+        }
+
+        MigrationPolicy::Compatible => Ok(SchemaMigrationPolicy::Compatible),
+    }?;
 
     log::trace!("Publishing to the identity: {}", database_identity.to_hex());
 
@@ -664,7 +725,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         }
 
         if clear && exists {
-            ctx.delete_database(&auth.identity, &database_identity)
+            ctx.delete_database(&auth.claims.identity, &database_identity)
                 .await
                 .map_err(log_and_500)?;
         }
@@ -686,13 +747,14 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 
     let maybe_updated = ctx
         .publish_database(
-            &auth.identity,
+            &auth.claims.identity,
             DatabaseDef {
                 database_identity,
                 program_bytes: body.into(),
                 num_replicas,
                 host_type: HostType::Wasm,
             },
+            policy,
         )
         .await
         .map_err(log_and_500)?;
@@ -720,6 +782,101 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     }))
 }
 
+#[derive(serde::Deserialize)]
+pub struct PrePublishParams {
+    name_or_identity: NameOrIdentity,
+}
+
+#[derive(serde::Deserialize)]
+pub struct PrePublishQueryParams {
+    #[serde(default)]
+    style: PrettyPrintStyle,
+}
+
+pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
+    State(ctx): State<S>,
+    Path(PrePublishParams { name_or_identity }): Path<PrePublishParams>,
+    Query(PrePublishQueryParams { style }): Query<PrePublishQueryParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    body: Bytes,
+) -> axum::response::Result<axum::Json<PrintPlanResult>> {
+    // User should not be able to print migration plans for a database that they do not own
+    let database_identity = resolve_and_authenticate(&ctx, &name_or_identity, &auth).await?;
+    let style = match style {
+        PrettyPrintStyle::NoColor => AutoMigratePrettyPrintStyle::NoColor,
+        PrettyPrintStyle::AnsiColor => AutoMigratePrettyPrintStyle::AnsiColor,
+    };
+
+    let migrate_plan = ctx
+        .migrate_plan(
+            DatabaseDef {
+                database_identity,
+                program_bytes: body.into(),
+                num_replicas: None,
+                host_type: HostType::Wasm,
+            },
+            style,
+        )
+        .await
+        .map_err(log_and_500)?;
+
+    match migrate_plan {
+        MigratePlanResult::Success {
+            old_module_hash,
+            new_module_hash,
+            breaks_client,
+            plan,
+        } => {
+            let token = MigrationToken {
+                database_identity,
+                old_module_hash,
+                new_module_hash,
+            }
+            .hash();
+
+            Ok(PrintPlanResult {
+                token,
+                migrate_plan: plan,
+                break_clients: breaks_client,
+            })
+        }
+        MigratePlanResult::AutoMigrationError(e) => Err((
+            StatusCode::BAD_REQUEST,
+            format!("Automatic migration is not possible: {e}"),
+        )
+            .into()),
+    }
+    .map(axum::Json)
+}
+
+/// Resolves the [`NameOrIdentity`] to a database identity and checks if the
+/// `auth` identity owns the database.
+async fn resolve_and_authenticate<S: ControlStateDelegate>(
+    ctx: &S,
+    name_or_identity: &NameOrIdentity,
+    auth: &SpacetimeAuth,
+) -> axum::response::Result<Identity> {
+    let database_identity = name_or_identity.resolve(ctx).await?;
+
+    let database = worker_ctx_find_database(ctx, &database_identity)
+        .await?
+        .ok_or(NO_SUCH_DATABASE)?;
+
+    if database.owner_identity != auth.claims.identity {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            format!(
+                "Identity does not own database, expected: {} got: {}",
+                database.owner_identity.to_hex(),
+                auth.claims.identity.to_hex()
+            ),
+        )
+            .into());
+    }
+
+    Ok(database_identity)
+}
+
 #[derive(Deserialize)]
 pub struct DeleteDatabaseParams {
     name_or_identity: NameOrIdentity,
@@ -732,7 +889,7 @@ pub async fn delete_database<S: ControlStateDelegate>(
 ) -> axum::response::Result<impl IntoResponse> {
     let database_identity = name_or_identity.resolve(&ctx).await?;
 
-    ctx.delete_database(&auth.identity, &database_identity)
+    ctx.delete_database(&auth.claims.identity, &database_identity)
         .await
         .map_err(log_and_500)?;
 
@@ -754,7 +911,7 @@ pub async fn add_name<S: ControlStateDelegate>(
     let database_identity = name_or_identity.resolve(&ctx).await?;
 
     let response = ctx
-        .create_dns_record(&auth.identity, &name.into(), &database_identity)
+        .create_dns_record(&auth.claims.identity, &name.into(), &database_identity)
         .await
         // TODO: better error code handling
         .map_err(log_and_500)?;
@@ -797,7 +954,7 @@ pub async fn set_names<S: ControlStateDelegate>(
         ));
     };
 
-    if database.owner_identity != auth.identity {
+    if database.owner_identity != auth.claims.identity {
         return Ok((
             StatusCode::UNAUTHORIZED,
             axum::Json(name::SetDomainsResult::NotYourDatabase {
@@ -891,7 +1048,8 @@ pub struct DatabaseRoutes<S> {
     pub logs_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
     pub sql_post: MethodRouter<S>,
-
+    /// POST: /database/:name_or_identity/pre-publish
+    pub pre_publish: MethodRouter<S>,
     /// GET: /database/: name_or_identity/unstable/timestamp
     pub timestamp_get: MethodRouter<S>,
 }
@@ -917,6 +1075,7 @@ where
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
+            pre_publish: post(pre_publish::<S>),
             timestamp_get: get(get_timestamp::<S>),
         }
     }
@@ -941,7 +1100,8 @@ where
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
-            .route("/unstable/timestamp", self.timestamp_get);
+            .route("/unstable/timestamp", self.timestamp_get)
+            .route("/pre-publish", self.pre_publish);
 
         axum::Router::new()
             .route("/", self.root_post)

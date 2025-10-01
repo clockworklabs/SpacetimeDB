@@ -216,3 +216,6 @@ new.json
 # Keys
 *.pem
 .ok.sql
+
+# Test data
+!crates/core/testdata/
