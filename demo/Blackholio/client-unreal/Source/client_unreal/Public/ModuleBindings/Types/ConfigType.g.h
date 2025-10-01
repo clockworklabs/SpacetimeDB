@@ -12,10 +12,10 @@ struct CLIENT_UNREAL_API FConfigType
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 Id;
+    uint32 Id = 0;
 
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 WorldSize;
+    uint64 WorldSize = 0;
 
     FORCEINLINE bool operator==(const FConfigType& Other) const
     {
