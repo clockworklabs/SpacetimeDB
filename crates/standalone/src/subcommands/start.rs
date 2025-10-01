@@ -75,6 +75,12 @@ pub fn cli() -> clap::Command {
                 "The maximum size of the page pool in bytes. Should be a multiple of 64KiB. The default is 8GiB.",
             ),
         )
+        .arg(
+            Arg::new("pg_port")
+                .long("pg-port")
+                .help("If specified, enables the built-in PostgreSQL wire protocol server on the given port.")
+                .value_parser(clap::value_parser!(u16).range(1024..65535)),
+        )
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
@@ -94,6 +100,7 @@ impl ConfigFile {
 
 pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
+    let pg_port = args.get_one::<u16>("pg_port");
     let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
     let certs = Option::zip(
         args.get_one::<PubKeyPath>("jwt_pub_key_path").cloned(),
@@ -180,23 +187,38 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let service = router(&ctx, db_routes, extra).with_state(ctx.clone());
 
-    let tcp = TcpListener::bind(listen_addr).await?;
+    let tcp = TcpListener::bind(listen_addr).await.context(format!(
+        "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"
+    ))?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
-    log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
-    let pg_server_addr = format!("{}:5432", listen_addr.split(':').next().unwrap());
-    let tcp_pg = TcpListener::bind(pg_server_addr).await?;
+    log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
 
-    let notify = Arc::new(tokio::sync::Notify::new());
-    let shutdown_notify = notify.clone();
-    tokio::select! {
-        _ = pg_server::start_pg(notify.clone(), ctx, tcp_pg) => {},
-        _ = axum::serve(tcp, service).with_graceful_shutdown(async move  {
-            shutdown_notify.notified().await;
-        }) => {},
-        _ = tokio::signal::ctrl_c() => {
-            println!("Shutting down servers...");
-            notify.notify_waiters(); // Notify all tasks
+    if let Some(pg_port) = pg_port {
+        let server_addr = listen_addr.split(':').next().unwrap();
+        let tcp_pg = TcpListener::bind(format!("{server_addr}:{pg_port}")).await.context(format!(
+            "failed to bind the SpacetimeDB PostgreSQL wire protocol server to {server_addr}:{pg_port}, please check that the port is valid and not already in use"
+        ))?;
+
+        let notify = Arc::new(tokio::sync::Notify::new());
+        let shutdown_notify = notify.clone();
+        tokio::select! {
+            _ = pg_server::start_pg(notify.clone(), ctx, tcp_pg) => {},
+            _ = axum::serve(tcp, service).with_graceful_shutdown(async move  {
+                shutdown_notify.notified().await;
+            }) => {},
+            _ = tokio::signal::ctrl_c() => {
+                println!("Shutting down servers...");
+                notify.notify_waiters(); // Notify all tasks
+            }
         }
+    } else {
+        log::warn!("PostgreSQL wire protocol server disabled");
+        axum::serve(tcp, service)
+            .with_graceful_shutdown(async {
+                tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+                log::info!("Shutting down server...");
+            })
+            .await?;
     }
 
     Ok(())

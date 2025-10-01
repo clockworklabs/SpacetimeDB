@@ -43,7 +43,7 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - uses: actions/setup-dotnet@v4
         with:
-          global-json-file: modules/global.json
+          global-json-file: global.json
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
@@ -55,7 +55,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
-          Start-Process target/debug/spacetimedb-cli.exe start
+          Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
@@ -97,13 +97,13 @@ jobs:
 
       - uses: actions/setup-dotnet@v3
         with:
-          global-json-file: modules/global.json
+          global-json-file: global.json
 
       - name: Create /stdb dir
         run: |
           sudo mkdir /stdb
           sudo chmod 777 /stdb
-      
+
       - name: Run cargo test
         #Note: Unreal tests will be run separately
         run: cargo test --all -- --skip unreal
@@ -129,6 +129,10 @@ jobs:
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
 
       - name: Run cargo fmt
         run: cargo fmt --all -- --check
@@ -227,7 +231,7 @@ jobs:
       - name: Install packages
         if: ${{ matrix.runner == 'arm-runner' }}
         shell: bash
-        run: sudo apt install libssl-dev
+        run: sudo apt install -y libssl-dev
 
       - name: Build spacetimedb-update
         run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
