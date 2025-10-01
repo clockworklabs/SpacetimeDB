@@ -15,9 +15,14 @@ post logout URIs, and name.
 
 You can manage clients by navigating to the "Clients" tab in your
 SpacetimeAuth project dashboard.
-![Clients tab](./clients-tab.png)
+![Clients tab](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-clients-tab.png)
 Every project comes with a default client that you can use to get started.
 You can also create additional clients by clicking the "Create Client" button.
+
+The majority of projects will only need a single client to authenticate users to
+their SpacetimeDB module. You may want to create multiple clients if you have
+multiple applications (e.g. a sidecar, admin panel, etc.) and want to use different
+authentication flows or settings for each application.
 
 When creating or editing a client, you can configure the following settings:
 
@@ -27,11 +32,9 @@ When creating or editing a client, you can configure the following settings:
 - **Post Logout Redirect URIs**: The URIs to which SpacetimeAuth allows to redirect
   the user after a logout. These must match the URIs used in your application.
 
-> ⚠️Remember to keep your client secret secure, **never** expose it in
-> client-side code or public repositories.
-> You can freely share the client ID as it is not sensitive information.
+> ⚠️Remember to keep your client secret secure, **never** expose it in client-side code or public repositories. You can freely share the client ID as it is not sensitive information. Client secrets are only used during the `client_credentials` flow, allowing you to get a token with no user context (the `sub` claim will be set to the client ID).`
 
-![Edit client](./edit-client.png)
+![Edit client](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-edit-client.png)
 
 ### Scopes and Claims
 
@@ -87,11 +90,13 @@ For example the username claim is mapped to the standard `preferred_username` cl
 You can manage identity providers by navigating to the "Identity Providers" tab
 in your SpacetimeAuth project dashboard.
 
-![Identity Providers tab](./identity-providers-tab.png)
+![Identity Providers tab](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-identity-providers.png)
 
-To enable an identity provider, enter the client ID and client secret obtained
-from the provider's developer console. You must also configure the redirect URI
-in the provider's developer console to point to SpacetimeAuth (see below).
+Since SpacetimeAuth acts as a client for the external identity provider,
+you need to provide the client ID and client secret obtained
+from the provider's developer console in order to enable the provider.
+You must also configure the redirect URI in the provider's developer console to
+point to SpacetimeAuth (see below).
 You can also choose to enable or disable the provider.
 After entering the required information, click "Save" and the provider will be
 available on the login page of your application.
@@ -123,6 +128,3 @@ verifying your setup with a quick test.
 
 - [Test your configuration with OIDC Debugger](/docs/spacetimeauth/testing-authentication)
 - [React integration guide](/docs/spacetimeauth/react-integration)
-- Rust (coming soon)
-- C#/Unity (coming soon)
-- Unreal Engine (coming soon)

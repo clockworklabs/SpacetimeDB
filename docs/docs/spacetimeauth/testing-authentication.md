@@ -48,6 +48,8 @@ It allows you to:
 
 > ⚠️ You do not need to enter the client secret here since the tool runs in the browser.
 
+![OIDC Debugger Setup](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-oidcdebugger-config.png)
+
 ---
 
 ## Step 3: Run the Flow
@@ -57,13 +59,14 @@ It allows you to:
 3. You’ll be redirected back to OIDC Debugger with an authorization code.
 4. OIDC Debugger will automatically exchange the code for tokens and display the
    results.
+   ![OIDC Debugger results](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-oidcdebugger-results.png)
 
 ---
 
 ## Step 4: Inspect your tokens
 
 Depending on the scopes you requested, you should receive an ID token like this:
-![OIDC Debugger Result](./oidc-debugger-result.png)
+![OIDC Debugger Result](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-jwtio.png)
 
 You can decode the ID token using any JWT decoder (e.g. [jwt.io](https://jwt.io/))
 to see the claims included. For example:
