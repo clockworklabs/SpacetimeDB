@@ -12,10 +12,10 @@ struct TESTCLIENT_API FPkI16Type
     GENERATED_BODY()
 
     // NOTE: int16 field not exposed to Blueprint due to non-blueprintable elements
-    int16 N;
+    int16 N = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FORCEINLINE bool operator==(const FPkI16Type& Other) const
     {

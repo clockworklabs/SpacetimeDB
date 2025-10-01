@@ -12,7 +12,7 @@ struct TESTCLIENT_API FOneF32Type
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    float F;
+    float F = 0.f;
 
     FORCEINLINE bool operator==(const FOneF32Type& Other) const
     {

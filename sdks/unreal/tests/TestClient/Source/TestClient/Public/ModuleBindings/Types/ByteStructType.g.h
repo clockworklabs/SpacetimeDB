@@ -12,7 +12,7 @@ struct TESTCLIENT_API FByteStructType
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    uint8 B;
+    uint8 B = 0;
 
     FORCEINLINE bool operator==(const FByteStructType& Other) const
     {

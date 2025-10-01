@@ -4,14 +4,14 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Types/SubscribeMultiType.g.h"
-#include "ModuleBindings/Types/UnsubscribeMultiType.g.h"
-#include "ModuleBindings/Types/OneOffQueryType.g.h"
-#include "ModuleBindings/Types/SubscribeSingleType.g.h"
-#include "ModuleBindings/Types/SubscribeType.g.h"
 #include "ModuleBindings/Types/UnsubscribeType.g.h"
-#include "ModuleBindings/Types/CallReducerType.g.h"
+#include "ModuleBindings/Types/SubscribeSingleType.g.h"
+#include "ModuleBindings/Types/OneOffQueryType.g.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "ModuleBindings/Types/UnsubscribeMultiType.g.h"
+#include "ModuleBindings/Types/SubscribeMultiType.g.h"
+#include "ModuleBindings/Types/CallReducerType.g.h"
+#include "ModuleBindings/Types/SubscribeType.g.h"
 #include "ClientMessageType.g.generated.h"
 
 UENUM(BlueprintType)
@@ -34,10 +34,10 @@ struct SPACETIMEDBSDK_API FClientMessageType
 public:
     FClientMessageType() = default;
 
-    TVariant<FUnsubscribeType, FUnsubscribeMultiType, FOneOffQueryType, FCallReducerType, FSubscribeType, FSubscribeSingleType, FSubscribeMultiType> MessageData;
+    TVariant<FCallReducerType, FSubscribeMultiType, FUnsubscribeType, FUnsubscribeMultiType, FSubscribeType, FOneOffQueryType, FSubscribeSingleType> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
-    EClientMessageTag Tag;
+    EClientMessageTag Tag = static_cast<EClientMessageTag>(0);
 
     static FClientMessageType CallReducer(const FCallReducerType& Value)
     {
