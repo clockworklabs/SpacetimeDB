@@ -26,9 +26,9 @@ namespace SpacetimeDB.Types
 
             public readonly IdentityUniqueIndex Identity;
 
-            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<uint>
+            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<int>
             {
-                protected override uint GetKey(Player row) => row.PlayerId;
+                protected override int GetKey(Player row) => row.PlayerId;
 
                 public PlayerIdUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
