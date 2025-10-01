@@ -2,6 +2,7 @@ use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
+use crate::client::{ClientActorId, ClientName};
 use crate::database_logger::DatabaseLogger;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
@@ -415,6 +416,7 @@ impl HostController {
                 .await?;
 
             *guard = Some(host);
+
             Ok::<_, anyhow::Error>(update_result)
         })
         .await??;
@@ -974,14 +976,43 @@ impl Host {
 
         let update_result =
             update_module(&replica_ctx.relational_db, &module, program, old_module_info, policy).await?;
-        trace!("update result: {update_result:?}");
+
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
-        if update_result.was_successful() {
-            self.scheduler = scheduler;
-            scheduler_starter.start(&module)?;
-            let old_module = self.module.send_replace(module);
-            old_module.exit().await;
+        match update_result {
+            UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
+                self.scheduler = scheduler;
+                scheduler_starter.start(&module)?;
+                let old_module = self.module.send_replace(module);
+                old_module.exit().await;
+            }
+
+            // In this case, we need to disconnect all clients connected to the old module
+            UpdateDatabaseResult::UpdatePerformedWithClientDisconnect => {
+                // Replace the module first, so that new clients get the new module.
+                let old_watcher = std::mem::replace(&mut self.module, watch::Sender::new(module.clone()));
+
+                // Disconnect all clients connected to the old module.
+                let connected_clients = replica_ctx.relational_db.connected_clients()?;
+                for (identity, connection_id) in connected_clients {
+                    let client_actor_id = ClientActorId {
+                        identity,
+                        connection_id,
+                        name: ClientName(0),
+                    };
+                    //NOTE: This will call disconnect reducer of the new module, not the old one.
+                    //It makes sense, as relationaldb is already updated to the new module.
+                    module.disconnect_client(client_actor_id).await;
+                }
+
+                self.scheduler = scheduler;
+                scheduler_starter.start(&module)?;
+                // exit the old module, drop the `old_watcher` afterwards,
+                // which will signal websocket clients that the module is gone.
+                let old_module = old_watcher.borrow().clone();
+                old_module.exit().await;
+            }
+            _ => {}
         }
 
         Ok(update_result)
