@@ -21,7 +21,6 @@ jobs:
         include:
           - { runner: spacetimedb-runner, smoketest_args: --docker }
           - { runner: windows-latest, smoketest_args: --no-build-cli }
-        runner: [ spacetimedb-runner, windows-latest ]
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Find Git ref
@@ -54,6 +53,10 @@ jobs:
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
+          # Fail properly if any individual command fails
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+
           cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
           Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
