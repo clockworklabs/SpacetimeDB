@@ -92,10 +92,33 @@ var ___hashUnsupportedEnum = UnsupportedEnum.GetHashCode();
     }
   },
   {/*
+[SpacetimeDB.Table]
+public partial struct TestDefaultFieldValues
+                      ^^^^^^^^^^^^^^^^^^^^^^
+{
+*/
+    Message: A 'struct' with field initializers must include an explicitly declared constructor.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS8983,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS8983),
+      MessageFormat: A 'struct' with field initializers must include an explicitly declared constructor.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
 SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
 SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THIRD_FILTER);
                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    }
+        {
 */
     Message: Argument 1: cannot convert from 'string' to 'SpacetimeDB.Filter',
     Severity: Error,
