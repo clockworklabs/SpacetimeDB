@@ -262,8 +262,9 @@ export const AlgebraicType: {
       case 'Product':
         return ProductType.intoMapKey(ty.value, value);
       default: {
+        // The fallback is to serialize and base64 encode the bytes.
         const writer = new BinaryWriter(10);
-        this.serialize(writer, value);
+        AlgebraicType.serializeValue(writer, ty, value);
         return writer.toBase64();
       }
     }
