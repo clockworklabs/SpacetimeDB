@@ -52,6 +52,10 @@ jobs:
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
+          # Fail properly if any individual command fails
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+
           cargo build -p spacetimedb-standalone
           echo "Return code is: $?"
           cd modules
