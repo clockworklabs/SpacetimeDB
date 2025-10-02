@@ -1,4 +1,3 @@
-use std::num::NonZeroU8;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -22,21 +21,19 @@ use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
-use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::host::{MigratePlanResult, ReducerArgs};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
-use spacetimedb_client_api_messages::name::{
-    self, DatabaseName, DomainName, MigrationPolicy, PrettyPrintStyle, PrintPlanResult, PublishOp, PublishResult,
-};
+use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PrettyPrintStyle, PrintPlanResult};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{sats, ProductValue, Timestamp};
-use spacetimedb_schema::auto_migrate::{
-    MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
-};
+use spacetimedb_schema::auto_migrate::{MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle};
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
+
+mod publish;
+pub use publish::{publish, PublishDatabaseParams, PublishDatabaseQueryParams};
 
 #[derive(Deserialize)]
 pub struct CallParams {
@@ -483,197 +480,7 @@ pub async fn get_names<S: ControlStateDelegate>(
     Ok(axum::Json(response))
 }
 
-#[derive(Deserialize)]
-pub struct PublishDatabaseParams {
-    name_or_identity: Option<NameOrIdentity>,
-}
-
-#[derive(Deserialize)]
-pub struct PublishDatabaseQueryParams {
-    #[serde(default)]
-    clear: bool,
-    num_replicas: Option<usize>,
-    /// [`Hash`] of [`MigrationToken`]` to be checked if `MigrationPolicy::BreakClients` is set.
-    ///
-    /// Users obtain such a hash via the `/database/:name_or_identity/pre-publish POST` route.
-    /// This is a safeguard to require explicit approval for updates which will break clients.
-    token: Option<spacetimedb_lib::Hash>,
-    #[serde(default)]
-    policy: MigrationPolicy,
-}
-
 use spacetimedb_client_api_messages::http::SqlStmtResult;
-use std::env;
-
-fn require_spacetime_auth_for_creation() -> bool {
-    env::var("TEMP_REQUIRE_SPACETIME_AUTH").is_ok_and(|v| !v.is_empty())
-}
-
-// A hacky function to let us restrict database creation on maincloud.
-fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
-    if !require_spacetime_auth_for_creation() {
-        return Ok(());
-    }
-    if auth.claims.issuer.trim_end_matches('/') == "https://auth.spacetimedb.com" {
-        Ok(())
-    } else {
-        log::trace!(
-            "Rejecting creation request because auth issuer is {}",
-            auth.claims.issuer
-        );
-        Err((
-            StatusCode::UNAUTHORIZED,
-            "To create a database, you must be logged in with a SpacetimeDB account.",
-        )
-            .into())
-    }
-}
-
-pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
-    State(ctx): State<S>,
-    Path(PublishDatabaseParams { name_or_identity }): Path<PublishDatabaseParams>,
-    Query(PublishDatabaseQueryParams {
-        clear,
-        num_replicas,
-        token,
-        policy,
-    }): Query<PublishDatabaseQueryParams>,
-    Extension(auth): Extension<SpacetimeAuth>,
-    body: Bytes,
-) -> axum::response::Result<axum::Json<PublishResult>> {
-    // You should not be able to publish to a database that you do not own
-    // so, unless you are the owner, this will fail.
-
-    let (database_identity, db_name) = match &name_or_identity {
-        Some(noa) => match noa.try_resolve(&ctx).await.map_err(log_and_500)? {
-            Ok(resolved) => (resolved, noa.name()),
-            Err(name) => {
-                // `name_or_identity` was a `NameOrIdentity::Name`, but no record
-                // exists yet. Create it now with a fresh identity.
-                allow_creation(&auth)?;
-                let database_auth = SpacetimeAuth::alloc(&ctx).await?;
-                let database_identity = database_auth.claims.identity;
-                let tld: name::Tld = name.clone().into();
-                let tld = match ctx
-                    .register_tld(&auth.claims.identity, tld)
-                    .await
-                    .map_err(log_and_500)?
-                {
-                    name::RegisterTldResult::Success { domain }
-                    | name::RegisterTldResult::AlreadyRegistered { domain } => domain,
-                    name::RegisterTldResult::Unauthorized { .. } => {
-                        return Err((
-                            StatusCode::UNAUTHORIZED,
-                            axum::Json(PublishResult::PermissionDenied { name: name.clone() }),
-                        )
-                            .into())
-                    }
-                };
-                let res = ctx
-                    .create_dns_record(&auth.claims.identity, &tld.into(), &database_identity)
-                    .await
-                    .map_err(log_and_500)?;
-                match res {
-                    name::InsertDomainResult::Success { .. } => {}
-                    name::InsertDomainResult::TldNotRegistered { .. }
-                    | name::InsertDomainResult::PermissionDenied { .. } => {
-                        return Err(log_and_500("impossible: we just registered the tld"))
-                    }
-                    name::InsertDomainResult::OtherError(e) => return Err(log_and_500(e)),
-                }
-                (database_identity, Some(name))
-            }
-        },
-        None => {
-            let database_auth = SpacetimeAuth::alloc(&ctx).await?;
-            let database_identity = database_auth.claims.identity;
-            (database_identity, None)
-        }
-    };
-
-    let policy: SchemaMigrationPolicy = match policy {
-        MigrationPolicy::BreakClients => {
-            if let Some(token) = token {
-                Ok(SchemaMigrationPolicy::BreakClients(token))
-            } else {
-                Err((
-                    StatusCode::BAD_REQUEST,
-                    "Migration policy is set to `BreakClients`, but no migration token was provided.",
-                ))
-            }
-        }
-
-        MigrationPolicy::Compatible => Ok(SchemaMigrationPolicy::Compatible),
-    }?;
-
-    log::trace!("Publishing to the identity: {}", database_identity.to_hex());
-
-    let op = {
-        let exists = ctx
-            .get_database_by_identity(&database_identity)
-            .map_err(log_and_500)?
-            .is_some();
-        if !exists {
-            allow_creation(&auth)?;
-        }
-
-        if clear && exists {
-            ctx.delete_database(&auth.claims.identity, &database_identity)
-                .await
-                .map_err(log_and_500)?;
-        }
-
-        if exists {
-            PublishOp::Updated
-        } else {
-            PublishOp::Created
-        }
-    };
-
-    let num_replicas = num_replicas
-        .map(|n| {
-            let n = u8::try_from(n).map_err(|_| (StatusCode::BAD_REQUEST, "Replication factor {n} out of bounds"))?;
-            Ok::<_, ErrorResponse>(NonZeroU8::new(n))
-        })
-        .transpose()?
-        .flatten();
-
-    let maybe_updated = ctx
-        .publish_database(
-            &auth.claims.identity,
-            DatabaseDef {
-                database_identity,
-                program_bytes: body.into(),
-                num_replicas,
-                host_type: HostType::Wasm,
-            },
-            policy,
-        )
-        .await
-        .map_err(log_and_500)?;
-
-    if let Some(updated) = maybe_updated {
-        match updated {
-            UpdateDatabaseResult::AutoMigrateError(errs) => {
-                return Err((StatusCode::BAD_REQUEST, format!("Database update rejected: {errs}")).into());
-            }
-            UpdateDatabaseResult::ErrorExecutingMigration(err) => {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    format!("Failed to create or update the database: {err}"),
-                )
-                    .into());
-            }
-            UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {}
-        }
-    }
-
-    Ok(axum::Json(PublishResult::Success {
-        domain: db_name.cloned(),
-        database_identity,
-        op,
-    }))
-}
 
 #[derive(serde::Deserialize)]
 pub struct PrePublishParams {
@@ -707,6 +514,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
                 program_bytes: body.into(),
                 num_replicas: None,
                 host_type: HostType::Wasm,
+                parent: None,
             },
             style,
         )

@@ -169,6 +169,7 @@ pub struct DatabaseDef {
     pub num_replicas: Option<NonZeroU8>,
     /// The host type of the supplied program.
     pub host_type: HostType,
+    pub parent: Option<Identity>,
 }
 
 /// API of the SpacetimeDB control plane.
@@ -239,6 +240,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult>;
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
+    async fn clear_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -337,6 +339,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
         (**self).delete_database(caller_identity, database_identity).await
+    }
+
+    async fn clear_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+        (**self).clear_database(caller_identity, database_identity).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
