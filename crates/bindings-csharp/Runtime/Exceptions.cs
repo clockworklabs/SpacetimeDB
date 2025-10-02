@@ -72,6 +72,11 @@ public class NoSpaceException : StdbException
     public override string Message => "The provided bytes sink has no more room left";
 }
 
+public class AutoIncOverflowException : StdbException
+{
+    public override string Message => "The auto-increment sequence overflowed";
+}
+
 public class UnknownException : StdbException
 {
     private readonly Errno code;

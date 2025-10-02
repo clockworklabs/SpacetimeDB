@@ -38,6 +38,7 @@ const row2 = {
   bar: t.i32().primaryKey(),
   idx: t.i64().index('btree').unique(),
 };
+// @ts-expect-error
 type Row2 = InferTypeOfRow<typeof row2>;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _ = MustBeNever<Row2>;
