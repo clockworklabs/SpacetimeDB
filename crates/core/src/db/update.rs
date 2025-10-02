@@ -23,6 +23,14 @@ impl UpdateLogger for SystemLogger {
     }
 }
 
+/// The result of a database update.
+/// Indicates whether clients should be disconnected when the update is complete.
+#[must_use]
+pub enum UpdateResult {
+    Success,
+    RequiresClientDisconnect,
+}
+
 /// Update the database according to the migration plan.
 ///
 /// The update is performed within the transactional context `tx`.
@@ -39,7 +47,7 @@ pub fn update_database(
     auth_ctx: AuthCtx,
     plan: MigratePlan,
     logger: &dyn UpdateLogger,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<UpdateResult> {
     let existing_tables = stdb.get_all_tables_mut(tx)?;
 
     // TODO: consider using `ErrorStream` here.
@@ -68,7 +76,7 @@ fn manual_migrate_database(
     _plan: ManualMigratePlan,
     _logger: &dyn UpdateLogger,
     _existing_tables: Vec<Arc<TableSchema>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<UpdateResult> {
     unimplemented!("Manual database migrations are not yet implemented")
 }
 
@@ -88,7 +96,7 @@ fn auto_migrate_database(
     plan: AutoMigratePlan,
     logger: &dyn UpdateLogger,
     existing_tables: Vec<Arc<TableSchema>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<UpdateResult> {
     // We have already checked in `migrate_database` that `existing_tables` are compatible with the `old` definition in `plan`.
     // So we can look up tables in there using unwrap.
 
@@ -126,6 +134,7 @@ fn auto_migrate_database(
     }
 
     log::info!("Running database update steps: {}", stdb.database_identity());
+    let mut res = UpdateResult::Success;
 
     for step in plan.steps {
         match step {
@@ -263,12 +272,17 @@ fn auto_migrate_database(
                     .collect();
                 stdb.add_columns_to_table(tx, table_id, column_schemas, default_values)?;
             }
-            _ => anyhow::bail!("migration step not implemented: {step:?}"),
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::DisconnectAllUsers => {
+                log!(logger, "Disconnecting all users");
+                // It does not disconnect clients right away,
+                // but send response indicated that caller should drop clients
+                res = UpdateResult::RequiresClientDisconnect;
+            }
         }
     }
 
     log::info!("Database update complete");
-    Ok(())
+    Ok(res)
 }
 
 #[cfg(test)]
@@ -348,7 +362,8 @@ mod test {
         // Try to update the db.
         let mut tx = begin_mut_tx(&stdb);
         let plan = ponder_migrate(&old, &new)?;
-        update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        matches!(res, UpdateResult::Success);
 
         // Expect the schema change.
         let idx_b_id = stdb

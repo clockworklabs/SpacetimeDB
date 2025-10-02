@@ -37,7 +37,7 @@ git push -u origin a-branch-name-that-describes-my-change
 > NOTE! If you make a change to `nav.ts` you will have to run `npm run build` to generate a new `docs/nav.js` file.
 
 #### CLI Reference Section
-1. Run `cargo run --features markdown-docs -p spacetimedb-cli > docs/cli-reference.md`
+1. Run `cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md`
 2. Run `pnpm format`
 
 ### Checking Links
