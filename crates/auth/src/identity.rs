@@ -15,8 +15,7 @@ pub struct ConnectionAuthCtx {
 impl TryFrom<SpacetimeIdentityClaims> for ConnectionAuthCtx {
     type Error = anyhow::Error;
     fn try_from(claims: SpacetimeIdentityClaims) -> Result<Self, Self::Error> {
-        let payload =
-            serde_json::to_string(&claims).map_err(|e| anyhow::anyhow!("Failed to serialize claims: {e}"))?;
+        let payload = serde_json::to_string(&claims).map_err(|e| anyhow::anyhow!("Failed to serialize claims: {e}"))?;
         Ok(ConnectionAuthCtx {
             claims,
             jwt_payload: payload,

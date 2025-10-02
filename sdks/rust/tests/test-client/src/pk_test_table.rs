@@ -38,9 +38,7 @@ pub fn insert_update_delete_one<T: PkTestTable>(
             if delete_result.is_some() {
                 let run_checks = || {
                     if row.primary_key() != &key_dup || row.as_value() != update_value {
-                        anyhow::bail!(
-                            "Unexpected row value. Expected ({key_dup:?}, {update_value}) but found {row:?}"
-                        );
+                        anyhow::bail!("Unexpected row value. Expected ({key_dup:?}, {update_value}) but found {row:?}");
                     }
                     let Event::Reducer(reducer_event) = &ctx.event else {
                         anyhow::bail!("Expected a reducer event");
@@ -99,9 +97,7 @@ pub fn insert_update_delete_one<T: PkTestTable>(
         if insert_result.is_some() {
             let run_checks = || {
                 if row.primary_key() != &key_dup || row.as_value() != initial_value {
-                    anyhow::bail!(
-                        "Unexpected row value. Expected ({key_dup:?}, {initial_value}) but found {row:?}"
-                    );
+                    anyhow::bail!("Unexpected row value. Expected ({key_dup:?}, {initial_value}) but found {row:?}");
                 }
                 let Event::Reducer(reducer_event) = &ctx.event else {
                     anyhow::bail!("Expected a reducer event");

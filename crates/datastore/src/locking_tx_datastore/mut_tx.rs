@@ -521,14 +521,10 @@ impl MutTxId {
             .len()
             .checked_sub(original_table_schema.columns.len())
             .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "new column schemas must be more than existing ones for table_id: {table_id}"
-                )
+                anyhow::anyhow!("new column schemas must be more than existing ones for table_id: {table_id}")
             })?;
         let older_defaults = default_values.len().checked_sub(new_cols).ok_or_else(|| {
-            anyhow::anyhow!(
-                "not enough default values provided for new columns for table_id: {table_id}"
-            )
+            anyhow::anyhow!("not enough default values provided for new columns for table_id: {table_id}")
         })?;
         default_values.drain(..older_defaults);
 

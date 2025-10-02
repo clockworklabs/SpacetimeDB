@@ -505,11 +505,7 @@ fn process_schedule(
     let st_scheduled_row = db
         .iter_by_col_eq_mut(tx, ST_SCHEDULED_ID, table_id_col, &table_id.into())?
         .next()
-        .ok_or_else(|| {
-            anyhow!(
-                "Scheduled table with id {table_id} entry does not exist in `st_scheduled`"
-            )
-        })?;
+        .ok_or_else(|| anyhow!("Scheduled table with id {table_id} entry does not exist in `st_scheduled`"))?;
     let reducer = st_scheduled_row.read_col::<Box<str>>(reducer_name_col)?;
 
     Ok(ScheduledReducer {
