@@ -136,13 +136,16 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(bad_request(
             format!("Failed to create or update the database: {err}").into(),
         )),
-        None | Some(UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed) => {
-            Ok(axum::Json(PublishResult::Success {
-                domain: db_name.cloned(),
-                database_identity,
-                op: publish_op,
-            }))
-        }
+        None
+        | Some(
+            UpdateDatabaseResult::NoUpdateNeeded
+            | UpdateDatabaseResult::UpdatePerformed
+            | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect,
+        ) => Ok(axum::Json(PublishResult::Success {
+            domain: db_name.cloned(),
+            database_identity,
+            op: publish_op,
+        })),
     }
 }
 

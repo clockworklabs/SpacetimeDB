@@ -12,7 +12,7 @@ struct CLIENT_UNREAL_API FFoodType
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 EntityId;
+    uint32 EntityId = 0;
 
     FORCEINLINE bool operator==(const FFoodType& Other) const
     {

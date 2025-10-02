@@ -314,7 +314,7 @@ public:
 	TVariant<FPlayerData, FNpc> MessageData;
 
 	UPROPERTY(BlueprintReadOnly)
-	ECharacterTypeTag Tag;
+	ECharacterTypeTag Tag = static_cast<ECharacterTypeTag>(0);
 
 
 public:
@@ -433,7 +433,7 @@ struct FManaOptional
 	bool bHasMana = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bHasName"))
-	int Mana;
+	int Mana = 0;
 
 	FORCEINLINE bool operator==(const FManaOptional& Other) const
 	{

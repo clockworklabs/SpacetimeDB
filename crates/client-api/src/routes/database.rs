@@ -24,7 +24,8 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::{MigratePlanResult, ReducerArgs};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
-use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PrettyPrintStyle, PrintPlanResult};
+use spacetimedb_client_api_messages::http::SqlStmtResult;
+use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PrePublishResult, PrettyPrintStyle};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{sats, ProductValue, Timestamp};
@@ -480,8 +481,6 @@ pub async fn get_names<S: ControlStateDelegate>(
     Ok(axum::Json(response))
 }
 
-use spacetimedb_client_api_messages::http::SqlStmtResult;
-
 #[derive(serde::Deserialize)]
 pub struct PrePublishParams {
     name_or_identity: NameOrIdentity,
@@ -499,7 +498,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
     Query(PrePublishQueryParams { style }): Query<PrePublishQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
-) -> axum::response::Result<axum::Json<PrintPlanResult>> {
+) -> axum::response::Result<axum::Json<PrePublishResult>> {
     // User should not be able to print migration plans for a database that they do not own
     let database_identity = resolve_and_authenticate(&ctx, &name_or_identity, &auth).await?;
     let style = match style {
@@ -535,7 +534,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
             }
             .hash();
 
-            Ok(PrintPlanResult {
+            Ok(PrePublishResult {
                 token,
                 migrate_plan: plan,
                 break_clients: breaks_client,
@@ -798,7 +797,7 @@ where
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
             .route("/unstable/timestamp", self.timestamp_get)
-            .route("/pre-publish", self.pre_publish);
+            .route("/pre_publish", self.pre_publish);
 
         axum::Router::new()
             .route("/", self.root_post)

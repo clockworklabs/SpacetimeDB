@@ -4,8 +4,8 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "Kismet/BlueprintFunctionLibrary.h"
 #include "Types/UnitType.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
 #include "ModuleBindings/Types/DatabaseUpdateType.g.h"
 #include "UpdateStatusType.g.generated.h"
 
@@ -25,10 +25,10 @@ struct SPACETIMEDBSDK_API FUpdateStatusType
 public:
     FUpdateStatusType() = default;
 
-    TVariant<FString, FDatabaseUpdateType, FSpacetimeDBUnit> MessageData;
+    TVariant<FSpacetimeDBUnit, FDatabaseUpdateType, FString> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
-    EUpdateStatusTag Tag;
+    EUpdateStatusTag Tag = static_cast<EUpdateStatusTag>(0);
 
     static FUpdateStatusType Committed(const FDatabaseUpdateType& Value)
     {

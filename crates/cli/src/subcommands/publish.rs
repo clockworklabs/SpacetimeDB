@@ -4,12 +4,12 @@ use clap::ArgAction::{Set, SetTrue};
 use clap::ArgMatches;
 use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
-use spacetimedb_client_api_messages::name::{DatabaseNameError, PublishOp};
-use std::fs;
+use spacetimedb_client_api_messages::name::{DatabaseNameError, PrePublishResult, PrettyPrintStyle, PublishOp};
 use std::path::PathBuf;
+use std::{env, fs};
 
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, get_auth_header, ResponseExt};
+use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, unauth_error_context, y_or_n};
 use crate::{build, common_args};
 
@@ -57,6 +57,12 @@ pub fn cli() -> clap::Command {
                 .help("UNSTABLE: The number of replicas the database should have")
         )
         .arg(
+            Arg::new("break_clients")
+                .long("break-clients")
+                .action(SetTrue)
+                .help("Allow breaking changes when publishing to an existing database identity. This will break existing clients.")
+        )
+        .arg(
             common_args::anonymous()
         )
         .arg(
@@ -99,6 +105,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
     let num_replicas = args.get_one::<u8>("num_replicas");
+    let break_clients_flag = args.get_flag("break_clients");
     let parent = args.get_one::<String>("parent");
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
@@ -107,20 +114,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     //  easily create a new identity with an email
     let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
 
-    let client = reqwest::Client::new();
-
     let (name_or_identity, parent) =
         validate_name_and_parent(name_or_identity.map(String::as_str), parent.map(String::as_str))?;
-
-    // If a name was given, ensure to percent-encode it.
-    // We also use PUT with a name or identity, and POST otherwise.
-    let mut builder = if let Some(name_or_identity) = name_or_identity {
-        let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
-        let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
-        client.put(format!("{database_host}/v1/database/{domain}"))
-    } else {
-        client.post(format!("{database_host}/v1/database"))
-    };
 
     if !path_to_project.exists() {
         return Err(anyhow::anyhow!(
@@ -154,6 +149,32 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         server.unwrap_or(config.default_server_name().unwrap_or("<default>")),
         database_host
     );
+
+    let client = reqwest::Client::new();
+    // If a name was given, ensure to percent-encode it.
+    // We also use PUT with a name or identity, and POST otherwise.
+    let mut builder = if let Some(name_or_identity) = name_or_identity {
+        let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
+        let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
+        let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
+
+        if !clear_database {
+            builder = apply_pre_publish_if_needed(
+                builder,
+                &client,
+                &database_host,
+                &domain.to_string(),
+                &program_bytes,
+                &auth_header,
+                break_clients_flag,
+            )
+            .await?;
+        };
+
+        builder
+    } else {
+        client.post(format!("{database_host}/v1/database"))
+    };
 
     if clear_database {
         // Note: `name_or_identity` should be set, because it is `required` in the CLI arg config.
@@ -276,4 +297,80 @@ fn validate_name_and_parent<'a>(
         },
         None => Ok((None, parent)),
     }
+}
+
+/// Determine the pretty print style based on the NO_COLOR environment variable.
+///
+/// See: https://no-color.org
+pub fn pretty_print_style_from_env() -> PrettyPrintStyle {
+    match env::var("NO_COLOR") {
+        Ok(_) => PrettyPrintStyle::NoColor,
+        Err(_) => PrettyPrintStyle::AnsiColor,
+    }
+}
+
+/// Applies pre-publish logic: checking for migration plan, prompting user, and
+/// modifying the request builder accordingly.
+async fn apply_pre_publish_if_needed(
+    mut builder: reqwest::RequestBuilder,
+    client: &reqwest::Client,
+    base_url: &str,
+    domain: &String,
+    program_bytes: &[u8],
+    auth_header: &AuthHeader,
+    break_clients_flag: bool,
+) -> Result<reqwest::RequestBuilder, anyhow::Error> {
+    if let Some(pre) = call_pre_publish(client, base_url, &domain.to_string(), program_bytes, auth_header).await? {
+        println!("{}", pre.migrate_plan);
+
+        if pre.break_clients
+            && !y_or_n(
+                break_clients_flag,
+                "The above changes will BREAK existing clients. Do you want to proceed?",
+            )?
+        {
+            println!("Aborting");
+            // Early exit: return an error or a special signal. Here we bail out by returning Err.
+            anyhow::bail!("Publishing aborted by user");
+        }
+
+        builder = builder
+            .query(&[("token", pre.token)])
+            .query(&[("policy", "BreakClients")]);
+    }
+
+    Ok(builder)
+}
+
+async fn call_pre_publish(
+    client: &reqwest::Client,
+    database_host: &str,
+    domain: &String,
+    program_bytes: &[u8],
+    auth_header: &AuthHeader,
+) -> Result<Option<PrePublishResult>, anyhow::Error> {
+    let mut builder = client.post(format!("{database_host}/v1/database/{domain}/pre_publish"));
+    let style = pretty_print_style_from_env();
+    builder = builder.query(&[("pretty_print_style", style)]);
+
+    builder = add_auth_header_opt(builder, auth_header);
+
+    println!("Checking for breaking changes...");
+    let res = builder.body(program_bytes.to_vec()).send().await?;
+
+    if res.status() == StatusCode::NOT_FOUND {
+        // This is a new database, so there are no breaking changes
+        return Ok(None);
+    }
+
+    if !res.status().is_success() {
+        anyhow::bail!(
+            "Pre-publish check failed with status {}: {}",
+            res.status(),
+            res.text().await?
+        );
+    }
+
+    let pre_publish_result: PrePublishResult = res.json_or_error().await?;
+    Ok(Some(pre_publish_result))
 }

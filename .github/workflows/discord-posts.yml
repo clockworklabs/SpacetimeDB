@@ -19,7 +19,7 @@ jobs:
           sudo apt-get install -y apt-transport-https
           echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
           sudo apt-get update
-          sudo apt-get install gh
+          sudo apt-get install -y gh
 
       - name: Fetch Check Run Results
         run: |

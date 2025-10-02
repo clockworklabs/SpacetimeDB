@@ -10,12 +10,10 @@ use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
-use spacetimedb::db::{self, relational_db};
+use spacetimedb::db;
+use spacetimedb::db::persistence::LocalPersistenceProvider;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
-use spacetimedb::host::{
-    DiskStorage, DurabilityProvider, ExternalDurability, HostController, MigratePlanResult, StartSnapshotWatcher,
-    UpdateDatabaseResult,
-};
+use spacetimedb::host::{DiskStorage, HostController, MigratePlanResult, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::util::jobs::JobCores;
@@ -71,15 +69,13 @@ impl StandaloneEnv {
         let energy_monitor = Arc::new(NullEnergyMonitor);
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
-        let durability_provider = Arc::new(StandaloneDurabilityProvider {
-            data_dir: data_dir.clone(),
-        });
+        let persistence_provider = Arc::new(LocalPersistenceProvider::new(data_dir.clone()));
         let host_controller = HostController::new(
             data_dir,
             config.db_config,
             program_store.clone(),
             energy_monitor,
-            durability_provider,
+            persistence_provider,
             db_cores,
         );
         let client_actor_index = ClientActorIndex::new();
@@ -110,30 +106,6 @@ impl StandaloneEnv {
 
     pub fn page_pool(&self) -> &PagePool {
         &self.host_controller.page_pool
-    }
-}
-
-struct StandaloneDurabilityProvider {
-    data_dir: Arc<ServerDataDir>,
-}
-
-#[async_trait]
-impl DurabilityProvider for StandaloneDurabilityProvider {
-    async fn durability(&self, replica_id: u64) -> anyhow::Result<(ExternalDurability, Option<StartSnapshotWatcher>)> {
-        let commitlog_dir = self.data_dir.replica(replica_id).commit_log();
-        let (durability, disk_size) = relational_db::local_durability(commitlog_dir).await?;
-        let start_snapshot_watcher = {
-            let durability = durability.clone();
-            |snapshot_rx| {
-                tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
-                    snapshot_rx,
-                    None,
-                    None,
-                    durability,
-                ));
-            }
-        };
-        Ok(((durability, disk_size), Some(Box::new(start_snapshot_watcher))))
     }
 }
 
@@ -393,6 +365,28 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         for instance in self.control_db.get_replicas_by_database(database.id)? {
             self.delete_replica(instance.id).await?;
         }
+
+        Ok(())
+    }
+
+    async fn clear_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+        let database = self
+            .control_db
+            .get_database_by_identity(database_identity)?
+            .with_context(|| format!("Database `{database_identity}` does not exist"))?;
+
+        anyhow::ensure!(
+            &database.owner_identity == caller_identity,
+            "Permission denied: `{caller_identity}` does not own database `{database_identity}`"
+        );
+
+        let mut num_replicas = 0;
+        for instance in self.control_db.get_replicas_by_database(database.id)? {
+            self.delete_replica(instance.id).await?;
+            num_replicas -= 1;
+        }
+
+        self.schedule_replicas(database.id, num_replicas).await?;
 
         Ok(())
     }
