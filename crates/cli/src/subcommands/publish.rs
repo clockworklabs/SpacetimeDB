@@ -124,13 +124,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // Optionally build the program.
     let (path_to_program, host_type) = if let Some(path) = wasm_file {
         println!("(WASM) Skipping build. Instead we are publishing {}", path.display());
-        (path.clone(), None)
+        (path.clone(), "Wasm")
     } else if let Some(path) = js_file {
         println!("(JS) Skipping build. Instead we are publishing {}", path.display());
-        (path.clone(), Some("Js"))
+        (path.clone(), "Js")
     } else {
         let path = build::exec_with_argstring(config.clone(), path_to_project, build_options).await?;
-        (path, None)
+        (path, "Wasm")
     };
     let program_bytes = fs::read(path_to_program)?;
 
@@ -205,14 +205,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         builder = builder.query(&[("num_replicas", *n)]);
     }
 
-    // The host type is not the default (WASM).
-    if let Some(host_type) = host_type {
-        builder = builder.query(&[("host_type", host_type)]);
-    }
-
     println!("Publishing module...");
 
     builder = add_auth_header_opt(builder, &auth_header);
+
+    // Set the host type.
+    builder = builder.query(&[("host_type", host_type)]);
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
