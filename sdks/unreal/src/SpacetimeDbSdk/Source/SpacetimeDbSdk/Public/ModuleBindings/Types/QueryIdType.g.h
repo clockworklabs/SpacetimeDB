@@ -12,7 +12,7 @@ struct SPACETIMEDBSDK_API FQueryIdType
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 Id;
+    uint32 Id = 0;
 
     FORCEINLINE bool operator==(const FQueryIdType& Other) const
     {
