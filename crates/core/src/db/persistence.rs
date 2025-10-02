@@ -72,7 +72,7 @@ impl Persistence {
     /// Initialize the [SnapshotWorker], no-op if snapshots are not enabled.
     pub(super) fn set_snapshot_state(&self, state: SnapshotDatabaseState) {
         if let Some(worker) = &self.snapshots {
-            worker.start(state)
+            worker.set_state(state)
         }
     }
 

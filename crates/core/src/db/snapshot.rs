@@ -2,7 +2,7 @@
 #![allow(clippy::uninlined_format_args)]
 
 use std::{
-    sync::{Arc, OnceLock},
+    sync::{Arc, Weak},
     time::Duration,
 };
 
@@ -50,12 +50,15 @@ impl Compression {
 ///
 /// The [SnapshotWorker] handle is freely cloneable, so ownership can be shared
 /// between the database and control code.
+///
+/// It is possible to re-use a [SnapshotWorker] to create a new database
+/// instance: when passed to [super::relational_db::RelationalDB::open], the
+/// worker's [SnapshotDatabaseState] will be replaced with the database's.
 #[derive(Clone)]
 pub struct SnapshotWorker {
     snapshot_created: watch::Sender<TxOffset>,
-    request_snapshot: OnceLock<mpsc::UnboundedSender<()>>,
+    request_snapshot: mpsc::UnboundedSender<Request>,
     snapshot_repository: Arc<SnapshotRepository>,
-    compression: Compression,
 }
 
 impl SnapshotWorker {
@@ -65,43 +68,39 @@ impl SnapshotWorker {
     /// [SnapshotDatabaseState]. This allows control code to [Self::subscribe]
     /// to future snapshots before handing off the worker to the database.
     pub fn new(snapshot_repository: Arc<SnapshotRepository>, compression: Compression) -> Self {
+        let database = snapshot_repository.database_identity();
         let latest_snapshot = snapshot_repository.latest_snapshot().ok().flatten().unwrap_or(0);
-        Self {
-            snapshot_created: watch::channel(latest_snapshot).0,
-            request_snapshot: OnceLock::new(),
-            snapshot_repository,
-            compression,
-        }
-    }
-
-    /// Finish the initialization of [Self] by passing a [SnapshotDatabaseState].
-    ///
-    /// This is called during construction of a [super::relational_db::RelationalDB].
-    ///
-    /// # Panics
-    ///
-    /// Panics if called after the worker was already initialized.
-    pub(crate) fn start(&self, state: SnapshotDatabaseState) {
+        let (snapshot_created, _) = watch::channel(latest_snapshot);
         let (request_tx, request_rx) = mpsc::unbounded();
-        let repo = self.snapshot_repository.clone();
-        let database = repo.database_identity();
 
         let actor = SnapshotWorkerActor {
             snapshot_requests: request_rx,
-            database_state: state,
-            snapshot_repo: repo.clone(),
-            snapshot_created: self.snapshot_created.clone(),
+            snapshot_repo: snapshot_repository.clone(),
+            snapshot_created: snapshot_created.clone(),
             metrics: SnapshotMetrics::new(database),
-            compression: self.compression.is_enabled().then(|| Compressor {
-                snapshot_repo: repo,
+            compression: compression.is_enabled().then(|| Compressor {
+                snapshot_repo: snapshot_repository.clone(),
                 metrics: CompressionMetrics::new(database),
                 stats: <_>::default(),
             }),
         };
         tokio::spawn(actor.run());
+
+        Self {
+            snapshot_created,
+            request_snapshot: request_tx,
+            snapshot_repository,
+        }
+    }
+
+    /// Finish the initialization of [Self] by passing a [SnapshotDatabaseState],
+    /// or replace the current [SnapshotDatabaseState] with a new one.
+    ///
+    /// This is called during construction of a [super::relational_db::RelationalDB].
+    pub(crate) fn set_state(&self, state: SnapshotDatabaseState) {
         self.request_snapshot
-            .set(request_tx)
-            .expect("snapshot worker already initialized");
+            .unbounded_send(Request::ReplaceState(state))
+            .expect("snapshot worker panicked");
     }
 
     /// Get the [SnapshotRepository] this worker is operating on.
@@ -114,9 +113,9 @@ impl SnapshotWorker {
     /// The snapshot will be taken at some point in the future.
     /// The request is dropped if the handle is not yet fully initialized.
     pub fn request_snapshot(&self) {
-        if let Some(tx) = self.request_snapshot.get() {
-            tx.unbounded_send(()).unwrap()
-        }
+        self.request_snapshot
+            .unbounded_send(Request::TakeSnapshot)
+            .expect("snapshot worker panicked");
     }
 
     /// Subscribe to the [TxOffset]s of snapshots created by this worker.
@@ -143,9 +142,15 @@ impl SnapshotMetrics {
     }
 }
 
+type WeakDatabaseState = Weak<RwLock<CommittedState>>;
+
+enum Request {
+    TakeSnapshot,
+    ReplaceState(SnapshotDatabaseState),
+}
+
 struct SnapshotWorkerActor {
-    snapshot_requests: mpsc::UnboundedReceiver<()>,
-    database_state: SnapshotDatabaseState,
+    snapshot_requests: mpsc::UnboundedReceiver<Request>,
     snapshot_repo: Arc<SnapshotRepository>,
     snapshot_created: watch::Sender<TxOffset>,
     metrics: SnapshotMetrics,
@@ -155,9 +160,9 @@ struct SnapshotWorkerActor {
 impl SnapshotWorkerActor {
     /// Read messages from `snapshot_requests` indefinitely.
     ///
-    /// For each message, a snapshot of `database_state` is taken.
-    /// The offset of each successfully created snapshot is sent to the
-    /// `snapshot_created` channel.
+    /// For each [Request::TakeSnapshot] message, a snapshot of `database_state`
+    /// is taken. The offset of each successfully created snapshot is sent to
+    /// the `snapshot_created` channel.
     ///
     /// If compression is enabled, it is run after successful creation of a
     /// snapshot.
@@ -168,31 +173,39 @@ impl SnapshotWorkerActor {
     /// message is received, unless a new snapshot request is already being
     /// processed.
     async fn run(mut self) {
-        while let Some(()) = self.snapshot_requests.next().await {
-            match self.take_snapshot().await {
-                Ok(snapshot_offset) => {
-                    if let Some(compressor) = self.compression.as_mut() {
-                        compressor.compress_snapshots(snapshot_offset).await;
+        let mut database_state: Option<WeakDatabaseState> = None;
+        while let Some(req) = self.snapshot_requests.next().await {
+            match req {
+                Request::TakeSnapshot => {
+                    if let Some(state) = database_state.as_ref().and_then(Weak::upgrade) {
+                        let res = self
+                            .take_snapshot(state)
+                            .await
+                            .inspect_err(|e| warn!("SnapshotWorker: {e:#}"));
+                        if let Ok(snapshot_offset) = res {
+                            self.maybe_compress_snapshots(snapshot_offset).await;
+                            self.snapshot_created.send_replace(snapshot_offset);
+                        }
                     }
-                    self.snapshot_created.send_replace(snapshot_offset);
                 }
-                Err(e) => warn!("SnapshotWorker: {e:#}"),
+                Request::ReplaceState(new_state) => {
+                    database_state = Some(Arc::downgrade(&new_state));
+                }
             }
         }
     }
 
-    async fn take_snapshot(&self) -> anyhow::Result<TxOffset> {
+    async fn take_snapshot(&self, state: SnapshotDatabaseState) -> anyhow::Result<TxOffset> {
         let timer = self.metrics.snapshot_timing_total.start_timer();
         let inner_timer = self.metrics.snapshot_timing_inner.clone();
 
-        let committed_state = self.database_state.clone();
         let snapshot_repo = self.snapshot_repo.clone();
 
         let database_identity = self.snapshot_repo.database_identity();
 
         let maybe_offset = asyncify(move || {
             let _timer = inner_timer.start_timer();
-            Locking::take_snapshot_internal(&committed_state, &snapshot_repo)
+            Locking::take_snapshot_internal(&state, &snapshot_repo)
         })
         .await
         .with_context(|| format!("error capturing snapshot of database {}", database_identity))?;
@@ -211,6 +224,12 @@ impl SnapshotWorkerActor {
                     database_identity
                 )
             })
+    }
+
+    async fn maybe_compress_snapshots(&mut self, latest_snapshot: TxOffset) {
+        if let Some(compressor) = self.compression.as_mut() {
+            compressor.compress_snapshots(latest_snapshot).await
+        }
     }
 }
 
