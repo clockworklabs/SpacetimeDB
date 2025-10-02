@@ -250,8 +250,10 @@ export const AlgebraicType: {
       case 'U256':
       case 'I8':
       case 'I16':
+      case 'I32':
       case 'I64':
       case 'I128':
+      case 'I256':
       case 'F32':
       case 'F64':
       case 'String':
