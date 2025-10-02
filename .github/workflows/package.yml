@@ -7,7 +7,6 @@ on:
     branches:
       - master
       - release/*
-      - bfops/ci-windows-fail
 
 jobs:
   build-cli:
