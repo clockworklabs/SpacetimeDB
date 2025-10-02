@@ -55,6 +55,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+          echo "Return code is: $?"
           Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
