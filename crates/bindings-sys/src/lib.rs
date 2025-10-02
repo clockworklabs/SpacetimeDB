@@ -622,6 +622,14 @@ pub mod raw {
         /// Find the jwt payload for the given connection id, and write the
         /// [`BytesSource`] to the given pointer.
         /// If this is not found, [`BytesSource::INVALID`] (aka 0) will be written.
+        /// This must be called inside a transaction (because it reads from a system table).
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - `connection_id` does not point to a valid little-endian `ConnectionId`.
+        /// - This is called outside a transaction.
         pub fn get_jwt(connection_id_ptr: *const u8, bytes_source_id: *mut BytesSource);
     }
 
