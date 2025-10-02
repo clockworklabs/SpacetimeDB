@@ -20,7 +20,6 @@ jobs:
       matrix:
         include:
           - { runner: windows-latest, smoketest_args: --no-build-cli }
-        runner: [ spacetimedb-runner, windows-latest ]
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Find Git ref
