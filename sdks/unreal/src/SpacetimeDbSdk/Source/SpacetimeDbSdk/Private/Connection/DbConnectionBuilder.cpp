@@ -108,10 +108,25 @@ UDbConnectionBase* UDbConnectionBuilderBase::BuildConnection(UDbConnectionBase* 
 	const FString CompressionName = CompressionEnum->GetNameStringByValue(static_cast<int64>(Compression));
 
 	// Construct the WebSocket URL using the provided URI, module name, and compression type
-	FString WebSocketUrl = FString::Printf(TEXT("ws://%s/v1/database/%s/subscribe?compression=%s"),
-		*Uri,
-		*ModuleName,
-		*CompressionName);
+	// If URI already contains a protocol (ws:// or wss://), use it as-is
+	// Otherwise, default to ws:// for backward compatibility
+	FString WebSocketUrl;
+	if (Uri.StartsWith(TEXT("ws://")) || Uri.StartsWith(TEXT("wss://")))
+	{
+		// URI already has protocol, just append the path
+		WebSocketUrl = FString::Printf(TEXT("%s/v1/database/%s/subscribe?compression=%s"),
+			*Uri,
+			*ModuleName,
+			*CompressionName);
+	}
+	else
+	{
+		// No protocol specified, default to ws:// for backward compatibility
+		WebSocketUrl = FString::Printf(TEXT("ws://%s/v1/database/%s/subscribe?compression=%s"),
+			*Uri,
+			*ModuleName,
+			*CompressionName);
+	}
 
 	Connection->WebSocket->OnConnectionError.AddDynamic(Connection, &UDbConnectionBase::HandleWSError);
 	Connection->WebSocket->OnClosed.AddDynamic(Connection, &UDbConnectionBase::HandleWSClosed);
