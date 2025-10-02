@@ -56,8 +56,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
 
+          $env:RUSTFLAGS='-C link-arg=/VERBOSE:LIB'
           cargo build -p spacetimedb-standalone
-          echo "Return code is: $?"
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
