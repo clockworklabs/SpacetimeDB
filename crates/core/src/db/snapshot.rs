@@ -54,6 +54,8 @@ impl Compression {
 /// It is possible to re-use a [SnapshotWorker] to create a new database
 /// instance: when passed to [super::relational_db::RelationalDB::open], the
 /// worker's [SnapshotDatabaseState] will be replaced with the database's.
+/// We use this for replicated databases when transitioning between the leader and follower states,
+/// to preserve event subscriptions on the `SnapshotWorker`'s `snapshot_created` channel.
 #[derive(Clone)]
 pub struct SnapshotWorker {
     snapshot_created: watch::Sender<TxOffset>,
