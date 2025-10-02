@@ -5,12 +5,13 @@
 SpacetimeAuth is a service for managing authentication for your SpacetimeDB
 applications. This allows you to authenticate users without needing
 an external authentication service or even a hosting server.
-SpacetimeAuth is an OpenID Connect (OIDC) provider, which means it can be used with
+SpacetimeAuth is an [OpenID Connect (OIDC)](https://openid.net/developers/how-connect-works/) provider, which means it can be used with
 any OIDC-compatible client library.
 
 At the end of the authentication flow, your application receives an ID token
-containing identity claims (such as email, username, and roles). This token can
-then be used with any SpacetimeDB SDK to authenticate and authorize users.
+containing identity claims (such as email, username, and roles). Your
+application can then use this token with any SpacetimeDB SDK to authenticate and
+authorize users with the SpacetimeDB server.
 
 ## Features
 
@@ -72,15 +73,21 @@ more roles assigned to them.
 
 > ⚠️ Clients must not be confused with Users.
 
-Clients (from OpenID Connect) are the applications that will be using
-SpacetimeAuth for authentication. Each client is associated with a single
-project and has its own client ID and client secret.
+Clients, also known as Relying Parties in OpenID Connect terminology, are the
+applications that are relying on SpacetimeAuth for authentication. Each client 
+is associated with a single project and has its own client ID and client
+secret.
+
+Clients are applications that request an OpenID Connect ID token from
+SpacetimeAuth, which can then be used to authenticate with the SpacetimeDB
+server.
 
 ### Roles
 
 Roles are used to manage access control within your application. Each role is
 represented by a string (e.g. "admin", "user") that can be assigned to one or
 more users.
+
 Roles are included as claims in the ID token that is issued to the user upon
 authentication.
 
