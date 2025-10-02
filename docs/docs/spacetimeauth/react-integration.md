@@ -11,7 +11,8 @@ in React.
 ## Prerequisites
 
 1. Create a SpacetimeAuth project and configure a client as described in the
-   [Getting Started](./create-project.md) and [Configuration](./configure-project.md) guides.
+   [Getting Started](/docs/spacetimeauth/create-project) and
+   [Configuration](/docs/spacetimeauth/configure-project) guides.
 2. Have a React application set up. You can use Create React App or any other
    React framework.
 3. Install the `react-oidc-context` package in your React application:
@@ -24,8 +25,7 @@ Create an OIDC configuration object with your SpacetimeAuth project details.
 Make sure to replace `YOUR_CLIENT_ID` with the actual client ID from your
 SpacetimeAuth dashboard.
 
-```javascript
-// src/index.tsx
+```tsx
 const oidcConfig = {
   authority: 'https://spacetimeauth.staging.spacetimedb.com/oidc',
   client_id: 'YOUR_CLIENT_ID',
@@ -41,19 +41,22 @@ const oidcConfig = {
 This component will log various authentication events and state changes to
 the console for debugging purposes.
 
-```javascript
+```tsx
 export function OidcDebug() {
   const auth = useAuth();
 
   useEffect(() => {
     const ev = auth.events;
 
-    const onUserLoaded = (u: any) => console.log("[OIDC] userLoaded", u?.profile?.sub, u);
-    const onUserUnloaded = () => console.log("[OIDC] userUnloaded");
-    const onAccessTokenExpiring = () => console.log("[OIDC] accessTokenExpiring");
-    const onAccessTokenExpired = () => console.log("[OIDC] accessTokenExpired");
-    const onSilentRenewError = (e: any) => console.warn("[OIDC] silentRenewError", e);
-    const onUserSignedOut = () => console.log("[OIDC] userSignedOut");
+    const onUserLoaded = (u: any) =>
+      console.log('[OIDC] userLoaded', u?.profile?.sub, u);
+    const onUserUnloaded = () => console.log('[OIDC] userUnloaded');
+    const onAccessTokenExpiring = () =>
+      console.log('[OIDC] accessTokenExpiring');
+    const onAccessTokenExpired = () => console.log('[OIDC] accessTokenExpired');
+    const onSilentRenewError = (e: any) =>
+      console.warn('[OIDC] silentRenewError', e);
+    const onUserSignedOut = () => console.log('[OIDC] userSignedOut');
 
     ev.addUserLoaded(onUserLoaded);
     ev.addUserUnloaded(onUserUnloaded);
@@ -73,14 +76,20 @@ export function OidcDebug() {
   }, [auth.events]);
 
   useEffect(() => {
-    console.log("[OIDC] state", {
+    console.log('[OIDC] state', {
       isLoading: auth.isLoading,
       isAuthenticated: auth.isAuthenticated,
       error: auth.error?.message,
       activeNavigator: auth.activeNavigator,
       user: !!auth.user,
     });
-  }, [auth.isLoading, auth.isAuthenticated, auth.error, auth.activeNavigator, auth.user]);
+  }, [
+    auth.isLoading,
+    auth.isAuthenticated,
+    auth.error,
+    auth.activeNavigator,
+    auth.user,
+  ]);
 
   return null;
 }
@@ -91,7 +100,7 @@ export function OidcDebug() {
 Wrap your React application with the `AuthProvider` component to provide
 authentication context.
 
-```javascript
+```tsx
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { AuthProvider, useAuth } from 'react-oidc-context';

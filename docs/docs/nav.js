@@ -107,7 +107,7 @@ const nav = {
       'spacetimeauth/testing-authentication.md'
     ),
     page(
-      'React',
+      'React integration',
       'spacetimeauth/react-integration',
       'spacetimeauth/react-integration.md'
     ),
