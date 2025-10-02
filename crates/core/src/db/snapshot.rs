@@ -179,15 +179,13 @@ impl SnapshotWorkerActor {
         while let Some(req) = self.snapshot_requests.next().await {
             match req {
                 Request::TakeSnapshot => {
-                    if let Some(state) = database_state.as_ref().and_then(Weak::upgrade) {
-                        let res = self
-                            .take_snapshot(state)
-                            .await
-                            .inspect_err(|e| warn!("SnapshotWorker: {e:#}"));
-                        if let Ok(snapshot_offset) = res {
-                            self.maybe_compress_snapshots(snapshot_offset).await;
-                            self.snapshot_created.send_replace(snapshot_offset);
-                        }
+                    let res = self
+                        .maybe_take_snapshot(database_state.as_ref())
+                        .await
+                        .inspect_err(|e| warn!("SnapshotWorker: {e:#}"));
+                    if let Ok(snapshot_offset) = res {
+                        self.maybe_compress_snapshots(snapshot_offset).await;
+                        self.snapshot_created.send_replace(snapshot_offset);
                     }
                 }
                 Request::ReplaceState(new_state) => {
@@ -195,6 +193,12 @@ impl SnapshotWorkerActor {
                 }
             }
         }
+    }
+
+    async fn maybe_take_snapshot(&self, state: Option<&WeakDatabaseState>) -> anyhow::Result<TxOffset> {
+        let state = state.context("database state not set, call `SnapshotWorker::set_state`")?;
+        let state = Weak::upgrade(state).context("database state is already dropped")?;
+        self.take_snapshot(state).await
     }
 
     async fn take_snapshot(&self, state: SnapshotDatabaseState) -> anyhow::Result<TxOffset> {
