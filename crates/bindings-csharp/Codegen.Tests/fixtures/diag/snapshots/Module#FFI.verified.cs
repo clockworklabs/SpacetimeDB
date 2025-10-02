@@ -145,6 +145,75 @@ namespace SpacetimeDB
             public IdentityFieldUniqueIndex IdentityField => new();
         }
 
+        public readonly struct TestDefaultFieldValues
+            : SpacetimeDB.Internal.ITableView<
+                TestDefaultFieldValues,
+                global::TestDefaultFieldValues
+            >
+        {
+            static global::TestDefaultFieldValues SpacetimeDB.Internal.ITableView<
+                TestDefaultFieldValues,
+                global::TestDefaultFieldValues
+            >.ReadGenFields(System.IO.BinaryReader reader, global::TestDefaultFieldValues row)
+            {
+                return row;
+            }
+
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                TestDefaultFieldValues,
+                global::TestDefaultFieldValues
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(TestDefaultFieldValues),
+                    ProductTypeRef: (uint)
+                        new global::TestDefaultFieldValues.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [],
+                    Indexes:
+                    [
+                        new(
+                            Name: null,
+                            AccessorName: "UniqueField",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
+                    ],
+                    Constraints:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            TestDefaultFieldValues,
+                            global::TestDefaultFieldValues
+                        >.MakeUniqueConstraint(0)
+                    ],
+                    Sequences: [],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
+
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<
+                    TestDefaultFieldValues,
+                    global::TestDefaultFieldValues
+                >.DoCount();
+
+            public IEnumerable<global::TestDefaultFieldValues> Iter() =>
+                SpacetimeDB.Internal.ITableView<
+                    TestDefaultFieldValues,
+                    global::TestDefaultFieldValues
+                >.DoIter();
+
+            public global::TestDefaultFieldValues Insert(global::TestDefaultFieldValues row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestDefaultFieldValues,
+                    global::TestDefaultFieldValues
+                >.DoInsert(row);
+
+            public bool Delete(global::TestDefaultFieldValues row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestDefaultFieldValues,
+                    global::TestDefaultFieldValues
+                >.DoDelete(row);
+        }
+
         public readonly struct TestDuplicateTableName
             : SpacetimeDB.Internal.ITableView<
                 TestDuplicateTableName,
@@ -827,6 +896,7 @@ namespace SpacetimeDB
     public sealed class Local
     {
         public Internal.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger => new();
+        public Internal.TableHandles.TestDefaultFieldValues TestDefaultFieldValues => new();
         public Internal.TableHandles.TestDuplicateTableName TestDuplicateTableName => new();
         public Internal.TableHandles.TestIndexIssues TestIndexIssues => new();
         public Internal.TableHandles.TestScheduleWithMissingScheduleAtField TestScheduleWithMissingScheduleAtField =>
@@ -968,6 +1038,8 @@ static class ModuleRegistration
             (identity, connectionId, random, time) =>
                 new SpacetimeDB.ReducerContext(identity, connectionId, random, time)
         );
+        var __memoryStream = new MemoryStream();
+        var __writer = new BinaryWriter(__memoryStream);
 
         SpacetimeDB.Internal.Module.RegisterReducer<__ReducerWithReservedPrefix>();
         SpacetimeDB.Internal.Module.RegisterReducer<DummyScheduledReducer>();
@@ -980,6 +1052,10 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterTable<
             global::TestAutoIncNotInteger,
             SpacetimeDB.Internal.TableHandles.TestAutoIncNotInteger
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::TestDefaultFieldValues,
+            SpacetimeDB.Internal.TableHandles.TestDefaultFieldValues
         >();
         SpacetimeDB.Internal.Module.RegisterTable<
             global::TestDuplicateTableName,
@@ -1017,6 +1093,161 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOURTH_FILTER);
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THIRD_FILTER);
+        {
+            var value = new SpacetimeDB.BSATN.String();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, "A default string set by attribute");
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                1,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.F32();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                10,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.F64();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                11,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.Enum<MyEnum>();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, (MyEnum)2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                12,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.Bool();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, true);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                2,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.U32();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                3,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.U16();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                4,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.U64();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                5,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.I8();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                6,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.I16();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                7,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.I32();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                8,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.I64();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                9,
+                array
+            );
+        }
     }
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.
