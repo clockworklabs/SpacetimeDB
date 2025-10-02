@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
+use std::future::Future;
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
@@ -1242,6 +1243,36 @@ impl WasmInstanceEnv {
             // as it gets a `&mut [u8]` from WASM memory and does `copy_from_slice` with it.
             identity.write_to(mem, out_ptr)?;
             Ok(())
+        })
+    }
+
+    pub fn procedure_sleep_until<'caller>(
+        mut caller: Caller<'caller, Self>,
+        (wake_at_micros_since_unix_epoch,): (i64,),
+    ) -> Box<dyn Future<Output = i64> + Send + 'caller> {
+        Box::new(async move {
+            use std::time::SystemTime;
+            let span_start = span::CallSpanStart::new(AbiCall::ProcedureSleepUntil);
+
+            let get_current_time = || Timestamp::now().to_micros_since_unix_epoch();
+
+            if wake_at_micros_since_unix_epoch < 0 {
+                return get_current_time();
+            }
+
+            let wake_at = Timestamp::from_micros_since_unix_epoch(wake_at_micros_since_unix_epoch);
+            let Ok(duration) = SystemTime::from(wake_at).duration_since(SystemTime::now()) else {
+                return get_current_time();
+            };
+
+            tokio::time::sleep(duration).await;
+
+            let res = get_current_time();
+
+            let span = span_start.end();
+            span::record_span(&mut caller.data_mut().call_times, span);
+
+            res
         })
     }
 }

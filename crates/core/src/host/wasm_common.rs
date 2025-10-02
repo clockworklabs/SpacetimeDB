@@ -373,8 +373,8 @@ pub struct AbiRuntimeError {
 }
 
 macro_rules! abi_funcs {
-    ($mac:ident) => {
-        $mac! {
+    ($link_sync:ident , $link_async:ident) => {
+        $link_sync! {
             "spacetime_10.0"::table_id_from_name,
             "spacetime_10.0"::datastore_table_row_count,
             "spacetime_10.0"::datastore_table_scan_bsatn,
@@ -397,6 +397,9 @@ macro_rules! abi_funcs {
 
             // unstable:
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
+        }
+        $link_async! {
+            "spacetime_10.1"::procedure_sleep_until,
         }
     };
 }

@@ -2,7 +2,7 @@
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
-    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
+    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp,
 };
 use spacetimedb::{log, ProcedureContext};
 
@@ -455,6 +455,15 @@ fn this_procedure_returns_something(ctx: &mut ProcedureContext) -> MyProcedureRe
         foo: format!("The time is {}", ctx.timestamp),
         bar: 100,
     }
+}
+
+#[spacetimedb::procedure]
+fn this_procedure_sleeps(ctx: &mut ProcedureContext) -> String {
+    let before = ctx.timestamp;
+    let until = before + TimeDuration::from_micros(1000000);
+    ctx.sleep_until(until);
+    let after = ctx.timestamp;
+    format!("Started at {before}, requested to sleep until {until}, woke at {after}")
 }
 
 #[spacetimedb::table(

@@ -57,6 +57,7 @@ use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
 use std::collections::VecDeque;
 use std::fmt;
+use std::future::Future;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -398,10 +399,10 @@ impl Instance {
         }
     }
 
-    fn call_procedure(&mut self, params: CallProcedureParams) -> Result<ProcedureCallResult, ProcedureCallError> {
+    async fn call_procedure(&mut self, params: CallProcedureParams) -> Result<ProcedureCallResult, ProcedureCallError> {
         match self {
-            Instance::Wasm(inst) => inst.call_procedure(params),
-            Instance::Js(inst) => inst.call_procedure(params),
+            Instance::Wasm(inst) => inst.call_procedure(params).await,
+            Instance::Js(inst) => inst.call_procedure(params).await,
         }
     }
 }
@@ -790,6 +791,35 @@ impl ModuleHost {
         })
     }
 
+    async fn call_async_with_instance<Fun, Fut, R>(&self, label: &str, f: Fun) -> Result<R, NoSuchModule>
+    where
+        Fun: (FnOnce(Instance) -> Fut) + Send + 'static,
+        Fut: Future<Output = (R, Instance)> + Send + 'static,
+        R: Send + 'static,
+    {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("procedure {label} panicked");
+            (self.on_panic)();
+        });
+
+        let instance = self.instance_manager.lock().await.get_instance();
+
+        let (res, instance) = self
+            .executor
+            .run_job(async move {
+                drop(timer_guard);
+                f(instance).await
+            })
+            .await;
+
+        self.instance_manager.lock().await.return_instance(instance);
+
+        Ok(res)
+    }
+
     /// Run a function on the JobThread for this module which has access to the module instance.
     async fn call<F, R>(&self, label: &str, f: F) -> Result<R, NoSuchModule>
     where
@@ -807,6 +837,7 @@ impl ModuleHost {
 
         // If a reducer call panics, we **must** ensure to call `self.on_panic`
         // so that the module is discarded by the host controller.
+        // TODO(pgoldman,procedures): Determine if this is still true.
         scopeguard::defer_on_unwind!({
             log::warn!("reducer {label} panicked");
             (self.on_panic)();
@@ -1252,15 +1283,18 @@ impl ModuleHost {
         let args = args.into_tuple_for_procedure(procedure_seed)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
-        self.call(&procedure_def.name, move |inst| {
-            inst.call_procedure(CallProcedureParams {
-                timestamp: Timestamp::now(),
-                caller_identity,
-                caller_connection_id,
-                timer,
-                procedure_id,
-                args,
-            })
+        self.call_async_with_instance(&procedure_def.name, async move |mut inst| {
+            let res = inst
+                .call_procedure(CallProcedureParams {
+                    timestamp: Timestamp::now(),
+                    caller_identity,
+                    caller_connection_id,
+                    timer,
+                    procedure_id,
+                    args,
+                })
+                .await;
+            (res, inst)
         })
         .await?
     }

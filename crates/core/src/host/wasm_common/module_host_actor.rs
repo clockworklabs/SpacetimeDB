@@ -4,6 +4,7 @@ use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_primitives::ProcedureId;
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::span::EnteredSpan;
@@ -54,6 +55,7 @@ pub trait WasmInstancePre: Send + Sync + 'static {
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError>;
 }
 
+#[async_trait::async_trait]
 pub trait WasmInstance: Send + Sync + 'static {
     fn extract_descriptions(&mut self) -> Result<Vec<u8>, DescribeError>;
 
@@ -63,7 +65,7 @@ pub trait WasmInstance: Send + Sync + 'static {
 
     fn log_traceback(func_type: &str, func: &str, trap: &anyhow::Error);
 
-    fn call_procedure(&mut self, op: ProcedureOp<'_>, budget: ReducerBudget) -> ProcedureExecuteResult;
+    async fn call_procedure(&mut self, op: ProcedureOp, budget: ReducerBudget) -> ProcedureExecuteResult;
 }
 
 pub struct EnergyStats {
@@ -269,12 +271,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(tx, params))
     }
 
-    pub fn call_procedure(&mut self, params: CallProcedureParams) -> Result<ProcedureCallResult, ProcedureCallError> {
-        self.common.call_procedure(
-            params,
-            |ty, fun, err| T::log_traceback(ty, fun, err),
-            |op, budget| self.instance.call_procedure(op, budget),
-        )
+    pub async fn call_procedure(
+        &mut self,
+        params: CallProcedureParams,
+    ) -> Result<ProcedureCallResult, ProcedureCallError> {
+        self.common
+            .call_procedure(
+                params,
+                |ty, fun, err| T::log_traceback(ty, fun, err),
+                |op, budget| self.instance.call_procedure(op, budget),
+            )
+            .await
     }
 }
 
@@ -360,11 +367,11 @@ impl InstanceCommon {
         }
     }
 
-    fn call_procedure(
+    async fn call_procedure<F: Future<Output = ProcedureExecuteResult>>(
         &mut self,
         params: CallProcedureParams,
         log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
-        vm_call_procedure: impl FnOnce(ProcedureOp<'_>, ReducerBudget) -> ProcedureExecuteResult,
+        vm_call_procedure: impl FnOnce(ProcedureOp, ReducerBudget) -> F,
     ) -> Result<ProcedureCallResult, ProcedureCallError> {
         let CallProcedureParams {
             timestamp,
@@ -378,7 +385,7 @@ impl InstanceCommon {
         // We've already validated by this point that the procedure exists,
         // so it's fine to use the panicking `procedure_by_id`.
         let procedure_def = self.info.module_def.procedure_by_id(procedure_id);
-        let procedure_name = &procedure_def.name;
+        let procedure_name: &str = &procedure_def.name;
 
         // TODO(observability): Add tracing spans, energy, metrics?
         // These will require further thinking once we implement procedure suspend/resume,
@@ -386,7 +393,7 @@ impl InstanceCommon {
 
         let op = ProcedureOp {
             id: procedure_id,
-            name: procedure_name,
+            name: procedure_name.into(),
             caller_identity,
             caller_connection_id,
             timestamp,
@@ -397,13 +404,13 @@ impl InstanceCommon {
             module_hash: self.info.module_hash,
             module_identity: self.info.owner_identity,
             caller_identity,
-            reducer_name: &procedure_name,
+            reducer_name: &procedure_def.name,
         };
 
         // TODO: replace with call to separate function `procedure_budget`.
         let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
 
-        let result = vm_call_procedure(op, budget);
+        let result = vm_call_procedure(op, budget).await;
 
         let ProcedureExecuteResult {
             memory_allocation,
@@ -419,7 +426,7 @@ impl InstanceCommon {
 
         match call_result {
             Err(err) => {
-                log_traceback("procedure", procedure_name, &err);
+                log_traceback("procedure", &procedure_def.name, &err);
 
                 WORKER_METRICS
                     .wasm_instance_errors
@@ -795,9 +802,9 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
 }
 
 #[derive(Clone, Debug)]
-pub struct ProcedureOp<'a> {
+pub struct ProcedureOp {
     pub id: ProcedureId,
-    pub name: &'a str,
+    pub name: Box<str>,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
     pub timestamp: Timestamp,

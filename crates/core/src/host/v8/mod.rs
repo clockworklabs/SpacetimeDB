@@ -174,7 +174,7 @@ impl JsInstance {
         )
     }
 
-    pub fn call_procedure(
+    pub async fn call_procedure(
         &mut self,
         _params: CallProcedureParams,
     ) -> Result<super::ProcedureCallResult, super::ProcedureCallError> {

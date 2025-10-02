@@ -39,7 +39,7 @@ impl WasmtimeModule {
         WasmtimeModule { module }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 0);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 1);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         const { assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION) };
@@ -49,7 +49,13 @@ impl WasmtimeModule {
                 linker$(.func_wrap($module, stringify!($func), WasmInstanceEnv::$func)?)*;
             }
         }
-        abi_funcs!(link_functions);
+        macro_rules! link_async_functions {
+            ($($module:literal :: $func:ident,)*) => {
+                #[allow(deprecated)]
+                linker$(.func_wrap_async($module, stringify!($func), WasmInstanceEnv::$func)?)*;
+            }
+        }
+        abi_funcs!(link_functions, link_async_functions);
         Ok(())
     }
 }
@@ -235,6 +241,7 @@ pub struct WasmtimeInstance {
     call_procedure: Option<CallProcedureType>,
 }
 
+#[async_trait::async_trait]
 impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn extract_descriptions(&mut self) -> Result<Vec<u8>, DescribeError> {
         let describer_func_name = DESCRIBE_MODULE_DUNDER;
@@ -325,9 +332,9 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_procedure(
+    async fn call_procedure(
         &mut self,
-        op: module_host_actor::ProcedureOp<'_>,
+        op: module_host_actor::ProcedureOp,
         budget: ReducerBudget,
     ) -> module_host_actor::ProcedureExecuteResult {
         let store = &mut self.store;
@@ -338,7 +345,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let [conn_id_0, conn_id_1] = prepare_connection_id_for_call(op.caller_connection_id);
 
         // Prepare arguments to the reducer + the error sink & start timings.
-        let (args_source, result_sink) = store.data_mut().start_funcall(op.name, op.arg_bytes, op.timestamp);
+        let (args_source, result_sink) = store.data_mut().start_funcall(&op.name, op.arg_bytes, op.timestamp);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             return module_host_actor::ProcedureExecuteResult {
@@ -352,21 +359,23 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 )),
             };
         };
-        let call_result = call_procedure.call(
-            &mut *store,
-            (
-                op.id.0,
-                sender_0,
-                sender_1,
-                sender_2,
-                sender_3,
-                conn_id_0,
-                conn_id_1,
-                op.timestamp.to_micros_since_unix_epoch() as u64,
-                args_source,
-                result_sink,
-            ),
-        );
+        let call_result = call_procedure
+            .call_async(
+                &mut *store,
+                (
+                    op.id.0,
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    op.timestamp.to_micros_since_unix_epoch() as u64,
+                    args_source,
+                    result_sink,
+                ),
+            )
+            .await;
 
         // Close the timing span for this procedure and get the BSATN bytes of its result.
         let (timings, result_bytes) = store.data_mut().finish_funcall();
