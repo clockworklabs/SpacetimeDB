@@ -125,10 +125,7 @@ fn auto_migrate_database(
                     .next()
                     .is_some()
                 {
-                    anyhow::bail!(
-                        "Precheck failed: added sequence {} already has values in range",
-                        sequence_name,
-                    );
+                    anyhow::bail!("Precheck failed: added sequence {sequence_name} already has values in range",);
                 }
             }
         }

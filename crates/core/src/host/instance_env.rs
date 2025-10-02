@@ -16,6 +16,7 @@ use spacetimedb_sats::{
 };
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
+use std::fmt::Display;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -498,6 +499,13 @@ impl From<GetTxError> for NodesError {
         NodesError::NotInTransaction
     }
 }
+
+impl Display for GetTxError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "not in a transaction")
+    }
+}
+impl std::error::Error for GetTxError {}
 
 #[cfg(test)]
 mod test {

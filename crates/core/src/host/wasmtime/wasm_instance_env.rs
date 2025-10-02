@@ -14,7 +14,7 @@ use crate::host::wasm_common::{
 use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_lib::Timestamp;
+use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
@@ -24,6 +24,7 @@ use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use instrumentation::noop as span;
 #[cfg(feature = "spacetimedb-wasm-instance-env-times")]
 use instrumentation::op as span;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 
 /// A stream of bytes which the WASM module can read from
 /// using [`WasmInstanceEnv::bytes_source_read`].
@@ -1351,6 +1352,41 @@ impl WasmInstanceEnv {
                 &caller.as_context(),
             );
             Ok(0)
+        })
+    }
+
+    /// Finds the JWT payload associated with `connection_id`.
+    /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
+    /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
+    ///
+    /// This must be called inside a transaction (because it reads from a system table).
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `connection_id` does not point to a valid little-endian `ConnectionId`.
+    /// - This is called outside a transaction.
+    pub fn get_jwt(
+        caller: Caller<'_, Self>,
+        connection_id: WasmPtr<ConnectionId>,
+        target_ptr: WasmPtr<u32>,
+    ) -> RtResult<()> {
+        Self::with_span(caller, AbiCall::GetJwt, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let cid = ConnectionId::read_from(mem, connection_id)?;
+            let jwt = match env.instance_env.tx.get()?.get_jwt_payload(cid)? {
+                None => {
+                    // Consider logging here, since this should only happen during an upgrade.
+                    0u32.write_to(mem, target_ptr)?;
+                    return Ok(());
+                }
+                Some(jwt) => jwt,
+            };
+            let b = bytes::Bytes::from(jwt);
+            let source_id = env.create_bytes_source(b)?;
+            source_id.0.write_to(mem, target_ptr)?;
+            Ok(())
         })
     }
 

@@ -392,7 +392,7 @@ pub(super) fn get_index(tx: &impl Datastore, table_id: TableId, index_id: IndexI
     let table = tx.table_or_err(table_id)?;
     table
         .get_index_by_id_with_table(tx.blob_store(), index_id)
-        .ok_or_else(|| anyhow!("IndexId `{}` does not exist", index_id))
+        .ok_or_else(|| anyhow!("IndexId `{index_id}` does not exist"))
 }
 
 impl<'a> UniqueIxJoin<'a> {

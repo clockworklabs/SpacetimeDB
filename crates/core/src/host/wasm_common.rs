@@ -397,6 +397,7 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
 
             "spacetime_10.1"::bytes_source_remaining_length,
+            "spacetime_10.1"::get_jwt,
         }
     };
 }

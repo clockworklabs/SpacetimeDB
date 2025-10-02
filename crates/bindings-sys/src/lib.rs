@@ -588,6 +588,7 @@ pub mod raw {
         ///
         /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
         pub fn identity(out_ptr: *mut u8);
+
     }
 
     // See comment on previous `extern "C"` block re: ABI version.
@@ -617,6 +618,19 @@ pub mod raw {
         ///
         /// If this function returns an error, `out` is not written.
         pub fn bytes_source_remaining_length(source: BytesSource, out: *mut u32) -> i16;
+
+        /// Find the jwt payload for the given connection id, and write the
+        /// [`BytesSource`] to the given pointer.
+        /// If this is not found, [`BytesSource::INVALID`] (aka 0) will be written.
+        /// This must be called inside a transaction (because it reads from a system table).
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - `connection_id` does not point to a valid little-endian `ConnectionId`.
+        /// - This is called outside a transaction.
+        pub fn get_jwt(connection_id_ptr: *const u8, bytes_source_id: *mut BytesSource);
     }
 
     /// What strategy does the database index use?
@@ -1116,6 +1130,19 @@ pub fn identity() -> [u8; 32] {
         raw::identity(buf.as_mut_ptr());
     }
     buf
+}
+
+#[inline]
+pub fn get_jwt(connection_id: [u8; 16]) -> Option<raw::BytesSource> {
+    let mut source: raw::BytesSource = raw::BytesSource::INVALID;
+    unsafe {
+        raw::get_jwt(connection_id.as_ptr(), &mut source);
+    }
+    if source == raw::BytesSource::INVALID {
+        None // No JWT found.
+    } else {
+        Some(source)
+    }
 }
 
 pub struct RowIter {

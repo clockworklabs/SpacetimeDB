@@ -234,10 +234,10 @@ impl RawConfig {
         if let Ok(cfg) = self.find_server(&host) {
             if let Some(nick) = &cfg.nickname {
                 if nick == &host {
-                    anyhow::bail!("Server host name is ambiguous with existing server nickname: {}", nick);
+                    anyhow::bail!("Server host name is ambiguous with existing server nickname: {nick}");
                 }
             }
-            anyhow::bail!("Server already configured for host: {}", host);
+            anyhow::bail!("Server already configured for host: {host}");
         }
 
         self.server_configs.push(ServerConfig {
