@@ -134,11 +134,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     };
     let program_bytes = fs::read(path_to_program)?;
 
-    // The host type is not the default (WASM).
-    if let Some(host_type) = host_type {
-        builder = builder.query(&[("host_type", host_type)]);
-    }
-
     let server_address = {
         let url = Url::parse(&database_host)?;
         url.host_str().unwrap_or("<default>").to_string()
@@ -208,6 +203,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     if let Some(n) = num_replicas {
         eprintln!("WARNING: Use of unstable option `--num-replicas`.\n");
         builder = builder.query(&[("num_replicas", *n)]);
+    }
+
+    // The host type is not the default (WASM).
+    if let Some(host_type) = host_type {
+        builder = builder.query(&[("host_type", host_type)]);
     }
 
     println!("Publishing module...");
