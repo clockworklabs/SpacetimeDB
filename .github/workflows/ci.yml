@@ -14,12 +14,6 @@ on:
 name: CI
 
 jobs:
-  failure_test:
-    runs-on: windows-latest
-    steps:
-      - run: |
-          false
-
   docker_smoketests:
     name: Smoketests
     strategy:
