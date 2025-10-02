@@ -1,9 +1,10 @@
+use anyhow::{ensure, Context};
 use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use clap::ArgMatches;
 use reqwest::{StatusCode, Url};
-use spacetimedb_client_api_messages::name::PublishOp;
 use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
+use spacetimedb_client_api_messages::name::{DatabaseNameError, PublishOp};
 use std::fs;
 use std::path::PathBuf;
 
@@ -59,6 +60,17 @@ pub fn cli() -> clap::Command {
             common_args::anonymous()
         )
         .arg(
+            Arg::new("parent")
+            .help("Domain or identity of a parent for this database")
+            .long("parent")
+            .long_help(
+"A valid domain or identity of an existing database that should be the parent of this database.
+
+If a parent is given, the new database inherits the team permissions from the parent.
+A parent can only be set when a database is created, not when it is updated."
+            )
+        )
+        .arg(
             Arg::new("name|identity")
                 .help("A valid domain or identity for this database")
                 .long_help(
@@ -87,6 +99,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
     let num_replicas = args.get_one::<u8>("num_replicas");
+    let parent = args.get_one::<String>("parent");
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
     // we want to use the default identity
@@ -96,11 +109,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let client = reqwest::Client::new();
 
-    // If a domain or identity was provided, we should locally make sure it looks correct and
+    let (name_or_identity, parent) =
+        validate_name_and_parent(name_or_identity.map(String::as_str), parent.map(String::as_str))?;
+
+    // If a name was given, ensure to percent-encode it.
+    // We also use PUT with a name or identity, and POST otherwise.
     let mut builder = if let Some(name_or_identity) = name_or_identity {
-        if !is_identity(name_or_identity) {
-            parse_database_name(name_or_identity)?;
-        }
         let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
         let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
         client.put(format!("{database_host}/v1/database/{domain}"))
@@ -164,6 +178,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         eprintln!("WARNING: Use of unstable option `--num-replicas`.\n");
         builder = builder.query(&[("num_replicas", *n)]);
     }
+    if let Some(parent) = parent {
+        builder = builder.query(&[("parent", parent)]);
+    }
 
     println!("Publishing module...");
 
@@ -218,4 +235,45 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     Ok(())
+}
+
+fn validate_name_or_identity(name_or_identity: &str) -> Result<(), DatabaseNameError> {
+    if is_identity(name_or_identity) {
+        Ok(())
+    } else {
+        parse_database_name(name_or_identity).map(drop)
+    }
+}
+
+fn invalid_parent_name(name: &str) -> String {
+    format!("invalid parent database name `{name}`")
+}
+
+fn validate_name_and_parent<'a>(
+    name: Option<&'a str>,
+    parent: Option<&'a str>,
+) -> anyhow::Result<(Option<&'a str>, Option<&'a str>)> {
+    if let Some(parent) = parent.as_ref() {
+        validate_name_or_identity(parent).with_context(|| invalid_parent_name(parent))?;
+    }
+
+    match name {
+        Some(name) => match name.split_once('/') {
+            Some((parent_alt, child)) => {
+                ensure!(
+                    parent.is_none() || parent.is_some_and(|parent| parent == parent_alt),
+                    "cannot specify both --parent and <parent>/<child>"
+                );
+                validate_name_or_identity(parent_alt).with_context(|| invalid_parent_name(parent_alt))?;
+                validate_name_or_identity(child)?;
+
+                Ok((Some(child), Some(parent_alt)))
+            }
+            None => {
+                validate_name_or_identity(name)?;
+                Ok((Some(name), parent))
+            }
+        },
+        None => Ok((None, parent)),
+    }
 }
