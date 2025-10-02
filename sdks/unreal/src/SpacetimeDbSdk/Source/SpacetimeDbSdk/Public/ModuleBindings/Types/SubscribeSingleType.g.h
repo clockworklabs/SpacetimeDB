@@ -16,7 +16,7 @@ struct SPACETIMEDBSDK_API FSubscribeSingleType
     FString Query;
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 RequestId;
+    uint32 RequestId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FQueryIdType QueryId;

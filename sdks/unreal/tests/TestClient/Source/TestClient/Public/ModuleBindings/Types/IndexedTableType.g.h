@@ -12,7 +12,7 @@ struct TESTCLIENT_API FIndexedTableType
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 PlayerId;
+    uint32 PlayerId = 0;
 
     FORCEINLINE bool operator==(const FIndexedTableType& Other) const
     {

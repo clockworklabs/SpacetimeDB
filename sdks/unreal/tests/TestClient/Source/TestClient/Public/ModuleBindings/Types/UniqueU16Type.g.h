@@ -12,10 +12,10 @@ struct TESTCLIENT_API FUniqueU16Type
     GENERATED_BODY()
 
     // NOTE: uint16 field not exposed to Blueprint due to non-blueprintable elements
-    uint16 N;
+    uint16 N = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FORCEINLINE bool operator==(const FUniqueU16Type& Other) const
     {

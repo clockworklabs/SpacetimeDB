@@ -16,7 +16,7 @@ struct CLIENT_UNREAL_API FPlayerType
     FSpacetimeDBIdentity Identity;
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 PlayerId;
+    uint32 PlayerId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FString Name;

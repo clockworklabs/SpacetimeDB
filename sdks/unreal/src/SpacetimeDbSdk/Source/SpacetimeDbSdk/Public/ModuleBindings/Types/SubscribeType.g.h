@@ -15,7 +15,7 @@ struct SPACETIMEDBSDK_API FSubscribeType
     TArray<FString> QueryStrings;
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 RequestId;
+    uint32 RequestId = 0;
 
     FORCEINLINE bool operator==(const FSubscribeType& Other) const
     {

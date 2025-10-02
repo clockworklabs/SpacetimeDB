@@ -13,7 +13,7 @@ struct SPACETIMEDBSDK_API FSubscriptionErrorType
     GENERATED_BODY()
 
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 TotalHostExecutionDurationMicros;
+    uint64 TotalHostExecutionDurationMicros = 0;
 
     // NOTE: FSpacetimeDbSdkOptionalUInt32 field not exposed to Blueprint due to non-blueprintable elements
     FSpacetimeDbSdkOptionalUInt32 RequestId;

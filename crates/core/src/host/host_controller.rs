@@ -2,7 +2,9 @@ use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
+use crate::client::{ClientActorId, ClientName};
 use crate::database_logger::DatabaseLogger;
+use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
@@ -26,7 +28,7 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_durability::{self as durability, TxOffset};
+use spacetimedb_durability::{self as durability};
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_paths::FromPathUnchecked;
@@ -53,13 +55,6 @@ type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
 
 pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn);
-
-pub type StartSnapshotWatcher = Box<dyn FnOnce(watch::Receiver<TxOffset>)>;
-
-#[async_trait]
-pub trait DurabilityProvider: Send + Sync + 'static {
-    async fn durability(&self, replica_id: u64) -> anyhow::Result<(ExternalDurability, Option<StartSnapshotWatcher>)>;
-}
 
 #[async_trait]
 pub trait ExternalStorage: Send + Sync + 'static {
@@ -98,8 +93,8 @@ pub struct HostController {
     program_storage: ProgramStorage,
     /// The [`EnergyMonitor`] used by this controller.
     energy_monitor: Arc<dyn EnergyMonitor>,
-    /// Provides implementations of [`Durability`] for each replica.
-    durability: Arc<dyn DurabilityProvider>,
+    /// Provides persistence services for each replica.
+    persistence: Arc<dyn PersistenceProvider>,
     /// The page pool all databases will use by cloning the ref counted pool.
     pub page_pool: PagePool,
     /// The runtimes for running our modules.
@@ -181,7 +176,7 @@ impl HostController {
         default_config: db::Config,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
-        durability: Arc<dyn DurabilityProvider>,
+        persistence: Arc<dyn PersistenceProvider>,
         db_cores: JobCores,
     ) -> Self {
         Self {
@@ -189,7 +184,7 @@ impl HostController {
             default_config,
             program_storage,
             energy_monitor,
-            durability,
+            persistence,
             runtimes: HostRuntimes::new(Some(&data_dir)),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
@@ -415,6 +410,7 @@ impl HostController {
                 .await?;
 
             *guard = Some(host);
+
             Ok::<_, anyhow::Error>(update_result)
         })
         .await??;
@@ -753,7 +749,7 @@ impl Host {
             program_storage,
             energy_monitor,
             runtimes,
-            durability,
+            persistence,
             page_pool,
             ..
         } = host_controller;
@@ -768,23 +764,18 @@ impl Host {
                 database.owner_identity,
                 EmptyHistory::new(),
                 None,
-                None,
                 Some(tx_metrics_queue),
                 page_pool.clone(),
             )?,
             db::Storage::Disk => {
-                let snapshot_repo =
-                    relational_db::open_snapshot_repo(replica_dir.snapshots(), database.database_identity, replica_id)?;
                 let (history, _) = relational_db::local_durability(replica_dir.commit_log()).await?;
-                let (durability, start_snapshot_watcher) = durability.durability(replica_id).await?;
-
+                let persistence = persistence.persistence(&database, replica_id).await?;
                 let (db, clients) = RelationalDB::open(
                     &replica_dir,
                     database.database_identity,
                     database.owner_identity,
                     history,
-                    Some(durability),
-                    Some(snapshot_repo),
+                    Some(persistence),
                     Some(tx_metrics_queue),
                     page_pool.clone(),
                 )
@@ -798,10 +789,7 @@ impl Host {
                         "Failed to open database: {e:#}"
                     );
                 })?;
-                if let Some(start_snapshot_watcher) = start_snapshot_watcher {
-                    let watcher = db.subscribe_to_snapshots().expect("we passed snapshot_repo");
-                    start_snapshot_watcher(watcher)
-                }
+
                 (db, clients)
             }
         };
@@ -905,7 +893,6 @@ impl Host {
             EmptyHistory::new(),
             None,
             None,
-            None,
             page_pool,
         )?;
 
@@ -976,14 +963,43 @@ impl Host {
 
         let update_result =
             update_module(&replica_ctx.relational_db, &module, program, old_module_info, policy).await?;
-        trace!("update result: {update_result:?}");
+
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
-        if update_result.was_successful() {
-            self.scheduler = scheduler;
-            scheduler_starter.start(&module)?;
-            let old_module = self.module.send_replace(module);
-            old_module.exit().await;
+        match update_result {
+            UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
+                self.scheduler = scheduler;
+                scheduler_starter.start(&module)?;
+                let old_module = self.module.send_replace(module);
+                old_module.exit().await;
+            }
+
+            // In this case, we need to disconnect all clients connected to the old module
+            UpdateDatabaseResult::UpdatePerformedWithClientDisconnect => {
+                // Replace the module first, so that new clients get the new module.
+                let old_watcher = std::mem::replace(&mut self.module, watch::Sender::new(module.clone()));
+
+                // Disconnect all clients connected to the old module.
+                let connected_clients = replica_ctx.relational_db.connected_clients()?;
+                for (identity, connection_id) in connected_clients {
+                    let client_actor_id = ClientActorId {
+                        identity,
+                        connection_id,
+                        name: ClientName(0),
+                    };
+                    //NOTE: This will call disconnect reducer of the new module, not the old one.
+                    //It makes sense, as relationaldb is already updated to the new module.
+                    module.disconnect_client(client_actor_id).await;
+                }
+
+                self.scheduler = scheduler;
+                scheduler_starter.start(&module)?;
+                // exit the old module, drop the `old_watcher` afterwards,
+                // which will signal websocket clients that the module is gone.
+                let old_module = old_watcher.borrow().clone();
+                old_module.exit().await;
+            }
+            _ => {}
         }
 
         Ok(update_result)
