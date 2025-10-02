@@ -41,4 +41,14 @@ describe('AlgebraicType', () => {
     // 42 as i32 little-endian is 2A000000, which is KgAAAA== in base64
     expect(mapKey).toBe('KgAAAA==');
   });
+
+  test('intoMapKey fallback serializes array types', () => {
+    const arrayType = AlgebraicType.Array(AlgebraicType.U16);
+    const arrayValue = [1, 2, 3];
+
+    const mapKey = AlgebraicType.intoMapKey(arrayType, arrayValue);
+    expect(typeof mapKey).toBe('string');
+    // Serialized as: [len (u32), val1 (u16), val2 (u16), val3 (u16)]
+    expect(mapKey).toBe('AwAAAAEAAgADAA==');
+  });
 });
