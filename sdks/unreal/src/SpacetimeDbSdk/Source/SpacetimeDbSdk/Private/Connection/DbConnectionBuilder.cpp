@@ -89,7 +89,30 @@ UDbConnectionBase* UDbConnectionBuilderBase::BuildConnection(UDbConnectionBase* 
 		return nullptr;
 	}
 
-	Connection->Uri = Uri;
+	FString WorkUri = Uri;
+	WorkUri.TrimStartAndEndInline();
+
+	// Normalize scheme: https->wss, http->ws, default to ws if none provided.
+	if (WorkUri.StartsWith(TEXT("https://"), ESearchCase::IgnoreCase))
+	{
+		WorkUri = TEXT("wss://") + WorkUri.Mid(8);
+	}
+	else if (WorkUri.StartsWith(TEXT("http://"), ESearchCase::IgnoreCase))
+	{
+		WorkUri = TEXT("ws://") + WorkUri.Mid(7);
+	}
+	else if (!WorkUri.StartsWith(TEXT("ws://"), ESearchCase::IgnoreCase) &&
+			 !WorkUri.StartsWith(TEXT("wss://"), ESearchCase::IgnoreCase))
+	{
+		WorkUri = TEXT("ws://") + WorkUri;
+	}
+
+	if (WorkUri.EndsWith(TEXT("/")))
+	{
+		WorkUri.LeftChopInline(1);
+	}
+
+	Connection->Uri = WorkUri;
 	Connection->ModuleName = ModuleName;
 	Connection->Token = Token;
 	Connection->OnConnectBaseDelegate = OnConnectCallback;
@@ -108,25 +131,10 @@ UDbConnectionBase* UDbConnectionBuilderBase::BuildConnection(UDbConnectionBase* 
 	const FString CompressionName = CompressionEnum->GetNameStringByValue(static_cast<int64>(Compression));
 
 	// Construct the WebSocket URL using the provided URI, module name, and compression type
-	// If URI already contains a protocol (ws:// or wss://), use it as-is
-	// Otherwise, default to ws:// for backward compatibility
-	FString WebSocketUrl;
-	if (Uri.StartsWith(TEXT("ws://")) || Uri.StartsWith(TEXT("wss://")))
-	{
-		// URI already has protocol, just append the path
-		WebSocketUrl = FString::Printf(TEXT("%s/v1/database/%s/subscribe?compression=%s"),
-			*Uri,
-			*ModuleName,
-			*CompressionName);
-	}
-	else
-	{
-		// No protocol specified, default to ws:// for backward compatibility
-		WebSocketUrl = FString::Printf(TEXT("ws://%s/v1/database/%s/subscribe?compression=%s"),
-			*Uri,
-			*ModuleName,
-			*CompressionName);
-	}
+	FString WebSocketUrl = FString::Printf(TEXT("%s/v1/database/%s/subscribe?compression=%s"),
+		*WorkUri,
+		*ModuleName,
+		*CompressionName);
 
 	Connection->WebSocket->OnConnectionError.AddDynamic(Connection, &UDbConnectionBase::HandleWSError);
 	Connection->WebSocket->OnClosed.AddDynamic(Connection, &UDbConnectionBase::HandleWSClosed);
