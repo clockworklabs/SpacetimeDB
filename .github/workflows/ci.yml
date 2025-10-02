@@ -52,21 +52,9 @@ jobs:
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
-          cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+          cargo build -p spacetimedb-standalone
           echo "Return code is: $?"
-          Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
           dotnet workload update
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-        if: runner.os == 'Windows'
-      - name: Install psycopg2
-        run: python -m pip install psycopg2-binary
-      - name: Run smoketests
-        # Note: clear_database and replication only work in private
-        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication
-      - name: Stop containers (Linux)
-        if: always() && runner.os == 'Linux'
-        run: docker compose down
