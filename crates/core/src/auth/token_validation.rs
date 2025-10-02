@@ -232,7 +232,7 @@ impl TokenValidator for CachingOidcTokenValidator {
             .cache
             .get(raw_issuer.clone().into())
             .await
-            .ok_or_else(|| anyhow::anyhow!("Error fetching public key for issuer {}", raw_issuer))?;
+            .ok_or_else(|| anyhow::anyhow!("Error fetching public key for issuer {raw_issuer}"))?;
         validator.validate_token(token).await
     }
 }
@@ -425,7 +425,7 @@ mod tests {
         let result = validator.validate_token(token).await;
         if result.is_ok() {
             let claims = result.unwrap();
-            anyhow::bail!("Validation succeeded when it should have failed: {:?}", claims);
+            anyhow::bail!("Validation succeeded when it should have failed: {claims:?}");
         }
         Ok(())
     }

@@ -347,7 +347,7 @@ impl SchedulerActor {
                 let (reducer_id, reducer_seed) = module_info
                     .module_def
                     .reducer_arg_deserialize_seed(&reducer[..])
-                    .ok_or_else(|| anyhow!("Reducer not found: {}", reducer))?;
+                    .ok_or_else(|| anyhow!("Reducer not found: {reducer}"))?;
 
                 let reducer_args = ReducerArgs::Bsatn(bsatn_args.into()).into_tuple(reducer_seed)?;
 
@@ -370,7 +370,7 @@ impl SchedulerActor {
                 let (reducer_id, reducer_seed) = module_info
                     .module_def
                     .reducer_arg_deserialize_seed(&reducer_name[..])
-                    .ok_or_else(|| anyhow!("Reducer not found: {}", reducer_name))?;
+                    .ok_or_else(|| anyhow!("Reducer not found: {reducer_name}"))?;
                 let reducer_args = args.into_tuple(reducer_seed)?;
 
                 Ok(Some(CallReducerParams {
@@ -507,8 +507,7 @@ fn process_schedule(
         .next()
         .ok_or_else(|| {
             anyhow!(
-                "Scheduled table with id {} entry does not exist in `st_scheduled`",
-                table_id
+                "Scheduled table with id {table_id} entry does not exist in `st_scheduled`"
             )
         })?;
     let reducer = st_scheduled_row.read_col::<Box<str>>(reducer_name_col)?;

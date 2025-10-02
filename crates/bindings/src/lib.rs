@@ -846,23 +846,21 @@ impl AuthCtx {
         }
     }
 
-    /// Create an AuthCtx for an internal call, with no JWT.
+    /// Create an [`AuthCtx`] for an internal call, with no JWT.
     /// This represents a scheduled reducer.
     pub fn internal() -> AuthCtx {
         Self::new(true, || None)
     }
 
-    /// Create an AuthCtx using the json claims from a JWT.
+    /// Creates an [`AuthCtx`] using the json claims from a JWT.
     /// This can be used to write unit tests.
     pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {
         Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
     }
 
-    /// Create an AuthCtx that reads the JWT for the given connection id.
+    /// Creates an [`AuthCtx`] that reads the JWT for the given connection id.
     fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
-        Self::new(false, move || {
-            spacetimedb_bindings_sys::get_jwt(connection_id.as_le_byte_array()).map(JwtClaims::new)
-        })
+        Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
     }
 
     /// True if this reducer was spawned from inside the database.

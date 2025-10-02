@@ -39,10 +39,7 @@ pub fn insert_update_delete_one<T: PkTestTable>(
                 let run_checks = || {
                     if row.primary_key() != &key_dup || row.as_value() != update_value {
                         anyhow::bail!(
-                            "Unexpected row value. Expected ({:?}, {}) but found {:?}",
-                            key_dup,
-                            update_value,
-                            row
+                            "Unexpected row value. Expected ({key_dup:?}, {update_value}) but found {row:?}"
                         );
                     }
                     let Event::Reducer(reducer_event) = &ctx.event else {
@@ -68,18 +65,12 @@ pub fn insert_update_delete_one<T: PkTestTable>(
                 let run_checks = || {
                     if old.primary_key() != &key_dup || old.as_value() != initial_value {
                         anyhow::bail!(
-                            "Unexpected old row value. Expected ({:?}, {}) but found {:?}",
-                            key_dup,
-                            initial_value,
-                            old,
+                            "Unexpected old row value. Expected ({key_dup:?}, {initial_value}) but found {old:?}",
                         );
                     }
                     if new.primary_key() != &key_dup || new.as_value() != update_value {
                         anyhow::bail!(
-                            "Unexpected new row value. Expected ({:?}, {}) but found {:?}",
-                            key_dup,
-                            update_value,
-                            new,
+                            "Unexpected new row value. Expected ({key_dup:?}, {update_value}) but found {new:?}",
                         );
                     }
                     let Event::Reducer(reducer_event) = &ctx.event else {
@@ -109,10 +100,7 @@ pub fn insert_update_delete_one<T: PkTestTable>(
             let run_checks = || {
                 if row.primary_key() != &key_dup || row.as_value() != initial_value {
                     anyhow::bail!(
-                        "Unexpected row value. Expected ({:?}, {}) but found {:?}",
-                        key_dup,
-                        initial_value,
-                        row
+                        "Unexpected row value. Expected ({key_dup:?}, {initial_value}) but found {row:?}"
                     );
                 }
                 let Event::Reducer(reducer_event) = &ctx.event else {

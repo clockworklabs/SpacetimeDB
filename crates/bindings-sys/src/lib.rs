@@ -620,8 +620,8 @@ pub mod raw {
         pub fn bytes_source_remaining_length(source: BytesSource, out: *mut u32) -> i16;
 
         /// Find the jwt payload for the given connection id, and write the
-        /// BytesSourceId to the given pointer.
-        /// If this is not found, BytesSourceId::INVALID (aka 0) will be written.
+        /// [`BytesSource`] to the given pointer.
+        /// If this is not found, [`BytesSource::INVALID`] (aka 0) will be written.
         pub fn get_jwt(connection_id_ptr: *const u8, bytes_source_id: *mut BytesSource);
     }
 
@@ -1125,31 +1125,16 @@ pub fn identity() -> [u8; 32] {
 }
 
 #[inline]
-pub fn get_jwt(connection_id: [u8; 16]) -> Option<String> {
+pub fn get_jwt(connection_id: [u8; 16]) -> Option<raw::BytesSource> {
     let mut source: raw::BytesSource = raw::BytesSource::INVALID;
     unsafe {
         raw::get_jwt(connection_id.as_ptr(), &mut source);
     }
     if source == raw::BytesSource::INVALID {
-        return None; // No JWT found.
+        None // No JWT found.
+    } else {
+        Some(source)
     }
-    let len = {
-        let mut len = 0;
-        let ret = unsafe { raw::bytes_source_remaining_length(source, &raw mut len) };
-        match ret {
-            0 => len,
-            _ => panic!("invalid source"),
-        }
-    };
-    let mut buf = vec![0u8; len as usize];
-    let mut bytes_read = len as usize;
-    let ret = unsafe { raw::bytes_source_read(source, buf.as_mut_ptr(), &mut bytes_read) };
-    // We should have exhausted the source.
-    assert_eq!(ret, -1);
-    // We should get exactly `len` bytes.
-    assert_eq!(bytes_read, len as usize);
-
-    Some(std::str::from_utf8(&buf[..bytes_read]).unwrap().to_string())
 }
 
 pub struct RowIter {

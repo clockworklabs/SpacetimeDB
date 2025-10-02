@@ -16,7 +16,7 @@ impl TryFrom<SpacetimeIdentityClaims> for ConnectionAuthCtx {
     type Error = anyhow::Error;
     fn try_from(claims: SpacetimeIdentityClaims) -> Result<Self, Self::Error> {
         let payload =
-            serde_json::to_string(&claims).map_err(|e| anyhow::anyhow!("Failed to serialize claims: {}", e))?;
+            serde_json::to_string(&claims).map_err(|e| anyhow::anyhow!("Failed to serialize claims: {e}"))?;
         Ok(ConnectionAuthCtx {
             claims,
             jwt_payload: payload,
@@ -111,9 +111,7 @@ impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
         if let Some(token_identity) = self.identity {
             if token_identity != computed_identity {
                 return Err(anyhow::anyhow!(
-                    "Identity mismatch: token identity {:?} does not match computed identity {:?}",
-                    token_identity,
-                    computed_identity,
+                    "Identity mismatch: token identity {token_identity:?} does not match computed identity {computed_identity:?}",
                 ));
             }
         }

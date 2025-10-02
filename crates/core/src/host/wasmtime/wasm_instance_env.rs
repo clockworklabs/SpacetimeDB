@@ -1355,12 +1355,23 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Finds the JWT payload associated with `connection_id`.
+    /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
+    /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
+    ///
+    /// This must be called inside a transaction (because it reads from a system table).
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `connection_id` does not point to a valid little-endian `ConnectionId`.
+    /// - This is called outside a transaction.
     pub fn get_jwt(
         caller: Caller<'_, Self>,
         connection_id: WasmPtr<ConnectionId>,
         target_ptr: WasmPtr<u32>,
     ) -> RtResult<()> {
-        log::info!("Calling get_jwt");
         Self::with_span(caller, AbiCall::GetJwt, |caller| {
             let (mem, env) = Self::mem_env(caller);
             let cid = ConnectionId::read_from(mem, connection_id)?;

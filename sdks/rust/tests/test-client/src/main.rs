@@ -911,7 +911,7 @@ fn exec_on_reducer() {
             }
             let row = ctx.db.one_u_8().iter().next().unwrap();
             if row.n != value {
-                anyhow::bail!("Unexpected row value. Expected {} but found {:?}", value, row);
+                anyhow::bail!("Unexpected row value. Expected {value} but found {row:?}");
             }
             Ok(())
         };
@@ -992,10 +992,7 @@ fn exec_fail_reducer() {
                 let row = ctx.db.pk_u_8().iter().next().unwrap();
                 if row.n != key || row.data != initial_data {
                     anyhow::bail!(
-                        "Unexpected row value. Expected ({}, {}) but found {:?}",
-                        key,
-                        initial_data,
-                        row
+                        "Unexpected row value. Expected ({key}, {initial_data}) but found {row:?}"
                     );
                 }
                 Ok(())
@@ -1052,10 +1049,7 @@ fn exec_fail_reducer() {
                 let row = ctx.db.pk_u_8().iter().next().unwrap();
                 if row.n != key || row.data != initial_data {
                     anyhow::bail!(
-                        "Unexpected row value. Expected ({}, {}) but found {:?}",
-                        key,
-                        initial_data,
-                        row
+                        "Unexpected row value. Expected ({key}, {initial_data}) but found {row:?}"
                     );
                 }
                 Ok(())

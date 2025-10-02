@@ -35,10 +35,7 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(
                 let run_checks = || {
                     if row.as_key() != &key_dup || row.as_value() != value {
                         anyhow::bail!(
-                            "Unexpected row value. Expected ({:?}, {}) but found {:?}",
-                            key_dup,
-                            value,
-                            row
+                            "Unexpected row value. Expected ({key_dup:?}, {value}) but found {row:?}"
                         );
                     }
                     let Event::Reducer(reducer_event) = &ctx.event else {
@@ -64,10 +61,7 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(
             let run_checks = || {
                 if row.as_key() != &key_dup || row.as_value() != value {
                     anyhow::bail!(
-                        "Unexpected row value. Expected ({:?}, {}) but found {:?}",
-                        key_dup,
-                        value,
-                        row
+                        "Unexpected row value. Expected ({key_dup:?}, {value}) but found {row:?}"
                     );
                 }
                 let Event::Reducer(reducer_event) = &ctx.event else {
