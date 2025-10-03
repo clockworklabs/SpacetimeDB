@@ -1,8 +1,7 @@
-// @ts-ignore
 import { TextEncoder, TextDecoder } from 'fast-text-encoding';
 globalThis.TextEncoder = TextEncoder;
 globalThis.TextDecoder = TextDecoder;
-import { schema, table, t } from '../../sdks/typescript/src/server';
+import { schema, table, t } from '../../crates/bindings-typescript/src/server';
 
 const spacetime = schema(
   table(
