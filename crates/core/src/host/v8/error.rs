@@ -5,7 +5,7 @@ use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace}
 use super::serialize_to_js;
 use core::fmt;
 use spacetimedb_sats::Serialize;
-use v8::{Exception, HandleScope, Local, StackFrame, StackTrace, TryCatch, Value};
+use v8::{tc_scope, Exception, HandleScope, Local, PinScope, PinnedRef, StackFrame, StackTrace, TryCatch, Value};
 
 /// The result of trying to convert a [`Value`] in scope `'scope` to some type `T`.
 pub(super) type ValueResult<'scope, T> = Result<T, ExceptionValue<'scope>>;
@@ -13,11 +13,11 @@ pub(super) type ValueResult<'scope, T> = Result<T, ExceptionValue<'scope>>;
 /// Types that can convert into a JS string type.
 pub(super) trait IntoJsString {
     /// Converts `self` into a JS string.
-    fn into_string<'scope>(self, scope: &mut HandleScope<'scope>) -> Local<'scope, v8::String>;
+    fn into_string<'scope>(self, scope: &PinScope<'scope, '_>) -> Local<'scope, v8::String>;
 }
 
 impl IntoJsString for String {
-    fn into_string<'scope>(self, scope: &mut HandleScope<'scope>) -> Local<'scope, v8::String> {
+    fn into_string<'scope>(self, scope: &PinScope<'scope, '_>) -> Local<'scope, v8::String> {
         v8::String::new(scope, &self).unwrap()
     }
 }
@@ -31,11 +31,11 @@ pub(super) struct ExceptionValue<'scope>(Local<'scope, Value>);
 /// Error types that can convert into JS exception values.
 pub(super) trait IntoException<'scope> {
     /// Converts `self` into a JS exception value.
-    fn into_exception(self, scope: &mut HandleScope<'scope>) -> ExceptionValue<'scope>;
+    fn into_exception(self, scope: &PinScope<'scope, '_>) -> ExceptionValue<'scope>;
 }
 
 impl<'scope> IntoException<'scope> for ExceptionValue<'scope> {
-    fn into_exception(self, _: &mut HandleScope<'scope>) -> ExceptionValue<'scope> {
+    fn into_exception(self, _: &PinScope<'scope, '_>) -> ExceptionValue<'scope> {
         self
     }
 }
@@ -45,7 +45,7 @@ impl<'scope> IntoException<'scope> for ExceptionValue<'scope> {
 pub struct TypeError<M>(pub M);
 
 impl<'scope, M: IntoJsString> IntoException<'scope> for TypeError<M> {
-    fn into_exception(self, scope: &mut HandleScope<'scope>) -> ExceptionValue<'scope> {
+    fn into_exception(self, scope: &PinScope<'scope, '_>) -> ExceptionValue<'scope> {
         let msg = self.0.into_string(scope);
         ExceptionValue(Exception::type_error(scope, msg))
     }
@@ -56,7 +56,7 @@ impl<'scope, M: IntoJsString> IntoException<'scope> for TypeError<M> {
 pub struct RangeError<M>(pub M);
 
 impl<'scope, M: IntoJsString> IntoException<'scope> for RangeError<M> {
-    fn into_exception(self, scope: &mut HandleScope<'scope>) -> ExceptionValue<'scope> {
+    fn into_exception(self, scope: &PinScope<'scope, '_>) -> ExceptionValue<'scope> {
         let msg = self.0.into_string(scope);
         ExceptionValue(Exception::range_error(scope, msg))
     }
@@ -71,7 +71,7 @@ pub(super) struct TerminationError {
 impl TerminationError {
     /// Convert `anyhow::Error` to a termination error.
     pub(super) fn from_error<'scope>(
-        scope: &mut HandleScope<'scope>,
+        scope: &PinScope<'scope, '_>,
         error: &anyhow::Error,
     ) -> ExcResult<ExceptionValue<'scope>> {
         let __terminated__ = format!("{error}");
@@ -90,7 +90,7 @@ pub(super) struct CodeError {
 impl CodeError {
     /// Create a code error from a code.
     pub(super) fn from_code<'scope>(
-        scope: &mut HandleScope<'scope>,
+        scope: &PinScope<'scope, '_>,
         __code_error__: u16,
     ) -> ExcResult<ExceptionValue<'scope>> {
         let error = Self { __code_error__ };
@@ -108,7 +108,7 @@ pub(super) struct BufferTooSmall {
 impl BufferTooSmall {
     /// Create a code error from a code.
     pub(super) fn from_requirement<'scope>(
-        scope: &mut HandleScope<'scope>,
+        scope: &PinScope<'scope, '_>,
         __buffer_too_small__: u32,
     ) -> ExcResult<ExceptionValue<'scope>> {
         let error = Self { __buffer_too_small__ };
@@ -138,11 +138,11 @@ pub(super) trait Throwable<'scope> {
     ///
     /// If an exception has already been thrown,
     /// [`ExceptionThrown`] can be returned directly.
-    fn throw(self, scope: &mut HandleScope<'scope>) -> ExceptionThrown;
+    fn throw(self, scope: &PinScope<'scope, '_>) -> ExceptionThrown;
 }
 
 impl<'scope, T: IntoException<'scope>> Throwable<'scope> for T {
-    fn throw(self, scope: &mut HandleScope<'scope>) -> ExceptionThrown {
+    fn throw(self, scope: &PinScope<'scope, '_>) -> ExceptionThrown {
         let ExceptionValue(exception) = self.into_exception(scope);
         scope.throw_exception(exception);
         exception_already_thrown()
@@ -202,7 +202,7 @@ pub(super) struct JsStackTrace {
 
 impl JsStackTrace {
     /// Converts a V8 [`StackTrace`] into one independent of `'scope`.
-    pub(super) fn from_trace<'scope>(scope: &mut HandleScope<'scope>, trace: Local<'scope, StackTrace>) -> Self {
+    pub(super) fn from_trace<'scope>(scope: &PinScope<'scope, '_>, trace: Local<'scope, StackTrace>) -> Self {
         let frames = (0..trace.get_frame_count())
             .map(|index| {
                 let frame = trace.get_frame(scope, index).unwrap();
@@ -213,7 +213,7 @@ impl JsStackTrace {
     }
 
     /// Construct a backtrace from `scope`.
-    pub(super) fn from_current_stack_trace(scope: &mut HandleScope<'_>) -> ExcResult<Self> {
+    pub(super) fn from_current_stack_trace(scope: &PinScope<'_, '_>) -> ExcResult<Self> {
         let trace = StackTrace::current_stack_trace(scope, 1024).ok_or_else(exception_already_thrown)?;
         Ok(Self::from_trace(scope, trace))
     }
@@ -263,7 +263,7 @@ pub(super) struct JsStackTraceFrame {
 
 impl JsStackTraceFrame {
     /// Converts a V8 [`StackFrame`] into one independent of `'scope`.
-    fn from_frame<'scope>(scope: &mut HandleScope<'scope>, frame: Local<'scope, StackFrame>) -> Self {
+    fn from_frame<'scope>(scope: &PinScope<'scope, '_>, frame: Local<'scope, StackFrame>) -> Self {
         let script_name = frame
             .get_script_name_or_source_url(scope)
             .map(|s| s.to_rust_string_lossy(scope));
@@ -329,7 +329,7 @@ impl fmt::Display for JsStackTraceFrame {
 
 impl JsError {
     /// Turns a caught JS exception in `scope` into a [`JSError`].
-    fn from_caught(scope: &mut TryCatch<'_, HandleScope<'_>>) -> Self {
+    fn from_caught(scope: &PinnedRef<'_, TryCatch<'_, '_, HandleScope<'_>>>) -> Self {
         match scope.message() {
             Some(message) => Self {
                 trace: message
@@ -358,10 +358,10 @@ pub(super) fn log_traceback(func_type: &str, func: &str, e: &anyhow::Error) {
 
 /// Run `body` within a try-catch context and capture any JS exception thrown as a [`JsError`].
 pub(super) fn catch_exception<'scope, T>(
-    scope: &mut HandleScope<'scope>,
-    body: impl FnOnce(&mut HandleScope<'scope>) -> Result<T, ErrorOrException<ExceptionThrown>>,
+    scope: &mut PinScope<'scope, '_>,
+    body: impl FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
 ) -> Result<T, ErrorOrException<JsError>> {
-    let scope = &mut TryCatch::new(scope);
+    tc_scope!(scope, scope);
     body(scope).map_err(|e| match e {
         ErrorOrException::Err(e) => ErrorOrException::Err(e),
         ErrorOrException::Exception(_) => ErrorOrException::Exception(JsError::from_caught(scope)),
