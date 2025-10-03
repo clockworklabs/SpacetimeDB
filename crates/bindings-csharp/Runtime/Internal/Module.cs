@@ -11,7 +11,7 @@ partial class RawModuleDefV9
     // Fix it up to a different mangling scheme if it causes problems.
     private static string GetFriendlyName(Type type) =>
         type.IsGenericType
-            ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
+            ? $"{type.Name[..type.Name.IndexOf('`')]}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
             : type.Name;
 
     private void RegisterTypeName<T>(AlgebraicType.Ref typeRef)

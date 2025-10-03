@@ -129,7 +129,22 @@ public readonly struct Enum<T> : IReadWrite<T>
     /// Note: the [Type] macro rejects enums with explicitly set values (see Codegen.Tests),
     /// so this array is guaranteed to be continuous and indexed starting from 0.
     /// </summary>
-    private static readonly T[] TagToValue = Enum.GetValues(typeof(T)).Cast<T>().ToArray();
+#if NET8_0_OR_GREATER
+    private static readonly T[] TagToValue = System.Enum.GetValues<T>();
+#else
+    private static readonly T[] TagToValue = CreateTagToValue();
+
+    private static T[] CreateTagToValue()
+    {
+        var values = System.Enum.GetValues(typeof(T));
+        var result = new T[values.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            result[i] = (T)values.GetValue(i);
+        }
+        return result;
+    }
+#endif
 
     public T Read(BinaryReader reader)
     {
@@ -173,15 +188,31 @@ public readonly struct Enum<T> : IReadWrite<T>
         }
     }
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-        registrar.RegisterType<T>(
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar)
+    {
+        return registrar.RegisterType<T>(
             (_) =>
-                new AlgebraicType.Sum(
-                    Enum.GetNames(typeof(T))
-                        .Select(name => new AggregateElement(name, AlgebraicType.Unit))
-                        .ToArray()
-                )
+            {
+#if NET8_0_OR_GREATER
+                return new AlgebraicType.Sum(
+                    [
+                        .. System
+                            .Enum.GetNames<T>()
+                            .Select(name => new AggregateElement(name, AlgebraicType.Unit)),
+                    ]
+                );
+#else
+                var names = System.Enum.GetNames(typeof(T));
+                var elements = new AggregateElement[names.Length];
+                for (var i = 0; i < names.Length; i++)
+                {
+                    elements[i] = new AggregateElement(names[i], AlgebraicType.Unit);
+                }
+                return new AlgebraicType.Sum(elements);
+#endif
+            }
         );
+    }
 }
 
 public readonly struct RefOption<Inner, InnerRW> : IReadWrite<Inner?>

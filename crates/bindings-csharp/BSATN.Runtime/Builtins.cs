@@ -331,7 +331,7 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
         DateTimeOffset.UnixEpoch.AddTicks(t.MicrosecondsSinceUnixEpoch * Util.TicksPerMicrosecond);
 
     public static implicit operator Timestamp(DateTimeOffset offset) =>
-        new Timestamp(offset.Subtract(DateTimeOffset.UnixEpoch).Ticks / Util.TicksPerMicrosecond);
+        new(offset.Subtract(DateTimeOffset.UnixEpoch).Ticks / Util.TicksPerMicrosecond);
 
     // For backwards-compatibility.
     public readonly DateTimeOffset ToStd() => this;
@@ -347,7 +347,7 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public static readonly Timestamp UNIX_EPOCH = new(0);
 
     public static Timestamp FromTimeDurationSinceUnixEpoch(TimeDuration timeDuration) =>
-        new Timestamp(timeDuration.Microseconds);
+        new(timeDuration.Microseconds);
 
     public readonly TimeDuration ToTimeDurationSinceUnixEpoch() => TimeDurationSince(UNIX_EPOCH);
 
@@ -357,15 +357,15 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public readonly TimeSpan ToTimeSpanSinceUnixEpoch() => (TimeSpan)ToTimeDurationSinceUnixEpoch();
 
     public readonly TimeDuration TimeDurationSince(Timestamp earlier) =>
-        new TimeDuration(checked(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch));
+        new(checked(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch));
 
     public static Timestamp operator +(Timestamp point, TimeDuration interval) =>
-        new Timestamp(checked(point.MicrosecondsSinceUnixEpoch + interval.Microseconds));
+        new(checked(point.MicrosecondsSinceUnixEpoch + interval.Microseconds));
 
     public static Timestamp operator -(Timestamp point, TimeDuration interval) =>
-        new Timestamp(checked(point.MicrosecondsSinceUnixEpoch - interval.Microseconds));
+        new(checked(point.MicrosecondsSinceUnixEpoch - interval.Microseconds));
 
-    public int CompareTo(Timestamp that)
+    public readonly int CompareTo(Timestamp that)
     {
         return this.MicrosecondsSinceUnixEpoch.CompareTo(that.MicrosecondsSinceUnixEpoch);
     }
@@ -466,10 +466,10 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
         new(timeSpan.Ticks / Util.TicksPerMicrosecond);
 
     public static TimeDuration operator +(TimeDuration lhs, TimeDuration rhs) =>
-        new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
+        new(checked(lhs.Microseconds + rhs.Microseconds));
 
     public static TimeDuration operator -(TimeDuration lhs, TimeDuration rhs) =>
-        new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
+        new(checked(lhs.Microseconds - rhs.Microseconds));
 
     // For backwards-compatibility.
     public readonly TimeSpan ToStd() => this;
@@ -548,7 +548,7 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
     // --- auto-generated ---
     private ScheduleAt() { }
 
-    internal enum @enum : byte
+    internal enum EnumTag : byte
     {
         Interval,
         Time,
@@ -560,15 +560,15 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
 
     public readonly partial struct BSATN : IReadWrite<ScheduleAt>
     {
-        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
+        internal static readonly SpacetimeDB.BSATN.Enum<EnumTag> __enumTag = new();
         internal static readonly TimeDuration.BSATN Interval = new();
         internal static readonly Timestamp.BSATN Time = new();
 
         public ScheduleAt Read(BinaryReader reader) =>
             __enumTag.Read(reader) switch
             {
-                @enum.Interval => new Interval(Interval.Read(reader)),
-                @enum.Time => new Time(Time.Read(reader)),
+                EnumTag.Interval => new Interval(Interval.Read(reader)),
+                EnumTag.Time => new Time(Time.Read(reader)),
                 _ => throw new InvalidOperationException(
                     "Invalid tag value, this state should be unreachable."
                 ),
@@ -579,12 +579,12 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
             switch (value)
             {
                 case Interval(var inner):
-                    __enumTag.Write(writer, @enum.Interval);
+                    __enumTag.Write(writer, EnumTag.Interval);
                     Interval.Write(writer, inner);
                     break;
 
                 case Time(var inner):
-                    __enumTag.Write(writer, @enum.Time);
+                    __enumTag.Write(writer, EnumTag.Time);
                     Time.Write(writer, inner);
                     break;
             }
