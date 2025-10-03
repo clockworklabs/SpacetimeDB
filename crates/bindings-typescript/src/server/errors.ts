@@ -1,15 +1,23 @@
+import type { CheckAnyMetadata, UntypedTableDef } from './table';
+
+/**
+ * Base class for all Spacetime errors.
+ * Each subclass must define a static CODE and MESSAGE property.
+ * Instances of SpacetimeError can be created with just an error code,
+ * which will return the appropriate subclass instance.
+ */
 export class SpacetimeError {
   public readonly code: number;
   public readonly message: string;
   constructor(code: number) {
     const proto = Object.getPrototypeOf(this);
     let cls;
-    if (error_protoypes.has(proto)) {
+    if (errorProtoypes.has(proto)) {
       cls = proto.constructor;
       if (code !== cls.CODE)
         throw new TypeError(`invalid error code for ${cls.name}`);
     } else if (proto === SpacetimeError.prototype) {
-      cls = errno_to_class.get(code);
+      cls = errnoToClass.get(code);
       if (!cls) throw new RangeError(`unknown error code ${code}`);
     } else {
       throw new TypeError('cannot subclass SpacetimeError');
@@ -20,6 +28,9 @@ export class SpacetimeError {
   }
 }
 
+/**
+ * A generic error class for unknown error codes.
+ */
 export class HostCallFailure extends SpacetimeError {
   static CODE = 1;
   static MESSAGE = 'ABI called by host returned an error';
@@ -27,6 +38,10 @@ export class HostCallFailure extends SpacetimeError {
     super(HostCallFailure.CODE);
   }
 }
+
+/**
+ * Error indicating that an ABI call was made outside of a transaction.
+ */
 export class NotInTransaction extends SpacetimeError {
   static CODE = 2;
   static MESSAGE = 'ABI call can only be made while in a transaction';
@@ -34,6 +49,11 @@ export class NotInTransaction extends SpacetimeError {
     super(NotInTransaction.CODE);
   }
 }
+
+/**
+ * Error indicating that BSATN decoding failed.
+ * This typically means that the data could not be decoded to the expected type.
+ */
 export class BsatnDecodeError extends SpacetimeError {
   static CODE = 3;
   static MESSAGE = "Couldn't decode the BSATN to the expected type";
@@ -41,6 +61,10 @@ export class BsatnDecodeError extends SpacetimeError {
     super(BsatnDecodeError.CODE);
   }
 }
+
+/**
+ * Error indicating that a specified table does not exist.
+ */
 export class NoSuchTable extends SpacetimeError {
   static CODE = 4;
   static MESSAGE = 'No such table';
@@ -48,6 +72,10 @@ export class NoSuchTable extends SpacetimeError {
     super(NoSuchTable.CODE);
   }
 }
+
+/**
+ * Error indicating that a specified index does not exist.
+ */
 export class NoSuchIndex extends SpacetimeError {
   static CODE = 5;
   static MESSAGE = 'No such index';
@@ -55,6 +83,10 @@ export class NoSuchIndex extends SpacetimeError {
     super(NoSuchIndex.CODE);
   }
 }
+
+/**
+ * Error indicating that a specified row iterator is not valid.
+ */
 export class NoSuchIter extends SpacetimeError {
   static CODE = 6;
   static MESSAGE = 'The provided row iterator is not valid';
@@ -62,6 +94,10 @@ export class NoSuchIter extends SpacetimeError {
     super(NoSuchIter.CODE);
   }
 }
+
+/**
+ * Error indicating that a specified console timer does not exist.
+ */
 export class NoSuchConsoleTimer extends SpacetimeError {
   static CODE = 7;
   static MESSAGE = 'The provided console timer does not exist';
@@ -69,6 +105,10 @@ export class NoSuchConsoleTimer extends SpacetimeError {
     super(NoSuchConsoleTimer.CODE);
   }
 }
+
+/**
+ * Error indicating that a specified bytes source or sink is not valid.
+ */
 export class NoSuchBytes extends SpacetimeError {
   static CODE = 8;
   static MESSAGE = 'The provided bytes source or sink is not valid';
@@ -76,6 +116,10 @@ export class NoSuchBytes extends SpacetimeError {
     super(NoSuchBytes.CODE);
   }
 }
+
+/**
+ * Error indicating that a provided sink has no more space left.
+ */
 export class NoSpace extends SpacetimeError {
   static CODE = 9;
   static MESSAGE = 'The provided sink has no more space left';
@@ -83,6 +127,10 @@ export class NoSpace extends SpacetimeError {
     super(NoSpace.CODE);
   }
 }
+
+/**
+ * Error indicating that there is no more space in the database.
+ */
 export class BufferTooSmall extends SpacetimeError {
   static CODE = 11;
   static MESSAGE = 'The provided buffer is not large enough to store the data';
@@ -90,6 +138,10 @@ export class BufferTooSmall extends SpacetimeError {
     super(BufferTooSmall.CODE);
   }
 }
+
+/**
+ * Error indicating that a value with a given unique identifier already exists.
+ */
 export class UniqueAlreadyExists extends SpacetimeError {
   static CODE = 12;
   static MESSAGE = 'Value with given unique identifier already exists';
@@ -97,6 +149,10 @@ export class UniqueAlreadyExists extends SpacetimeError {
     super(UniqueAlreadyExists.CODE);
   }
 }
+
+/**
+ * Error indicating that the specified delay in scheduling a row was too long.
+ */
 export class ScheduleAtDelayTooLong extends SpacetimeError {
   static CODE = 13;
   static MESSAGE = 'Specified delay in scheduling row was too long';
@@ -104,6 +160,10 @@ export class ScheduleAtDelayTooLong extends SpacetimeError {
     super(ScheduleAtDelayTooLong.CODE);
   }
 }
+
+/**
+ * Error indicating that an index was not unique when it was expected to be.
+ */
 export class IndexNotUnique extends SpacetimeError {
   static CODE = 14;
   static MESSAGE = 'The index was not unique';
@@ -111,6 +171,10 @@ export class IndexNotUnique extends SpacetimeError {
     super(IndexNotUnique.CODE);
   }
 }
+
+/**
+ * Error indicating that an index was not unique when it was expected to be.
+ */
 export class NoSuchRow extends SpacetimeError {
   static CODE = 15;
   static MESSAGE = 'The row was not found, e.g., in an update call';
@@ -118,6 +182,10 @@ export class NoSuchRow extends SpacetimeError {
     super(NoSuchRow.CODE);
   }
 }
+
+/**
+ * Error indicating that an auto-increment sequence has overflowed.
+ */
 export class AutoIncOverflow extends SpacetimeError {
   static CODE = 16;
   static MESSAGE = 'The auto-increment sequence overflowed';
@@ -126,7 +194,10 @@ export class AutoIncOverflow extends SpacetimeError {
   }
 }
 
-const error_subclasses = [
+/**
+ * List of all SpacetimeError subclasses.
+ */
+const errorSubclasses = [
   HostCallFailure,
   NotInTransaction,
   BsatnDecodeError,
@@ -143,8 +214,39 @@ const error_subclasses = [
   NoSuchRow,
 ];
 
-const error_protoypes = new Set(error_subclasses.map(cls => cls.prototype));
+/**
+ * Set of prototypes of all SpacetimeError subclasses for quick lookup.
+ */
+const errorProtoypes = new Set(errorSubclasses.map(cls => cls.prototype));
 
-const errno_to_class = new Map(
-  error_subclasses.map(cls => [cls.CODE as number, cls])
+/**
+ * Map from error codes to their corresponding SpacetimeError subclass.
+ */
+const errnoToClass = new Map(
+  errorSubclasses.map(cls => [cls.CODE as number, cls])
 );
+
+/**
+ * A type representing errors that can occur during an insert operation.
+ * - `UniqueAlreadyExists`: Error indicating that a unique constraint was violated during the insert.
+ * - `AutoIncOverflow`: Error indicating that an auto-increment field has overflowed its maximum value.
+ * @template TableDef - The table definition used to determine which errors are applicable.
+ * @example
+ * ```typescript
+ * // Example of handling insert errors
+ * const result = table.tryInsert({ id: 1, name: 'Alice' });
+ * if (!result.ok) {
+ *  if (result.err instanceof UniqueAlreadyExists) {
+ *   console.error('Unique constraint violated:', result.err.message);
+ * } else if (result.err instanceof AutoIncOverflow) {
+ *  console.error('Auto-increment overflow:', result.err.message);
+ * }
+ * ```
+ */
+export type TryInsertError<TableDef extends UntypedTableDef> =
+  | CheckAnyMetadata<
+      TableDef,
+      { isUnique: true } | { isPrimaryKey: true },
+      UniqueAlreadyExists
+    >
+  | CheckAnyMetadata<TableDef, { isAutoIncrement: true }, AutoIncOverflow>;

@@ -10,24 +10,24 @@ import { Identity } from '../lib/identity';
 import { Timestamp } from '../lib/timestamp';
 import { BinaryReader, BinaryWriter } from '../sdk';
 import { AutoIncOverflow, SpacetimeError, UniqueAlreadyExists } from './errors';
+import { Range, type Bound } from './range';
 import {
-  Range,
-  type Bound,
-  type DbView,
   type Index,
   type IndexVal,
+  type UniqueIndex,
   type RangedIndex,
-  type ReducerCtx,
+} from './indexes';
+import {
   type RowObj,
   type RowType,
   type Table,
   type TableMethods,
-  type UniqueIndex,
-} from './schema';
+} from './table';
+import { type DbView, type ReducerCtx } from './reducers';
 
-/*****************************************************************
- * the run‑time catalogue that we are filling
- *****************************************************************/
+/**
+ * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
+ */
 export const MODULE_DEF: RawModuleDefV9 = {
   typespace: { types: [] },
   tables: [],
@@ -37,9 +37,14 @@ export const MODULE_DEF: RawModuleDefV9 = {
   rowLevelSecurity: [],
 };
 
-/*****************************************************************
+/**
  * internal: pushReducer() helper used by reducer() and lifecycle wrappers
- *****************************************************************/
+ *
+ * @param name - The name of the reducer.
+ * @param params - The parameters for the reducer.
+ * @param fn - The reducer function.
+ * @param lifecycle - Optional lifecycle hooks for the reducer.
+ */
 export function pushReducer(
   name: string,
   params: RowObj,
@@ -576,7 +581,9 @@ const console_level_debug = 3;
 const console_level_trace = 4;
 const console_level_panic = 101;
 
-const console = {
+const timerMap = new Map<string, u32>();
+
+let console: Console = {
   __proto__: {},
   [Symbol.toStringTag]: 'console',
   assert: (condition = false, ...data: any[]) => {
@@ -616,9 +623,31 @@ const console = {
   groupCollapsed: (...data: any[]) => {},
   groupEnd: () => {},
   // Timing
-  time: (label = 'default') => {},
-  timeLog: (label = 'default', ...data: any[]) => {},
-  timeEnd: (label = 'default') => {},
-};
-// @ts-ignore
+  time: (label = 'default') => {
+    if (timerMap.has(label)) {
+      sys.console_log(console_level_warn, `Timer '${label}' already exists.`);
+      return;
+    }
+    timerMap.set(label, sys.console_timer_start(label));
+  },
+  timeLog: (label = 'default', ...data: any[]) => {
+    sys.console_log(console_level_info, fmtLog(label, ...data));
+  },
+  timeEnd: (label = 'default') => {
+    const spanId = timerMap.get(label);
+    if (spanId === undefined) {
+      sys.console_log(console_level_warn, `Timer '${label}' does not exist.`);
+      return;
+    }
+    sys.console_timer_end(spanId);
+    timerMap.delete(label);
+  },
+  // Additional console methods to satisfy the Console interface
+  timeStamp: () => {},
+  profile: () => {},
+  profileEnd: () => {},
+} as any;
+
+(console as any).Console = console;
+
 globalThis.console = console;
