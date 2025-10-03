@@ -29,6 +29,15 @@
   --clockworklabs-strong-color: #ced3e0;
 }
 
+:root .alert--info {
+  --ifm-alert-background-color: #003544;
+  --ifm-alert-foreground-color: #d0f4ff;
+  --ifm-alert-border-color: #00b8d9;
+  --ifm-alert-background-color-highlight: var(
+    --clockworklabs-code-background-color
+  );
+}
+
 :root .alert--warning {
   --ifm-alert-background-color: #4d3800;
   --ifm-alert-foreground-color: #fff8e6;
@@ -42,6 +51,15 @@
   --ifm-alert-background-color: #25353a;
   --ifm-alert-foreground-color: #b6c0cf;
   --ifm-alert-border-color: #3a565e;
+  --ifm-alert-background-color-highlight: var(
+    --clockworklabs-code-background-color
+  );
+}
+
+:root .alert--danger {
+  --ifm-alert-background-color: #4b1113;
+  --ifm-alert-foreground-color: #b6c0cf;
+  --ifm-alert-border-color: #e13238;
   --ifm-alert-background-color-highlight: var(
     --clockworklabs-code-background-color
   );
