@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use std::future::Future;
+use std::num::NonZeroU32;
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
@@ -13,6 +14,7 @@ use crate::host::wasm_common::{
 };
 use crate::host::AbiCall;
 use anyhow::Context as _;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{errno, ColId};
 use wasmtime::{AsContext, Caller, StoreContextMut};
@@ -23,6 +25,46 @@ use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use instrumentation::noop as span;
 #[cfg(feature = "spacetimedb-wasm-instance-env-times")]
 use instrumentation::op as span;
+
+/// A stream of bytes which the WASM module can read from
+/// using [`WasmInstanceEnv::bytes_source_read`].
+///
+/// These are managed in the `bytes_sources` of [`WasmInstanceEnv`],
+/// where each one is paired with an integer ID.
+/// This is basically a massively-simplified version of Unix read files and file descriptors.
+///
+/// Unlike Unix read files, we implicitly close `BytesSource`s once they are read to the end.
+/// This is sensible because we don't provide a seek operation,
+/// so the `BytesSource` becomes useless once read to the end.
+struct BytesSource {
+    /// The actual bytes which will be returned by calls to `byte_source_read`.
+    ///
+    /// When this becomes empty, this `ByteSource` is expended and should be discarded.
+    bytes: bytes::Bytes,
+}
+
+/// Identifier for a [`BytesSource`] stored in the `bytes_sources` of a [`WasmInstanceEnv`].
+///
+/// The special sentinel [`Self::INVALID`] (zero) is used for a never-readable [`BytesSource`].
+/// We pass this to guests for a [`BytesSource`] with a length of zero
+/// so that they can avoid host calls.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(super) struct BytesSourceId(pub(super) u32);
+
+// `nohash_hasher` recommends impling `Hash` explicitly rather than using the derive macro,
+// as the derive macro is not technically guaranteed to only call `hasher.write_{int}` for an integer newtype,
+// even though any other behavior would be deranged.
+impl std::hash::Hash for BytesSourceId {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        hasher.write_u32(self.0)
+    }
+}
+
+impl nohash_hasher::IsEnabled for BytesSourceId {}
+
+impl BytesSourceId {
+    const INVALID: Self = Self(0);
+}
 
 /// A `WasmInstanceEnv` provides the connection between a module
 /// and the database.
@@ -48,9 +90,19 @@ pub(super) struct WasmInstanceEnv {
     /// always be `Some`.
     mem: Option<Mem>,
 
-    /// The arguments being passed to a reducer or procedure
-    /// that it can read via [`Self::bytes_source_read`].
-    funcall_args: Option<(bytes::Bytes, usize)>,
+    /// `File`-like [`BytesSource`]s which guest code can read via [`Self::bytes_source_read`].
+    ///
+    /// These are essentially simplified versions of Unix read files,
+    /// with [`BytesSourceId`] being file descriptors.
+    ///
+    /// Unlike Unix files, we implicitly close a [`BytesSource`] when it is read to the end.
+    /// This is because we don't provide a seek operation and a [`BytesSource`] never grows after initialization.
+    bytes_sources: IntMap<BytesSourceId, BytesSource>,
+
+    /// Counter as a source of [`BytesSourceId`] values.
+    ///
+    /// Recall that zero is [`BytesSourceId::INVALID`], so we have to start at 1.
+    next_bytes_source_id: NonZeroU32,
 
     /// The standard sink used for [`Self::bytes_sink_write`].
     standard_bytes_sink: Option<Vec<u8>>,
@@ -77,7 +129,6 @@ pub(super) struct WasmInstanceEnv {
     chunk_pool: ChunkPool,
 }
 
-const FUNCALL_ARGS_SOURCE: u32 = 1;
 const STANDARD_BYTES_SINK: u32 = 1;
 
 type WasmResult<T> = Result<T, WasmError>;
@@ -92,7 +143,8 @@ impl WasmInstanceEnv {
         Self {
             instance_env,
             mem: None,
-            funcall_args: None,
+            bytes_sources: IntMap::default(),
+            next_bytes_source_id: NonZeroU32::new(1).unwrap(),
             standard_bytes_sink: None,
             iters: Default::default(),
             timing_spans: Default::default(),
@@ -100,6 +152,46 @@ impl WasmInstanceEnv {
             call_times: CallTimes::new(),
             funcall_name: String::from("<initializing>"),
             chunk_pool: <_>::default(),
+        }
+    }
+
+    fn alloc_bytes_source_id(&mut self) -> RtResult<BytesSourceId> {
+        let id = self.next_bytes_source_id;
+        self.next_bytes_source_id = id
+            .checked_add(1)
+            .context("Allocating next `BytesSourceId` overflowed `u32`")?;
+        Ok(BytesSourceId(id.into()))
+    }
+
+    /// Binds `bytes` to the environment and assigns it an ID.
+    ///
+    /// If `bytes` is empty, `BytesSourceId::INVALID` is returned.
+    fn create_bytes_source(&mut self, bytes: bytes::Bytes) -> RtResult<BytesSourceId> {
+        // Pass an invalid source when the bytes were empty.
+        // This allows the module to avoid allocating and make a system call in those cases.
+        if bytes.is_empty() {
+            Ok(BytesSourceId::INVALID)
+        } else if bytes.len() > u32::MAX as usize {
+            // There's no inherent reason we need to error here,
+            // other than that it makes it impossible to report the length in `bytes_source_remaining_length`
+            // and that all of our usage of `BytesSource`s as of writing (pgoldman 2025-09-26)
+            // are to immediately slurp the whole thing into a buffer in guest memory,
+            // which can't hold buffers this big because it's WASM32.
+            Err(anyhow::anyhow!(
+                "`create_bytes_source`: `Bytes` has length {}, which is greater than `u32::MAX` {}",
+                bytes.len(),
+                u32::MAX,
+            ))
+        } else {
+            let id = self.alloc_bytes_source_id()?;
+            self.bytes_sources.insert(id, BytesSource { bytes });
+            Ok(id)
+        }
+    }
+
+    fn free_bytes_source(&mut self, id: BytesSourceId) {
+        if self.bytes_sources.remove(&id).is_none() {
+            log::warn!("`free_bytes_source` on non-existent source {id:?}");
         }
     }
 
@@ -141,20 +233,13 @@ impl WasmInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    pub fn start_funcall(&mut self, name: &str, args: bytes::Bytes, ts: Timestamp) -> (u32, u32) {
+    pub fn start_funcall(&mut self, name: &str, args: bytes::Bytes, ts: Timestamp) -> (BytesSourceId, u32) {
         // Create the output sink.
         // Reducers which fail will write their error message here.
         // Procedures will write their result here.
         let errors = self.setup_standard_bytes_sink();
 
-        // Pass an invalid source when the reducer args were empty.
-        // This allows the module to avoid allocating and make a system call in those cases.
-        self.funcall_args = (!args.is_empty()).then_some((args, 0));
-        let args = if self.funcall_args.is_some() {
-            FUNCALL_ARGS_SOURCE
-        } else {
-            0
-        };
+        let args = self.create_bytes_source(args).unwrap();
 
         self.funcall_start = Instant::now();
         name.clone_into(&mut self.funcall_name);
@@ -201,7 +286,11 @@ impl WasmInstanceEnv {
             wasm_instance_env_call_times,
         };
 
-        self.funcall_args = None;
+        // Drop any outstanding bytes sources and reset the ID counter,
+        // so that we don't leak either the IDs or the buffers themselves.
+        self.bytes_sources = IntMap::default();
+        self.next_bytes_source_id = NonZeroU32::new(1).unwrap();
+
         (timings, self.take_standard_bytes_sink())
     }
 
@@ -1036,9 +1125,10 @@ impl WasmInstanceEnv {
         Self::cvt_custom(caller, AbiCall::BytesSourceRead, |caller| {
             let (mem, env) = Self::mem_env(caller);
 
+            let source = BytesSourceId(source);
+
             // Retrieve the reducer args if available and requested, or error.
-            let Some((funcall_args, cursor)) = env.funcall_args.as_mut().filter(|_| source == FUNCALL_ARGS_SOURCE)
-            else {
+            let Some(bytes_source) = env.bytes_sources.get_mut(&source) else {
                 return Ok(errno::NO_SUCH_BYTES.get().into());
             };
 
@@ -1050,21 +1140,68 @@ impl WasmInstanceEnv {
 
             // Derive the portion that we can read and what remains,
             // based on what is left to read and the capacity.
-            let left_to_read = &funcall_args[*cursor..];
-            let can_read_len = buffer_len.min(left_to_read.len());
-            let (can_read, remainder) = left_to_read.split_at(can_read_len);
+            let can_read_len = buffer_len.min(bytes_source.bytes.len());
+            let can_read = bytes_source.bytes.split_to(can_read_len);
             // Copy to the `buffer` and write written bytes count to `buffer_len`.
-            buffer[..can_read_len].copy_from_slice(can_read);
+            buffer[..can_read_len].copy_from_slice(&can_read);
             (can_read_len as u32).write_to(mem, buffer_len_ptr)?;
 
             // Destroy the source if exhausted, or advance `cursor`.
-            if remainder.is_empty() {
-                env.funcall_args = None;
+            if bytes_source.bytes.is_empty() {
+                env.free_bytes_source(source);
                 Ok(-1i32)
             } else {
-                *cursor += can_read_len;
                 Ok(0)
             }
+        })
+    }
+
+    /// Read the remaining length of a [`BytesSource`] and write it to `out`.
+    ///
+    /// Note that the host automatically frees byte sources which are exhausted.
+    /// Such sources are invalid, and this method will return an error when passed one.
+    /// Callers of [`Self::bytes_source_read`] should check for a return of -1
+    /// before invoking this function on the same `source`.
+    ///
+    /// Also note that the special [`BytesSourceId::INVALID`] (zero) is always invalid.
+    /// Callers should check for that value before invoking this function.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `out` is NULL or `out` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NO_SUCH_BYTES`, when `source` is not a valid bytes source.
+    ///
+    /// If this function returns an error, `out` is not written.
+    pub fn bytes_source_remaining_length(caller: Caller<'_, Self>, source: u32, out: WasmPtr<u32>) -> RtResult<i32> {
+        Self::cvt_custom(caller, AbiCall::BytesSourceRemainingLength, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            let Some(bytes_source) = env.bytes_sources.get(&BytesSourceId(source)) else {
+                return Ok(errno::NO_SUCH_BYTES.get().into());
+            };
+
+            let remaining: u32 = bytes_source
+                .bytes
+                .len()
+                .try_into()
+                // TODO: Change this into an `errno::BYTES_SOURCE_LENGTH_UNKNOWN` rather than a trap,
+                // so that we can support very large `BytesSource`s, streams, and other file-like things that aren't just `Bytes`.
+                // This is not currently (pgoldman 2025-09-26) a useful thing to do,
+                // as all of our uses of `BytesSource` are to slurp the whole source into a single buffer in guest memory,
+                // `File::read_to_end`-style, and we don't have any use for large or streaming `BytesSource`s.
+                .context("Bytes object in `BytesSource` had length greater than range of u32")?;
+
+            u32::write_to(remaining, mem, out)
+                .context("Failed to write output from `bytes_source_remaining_length`")?;
+
+            Ok(0)
         })
     }
 

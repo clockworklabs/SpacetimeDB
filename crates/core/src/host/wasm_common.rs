@@ -397,6 +397,8 @@ macro_rules! abi_funcs {
 
             // unstable:
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
+
+            "spacetime_10.1"::bytes_source_remaining_length,
         }
         $link_async! {
             "spacetime_10.1"::procedure_sleep_until,

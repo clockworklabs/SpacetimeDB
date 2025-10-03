@@ -24,6 +24,10 @@ use tokio::sync::watch;
 /// This handle is cheaply cloneable, but at least one handle must be kept alive.
 /// If all instances of it are dropped, the per-thread [`runtime::Runtime`]s will be dropped,
 /// and so will stop executing jobs for databases.
+///
+/// Dropping the last handle on a `JobCores` from an `async` context will panic,
+/// as Tokio doesn't like to shut down nested runtimes.
+/// To avoid this, keep a handle on the `JobCores` alive outside of the `async` runner.
 #[derive(Clone)]
 pub struct JobCores {
     inner: JobCoresInner,

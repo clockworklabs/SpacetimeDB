@@ -626,6 +626,7 @@ pub struct WeakModuleHost {
 pub enum UpdateDatabaseResult {
     NoUpdateNeeded,
     UpdatePerformed,
+    UpdatePerformedWithClientDisconnect,
     AutoMigrateError(ErrorStream<AutoMigrateError>),
     ErrorExecutingMigration(anyhow::Error),
 }
@@ -634,7 +635,9 @@ impl UpdateDatabaseResult {
     pub fn was_successful(&self) -> bool {
         matches!(
             self,
-            UpdateDatabaseResult::UpdatePerformed | UpdateDatabaseResult::NoUpdateNeeded
+            UpdateDatabaseResult::UpdatePerformed
+                | UpdateDatabaseResult::NoUpdateNeeded
+                | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect
         )
     }
 }
@@ -979,32 +982,49 @@ impl ModuleHost {
         .map_err(ReducerCallError::from)?
     }
 
+    /// Invokes the `client_disconnected` reducer, if present,
+    /// then deletes the client’s rows from `st_client` and `st_connection_credentials`.
+    /// If the reducer fails, the rows are still deleted.
+    /// Calling this on an already-disconnected client is a no-op.
     pub fn call_identity_disconnected_inner(
         &self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
         inst: &mut Instance,
     ) -> Result<(), ReducerCallError> {
-        let me = self.clone();
-        let reducer_lookup = me.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
+        let reducer_lookup = self.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
+        let reducer_name = reducer_lookup
+            .as_ref()
+            .map(|(_, def)| &*def.name)
+            .unwrap_or("__identity_disconnected__");
 
-        // A fallback transaction that deletes the client from `st_client`.
-        let fallback = || {
-            let reducer_name = reducer_lookup
-                .as_ref()
-                .map(|(_, def)| &*def.name)
-                .unwrap_or("__identity_disconnected__");
+        let is_client_exist = |mut_tx: &MutTxId| mut_tx.st_client_row(caller_identity, caller_connection_id).is_some();
 
-            let workload = Workload::Reducer(ReducerContext {
+        let workload = || {
+            Workload::Reducer(ReducerContext {
                 name: reducer_name.to_owned(),
                 caller_identity,
                 caller_connection_id,
                 timestamp: Timestamp::now(),
                 arg_bsatn: Bytes::new(),
-            });
-            let stdb = me.module.replica_ctx().relational_db.clone();
+            })
+        };
+
+        let me = self.clone();
+        let stdb = me.module.replica_ctx().relational_db.clone();
+
+        // A fallback transaction that deletes the client from `st_client`.
+        let fallback = || {
             let database_identity = me.info.database_identity;
-            stdb.with_auto_commit(workload, |mut_tx| {
+            stdb.with_auto_commit(workload(), |mut_tx| {
+                if !is_client_exist(mut_tx) {
+                    // The client is already gone. Nothing to do.
+                    log::debug!(
+                        "`call_identity_disconnected`: no row in `st_client` for ({caller_identity}, {caller_connection_id}), nothing to do",
+                    );
+                    return Ok(());
+                }
+
                 mut_tx
                     .delete_st_client(caller_identity, caller_connection_id, database_identity)
                     .map_err(DBError::from)
@@ -1022,11 +1042,22 @@ impl ModuleHost {
         };
 
         if let Some((reducer_id, reducer_def)) = reducer_lookup {
+            let stdb = me.module.replica_ctx().relational_db.clone();
+            let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload());
+
+            if !is_client_exist(&mut_tx) {
+                // The client is already gone. Nothing to do.
+                log::debug!(
+                    "`call_identity_disconnected`: no row in `st_client` for ({caller_identity}, {caller_connection_id}), nothing to do",
+                );
+                return Ok(());
+            }
+
             // The module defined a lifecycle reducer to handle disconnects. Call it.
             // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
             // that `st_client` is updated appropriately.
             let result = me.call_reducer_inner_with_inst(
-                None,
+                Some(mut_tx),
                 caller_identity,
                 Some(caller_connection_id),
                 None,

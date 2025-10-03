@@ -68,6 +68,7 @@ const nav = {
     page('Unreal Reference', 'unreal/reference', 'unreal/reference.md'),
     section('SQL'),
     page('SQL Reference', 'sql', 'sql/index.md'),
+    page('PostgreSQL wire protocol (PGWire) ', 'sql/pg-wire', 'sql/pg-wire.md'),
     section('Subscriptions'),
     page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
     page(
@@ -87,6 +88,28 @@ const nav = {
       'Reject Client Connections',
       'how-to/reject-client-connections',
       'how-to/reject-client-connections.md'
+    ),
+    section('SpacetimeAuth'),
+    page('Overview', 'spacetimeauth', 'spacetimeauth/index.md'),
+    page(
+      'Creating a project',
+      'spacetimeauth/create-project',
+      'spacetimeauth/create-project.md'
+    ),
+    page(
+      'Configuring a project',
+      'spacetimeauth/configure-project',
+      'spacetimeauth/configure-project.md'
+    ),
+    page(
+      'Testing authentication',
+      'spacetimeauth/testing-authentication',
+      'spacetimeauth/testing-authentication.md'
+    ),
+    page(
+      'React',
+      'spacetimeauth/react-integration',
+      'spacetimeauth/react-integration.md'
     ),
     section('HTTP API'),
     page('Authorization', 'http/authorization', 'http/authorization.md'),

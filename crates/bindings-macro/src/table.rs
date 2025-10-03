@@ -713,7 +713,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 spacetimedb::table::ColumnDefault {
                     col_id: #col_id,
                     value: #val.serialize(spacetimedb::sats::algebraic_value::ser::ValueSerializer).expect("default value serialization failed"),
-                }
+                },
             })
         } else {
             None

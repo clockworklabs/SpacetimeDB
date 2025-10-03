@@ -1034,7 +1034,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::{
         begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TempReplicaDir, TestDB,
     };
-    use crate::db::relational_db::{RelationalDB, Txdata};
+    use crate::db::relational_db::{Persistence, RelationalDB, Txdata};
     use crate::error::DBError;
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::messages::websocket as ws;
@@ -1169,8 +1169,11 @@ mod tests {
         let db = TestDB::open_db(
             &dir,
             EmptyHistory::new(),
-            Some((durability.clone(), Arc::new(|| Ok(0)))),
-            None,
+            Some(Persistence {
+                durability: durability.clone(),
+                disk_size: Arc::new(|| Ok(0)),
+                snapshots: None,
+            }),
             None,
             0,
         )?;

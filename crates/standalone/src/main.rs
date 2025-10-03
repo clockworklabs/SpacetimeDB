@@ -77,5 +77,12 @@ fn main() -> anyhow::Result<()> {
     let rt = builder.build().unwrap();
     cores.rayon.configure(rt.handle());
     let database_cores = cores.databases.make_database_runners(rt.handle());
-    rt.block_on(async_main(database_cores))
+
+    // Keep a handle on the `database_cores` alive outside of `async_main`
+    // and explicitly drop it to avoid dropping it from an `async` context -
+    // Tokio gets angry when you drop a runtime within another runtime.
+    let res = rt.block_on(async_main(database_cores.clone()));
+    drop(database_cores);
+
+    res
 }

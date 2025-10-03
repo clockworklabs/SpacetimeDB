@@ -287,6 +287,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
+
         let (args_source, errors_sink) = store.data_mut().start_funcall(op.name, args_bytes, op.timestamp);
 
         let call_result = call_sync_typed_func(
@@ -301,7 +302,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 conn_id_0,
                 conn_id_1,
                 op.timestamp.to_micros_since_unix_epoch() as u64,
-                args_source,
+                args_source.0,
                 errors_sink,
             ),
         );
@@ -371,7 +372,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                     conn_id_0,
                     conn_id_1,
                     op.timestamp.to_micros_since_unix_epoch() as u64,
-                    args_source,
+                    args_source.0,
                     result_sink,
                 ),
             )
