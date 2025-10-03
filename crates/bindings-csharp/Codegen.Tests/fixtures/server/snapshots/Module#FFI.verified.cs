@@ -1092,6 +1092,8 @@ static class ModuleRegistration
             (identity, connectionId, random, time) =>
                 new SpacetimeDB.ReducerContext(identity, connectionId, random, time)
         );
+        var __memoryStream = new MemoryStream();
+        var __writer = new BinaryWriter(__memoryStream);
 
         SpacetimeDB.Internal.Module.RegisterReducer<Init>();
         SpacetimeDB.Internal.Module.RegisterReducer<InsertData>();

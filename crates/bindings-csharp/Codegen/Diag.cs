@@ -150,4 +150,29 @@ internal static class ErrorDescriptor
                 $"Field {field.Name} is marked as [ClientVisibilityFilter] but it is not public static readonly",
             field => field
         );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> IncompatibleDefaultAttributesCombination =
+        new(
+            group,
+            "Invalid Combination: AutoInc, Unique or PrimaryKey cannot have a Default value",
+            field =>
+                $"Field {field.Name} contains a default value and has a AutoInc, Unique or PrimaryKey attributes, which is not allowed.",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> InvalidDefaultValueType =
+        new(
+            group,
+            "Invalid Default Value Type",
+            field => $"Default value for field {field.Name} cannot be converted to provided type",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> InvalidDefaultValueFormat =
+        new(
+            group,
+            "Invalid Default Value Format",
+            field => $"Default value for field {field.Name} has invalid format for provided type ",
+            field => field
+        );
 }
