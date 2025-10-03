@@ -514,7 +514,7 @@ class TableIterator implements IterableIterator<any, undefined> {
   }
   next(): IteratorResult<any, undefined> {
     while (true) {
-      if (this.#reader.remaining) {
+      if (this.#reader.remaining > 0) {
         const value = AlgebraicType.deserializeValue(this.#reader, this.#ty);
         return { value };
       }
