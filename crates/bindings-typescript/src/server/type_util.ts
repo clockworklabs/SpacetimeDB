@@ -10,6 +10,12 @@ export type Set<T, F extends string, V> = Prettify<
   Omit<T, F> & { [K in F]: V }
 >;
 
+/**
+ * Sets a field in an object
+ * @param x The original object
+ * @param t The object containing the field to set
+ * @returns A new object with the field set
+ */
 export function set<T, F extends string, V>(
   x: T,
   t: { [k in F]: V }
@@ -17,15 +23,20 @@ export function set<T, F extends string, V>(
   return { ...x, ...t };
 }
 
-type Equals<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
-    ? true
-    : false;
+/**
+ * Helper to extract the value types from an object type
+ */
+export type Values<T> = T[keyof T];
 
-export type DifferenceFromDefault<T, D> = Prettify<{
-  [K in keyof T as K extends keyof D
-    ? Equals<T[K], D[K]> extends true
-      ? never
-      : K
-    : K]: T[K];
-}>;
+/**
+ * A Result type representing either a success or an error.
+ * - `ok: true` with `val`: Indicates a successful operation with the resulting value.
+ * - `ok: false` with `err`: Indicates a failed operation with the associated error.
+ */
+// TODO: Should we use the same `{ tag: 'Ok', value: T } | { tag: 'Err', value: E }` style as we have for other sum types?
+export type Result<T, E> = { ok: true; val: T } | { ok: false; err: E };
+
+/**
+ * A helper type to collapse a tuple into a single type if it has only one element.
+ */
+export type CollapseTuple<A extends any[]> = A extends [infer T] ? T : A;
