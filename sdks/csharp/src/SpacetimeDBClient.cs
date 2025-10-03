@@ -475,10 +475,17 @@ namespace SpacetimeDB
             {
                 webSocket.Close();
             }
-            else
+#if UNITY_WEBGL && !UNITY_EDITOR
+                else if (webSocket.IsConnecting)
             {
                 webSocket.Abort(); // forceful during connecting
             }
+#else
+            else if (webSocket.IsConnecting || webSocket.IsNoneState)
+            {
+                webSocket.Abort(); // forceful during connecting
+            }
+#endif
 
             _parseCancellationTokenSource.Cancel();
         }

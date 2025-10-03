@@ -61,8 +61,11 @@ namespace SpacetimeDB
         private bool _isConnected = false;
         private bool _isConnecting = false;
         public bool IsConnected => _isConnected;
+        public bool IsConnecting => _isConnecting;
 #else 
         public bool IsConnected { get { return Ws != null && Ws.State == WebSocketState.Open; } }
+        public bool IsConnecting { get { return Ws != null && Ws.State == WebSocketState.Connecting; } }
+        public bool IsNoneState { get { return Ws != null && Ws.State == WebSocketState.None; } }
 #endif
 
 #if UNITY_WEBGL && !UNITY_EDITOR
