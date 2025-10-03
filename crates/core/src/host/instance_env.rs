@@ -1,5 +1,5 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
-use crate::database_logger::{BacktraceProvider, LogLevel, Record};
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::wasm_common::TimingSpan;
@@ -191,9 +191,22 @@ impl InstanceEnv {
     }
 
     /// End a console timer by logging the span at INFO level.
-    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>, bt: &dyn BacktraceProvider) {
+    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
         let elapsed = span.start.elapsed();
         let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+
+        /// A backtrace provider that provides nothing.
+        struct Noop;
+        impl BacktraceProvider for Noop {
+            fn capture(&self) -> Box<dyn ModuleBacktrace> {
+                Box::new(Noop)
+            }
+        }
+        impl ModuleBacktrace for Noop {
+            fn frames(&self) -> Vec<BacktraceFrame<'_>> {
+                Vec::new()
+            }
+        }
 
         let record = Record {
             ts: chrono::Utc::now(),
@@ -203,7 +216,7 @@ impl InstanceEnv {
             function,
             message: &message,
         };
-        self.console_log(LogLevel::Info, &record, bt);
+        self.console_log(LogLevel::Info, &record, &Noop);
     }
 
     /// Project `cols` in `row_ref` encoded in BSATN to `buffer`
