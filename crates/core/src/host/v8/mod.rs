@@ -97,10 +97,6 @@ impl ModuleRuntime for V8RuntimeInner {
             mcc.program.hash,
         );
 
-        if true {
-            return Err::<JsModule, _>(anyhow::anyhow!("v8_todo"));
-        }
-
         // TODO(v8): determine min required ABI by module and check that it's supported?
 
         // TODO(v8): validate function signatures like in WASM? Is that possible with V8?
