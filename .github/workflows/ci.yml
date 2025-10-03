@@ -57,6 +57,8 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
 
           $env:RUSTFLAGS='-C link-arg=/VERBOSE:LIB -C link-arg=/INCREMENTAL:NO -C link-arg=/DEBUG:FASTLINK'
+          # $env:RUSTFLAGS='-Clinker=lld-link -C debuginfo=1 -C link-arg=/DEBUG:FULL' + " -C link-arg=/PDB:`"$pdb`" -C link-arg=/PDBSTRIPPED:`"$pdb.stripped`""
+          $env:RUSTFLAGS='-C link-arg=/INCREMENTAL:NO -C debuginfo=1 -C link-arg=/DEBUG:FULL'
           cargo build -p spacetimedb-standalone
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
