@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-Internals/Module ABI Reference" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.9.1">
+<title data-rh="true">Module ABI Reference | SpacetimeDB docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://docs.spacetimedb.com/webassembly-abi"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Module ABI Reference | SpacetimeDB docs"><meta data-rh="true" name="description" content="This document specifies the low level details of module-host interactions (&quot;Module ABI&quot;). **Most users** looking to interact with the host will want to use derived and higher level functionality like bindings], #[spacetimedb(table)], and #[derive(SpacetimeType)] rather than this low level ABI. For more on those, read the [Rust module quick start guide and the Rust module reference."><meta data-rh="true" property="og:description" content="This document specifies the low level details of module-host interactions (&quot;Module ABI&quot;). **Most users** looking to interact with the host will want to use derived and higher level functionality like bindings], #[spacetimedb(table)], and #[derive(SpacetimeType)] rather than this low level ABI. For more on those, read the [Rust module quick start guide and the Rust module reference."><link data-rh="true" rel="icon" href="/images/favicon.ico"><link data-rh="true" rel="canonical" href="https://docs.spacetimedb.com/webassembly-abi"><link data-rh="true" rel="alternate" href="https://docs.spacetimedb.com/webassembly-abi" hreflang="en"><link data-rh="true" rel="alternate" href="https://docs.spacetimedb.com/webassembly-abi" hreflang="x-default"><link data-rh="true" rel="preconnect" href="https://QBC7Z9KXS2-dsn.algolia.net" crossorigin="anonymous"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Module ABI Reference","item":"https://docs.spacetimedb.com/webassembly-abi"}]}</script><link rel="search" type="application/opensearchdescription+xml" title="SpacetimeDB docs" href="/opensearch.xml"><link rel="stylesheet" href="/assets/css/styles.0cb9f7a7.css">
+<script src="/assets/js/runtime~main.d71df0f5.js" defer="defer"></script>
+<script src="/assets/js/main.31d95d83.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>document.documentElement.setAttribute("data-theme","light"),document.documentElement.setAttribute("data-theme-choice","light"),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="https://spacetimedb.com/images/brand.png"><div role="region" aria-label="Skip to main content"><a class="skipToContent_6jFv" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/"><div class="navbar__logo"><img src="https://spacetimedb.com/images/brand.png" alt="SpacetimeDB Logo" class="themedComponent_rvet themedComponent--light_mbAJ"><img src="https://spacetimedb.com/images/brand.png" alt="SpacetimeDB Logo" class="themedComponent_rvet themedComponent--dark_Ncy6"></div></a><div class="navbarSearchContainer_AesG"><button type="button" class="DocSearch DocSearch-Button" aria-label="Search (Command+K)"><span class="DocSearch-Button-Container"><svg width="20" height="20" class="DocSearch-Search-Icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M14.386 14.386l4.0877 4.0877-4.0877-4.0877c-2.9418 2.9419-7.7115 2.9419-10.6533 0-2.9419-2.9418-2.9419-7.7115 0-10.6533 2.9418-2.9419 7.7115-2.9419 10.6533 0 2.9419 2.9418 2.9419 7.7115 0 10.6533z" stroke="currentColor" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg><span class="DocSearch-Button-Placeholder">Search</span></span><span class="DocSearch-Button-Keys"></span></button></div></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://spacetimedb.com/install" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">Install</a><a href="https://spacetimedb.com/pricing" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">Pricing</a><a href="https://spacetimedb.com/maincloud" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">Maincloud</a><a href="https://spacetimedb.com/blog" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">Blog</a><a href="https://spacetimedb.com/community" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">Community</a></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_hV_y"><div class="docsWrapper_f07g"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_MJiz" type="button"></button><div class="docRoot_Gd2s"><aside class="theme-doc-sidebar-container docSidebarContainer_fSpF"><div class="sidebarViewport_YElg"><div class="sidebar_kjg4"><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_AG0n"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/"><span title="Intro" class="categoryLinkLabel_EDYQ">Intro</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/deploying/maincloud"><span title="Deploying" class="categoryLinkLabel_EDYQ">Deploying</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/unity"><span title="Unity tutorial" class="categoryLinkLabel_EDYQ">Unity tutorial</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/unreal"><span title="Unreal Tutorial" class="categoryLinkLabel_EDYQ">Unreal Tutorial</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/cli-reference"><span title="CLI Reference" class="categoryLinkLabel_EDYQ">CLI Reference</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/modules"><span title="Server Module Languages" class="categoryLinkLabel_EDYQ">Server Module Languages</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/sdks"><span title="Client SDK Languages" class="categoryLinkLabel_EDYQ">Client SDK Languages</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/sql"><span title="SQL" class="categoryLinkLabel_EDYQ">SQL</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/subscriptions"><span title="Subscriptions" class="categoryLinkLabel_EDYQ">Subscriptions</span></a></div></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/rls"><span title="Row Level Security" class="linkLabel_dpMB">Row Level Security</span></a></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/how-to/incremental-migrations"><span title="How-To" class="categoryLinkLabel_EDYQ">How-To</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/spacetimeauth"><span title="SpacetimeAuth" class="categoryLinkLabel_EDYQ">SpacetimeAuth</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/http/authorization"><span title="HTTP API" class="categoryLinkLabel_EDYQ">HTTP API</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_ggI5 menu__link menu__link--sublist menu__link--sublist-caret menu__link--active" role="button" aria-expanded="true" href="/webassembly-abi"><span title="Internals" class="categoryLinkLabel_EDYQ">Internals</span></a></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current="page" tabindex="0" href="/webassembly-abi"><span title="Module ABI Reference" class="linkLabel_dpMB">Module ABI Reference</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/sats-json"><span title="SATS-JSON Data Format" class="linkLabel_dpMB">SATS-JSON Data Format</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/bsatn"><span title="BSATN Data Format" class="linkLabel_dpMB">BSATN Data Format</span></a></li></ul></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/appendix"><span title="Appendix" class="linkLabel_dpMB">Appendix</span></a></li></ul></nav></div></div></aside><main class="docMainContainer_dkUT"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_w2oE"><div class="docItemContainer_f71m"><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_xsLZ" aria-label="Breadcrumbs"><ul class="breadcrumbs"><li class="breadcrumbs__item"><a aria-label="Home page" class="breadcrumbs__link" href="/"><svg viewBox="0 0 24 24" class="breadcrumbHomeIcon_oyay"><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill="currentColor"></path></svg></a></li><li class="breadcrumbs__item"><span class="breadcrumbs__link">Internals</span></li><li class="breadcrumbs__item breadcrumbs__item--active"><span class="breadcrumbs__link">Module ABI Reference</span></li></ul></nav><div class="tocCollapsible_dqme theme-doc-toc-mobile tocMobile_Z34P"><button type="button" class="clean-btn tocCollapsibleButton_QMSE">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>Module ABI Reference</h1></header>
+<p>This document specifies the <em>low level details</em> of module-host interactions (<em>&quot;Module ABI&quot;</em>). <em><strong>Most users</strong></em> looking to interact with the host will want to use derived and higher level functionality like <a href="https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/bindings/src/lib.rs" target="_blank" rel="noopener noreferrer"><code>bindings</code></a>, <code>#[spacetimedb(table)]</code>, and <code>#[derive(SpacetimeType)]</code> rather than this low level ABI. For more on those, read the <a href="/modules/rust/quickstart">Rust module quick start</a> guide and the <a href="/modules/rust">Rust module reference</a>.</p>
+<p>The Module ABI is defined in <a href="https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/bindings-sys/src/lib.rs#L44-L215" target="_blank" rel="noopener noreferrer"><code>bindings_sys::raw</code></a> and is used by modules to interact with their host and perform various operations like:</p>
+<ul>
+<li>logging,</li>
+<li>transporting data,</li>
+<li>scheduling reducers,</li>
+<li>altering tables,</li>
+<li>inserting and deleting rows,</li>
+<li>querying tables.</li>
+</ul>
+<p>In the next few sections, we&#x27;ll define the functions that make up the ABI and what these functions do.</p>
+<h2 class="anchor anchorWithStickyNavbar_wKCU" id="general-notes">General notes<a href="#general-notes" class="hash-link" aria-label="Direct link to General notes" title="Direct link to General notes" translate="no">​</a></h2>
+<p>The functions in this ABI all use the <a href="https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md" target="_blank" rel="noopener noreferrer"><code>C</code> ABI on the <code>wasm32</code> platform</a>. They are specified in a Rust <code>extern &quot;C&quot; { .. }</code> block. For those more familiar with the <code>C</code> notation, an <a href="#appendix-bindingsh">appendix</a> is provided with equivalent definitions as would occur in a <code>.h</code> file.</p>
+<p>Many functions in the ABI take in- or out-pointers, e.g. <code>*const u8</code> and <code>*mut u8</code>. The WASM host itself does not have undefined behavior. However, what WASM does not consider a memory access violation could be one according to some other language&#x27;s abstract machine. For example, running the following on a WASM host would violate Rust&#x27;s rules around writing across allocations:</p>
+<pre tabindex="0" class="codeBlockStandalone_pMzE thin-scrollbar codeBlockContainer_HZVP theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><code class="codeBlockLines_ckKi"><span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> main</span><span style="color:#F8F8F2">() {</span></span>
+<span class="line"><span style="color:#FF79C6">    let</span><span style="color:#FF79C6"> mut</span><span style="color:#F8F8F2"> bytes </span><span style="color:#FF79C6">=</span><span style="color:#F8F8F2"> [</span><span style="color:#BD93F9">0</span><span style="color:#8BE9FD;font-style:italic">u8</span><span style="color:#F8F8F2">; </span><span style="color:#BD93F9">12</span><span style="color:#F8F8F2">];</span></span>
+<span class="line"><span style="color:#FF79C6">    let</span><span style="color:#F8F8F2"> other_bytes </span><span style="color:#FF79C6">=</span><span style="color:#F8F8F2"> [</span><span style="color:#BD93F9">0</span><span style="color:#8BE9FD;font-style:italic">u8</span><span style="color:#F8F8F2">; </span><span style="color:#BD93F9">4</span><span style="color:#F8F8F2">];</span></span>
+<span class="line"><span style="color:#FF79C6">    unsafe</span><span style="color:#F8F8F2"> { </span><span style="color:#50FA7B">ffi_func_with_out_ptr_and_len</span><span style="color:#F8F8F2">(</span><span style="color:#FF79C6">&amp;mut</span><span style="color:#F8F8F2"> bytes </span><span style="color:#FF79C6">as</span><span style="color:#FF79C6"> *mut</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">, </span><span style="color:#BD93F9">16</span><span style="color:#F8F8F2">); }</span></span>
+<span class="line"><span style="color:#50FA7B">    assert_eq!</span><span style="color:#F8F8F2">(other_bytes, [</span><span style="color:#BD93F9">0</span><span style="color:#8BE9FD;font-style:italic">u8</span><span style="color:#F8F8F2">; </span><span style="color:#BD93F9">4</span><span style="color:#F8F8F2">]);</span></span>
+<span class="line"><span style="color:#F8F8F2">}</span></span></code></pre>
+<p>When we note in this reference that traps occur or errors are returned on memory access violations, we only mean those that WASM can directly detected, and not cases like the one above.</p>
+<p>Should memory access violations occur, such as a buffer overrun, undefined behavior will never result, as it does not exist in WASM. However, in many cases, an error code will result.</p>
+<p>Some functions will treat UTF-8 strings <em>lossily</em>. That is, if the slice identified by a <code>(ptr, len)</code> contains non-UTF-8 bytes, these bytes will be replaced with <code>�</code> in the read string.</p>
+<p>Most functions return a <code>u16</code> value. This is how these functions indicate an error where a <code>0</code> value means that there were no errors. Such functions will instead return any data they need to through out pointers.</p>
+<h2 class="anchor anchorWithStickyNavbar_wKCU" id="logging">Logging<a href="#logging" class="hash-link" aria-label="Direct link to Logging" title="Direct link to Logging" translate="no">​</a></h2>
+<pre tabindex="0" class="codeBlockStandalone_pMzE thin-scrollbar codeBlockContainer_HZVP theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><code class="codeBlockLines_ckKi"><span class="line"><span style="color:#6272A4">/// The error log level.</span></span>
+<span class="line"><span style="color:#FF79C6">const</span><span style="color:#BD93F9"> LOG_LEVEL_ERROR</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#FF79C6"> =</span><span style="color:#BD93F9"> 0</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"><span style="color:#6272A4">/// The warn log level.</span></span>
+<span class="line"><span style="color:#FF79C6">const</span><span style="color:#BD93F9"> LOG_LEVEL_WARN</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#FF79C6"> =</span><span style="color:#BD93F9"> 1</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"><span style="color:#6272A4">/// The info log level.</span></span>
+<span class="line"><span style="color:#FF79C6">const</span><span style="color:#BD93F9"> LOG_LEVEL_INFO</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#FF79C6"> =</span><span style="color:#BD93F9"> 2</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"><span style="color:#6272A4">/// The debug log level.</span></span>
+<span class="line"><span style="color:#FF79C6">const</span><span style="color:#BD93F9"> LOG_LEVEL_DEBUG</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#FF79C6"> =</span><span style="color:#BD93F9"> 3</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"><span style="color:#6272A4">/// The trace log level.</span></span>
+<span class="line"><span style="color:#FF79C6">const</span><span style="color:#BD93F9"> LOG_LEVEL_TRACE</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#FF79C6"> =</span><span style="color:#BD93F9"> 4</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"><span style="color:#6272A4">/// The panic log level.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// A panic level is emitted just before</span></span>
+<span class="line"><span style="color:#6272A4">/// a fatal error causes the WASM module to trap.</span></span>
+<span class="line"><span style="color:#FF79C6">const</span><span style="color:#BD93F9"> LOG_LEVEL_PANIC</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#FF79C6"> =</span><span style="color:#BD93F9"> 101</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6272A4">/// Log at `level` a `text` message occuring in `filename:line_number`</span></span>
+<span class="line"><span style="color:#6272A4">/// with `target` being the module path at the `log!` invocation site.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// These various pointers are interpreted lossily as UTF-8 strings.</span></span>
+<span class="line"><span style="color:#6272A4">/// The data pointed to are copied. Ownership does not transfer.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// See https://docs.rs/log/latest/log/struct.Record.html#method.target</span></span>
+<span class="line"><span style="color:#6272A4">/// for more info on `target`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Calls to the function cannot fail</span></span>
+<span class="line"><span style="color:#6272A4">/// irrespective of memory access violations.</span></span>
+<span class="line"><span style="color:#6272A4">/// If they occur, no message is logged.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _console_log</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // The level we&#x27;re logging at.</span></span>
+<span class="line"><span style="color:#6272A4">    // One of the `LOG_*` constants above.</span></span>
+<span class="line"><span style="color:#F8F8F2">    level</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The module path, if any, associated with the message</span></span>
+<span class="line"><span style="color:#6272A4">    // or to &quot;blame&quot; for the reason we&#x27;re logging.</span></span>
+<span class="line"><span style="color:#6272A4">    //</span></span>
+<span class="line"><span style="color:#6272A4">    // This is a pointer to a buffer holding an UTF-8 encoded string.</span></span>
+<span class="line"><span style="color:#6272A4">    // When the pointer is `NULL`, `target` is ignored.</span></span>
+<span class="line"><span style="color:#F8F8F2">    target</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The length of the buffer pointed to by `text`.</span></span>
+<span class="line"><span style="color:#6272A4">    // Unused when `target` is `NULL`.</span></span>
+<span class="line"><span style="color:#F8F8F2">    target_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The file name, if any, associated with the message</span></span>
+<span class="line"><span style="color:#6272A4">    // or to &quot;blame&quot; for the reason we&#x27;re logging.</span></span>
+<span class="line"><span style="color:#6272A4">    //</span></span>
+<span class="line"><span style="color:#6272A4">    // This is a pointer to a buffer holding an UTF-8 encoded string.</span></span>
+<span class="line"><span style="color:#6272A4">    // When the pointer is `NULL`, `filename` is ignored.</span></span>
+<span class="line"><span style="color:#F8F8F2">    filename</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The length of the buffer pointed to by `text`.</span></span>
+<span class="line"><span style="color:#6272A4">    // Unused when `filename` is `NULL`.</span></span>
+<span class="line"><span style="color:#F8F8F2">    filename_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The line number associated with the message</span></span>
+<span class="line"><span style="color:#6272A4">    // or to &quot;blame&quot; for the reason we&#x27;re logging.</span></span>
+<span class="line"><span style="color:#F8F8F2">    line_number</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u32</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // A pointer to a buffer holding an UTF-8 encoded message to log.</span></span>
+<span class="line"><span style="color:#F8F8F2">    text</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The length of the buffer pointed to by `text`.</span></span>
+<span class="line"><span style="color:#F8F8F2">    text_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span></code></pre>
+<h2 class="anchor anchorWithStickyNavbar_wKCU" id="buffer-handling">Buffer handling<a href="#buffer-handling" class="hash-link" aria-label="Direct link to Buffer handling" title="Direct link to Buffer handling" translate="no">​</a></h2>
+<pre tabindex="0" class="codeBlockStandalone_pMzE thin-scrollbar codeBlockContainer_HZVP theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><code class="codeBlockLines_ckKi"><span class="line"><span style="color:#6272A4">/// Returns the length of buffer `bufh` without</span></span>
+<span class="line"><span style="color:#6272A4">/// transferring ownership of the data into the function.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// The `bufh` must have previously been allocating using `_buffer_alloc`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Traps if the buffer does not exist.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _buffer_len</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // The buffer previously allocated using `_buffer_alloc`.</span></span>
+<span class="line"><span style="color:#6272A4">    // Ownership of the buffer is not taken.</span></span>
+<span class="line"><span style="color:#F8F8F2">    bufh</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> ManuallyDrop</span><span style="color:#F8F8F2">&lt;</span><span style="color:#8BE9FD;font-style:italic">Buffer</span><span style="color:#F8F8F2">&gt;</span></span>
+<span class="line"><span style="color:#F8F8F2">) </span><span style="color:#FF79C6">-&gt;</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6272A4">/// Consumes the buffer `bufh`,</span></span>
+<span class="line"><span style="color:#6272A4">/// moving its contents to the WASM byte slice `(ptr, len)`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Returns an error if the buffer does not exist</span></span>
+<span class="line"><span style="color:#6272A4">/// or on any memory access violations associated with `(ptr, len)`.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _buffer_consume</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // The buffer to consume and move into `(ptr, len)`.</span></span>
+<span class="line"><span style="color:#6272A4">    // Ownership of the buffer and its contents are taken.</span></span>
+<span class="line"><span style="color:#6272A4">    // That is, `bufh` won&#x27;t be usable after this call.</span></span>
+<span class="line"><span style="color:#F8F8F2">    bufh</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> Buffer</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // A WASM out pointer to write the contents of `bufh` to.</span></span>
+<span class="line"><span style="color:#F8F8F2">    ptr</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *mut</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The size of the buffer pointed to by `ptr`.</span></span>
+<span class="line"><span style="color:#6272A4">    // This size must match that of `bufh` or a trap will occur.</span></span>
+<span class="line"><span style="color:#F8F8F2">    len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6272A4">/// Creates a buffer of size `data_len` in the host environment.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// The contents of the byte slice lasting `data_len` bytes</span></span>
+<span class="line"><span style="color:#6272A4">/// at the `data` WASM pointer are read</span></span>
+<span class="line"><span style="color:#6272A4">/// and written into the newly initialized buffer.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Traps on any memory access violations.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _buffer_alloc</span><span style="color:#F8F8F2">(data</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">, data_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">) </span><span style="color:#FF79C6">-&gt;</span><span style="color:#8BE9FD;font-style:italic"> Buffer</span><span style="color:#F8F8F2">;</span></span></code></pre>
+<h2 class="anchor anchorWithStickyNavbar_wKCU" id="reducer-scheduling">Reducer scheduling<a href="#reducer-scheduling" class="hash-link" aria-label="Direct link to Reducer scheduling" title="Direct link to Reducer scheduling" translate="no">​</a></h2>
+<pre tabindex="0" class="codeBlockStandalone_pMzE thin-scrollbar codeBlockContainer_HZVP theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><code class="codeBlockLines_ckKi"><span class="line"><span style="color:#6272A4">/// Schedules a reducer to be called asynchronously at `time`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// The reducer is named as the valid UTF-8 slice `(name, name_len)`,</span></span>
+<span class="line"><span style="color:#6272A4">/// and is passed the slice `(args, args_len)` as its argument.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// A generated schedule id is assigned to the reducer.</span></span>
+<span class="line"><span style="color:#6272A4">/// This id is written to the pointer `out`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Errors on any memory access violations,</span></span>
+<span class="line"><span style="color:#6272A4">/// if `(name, name_len)` does not point to valid UTF-8,</span></span>
+<span class="line"><span style="color:#6272A4">/// or if the `time` delay exceeds `64^6 - 1` milliseconds from now.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _schedule_reducer</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // A pointer to a buffer</span></span>
+<span class="line"><span style="color:#6272A4">    // with a valid UTF-8 string of `name_len` many bytes.</span></span>
+<span class="line"><span style="color:#F8F8F2">    name</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The number of bytes in the `name` buffer.</span></span>
+<span class="line"><span style="color:#F8F8F2">    name_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // A pointer to a byte buffer of `args_len` many bytes.</span></span>
+<span class="line"><span style="color:#F8F8F2">    args</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The number of bytes in the `args` buffer.</span></span>
+<span class="line"><span style="color:#F8F8F2">    args_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // When to call the reducer.</span></span>
+<span class="line"><span style="color:#F8F8F2">    time</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u64</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The schedule ID is written to this out pointer on a successful call.</span></span>
+<span class="line"><span style="color:#F8F8F2">    out</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *mut</span><span style="color:#8BE9FD;font-style:italic"> u64</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6272A4">/// Unschedules a reducer</span></span>
+<span class="line"><span style="color:#6272A4">/// using the same `id` generated as when it was scheduled.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// This assumes that the reducer hasn&#x27;t already been executed.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _cancel_reducer</span><span style="color:#F8F8F2">(id</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u64</span><span style="color:#F8F8F2">);</span></span></code></pre>
+<h2 class="anchor anchorWithStickyNavbar_wKCU" id="altering-tables">Altering tables<a href="#altering-tables" class="hash-link" aria-label="Direct link to Altering tables" title="Direct link to Altering tables" translate="no">​</a></h2>
+<pre tabindex="0" class="codeBlockStandalone_pMzE thin-scrollbar codeBlockContainer_HZVP theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><code class="codeBlockLines_ckKi"><span class="line"><span style="color:#6272A4">/// Creates an index with the name `index_name` and type `index_type`,</span></span>
+<span class="line"><span style="color:#6272A4">/// on a product of the given columns in `col_ids`</span></span>
+<span class="line"><span style="color:#6272A4">/// in the table identified by `table_id`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Here `index_name` points to a UTF-8 slice in WASM memory</span></span>
+<span class="line"><span style="color:#6272A4">/// and `col_ids` points to a byte slice in WASM memory</span></span>
+<span class="line"><span style="color:#6272A4">/// with each element being a column.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Currently only single-column-indices are supported</span></span>
+<span class="line"><span style="color:#6272A4">/// and they may only be of the btree index type.</span></span>
+<span class="line"><span style="color:#6272A4">/// In the former case, the function will panic,</span></span>
+<span class="line"><span style="color:#6272A4">/// and in latter, an error is returned.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Returns an error on any memory access violations,</span></span>
+<span class="line"><span style="color:#6272A4">/// if `(index_name, index_name_len)` is not valid UTF-8,</span></span>
+<span class="line"><span style="color:#6272A4">/// or when a table with the provided `table_id` doesn&#x27;t exist.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Traps if `index_type /= 0` or if `col_len /= 1`.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _create_index</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // A pointer to a buffer holding an UTF-8 encoded index name.</span></span>
+<span class="line"><span style="color:#F8F8F2">    index_name</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The length of the buffer pointed to by `index_name`.</span></span>
+<span class="line"><span style="color:#F8F8F2">    index_name_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The ID of the table to create the index for.</span></span>
+<span class="line"><span style="color:#F8F8F2">    table_id</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u32</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The type of the index.</span></span>
+<span class="line"><span style="color:#6272A4">    // Must be `0` currently, that is, a btree-index.</span></span>
+<span class="line"><span style="color:#F8F8F2">    index_type</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // A pointer to a buffer holding a byte slice</span></span>
+<span class="line"><span style="color:#6272A4">    // where each element is the position</span></span>
+<span class="line"><span style="color:#6272A4">    // of a column to include in the index.</span></span>
+<span class="line"><span style="color:#F8F8F2">    col_ids</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The length of the byte slice in `col_ids`. Must be `1`.</span></span>
+<span class="line"><span style="color:#F8F8F2">    col_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#F8F8F2">) </span><span style="color:#FF79C6">-&gt;</span><span style="color:#8BE9FD;font-style:italic"> u16</span><span style="color:#F8F8F2">;</span></span></code></pre>
+<h2 class="anchor anchorWithStickyNavbar_wKCU" id="inserting-and-deleting-rows">Inserting and deleting rows<a href="#inserting-and-deleting-rows" class="hash-link" aria-label="Direct link to Inserting and deleting rows" title="Direct link to Inserting and deleting rows" translate="no">​</a></h2>
+<pre tabindex="0" class="codeBlockStandalone_pMzE thin-scrollbar codeBlockContainer_HZVP theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><code class="codeBlockLines_ckKi"><span class="line"><span style="color:#6272A4">/// Inserts a row into the table identified by `table_id`,</span></span>
+<span class="line"><span style="color:#6272A4">/// where the row is read from the byte slice `row_ptr` in WASM memory,</span></span>
+<span class="line"><span style="color:#6272A4">/// lasting `row_len` bytes.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Errors if there were unique constraint violations,</span></span>
+<span class="line"><span style="color:#6272A4">/// if there were any memory access violations in associated with `row`,</span></span>
+<span class="line"><span style="color:#6272A4">/// if the `table_id` doesn&#x27;t identify a table,</span></span>
+<span class="line"><span style="color:#6272A4">/// or if `(row, row_len)` doesn&#x27;t decode from BSATN to a `ProductValue`</span></span>
+<span class="line"><span style="color:#6272A4">/// according to the `ProductType` that the table&#x27;s schema specifies.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _insert</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // The table to insert the row into.</span></span>
+<span class="line"><span style="color:#6272A4">    // The interpretation of `(row, row_len)` depends on this ID</span></span>
+<span class="line"><span style="color:#6272A4">    // as it&#x27;s table schema determines how to decode the raw bytes.</span></span>
+<span class="line"><span style="color:#F8F8F2">    table_id</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u32</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // An in/out pointer to a byte buffer</span></span>
+<span class="line"><span style="color:#6272A4">    // holding the BSATN-encoded `ProductValue` row data to insert.</span></span>
+<span class="line"><span style="color:#6272A4">    //</span></span>
+<span class="line"><span style="color:#6272A4">    // The pointer is written to with the inserted row re-encoded.</span></span>
+<span class="line"><span style="color:#6272A4">    // This is due to auto-incrementing columns.</span></span>
+<span class="line"><span style="color:#F8F8F2">    row</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *mut</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The length of the buffer pointed to by `row`.</span></span>
+<span class="line"><span style="color:#F8F8F2">    row_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span></span>
+<span class="line"><span style="color:#F8F8F2">) </span><span style="color:#FF79C6">-&gt;</span><span style="color:#8BE9FD;font-style:italic"> u16</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6272A4">/// Deletes all rows in the table identified by `table_id`</span></span>
+<span class="line"><span style="color:#6272A4">/// where the column identified by `col_id` matches the byte string,</span></span>
+<span class="line"><span style="color:#6272A4">/// in WASM memory, pointed to by `value`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Matching is defined by decoding of `value` to an `AlgebraicValue`</span></span>
+<span class="line"><span style="color:#6272A4">/// according to the column&#x27;s schema and then `Ord for AlgebraicValue`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// The number of rows deleted is written to the WASM pointer `out`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Errors if there were memory access violations</span></span>
+<span class="line"><span style="color:#6272A4">/// associated with `value` or `out`,</span></span>
+<span class="line"><span style="color:#6272A4">/// if no columns were deleted,</span></span>
+<span class="line"><span style="color:#6272A4">/// or if the column wasn&#x27;t found.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _delete_by_col_eq</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // The table to delete rows from.</span></span>
+<span class="line"><span style="color:#F8F8F2">    table_id</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u32</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The position of the column to match `(value, value_len)` against.</span></span>
+<span class="line"><span style="color:#F8F8F2">    col_id</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u32</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // A pointer to a byte buffer holding a BSATN-encoded `AlgebraicValue`</span></span>
+<span class="line"><span style="color:#6272A4">    // of the `AlgebraicType` that the table&#x27;s schema specifies</span></span>
+<span class="line"><span style="color:#6272A4">    // for the column identified by `col_id`.</span></span>
+<span class="line"><span style="color:#F8F8F2">    value</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The length of the buffer pointed to by `value`.</span></span>
+<span class="line"><span style="color:#F8F8F2">    value_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // An out pointer that the number of rows deleted is written to.</span></span>
+<span class="line"><span style="color:#F8F8F2">    out</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *mut</span><span style="color:#8BE9FD;font-style:italic"> u32</span></span>
+<span class="line"><span style="color:#F8F8F2">) </span><span style="color:#FF79C6">-&gt;</span><span style="color:#8BE9FD;font-style:italic"> u16</span><span style="color:#F8F8F2">;</span></span></code></pre>
+<h2 class="anchor anchorWithStickyNavbar_wKCU" id="querying-tables">Querying tables<a href="#querying-tables" class="hash-link" aria-label="Direct link to Querying tables" title="Direct link to Querying tables" translate="no">​</a></h2>
+<pre tabindex="0" class="codeBlockStandalone_pMzE thin-scrollbar codeBlockContainer_HZVP theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><code class="codeBlockLines_ckKi"><span class="line"><span style="color:#6272A4">/// Queries the `table_id` associated with the given (table) `name`</span></span>
+<span class="line"><span style="color:#6272A4">/// where `name` points to a UTF-8 slice</span></span>
+<span class="line"><span style="color:#6272A4">/// in WASM memory of `name_len` bytes.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// The table id is written into the `out` pointer.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Errors on memory access violations associated with `name`</span></span>
+<span class="line"><span style="color:#6272A4">/// or if the table does not exist.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _get_table_id</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // A pointer to a buffer holding the name of the table</span></span>
+<span class="line"><span style="color:#6272A4">    // as a valid UTF-8 encoded string.</span></span>
+<span class="line"><span style="color:#F8F8F2">    name</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The length of the buffer pointed to by `name`.</span></span>
+<span class="line"><span style="color:#F8F8F2">    name_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // An out pointer to write the table ID to.</span></span>
+<span class="line"><span style="color:#F8F8F2">    out</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *mut</span><span style="color:#8BE9FD;font-style:italic"> u32</span></span>
+<span class="line"><span style="color:#F8F8F2">) </span><span style="color:#FF79C6">-&gt;</span><span style="color:#8BE9FD;font-style:italic"> u16</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6272A4">/// Finds all rows in the table identified by `table_id`,</span></span>
+<span class="line"><span style="color:#6272A4">/// where the row has a column, identified by `col_id`,</span></span>
+<span class="line"><span style="color:#6272A4">/// with data matching the byte string,</span></span>
+<span class="line"><span style="color:#6272A4">/// in WASM memory, pointed to at by `val`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Matching is defined by decoding of `value`</span></span>
+<span class="line"><span style="color:#6272A4">/// to an `AlgebraicValue` according to the column&#x27;s schema</span></span>
+<span class="line"><span style="color:#6272A4">/// and then `Ord for AlgebraicValue`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// The rows found are BSATN encoded and then concatenated.</span></span>
+<span class="line"><span style="color:#6272A4">/// The resulting byte string from the concatenation</span></span>
+<span class="line"><span style="color:#6272A4">/// is written to a fresh buffer</span></span>
+<span class="line"><span style="color:#6272A4">/// with the buffer&#x27;s identifier written to the WASM pointer `out`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Errors if no table with `table_id` exists,</span></span>
+<span class="line"><span style="color:#6272A4">/// if `col_id` does not identify a column of the table,</span></span>
+<span class="line"><span style="color:#6272A4">/// if `(value, value_len)` cannot be decoded to an `AlgebraicValue`</span></span>
+<span class="line"><span style="color:#6272A4">/// typed at the `AlgebraicType` of the column,</span></span>
+<span class="line"><span style="color:#6272A4">/// or if memory access violations occurred associated with `value` or `out`.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _iter_by_col_eq</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // Identifies the table to find rows in.</span></span>
+<span class="line"><span style="color:#F8F8F2">    table_id</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u32</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The position of the column in the table</span></span>
+<span class="line"><span style="color:#6272A4">    // to match `(value, value_len)` against.</span></span>
+<span class="line"><span style="color:#F8F8F2">    col_id</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u32</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // A pointer to a byte buffer holding a BSATN encoded</span></span>
+<span class="line"><span style="color:#6272A4">    // value typed at the `AlgebraicType` of the column.</span></span>
+<span class="line"><span style="color:#F8F8F2">    value</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The length of the buffer pointed to by `value`.</span></span>
+<span class="line"><span style="color:#F8F8F2">    value_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // An out pointer to which the new buffer&#x27;s id is written to.</span></span>
+<span class="line"><span style="color:#F8F8F2">    out</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *mut</span><span style="color:#8BE9FD;font-style:italic"> Buffer</span></span>
+<span class="line"><span style="color:#F8F8F2">) </span><span style="color:#FF79C6">-&gt;</span><span style="color:#8BE9FD;font-style:italic"> u16</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6272A4">/// Starts iteration on each row, as bytes,</span></span>
+<span class="line"><span style="color:#6272A4">/// of a table identified by `table_id`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// The iterator is registered in the host environment</span></span>
+<span class="line"><span style="color:#6272A4">/// under an assigned index which is written to the `out` pointer provided.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Errors if the table doesn&#x27;t exist</span></span>
+<span class="line"><span style="color:#6272A4">/// or if memory access violations occurred in association with `out`.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _iter_start</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // The ID of the table to start row iteration on.</span></span>
+<span class="line"><span style="color:#F8F8F2">    table_id</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u32</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // An out pointer to which an identifier</span></span>
+<span class="line"><span style="color:#6272A4">    // to the newly created buffer is written.</span></span>
+<span class="line"><span style="color:#F8F8F2">    out</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *mut</span><span style="color:#8BE9FD;font-style:italic"> BufferIter</span></span>
+<span class="line"><span style="color:#F8F8F2">) </span><span style="color:#FF79C6">-&gt;</span><span style="color:#8BE9FD;font-style:italic"> u16</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6272A4">/// Like [`_iter_start`], starts iteration on each row,</span></span>
+<span class="line"><span style="color:#6272A4">/// as bytes, of a table identified by `table_id`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// The rows are filtered through `filter`, which is read from WASM memory</span></span>
+<span class="line"><span style="color:#6272A4">/// and is encoded in the embedded language defined by `spacetimedb_lib::filter::Expr`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// The iterator is registered in the host environment</span></span>
+<span class="line"><span style="color:#6272A4">/// under an assigned index which is written to the `out` pointer provided.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Errors if `table_id` doesn&#x27;t identify a table,</span></span>
+<span class="line"><span style="color:#6272A4">/// if `(filter, filter_len)` doesn&#x27;t decode to a filter expression,</span></span>
+<span class="line"><span style="color:#6272A4">/// or if there were memory access violations</span></span>
+<span class="line"><span style="color:#6272A4">/// in association with `filter` or `out`.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _iter_start_filtered</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // The ID of the table to start row iteration on.</span></span>
+<span class="line"><span style="color:#F8F8F2">    table_id</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> u32</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // A pointer to a buffer holding an encoded filter expression.</span></span>
+<span class="line"><span style="color:#F8F8F2">    filter</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *const</span><span style="color:#8BE9FD;font-style:italic"> u8</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // The length of the buffer pointed to by `filter`.</span></span>
+<span class="line"><span style="color:#F8F8F2">    filter_len</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> usize</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#6272A4">    // An out pointer to which an identifier</span></span>
+<span class="line"><span style="color:#6272A4">    // to the newly created buffer is written.</span></span>
+<span class="line"><span style="color:#F8F8F2">    out</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *mut</span><span style="color:#8BE9FD;font-style:italic"> BufferIter</span></span>
+<span class="line"><span style="color:#F8F8F2">) </span><span style="color:#FF79C6">-&gt;</span><span style="color:#8BE9FD;font-style:italic"> u16</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6272A4">/// Advances the registered iterator with the index given by `iter_key`.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// On success, the next element (the row as bytes) is written to a buffer.</span></span>
+<span class="line"><span style="color:#6272A4">/// The buffer&#x27;s index is returned and written to the `out` pointer.</span></span>
+<span class="line"><span style="color:#6272A4">/// If there are no elements left, an invalid buffer index is written to `out`.</span></span>
+<span class="line"><span style="color:#6272A4">/// On failure however, the error is returned.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Errors if `iter` does not identify a registered `BufferIter`,</span></span>
+<span class="line"><span style="color:#6272A4">/// or if there were memory access violations in association with `out`.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _iter_next</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // An identifier for the iterator buffer to advance.</span></span>
+<span class="line"><span style="color:#6272A4">    // Ownership of the buffer nor the identifier is moved into the function.</span></span>
+<span class="line"><span style="color:#F8F8F2">    iter</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> ManuallyDrop</span><span style="color:#F8F8F2">&lt;</span><span style="color:#8BE9FD;font-style:italic">BufferIter</span><span style="color:#F8F8F2">&gt;,</span></span>
+<span class="line"><span style="color:#6272A4">    // An out pointer to write the newly created buffer&#x27;s identifier to.</span></span>
+<span class="line"><span style="color:#F8F8F2">    out</span><span style="color:#FF79C6">:</span><span style="color:#FF79C6"> *mut</span><span style="color:#8BE9FD;font-style:italic"> Buffer</span></span>
+<span class="line"><span style="color:#F8F8F2">) </span><span style="color:#FF79C6">-&gt;</span><span style="color:#8BE9FD;font-style:italic"> u16</span><span style="color:#F8F8F2">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6272A4">/// Drops the entire registered iterator with the index given by `iter_key`.</span></span>
+<span class="line"><span style="color:#6272A4">/// The iterator is effectively de-registered.</span></span>
+<span class="line"><span style="color:#6272A4">///</span></span>
+<span class="line"><span style="color:#6272A4">/// Returns an error if the iterator does not exist.</span></span>
+<span class="line"><span style="color:#FF79C6">fn</span><span style="color:#50FA7B"> _iter_drop</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#6272A4">    // An identifier for the iterator buffer to unregister / drop.</span></span>
+<span class="line"><span style="color:#F8F8F2">    iter</span><span style="color:#FF79C6">:</span><span style="color:#8BE9FD;font-style:italic"> ManuallyDrop</span><span style="color:#F8F8F2">&lt;</span><span style="color:#8BE9FD;font-style:italic">BufferIter</span><span style="color:#F8F8F2">&gt;</span></span>
+<span class="line"><span style="color:#F8F8F2">) </span><span style="color:#FF79C6">-&gt;</span><span style="color:#8BE9FD;font-style:italic"> u16</span><span style="color:#F8F8F2">;</span></span></code></pre>
+<h2 class="anchor anchorWithStickyNavbar_wKCU" id="appendix-bindingsh">Appendix, <code>bindings.h</code><a href="#appendix-bindingsh" class="hash-link" aria-label="Direct link to appendix-bindingsh" title="Direct link to appendix-bindingsh" translate="no">​</a></h2>
+<pre tabindex="0" class="codeBlockStandalone_pMzE thin-scrollbar codeBlockContainer_HZVP theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><code class="codeBlockLines_ckKi"><span class="line"><span style="color:#FF79C6">#include</span><span style="color:#E9F284"> &lt;</span><span style="color:#F1FA8C">stdarg.h</span><span style="color:#E9F284">&gt;</span></span>
+<span class="line"><span style="color:#FF79C6">#include</span><span style="color:#E9F284"> &lt;</span><span style="color:#F1FA8C">stdbool.h</span><span style="color:#E9F284">&gt;</span></span>
+<span class="line"><span style="color:#FF79C6">#include</span><span style="color:#E9F284"> &lt;</span><span style="color:#F1FA8C">stddef.h</span><span style="color:#E9F284">&gt;</span></span>
+<span class="line"><span style="color:#FF79C6">#include</span><span style="color:#E9F284"> &lt;</span><span style="color:#F1FA8C">stdint.h</span><span style="color:#E9F284">&gt;</span></span>
+<span class="line"><span style="color:#FF79C6">#include</span><span style="color:#E9F284"> &lt;</span><span style="color:#F1FA8C">stdlib.h</span><span style="color:#E9F284">&gt;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#FF79C6">typedef</span><span style="color:#FF79C6"> uint32_t</span><span style="color:#F8F8F2"> Buffer;</span></span>
+<span class="line"><span style="color:#FF79C6">typedef</span><span style="color:#FF79C6"> uint32_t</span><span style="color:#F8F8F2"> BufferIter;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#FF79C6">void</span><span style="color:#50FA7B"> _console_log</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#FF79C6">    uint8_t</span><span style="color:#FFB86C;font-style:italic"> level</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">target</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#FFB86C;font-style:italic"> target_len</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">filename</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#FFB86C;font-style:italic"> filename_len</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    uint32_t</span><span style="color:#FFB86C;font-style:italic"> line_number</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">text</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#F8F8F2"> text_len</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span>
+<span class="line"></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F8F8F2">Buffer </span><span style="color:#50FA7B">_buffer_alloc</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">data</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#F8F8F2"> data_len</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span>
+<span class="line"><span style="color:#FF79C6">void</span><span style="color:#50FA7B"> _buffer_consume</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#F8F8F2">    Buffer </span><span style="color:#FFB86C;font-style:italic">bufh</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">into</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#F8F8F2"> len</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span>
+<span class="line"><span style="color:#FF79C6">size_t</span><span style="color:#50FA7B"> _buffer_len</span><span style="color:#F8F8F2">(Buffer </span><span style="color:#FFB86C;font-style:italic">bufh</span><span style="color:#F8F8F2">);</span></span>
+<span class="line"></span>
+<span class="line"></span>
+<span class="line"><span style="color:#FF79C6">void</span><span style="color:#50FA7B"> _schedule_reducer</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">name</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#FFB86C;font-style:italic"> name_len</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">args</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#FFB86C;font-style:italic"> args_len</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    uint64_t</span><span style="color:#FFB86C;font-style:italic"> time</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    uint64_t</span><span style="color:#FF79C6"> *</span><span style="color:#F8F8F2">out</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span>
+<span class="line"><span style="color:#FF79C6">void</span><span style="color:#50FA7B"> _cancel_reducer</span><span style="color:#F8F8F2">(</span><span style="color:#FF79C6">uint64_t</span><span style="color:#FFB86C;font-style:italic"> id</span><span style="color:#F8F8F2">);</span></span>
+<span class="line"></span>
+<span class="line"></span>
+<span class="line"><span style="color:#FF79C6">uint16_t</span><span style="color:#50FA7B"> _create_index</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">index_name</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#FFB86C;font-style:italic"> index_name_len</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    uint32_t</span><span style="color:#FFB86C;font-style:italic"> table_id</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    uint8_t</span><span style="color:#FFB86C;font-style:italic"> index_type</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">col_ids</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#F8F8F2"> col_len</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span>
+<span class="line"></span>
+<span class="line"></span>
+<span class="line"><span style="color:#FF79C6">uint16_t</span><span style="color:#50FA7B"> _insert</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#FF79C6">    uint32_t</span><span style="color:#FFB86C;font-style:italic"> table_id</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">row</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#F8F8F2"> row_len</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span>
+<span class="line"><span style="color:#FF79C6">uint16_t</span><span style="color:#50FA7B"> _delete_by_col_eq</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#FF79C6">    uint32_t</span><span style="color:#FFB86C;font-style:italic"> table_id</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    uint32_t</span><span style="color:#FFB86C;font-style:italic"> col_id</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">value</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#FFB86C;font-style:italic"> value_len</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    uint32_t</span><span style="color:#FF79C6"> *</span><span style="color:#F8F8F2">out</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span>
+<span class="line"></span>
+<span class="line"></span>
+<span class="line"><span style="color:#FF79C6">uint16_t</span><span style="color:#50FA7B"> _get_table_id</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">name</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#FFB86C;font-style:italic"> name_len</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    uint32_t</span><span style="color:#FF79C6"> *</span><span style="color:#F8F8F2">out</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span>
+<span class="line"><span style="color:#FF79C6">uint16_t</span><span style="color:#50FA7B"> _iter_by_col_eq</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#FF79C6">    uint32_t</span><span style="color:#FFB86C;font-style:italic"> table_id</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    uint32_t</span><span style="color:#FFB86C;font-style:italic"> col_id</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">value</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#FFB86C;font-style:italic"> value_len</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#F8F8F2">    Buffer </span><span style="color:#FF79C6">*</span><span style="color:#F8F8F2">out</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span>
+<span class="line"><span style="color:#FF79C6">uint16_t</span><span style="color:#50FA7B"> _iter_drop</span><span style="color:#F8F8F2">(BufferIter </span><span style="color:#FFB86C;font-style:italic">iter</span><span style="color:#F8F8F2">);</span></span>
+<span class="line"><span style="color:#FF79C6">uint16_t</span><span style="color:#50FA7B"> _iter_next</span><span style="color:#F8F8F2">(BufferIter </span><span style="color:#FFB86C;font-style:italic">iter</span><span style="color:#F8F8F2">, Buffer </span><span style="color:#FF79C6">*</span><span style="color:#FFB86C;font-style:italic">out</span><span style="color:#F8F8F2">);</span></span>
+<span class="line"><span style="color:#FF79C6">uint16_t</span><span style="color:#50FA7B"> _iter_start</span><span style="color:#F8F8F2">(</span><span style="color:#FF79C6">uint32_t</span><span style="color:#FFB86C;font-style:italic"> table_id</span><span style="color:#F8F8F2">, BufferIter </span><span style="color:#FF79C6">*</span><span style="color:#FFB86C;font-style:italic">out</span><span style="color:#F8F8F2">);</span></span>
+<span class="line"><span style="color:#FF79C6">uint16_t</span><span style="color:#50FA7B"> _iter_start_filtered</span><span style="color:#F8F8F2">(</span></span>
+<span class="line"><span style="color:#FF79C6">    uint32_t</span><span style="color:#FFB86C;font-style:italic"> table_id</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    const</span><span style="color:#FF79C6"> uint8_t</span><span style="color:#FF79C6"> *</span><span style="color:#FFB86C;font-style:italic">filter</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#FF79C6">    size_t</span><span style="color:#FFB86C;font-style:italic"> filter_len</span><span style="color:#F8F8F2">,</span></span>
+<span class="line"><span style="color:#F8F8F2">    BufferIter </span><span style="color:#FF79C6">*</span><span style="color:#F8F8F2">out</span></span>
+<span class="line"><span style="color:#F8F8F2">);</span></span></code></pre></div></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/http/database"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">/v1/database</div></a><a class="pagination-nav__link pagination-nav__link--next" href="/sats-json"><div class="pagination-nav__sublabel">Next</div><div class="pagination-nav__label">SATS-JSON Data Format</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_Ea_L thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#general-notes" class="table-of-contents__link toc-highlight">General notes</a></li><li><a href="#logging" class="table-of-contents__link toc-highlight">Logging</a></li><li><a href="#buffer-handling" class="table-of-contents__link toc-highlight">Buffer handling</a></li><li><a href="#reducer-scheduling" class="table-of-contents__link toc-highlight">Reducer scheduling</a></li><li><a href="#altering-tables" class="table-of-contents__link toc-highlight">Altering tables</a></li><li><a href="#inserting-and-deleting-rows" class="table-of-contents__link toc-highlight">Inserting and deleting rows</a></li><li><a href="#querying-tables" class="table-of-contents__link toc-highlight">Querying tables</a></li><li><a href="#appendix-bindingsh" class="table-of-contents__link toc-highlight">Appendix, <code>bindings.h</code></a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer"><div class="container container-fluid"></div></footer></div>
+</body>
+</html>
