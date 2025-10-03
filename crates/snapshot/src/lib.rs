@@ -702,6 +702,28 @@ impl SnapshotRepository {
         snapshot.write_all_blobs(&object_repo, blobs, prev_snapshot.as_ref(), &mut counter)?;
         snapshot.write_all_tables(&object_repo, tables, prev_snapshot.as_ref(), &mut counter)?;
 
+        self.write_snapshot_file(&snapshot_dir, snapshot)?;
+
+        log::info!(
+            "[{}] SNAPSHOT {:0>20}: Hardlinked {} objects and wrote {} objects",
+            self.database_identity,
+            tx_offset,
+            counter.objects_hardlinked,
+            counter.objects_written,
+        );
+
+        // Success! return the directory of the newly-created snapshot.
+        // The lockfile will be dropped here.
+        Ok(snapshot_dir)
+    }
+
+    /// Write the on-disk snapshot file containing the BSATN-encoded `snapshot`
+    /// into `snapshot_dir`.
+    ///
+    /// It is not recommanded to call this method directly; prefer using `create_snapshot`.
+    /// It is exposed publicly to be used in very specific scenarios, like modifying an existing
+    /// snapshot.
+    pub fn write_snapshot_file(&self, snapshot_dir: &SnapshotDirPath, snapshot: Snapshot) -> Result<(), SnapshotError> {
         // Serialize and hash the in-memory `Snapshot` object.
         let snapshot_bsatn = bsatn::to_vec(&snapshot).map_err(|cause| SnapshotError::Serialize {
             ty: ObjectType::Snapshot,
@@ -711,22 +733,14 @@ impl SnapshotRepository {
 
         // Create the snapshot file, containing first the hash, then the `Snapshot`.
         {
-            let mut snapshot_file = BufWriter::new(snapshot_dir.snapshot_file(tx_offset).open_file(&o_excl())?);
+            let mut snapshot_file =
+                BufWriter::new(snapshot_dir.snapshot_file(snapshot.tx_offset).open_file(&o_excl())?);
             snapshot_file.write_all(hash.as_bytes())?;
             snapshot_file.write_all(&snapshot_bsatn)?;
             snapshot_file.flush()?;
         }
 
-        log::info!(
-            "[{}] SNAPSHOT {:0>20}: Hardlinked {} objects and wrote {} objects",
-            self.database_identity,
-            tx_offset,
-            counter.objects_hardlinked,
-            counter.objects_written,
-        );
-        // Success! return the directory of the newly-created snapshot.
-        // The lockfile will be dropped here.
-        Ok(snapshot_dir)
+        Ok(())
     }
 
     fn empty_snapshot(&self, tx_offset: TxOffset) -> Snapshot {
