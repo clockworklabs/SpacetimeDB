@@ -475,6 +475,10 @@ namespace SpacetimeDB
             {
                 webSocket.Close();
             }
+            else
+            {
+                webSocket.Abort(); // forceful during connecting
+            }
 
             _parseCancellationTokenSource.Cancel();
         }

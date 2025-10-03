@@ -381,6 +381,31 @@ namespace SpacetimeDB
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Forcefully abort the WebSocket connection. This terminates any in-flight connect/receive/send
+        /// and ensures the server-side socket is torn down promptly. Prefer Close() for graceful shutdowns.
+        /// </summary>
+        public void Abort()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // WebGL plugin does not expose an Abort; fall back to a best-effort close if connected.
+            if (_isConnected && _webglSocketId >= 0)
+            {
+                WebSocket_Close(_webglSocketId, (int)WebSocketCloseStatus.NormalClosure, "Aborting connection.");
+                _isConnected = false;
+            }
+#else
+            try
+            {
+                Ws?.Abort();
+            }
+            catch
+            {
+                // Intentionally swallow; Abort is best-effort.
+            }
+#endif
+        }
+
         private Task? senderTask;
         private readonly ConcurrentQueue<ClientMessage> messageSendQueue = new();
 
