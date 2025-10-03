@@ -2,6 +2,9 @@
 title: 3 - Gameplay
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # Unity Tutorial - Part 3 - Gameplay
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
@@ -10,7 +13,8 @@ This progressive tutorial is continued from [part 2](/docs/unity/part-2).
 
 ### Spawning Food
 
-:::server-rust
+<Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="rust" label="Rust">
 Let's start by spawning food into the map. The first thing we need to do is create a new, special reducer called the `init` reducer. SpacetimeDB calls the `init` reducer automatically when first publish your module, and also after any time you run with `publish --delete-data`. It gives you an opportunity to initialize the state of your database before any clients connect.
 
 Add this new reducer above our `connect` reducer.
@@ -81,8 +85,10 @@ pub fn spawn_food(ctx: &ReducerContext) -> Result<(), String> {
 }
 ```
 
-:::
-:::server-csharp
+In this reducer, we are using the `world_size` we configured along with the `ReducerContext`'s random number generator `.rng()` function to place 600 food uniformly randomly throughout the map. We've also chosen the `mass` of the food to be a random number between 2 and 4 inclusive.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
 Let's start by spawning food into the map. The first thing we need to do is create a new, special reducer called the `Init` reducer. SpacetimeDB calls the `Init` reducer automatically when you first publish your module, and also after any time you run with `publish --delete-data`. It gives you an opportunity to initialize the state of your database before any clients connect.
 
 Add this new reducer above our `Connect` reducer.
@@ -146,19 +152,19 @@ public static float Range(this Random rng, float min, float max) => rng.NextSing
 public static uint Range(this Random rng, uint min, uint max) => (uint)rng.NextInt64(min, max);
 ```
 
-:::
+In this reducer, we are using the `world_size` we configured along with the `ReducerContext`'s random number generator `.Rng` function to place 600 food uniformly randomly throughout the map. We've also chosen the `mass` of the food to be a random number between 2 and 4 inclusive.
 
-In this reducer, we are using the `world_size` we configured along with the `ReducerContext`'s random number generator `.rng()` function to place 600 food uniformly randomly throughout the map. We've also chosen the `mass` of the food to be a random number between 2 and 4 inclusive.
-
-:::server-csharp
 We also added two helper functions so we can get a random range as either a `uint` or a `float`.
 
-:::
+</TabItem>
+</Tabs>
+
 Although, we've written the reducer to spawn food, no food will actually be spawned until we call the function while players are logged in. This raises the question, who should call this function and when?
 
 We would like for this function to be called periodically to "top up" the amount of food on the map so that it never falls very far below our target amount of food. SpacetimeDB has built in functionality for exactly this. With SpacetimeDB you can schedule your module to call itself in the future or repeatedly with reducers.
 
-:::server-rust
+<Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="rust" label="Rust">
 In order to schedule a reducer to be called we have to create a new table which specifies when and how a reducer should be called. Add this new table to the top of the file, below your imports.
 
 ```rust
@@ -172,8 +178,9 @@ pub struct SpawnFoodTimer {
 ```
 
 Note the `scheduled(spawn_food)` parameter in the table macro. This tells SpacetimeDB that the rows in this table specify a schedule for when the `spawn_food` reducer should be called. Each scheduled table requires a `scheduled_id` and a `scheduled_at` field so that SpacetimeDB can call your reducer, however you can also add your own fields to these rows as well.
-:::
-:::server-csharp
+
+</TabItem>
+<TabItem value="csharp" label="C#">
 In order to schedule a reducer to be called we have to create a new table which specifies when an how a reducer should be called. Add this new table to the top of the `Module` class.
 
 ```csharp
@@ -187,13 +194,16 @@ public partial struct SpawnFoodTimer
 ```
 
 Note the `Scheduled = nameof(SpawnFood)` parameter in the table macro. This tells SpacetimeDB that the rows in this table specify a schedule for when the `SpawnFood` reducer should be called. Each scheduled table requires a `scheduled_id` and a `scheduled_at` field so that SpacetimeDB can call your reducer, however you can also add your own fields to these rows as well.
-:::
+
+</TabItem>
+</Tabs>
 
 You can create, delete, or change a schedule by inserting, deleting, or updating rows in this table.
 
 You will see an error telling you that the `spawn_food` reducer needs to take two arguments, but currently only takes one. This is because the schedule row must be passed in to all scheduled reducers. Modify your `spawn_food` reducer to take the scheduled row as an argument.
 
-:::server-rust
+<Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="rust" label="Rust">
 
 ```rust
 #[spacetimedb::reducer]
@@ -202,8 +212,8 @@ pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), St
 }
 ```
 
-:::
-:::server-csharp
+</TabItem>
+<TabItem value="csharp" label="C#">
 
 ```csharp
 [Reducer]
@@ -213,11 +223,13 @@ public static void SpawnFood(ReducerContext ctx, SpawnFoodTimer _timer)
 }
 ```
 
-:::
+</TabItem>
+</Tabs>
 
 In our case we aren't interested in the data on the row, so we name the argument `_timer`.
 
-:::server-rust
+<Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="rust" label="Rust">
 Let's modify our `init` reducer to schedule our `spawn_food` reducer to be called every 500 milliseconds.
 
 ```rust
@@ -236,10 +248,15 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 }
 ```
 
-> You can use `ScheduleAt::Interval` to schedule a reducer call at an interval like we're doing here. SpacetimeDB will continue to call the reducer at this interval until you remove the row. You can also use `ScheduleAt::Time()` to specify a specific at which to call a reducer once. SpacetimeDB will remove that row automatically after the reducer has been called.
-> :::
-> :::server-csharp
-> Let's modify our `Init` reducer to schedule our `SpawnFood` reducer to be called every 500 milliseconds.
+:::note
+
+You can use `ScheduleAt::Interval` to schedule a reducer call at an interval like we're doing here. SpacetimeDB will continue to call the reducer at this interval until you remove the row. You can also use `ScheduleAt::Time()` to specify a specific at which to call a reducer once. SpacetimeDB will remove that row automatically after the reducer has been called.
+
+:::
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+Let's modify our `Init` reducer to schedule our `SpawnFood` reducer to be called every 500 milliseconds.
 
 ```csharp
 [Reducer(ReducerKind.Init)]
@@ -254,8 +271,14 @@ public static void Init(ReducerContext ctx)
 }
 ```
 
-> You can use `ScheduleAt.Interval` to schedule a reducer call at an interval like we're doing here. SpacetimeDB will continue to call the reducer at this interval until you remove the row. You can also use `ScheduleAt.Time()` to specify a specific at which to call a reducer once. SpacetimeDB will remove that row automatically after the reducer has been called.
-> :::
+:::note
+
+You can use `ScheduleAt.Interval` to schedule a reducer call at an interval like we're doing here. SpacetimeDB will continue to call the reducer at this interval until you remove the row. You can also use `ScheduleAt.Time()` to specify a specific at which to call a reducer once. SpacetimeDB will remove that row automatically after the reducer has been called.
+
+:::
+
+</TabItem>
+</Tabs>
 
 ### Logging Players In
 
@@ -263,24 +286,27 @@ Let's continue building out our server module by modifying it to log in a player
 
 Let's add a second table to our `Player` struct. Modify the `Player` struct by adding this above the struct:
 
-:::server-rust
+<Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="rust" label="Rust">
 
 ```rust
 #[spacetimedb::table(name = logged_out_player)]
 ```
 
-:::
-:::server-csharp
+</TabItem>
+<TabItem value="csharp" label="C#">
 
 ```csharp
 [Table(Name = "logged_out_player")]
 ```
 
-:::
+</TabItem>
+</Tabs>
 
 Your struct should now look like this:
 
-:::server-rust
+<Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="rust" label="Rust">
 
 ```rust
 #[spacetimedb::table(name = player, public)]
@@ -296,8 +322,8 @@ pub struct Player {
 }
 ```
 
-:::
-:::server-csharp
+</TabItem>
+<TabItem value="csharp" label="C#">
 
 ```csharp
 [Table(Name = "player", Public = true)]
@@ -312,15 +338,21 @@ public partial struct Player
 }
 ```
 
-:::
+</TabItem>
+</Tabs>
 
 This line creates an additional tabled called `logged_out_player` whose rows share the same `Player` type as in the `player` table.
 
-> IMPORTANT! Note that this new table is not marked `public`. This means that it can only be accessed by the database owner (which is almost always the database creator). In order to prevent any unintended data access, all SpacetimeDB tables are private by default.
->
-> If your client isn't syncing rows from the server, check that your table is not accidentally marked private.
+:::note
 
-:::server-rust
+IMPORTANT! Note that this new table is not marked `public`. This means that it can only be accessed by the database owner (which is almost always the database creator). In order to prevent any unintended data access, all SpacetimeDB tables are private by default.
+
+If your client isn't syncing rows from the server, check that your table is not accidentally marked private.
+
+:::
+
+<Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="rust" label="Rust">
 Next, modify your `connect` reducer and add a new `disconnect` reducer below it:
 
 ```rust
@@ -358,8 +390,8 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
 }
 ```
 
-:::
-:::server-csharp
+</TabItem>
+<TabItem value="csharp" label="C#">
 Next, modify your `Connect` reducer and add a new `Disconnect` reducer below it:
 
 ```csharp
@@ -391,25 +423,31 @@ public static void Disconnect(ReducerContext ctx)
 }
 ```
 
-:::
+</TabItem>
+</Tabs>
 
 Now when a client connects, if the player corresponding to the client is in the `logged_out_player` table, we will move them into the `player` table, thus indicating that they are logged in and connected. For any new unrecognized client connects we will create a `Player` and insert it into the `player` table.
 
 When a player disconnects, we will transfer their player row from the `player` table to the `logged_out_player` table to indicate they're offline.
 
-> Note that we could have added a `logged_in` boolean to the `Player` type to indicated whether the player is logged in. There's nothing incorrect about that approach, however for several reasons we recommend this two table approach:
->
-> - We can iterate over all logged in players without any `if` statements or branching
-> - The `Player` type now uses less program memory improving cache efficiency
-> - We can easily check whether a player is logged in, based on whether their row exists in the `player` table
->
-> This approach is more generally referred to as [existence based processing](https://www.dataorienteddesign.com/dodmain/node4.html) and it is a common technique in data-oriented design.
+:::note
+
+Note that we could have added a `logged_in` boolean to the `Player` type to indicated whether the player is logged in. There's nothing incorrect about that approach, however for several reasons we recommend this two table approach:
+
+- We can iterate over all logged in players without any `if` statements or branching
+- The `Player` type now uses less program memory improving cache efficiency
+- We can easily check whether a player is logged in, based on whether their row exists in the `player` table
+
+This approach is more generally referred to as [existence based processing](https://www.dataorienteddesign.com/dodmain/node4.html) and it is a common technique in data-oriented design.
+
+:::
 
 ### Spawning Player Circles
 
 Now that we've got our food spawning and our players set up, let's create a match and spawn player circle entities into it. The first thing we should do before spawning a player into a match is give them a name.
 
-:::server-rust
+<Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="rust" label="Rust">
 Add the following to the bottom of your file.
 
 ```rust
@@ -473,8 +511,9 @@ fn spawn_circle_at(
 ```
 
 The `enter_game` reducer takes one argument, the player's `name`. We can use this name to display as a label for the player in the match, by storing the name on the player's row. We are also spawning some circles for the player to control now that they are entering the game. To do this, we choose a random position within the bounds of the arena and create a new entity and corresponding circle row.
-:::
-:::server-csharp
+
+</TabItem>
+<TabItem value="csharp" label="C#">
 Add the following to the end of the `Module` class.
 
 ```csharp
@@ -527,11 +566,14 @@ public static Entity SpawnCircleAt(ReducerContext ctx, uint player_id, uint mass
 ```
 
 The `EnterGame` reducer takes one argument, the player's `name`. We can use this name to display as a label for the player in the match, by storing the name on the player's row. We are also spawning some circles for the player to control now that they are entering the game. To do this, we choose a random position within the bounds of the arena and create a new entity and corresponding circle row.
-:::
+
+</TabItem>
+</Tabs>
 
 Let's also modify our `disconnect` reducer to remove the circles from the arena when the player disconnects from the database server.
 
-:::server-rust
+<Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="rust" label="Rust">
 
 ```rust
 #[spacetimedb::reducer(client_disconnected)]
@@ -556,8 +598,8 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
 }
 ```
 
-:::
-:::server-csharp
+</TabItem>
+<TabItem value="csharp" label="C#">
 
 ```csharp
 [Reducer(ReducerKind.ClientDisconnected)]
@@ -576,7 +618,8 @@ public static void Disconnect(ReducerContext ctx)
 }
 ```
 
-:::
+</TabItem>
+</Tabs>
 
 Finally, publish the new module to SpacetimeDB with this command:
 
@@ -1191,12 +1234,16 @@ Lastly modify the `GameManager.SetupArena` method to set the `WorldSize` on the 
 
 ### Entering the Game
 
-:::server-rust
-At this point, you may need to regenerate your bindings the following command from the `server-rust` directory.
-:::
-:::server-csharp
-At this point, you may need to regenerate your bindings the following command from the `server-csharp` directory.
-:::
+<Tabs groupId="server-language" defaultValue="rust">
+  <TabItem value="rust" label="Rust">
+    At this point, you may need to regenerate your bindings the following
+    command from the `server-rust` directory.
+  </TabItem>
+  <TabItem value="csharp" label="C#">
+    At this point, you may need to regenerate your bindings the following
+    command from the `server-csharp` directory.
+  </TabItem>
+</Tabs>
 
 ```sh
 spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen
@@ -1224,9 +1271,13 @@ The last step is to call the `enter_game` reducer on the server, passing in a us
 
 At this point, after publishing our module we can press the play button to see the fruits of our labor! You should be able to see your player's circle, with its username label, surrounded by food.
 
-<!-- ![Player on screen](part-3-player-on-screen.png) -->
+![Player on screen](/images/unity/part-3-player-on-screen.png)
 
-> The label won't be centered at this point. Feel free to adjust it if you like. We just didn't want to complicate the tutorial.
+:::note
+
+The label won't be centered at this point. Feel free to adjust it if you like. We just didn't want to complicate the tutorial.
+
+:::
 
 ### Troubleshooting
 

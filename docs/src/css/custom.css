@@ -33,7 +33,18 @@
   --ifm-alert-background-color: #4d3800;
   --ifm-alert-foreground-color: #fff8e6;
   --ifm-alert-border-color: #e6a700;
-  --ifm-alert-background-color-highlight: #3d2d00;
+  --ifm-alert-background-color-highlight: var(
+    --clockworklabs-code-background-color
+  );
+}
+
+:root .alert--secondary {
+  --ifm-alert-background-color: #25353a;
+  --ifm-alert-foreground-color: #b6c0cf;
+  --ifm-alert-border-color: #3a565e;
+  --ifm-alert-background-color-highlight: var(
+    --clockworklabs-code-background-color
+  );
 }
 
 html {
