@@ -67,6 +67,7 @@ jobs:
 
       - name: Package (windows)
         if: ${{ runner.os == 'Windows' }}
+        shell: bash
         run: |
           mkdir build
           cd target/${{matrix.target}}/release
