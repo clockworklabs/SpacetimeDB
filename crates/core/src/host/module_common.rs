@@ -5,6 +5,7 @@ use crate::{
     energy::EnergyMonitor,
     host::{
         module_host::{DynModule, ModuleInfo},
+        wasm_common::{module_host_actor::DescribeError, DESCRIBE_MODULE_DUNDER},
         Scheduler,
     },
     module_host_context::ModuleCreationContext,
@@ -87,4 +88,23 @@ impl DynModule for ModuleCommon {
     fn scheduler(&self) -> &Scheduler {
         &self.scheduler
     }
+}
+
+/// Runs the describer of modules in `run` and does some logging around it.
+pub(crate) fn run_describer<T>(
+    log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
+    run: impl FnOnce() -> anyhow::Result<T>,
+) -> Result<T, DescribeError> {
+    let describer_func_name = DESCRIBE_MODULE_DUNDER;
+    let start = std::time::Instant::now();
+    log::trace!("Start describer \"{describer_func_name}\"...");
+
+    let result = run();
+
+    let duration = start.elapsed();
+    log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros());
+
+    result
+        .inspect_err(|err| log_traceback("describer", describer_func_name, err))
+        .map_err(DescribeError::RuntimeError)
 }
