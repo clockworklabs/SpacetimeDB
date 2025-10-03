@@ -28,7 +28,7 @@ spacetime login
 ```
 
 1. Open the SpacetimeDB website and log in using your GitHub login.
-1. You should now be able to see your published modules [by navigating to your profile on the website](/profile).
+1. You should now be able to see your published modules [https://spacetimedb.com/profile](https://spacetimedb.com/profile), or you can navigate to your database directly at [https://spacetimedb.com/my-cool-module](https://spacetimedb.com/my-cool-module).
 
 ---
 
@@ -55,5 +55,5 @@ DbConnection.Builder()
 ## TypeScript
 
 ```ts
-DbConnection.builder().withUri("https://maincloud.spacetimedb.com");
+DbConnection.builder().withUri('https://maincloud.spacetimedb.com');
 ```

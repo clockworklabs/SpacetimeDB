@@ -48,8 +48,8 @@ const config: Config = {
   url: 'https://docs.spacetimedb.com',
   baseUrl: '/',
 
-  onBrokenLinks: 'warn',
-  onBrokenMarkdownLinks: 'warn',
+  onBrokenLinks: 'throw',
+  onBrokenMarkdownLinks: 'throw',
 
   i18n: {
     defaultLocale: 'en',
@@ -143,6 +143,7 @@ const config: Config = {
     prism: {},
     colorMode: {
       disableSwitch: true,
+      defaultMode: 'light',
     },
   } satisfies Preset.ThemeConfig,
 
