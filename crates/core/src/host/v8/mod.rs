@@ -9,21 +9,23 @@ use crate::host::wasm_common::module_host_actor::{
 };
 use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
-use anyhow::anyhow;
+use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 use de::deserialize_js;
 use error::{catch_exception, exception_already_thrown, log_traceback, ExcResult, Throwable};
 use from_value::cast;
 use key_cache::get_or_create_key_cache;
 use ser::serialize_to_js;
-use spacetimedb_client_api_messages::energy::{EnergyQuanta, ReducerBudget};
+use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::RawModuleDef;
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
-use v8::{Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, Local, Value};
+use std::thread;
+use std::time::Instant;
+use v8::{Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, IsolateHandle, Local, Value};
 
 mod de;
 mod error;
@@ -81,8 +83,12 @@ impl V8RuntimeInner {
         );
 
         if true {
-            return Err::<JsModule, _>(anyhow!("v8_todo"));
+            return Err::<JsModule, _>(anyhow::anyhow!("v8_todo"));
         }
+
+        // TODO(v8): determine min required ABI by module and check that it's supported?
+
+        // TODO(v8): validate function signatures like in WASM? Is that possible with V8?
 
         let desc = todo!();
         // Validate and create a common module rom the raw definition.
@@ -121,6 +127,17 @@ impl Module for JsModule {
     }
 
     fn create_instance(&self) -> Self::Instance {
+        // TODO(v8): consider some equivalent to `epoch_deadline_callback`
+        // where we report `Js has been running for ...`.
+
+        // TODO(v8): timeout things like `extract_description`.
+
+        // TODO(v8): do we care about preinits / setup or are they unnecessary?
+
+        // TODO(v8): create `InstanceEnv`.
+
+        // TODO(v8): extract description.
+
         todo!()
     }
 }
@@ -147,41 +164,94 @@ impl ModuleInstance for JsInstance {
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
-        // TODO(centril): snapshots, module->host calls
-        let mut isolate = Isolate::new(<_>::default());
-        let scope = &mut HandleScope::new(&mut isolate);
-        let context = Context::new(scope, ContextOptions::default());
-        let scope = &mut ContextScope::new(scope, context);
-
         self.common.call_reducer_with_tx(
             &self.replica_ctx.clone(),
             tx,
             params,
             log_traceback,
-            |tx, op, _budget| {
-                let call_result = call_call_reducer_from_op(scope, op);
-                // TODO(centril): energy metrering.
-                let energy = EnergyStats {
-                    used: EnergyQuanta::ZERO,
-                    wasmtime_fuel_used: 0,
-                    remaining: ReducerBudget::ZERO,
-                };
-                // TODO(centril): timings.
+            |tx, op, budget| {
+                // TODO(v8): snapshots, module->host calls
+                // Setup V8 scope.
+                let mut isolate: v8::OwnedIsolate = Isolate::new(<_>::default());
+                let isolate_handle = isolate.thread_safe_handle();
+                let mut scope_1 = HandleScope::new(&mut isolate);
+                let context = Context::new(&mut scope_1, ContextOptions::default());
+                let mut scope_2 = ContextScope::new(&mut scope_1, context);
+
+                let timeout_thread_cancel_flag = run_reducer_timeout(isolate_handle, budget);
+
+                // Call the reducer.
+                let start = Instant::now();
+                let call_result = call_call_reducer_from_op(&mut scope_2, op);
+                let total_duration = start.elapsed();
+                // Cancel the execution timeout in `run_reducer_timeout`.
+                timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
+
+                // Handle energy and timings.
+                let used = duration_to_budget(total_duration);
+                let remaining = budget - used;
+                let energy = EnergyStats { budget, remaining };
                 let timings = ExecutionTimings {
-                    total_duration: Duration::ZERO,
+                    total_duration,
+                    // TODO(v8): call times.
                     wasm_instance_env_call_times: CallTimes::new(),
                 };
+
+                // Fetch the currently used heap size in V8.
+                // The used size is ostensibly fairer than the total size.
+                drop(scope_2);
+                drop(scope_1);
+                let memory_allocation = isolate.get_heap_statistics().used_heap_size();
+
                 let exec_result = ExecuteResult {
                     energy,
                     timings,
-                    // TODO(centril): memory allocation.
-                    memory_allocation: 0,
+                    memory_allocation,
                     call_result,
                 };
                 (tx, exec_result)
             },
         )
     }
+}
+
+/// Spawns a thread that will terminate reducer execution
+/// when `budget` has been used up.
+fn run_reducer_timeout(isolate_handle: IsolateHandle, budget: ReducerBudget) -> Arc<AtomicBool> {
+    let execution_done_flag = Arc::new(AtomicBool::new(false));
+    let execution_done_flag2 = execution_done_flag.clone();
+    let timeout = budget_to_duration(budget);
+
+    // TODO(v8): Using an OS thread is a bit heavy handed...?
+    thread::spawn(move || {
+        // Sleep until the timeout.
+        thread::sleep(timeout);
+
+        if execution_done_flag2.load(Ordering::Relaxed) {
+            // The reducer completed successfully.
+            return;
+        }
+
+        // Reducer is still running.
+        // Terminate V8 execution.
+        isolate_handle.terminate_execution();
+    });
+
+    execution_done_flag
+}
+
+/// Converts a [`ReducerBudget`] to a [`Duration`].
+fn budget_to_duration(_budget: ReducerBudget) -> Duration {
+    // TODO(v8): This is fake logic that allows a maximum timeout.
+    // Replace with sensible math.
+    Duration::MAX
+}
+
+/// Converts a [`Duration`] to a [`ReducerBudget`].
+fn duration_to_budget(_duration: Duration) -> ReducerBudget {
+    // TODO(v8): This is fake logic that allows minimum energy usage.
+    // Replace with sensible math.
+    ReducerBudget::ZERO
 }
 
 /// Returns the global property `key`.
