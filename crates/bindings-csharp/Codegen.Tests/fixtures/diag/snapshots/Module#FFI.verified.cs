@@ -1107,7 +1107,7 @@ static class ModuleRegistration
         }
 
         {
-            var value = new SpacetimeDB.BSATN.F32();
+            var value = new SpacetimeDB.BSATN.U64();
             __memoryStream.Position = 0;
             __memoryStream.SetLength(0);
             value.Write(__writer, 2);
@@ -1120,7 +1120,7 @@ static class ModuleRegistration
         }
 
         {
-            var value = new SpacetimeDB.BSATN.F64();
+            var value = new SpacetimeDB.BSATN.I32();
             __memoryStream.Position = 0;
             __memoryStream.SetLength(0);
             value.Write(__writer, 2);
@@ -1133,6 +1133,45 @@ static class ModuleRegistration
         }
 
         {
+            var value = new SpacetimeDB.BSATN.I32();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                12,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.F32();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                13,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.F64();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, 2);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                14,
+                array
+            );
+        }
+
+        {
             var value = new SpacetimeDB.BSATN.Enum<MyEnum>();
             __memoryStream.Position = 0;
             __memoryStream.SetLength(0);
@@ -1140,7 +1179,20 @@ static class ModuleRegistration
             var array = __memoryStream.ToArray();
             SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
                 "TestDefaultFieldValues",
-                12,
+                15,
+                array
+            );
+        }
+
+        {
+            var value = new SpacetimeDB.BSATN.ValueOption<MyStruct, MyStruct.BSATN>();
+            __memoryStream.Position = 0;
+            __memoryStream.SetLength(0);
+            value.Write(__writer, null);
+            var array = __memoryStream.ToArray();
+            SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
+                "TestDefaultFieldValues",
+                16,
                 array
             );
         }
@@ -1159,7 +1211,7 @@ static class ModuleRegistration
         }
 
         {
-            var value = new SpacetimeDB.BSATN.U32();
+            var value = new SpacetimeDB.BSATN.I8();
             __memoryStream.Position = 0;
             __memoryStream.SetLength(0);
             value.Write(__writer, 2);
@@ -1172,7 +1224,7 @@ static class ModuleRegistration
         }
 
         {
-            var value = new SpacetimeDB.BSATN.U16();
+            var value = new SpacetimeDB.BSATN.U8();
             __memoryStream.Position = 0;
             __memoryStream.SetLength(0);
             value.Write(__writer, 2);
@@ -1185,7 +1237,7 @@ static class ModuleRegistration
         }
 
         {
-            var value = new SpacetimeDB.BSATN.U64();
+            var value = new SpacetimeDB.BSATN.I16();
             __memoryStream.Position = 0;
             __memoryStream.SetLength(0);
             value.Write(__writer, 2);
@@ -1198,7 +1250,7 @@ static class ModuleRegistration
         }
 
         {
-            var value = new SpacetimeDB.BSATN.I8();
+            var value = new SpacetimeDB.BSATN.U16();
             __memoryStream.Position = 0;
             __memoryStream.SetLength(0);
             value.Write(__writer, 2);
@@ -1211,7 +1263,7 @@ static class ModuleRegistration
         }
 
         {
-            var value = new SpacetimeDB.BSATN.I16();
+            var value = new SpacetimeDB.BSATN.I32();
             __memoryStream.Position = 0;
             __memoryStream.SetLength(0);
             value.Write(__writer, 2);
@@ -1224,7 +1276,7 @@ static class ModuleRegistration
         }
 
         {
-            var value = new SpacetimeDB.BSATN.I32();
+            var value = new SpacetimeDB.BSATN.U32();
             __memoryStream.Position = 0;
             __memoryStream.SetLength(0);
             value.Write(__writer, 2);

@@ -374,43 +374,66 @@ public partial struct TestDefaultFieldValues
     [Default(true)]
     public bool DefaultBool = false;
 
-    [Default(2U)]
-    public uint DefaultUInt = 1U;
+    [Default((sbyte)2)]
+    public sbyte DefaultI8 = 1;
+
+    [Default((byte)2)]
+    public byte DefaultU8 = 1;
+
+    [Default((short)2)]
+    public short DefaultI16 = 1;
+
+    [Default((ushort)2)]
+    public ushort DefaultU16 = 1;
 
     [Default(2)]
-    public ushort DefaultUInt16 = 1;
+    public int DefaultI32 = 1;
+
+    [Default(2U)]
+    public uint DefaultU32 = 1U;
 
     [Default(2L)]
-    public ulong DefaultUInt64 = 1L;
+    public long DefaultI64 = 1L;
 
-    [Default(2)]
-    public sbyte DefaultSByte = 1;
+    [Default(2UL)]
+    public ulong DefaultU64 = 1UL;
 
-    [Default(2)]
-    public short DefaultInt16 = 1;
+    [Default(0x02)]
+    public int DefaultHex = 1;
 
-    [Default(2)]
-    public int DefaultInt32 = 1;
-
-    [Default(2)]
-    public long DefaultInt64 = 1;
+    [Default(0b00000010)]
+    public int DefaultBin = 1;
 
     [Default(2.0f)]
-    public float DefaultFloat = 1.0f;
+    public float DefaultF32 = 1.0f;
 
     [Default(2.0)]
-    public double DefaultDouble = 1.0;
+    public double DefaultF64 = 1.0;
 
     [Default(MyEnum.SetByAttribute)]
-    public MyEnum DefaultEnum = MyEnum.SetDuringInit;
+    public MyEnum DefaultEnum = MyEnum.SetByInitalization;
+
+    [Default(null!)]
+    public MyStruct? DefaultNull = new MyStruct(1);
 }
 
 [SpacetimeDB.Type]
 public enum MyEnum
 {
-    Unset,
-    SetDuringInit,
+    Default,
+    SetByInitalization,
     SetByAttribute,
+}
+
+[SpacetimeDB.Type]
+public partial struct MyStruct
+{
+    public int x;
+
+    public MyStruct(int x)
+    {
+        this.x = x;
+    }
 }
 
 [SpacetimeDB.Table]

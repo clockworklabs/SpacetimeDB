@@ -11,16 +11,20 @@ partial struct TestDefaultFieldValues
         UniqueField = BSATN.UniqueFieldRW.Read(reader);
         DefaultString = BSATN.DefaultStringRW.Read(reader);
         DefaultBool = BSATN.DefaultBoolRW.Read(reader);
-        DefaultUInt = BSATN.DefaultUIntRW.Read(reader);
-        DefaultUInt16 = BSATN.DefaultUInt16RW.Read(reader);
-        DefaultUInt64 = BSATN.DefaultUInt64RW.Read(reader);
-        DefaultSByte = BSATN.DefaultSByteRW.Read(reader);
-        DefaultInt16 = BSATN.DefaultInt16RW.Read(reader);
-        DefaultInt32 = BSATN.DefaultInt32RW.Read(reader);
-        DefaultInt64 = BSATN.DefaultInt64RW.Read(reader);
-        DefaultFloat = BSATN.DefaultFloatRW.Read(reader);
-        DefaultDouble = BSATN.DefaultDoubleRW.Read(reader);
+        DefaultI8 = BSATN.DefaultI8RW.Read(reader);
+        DefaultU8 = BSATN.DefaultU8RW.Read(reader);
+        DefaultI16 = BSATN.DefaultI16RW.Read(reader);
+        DefaultU16 = BSATN.DefaultU16RW.Read(reader);
+        DefaultI32 = BSATN.DefaultI32RW.Read(reader);
+        DefaultU32 = BSATN.DefaultU32RW.Read(reader);
+        DefaultI64 = BSATN.DefaultI64RW.Read(reader);
+        DefaultU64 = BSATN.DefaultU64RW.Read(reader);
+        DefaultHex = BSATN.DefaultHexRW.Read(reader);
+        DefaultBin = BSATN.DefaultBinRW.Read(reader);
+        DefaultF32 = BSATN.DefaultF32RW.Read(reader);
+        DefaultF64 = BSATN.DefaultF64RW.Read(reader);
         DefaultEnum = BSATN.DefaultEnumRW.Read(reader);
+        DefaultNull = BSATN.DefaultNullRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
@@ -28,16 +32,20 @@ partial struct TestDefaultFieldValues
         BSATN.UniqueFieldRW.Write(writer, UniqueField);
         BSATN.DefaultStringRW.Write(writer, DefaultString);
         BSATN.DefaultBoolRW.Write(writer, DefaultBool);
-        BSATN.DefaultUIntRW.Write(writer, DefaultUInt);
-        BSATN.DefaultUInt16RW.Write(writer, DefaultUInt16);
-        BSATN.DefaultUInt64RW.Write(writer, DefaultUInt64);
-        BSATN.DefaultSByteRW.Write(writer, DefaultSByte);
-        BSATN.DefaultInt16RW.Write(writer, DefaultInt16);
-        BSATN.DefaultInt32RW.Write(writer, DefaultInt32);
-        BSATN.DefaultInt64RW.Write(writer, DefaultInt64);
-        BSATN.DefaultFloatRW.Write(writer, DefaultFloat);
-        BSATN.DefaultDoubleRW.Write(writer, DefaultDouble);
+        BSATN.DefaultI8RW.Write(writer, DefaultI8);
+        BSATN.DefaultU8RW.Write(writer, DefaultU8);
+        BSATN.DefaultI16RW.Write(writer, DefaultI16);
+        BSATN.DefaultU16RW.Write(writer, DefaultU16);
+        BSATN.DefaultI32RW.Write(writer, DefaultI32);
+        BSATN.DefaultU32RW.Write(writer, DefaultU32);
+        BSATN.DefaultI64RW.Write(writer, DefaultI64);
+        BSATN.DefaultU64RW.Write(writer, DefaultU64);
+        BSATN.DefaultHexRW.Write(writer, DefaultHex);
+        BSATN.DefaultBinRW.Write(writer, DefaultBin);
+        BSATN.DefaultF32RW.Write(writer, DefaultF32);
+        BSATN.DefaultF64RW.Write(writer, DefaultF64);
         BSATN.DefaultEnumRW.Write(writer, DefaultEnum);
+        BSATN.DefaultNullRW.Write(writer, DefaultNull);
     }
 
     object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
@@ -46,7 +54,7 @@ partial struct TestDefaultFieldValues
     }
 
     public override string ToString() =>
-        $"TestDefaultFieldValues {{ UniqueField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UniqueField)}, DefaultString = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultString)}, DefaultBool = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultBool)}, DefaultUInt = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultUInt)}, DefaultUInt16 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultUInt16)}, DefaultUInt64 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultUInt64)}, DefaultSByte = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultSByte)}, DefaultInt16 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultInt16)}, DefaultInt32 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultInt32)}, DefaultInt64 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultInt64)}, DefaultFloat = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultFloat)}, DefaultDouble = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultDouble)}, DefaultEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultEnum)} }}";
+        $"TestDefaultFieldValues {{ UniqueField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UniqueField)}, DefaultString = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultString)}, DefaultBool = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultBool)}, DefaultI8 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultI8)}, DefaultU8 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultU8)}, DefaultI16 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultI16)}, DefaultU16 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultU16)}, DefaultI32 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultI32)}, DefaultU32 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultU32)}, DefaultI64 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultI64)}, DefaultU64 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultU64)}, DefaultHex = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultHex)}, DefaultBin = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultBin)}, DefaultF32 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultF32)}, DefaultF64 = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultF64)}, DefaultEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultEnum)}, DefaultNull = {SpacetimeDB.BSATN.StringUtil.GenericToString(DefaultNull)} }}";
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestDefaultFieldValues>
     {
@@ -56,16 +64,23 @@ partial struct TestDefaultFieldValues
         > UniqueFieldRW = new();
         internal static readonly SpacetimeDB.BSATN.String DefaultStringRW = new();
         internal static readonly SpacetimeDB.BSATN.Bool DefaultBoolRW = new();
-        internal static readonly SpacetimeDB.BSATN.U32 DefaultUIntRW = new();
-        internal static readonly SpacetimeDB.BSATN.U16 DefaultUInt16RW = new();
-        internal static readonly SpacetimeDB.BSATN.U64 DefaultUInt64RW = new();
-        internal static readonly SpacetimeDB.BSATN.I8 DefaultSByteRW = new();
-        internal static readonly SpacetimeDB.BSATN.I16 DefaultInt16RW = new();
-        internal static readonly SpacetimeDB.BSATN.I32 DefaultInt32RW = new();
-        internal static readonly SpacetimeDB.BSATN.I64 DefaultInt64RW = new();
-        internal static readonly SpacetimeDB.BSATN.F32 DefaultFloatRW = new();
-        internal static readonly SpacetimeDB.BSATN.F64 DefaultDoubleRW = new();
+        internal static readonly SpacetimeDB.BSATN.I8 DefaultI8RW = new();
+        internal static readonly SpacetimeDB.BSATN.U8 DefaultU8RW = new();
+        internal static readonly SpacetimeDB.BSATN.I16 DefaultI16RW = new();
+        internal static readonly SpacetimeDB.BSATN.U16 DefaultU16RW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 DefaultI32RW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 DefaultU32RW = new();
+        internal static readonly SpacetimeDB.BSATN.I64 DefaultI64RW = new();
+        internal static readonly SpacetimeDB.BSATN.U64 DefaultU64RW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 DefaultHexRW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 DefaultBinRW = new();
+        internal static readonly SpacetimeDB.BSATN.F32 DefaultF32RW = new();
+        internal static readonly SpacetimeDB.BSATN.F64 DefaultF64RW = new();
         internal static readonly SpacetimeDB.BSATN.Enum<MyEnum> DefaultEnumRW = new();
+        internal static readonly SpacetimeDB.BSATN.ValueOption<
+            MyStruct,
+            MyStruct.BSATN
+        > DefaultNullRW = new();
 
         public TestDefaultFieldValues Read(System.IO.BinaryReader reader)
         {
@@ -89,16 +104,20 @@ partial struct TestDefaultFieldValues
                         new("UniqueField", UniqueFieldRW.GetAlgebraicType(registrar)),
                         new("DefaultString", DefaultStringRW.GetAlgebraicType(registrar)),
                         new("DefaultBool", DefaultBoolRW.GetAlgebraicType(registrar)),
-                        new("DefaultUInt", DefaultUIntRW.GetAlgebraicType(registrar)),
-                        new("DefaultUInt16", DefaultUInt16RW.GetAlgebraicType(registrar)),
-                        new("DefaultUInt64", DefaultUInt64RW.GetAlgebraicType(registrar)),
-                        new("DefaultSByte", DefaultSByteRW.GetAlgebraicType(registrar)),
-                        new("DefaultInt16", DefaultInt16RW.GetAlgebraicType(registrar)),
-                        new("DefaultInt32", DefaultInt32RW.GetAlgebraicType(registrar)),
-                        new("DefaultInt64", DefaultInt64RW.GetAlgebraicType(registrar)),
-                        new("DefaultFloat", DefaultFloatRW.GetAlgebraicType(registrar)),
-                        new("DefaultDouble", DefaultDoubleRW.GetAlgebraicType(registrar)),
-                        new("DefaultEnum", DefaultEnumRW.GetAlgebraicType(registrar))
+                        new("DefaultI8", DefaultI8RW.GetAlgebraicType(registrar)),
+                        new("DefaultU8", DefaultU8RW.GetAlgebraicType(registrar)),
+                        new("DefaultI16", DefaultI16RW.GetAlgebraicType(registrar)),
+                        new("DefaultU16", DefaultU16RW.GetAlgebraicType(registrar)),
+                        new("DefaultI32", DefaultI32RW.GetAlgebraicType(registrar)),
+                        new("DefaultU32", DefaultU32RW.GetAlgebraicType(registrar)),
+                        new("DefaultI64", DefaultI64RW.GetAlgebraicType(registrar)),
+                        new("DefaultU64", DefaultU64RW.GetAlgebraicType(registrar)),
+                        new("DefaultHex", DefaultHexRW.GetAlgebraicType(registrar)),
+                        new("DefaultBin", DefaultBinRW.GetAlgebraicType(registrar)),
+                        new("DefaultF32", DefaultF32RW.GetAlgebraicType(registrar)),
+                        new("DefaultF64", DefaultF64RW.GetAlgebraicType(registrar)),
+                        new("DefaultEnum", DefaultEnumRW.GetAlgebraicType(registrar)),
+                        new("DefaultNull", DefaultNullRW.GetAlgebraicType(registrar))
                     }
                 )
             );
@@ -113,29 +132,37 @@ partial struct TestDefaultFieldValues
         var ___hashUniqueField = UniqueField.GetHashCode();
         var ___hashDefaultString = DefaultString == null ? 0 : DefaultString.GetHashCode();
         var ___hashDefaultBool = DefaultBool.GetHashCode();
-        var ___hashDefaultUInt = DefaultUInt.GetHashCode();
-        var ___hashDefaultUInt16 = DefaultUInt16.GetHashCode();
-        var ___hashDefaultUInt64 = DefaultUInt64.GetHashCode();
-        var ___hashDefaultSByte = DefaultSByte.GetHashCode();
-        var ___hashDefaultInt16 = DefaultInt16.GetHashCode();
-        var ___hashDefaultInt32 = DefaultInt32.GetHashCode();
-        var ___hashDefaultInt64 = DefaultInt64.GetHashCode();
-        var ___hashDefaultFloat = DefaultFloat.GetHashCode();
-        var ___hashDefaultDouble = DefaultDouble.GetHashCode();
+        var ___hashDefaultI8 = DefaultI8.GetHashCode();
+        var ___hashDefaultU8 = DefaultU8.GetHashCode();
+        var ___hashDefaultI16 = DefaultI16.GetHashCode();
+        var ___hashDefaultU16 = DefaultU16.GetHashCode();
+        var ___hashDefaultI32 = DefaultI32.GetHashCode();
+        var ___hashDefaultU32 = DefaultU32.GetHashCode();
+        var ___hashDefaultI64 = DefaultI64.GetHashCode();
+        var ___hashDefaultU64 = DefaultU64.GetHashCode();
+        var ___hashDefaultHex = DefaultHex.GetHashCode();
+        var ___hashDefaultBin = DefaultBin.GetHashCode();
+        var ___hashDefaultF32 = DefaultF32.GetHashCode();
+        var ___hashDefaultF64 = DefaultF64.GetHashCode();
         var ___hashDefaultEnum = DefaultEnum.GetHashCode();
+        var ___hashDefaultNull = DefaultNull.GetHashCode();
         return ___hashUniqueField
             ^ ___hashDefaultString
             ^ ___hashDefaultBool
-            ^ ___hashDefaultUInt
-            ^ ___hashDefaultUInt16
-            ^ ___hashDefaultUInt64
-            ^ ___hashDefaultSByte
-            ^ ___hashDefaultInt16
-            ^ ___hashDefaultInt32
-            ^ ___hashDefaultInt64
-            ^ ___hashDefaultFloat
-            ^ ___hashDefaultDouble
-            ^ ___hashDefaultEnum;
+            ^ ___hashDefaultI8
+            ^ ___hashDefaultU8
+            ^ ___hashDefaultI16
+            ^ ___hashDefaultU16
+            ^ ___hashDefaultI32
+            ^ ___hashDefaultU32
+            ^ ___hashDefaultI64
+            ^ ___hashDefaultU64
+            ^ ___hashDefaultHex
+            ^ ___hashDefaultBin
+            ^ ___hashDefaultF32
+            ^ ___hashDefaultF64
+            ^ ___hashDefaultEnum
+            ^ ___hashDefaultNull;
     }
 
 #nullable enable
@@ -147,29 +174,37 @@ partial struct TestDefaultFieldValues
                 ? that.DefaultString == null
                 : this.DefaultString.Equals(that.DefaultString);
         var ___eqDefaultBool = this.DefaultBool.Equals(that.DefaultBool);
-        var ___eqDefaultUInt = this.DefaultUInt.Equals(that.DefaultUInt);
-        var ___eqDefaultUInt16 = this.DefaultUInt16.Equals(that.DefaultUInt16);
-        var ___eqDefaultUInt64 = this.DefaultUInt64.Equals(that.DefaultUInt64);
-        var ___eqDefaultSByte = this.DefaultSByte.Equals(that.DefaultSByte);
-        var ___eqDefaultInt16 = this.DefaultInt16.Equals(that.DefaultInt16);
-        var ___eqDefaultInt32 = this.DefaultInt32.Equals(that.DefaultInt32);
-        var ___eqDefaultInt64 = this.DefaultInt64.Equals(that.DefaultInt64);
-        var ___eqDefaultFloat = this.DefaultFloat.Equals(that.DefaultFloat);
-        var ___eqDefaultDouble = this.DefaultDouble.Equals(that.DefaultDouble);
+        var ___eqDefaultI8 = this.DefaultI8.Equals(that.DefaultI8);
+        var ___eqDefaultU8 = this.DefaultU8.Equals(that.DefaultU8);
+        var ___eqDefaultI16 = this.DefaultI16.Equals(that.DefaultI16);
+        var ___eqDefaultU16 = this.DefaultU16.Equals(that.DefaultU16);
+        var ___eqDefaultI32 = this.DefaultI32.Equals(that.DefaultI32);
+        var ___eqDefaultU32 = this.DefaultU32.Equals(that.DefaultU32);
+        var ___eqDefaultI64 = this.DefaultI64.Equals(that.DefaultI64);
+        var ___eqDefaultU64 = this.DefaultU64.Equals(that.DefaultU64);
+        var ___eqDefaultHex = this.DefaultHex.Equals(that.DefaultHex);
+        var ___eqDefaultBin = this.DefaultBin.Equals(that.DefaultBin);
+        var ___eqDefaultF32 = this.DefaultF32.Equals(that.DefaultF32);
+        var ___eqDefaultF64 = this.DefaultF64.Equals(that.DefaultF64);
         var ___eqDefaultEnum = this.DefaultEnum == that.DefaultEnum;
+        var ___eqDefaultNull = this.DefaultNull.Equals(that.DefaultNull);
         return ___eqUniqueField
             && ___eqDefaultString
             && ___eqDefaultBool
-            && ___eqDefaultUInt
-            && ___eqDefaultUInt16
-            && ___eqDefaultUInt64
-            && ___eqDefaultSByte
-            && ___eqDefaultInt16
-            && ___eqDefaultInt32
-            && ___eqDefaultInt64
-            && ___eqDefaultFloat
-            && ___eqDefaultDouble
-            && ___eqDefaultEnum;
+            && ___eqDefaultI8
+            && ___eqDefaultU8
+            && ___eqDefaultI16
+            && ___eqDefaultU16
+            && ___eqDefaultI32
+            && ___eqDefaultU32
+            && ___eqDefaultI64
+            && ___eqDefaultU64
+            && ___eqDefaultHex
+            && ___eqDefaultBin
+            && ___eqDefaultF32
+            && ___eqDefaultF64
+            && ___eqDefaultEnum
+            && ___eqDefaultNull;
     }
 
     public override bool Equals(object? that)
