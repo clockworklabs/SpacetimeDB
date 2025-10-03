@@ -1,4 +1,5 @@
 :root {
+  --ifm-font-family-base: 'Inter Variable', sans-serif;
   --ifm-color-primary: #4cf490;
   --ifm-color-primary-dark: #2ef27d;
   --ifm-color-primary-darker: #1ff174;
