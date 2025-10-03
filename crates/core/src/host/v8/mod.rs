@@ -83,7 +83,7 @@ impl V8RuntimeInner {
         );
 
         if true {
-            return Err::<JsModule, _>(anyhow!("v8_todo"));
+            return Err::<JsModule, _>(anyhow::anyhow!("v8_todo"));
         }
 
         // TODO(v8): determine min required ABI by module and check that it's supported?
