@@ -500,6 +500,8 @@ pub struct PublishDatabaseQueryParams {
     token: Option<spacetimedb_lib::Hash>,
     #[serde(default)]
     policy: MigrationPolicy,
+    #[serde(default)]
+    host_type: HostType,
 }
 
 use spacetimedb_client_api_messages::http::SqlStmtResult;
@@ -537,10 +539,23 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         num_replicas,
         token,
         policy,
+        host_type,
     }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
+    // Feature gate V8 modules.
+    // The host must've been compiled with the `unstable` feature.
+    // TODO(v8): ungate this when V8 is ready to ship.
+    #[cfg(not(feature = "unstable"))]
+    if host_type == HostType::Js {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "JS host type requires a host with unstable features",
+        )
+            .into());
+    }
+
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
 
@@ -645,7 +660,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                 database_identity,
                 program_bytes: body.into(),
                 num_replicas,
-                host_type: HostType::Wasm,
+                host_type,
             },
             policy,
         )

@@ -46,7 +46,18 @@ pub fn cli() -> clap::Command {
                 .short('b')
                 .conflicts_with("project_path")
                 .conflicts_with("build_options")
+                .conflicts_with("js_file")
                 .help("The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project."),
+        )
+        .arg(
+            Arg::new("js_file")
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("js-path")
+                .short('j')
+                .conflicts_with("project_path")
+                .conflicts_with("build_options")
+                .conflicts_with("wasm_file")
+                .help("UNSTABLE: The system path (absolute or relative) to the javascript file we should publish, instead of building the project."),
         )
         .arg(
             Arg::new("num_replicas")
@@ -90,6 +101,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let force = args.get_flag("force");
     let anon_identity = args.get_flag("anon_identity");
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
+    let js_file = args.get_one::<PathBuf>("js_file");
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
     let num_replicas = args.get_one::<u8>("num_replicas");
@@ -108,13 +120,19 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         ));
     }
 
-    let path_to_wasm = if let Some(path) = wasm_file {
-        println!("Skipping build. Instead we are publishing {}", path.display());
-        path.clone()
+    // Decide program file path and read program.
+    // Optionally build the program.
+    let (path_to_program, host_type) = if let Some(path) = wasm_file {
+        println!("(WASM) Skipping build. Instead we are publishing {}", path.display());
+        (path.clone(), "Wasm")
+    } else if let Some(path) = js_file {
+        println!("(JS) Skipping build. Instead we are publishing {}", path.display());
+        (path.clone(), "Js")
     } else {
-        build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
+        let path = build::exec_with_argstring(config.clone(), path_to_project, build_options).await?;
+        (path, "Wasm")
     };
-    let program_bytes = fs::read(path_to_wasm)?;
+    let program_bytes = fs::read(path_to_program)?;
 
     let server_address = {
         let url = Url::parse(&database_host)?;
@@ -190,6 +208,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     println!("Publishing module...");
 
     builder = add_auth_header_opt(builder, &auth_header);
+
+    // Set the host type.
+    builder = builder.query(&[("host_type", host_type)]);
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {

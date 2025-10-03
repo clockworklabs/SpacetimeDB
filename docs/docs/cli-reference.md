@@ -89,6 +89,7 @@ Run `spacetime help publish` for more detailed information.
 
   Default value: `.`
 * `-b`, `--bin-path <WASM_FILE>` — The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project.
+* `-j`, `--js-path <JS_FILE>` — UNSTABLE: The system path (absolute or relative) to the javascript file we should publish, instead of building the project.
 * `--break-clients` — Allow breaking changes when publishing to an existing database identity. This will break existing clients.
 * `--anonymous` — Perform this action with an anonymous identity
 * `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
