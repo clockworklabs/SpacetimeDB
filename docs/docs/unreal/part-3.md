@@ -31,11 +31,11 @@ This reducer also demonstrates how to insert new rows into a table. Here we are 
 Now that we've ensured that our database always has a valid `world_size` let's spawn some food into the map. Add the following code to the end of the file.
 
 ```rust
-const FOOD_MASS_MIN: u32 = 2;
-const FOOD_MASS_MAX: u32 = 4;
+const FOOD_MASS_MIN: i32 = 2;
+const FOOD_MASS_MAX: i32 = 4;
 const TARGET_FOOD_COUNT: usize = 600;
 
-fn mass_to_radius(mass: u32) -> f32 {
+fn mass_to_radius(mass: i32) -> f32 {
     (mass as f32).sqrt()
 }
 
@@ -99,11 +99,11 @@ This reducer also demonstrates how to insert new rows into a table. Here we are 
 Now that we've ensured that our database always has a valid `world_size` let's spawn some food into the map. Add the following code to the end of the `Module` class.
 
 ```csharp
-const uint FOOD_MASS_MIN = 2;
-const uint FOOD_MASS_MAX = 4;
-const uint TARGET_FOOD_COUNT = 600;
+const int FOOD_MASS_MIN = 2;
+const int FOOD_MASS_MAX = 4;
+const int TARGET_FOOD_COUNT = 600;
 
-public static float MassToRadius(uint mass) => MathF.Sqrt(mass);
+public static float MassToRadius(int mass) => MathF.Sqrt(mass);
 
 [Reducer]
 public static void SpawnFood(ReducerContext ctx)
@@ -138,7 +138,7 @@ public static void SpawnFood(ReducerContext ctx)
 
 public static float Range(this Random rng, float min, float max) => rng.NextSingle() * (max - min) + min;
 
-public static uint Range(this Random rng, uint min, uint max) => (uint)rng.NextInt64(min, max);
+public static int Range(this Random rng, int min, int max) => (int)rng.NextInt64(min, max);
 ```
 :::
 
@@ -276,7 +276,7 @@ pub struct Player {
     identity: Identity,
     #[unique]
     #[auto_inc]
-    player_id: u32,
+    player_id: i32,
     name: String,
 }
 ```
@@ -290,7 +290,7 @@ public partial struct Player
     [PrimaryKey]
     public Identity identity;
     [Unique, AutoInc]
-    public uint player_id;
+    public int player_id;
     public string name;
 }
 ```
@@ -392,7 +392,7 @@ Now that we've got our food spawning and our players set up, let's create a matc
 Add the following to the bottom of your file.
 
 ```rust
-const START_PLAYER_MASS: u32 = 15;
+const START_PLAYER_MASS: i32 = 15;
 
 #[spacetimedb::reducer]
 pub fn enter_game(ctx: &ReducerContext, name: String) -> Result<(), String> {
@@ -406,7 +406,7 @@ pub fn enter_game(ctx: &ReducerContext, name: String) -> Result<(), String> {
     Ok(())
 }
 
-fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<Entity, String> {
+fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: i32) -> Result<Entity, String> {
     let mut rng = ctx.rng();
     let world_size = ctx
         .db
@@ -429,8 +429,8 @@ fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<E
 
 fn spawn_circle_at(
     ctx: &ReducerContext,
-    player_id: u32,
-    mass: u32,
+    player_id: i32,
+    mass: i32,
     position: DbVector2,
     timestamp: Timestamp,
 ) -> Result<Entity, String> {
@@ -457,7 +457,7 @@ The `enter_game` reducer takes one argument, the player's `name`. We can use thi
 Add the following to the end of the `Module` class.
 
 ```csharp
-const uint START_PLAYER_MASS = 15;
+const int START_PLAYER_MASS = 15;
 
 [Reducer]
 public static void EnterGame(ReducerContext ctx, string name)
@@ -469,7 +469,7 @@ public static void EnterGame(ReducerContext ctx, string name)
     SpawnPlayerInitialCircle(ctx, player.player_id);
 }
 
-public static Entity SpawnPlayerInitialCircle(ReducerContext ctx, uint player_id)
+public static Entity SpawnPlayerInitialCircle(ReducerContext ctx, int player_id)
 {
     var rng = ctx.Rng;
     var world_size = (ctx.Db.config.id.Find(0) ?? throw new Exception("Config not found")).world_size;
@@ -485,7 +485,7 @@ public static Entity SpawnPlayerInitialCircle(ReducerContext ctx, uint player_id
     );
 }
 
-public static Entity SpawnCircleAt(ReducerContext ctx, uint player_id, uint mass, DbVector2 position, SpacetimeDB.Timestamp timestamp)
+public static Entity SpawnCircleAt(ReducerContext ctx, int player_id, int mass, DbVector2 position, SpacetimeDB.Timestamp timestamp)
 {
     var entity = ctx.Db.entity.Insert(new Entity
     {
@@ -567,12 +567,14 @@ Deleting the data is optional in this case, but in case you've been messing arou
 
 With the server logic in place to spawn food and players, extend the Unreal client to display the current state.
 
+:::server-cpp
+
 Add the `SetupArena` and `CreateBorderCube` methods and properties to your `GameManager.h` class. Place them below the `Handle{}` functions in the private block:
 
 ```cpp
     /* Border */
     UFUNCTION()
-    void SetupArena(uint64 WorldSizeMeters);
+    void SetupArena(int64 WorldSizeMeters);
     UFUNCTION()
     void CreateBorderCube(const FVector2f Position, const FVector2f Size) const;
     
@@ -625,7 +627,7 @@ AGameManager::AGameManager()
 Add the implementations of `SetupArena` and `CreateBorderCube` to the end of `GameManager.cpp`:
 
 ```cpp
-void AGameManager::SetupArena(uint64 WorldSizeMeters)
+void AGameManager::SetupArena(int64 WorldSizeMeters)
 {
     if (!BorderISM || !CubeMesh) return;
     
@@ -636,7 +638,7 @@ void AGameManager::SetupArena(uint64 WorldSizeMeters)
         BorderISM->SetMaterial(0, BorderMaterial);
     }
     
-    // Convert from meters (uint64) → centimeters (double for precision)
+    // Convert from meters (int64) → centimeters (double for precision)
     const double worldSizeCmDouble = static_cast<double>(WorldSizeMeters) * 100.0;
     
     // Clamp to avoid float overflow in transforms
@@ -695,16 +697,79 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
     
     // Once we have the initial subscription sync'd to the client cache
     // Get the world size from the config table and set up the arena
-    uint64 WorldSize = Conn->Db->Config->Id->Find(0).WorldSize;
+    int64 WorldSize = Conn->Db->Config->Id->Find(0).WorldSize;
     SetupArena(WorldSize);
 }
 ```
+
+:::
+:::server-blueprint
+
+Open `BP_GameMode` and update to the following:
+
+1. Add a **Variable**
+    - Change **Variable Name** to `BorderThickness`
+    - Change **Variable Type** to **Float**
+    - Change **Default Value** to `50.0`
+    - Change **Category** to `Arena`
+2. Add a **Variable**
+    - Change **Variable Name** to `BorderHeight`
+    - Change **Variable Type** to **Float**
+    - Change **Default Value** to `100.0`
+    - Change **Category** to `Arena`
+3. Add a **Variable**
+    - Change **Variable Name** to `BorderMaterial`
+    - Change **Variable Type** to **Material Instance > Object Reference**
+    - Change **Default Value** to `BasicShapeMaterial_Inst`
+    - Change **Category** to `Arena`
+4. Add a **Component**
+    - Click **Add** button
+    - Select **Instanced Static Mesh**
+    - Rename to `BorderISM`
+
+Add the `CreateBorderCube` and `SetupArena` functions and properties to `BP_GameManager`:
+
+Add **Function** named `CreateBorderCube` as follows:
+<!-- ![Add CreateBorderCube](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-01-blueprint-setup-arena-1.png) -->
+![Add CreateBorderCube](./part-3-01-blueprint-setup-arena-1.png)
+
+- Add **Input** as `Position` with **Vector 2D** as the type.
+- Add **Input** as `Size` with **Vector 2D** as the type.
+
+Add **Function** named `SetupArena` as follows:
+<!-- ![Add SetupArena](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-01-blueprint-setup-arena-2.png) -->
+![Add SetupArena](./part-3-01-blueprint-setup-arena-2.png)
+
+<!-- ![Continue SetupArena](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-01-blueprint-setup-arena-3.png) -->
+![Continue SetupArena](./part-3-01-blueprint-setup-arena-3.png)
+
+- Add **Input** as `WorldSizeMeters` with **Integer 64** as the type.
+- Add **Local Variable** as `WorldSizeCm` with **Float** as the type.
+- Add **Local Variable** as `HalfWorldSize` with **Float** as the type.
+- Add **Local Variable** as `BorderWidth` with **Float** as the type.
+- Add **Local Variable** as `HalfBorder` with **Float** as the type.
+
+Add **Function** named `IsConnected` as follows:
+<!-- ![Add IsConnected](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-03-blueprint-gamemanager-2.png) -->
+![Add IsConnected](./part-3-03-blueprint-gamemanager-2.png)
+
+- Add **Output** as `Result` with **Boolean** as the type.
+- Check **Pure**
+
+In `OnApplied_Event`, call the `SetupArena` function. Update `OnApplied_Event` as follows:
+
+<!-- ![Call SetupArena](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-01-blueprint-setup-arena-4.png) -->
+![Call SetupArena](./part-3-01-blueprint-setup-arena-4.png)
+
+:::
 
 The `OnApplied` callback is called after the server synchronizes the initial state of your tables with the client. After the sync, look up the world size from the `config` table and use it to set up the arena.
 
 ### Create Entity Blueprints
 
 With the arena set up, use the row data that SpacetimeDB syncs with the client to create and display **Blueprints** on the screen.
+
+:::server-cpp
 
 Start by making a C++ class for each entity you want in the scene. If the Unreal project is not running, start it now. From the top menu, choose **Tools -> New C++ Class...** to create the following classes (you’ll modify these later):
 
@@ -722,34 +787,67 @@ Next add blueprints for our these classes:
 ![Add Circle](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-01-create-blueprint.png)
 
 1. **Circle Blueprint**  
-   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.  
-   - Expand **All Classes**, search for `Circle`, highlight `Circle`, and click **Select**.  
+   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.
+   - Expand **All Classes**, search for `Circle`, highlight `Circle`, and click **Select**.
    - Rename the new Blueprint to `BP_Circle`.
 
 2. **Food Blueprint**  
-   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.  
-   - Expand **All Classes**, search for `Food`, highlight `Food`, and click **Select**.  
+   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.
+   - Expand **All Classes**, search for `Food`, highlight `Food`, and click **Select**.
    - Rename the new Blueprint to `BP_Food`.
 
 3. **Player Blueprint**  
-   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.  
-   - Expand **All Classes**, search for `PlayerPawn`, highlight `PlayerPawn`, and click **Select**.  
+   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.
+   - Expand **All Classes**, search for `PlayerPawn`, highlight `PlayerPawn`, and click **Select**.
    - Rename the new Blueprint to `BP_PlayerPawn`.
 
 4. **Player Controller Blueprint**  
-   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.  
-   - Expand **All Classes**, search for `BlackholioPlayerController`, highlight `BlackholioPlayerController`, and click **Select**.  
-   - Rename the new Blueprint to `BP_BlackholioPlayerController`.  
-   - Open **Window -> World Settings** in the top menu.  
-   - Change **Player Controller Class** from **PlayerController** to `BP_BlackholioPlayerController`.  
+   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.
+   - Expand **All Classes**, search for `BlackholioPlayerController`, highlight `BlackholioPlayerController`, and click **Select**.
+   - Rename the new Blueprint to `BP_BlackholioPlayerController`.
+   - Open **Window -> World Settings** in the top menu.
+   - Change **Player Controller Class** from **PlayerController** to `BP_BlackholioPlayerController`.
    - Save the level.
+
+:::
+:::server-blueprint
+
+Add blueprints for our entities:
+
+1. **Entity Blueprint**
+    - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.
+    - Click **Actor**.
+    - Rename the new Blueprint to `BP_Entity`.
+
+2. **Circle Blueprint**  
+   - In the **Content Drawer**, find and right-click **BP_Entity** and choose **Create Child Blueprint Class**.
+   - Rename the new Blueprint to `BP_Circle`.
+
+3. **Food Blueprint**  
+   - In the **Content Drawer**, find and right-click **BP_Entity** and choose **Create Child Blueprint Class**.
+   - Rename the new Blueprint to `BP_Food`.
+
+4. **Player Blueprint**  
+   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.
+   - Click **Pawn**.
+   - Rename the new Blueprint to `BP_PlayerPawn`.
+
+5. **Player Controller Blueprint**  
+   - In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.
+   - Click **Player Controller**.
+   - Rename the new Blueprint to `BP_PlayerController`.
+   - Open **Window -> World Settings** in the top menu.  
+   - Change **Player Controller Class** from **PlayerController** to `BP_PlayerController`.  
+   - Save the level.
+
+:::
 
 ### Set Up the Nameplate Blueprint
 
 Create a widget Blueprint for the player nameplate:
 
-- In the **Content Drawer**, right-click and choose **Blueprint -> Blueprint Class**.  
-- Expand **All Classes**, search for **UserWidget**, highlight **UserWidget**, and click **Select**.  
+- In the **Content Drawer**, right-click and choose **User Interface -> Widget Blueprint**.
+- Click **User Widget**.
 - Name the new Blueprint `WBP_Nameplate`.
 
 Double-click `WBP_Nameplate` to open it, then make the following changes:
@@ -831,6 +929,8 @@ Open `BP_PlayerPawn` and make the following changes:
 
 ### Update Classes
 
+:::server-cpp
+
 With the Blueprints set up, return to the source code behind the entities. First, add helper functions to translate server-side vectors to Unreal vectors.
 
 Open `DbVector2.h` and update it as follows:
@@ -888,7 +988,7 @@ class CLIENT_UNREAL_API AEntity : public AActor
 {
     GENERATED_BODY()
 
-public:	
+public:
     AEntity();
 
 protected:
@@ -902,17 +1002,18 @@ protected:
     float TargetScale = 1.f;
 
 public:
-    uint32 EntityId = 0;
+    UPROPERTY(EditDefaultsOnly, Category="BH|Entity")
+    int32 EntityId = 0;
     virtual void Tick(float DeltaTime) override;
     
-    void Spawn(uint32 InEntityId);
+    void Spawn(int32 InEntityId);
     virtual void OnEntityUpdated(const FEntityType& NewVal);
     virtual void OnDelete(const FEventContext& Context);
     
     void SetColor(const FLinearColor& Color) const;
     
-    static float MassToRadius(uint32 Mass) { return FMath::Sqrt(static_cast<float>(Mass)); }
-    static float MassToDiameter(uint32 Mass) { return MassToRadius(Mass) * 2.f; }
+    static float MassToRadius(int32 Mass) { return FMath::Sqrt(static_cast<float>(Mass)); }
+    static float MassToDiameter(int32 Mass) { return MassToRadius(Mass) * 2.f; }
 };
 ```
 
@@ -943,7 +1044,7 @@ void AEntity::Tick(float DeltaTime)
     SetActorScale3D(FVector(NewScale));
 }
 
-void AEntity::Spawn(uint32 InEntityId)
+void AEntity::Spawn(int32 InEntityId)
 {
     EntityId = InEntityId;
     
@@ -1004,7 +1105,8 @@ class CLIENT_UNREAL_API ACircle : public AEntity
 public:
     ACircle();
     
-    uint32 OwnerPlayerId = 0;
+    UPROPERTY(BlueprintReadOnly, Category="BH|Circle")
+    int32 OwnerPlayerId = 0;
     UPROPERTY(BlueprintReadOnly, Category="BH|Circle")
     FString Username;
     
@@ -1170,7 +1272,8 @@ public:
     APlayerPawn();
     void Initialize(FPlayerType Player);
     
-    uint32 PlayerId = 0;
+    UPROPERTY(BlueprintReadOnly, Category="BH|Player")
+    int32 PlayerId = 0;
     UPROPERTY(BlueprintReadOnly, Category="BH|Player")
     FString Username;
     UPROPERTY(BlueprintReadWrite, Category="BH|Player")
@@ -1184,7 +1287,8 @@ public:
     UFUNCTION()
     void OnCircleDeleted(ACircle* Circle);
     
-    uint32 TotalMass() const;
+    UFUNCTION(BlueprintPure, Category="BH|Player")
+    int32 TotalMass() const;
     UFUNCTION(BlueprintPure, Category="BH|Player")
     FVector CenterOfMass() const;
 
@@ -1260,16 +1364,16 @@ void APlayerPawn::OnCircleDeleted(ACircle* Circle)
     }
 }
 
-uint32 APlayerPawn::TotalMass() const
+int32 APlayerPawn::TotalMass() const
 {
-    uint32 Total = 0;
+    int32 Total = 0;
     for (int32 Index = 0; Index < OwnedCircles.Num(); ++Index)
     {
         const TWeakObjectPtr<ACircle>& Weak = OwnedCircles[Index];
         if (!Weak.IsValid()) continue;
         
         const ACircle* Circle = Weak.Get();
-        const uint32 Id = Circle->EntityId;
+        const int32 Id = Circle->EntityId;
         
         const FEntityType Entity = AGameManager::Instance->Conn->Db->Entity->EntityId->Find(Id);
         Total += Entity.Mass;
@@ -1285,7 +1389,7 @@ FVector APlayerPawn::CenterOfMass() const
     }
     
     FVector WeightedPosition = FVector::ZeroVector; // Σ (pos * mass)
-    double  TotalMass        = 0.0;                 // Σ mass
+    double TotalMass = 0.0;                         // Σ mass
     
     const int32 Count = OwnedCircles.Num();
     
@@ -1295,7 +1399,7 @@ FVector APlayerPawn::CenterOfMass() const
         if (!Weak.IsValid()) continue;
         
         const ACircle* Circle = Weak.Get();
-        const uint32 Id = Circle->EntityId;
+        const int32 Id = Circle->EntityId;
         
         const FEntityType Entity = AGameManager::Instance->Conn->Db->Entity->EntityId->Find(Id);
         const double Mass = Entity.Mass;
@@ -1356,7 +1460,197 @@ void APlayerPawn::Tick(float DeltaTime)
 }
 ```
 
+:::
+:::server-blueprint
+
+#### Entity Blueprint
+
+With the foundation in place, implement the core entity class. Edit `BP_Entity` add the following **Variables**:
+
+1. Add `LerpStartPosition`
+    - Change **Variable Type** to **Vector**
+2. Add `LerpTargetPosition`
+    - Change **Variable Type** to **Vector**
+3. Add `TargetScale`
+    - Change **Variable Type** to **Float**
+    - Change **Default Value** to `1.0`
+4. Add `LerpTime`
+    - Change **Variable Type** to **Float**
+5. Add `LerpDuration`
+    - Change **Variable Type** to **Float**
+    - Change **Default Value** to `0.1`
+6. Add `EntityId`
+    - Change **Variable Type** to **Integer**
+7. Add `Alpha`
+    - Change **Variable Type** to **Float**
+
+<!-- ![Add Variables](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-entity-1.png) -->
+![Add Variables](./part-3-02-blueprint-entity-1.png)
+
+Add the following to **Event Tick**:
+
+<!-- ![Update Event Tick](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-entity-2.png) -->
+![Update Event Tick](./part-3-02-blueprint-entity-2.png)
+
+Add **Function** named `MassToRadius` as follows:
+<!-- ![Add MassToRadius](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-entity-7.png) -->
+![Add MassToRadius](./part-3-02-blueprint-entity-7.png)
+
+- Add **Input** as `Mass` with **Integer** as the type.
+- Add **Output** as `Radius` with **Float** as the type.
+
+Add **Function** named `MassToDiameter` as follows:
+<!-- ![Add MassToDiameter](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-entity-8.png) -->
+![Add MassToDiameter](./part-3-02-blueprint-entity-8.png)
+
+- Add **Input** as `Mass` with **Integer** as the type.
+- Add **Output** as `Diameer` with **Float** as the type.
+
+Add **Function** named `OnUpdated` as follows:
+<!-- ![Add OnUpdated](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-entity-3.png) -->
+![Add OnUpdated](./part-3-02-blueprint-entity-3.png)
+
+- Add **Input** as `NewRow` with **Entity Type** as the type.
+
+Add **Function** named `OnDeleted` as follows:
+<!-- ![Add OnDeleted](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-entity-4.png) -->
+![Add OnDeleted](./part-3-02-blueprint-entity-4.png)
+
+- Add **Input** as `Context` with **Event Context** as the type.
+
+Add **Function** named `Spawn` as follows:
+<!-- ![Add Spawn](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-entity-5.png) -->
+![Add Spawn](./part-3-02-blueprint-entity-5.png)
+
+- Add **Input** as `In Entity Id` with **Integer** as the type.
+
+Add **Function** named `SetColor` as follows:
+<!-- ![Add SetColor](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-entity-6.png) -->
+![Add SetColor](./part-3-02-blueprint-entity-6.png)
+
+- Add **Input** as `Color` with **Linear Color** as the type.
+
+The `Entity` class provides helper functions and basic functionality to manage game objects based on entity updates.
+
+> **Note:** One notable feature is linear interpolation (lerp) between the server-reported entity position and the client-drawn position. This technique produces smoother movement.
+>
+> If you're interested in learning more checkout [this demo](https://gabrielgambetta.com/client-side-prediction-live-demo.html) from Gabriel Gambetta.
+
+#### PlayerPawn Blueprint
+
+Open `BP_PlayerPawn` and add the following **Variables**:
+
+1. Add `Username`
+    - Change **Variable Type** to **String**
+    - Check **Instance Editable**
+2. Add `PlayerId`
+    - Change **Variable Type** to an **Integer**
+3. Add `IsLocalPlayer`
+    - Change **Variable Type** to an **Boolean**
+4. Add `OwnedCircles`
+    - Change **Variable Type** to an **Array** **BP Circle -> Object References**
+5. Add `GameManager`
+    - Change **Variable Type** to an **BP GameManager -> Object References**
+6. Add `Target`
+    - Change **Variable Type** to an **Vector**
+
+<!-- ![Add Variables](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-player-1.png) -->
+![Add Variables](./part-3-02-blueprint-player-1.png)
+
+Add **Function** named `GetGameManager` as follows:
+<!-- ![Add GetGameManager](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-player-2.png) -->
+![Add GetGameManager](./part-3-02-blueprint-player-2.png)
+
+Add **Function** named `Initialize` as follows:
+<!-- ![Add Initialize](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-player-3.png) -->
+![Add Initialize](./part-3-02-blueprint-player-3.png)
+
+- Add **Input** as `PlayerRow` with **Player Type** as the type.
+
+Add **Function** named `OnCircleSpawned` as follows:
+<!-- ![Add OnCircleSpawned](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-player-4.png) -->
+![Add OnCircleSpawned](./part-3-02-blueprint-player-4.png)
+
+- Add **Input** as `Circle` with **BP Circle -> Object Reference** as the type.
+
+Add **Function** named `OnCircleDeleted` as follows:
+<!-- ![Add OnCircleDeleted](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-player-5.png) -->
+![Add OnCircleDeleted](./part-3-02-blueprint-player-5.png)
+
+- Add **Input** as `Circle` with **BP Circle -> Object Reference** as the type.
+
+Add **Function** named `CenterOfMass` as follows:
+<!-- ![Add CenterOfMass](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-player-6.png) -->
+![Add CenterOfMass](./part-3-02-blueprint-player-6.png)
+
+- Add **Input** as `Center` with **Vector** as the type.
+- Add **Local Variable** as `WeightedPosition` with **Vector** as the type.
+- Add **Local Variable** as `TotalMass` with **Float** as the type.
+
+Add **Function** named `UpdateTargetLocation` as follows:
+<!-- ![Add UpdateTargetLocation](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-player-7.png) -->
+![Add UpdateTargetLocation](./part-3-02-blueprint-player-7.png)
+
+Add **Function** named `GetUsername` as follows:
+<!-- ![Add GetUsername](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-player-10.png) -->
+![Add GetUsername](./part-3-02-blueprint-player-10.png)
+
+- Add **Output** as `Output` with **String** as the type.
+
+Update **Event Tick** to:
+<!-- ![Update Event Tick](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-player-8.png) -->
+![Update Event Tick](./part-3-02-blueprint-player-8.png)
+
+Update **Event Destroyed** to:
+<!-- ![Update Event Destroyed](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-player-9.png) -->
+![Update Event Destroyed](./part-3-02-blueprint-player-9.png)
+
+#### Circle Blueprint
+
+Open `BP_Circle` and add the following **Variables**:
+
+1. Add `OwningPlayer`
+    - Change **Variable Type** to **BP Player Pawn -> Object Reference**
+2. Add `ColorPalette`
+    - Change **Variable Type** to an **Array** of **Linear Color**
+
+<!-- ![Color Palette](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-circle-1.png) -->
+![Color Palette](./part-3-02-blueprint-circle-1.png)
+
+Override **Function** `OnDeleted` as follows:
+<!-- ![Override OnDeleted](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-circle-2.png) -->
+![Override OnDeleted](./part-3-02-blueprint-circle-2.png)
+
+- Add **Input** as `Context` with **Entity Context** as the type.
+
+Add **Function** named `SpawnCircle` as follows:
+<!-- ![Add SpawnCircle](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-circle-3.png) -->
+![Add SpawnCircle](./part-3-02-blueprint-circle-3.png)
+
+- Add **Input** as `Circle` with **Circle Type** as the type.
+- Add **Input** as `InOwner` with **BP Player Pawn -> Object Reference** as the type
+
+#### Food Blueprint
+
+Open `BP_Food` and add the following **Variables**:
+
+1. Add `ColorPalette`
+    - Change **Variable Type** to an **Array** of **Linear Color**
+
+<!-- ![Color Palette](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-food-1.png) -->
+![Color Palette](./part-3-02-blueprint-food-1.png)
+
+Add **Function** named `SpawnFood` as follows:
+<!-- ![Add SpawnFood](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-02-blueprint-food-2.png) -->
+![Add SpawnFood](./part-3-02-blueprint-food-2.png)
+
+- Add **Input** as `Food Entity` with **Food Type** as the type.
+
+:::
+
 ### Spawning Blueprints
+
+:::server-cpp
 
 Update `GameManager.h` to support spawning Blueprints.  
 Make the following edits to the file:
@@ -1404,9 +1698,9 @@ Below the `/* Border */` section, add code to link the SpacetimeDB tables to the
     
     /* Data Bindings */
     UPROPERTY()
-    TMap<uint32, TWeakObjectPtr<AEntity>> EntityMap;
+    TMap<int32, TWeakObjectPtr<AEntity>> EntityMap;
     UPROPERTY()
-    TMap<uint32, TWeakObjectPtr<APlayerPawn>> PlayerMap;
+    TMap<int32, TWeakObjectPtr<APlayerPawn>> PlayerMap;
     
     APlayerPawn* SpawnOrGetPlayer(const FPlayerType& PlayerRow);
     ACircle* SpawnCircle(const FCircleType& CircleRow);
@@ -1501,7 +1795,7 @@ void AGameManager::OnEntityDelete(const FEventContext& Context, const FEntityTyp
 {
     TWeakObjectPtr<AEntity> EntityPtr;
     const bool bHadEntry = EntityMap.RemoveAndCopyValue(RemovedRow.EntityId, EntityPtr);
-    const bool bIsValid =EntityPtr.IsValid(); 
+    const bool bIsValid = EntityPtr.IsValid(); 
     if (!bHadEntry || !bIsValid)
     {
         return;
@@ -1606,10 +1900,81 @@ AFood* AGameManager::SpawnFood(const FFoodType& FoodEntity)
 }
 ```
 
+:::
+:::server-blueprint
+
+Open `BP_GameManager` and add the following **Variables**:
+
+1. Add `CircleClass`
+    - Change **Variable Type** to **BP Circle -> Class Reference**
+    - Check **Instance Editable**
+    - Change **Category** to `Classes`
+    - Change **Default Value** to `BP_Circle`
+2. Add `FoodClass`
+    - Change **Variable Type** to **BP Food -> Class Reference**
+    - Check **Instance Editable**
+    - Change **Category** to `Classes`
+    - Change **Default Value** to `BP_Food`
+3. Add `PlayerClass`
+    - Change **Variable Type** to **BP Player Pawn -> Class Reference**
+    - Check **Instance Editable**
+    - Change **Category** to `Classes`
+    - Change **Default Value** to `BP_PlayerPawn`
+4. Add `EntityMap`
+    - Change **Variable Type** to an **Integer**
+    - Change **Variable Type** to **Map** and set value type to **BP Entity -> Object Reference**
+5. Add `PlayerMap`
+    - Change **Variable Type** to an **Integer**
+    - Change **Variable Type** to **Map** and set value type to **BP Player Pawn -> Object Reference**
+
+<!-- ![Add Variables](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-03-blueprint-gamemanager-1.png) -->
+![Add Variables](./part-3-03-blueprint-gamemanager-1.png)
+
+Add **Function** named `SpawnOrGetPlayer` as follows:
+<!-- ![Add SpawnOrGetPlayer](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-03-blueprint-gamemanager-3.png) -->
+![Add SpawnOrGetPlayer](./part-3-03-blueprint-gamemanager-3.png)
+
+- Add **Input** as `PlayerRow` with **Player Type** as the type.
+- Add **Output** as `PlayerPawn` with **BP Player Pawn -> Object Reference** as the type.
+
+With the functions and variables in place next we'll expand the **EventGraph**:
+
+Extened **OnConnect_Event** as follows:
+<!-- ![Update OnConnect_Event](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-03-blueprint-gamemanager-4.png) -->
+![Update OnConnect_Event](./part-3-03-blueprint-gamemanager-4.png)
+<!-- ![Update OnConnect_Event](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-03-blueprint-gamemanager-5.png) -->
+![Update OnConnect_Event](./part-3-03-blueprint-gamemanager-5.png)
+
+> **Note:** For the events the naming scheme for this tutorial is `<Type>_<Event>_Event` for example `Circle_OnInsert_Event`.
+
+Update **Circle_OnInsert_Event** as follows:
+<!-- ![Update Circle_OnInsert_Event](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-03-blueprint-gamemanager-6.png) -->
+![Update Circle_OnInsert_Event](./part-3-03-blueprint-gamemanager-6.png)
+
+Update **Entity_OnUpdate_Event** as follows:
+<!-- ![Update Entity_OnUpdate_Event](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-03-blueprint-gamemanager-7.png) -->
+![Update Entity_OnUpdate_Event](./part-3-03-blueprint-gamemanager-7.png)
+
+Update **Entity_OnDelete_Event** as follows:
+<!-- ![Update Entity_OnDelete_Event](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-03-blueprint-gamemanager-8.png) -->
+![Update Entity_OnDelete_Event](./part-3-03-blueprint-gamemanager-8.png)
+
+Update **Food_OnInsert_Event** as follows:
+<!-- ![Update Food_OnInsert_Event](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-03-blueprint-gamemanager-9.png) -->
+![Update Food_OnInsert_Event](./part-3-03-blueprint-gamemanager-9.png)
+
+Update **Player_OnInsert_Event** and **Player_OnDelete_Event** as follows:
+<!-- ![Update Player Events](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-03-blueprint-gamemanager-10.png) -->
+![Update Player Events](./part-3-03-blueprint-gamemanager-10.png)
+
+:::
+
 ### Player Controller
 
 In most Unreal projects, proper input handling depends on setting up the PlayerController.  
 We’ll finish that setup in the next part of the tutorial. For now, add the possession logic.
+
+:::server-cpp
 
 Edit `BlackholioPlayerController.h` as follows:
 
@@ -1681,6 +2046,35 @@ FVector2D ABlackholioPlayerController::ComputeDesiredDirection() const
 }
 ```
 
+:::
+:::server-blueprint
+
+Last update `BP_PlayerController` for the basics by adding the following **Variables**:
+
+1. Add `GameManger`
+    - Change **Variable Type** to **BP Game Manager -> Class Reference**
+2. Add `LocalPlayer`
+    - Change **Variable Type** to **BP Player Pawn -> Class Reference**
+3. Add `LastMovementSendTime`
+    - Change **Variable Type** to **Float**
+4. Add `SendUpdateFrequency`
+    - Change **Variable Type** to **Float**
+    - Change **Default Value** to `0.0333`
+
+Add **Function** named `GetGameManager` as follows:
+<!-- ![Add GetGameManager](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-04-blueprint-playercontroller-1.png) -->
+![Add GetGameManager](./part-3-04-blueprint-playercontroller-1.png)
+
+Override **Function -> On Possess** as follows:
+<!-- ![Add GetGameManager](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-04-blueprint-playercontroller-2.png) -->
+![Add GetGameManager](./part-3-04-blueprint-playercontroller-2.png)
+
+Update **Event BeginPlay** as follows:
+<!-- ![Update BeginPlay](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-04-blueprint-playercontroller-3.png) -->
+![Update BeginPlay](./part-3-04-blueprint-playercontroller-3.png)
+
+:::
+
 ### Entering the Game
 
 :::server-rust
@@ -1694,6 +2088,8 @@ At this point, you may need to regenerate your bindings the following command fr
 spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-path ./ --module-name client_unreal
 ```
 
+:::server-cpp
+
 The last step is to call the `enter_game` reducer on the server, passing in a username for the player.
 For simplicity, call `enter_game` from the `HandleSubscriptionApplied` callback with the name `TestPlayer`.
 
@@ -1706,7 +2102,7 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
     
     // Once we have the initial subscription sync'd to the client cache
     // Get the world size from the config table and set up the arena
-    uint64 WorldSize = Conn->Db->Config->Id->Find(0).WorldSize;
+    int64 WorldSize = Conn->Db->Config->Id->Find(0).WorldSize;
     SetupArena(WorldSize);
     
     Context.Reducers->EnterGame("TestPlayer");
@@ -1715,24 +2111,43 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
 
 > **Reminder:** Be sure to rebuild your project after making changes to the code.
 
+:::
+:::server-blueprint
+
+The last step is to call the `enter_game` reducer on the server, passing in a username for the player.
+For simplicity, call `enter_game` from the `OnApplied_Event` callback with the name `TestPlayer`.
+
+Open up `BP_GameManager` and edit `OnApplied_Event` to match the following:
+
+<!-- ![Update OnApplied_Event](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-05-blueprint-gamemanager-1.png) -->
+![Update OnApplied_Event](./part-3-05-blueprint-gamemanager-1.png)
+
+:::
+
 ### Trying It Out
 
 Almost everything is ready to play. Before launching, set up the spawning classes:  
 
 1. Open `BP_GameManager`.  
-2. Update the spawning classes:  
+2. Make sure the spawning classes are set:
    - **Circle Class** → `BP_Circle`  
    - **Food Class** → `BP_Food`  
    - **Player Class** → `BP_PlayerPawn`  
 
 > **Reminder:** Compile and save your changes.
 
+:::server-cpp
+
 Next, wire up `SetUsername` to update the Nameplate:  
 
-1. Open `BP_Circle`.  
+1. Open `BP_Circle`.
 2. In **Event BeginPlay**, add the following:  
 
 ![Nameplate Update](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-3-04-nameplate-change.png)
+
+:::
+:::server-blueprint
+:::
 
 ---
 

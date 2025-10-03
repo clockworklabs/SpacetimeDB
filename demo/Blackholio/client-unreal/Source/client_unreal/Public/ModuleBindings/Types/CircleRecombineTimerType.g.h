@@ -13,13 +13,13 @@ struct CLIENT_UNREAL_API FCircleRecombineTimerType
     GENERATED_BODY()
 
     // NOTE: uint64 field not exposed to Blueprint due to non-blueprintable elements
-    uint64 ScheduledId = 0;
+    uint64 ScheduledId;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FSpacetimeDBScheduleAt ScheduledAt;
 
-    // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 PlayerId = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    int32 PlayerId;
 
     FORCEINLINE bool operator==(const FCircleRecombineTimerType& Other) const
     {

@@ -31,7 +31,7 @@ AGameManager::AGameManager()
 	}
 }
 
-AEntity* AGameManager::GetEntity(uint32 EntityId) const
+AEntity* AGameManager::GetEntity(int32 EntityId) const
 {
 	if (const TWeakObjectPtr<AEntity>* WeakEntity = EntityMap.Find(EntityId))
 	{
@@ -58,7 +58,7 @@ void AGameManager::BeginPlay()
 	FOnDisconnectDelegate DisconnectDelegate;
 	BIND_DELEGATE_SAFE(DisconnectDelegate, this, AGameManager, HandleDisconnect);
 	FOnConnectErrorDelegate ConnectErrorDelegate;
-	BIND_DELEGATE_SAFE(ConnectErrorDelegate, this, AGameManager, HandleConnect);
+	BIND_DELEGATE_SAFE(ConnectErrorDelegate, this, AGameManager, HandleConnectError);
 
 	UCredentials::Init(FString::Printf(TEXT("%s-%s"), *TokenFilePath, *ServerUri));
 	FString Token = UCredentials::LoadToken();
@@ -137,7 +137,7 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
 	
 	// Once we have the initial subscription sync'd to the client cache
 	// Get the world size from the config table and set up the arena
-	uint64 WorldSize = Conn->Db->Config->Id->Find(0).WorldSize;
+	int64 WorldSize = Conn->Db->Config->Id->Find(0).WorldSize;
 	SetupArena(WorldSize);
 
 	FPlayerType Player = Context.Db->Player->Identity->Find(LocalIdentity);
@@ -151,7 +151,7 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
 	}
 }
 
-void AGameManager::SetupArena(uint64 WorldSizeMeters)
+void AGameManager::SetupArena(int64 WorldSizeMeters)
 {
 	if (!BorderISM || !CubeMesh) return;
 
@@ -162,7 +162,7 @@ void AGameManager::SetupArena(uint64 WorldSizeMeters)
 		BorderISM->SetMaterial(0, BorderMaterial);
 	}
 
-	// Convert from meters (uint64) → centimeters (double for precision)
+	// Convert from meters (int64) → centimeters (double for precision)
 	const double worldSizeCmDouble = static_cast<double>(WorldSizeMeters) * 100.0;
 
 	// Clamp to avoid float overflow in transforms
