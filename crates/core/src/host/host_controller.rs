@@ -16,7 +16,7 @@ use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
 use crate::util::asyncify;
-use crate::util::jobs::{JobCore, JobCores};
+use crate::util::jobs::{JobCores, SingleCoreExecutor};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
@@ -583,7 +583,7 @@ async fn make_module_host(
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
-    core: JobCore,
+    executor: SingleCoreExecutor,
 ) -> anyhow::Result<(Program, ModuleHost)> {
     // `make_actor` is blocking, as it needs to compile the wasm to native code,
     // which may be computationally expensive - sometimes up to 1s for a large module.
@@ -591,6 +591,8 @@ async fn make_module_host(
     //       threads, but those aren't for computation. Also, wasmtime uses rayon
     //       to run compilation in parallel, so it'll need to run stuff in rayon anyway.
     asyncify(move || {
+        let database_identity = replica_ctx.database_identity;
+
         let mcc = ModuleCreationContext {
             replica_ctx,
             scheduler,
@@ -603,12 +605,12 @@ async fn make_module_host(
             HostType::Wasm => {
                 let actor = runtimes.wasmtime.make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister, core)
+                ModuleHost::new(actor, unregister, executor, database_identity)
             }
             HostType::Js => {
                 let actor = runtimes.v8.make_actor(mcc)?;
                 trace!("v8::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister, core)
+                ModuleHost::new(actor, unregister, executor, database_identity)
             }
         };
         Ok((program, module_host))
@@ -641,7 +643,7 @@ async fn launch_module(
     energy_monitor: Arc<dyn EnergyMonitor>,
     replica_dir: ReplicaDir,
     runtimes: Arc<HostRuntimes>,
-    core: JobCore,
+    executor: SingleCoreExecutor,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
     let db_identity = database.database_identity;
     let host_type = database.host_type;
@@ -658,7 +660,7 @@ async fn launch_module(
         program,
         energy_monitor.clone(),
         on_panic,
-        core,
+        executor,
     )
     .await?;
 
@@ -874,7 +876,7 @@ impl Host {
         page_pool: PagePool,
         database: Database,
         program: Program,
-        core: JobCore,
+        executor: SingleCoreExecutor,
     ) -> anyhow::Result<Arc<ModuleInfo>> {
         // Even in-memory databases acquire a lockfile.
         // Grab a tempdir to put that lockfile in.
@@ -906,7 +908,7 @@ impl Host {
             Arc::new(NullEnergyMonitor),
             phony_replica_dir,
             runtimes.clone(),
-            core,
+            executor,
         )
         .await?;
 
@@ -939,7 +941,7 @@ impl Host {
         policy: MigrationPolicy,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
-        core: JobCore,
+        executor: SingleCoreExecutor,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
@@ -952,7 +954,7 @@ impl Host {
             program,
             energy_monitor,
             on_panic,
-            core,
+            executor,
         )
         .await?;
 
@@ -1094,7 +1096,7 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
 
     let runtimes = HostRuntimes::new(None);
     let page_pool = PagePool::new(None);
-    let core = JobCore::default();
+    let core = SingleCoreExecutor::in_current_tokio_runtime();
     let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program, core).await?;
     // this should always succeed, but sometimes it doesn't
     let module_def = match Arc::try_unwrap(module_info) {

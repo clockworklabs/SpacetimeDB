@@ -1,4 +1,5 @@
 use crate::hash::Hash;
+use crate::messages::control_db::HostType;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_datastore::execution_context::WorkloadType;
@@ -312,6 +313,17 @@ metrics_group!(
         #[help = "Number of commits replayed after restoring from a snapshot upon restart"]
         #[labels(db: Identity)]
         pub replay_commitlog_num_commits: IntGaugeVec,
+
+        #[name = spacetime_module_create_instance_time_seconds]
+        #[help = "Time taken to construct a WASM instance or V8 isolate to run module code"]
+        #[labels(db: Identity, module_type: HostType)]
+        // As of writing (pgoldman 2025-09-25), calls to `create_instance` are rare,
+        // as they happen only when an instance traps (panics).
+        // However, this is not once-per-process, unlike the above replay metrics.
+        // I (pgoldman 2025-09-25) am not sure what range or distribution of values to expect,
+        // so I'm making up some buckets based on what I imagine are the upper and lower bounds of plausibility.
+        #[buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 50, 100)]
+        pub module_create_instance_time_seconds: HistogramVec,
 
         #[name = spacetime_snapshot_creation_time_total_sec]
         #[help = "The time (in seconds) it took to take and store a database snapshot, including scheduling overhead"]
