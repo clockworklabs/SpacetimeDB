@@ -1333,23 +1333,11 @@ impl WasmInstanceEnv {
                 return Ok(errno::NO_SUCH_CONSOLE_TIMER.get().into());
             };
 
-            let elapsed = span.start.elapsed();
-            let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
             let function = caller.data().log_record_function();
-
-            let record = Record {
-                ts: chrono::Utc::now(),
-                target: None,
-                filename: None,
-                line_number: None,
-                function,
-                message: &message,
-            };
-            caller.data().instance_env.console_log(
-                crate::database_logger::LogLevel::Info,
-                &record,
-                &caller.as_context(),
-            );
+            caller
+                .data()
+                .instance_env
+                .console_timer_end(&span, function, &caller.as_context());
             Ok(0)
         })
     }
