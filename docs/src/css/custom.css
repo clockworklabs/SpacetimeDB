@@ -17,6 +17,9 @@
   --ifm-blockquote-color: #b6c0cf;
   --ifm-menu-link-sublist-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 24 24"><path fill="rgb(182, 192, 207, 0.5)" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"></path></svg>');
   --ifm-breadcrumb-separator: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><path fill="rgb(182, 192, 207)" d="M79.093 0 48.907 30.187 146.72 128l-97.813 97.813L79.093 256l128-128z"/></svg>');
+  --ifm-alert-background-color-highlight: #4d3800;
+  --ifm-alert-foreground-color: #fff8e6;
+  --ifm-alert-border-color: #e6a700;
 
   --clockworklabs-title-color: #f4f6fc;
   --clockworklabs-code-color: #fbdc8e;
@@ -24,6 +27,13 @@
   --clockworklabs-code-background-color: #0d0d0e;
   --clockworklabs-navbar-border-color: rgb(244 246 252 / 11%);
   --clockworklabs-strong-color: #ced3e0;
+}
+
+:root .alert--warning {
+  --ifm-alert-background-color: #4d3800;
+  --ifm-alert-foreground-color: #fff8e6;
+  --ifm-alert-border-color: #e6a700;
+  --ifm-alert-background-color-highlight: #3d2d00;
 }
 
 html {

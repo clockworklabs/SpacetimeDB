@@ -4,13 +4,13 @@ title: 1 - Setup
 
 # Unity Tutorial - Part 1 - Setup
 
-<!-- ![Unity Tutorial Hero Image](./part-1-hero-image.png) -->
+![Unity Tutorial Hero Image](/images/unity/part-1-hero-image.png)
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
 > A completed version of the game we'll create in this tutorial is available at:
 >
-> [https://github.com/ClockworkLabs/Blackholio](https://github.com/ClockworkLabs/Blackholio)
+> [https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio)
 
 ## Prepare Project Structure
 
@@ -34,17 +34,21 @@ In this section, we will guide you through the process of setting up a Unity Pro
 
 ### Step 1: Create a Blank Unity Project
 
-The SpacetimeDB Unity SDK minimum supported Unity version is `2021.2` as the SDK requires C# 9. See [the overview](.) for more information on specific supported versions.
+SpacetimeDB supports Unity version `2022.3.32f1` or later. See [the overview](.) for more information on specific supported versions.
 
 Open Unity and create a new project by selecting "New" from the Unity Hub or going to **File -> New Project**.
 
-<!-- ![Unity Hub New Project](./part-1-unity-hub-new-project.jpg) -->
+![Unity Hub New Project](/images/unity/part-1-unity-hub-new-project.jpg)
 
-**⚠️ Important: Choose the `Universal 2D`** template to select a template which uses the Unity Universal Render Pipeline.
+:::warning
+
+**Choose the `Universal 2D`** template to select a template which uses the Unity Universal Render Pipeline.
+
+:::
 
 For `Project Name` use `client-unity`. For Project Location make sure that you use your `blackholio` directory. This is the directory that we created in a previous step.
 
-<!-- ![Universal 2D Template](./part-1-universal-2d-template.png) -->
+![Universal 2D Template](/images/unity/part-1-universal-2d-template.png)
 
 Click "Create" to generate the blank project.
 
@@ -69,12 +73,10 @@ The `GameManager` script will be where we will put the high level initialization
 ### Add the GameManager to the Scene
 
 1. **Create an Empty GameObject**:
-
    - Go to the top menu and select **GameObject > Create Empty**.
    - Alternatively, right-click in the **Hierarchy** window and select **Create Empty**.
 
 2. **Rename the GameObject**:
-
    - In the **Inspector**, click on the GameObject’s name at the top and rename it to `GameManager`.
 
 3. **Attach the GameManager Script**:
@@ -93,5 +95,4 @@ Our Unity project is all set up! If you press play, it will show a blank screen,
 
 ### Create the Server Module
 
-We've now got the very basics set up. In [part 2](part-2) you'll learn the basics of how how to create a SpacetimeDB server module and how to connect to it from your client.
-
+We've now got the very basics set up. In [part 2](part-2) you'll learn the basics of how to create a SpacetimeDB server module and how to connect to it from your client.

@@ -1,4 +1,4 @@
-# Self Hosting SpacetimeDB
+# Self-Hosting SpacetimeDB
 
 This tutorial will guide you through setting up SpacetimeDB on an Ubuntu 24.04 server, securing it with HTTPS using Nginx and Let's Encrypt, and configuring a systemd service to keep it running.
 
@@ -86,7 +86,24 @@ server {
     listen 80;
     server_name example.com;
 
-    location / {
+    #########################################
+    # By default SpacetimeDB is completely open so that anyone can publish to it. If you want to block
+    # users from creating new databases you should keep this section commented out. Otherwise, if you
+    # want to open it up (probably for dev environments) then you can uncomment this section and then
+    # also comment out the location / section below.
+    #########################################
+    # location / {
+    #     proxy_pass http://localhost:3000;
+    #     proxy_http_version 1.1;
+    #     proxy_set_header Upgrade $http_upgrade;
+    #     proxy_set_header Connection "Upgrade";
+    #     proxy_set_header Host $host;
+    # }
+
+    # Anyone can subscribe to any database.
+    # Note: This is the only section *required* for the websocket to function properly. Clients will
+    # be able to create identities, call reducers, and subscribe to tables through this websocket.
+    location ~ ^/v1/database/[^/]+/subscribe$ {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -94,21 +111,44 @@ server {
         proxy_set_header Host $host;
     }
 
-    # This restricts who can publish new databases to your SpacetimeDB instance. We recommend
-    # restricting this ability to local connections.
-    location /v1/publish {
-        allow 127.0.0.1;
-        deny all;
+    # Uncomment this section to allow all HTTP reducer calls
+    # location ~ ^/v1/[^/]+/call/[^/]+$ {
+    #     proxy_pass http://localhost:3000;
+    #     proxy_http_version 1.1;
+    #     proxy_set_header Upgrade $http_upgrade;
+    #     proxy_set_header Connection "Upgrade";
+    #     proxy_set_header Host $host;
+    # }
+
+    # Uncomment this section to allow all HTTP sql requests
+    # location ~ ^/v1/[^/]+/sql$ {
+    #     proxy_pass http://localhost:3000;
+    #     proxy_http_version 1.1;
+    #     proxy_set_header Upgrade $http_upgrade;
+    #     proxy_set_header Connection "Upgrade";
+    #     proxy_set_header Host $host;
+    # }
+
+    # NOTE: This is required for the typescript sdk to function, it is optional
+    # for the rust and the C# SDKs.
+    location /v1/identity {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "Upgrade";
         proxy_set_header Host $host;
+    }
+
+    # Block all other routes explicitly. Only localhost can use these routes. If you want to open your
+    # server up so that anyone can publish to it you should comment this section out.
+    location / {
+        allow 127.0.0.1;
+        deny all;
     }
 }
 ```
 
-This configuration contains a restriction to the `/v1/publish` route. This restriction makes it so that you can only publish to the database if you're publishing from a local connection on the host.
+This configuration by default blocks all connections other than `/v1/identity` and `/v1/database/<database-name>/subscribe` which only allows the most basic functionality. This will prevent all remote users from publishing to your SpacetimeDB instance.
 
 Enable the configuration:
 
