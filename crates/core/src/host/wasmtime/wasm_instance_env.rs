@@ -1,29 +1,19 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::num::NonZeroU32;
-use std::time::Instant;
-
+use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
-use crate::host::wasm_common::instrumentation;
+use crate::host::wasm_common::instrumentation::{span, CallTimes};
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
-use crate::host::wasm_common::{
-    err_to_errno, instrumentation::CallTimes, AbiRuntimeError, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx,
-    TimingSpanSet,
-};
+use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
 use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{errno, ColId};
+use std::num::NonZeroU32;
+use std::time::Instant;
 use wasmtime::{AsContext, Caller, StoreContextMut};
-
-use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
-
-#[cfg(not(feature = "spacetimedb-wasm-instance-env-times"))]
-use instrumentation::noop as span;
-#[cfg(feature = "spacetimedb-wasm-instance-env-times")]
-use instrumentation::op as span;
 
 /// A stream of bytes which the WASM module can read from
 /// using [`WasmInstanceEnv::bytes_source_read`].
@@ -123,6 +113,7 @@ pub(super) struct WasmInstanceEnv {
 
     /// The last, including current, reducer to be executed by this environment.
     reducer_name: String,
+
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
     chunk_pool: ChunkPool,
@@ -301,20 +292,11 @@ impl WasmInstanceEnv {
     }
 
     fn convert_wasm_result<T: From<u16>>(func: AbiCall, err: WasmError) -> RtResult<T> {
-        Err(match err {
-            WasmError::Db(err) => match err_to_errno(&err) {
-                Some(errno) => {
-                    log::debug!(
-                        "abi call to {func} returned an errno: {errno} ({})",
-                        errno::strerror(errno).unwrap_or("<unknown>")
-                    );
-                    return Ok(errno.get().into());
-                }
-                None => anyhow::Error::from(AbiRuntimeError { func, err }),
-            },
-            WasmError::BufferTooSmall => return Ok(errno::BUFFER_TOO_SMALL.get().into()),
-            WasmError::Wasm(err) => err,
-        })
+        match err {
+            WasmError::Db(err) => err_to_errno_and_log(func, err),
+            WasmError::BufferTooSmall => Ok(errno::BUFFER_TOO_SMALL.get().into()),
+            WasmError::Wasm(err) => Err(err),
+        }
     }
 
     /// Call the function `run` with the name `func`.
@@ -697,27 +679,12 @@ impl WasmInstanceEnv {
             // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
             let buffer_len = u32::read_from(mem, buffer_len_ptr)?;
             let write_buffer_len = |mem, len| u32::try_from(len).unwrap().write_to(mem, buffer_len_ptr);
+
             // Get a mutable view to the `buffer`.
-            let mut buffer = mem.deref_slice_mut(buffer_ptr, buffer_len)?;
+            let buffer = mem.deref_slice_mut(buffer_ptr, buffer_len)?;
 
-            let mut written = 0;
             // Fill the buffer as much as possible.
-            while let Some(chunk) = iter.as_slice().first() {
-                let Some((buf_chunk, rest)) = buffer.split_at_mut_checked(chunk.len()) else {
-                    // Cannot fit chunk into the buffer,
-                    // either because we already filled it too much,
-                    // or because it is too small.
-                    break;
-                };
-                buf_chunk.copy_from_slice(chunk);
-                written += chunk.len();
-                buffer = rest;
-
-                // Advance the iterator, as we used a chunk.
-                // SAFETY: We peeked one `chunk`, so there must be one at least.
-                let chunk = unsafe { iter.next().unwrap_unchecked() };
-                env.chunk_pool.put(chunk);
-            }
+            let written = InstanceEnv::fill_buffer_from_iter(iter, buffer, &mut env.chunk_pool);
 
             let ret = match (written, iter.as_slice().first()) {
                 // Nothing was written and the iterator is not exhausted.
@@ -1332,24 +1299,8 @@ impl WasmInstanceEnv {
             let Some(span) = caller.data_mut().timing_spans.take(TimingSpanIdx(span_id)) else {
                 return Ok(errno::NO_SUCH_CONSOLE_TIMER.get().into());
             };
-
-            let elapsed = span.start.elapsed();
-            let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
             let function = caller.data().log_record_function();
-
-            let record = Record {
-                ts: chrono::Utc::now(),
-                target: None,
-                filename: None,
-                line_number: None,
-                function,
-                message: &message,
-            };
-            caller.data().instance_env.console_log(
-                crate::database_logger::LogLevel::Info,
-                &record,
-                &caller.as_context(),
-            );
+            caller.data().instance_env.console_timer_end(&span, function);
             Ok(0)
         })
     }
@@ -1366,7 +1317,7 @@ impl WasmInstanceEnv {
         // as we want to possibly trap, but not to return an error code.
         Self::with_span(caller, AbiCall::Identity, |caller| {
             let (mem, env) = Self::mem_env(caller);
-            let identity = env.instance_env.replica_ctx.database.database_identity;
+            let identity = env.instance_env.database_identity();
             // We're implicitly casting `out_ptr` to `WasmPtr<Identity>` here.
             // (Both types are actually `u32`.)
             // This works because `Identity::write_to` does not require an aligned pointer,

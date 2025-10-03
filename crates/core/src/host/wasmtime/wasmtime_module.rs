@@ -4,6 +4,7 @@ use super::wasm_instance_env::WasmInstanceEnv;
 use super::{Mem, WasmtimeFuel, EPOCH_TICKS_PER_SECOND};
 use crate::energy::ReducerBudget;
 use crate::host::instance_env::InstanceEnv;
+use crate::host::module_common::run_describer;
 use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
 use crate::host::wasm_common::*;
 use crate::util::string_from_utf8_lossy_owned;
@@ -180,29 +181,20 @@ pub struct WasmtimeInstance {
 impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn extract_descriptions(&mut self) -> Result<Vec<u8>, DescribeError> {
         let describer_func_name = DESCRIBE_MODULE_DUNDER;
-        let store = &mut self.store;
 
-        let describer = self.instance.get_func(&mut *store, describer_func_name).unwrap();
-        let describer = describer
-            .typed::<u32, ()>(&mut *store)
+        let describer = self
+            .instance
+            .get_typed_func::<u32, ()>(&mut self.store, describer_func_name)
             .map_err(|_| DescribeError::Signature)?;
 
-        let sink = store.data_mut().setup_standard_bytes_sink();
+        let sink = self.store.data_mut().setup_standard_bytes_sink();
 
-        let start = std::time::Instant::now();
-        log::trace!("Start describer \"{describer_func_name}\"...");
-
-        let result = call_sync_typed_func(&describer, &mut *store, sink);
-
-        let duration = start.elapsed();
-        log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros());
-
-        result
-            .inspect_err(|err| log_traceback("describer", describer_func_name, err))
-            .map_err(DescribeError::RuntimeError)?;
+        run_describer(log_traceback, || {
+            call_sync_typed_func(&describer, &mut self.store, sink)
+        })?;
 
         // Fetch the bsatn returned by the describer call.
-        let bytes = store.data_mut().take_standard_bytes_sink();
+        let bytes = self.store.data_mut().take_standard_bytes_sink();
 
         Ok(bytes)
     }
@@ -214,11 +206,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> module_host_actor::ExecuteResult {
         let store = &mut self.store;
-        // note that ReducerBudget being a u64 is load-bearing here - although we convert budget right back into
-        // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
-        // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
+        // Set the fuel budget in WASM.
         set_store_fuel(store, budget.into());
-        let original_fuel = get_store_fuel(store);
         store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
 
         // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
@@ -254,14 +243,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result.map(|code| handle_error_sink_code(code, error));
 
+        // Compute fuel and heap usage.
         let remaining_fuel = get_store_fuel(store);
-
         let remaining: ReducerBudget = remaining_fuel.into();
-        let energy = module_host_actor::EnergyStats {
-            used: (budget - remaining).into(),
-            wasmtime_fuel_used: original_fuel.0 - remaining_fuel.0,
-            remaining,
-        };
+        let energy = module_host_actor::EnergyStats { budget, remaining };
         let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
         module_host_actor::ExecuteResult {

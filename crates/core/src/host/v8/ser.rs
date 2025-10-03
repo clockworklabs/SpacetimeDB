@@ -3,6 +3,7 @@
 use super::de::intern_field_name;
 use super::error::{exception_already_thrown, ExcResult, ExceptionThrown, RangeError, Throwable, TypeError};
 use super::key_cache::{get_or_create_key_cache, KeyCache};
+use super::syscall::FnRet;
 use super::to_value::ToValue;
 use derive_more::From;
 use spacetimedb_sats::{
@@ -13,10 +14,7 @@ use spacetimedb_sats::{
 use v8::{Array, ArrayBuffer, HandleScope, IntegrityLevel, Local, Object, Uint8Array, Value};
 
 /// Serializes `value` into a V8 into `scope`.
-pub(super) fn serialize_to_js<'scope>(
-    scope: &mut HandleScope<'scope>,
-    value: &impl Serialize,
-) -> ExcResult<Local<'scope, Value>> {
+pub(super) fn serialize_to_js<'scope>(scope: &mut HandleScope<'scope>, value: &impl Serialize) -> FnRet<'scope> {
     let key_cache = get_or_create_key_cache(scope);
     let key_cache = &mut *key_cache.borrow_mut();
     value
@@ -150,7 +148,7 @@ impl<'this, 'scope> ser::Serializer for Serializer<'this, 'scope> {
     }
 
     fn serialize_named_product(self, _len: usize) -> Result<Self::SerializeNamedProduct, Self::Error> {
-        // TODO(noa): this can be more efficient if we tell it the names ahead of time
+        // TODO(v8, noa): this can be more efficient if we tell it the names ahead of time
         let object = Object::new(self.scope);
         Ok(SerializeNamedProduct {
             inner: self,
