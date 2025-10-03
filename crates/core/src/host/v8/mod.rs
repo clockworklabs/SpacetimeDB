@@ -9,10 +9,11 @@ use crate::host::wasm_common::module_host_actor::{
 };
 use crate::host::ArgsTuple;
 use crate::{host::Scheduler, module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
+use core::iter;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 use de::deserialize_js;
-use error::{catch_exception, exception_already_thrown, log_traceback, ExcResult, Throwable};
+use error::{catch_exception, exception_already_thrown, log_traceback, ExcResult, FnRet, Throwable};
 use from_value::cast;
 use key_cache::get_or_create_key_cache;
 use ser::serialize_to_js;
@@ -25,7 +26,7 @@ use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use std::thread;
 use std::time::Instant;
-use v8::{Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, IsolateHandle, Local, Value};
+use v8::{Context, ContextOptions, ContextScope, Function, HandleScope, Isolate, IsolateHandle, Local, Object, Value};
 
 mod de;
 mod error;
@@ -61,18 +62,23 @@ struct V8RuntimeInner {
 }
 
 impl V8RuntimeInner {
+    /// Initializes the V8 platform and engine.
+    ///
+    /// Should only be called once but it isn't unsound to call it more times.
     fn init() -> Self {
         // Our current configuration:
         // - will pick a number of worker threads for background jobs based on the num CPUs.
         // - does not allow idle tasks
-        let platform = v8::new_default_platform(0, false).make_shared();
+        let platform = v8::new_single_threaded_default_platform(false).make_shared();
         // Initialize V8. Internally, this uses a global lock so it's safe that we don't.
         v8::V8::initialize_platform(platform);
         v8::V8::initialize();
 
         Self { _priv: () }
     }
+}
 
+impl ModuleRuntime for V8RuntimeInner {
     fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
         #![allow(unreachable_code, unused_variables)]
 
@@ -116,10 +122,10 @@ impl DynModule for JsModule {
 impl Module for JsModule {
     type Instance = JsInstance;
 
-    type InitialInstances<'a> = std::iter::Empty<JsInstance>;
+    type InitialInstances<'a> = iter::Empty<JsInstance>;
 
     fn initial_instances(&mut self) -> Self::InitialInstances<'_> {
-        std::iter::empty()
+        iter::empty()
     }
 
     fn info(&self) -> Arc<ModuleInfo> {
@@ -254,18 +260,19 @@ fn duration_to_budget(_duration: Duration) -> ReducerBudget {
     ReducerBudget::ZERO
 }
 
+/// Returns the global object.
+fn global<'scope>(scope: &mut HandleScope<'scope>) -> Local<'scope, Object> {
+    scope.get_current_context().global(scope)
+}
+
 /// Returns the global property `key`.
-fn get_global_property<'scope>(
-    scope: &mut HandleScope<'scope>,
-    key: Local<'scope, v8::String>,
-) -> ExcResult<Local<'scope, Value>> {
-    scope
-        .get_current_context()
-        .global(scope)
+fn get_global_property<'scope>(scope: &mut HandleScope<'scope>, key: Local<'scope, v8::String>) -> FnRet<'scope> {
+    global(scope)
         .get(scope, key.into())
         .ok_or_else(exception_already_thrown)
 }
 
+/// Calls free function `fun` with `args`.
 fn call_free_fun<'scope>(
     scope: &mut HandleScope<'scope>,
     fun: Local<'scope, Function>,
