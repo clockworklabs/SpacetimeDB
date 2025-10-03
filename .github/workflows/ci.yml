@@ -56,7 +56,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
 
-          $env:RUSTFLAGS='-C link-arg=/VERBOSE:LIB'
+          $env:RUSTFLAGS='-C link-arg=/VERBOSE:LIB -C link-arg=/INCREMENTAL:NO -C link-arg=/DEBUG:FASTLINK'
           cargo build -p spacetimedb-standalone
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
