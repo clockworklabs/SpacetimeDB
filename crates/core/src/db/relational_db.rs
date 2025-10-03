@@ -287,14 +287,6 @@ impl RelationalDB {
             page_pool,
         )?;
         if let Some(persistence) = &mut persistence {
-            // Sanity check because the snapshot worker could've been used before.
-            debug_assert!(
-                persistence
-                    .snapshot_repo()
-                    .map(|repo| repo.database_identity() == database_identity)
-                    .unwrap_or(true),
-                "snapshot repository does not match database identity",
-            );
             persistence.set_snapshot_state(inner.committed_state.clone());
         }
 

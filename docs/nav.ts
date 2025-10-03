@@ -141,7 +141,7 @@ const nav: Nav = {
       'spacetimeauth/testing-authentication.md'
     ),
     page(
-      'React integration',
+      'React',
       'spacetimeauth/react-integration',
       'spacetimeauth/react-integration.md'
     ),

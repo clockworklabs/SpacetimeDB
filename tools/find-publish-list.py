@@ -86,6 +86,6 @@ if __name__ == "__main__":
         print("\nAll crates to publish, in order:")
     for crate in publish_order:
         if args.directories:
-            print(Path(crate_metadata[crate]['manifest_path']).parent)
+            print(crate_metadata[crate]['manifest_path'])
         else:
             print(crate)

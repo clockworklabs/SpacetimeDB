@@ -230,9 +230,7 @@ impl SourceSnapshot {
 
 async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffset> {
     let start = Instant::now();
-    // NOTE: `_db` needs to stay alive until the snapshot is taken,
-    // because the snapshot worker holds only a weak reference.
-    let (mut watch, _db) = spawn_blocking(|| {
+    let mut watch = spawn_blocking(|| {
         let tmp = TempReplicaDir::new()?;
 
         let persistence = Persistence {
@@ -256,13 +254,13 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
             })?;
         }
 
-        Ok::<_, DBError>((watch, db))
+        Ok::<_, DBError>(watch)
     })
     .await
     .unwrap()?;
 
-    let mut snapshot_offset = *watch.borrow();
-    while snapshot_offset < SNAPSHOT_FREQUENCY && watch.changed().await.is_ok() {
+    let mut snapshot_offset = 0;
+    while watch.changed().await.is_ok() {
         snapshot_offset = *watch.borrow_and_update();
     }
     assert!(snapshot_offset >= SNAPSHOT_FREQUENCY);

@@ -64,3 +64,6 @@ toml.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+unstable = []

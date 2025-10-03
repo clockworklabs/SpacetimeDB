@@ -98,19 +98,19 @@
     },
     {
       "name": "esm min (brotli)",
-      "path": "dist/min/index.browser.mjs",
+      "path": "dist/min/index.mjs",
       "brotli": true,
-      "limit": "12 kB"
+      "limit": "10 kB"
     },
     {
       "name": "esm min (gzip)",
-      "path": "dist/min/index.browser.mjs",
+      "path": "dist/min/index.mjs",
       "gzip": true,
       "limit": "15 kB"
     },
     {
       "name": "esm min (uncompressed)",
-      "path": "dist/min/index.browser.mjs",
+      "path": "dist/min/index.mjs",
       "brotli": false,
       "limit": "60 kB"
     },
