@@ -1,0 +1,12 @@
+src/
+*.ts
+!*.d.ts
+
+# config files
+.eslintrc*
+.prettierrc*
+tsconfig*.json
+.gitignore
+
+*.log
+*.tsbuildinfo
