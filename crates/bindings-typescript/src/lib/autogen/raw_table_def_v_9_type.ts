@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { RawIndexDefV9 } from './raw_index_def_v_9_type';
 // Mark import as potentially unused

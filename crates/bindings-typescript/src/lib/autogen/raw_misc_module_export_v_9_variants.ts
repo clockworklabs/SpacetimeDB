@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { RawColumnDefaultValueV9 as RawColumnDefaultValueV9Type } from './raw_column_default_value_v_9_type';
 // Mark import as potentially unused
