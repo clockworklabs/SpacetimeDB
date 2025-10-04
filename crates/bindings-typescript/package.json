@@ -178,7 +178,7 @@
     "size-limit": "^11.2.0",
     "ts-node": "^10.9.2",
     "tsup": "^8.1.0",
-    "typescript": "^5.9.2",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^8.18.2",
     "vite": "^7.1.5",
     "vitest": "^3.2.4"
