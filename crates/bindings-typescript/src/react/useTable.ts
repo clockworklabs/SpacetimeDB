@@ -231,7 +231,7 @@ export function useTable<
  * The hook must be used within a component tree wrapped by `SpacetimeDBProvider`.
  *
  * Overloads:
- * - `(tableName, where, callbacks?)`: Subscribe to a table with a filter and optional callbacks.
+ * - `useTable(tableName, where, callbacks?)`: Subscribe to a table with a filter and optional callbacks.
  * - `useTable(tableName, callbacks?)`: Subscribe to a table without a filter, with optional callbacks.
  *
  * @template DbConnection The type of the SpacetimeDB connection.
