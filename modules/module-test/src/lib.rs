@@ -107,6 +107,41 @@ pub struct PrivateTable {
     name: String,
 }
 
+// TODO: Filter on Option is not yet implemented
+// so this is nearly useless, but this does compile
+#[spacetimedb::table(name = indexed_option_field)]
+pub struct IndexedOptionField {
+    #[index(btree)]
+    field: Option<u32>,
+}
+
+#[spacetimedb::reducer]
+fn indexed_option_field_example(_ctx: &ReducerContext) {
+    // FilterableValue is not yet implemented
+    // let _ = ctx.db.indexed_option_field().field().filter(None);
+}
+
+// TODO: Find on Option is not yet implemented
+// so this is nearly useless, but this does compile
+#[spacetimedb::table(name = unique_option_field)]
+pub struct UniqueOptionField {
+    #[unique]
+    field: Option<u32>,
+}
+
+#[spacetimedb::reducer]
+fn unique_option_field_example(_ctx: &ReducerContext) {
+    // FilterableValue is not yet implemented
+    // let _ = ctx.db.unique_option_field().field().find(None);
+}
+
+// TODO: not implemented yet
+// #[spacetimedb::table(name = auto_inc_option_field)]
+// pub struct AutoIncOptionField {
+//     #[auto_inc]
+//     field: Option<u32>
+// }
+
 #[spacetimedb::table(name = points, private, index(name = multi_column_index, btree(columns = [x, y])))]
 pub struct Point {
     x: i64,

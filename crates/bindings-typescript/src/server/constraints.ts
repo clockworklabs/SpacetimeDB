@@ -32,7 +32,7 @@ export type AllUnique<
  * type Result4 = ColumnIsUnique<Meta4>; // false
  * ```
  */
-export type ColumnIsUnique<M extends ColumnMetadata> = M extends
+export type ColumnIsUnique<M extends ColumnMetadata<any>> = M extends
   | { isUnique: true }
   | { isPrimaryKey: true }
   ? true

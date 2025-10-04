@@ -812,6 +812,8 @@ import { DeletePlayer } from "./delete_player_reducer.ts";
 export { DeletePlayer };
 import { DeletePlayersByName } from "./delete_players_by_name_reducer.ts";
 export { DeletePlayersByName };
+import { IndexedOptionFieldExample } from "./indexed_option_field_example_reducer.ts";
+export { IndexedOptionFieldExample };
 import { ListOverAge } from "./list_over_age_reducer.ts";
 export { ListOverAge };
 import { LogModuleIdentity } from "./log_module_identity_reducer.ts";
@@ -826,10 +828,14 @@ import { Test } from "./test_reducer.ts";
 export { Test };
 import { TestBtreeIndexArgs } from "./test_btree_index_args_reducer.ts";
 export { TestBtreeIndexArgs };
+import { UniqueOptionFieldExample } from "./unique_option_field_example_reducer.ts";
+export { UniqueOptionFieldExample };
 
 // Import and reexport all table handle types
 import { HasSpecialStuffTableHandle } from "./has_special_stuff_table.ts";
 export { HasSpecialStuffTableHandle };
+import { IndexedOptionFieldTableHandle } from "./indexed_option_field_table.ts";
+export { IndexedOptionFieldTableHandle };
 import { LoggedOutPlayerTableHandle } from "./logged_out_player_table.ts";
 export { LoggedOutPlayerTableHandle };
 import { PersonTableHandle } from "./person_table.ts";
@@ -852,6 +858,8 @@ import { TestETableHandle } from "./test_e_table.ts";
 export { TestETableHandle };
 import { TestFTableHandle } from "./test_f_table.ts";
 export { TestFTableHandle };
+import { UniqueOptionFieldTableHandle } from "./unique_option_field_table.ts";
+export { UniqueOptionFieldTableHandle };
 
 // Import and reexport all types
 import { Baz } from "./baz_type.ts";
@@ -860,6 +868,8 @@ import { Foobar } from "./foobar_type.ts";
 export { Foobar };
 import { HasSpecialStuff } from "./has_special_stuff_type.ts";
 export { HasSpecialStuff };
+import { IndexedOptionField } from "./indexed_option_field_type.ts";
+export { IndexedOptionField };
 import { Person } from "./person_type.ts";
 export { Person };
 import { PkMultiIdentity } from "./pk_multi_identity_type.ts";
@@ -882,6 +892,8 @@ import { TestE } from "./test_e_type.ts";
 export { TestE };
 import { TestFoobar } from "./test_foobar_type.ts";
 export { TestFoobar };
+import { UniqueOptionField } from "./unique_option_field_type.ts";
+export { UniqueOptionField };
 import { NamespaceTestC } from "./namespace_test_c_type.ts";
 export { NamespaceTestC };
 import { NamespaceTestF } from "./namespace_test_f_type.ts";
@@ -892,6 +904,10 @@ const REMOTE_MODULE = {
     has_special_stuff: {
       tableName: "has_special_stuff" as const,
       rowType: HasSpecialStuff.getTypeScriptAlgebraicType(),
+    },
+    indexed_option_field: {
+      tableName: "indexed_option_field",
+      rowType: IndexedOptionField.getTypeScriptAlgebraicType(),
     },
     logged_out_player: {
       tableName: "logged_out_player" as const,
@@ -967,6 +983,10 @@ const REMOTE_MODULE = {
       tableName: "test_f" as const,
       rowType: TestFoobar.getTypeScriptAlgebraicType(),
     },
+    unique_option_field: {
+      tableName: "unique_option_field",
+      rowType: UniqueOptionField.getTypeScriptAlgebraicType(),
+    },
   },
   reducers: {
     add: {
@@ -997,6 +1017,10 @@ const REMOTE_MODULE = {
       reducerName: "delete_players_by_name",
       argsType: DeletePlayersByName.getTypeScriptAlgebraicType(),
     },
+    indexed_option_field_example: {
+      reducerName: "indexed_option_field_example",
+      argsType: IndexedOptionFieldExample.getTypeScriptAlgebraicType(),
+    },
     list_over_age: {
       reducerName: "list_over_age",
       argsType: ListOverAge.getTypeScriptAlgebraicType(),
@@ -1024,6 +1048,10 @@ const REMOTE_MODULE = {
     test_btree_index_args: {
       reducerName: "test_btree_index_args",
       argsType: TestBtreeIndexArgs.getTypeScriptAlgebraicType(),
+    },
+    unique_option_field_example: {
+      reducerName: "unique_option_field_example",
+      argsType: UniqueOptionFieldExample.getTypeScriptAlgebraicType(),
     },
   },
   versionInfo: {
@@ -1062,6 +1090,7 @@ export type Reducer = never
 | { name: "ClientConnected", args: ClientConnected }
 | { name: "DeletePlayer", args: DeletePlayer }
 | { name: "DeletePlayersByName", args: DeletePlayersByName }
+| { name: "IndexedOptionFieldExample", args: IndexedOptionFieldExample }
 | { name: "ListOverAge", args: ListOverAge }
 | { name: "LogModuleIdentity", args: LogModuleIdentity }
 | { name: "QueryPrivate", args: QueryPrivate }
@@ -1069,6 +1098,7 @@ export type Reducer = never
 | { name: "SayHello", args: SayHello }
 | { name: "Test", args: Test }
 | { name: "TestBtreeIndexArgs", args: TestBtreeIndexArgs }
+| { name: "UniqueOptionFieldExample", args: UniqueOptionFieldExample }
 ;
 
 export class RemoteReducers {
@@ -1174,6 +1204,18 @@ export class RemoteReducers {
     this.connection.offReducer("delete_players_by_name", callback);
   }
 
+  indexedOptionFieldExample() {
+    this.connection.callReducer("indexed_option_field_example", new Uint8Array(0), this.setCallReducerFlags.indexedOptionFieldExampleFlags);
+  }
+
+  onIndexedOptionFieldExample(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("indexed_option_field_example", callback);
+  }
+
+  removeOnIndexedOptionFieldExample(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("indexed_option_field_example", callback);
+  }
+
   listOverAge(age: number) {
     const __args = { age };
     let __writer = new __BinaryWriter(1024);
@@ -1270,6 +1312,18 @@ export class RemoteReducers {
     this.connection.offReducer("test_btree_index_args", callback);
   }
 
+  uniqueOptionFieldExample() {
+    this.connection.callReducer("unique_option_field_example", new Uint8Array(0), this.setCallReducerFlags.uniqueOptionFieldExampleFlags);
+  }
+
+  onUniqueOptionFieldExample(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer("unique_option_field_example", callback);
+  }
+
+  removeOnUniqueOptionFieldExample(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer("unique_option_field_example", callback);
+  }
+
 }
 
 export class SetReducerFlags {
@@ -1301,6 +1355,11 @@ export class SetReducerFlags {
   deletePlayersByNameFlags: __CallReducerFlags = 'FullUpdate';
   deletePlayersByName(flags: __CallReducerFlags) {
     this.deletePlayersByNameFlags = flags;
+  }
+
+  indexedOptionFieldExampleFlags: __CallReducerFlags = 'FullUpdate';
+  indexedOptionFieldExample(flags: __CallReducerFlags) {
+    this.indexedOptionFieldExampleFlags = flags;
   }
 
   listOverAgeFlags: __CallReducerFlags = 'FullUpdate';
@@ -1338,6 +1397,11 @@ export class SetReducerFlags {
     this.testBtreeIndexArgsFlags = flags;
   }
 
+  uniqueOptionFieldExampleFlags: __CallReducerFlags = 'FullUpdate';
+  uniqueOptionFieldExample(flags: __CallReducerFlags) {
+    this.uniqueOptionFieldExampleFlags = flags;
+  }
+
 }
 
 export class RemoteTables {
@@ -1346,6 +1410,11 @@ export class RemoteTables {
   get hasSpecialStuff(): HasSpecialStuffTableHandle<'has_special_stuff'> {
     // clientCache is a private property
     return new HasSpecialStuffTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<HasSpecialStuff>(REMOTE_MODULE.tables.has_special_stuff));
+  }
+
+  get indexedOptionField(): IndexedOptionFieldTableHandle {
+    // clientCache is a private property
+    return new IndexedOptionFieldTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<IndexedOptionField>(REMOTE_MODULE.tables.indexed_option_field));
   }
 
   get loggedOutPlayer(): LoggedOutPlayerTableHandle<'logged_out_player'> {
@@ -1402,6 +1471,11 @@ export class RemoteTables {
     // clientCache is a private property
     return new TestFTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestFoobar>(REMOTE_MODULE.tables.test_f));
   }
+
+  get uniqueOptionField(): UniqueOptionFieldTableHandle {
+    // clientCache is a private property
+    return new UniqueOptionFieldTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<UniqueOptionField>(REMOTE_MODULE.tables.unique_option_field));
+  }
 }
 
 export class SubscriptionBuilder extends __SubscriptionBuilderImpl<RemoteTables, RemoteReducers, SetReducerFlags> { }
@@ -1419,6 +1493,203 @@ export type EventContext = __EventContextInterface<RemoteTables, RemoteReducers,
 export type ReducerEventContext = __ReducerEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;
 export type SubscriptionEventContext = __SubscriptionEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;
 export type ErrorContext = __ErrorContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;
+'''
+"indexed_option_field_example_reducer.ts" = '''
+// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+/* eslint-disable */
+/* tslint:disable */
+import {
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+} from "spacetimedb";
+
+export type IndexedOptionFieldExample = {};
+/**
+ * An object for generated helper functions.
+ */
+export const IndexedOptionFieldExample = {
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
+      elements: [
+      ]
+    });
+  },
+
+  serialize(writer: __BinaryWriter, value: IndexedOptionFieldExample): void {
+    __AlgebraicTypeValue.serializeValue(writer, IndexedOptionFieldExample.getTypeScriptAlgebraicType(), value);
+  },
+
+  deserialize(reader: __BinaryReader): IndexedOptionFieldExample {
+    return __AlgebraicTypeValue.deserializeValue(reader, IndexedOptionFieldExample.getTypeScriptAlgebraicType());
+  },
+
+}
+
+export default IndexedOptionFieldExample;
+
+'''
+"indexed_option_field_table.ts" = '''
+// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+/* eslint-disable */
+/* tslint:disable */
+import {
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+} from "spacetimedb";
+import { IndexedOptionField } from "./indexed_option_field_type";
+import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
+
+/**
+ * Table handle for the table `indexed_option_field`.
+ *
+ * Obtain a handle from the [`indexedOptionField`] property on [`RemoteTables`],
+ * like `ctx.db.indexedOptionField`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.indexedOptionField.on_insert(...)`.
+ */
+export class IndexedOptionFieldTableHandle {
+  tableCache: __TableCache<IndexedOptionField>;
+
+  constructor(tableCache: __TableCache<IndexedOptionField>) {
+    this.tableCache = tableCache;
+  }
+
+  count(): number {
+    return this.tableCache.count();
+  }
+
+  iter(): Iterable<IndexedOptionField> {
+    return this.tableCache.iter();
+  }
+
+  onInsert = (cb: (ctx: EventContext, row: IndexedOptionField) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
+
+  removeOnInsert = (cb: (ctx: EventContext, row: IndexedOptionField) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
+
+  onDelete = (cb: (ctx: EventContext, row: IndexedOptionField) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
+
+  removeOnDelete = (cb: (ctx: EventContext, row: IndexedOptionField) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
+}
+'''
+"indexed_option_field_type.ts" = '''
+// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+/* eslint-disable */
+/* tslint:disable */
+import {
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+} from "spacetimedb";
+
+export type IndexedOptionField = {
+  field: number | undefined,
+};
+/**
+ * An object for generated helper functions.
+ */
+export const IndexedOptionField = {
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
+      elements: [
+        { name: "field", algebraicType: __AlgebraicTypeValue.createOptionType(__AlgebraicTypeValue.U32)},
+      ]
+    });
+  },
+
+  serialize(writer: __BinaryWriter, value: IndexedOptionField): void {
+    __AlgebraicTypeValue.serializeValue(writer, IndexedOptionField.getTypeScriptAlgebraicType(), value);
+  },
+
+  deserialize(reader: __BinaryReader): IndexedOptionField {
+    return __AlgebraicTypeValue.deserializeValue(reader, IndexedOptionField.getTypeScriptAlgebraicType());
+  },
+
+}
+
+export default IndexedOptionField;
+
+
 '''
 "list_over_age_reducer.ts" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
@@ -3974,5 +4245,202 @@ export const Test = {
 }
 
 export default Test;
+
+'''
+"unique_option_field_example_reducer.ts" = '''
+// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+/* eslint-disable */
+/* tslint:disable */
+import {
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+} from "spacetimedb";
+
+export type UniqueOptionFieldExample = {};
+/**
+ * An object for generated helper functions.
+ */
+export const UniqueOptionFieldExample = {
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
+      elements: [
+      ]
+    });
+  },
+
+  serialize(writer: __BinaryWriter, value: UniqueOptionFieldExample): void {
+    __AlgebraicTypeValue.serializeValue(writer, UniqueOptionFieldExample.getTypeScriptAlgebraicType(), value);
+  },
+
+  deserialize(reader: __BinaryReader): UniqueOptionFieldExample {
+    return __AlgebraicTypeValue.deserializeValue(reader, UniqueOptionFieldExample.getTypeScriptAlgebraicType());
+  },
+
+}
+
+export default UniqueOptionFieldExample;
+
+'''
+"unique_option_field_table.ts" = '''
+// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+/* eslint-disable */
+/* tslint:disable */
+import {
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+} from "spacetimedb";
+import { UniqueOptionField } from "./unique_option_field_type";
+import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
+
+/**
+ * Table handle for the table `unique_option_field`.
+ *
+ * Obtain a handle from the [`uniqueOptionField`] property on [`RemoteTables`],
+ * like `ctx.db.uniqueOptionField`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.uniqueOptionField.on_insert(...)`.
+ */
+export class UniqueOptionFieldTableHandle {
+  tableCache: __TableCache<UniqueOptionField>;
+
+  constructor(tableCache: __TableCache<UniqueOptionField>) {
+    this.tableCache = tableCache;
+  }
+
+  count(): number {
+    return this.tableCache.count();
+  }
+
+  iter(): Iterable<UniqueOptionField> {
+    return this.tableCache.iter();
+  }
+
+  onInsert = (cb: (ctx: EventContext, row: UniqueOptionField) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
+
+  removeOnInsert = (cb: (ctx: EventContext, row: UniqueOptionField) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
+
+  onDelete = (cb: (ctx: EventContext, row: UniqueOptionField) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
+
+  removeOnDelete = (cb: (ctx: EventContext, row: UniqueOptionField) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
+}
+'''
+"unique_option_field_type.ts" = '''
+// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+/* eslint-disable */
+/* tslint:disable */
+import {
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+} from "spacetimedb";
+
+export type UniqueOptionField = {
+  field: number | undefined,
+};
+/**
+ * An object for generated helper functions.
+ */
+export const UniqueOptionField = {
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
+    return __AlgebraicTypeValue.Product({
+      elements: [
+        { name: "field", algebraicType: __AlgebraicTypeValue.createOptionType(__AlgebraicTypeValue.U32)},
+      ]
+    });
+  },
+
+  serialize(writer: __BinaryWriter, value: UniqueOptionField): void {
+    __AlgebraicTypeValue.serializeValue(writer, UniqueOptionField.getTypeScriptAlgebraicType(), value);
+  },
+
+  deserialize(reader: __BinaryReader): UniqueOptionField {
+    return __AlgebraicTypeValue.deserializeValue(reader, UniqueOptionField.getTypeScriptAlgebraicType());
+  },
+
+}
+
+export default UniqueOptionField;
+
 
 '''
