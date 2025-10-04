@@ -38,6 +38,7 @@ namespace SpacetimeDB
         private readonly ConcurrentQueue<Action> dispatchQueue = new();
 
         protected ClientWebSocket Ws = new();
+        private CancellationTokenSource? _connectCts;
 
         public WebSocket(ConnectOptions options)
         {
@@ -60,6 +61,7 @@ namespace SpacetimeDB
 #if UNITY_WEBGL && !UNITY_EDITOR
         private bool _isConnected = false;
         private bool _isConnecting = false;
+        private bool _cancelConnectRequested = false;
         public bool IsConnected => _isConnected;
         public bool IsConnecting => _isConnecting;
 #else 
@@ -148,8 +150,9 @@ namespace SpacetimeDB
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (_isConnecting || _isConnected) return;
-    
+
             _isConnecting = true;
+            _cancelConnectRequested = false;
             try
             {
                 var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
@@ -163,6 +166,11 @@ namespace SpacetimeDB
                 {
                     dispatchQueue.Enqueue(() => OnConnectError?.Invoke(
                         new Exception("Failed to connect WebSocket")));
+                }
+                else if (_cancelConnectRequested)
+                {
+                    // If cancel was requested before open, proactively close now.
+                    WebSocket_Close(_webglSocketId, (int)WebSocketCloseStatus.NormalClosure, "Canceled during connect.");
                 }
             }
             catch (Exception e)
@@ -183,7 +191,7 @@ namespace SpacetimeDB
             var url = new Uri(uri);
             Ws.Options.AddSubProtocol(_options.Protocol);
 
-            var source = new CancellationTokenSource(10000);
+            _connectCts = new CancellationTokenSource(10000);
             if (!string.IsNullOrEmpty(auth))
             {
                 Ws.Options.SetRequestHeader("Authorization", $"Bearer {auth}");
@@ -195,7 +203,7 @@ namespace SpacetimeDB
 
             try
             {
-                await Ws.ConnectAsync(url, source.Token);
+                await Ws.ConnectAsync(url, _connectCts.Token);
                 if (Ws.State == WebSocketState.Open)
                 {
                     if (OnConnect != null)
@@ -367,13 +375,35 @@ namespace SpacetimeDB
 #endif
         }
 
+        /// <summary>
+        /// Cancel an in-flight ConnectAsync. Safe to call if no connect is pending.
+        /// </summary>
+        public void CancelConnect()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // No CTS on WebGL. Mark cancel intent so that when socket id arrives or open fires,
+            // we immediately close and avoid reporting a connected state.
+            _cancelConnectRequested = true;
+            return;
+#else
+            try { _connectCts?.Cancel(); } catch { /* ignore */ }
+#endif
+        }
+
         public Task Close(WebSocketCloseStatus code = WebSocketCloseStatus.NormalClosure)
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
-            if (_isConnected && _webglSocketId >= 0)
+            if (_webglSocketId >= 0)
             {
+                // If connected or connecting with a valid socket id, request a close.
                 WebSocket_Close(_webglSocketId, (int)code, "Disconnecting normally.");
+                _cancelConnectRequested = false; // graceful close intent
                 _isConnected = false;
+            }
+            else if (_isConnecting)
+            {
+                // We don't yet have a socket id; remember to cancel once it arrives/opens.
+                _cancelConnectRequested = true;
             }
 #else
             if (Ws?.State == WebSocketState.Open)
@@ -391,11 +421,15 @@ namespace SpacetimeDB
         public void Abort()
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
-            // WebGL plugin does not expose an Abort; fall back to a best-effort close if connected.
-            if (_isConnected && _webglSocketId >= 0)
+            if (_webglSocketId >= 0)
             {
                 WebSocket_Close(_webglSocketId, (int)WebSocketCloseStatus.NormalClosure, "Aborting connection.");
                 _isConnected = false;
+            }
+            else if (_isConnecting)
+            {
+                // No socket yet; ensure we close immediately once it opens.
+                _cancelConnectRequested = true;
             }
 #else
             try
@@ -475,11 +509,21 @@ namespace SpacetimeDB
         {
             return Ws!.State;
         }
+
 #if UNITY_WEBGL && !UNITY_EDITOR
         public void HandleWebGLOpen(int socketId)
         {
             if (socketId == _webglSocketId)
             {
+                if (_cancelConnectRequested)
+                {
+                    // Immediately close instead of reporting connected.
+                    WebSocket_Close(_webglSocketId, (int)WebSocketCloseStatus.NormalClosure, "Canceled during connect.");
+                    _isConnecting = false;
+                    _isConnected = false;
+                    _cancelConnectRequested = false;
+                    return;
+                }
                 _isConnected = true;
                 if (OnConnect != null)
                     dispatchQueue.Enqueue(() => OnConnect());
@@ -500,6 +544,9 @@ namespace SpacetimeDB
             if (socketId == _webglSocketId && OnClose != null)
             {
                 _isConnected = false;
+                _isConnecting = false;
+                _webglSocketId = -1;
+                _cancelConnectRequested = false;
                 var ex = code != (int)WebSocketCloseStatus.NormalClosure ? new Exception($"WebSocket closed with code {code}: {reason}") : null;
                 dispatchQueue.Enqueue(() => OnClose?.Invoke(ex));
             }
@@ -510,6 +557,8 @@ namespace SpacetimeDB
             UnityEngine.Debug.Log($"HandleWebGLError: {socketId}");
             if (socketId == _webglSocketId && OnConnectError != null)
             {
+                _isConnecting = false;
+                _webglSocketId = -1;
                 dispatchQueue.Enqueue(() => OnConnectError(new Exception($"Socket {socketId} error.")));
             }
         }
