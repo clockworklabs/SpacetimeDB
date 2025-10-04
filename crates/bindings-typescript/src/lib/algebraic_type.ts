@@ -4,6 +4,7 @@ import { ConnectionId } from './connection_id';
 import type BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
 import { Identity } from './identity';
+import { Option } from './option';
 import {
   AlgebraicType as AlgebraicTypeType,
   AlgebraicType as AlgebraicTypeValue,
@@ -89,15 +90,7 @@ export const AlgebraicType: {
     value,
   }),
   createOptionType: function (innerType: AlgebraicTypeType): AlgebraicTypeType {
-    return AlgebraicTypeValue.Sum({
-      variants: [
-        { name: 'some', algebraicType: innerType },
-        {
-          name: 'none',
-          algebraicType: AlgebraicTypeValue.Product({ elements: [] }),
-        },
-      ],
-    });
+    return Option.getAlgebraicType(innerType);
   },
   createIdentityType: function (): AlgebraicTypeType {
     return Identity.getAlgebraicType();

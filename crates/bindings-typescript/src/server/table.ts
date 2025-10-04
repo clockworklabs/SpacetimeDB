@@ -60,7 +60,7 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
  */
 export type UntypedTableDef = {
   name: string;
-  columns: Record<string, ColumnBuilder<any, any, ColumnMetadata>>;
+  columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
   indexes: IndexOpts<any>[];
 };
 
@@ -113,7 +113,7 @@ type OptsIndices<Opts extends TableOpts<any>> = Opts extends {
  */
 export type CheckAnyMetadata<
   TableDef extends UntypedTableDef,
-  Metadata extends ColumnMetadata,
+  Metadata extends ColumnMetadata<any>,
   T,
 > = Values<TableDef['columns']>['columnMetadata'] extends Metadata ? T : never;
 
@@ -232,7 +232,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   let scheduleAtCol: ColId | undefined;
 
   for (const [name, builder] of Object.entries(row)) {
-    const meta: ColumnMetadata =
+    const meta: ColumnMetadata<any> =
       'columnMetadata' in builder ? builder.columnMetadata : {};
 
     if (meta.isPrimaryKey) {

@@ -136,7 +136,7 @@ type _IndexScanRangeBoundsCase<Columns extends any[]> = Columns extends [
  */
 export type ColumnIndex<
   Name extends string,
-  M extends ColumnMetadata,
+  M extends ColumnMetadata<any>,
 > = Prettify<
   {
     name: Name;
