@@ -213,8 +213,9 @@ type ColumnsFromRow<R> = {
 export function useTable<
   DbConnection extends DbConnectionImpl,
   RowType extends Record<string, any>,
-  TableName extends TableNamesFromDb<DbConnection['db']> =
-    TableNamesFromDb<DbConnection['db']>,
+  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
+    DbConnection['db']
+  >,
 >(
   tableName: TableName,
   where: Expr<ColumnsFromRow<RowType>>,
@@ -257,8 +258,9 @@ export function useTable<
 export function useTable<
   DbConnection extends DbConnectionImpl,
   RowType extends Record<string, any>,
-  TableName extends TableNamesFromDb<DbConnection['db']> =
-    TableNamesFromDb<DbConnection['db']>,
+  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
+    DbConnection['db']
+  >,
 >(
   tableName: TableName,
   callbacks?: UseQueryCallbacks<RowType>
@@ -267,8 +269,9 @@ export function useTable<
 export function useTable<
   DbConnection extends DbConnectionImpl,
   RowType extends Record<string, any>,
-  TableName extends TableNamesFromDb<DbConnection['db']> =
-    TableNamesFromDb<DbConnection['db']>,
+  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
+    DbConnection['db']
+  >,
 >(
   tableName: TableName,
   whereClauseOrCallbacks?:
