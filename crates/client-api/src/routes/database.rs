@@ -319,6 +319,7 @@ where
 
     let replica = worker_ctx
         .get_leader_replica_by_database(database.id)
+        .await
         .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
     let replica_id = replica.id;
 
@@ -378,6 +379,7 @@ pub(crate) async fn worker_ctx_find_database(
 ) -> axum::response::Result<Option<Database>> {
     worker_ctx
         .get_database_by_identity(database_identity)
+        .await
         .map_err(log_and_500)
 }
 
@@ -474,6 +476,7 @@ pub async fn get_names<S: ControlStateDelegate>(
 
     let names = ctx
         .reverse_lookup(&database_identity)
+        .await
         .map_err(log_and_500)?
         .into_iter()
         .filter_map(|x| String::from(x).try_into().ok())
@@ -611,6 +614,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     let op = {
         let exists = ctx
             .get_database_by_identity(&database_identity)
+            .await
             .map_err(log_and_500)?
             .is_some();
         if !exists {
@@ -841,7 +845,10 @@ pub async fn set_names<S: ControlStateDelegate>(
 
     let database_identity = name_or_identity.resolve(&ctx).await?;
 
-    let database = ctx.get_database_by_identity(&database_identity).map_err(log_and_500)?;
+    let database = ctx
+        .get_database_by_identity(&database_identity)
+        .await
+        .map_err(log_and_500)?;
     let Some(database) = database else {
         return Ok((
             StatusCode::NOT_FOUND,
@@ -859,7 +866,7 @@ pub async fn set_names<S: ControlStateDelegate>(
     }
 
     for name in &validated_names {
-        if ctx.lookup_identity(name.as_str()).unwrap().is_some() {
+        if ctx.lookup_identity(name.as_str()).await.unwrap().is_some() {
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(format!(

@@ -78,7 +78,7 @@ pub async fn get_databases<S: ControlStateDelegate>(
 ) -> axum::response::Result<impl IntoResponse> {
     let identity = identity.into();
     // Linear scan for all databases that have this owner, and return their identities
-    let all_dbs = ctx.get_databases().map_err(|e| {
+    let all_dbs = ctx.get_databases().await.map_err(|e| {
         log::error!("Failure when retrieving databases for search: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
