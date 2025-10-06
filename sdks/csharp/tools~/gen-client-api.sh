@@ -2,9 +2,9 @@
 
 set -ueo pipefail
 
-STDB_PATH="$1"
 SDK_PATH="$(dirname "$0")/.."
 SDK_PATH="$(realpath "$SDK_PATH")"
+STDB_PATH="$SDK_PATH/../.."
 
 cargo build --manifest-path "$STDB_PATH/crates/standalone/Cargo.toml"
 

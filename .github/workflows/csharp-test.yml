@@ -83,15 +83,11 @@ jobs:
           CARGO_TARGET_DIR: demo/Blackholio/server-rust/target
 
       - name: Check quickstart-chat bindings are up to date
-        working-directory: sdks/csharp/examples~/quickstart-chat
+        working-directory: sdks/csharp
         run: |
-          bash ../../tools~/gen-quickstart.sh "${GITHUB_WORKSPACE}"
-          # This was copied from tools/check-diff.sh.
-          # It's required because `spacetime generate` creates lines with the SpacetimeDB commit
-          # version, which would make this `git diff` check very brittle if included.
-          PATTERN='^// This was generated using spacetimedb cli version.*'
-          git diff --exit-code --ignore-matching-lines="$PATTERN" -- . || {
-              echo "Error: quickstart-chat bindings have changed. Please regenerate the bindings and commit them to this branch."
+          bash tools~/gen-quickstart.sh
+          "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples~/quickstart-chat || {
+              echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
               exit 1
           }
 
@@ -101,12 +97,8 @@ jobs:
 
       - name: Check for changes
         run: |
-          # This was copied from tools/check-diff.sh.
-          # It's required because `spacetime generate` creates lines with the SpacetimeDB commit
-          # version, which would make this `git diff` check very brittle if included.
-          PATTERN='^// This was generated using spacetimedb cli version.*'
-          git diff --exit-code --ignore-matching-lines="$PATTERN" -- demo/Blackholio/client-unity/Assets/Scripts/autogen || {
-              echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
+          tools/check-diff.sh demo/Blackholio/client-unity/Assets/Scripts/autogen || {
+              echo 'Error: Bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
               exit 1
           }
 
@@ -124,7 +116,7 @@ jobs:
           disown
 
       - name: Run regression tests
-        run: bash sdks/csharp/tools~/run-regression-tests.sh .
+        run: bash sdks/csharp/tools~/run-regression-tests.sh
 
       - name: Publish unity-tests module to SpacetimeDB
         working-directory: demo/Blackholio/server-rust
