@@ -1,13 +1,8 @@
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
 import { MODULE_DEF } from './runtime';
-import { ColumnBuilder, type TypeBuilder } from './type_builders';
-import type {
-  AlgebraicTypeRef,
-  RowObj,
-  TableSchema,
-  UntypedTableDef,
-} from './table';
+import { ColumnBuilder, type RowObj, type TypeBuilder } from './type_builders';
+import type { AlgebraicTypeRef, TableSchema, UntypedTableDef } from './table';
 import {
   clientConnected,
   clientDisconnected,
@@ -69,10 +64,13 @@ type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
  * );
  * ```
  */
+// TODO(cloutiertyler): It might be nice to have a way to access the types
+// for the tables from the schema object, e.g. `spacetimedb.user.type` would
+// be the type of the user table.
 class Schema<S extends UntypedSchemaDef> {
   readonly tablesDef: { tables: RawTableDefV9[] };
   readonly typespace: Typespace;
-  private readonly schemaType!: S;
+  readonly schemaType!: S;
 
   constructor(tables: RawTableDefV9[], typespace: Typespace) {
     this.tablesDef = { tables };

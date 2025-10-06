@@ -17,13 +17,9 @@ import {
   type UniqueIndex,
   type RangedIndex,
 } from './indexes';
-import {
-  type RowObj,
-  type RowType,
-  type Table,
-  type TableMethods,
-} from './table';
+import { type RowType, type Table, type TableMethods } from './table';
 import { type DbView, type ReducerCtx } from './reducers';
+import type { RowObj } from './type_builders';
 
 /**
  * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
@@ -176,6 +172,9 @@ globalThis.__call_reducer__ = function __call_reducer__(
   );
   const ctx: ReducerCtx<any> = freeze({
     sender: new Identity(sender),
+    get identity() {
+      return new Identity(_syscalls().identity().__identity__);
+    },
     timestamp: new Timestamp(timestamp),
     connection_id: ConnectionId.nullIfZero(new ConnectionId(conn_id)),
     db: getDbView(),

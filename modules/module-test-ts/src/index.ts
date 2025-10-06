@@ -6,48 +6,48 @@ import { schema, table, t, type Infer, type InferTypeOfRow } from '../../../crat
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Rust: #[derive(SpacetimeType)] pub struct TestB { foo: String }
-export const testB = t.object({
+const testB = t.object({
   foo: t.string(),
 });
-export type TestB = Infer<typeof testB>;
+type TestB = Infer<typeof testB>;
 
 // Rust: #[derive(SpacetimeType)] #[sats(name = "Namespace.TestC")] enum TestC { Foo, Bar }
 // TODO: support enum name attribute in TS bindings
-export const testC = t.enum({
+const testC = t.enum({
   Foo: t.unit(),
   Bar: t.unit(),
 });
-export type TestC = Infer<typeof testC>;
+type TestC = Infer<typeof testC>;
 
 const DEFAULT_TEST_C: TestC = { tag: 'Foo', value: {} } as const;
 
-export const testD = {
+const testD = {
   testC: testC.default(DEFAULT_TEST_C),
 };
-export type TestD = InferTypeOfRow<typeof testD>;
+type TestD = InferTypeOfRow<typeof testD>;
 
 // Rust: #[derive(SpacetimeType)] pub struct Baz { pub field: String }
-export const Baz = t.object({
+const Baz = t.object({
   field: t.string(),
 });
-export type Baz = Infer<typeof Baz>;
+type Baz = Infer<typeof Baz>;
 
 // Rust: #[derive(SpacetimeType)] pub enum Foobar { Baz(Baz), Bar, Har(u32) }
-export const foobar = t.enum({
+const foobar = t.enum({
   Baz: Baz,
   Bar: t.unit(),
   Har: t.u32(),
 });
-export type Foobar = Infer<typeof foobar>;
+type Foobar = Infer<typeof foobar>;
 
 // Rust: #[derive(SpacetimeType)] #[sats(name = "Namespace.TestF")] enum TestF { Foo, Bar, Baz(String) }
 // TODO: support enum name attribute in TS bindings
-export const TestF = t.enum({
+const testF = t.enum({
   Foo: t.unit(),
   Bar: t.unit(),
   Baz: t.string(),
 });
-export type TestF = Infer<typeof TestF>;
+type TestF = Infer<typeof testF>;
 
 // Rust: pub type TestAlias = TestA;
 // In TS we’ll just reuse TestA’s row type (see below) where needed.
@@ -61,6 +61,21 @@ export function Foo_baz_bsatn(bytes: Uint8Array): Foo {
   // return bsatn.fromSlice(bytes, Foo);
   throw new Error('Implement BSATN decode for Foo if needed');
 }
+
+const repeatingTestArg = t.row({
+  scheduled_id: t.u64().primaryKey().autoInc(),
+  // Replace with your actual ScheduleAt type if named differently.
+  scheduled_at: t.scheduleAt(),
+  prev_time: t.timestamp(),
+});
+type RepeatingTestArg = Infer<typeof repeatingTestArg>;
+
+const testA = t.row({
+  x: t.u32(),
+  y: t.u32(),
+  z: t.string(),
+});
+type TestA = Infer<typeof testA>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEMA AND TABLES
@@ -87,11 +102,7 @@ export const spacetimedb = schema(
       name: 'test_a',
       indexes: [{ name: 'foo', algorithm: 'btree', columns: ['x'] }],
     },
-    {
-      x: t.u32(),
-      y: t.u32(),
-      z: t.string(),
-    }
+    testA
   ),
 
   // test_d (public) with default(Some(DEFAULT_TEST_C)) option field
@@ -167,12 +178,7 @@ export const spacetimedb = schema(
       // otherwise the reducer itself will reschedule.
       scheduled: 'repeating_test',
     } as any,
-    {
-      scheduled_id: t.u64().primaryKey().autoInc(),
-      // Replace with your actual ScheduleAt type if named differently.
-      scheduled_at: t.scheduleAt(),
-      prev_time: t.timestamp(),
-    }
+    repeatingTestArg
   ),
 
   // has_special_stuff with Identity and ConnectionId
@@ -217,7 +223,7 @@ spacetimedb.reducer('init', {}, (ctx) => {
 });
 
 // repeating_test: log delta time since last run
-spacetimedb.reducer('repeating_test', { arg: spacetimedb.tables.repeating_test_arg.row }, (ctx, { arg }) => {
+spacetimedb.reducer('repeating_test', { arg: repeatingTestArg }, (ctx, { arg }) => {
   const delta = ctx.timestamp.since(arg.prev_time); // adjust if API differs
   console.trace(`Timestamp: ${ctx.timestamp}, Delta time: ${delta}`);
 });
@@ -249,13 +255,13 @@ spacetimedb.reducer('list_over_age', { age: t.u8() }, (ctx, { age }) => {
 
 // log_module_identity()
 spacetimedb.reducer('log_module_identity', {}, (ctx) => {
-  console.info(`Module identity: ${ctx.identity()}`);
+  console.info(`Module identity: ${ctx.identity}`);
 });
 
 // test(arg: TestAlias(TestA), arg2: TestB, arg3: TestC, arg4: TestF)
 spacetimedb.reducer(
   'test',
-  { arg: spacetimedb.tables.test_a.row, arg2: testB, arg3: testC, arg4: TestF },
+  { arg: testA, arg2: testB, arg3: testC, arg4: testF },
   (ctx, { arg, arg2, arg3, arg4 }) => {
     console.info('BEGIN');
     console.info(`sender: ${ctx.sender}`);
@@ -396,7 +402,7 @@ spacetimedb.reducer('test_btree_index_args', {}, (ctx) => {
 // assert_caller_identity_is_module_identity()
 spacetimedb.reducer('assert_caller_identity_is_module_identity', {}, (ctx) => {
   const caller = ctx.sender;
-  const owner = ctx.identity();
+  const owner = ctx.identity;
   if (String(caller) !== String(owner)) {
     throw new Error(`Caller ${caller} is not the owner ${owner}`);
   } else {
