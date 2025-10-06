@@ -15,6 +15,14 @@ jobs:
       cancel-in-progress: true
     timeout-minutes: 30
     steps:
+      - run: df -h
+      # Free up disk space because otherwise we run out during the test
+      - name: "node-cleanup"
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          sudo docker image prune --all --force
+          sudo docker builder prune -a
+      - run: df -h
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
