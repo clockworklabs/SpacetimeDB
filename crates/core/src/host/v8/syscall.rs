@@ -1,25 +1,29 @@
-use super::de::{deserialize_js, scratch_buf, v8_interned_string};
-use super::error::ExcResult;
+use super::de::{deserialize_js, scratch_buf};
+use super::error::{ExcResult, ExceptionThrown};
 use super::ser::serialize_to_js;
-use super::{env_on_isolate, exception_already_thrown};
+use super::string_const::{str_from_ident, StringConst};
+use super::{
+    env_on_isolate, exception_already_thrown, global, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace,
+    TerminationError, Throwable,
+};
 use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
-use crate::host::v8::error::ExceptionThrown;
-use crate::host::v8::{global, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace, TerminationError, Throwable};
 use crate::host::wasm_common::instrumentation::span;
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, TimingSpanIdx};
 use crate::host::AbiCall;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{errno, ColId, IndexId, TableId};
 use spacetimedb_sats::Serialize;
-use v8::{Function, FunctionCallbackArguments, HandleScope, Local, Value};
+use v8::{Function, FunctionCallbackArguments, Local, PinScope, Value};
 
 /// Registers all module -> host syscalls.
-pub(super) fn register_host_funs(scope: &mut HandleScope<'_>) -> ExcResult<()> {
+pub(super) fn register_host_funs(scope: &mut PinScope<'_, '_>) -> ExcResult<()> {
     macro_rules! register {
         ($wrapper:ident, $abi_call:expr, $fun:ident) => {
-            register_host_fun(scope, stringify!($fun), |s, a| $wrapper($abi_call, s, a, $fun))?;
+            register_host_fun(scope, str_from_ident!($fun), |s, a| {
+                $wrapper($abi_call, s, a, $fun)
+            })?;
         };
     }
 
@@ -72,11 +76,11 @@ pub(super) type FnRet<'scope> = ExcResult<Local<'scope, Value>>;
 /// Registers a module -> host syscall in `scope`
 /// where the function has `name` and `body`
 fn register_host_fun(
-    scope: &mut HandleScope<'_>,
-    name: &str,
-    body: impl Copy + for<'scope> Fn(&mut HandleScope<'scope>, FunctionCallbackArguments<'scope>) -> FnRet<'scope>,
+    scope: &mut PinScope<'_, '_>,
+    name: &'static StringConst,
+    body: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> FnRet<'scope>,
 ) -> ExcResult<()> {
-    let name = v8_interned_string(scope, name).into();
+    let name = name.string(scope).into();
     let fun = Function::new(scope, adapt_fun(body))
         .ok_or_else(exception_already_thrown)?
         .into();
@@ -93,8 +97,8 @@ struct TerminationFlag;
 
 /// Adapts `fun`, which returns a [`Value`] to one that works on [`v8::ReturnValue`].
 fn adapt_fun(
-    fun: impl Copy + for<'scope> Fn(&mut HandleScope<'scope>, FunctionCallbackArguments<'scope>) -> FnRet<'scope>,
-) -> impl Copy + for<'scope> Fn(&mut HandleScope<'scope>, FunctionCallbackArguments<'scope>, v8::ReturnValue) {
+    fun: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> FnRet<'scope>,
+) -> impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue) {
     move |scope, args, mut rv| {
         // If the flag was set in `handle_nodes_error`,
         // we need to block all module -> host ABI calls.
@@ -126,9 +130,9 @@ type SysCallResult<T> = Result<T, SysCallError>;
 /// Handles [`SysCallError`] if it occurs by throwing exceptions into JS.
 fn with_sys_result<'scope, O: Serialize>(
     abi_call: AbiCall,
-    scope: &mut HandleScope<'scope>,
+    scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
-    run: impl FnOnce(&mut HandleScope<'scope>, FunctionCallbackArguments<'scope>) -> SysCallResult<O>,
+    run: impl FnOnce(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> SysCallResult<O>,
 ) -> FnRet<'scope> {
     match with_span(abi_call, scope, args, run) {
         Ok(ret) => serialize_to_js(scope, &ret),
@@ -138,7 +142,7 @@ fn with_sys_result<'scope, O: Serialize>(
 }
 
 /// Turns a [`NodesError`] into a thrown exception.
-fn throw_nodes_error(abi_call: AbiCall, scope: &mut HandleScope<'_>, error: NodesError) -> ExceptionThrown {
+fn throw_nodes_error(abi_call: AbiCall, scope: &mut PinScope<'_, '_>, error: NodesError) -> ExceptionThrown {
     let res = match err_to_errno_and_log::<u16>(abi_call, error) {
         Ok(code) => CodeError::from_code(scope, code),
         Err(err) => {
@@ -157,7 +161,7 @@ fn throw_nodes_error(abi_call: AbiCall, scope: &mut HandleScope<'_>, error: Node
 
 /// Collapses `res` where the `Ok(x)` where `x` is throwable.
 fn collapse_exc_thrown<'scope>(
-    scope: &mut HandleScope<'scope>,
+    scope: &PinScope<'scope, '_>,
     res: ExcResult<impl Throwable<'scope>>,
 ) -> ExceptionThrown {
     let (Ok(thrown) | Err(thrown)) = res.map(|ev| ev.throw(scope));
@@ -167,9 +171,9 @@ fn collapse_exc_thrown<'scope>(
 /// Tracks the span of `body` under the label `abi_call`.
 fn with_span<'scope, R>(
     abi_call: AbiCall,
-    scope: &mut HandleScope<'scope>,
+    scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
-    body: impl FnOnce(&mut HandleScope<'scope>, FunctionCallbackArguments<'scope>) -> R,
+    body: impl FnOnce(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> R,
 ) -> R {
     // Start the span.
     let span_start = span::CallSpanStart::new(abi_call);
@@ -215,7 +219,7 @@ fn with_span<'scope, R>(
 ///
 /// Throws a `TypeError` if:
 /// - `name` is not `string`.
-fn table_id_from_name(scope: &mut HandleScope<'_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<TableId> {
+fn table_id_from_name(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<TableId> {
     let name: &str = deserialize_js(scope, args.get(0))?;
     Ok(env_on_isolate(scope).instance_env.table_id_from_name(name)?)
 }
@@ -251,7 +255,7 @@ fn table_id_from_name(scope: &mut HandleScope<'_>, args: FunctionCallbackArgumen
 ///
 /// Throws a `TypeError`:
 /// - if `name` is not `string`.
-fn index_id_from_name(scope: &mut HandleScope<'_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<IndexId> {
+fn index_id_from_name(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<IndexId> {
     let name: &str = deserialize_js(scope, args.get(0))?;
     Ok(env_on_isolate(scope).instance_env.index_id_from_name(name)?)
 }
@@ -288,7 +292,7 @@ fn index_id_from_name(scope: &mut HandleScope<'_>, args: FunctionCallbackArgumen
 ///
 /// Throws a `TypeError` if:
 /// - `table_id` is not a `u32`.
-fn datastore_table_row_count(scope: &mut HandleScope<'_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<u64> {
+fn datastore_table_row_count(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<u64> {
     let table_id: TableId = deserialize_js(scope, args.get(0))?;
     Ok(env_on_isolate(scope).instance_env.datastore_table_row_count(table_id)?)
 }
@@ -327,7 +331,7 @@ fn datastore_table_row_count(scope: &mut HandleScope<'_>, args: FunctionCallback
 ///
 /// Throws a `TypeError`:
 /// - if `table_id` is not a `u32`.
-fn datastore_table_scan_bsatn(scope: &mut HandleScope<'_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<u32> {
+fn datastore_table_scan_bsatn(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<u32> {
     let table_id: TableId = deserialize_js(scope, args.get(0))?;
 
     let env = env_on_isolate(scope);
@@ -426,7 +430,7 @@ fn datastore_table_scan_bsatn(scope: &mut HandleScope<'_>, args: FunctionCallbac
 /// - `prefix`, `rstart`, and `rend` are not arrays of `u8`s.
 /// - `prefix_elems` is not a `u16`.
 fn datastore_index_scan_range_bsatn(
-    scope: &mut HandleScope<'_>,
+    scope: &mut PinScope<'_, '_>,
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<u32> {
     let index_id: IndexId = deserialize_js(scope, args.get(0))?;
@@ -456,7 +460,7 @@ fn datastore_index_scan_range_bsatn(
 }
 
 /// Throws `{ __code_error__: NO_SUCH_ITER }`.
-fn no_such_iter(scope: &mut HandleScope<'_>) -> ExceptionThrown {
+fn no_such_iter(scope: &PinScope<'_, '_>) -> ExceptionThrown {
     let res = CodeError::from_code(scope, errno::NO_SUCH_ITER.get());
     collapse_exc_thrown(scope, res)
 }
@@ -511,7 +515,7 @@ fn no_such_iter(scope: &mut HandleScope<'_>) -> ExceptionThrown {
 /// Throws a `TypeError` if:
 /// - `iter` and `buffer_max_len` are not `u32`s.
 fn row_iter_bsatn_advance<'scope>(
-    scope: &mut HandleScope<'scope>,
+    scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
 ) -> SysCallResult<(bool, Vec<u8>)> {
     let row_iter_idx: u32 = deserialize_js(scope, args.get(0))?;
@@ -578,7 +582,7 @@ fn row_iter_bsatn_advance<'scope>(
 /// Throws a `TypeError` if:
 /// - `iter` is not a `u32`.
 fn row_iter_bsatn_close<'scope>(
-    scope: &mut HandleScope<'scope>,
+    scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
 ) -> FnRet<'scope> {
     let row_iter_idx: u32 = deserialize_js(scope, args.get(0))?;
@@ -654,7 +658,7 @@ fn row_iter_bsatn_close<'scope>(
 /// Throws a `TypeError` if:
 /// - `table_id` is not a `u32`.
 /// - `row` is not an array of `u8`s.
-fn datastore_insert_bsatn(scope: &mut HandleScope<'_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<Vec<u8>> {
+fn datastore_insert_bsatn(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<Vec<u8>> {
     let table_id: TableId = deserialize_js(scope, args.get(0))?;
     let mut row: Vec<u8> = deserialize_js(scope, args.get(1))?;
 
@@ -737,7 +741,7 @@ fn datastore_insert_bsatn(scope: &mut HandleScope<'_>, args: FunctionCallbackArg
 /// Throws a `TypeError` if:
 /// - `table_id` is not a `u32`.
 /// - `row` is not an array of `u8`s.
-fn datastore_update_bsatn(scope: &mut HandleScope<'_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<Vec<u8>> {
+fn datastore_update_bsatn(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<Vec<u8>> {
     let table_id: TableId = deserialize_js(scope, args.get(0))?;
     let index_id: IndexId = deserialize_js(scope, args.get(1))?;
     let mut row: Vec<u8> = deserialize_js(scope, args.get(2))?;
@@ -805,7 +809,7 @@ fn datastore_update_bsatn(scope: &mut HandleScope<'_>, args: FunctionCallbackArg
 /// - `prefix`, `rstart`, and `rend` are not arrays of `u8`s.
 /// - `prefix_elems` is not a `u16`.
 fn datastore_delete_by_index_scan_range_bsatn(
-    scope: &mut HandleScope<'_>,
+    scope: &mut PinScope<'_, '_>,
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<u32> {
     let index_id: IndexId = deserialize_js(scope, args.get(0))?;
@@ -872,7 +876,7 @@ fn datastore_delete_by_index_scan_range_bsatn(
 /// - `table_id` is not a `u32`.
 /// - `relation` is not an array of `u8`s.
 fn datastore_delete_all_by_eq_bsatn(
-    scope: &mut HandleScope<'_>,
+    scope: &mut PinScope<'_, '_>,
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<u32> {
     let table_id: TableId = deserialize_js(scope, args.get(0))?;
@@ -888,7 +892,7 @@ fn datastore_delete_all_by_eq_bsatn(
 /// volatile_nonatomic_schedule_immediate(reducer_name: string, args: u8[]) -> undefined
 /// ```
 fn volatile_nonatomic_schedule_immediate<'scope>(
-    scope: &mut HandleScope<'scope>,
+    scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
 ) -> FnRet<'scope> {
     let name: String = deserialize_js(scope, args.get(0))?;
@@ -921,7 +925,7 @@ fn volatile_nonatomic_schedule_immediate<'scope>(
 /// # Returns
 ///
 /// Returns nothing.
-fn console_log<'scope>(scope: &mut HandleScope<'scope>, args: FunctionCallbackArguments<'scope>) -> FnRet<'scope> {
+fn console_log<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'scope>) -> FnRet<'scope> {
     let level: u32 = deserialize_js(scope, args.get(0))?;
 
     let msg = args.get(1).cast::<v8::String>();
@@ -989,7 +993,7 @@ fn console_log<'scope>(scope: &mut HandleScope<'scope>, args: FunctionCallbackAr
 /// Throws a `TypeError` if:
 /// - `name` is not a `string`.
 fn console_timer_start<'scope>(
-    scope: &mut HandleScope<'scope>,
+    scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
 ) -> FnRet<'scope> {
     let name = args.get(0).cast::<v8::String>();
@@ -1029,7 +1033,7 @@ fn console_timer_start<'scope>(
 /// Throws a `TypeError` if:
 /// - `span_id` is not a `u32`.
 fn console_timer_end<'scope>(
-    scope: &mut HandleScope<'scope>,
+    scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
 ) -> FnRet<'scope> {
     let span_id: u32 = deserialize_js(scope, args.get(0))?;
@@ -1060,6 +1064,6 @@ fn console_timer_end<'scope>(
 /// # Returns
 ///
 /// Returns the module identity.
-fn identity<'scope>(scope: &mut HandleScope<'scope>, _: FunctionCallbackArguments<'scope>) -> SysCallResult<Identity> {
+fn identity<'scope>(scope: &mut PinScope<'scope, '_>, _: FunctionCallbackArguments<'scope>) -> SysCallResult<Identity> {
     Ok(*env_on_isolate(scope).instance_env.database_identity())
 }
