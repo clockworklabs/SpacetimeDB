@@ -4,8 +4,8 @@ import type { Identity } from '../lib/identity';
 import type { Timestamp } from '../lib/timestamp';
 import { pushReducer } from './runtime';
 import type { UntypedSchemaDef } from './schema';
-import type { RowObj, Table } from './table';
-import type { InferTypeOfRow, TypeBuilder } from './type_builders';
+import type { Table } from './table';
+import type { InferTypeOfRow, RowObj, TypeBuilder } from './type_builders';
 
 /**
  * Helper to extract the parameter types from an object type
@@ -61,6 +61,7 @@ export type DbView<SchemaDef extends UntypedSchemaDef> = {
  */
 export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
+  identity: Identity;
   timestamp: Timestamp;
   connection_id: ConnectionId | null;
   db: DbView<SchemaDef>;

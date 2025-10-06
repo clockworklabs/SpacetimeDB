@@ -45,9 +45,44 @@ export type InferTypeOfRow<
   [K in keyof T & string]: InferTypeOfTypeBuilder<CollapseColumn<T[K]>>;
 };
 
+/**
+ * Helper type to extract the Spacetime type from a row object.
+ */
 type CollapseColumn<
   T extends TypeBuilder<any, any> | ColumnBuilder<any, any, any>,
 > = T extends ColumnBuilder<any, any, any> ? T['typeBuilder'] : T;
+
+/**
+ * A type representing an object which is used to define the type of
+ * a row in a table.
+ */
+export type RowObj = Record<
+  string,
+  TypeBuilder<any, any> | ColumnBuilder<any, any, any>
+>;
+
+/**
+ * Type which converts the elements of RowObj to a ProductType elements array
+ */
+type ElementsArrayFromRowObj<Obj extends RowObj> = Array<
+  {
+    [N in keyof Obj & string]: {
+      name: N;
+      algebraicType: InferSpacetimeTypeOfTypeBuilder<CollapseColumn<Obj[N]>>;
+    };
+  }[keyof Obj & string]
+>;
+
+/**
+ * A type which converts the elements of RowObj to a TypeScript object type.
+ * It works by `Infer`ing the types of the column builders which are the values of
+ * the keys in the object passed in.
+ *
+ * e.g. { a: I32TypeBuilder, b: StringBuilder } -> { a: number, b: string }
+ */
+type TypeScriptTypeFromRowObj<Row extends RowObj> = {
+  [K in keyof Row]: InferTypeOfTypeBuilder<CollapseColumn<Row[K]>>;
+};
 
 /**
  * Type which represents a valid argument to the ProductColumnBuilder
@@ -1127,6 +1162,36 @@ export class ProductBuilder<Elements extends ElementsObj>
     return new ProductColumnBuilder(
       this,
       set(defaultMetadata, { defaultValue: value })
+    );
+  }
+}
+
+export class RowBuilder<Row extends RowObj> extends TypeBuilder<
+  TypeScriptTypeFromRowObj<Row>,
+  {
+    tag: 'Product';
+    value: { elements: ElementsArrayFromRowObj<Row> };
+  }
+> {
+  constructor(row: Row) {
+    function elementsArrayFromRowObj<Obj extends RowObj>(obj: Obj) {
+      return Object.entries(obj).map(([name, innerObj]) => {
+        let innerType: AlgebraicType;
+        if (innerObj instanceof ColumnBuilder) {
+          innerType = innerObj.typeBuilder.algebraicType;
+        } else {
+          innerType = innerObj.algebraicType;
+        }
+        return {
+          name,
+          algebraicType: innerType!,
+        };
+      });
+    }
+    super(
+      AlgebraicType.Product({
+        elements: elementsArrayFromRowObj(row) as ElementsArrayFromRowObj<Row>,
+      })
     );
   }
 }
@@ -2571,6 +2636,26 @@ export const t = {
    */
   object<Obj extends ElementsObj>(obj: Obj): ProductBuilder<Obj> {
     return new ProductBuilder(obj);
+  },
+
+  /**
+   * Creates a new `Row` {@link AlgebraicType} to be used in table definitions. Row types in SpacetimeDB
+   * are similar to `Product` types, but are specifically used to define the schema of a table row.
+   * Properties of the object must also be {@link TypeBuilder} or {@link ColumnBuilder}s.
+   *
+   * You can represent a `Row` as either a {@link RowObj} or an {@link RowBuilder} type when
+   * defining a table schema.
+   *
+   * The {@link RowBuilder} type is useful when you want to create a type which can be used anywhere
+   * a {@link TypeBuilder} is accepted, such as in nested objects or arrays, or as the argument
+   * to a scheduled function.
+   *
+   * @param obj The object defining the properties of the row, whose property
+   * values must be {@link TypeBuilder}s or {@link ColumnBuilder}s.
+   * @returns A new {@link RowBuilder} instance
+   */
+  row<Obj extends RowObj>(obj: Obj): RowBuilder<Obj> {
+    return new RowBuilder(obj);
   },
 
   /**

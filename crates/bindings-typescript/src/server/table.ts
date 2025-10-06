@@ -7,11 +7,13 @@ import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type { AllUnique } from './constraints';
 import type { TryInsertError } from './errors';
 import type { ColumnIndex, IndexColumns, Indexes, IndexOpts } from './indexes';
-import type {
-  ColumnBuilder,
-  ColumnMetadata,
-  InferTypeOfRow,
-  TypeBuilder,
+import {
+  RowBuilder,
+  type ColumnBuilder,
+  type ColumnMetadata,
+  type InferTypeOfRow,
+  type RowObj,
+  type TypeBuilder,
 } from './type_builders';
 import type { Prettify, Result, Values } from './type_util';
 
@@ -24,15 +26,6 @@ type ColList = ColId[];
  */
 export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
   TableDef['columns']
->;
-
-/**
- * A type representing an object which is used to define the type of
- * a row in a table.
- */
-export type RowObj = Record<
-  string,
-  TypeBuilder<any, any> | ColumnBuilder<any, any, any>
 >;
 
 /**
@@ -204,7 +197,7 @@ export type TableSchema<
  */
 export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   opts: Opts,
-  row: Row
+  row: Row | RowBuilder<Row>
 ): TableSchema<Opts['name'], CoerceRow<Row>, OptsIndices<Opts>> {
   const {
     name,
@@ -217,11 +210,15 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   const colIds = new Map<keyof Row & string, ColId>();
   const colNameList: string[] = [];
 
-  let nextCol: number = 0;
-  for (const colName of Object.keys(row) as (keyof Row & string)[]) {
-    colIds.set(colName, nextCol++);
-    colNameList.push(colName);
+  if (!(row instanceof RowBuilder)) {
+    row = new RowBuilder(row);
   }
+
+  let nextColId = 0;
+  row.algebraicType.value.elements.forEach(elem => {
+    colIds.set(elem.name, nextColId++);
+    colNameList.push(elem.name);
+  });
 
   // gather primary keys, per‑column indexes, uniques, sequences
   const pk: ColList = [];
@@ -334,13 +331,8 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   };
 
   const productType = AlgebraicType.Product({
-    elements: Object.entries(row).map(([columnName, columnBuilder]) => {
-      // If it's a ColumnBuilder, use .typeBuilder.algebraicType, else use .algebraicType directly
-      const algebraicType =
-        'typeBuilder' in columnBuilder
-          ? columnBuilder.typeBuilder.algebraicType
-          : columnBuilder.algebraicType;
-      return { name: columnName, algebraicType };
+    elements: row.algebraicType.value.elements.map(elem => {
+      return { name: elem.name, algebraicType: elem.algebraicType };
     }),
   });
 
