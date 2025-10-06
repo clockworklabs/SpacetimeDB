@@ -538,7 +538,8 @@ In order to conform with the best practices for optimizing performance and scala
 - `Orders` should come next because it joins directly with `Inventory`.
 - `Customers` should come next because it joins directly with `Orders`.
 
-:::server-rust
+<Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="rust" label="Rust">
 
 ```rust
 #[table(
@@ -580,8 +581,8 @@ struct Orders {
 }
 ```
 
-:::
-:::server-csharp
+</TabItem>
+<TabItem value="csharp" label="C#">
 
 ```cs
 [SpacetimeDB.Table(Name = "Inventory")]
@@ -617,7 +618,8 @@ public partial struct Orders
 }
 ```
 
-:::
+</TabItem>
+</Tabs>
 
 ```sql
 -- Find all customers who ordered a particular product and when they ordered it
