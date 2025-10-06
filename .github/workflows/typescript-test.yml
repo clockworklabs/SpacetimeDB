@@ -103,7 +103,7 @@ jobs:
       - name: Check for changes
         working-directory: crates/bindings-typescript
         run: |
-          tools/check-diff.sh crates/bindings-typescript/examples/quickstart-chat/src/module_bindings || {
+          "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples/quickstart-chat/src/module_bindings || {
             echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
             exit 1
           }

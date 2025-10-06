@@ -83,17 +83,19 @@ jobs:
           CARGO_TARGET_DIR: demo/Blackholio/server-rust/target
 
       - name: Check quickstart-chat bindings are up to date
+        working-directory: sdks/csharp
         run: |
-          bash sdks/csharp/tools~/gen-quickstart.sh "${GITHUB_WORKSPACE}"
-          tools/check-diff.sh sdks/csharp/examples~/quickstart-chat || {
+          bash tools~/gen-quickstart.sh "${GITHUB_WORKSPACE}"
+          "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples~/quickstart-chat || {
               echo "Error: quickstart-chat bindings have changed. Please regenerate the bindings and commit them to this branch."
               exit 1
           }
 
       - name: Check client-api bindings are up to date
+        working-directory: sdks/csharp
         run: |
-          bash sdks/csharp/tools~/gen-client-api.sh "${GITHUB_WORKSPACE}"
-          tools/check-diff.sh sdks/csharp/src/SpacetimeDB/ClientApi || {
+          bash tools~/gen-client-api.sh "${GITHUB_WORKSPACE}"
+          "${GITHUB_WORKSPACE}"/tools/check-diff.sh src/SpacetimeDB/ClientApi || {
               echo "Error: Client API are dirty. Please generate bindings again and commit them to this branch."
               exit 1
           }
