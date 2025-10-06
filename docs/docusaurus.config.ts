@@ -19,6 +19,7 @@ import css from 'shiki/langs/css.mjs';
 import nginx from 'shiki/langs/nginx.mjs';
 import systemd from 'shiki/langs/systemd.mjs';
 import ogTheme from 'shiki/themes/dracula.mjs';
+import cpp from 'shiki/langs/cpp.mjs';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
@@ -49,7 +50,12 @@ const config: Config = {
   baseUrl: '/',
 
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'throw',
+  markdown: {
+    hooks: {
+      onBrokenMarkdownImages: 'throw',
+      onBrokenMarkdownLinks: 'throw',
+    },
+  },
 
   i18n: {
     defaultLocale: 'en',
@@ -79,6 +85,7 @@ const config: Config = {
                   toml,
                   python,
                   c,
+                  cpp,
                   protobuf,
                   fsharp,
                   systemd,
