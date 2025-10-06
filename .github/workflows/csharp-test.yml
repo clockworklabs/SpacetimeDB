@@ -85,7 +85,7 @@ jobs:
       - name: Check quickstart-chat bindings are up to date
         working-directory: sdks/csharp
         run: |
-          bash tools~/gen-quickstart.sh "${GITHUB_WORKSPACE}"
+          bash tools~/gen-quickstart.sh
           "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples~/quickstart-chat || {
               echo "Error: quickstart-chat bindings have changed. Please regenerate the bindings and commit them to this branch."
               exit 1
@@ -94,7 +94,7 @@ jobs:
       - name: Check client-api bindings are up to date
         working-directory: sdks/csharp
         run: |
-          bash tools~/gen-client-api.sh "${GITHUB_WORKSPACE}"
+          bash tools~/gen-client-api.sh
           "${GITHUB_WORKSPACE}"/tools/check-diff.sh src/SpacetimeDB/ClientApi || {
               echo "Error: Client API are dirty. Please generate bindings again and commit them to this branch."
               exit 1
