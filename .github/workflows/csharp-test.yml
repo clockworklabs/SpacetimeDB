@@ -87,7 +87,7 @@ jobs:
         run: |
           bash tools~/gen-quickstart.sh
           "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples~/quickstart-chat || {
-              echo "Error: quickstart-chat bindings have changed. Please regenerate the bindings and commit them to this branch."
+              echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
               exit 1
           }
 
@@ -96,7 +96,7 @@ jobs:
         run: |
           bash tools~/gen-client-api.sh
           "${GITHUB_WORKSPACE}"/tools/check-diff.sh src/SpacetimeDB/ClientApi || {
-              echo "Error: Client API are dirty. Please generate bindings again and commit them to this branch."
+              echo 'Error: Client API bindings are dirty. Please run `sdks/csharp/tools~/gen-client-api.sh`.'
               exit 1
           }
 
@@ -107,7 +107,7 @@ jobs:
       - name: Check for changes
         run: |
           tools/check-diff.sh demo/Blackholio/client-unity/Assets/Scripts/autogen || {
-              echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
+              echo 'Error: Bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
               exit 1
           }
 
@@ -126,9 +126,9 @@ jobs:
 
       - name: Run regression tests
         run: |
-          bash sdks/csharp/tools~/run-regression-tests.sh "${GITHUB_WORKSPACE}"
+          bash sdks/csharp/tools~/run-regression-tests.sh
           tools/check-diff.sh sdks/csharp/examples~/regression-tests || {
-              echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
+              echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
               exit 1
           }
 
