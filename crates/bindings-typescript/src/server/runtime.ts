@@ -253,9 +253,10 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
         return { ok: false, err: e };
       throw e;
     }
-    integrate_generated_columns?.(row, ret_buf);
+    const ret = { ...row };
+    integrate_generated_columns?.(ret, ret_buf);
 
-    return { ok: true, val: row };
+    return { ok: true, val: ret };
   };
 
   const tableMethods: TableMethods<any> = {
