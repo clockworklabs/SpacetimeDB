@@ -16,6 +16,7 @@ directives = [
     "spacetimedb_commitlog=info",
     "spacetimedb_durability=info",
     "axum::rejection=trace",
+    "tokio=trace,runtime=trace",
 ]
 
 # vim: set nowritebackup: << otherwise triggers cargo-watch

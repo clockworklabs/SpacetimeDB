@@ -89,11 +89,14 @@ pub fn configure_tracing(opts: TracingOptions) {
         (None, None)
     };
 
+    let console_layer = console_subscriber::spawn();
+
     // Is important for `tracy_layer` to be before `fmt_layer` to not print ascii codes...
     let subscriber = tracing_subscriber::Registry::default()
         .with(tracy_layer)
         .with(fmt_layer)
-        .with(flame_layer);
+        .with(flame_layer)
+        .with(console_layer);
 
     if let Some(conf_file) = opts.reload_config {
         let (reload_layer, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter_layer);

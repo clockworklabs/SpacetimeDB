@@ -158,6 +158,7 @@ clap = { version = "4.2.4", features = ["derive", "wrap_help"] }
 clap-markdown = "0.1.4"
 colored = "2.0.0"
 console = { version = "0.15.6" }
+console-subscriber = "0.4.1"
 convert_case = "0.6.0"
 crc32c = "0.6.4"
 criterion = { version = "0.5.1", features = ["async", "async_tokio", "html_reports"] }
@@ -268,7 +269,7 @@ tempfile = "3.20"
 termcolor = "1.2.0"
 thin-vec = "0.2.13"
 thiserror = "1.0.37"
-tokio = { version = "1.37", features = ["full"] }
+tokio = { version = "1.37", features = ["full", "tracing"] }
 tokio_metrics = { version = "0.4.0" }
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 tokio-stream = "0.1.17"
