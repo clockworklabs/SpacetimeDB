@@ -481,19 +481,21 @@ pub(crate) fn with_scope<R>(isolate: &mut OwnedIsolate, logic: impl FnOnce(&mut 
 ///
 /// Every `callback_every` ticks, `callback` is called.
 fn with_timeout_and_cb_every<R>(
-    handle: IsolateHandle,
-    callback_every: u64,
-    callback: InterruptCallback,
-    budget: ReducerBudget,
+    _handle: IsolateHandle,
+    _callback_every: u64,
+    _callback: InterruptCallback,
+    _budget: ReducerBudget,
     logic: impl FnOnce() -> R,
 ) -> R {
     // Start the concurrent thread.
-    let timeout_thread_cancel_flag = run_timeout_and_cb_every(handle, callback_every, callback, budget);
+    // TODO(v8): This currently leads to UB as there are bugs in th v8 crate.
+    //let timeout_thread_cancel_flag = run_timeout_and_cb_every(handle, callback_every, callback, budget);
 
+    #[allow(clippy::let_and_return)]
     let ret = logic();
 
     // Cancel the execution timeout in `run_timeout_and_cb_every`.
-    timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
+    //timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
 
     ret
 }
@@ -505,6 +507,7 @@ type InterruptCallback = extern "C" fn(&mut Isolate, *mut c_void);
 /// when `budget` has been used up.
 ///
 /// Every `callback_every` ticks, `callback` is called.
+#[allow(dead_code)]
 fn run_timeout_and_cb_every(
     handle: IsolateHandle,
     callback_every: u64,
@@ -545,6 +548,7 @@ fn run_timeout_and_cb_every(
 }
 
 /// Converts a [`ReducerBudget`] to a [`Duration`].
+#[allow(dead_code)]
 fn budget_to_duration(_budget: ReducerBudget) -> Duration {
     // TODO(v8): This is fake logic that allows a maximum timeout.
     // Replace with sensible math.
