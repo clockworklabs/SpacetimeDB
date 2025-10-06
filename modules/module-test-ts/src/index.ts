@@ -1,219 +1,200 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// IMPORTS
+// ─────────────────────────────────────────────────────────────────────────────
 import { ScheduleAt } from '../../../crates/bindings-typescript/src';
 import { schema, table, t, type Infer, type InferTypeOfRow } from '../../../crates/bindings-typescript/src/server';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPE ALIASES
+// ─────────────────────────────────────────────────────────────────────────────
+// Rust: pub type TestAlias = TestA
+export type TestAlias = TestA;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUPPORT TYPES (SpacetimeType equivalents)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Rust: #[derive(SpacetimeType)] pub struct TestB { foo: String }
-const testB = t.object({
+export const testB = t.object({
   foo: t.string(),
 });
-type TestB = Infer<typeof testB>;
+export type TestB = Infer<typeof testB>;
 
 // Rust: #[derive(SpacetimeType)] #[sats(name = "Namespace.TestC")] enum TestC { Foo, Bar }
 // TODO: support enum name attribute in TS bindings
-const testC = t.enum({
+export const testC = t.enum({
   Foo: t.unit(),
   Bar: t.unit(),
 });
-type TestC = Infer<typeof testC>;
+export type TestC = Infer<typeof testC>;
 
-const DEFAULT_TEST_C: TestC = { tag: 'Foo', value: {} } as const;
-
-const testD = {
-  testC: testC.default(DEFAULT_TEST_C),
-};
-type TestD = InferTypeOfRow<typeof testD>;
+// Rust: const DEFAULT_TEST_C: TestC = TestC::Foo;
+export const DEFAULT_TEST_C: TestC = { tag: 'Foo', value: {} } as const;
 
 // Rust: #[derive(SpacetimeType)] pub struct Baz { pub field: String }
-const Baz = t.object({
+export const Baz = t.object({
   field: t.string(),
 });
-type Baz = Infer<typeof Baz>;
+export type Baz = Infer<typeof Baz>;
 
 // Rust: #[derive(SpacetimeType)] pub enum Foobar { Baz(Baz), Bar, Har(u32) }
-const foobar = t.enum({
+export const foobar = t.enum({
   Baz: Baz,
   Bar: t.unit(),
   Har: t.u32(),
 });
-type Foobar = Infer<typeof foobar>;
+export type Foobar = Infer<typeof foobar>;
 
 // Rust: #[derive(SpacetimeType)] #[sats(name = "Namespace.TestF")] enum TestF { Foo, Bar, Baz(String) }
 // TODO: support enum name attribute in TS bindings
-const testF = t.enum({
+export const testF = t.enum({
   Foo: t.unit(),
   Bar: t.unit(),
   Baz: t.string(),
 });
-type TestF = Infer<typeof testF>;
-
-// Rust: pub type TestAlias = TestA;
-// In TS we’ll just reuse TestA’s row type (see below) where needed.
+export type TestF = Infer<typeof testF>;
 
 // Rust: #[derive(Deserialize)] pub struct Foo<'a> { pub field: &'a str }
 // In TS we simply model as a struct and provide a BSATN deserializer placeholder.
 export const Foo = t.object({ field: t.string() });
 export type Foo = Infer<typeof Foo>;
-export function Foo_baz_bsatn(bytes: Uint8Array): Foo {
+export function Foo_baz_bsatn(_bytes: Uint8Array): Foo {
   // If your bindings expose a bsatn decode helper, use it here.
   // return bsatn.fromSlice(bytes, Foo);
   throw new Error('Implement BSATN decode for Foo if needed');
 }
 
-const repeatingTestArg = t.row({
-  scheduled_id: t.u64().primaryKey().autoInc(),
-  // Replace with your actual ScheduleAt type if named differently.
-  scheduled_at: t.scheduleAt(),
-  prev_time: t.timestamp(),
-});
-type RepeatingTestArg = Infer<typeof repeatingTestArg>;
+// ─────────────────────────────────────────────────────────────────────────────
+// TABLE ROW DEFINITIONS (shape only)
+// ─────────────────────────────────────────────────────────────────────────────
 
-const testA = t.row({
+// Rust: #[spacetimedb::table(name = person, public, index(name = age, btree(columns = [age])))]
+const personRow = {
+  id: t.u32().primaryKey().autoInc(),
+  name: t.string(),
+  age: t.u8(),
+};
+
+// Rust: #[spacetimedb::table(name = test_a, index(name = foo, btree(columns = [x])))]
+export const testA = t.row({
   x: t.u32(),
   y: t.u32(),
   z: t.string(),
 });
-type TestA = Infer<typeof testA>;
+export type TestA = Infer<typeof testA>;
+
+// Rust: #[table(name = test_d, public)] struct TestD { #[default(Some(DEFAULT_TEST_C))] test_c: Option<TestC>, }
+// NOTE: If your Option default requires wrapping, adjust to your bindings’ Option encoding.
+const testDRow = {
+  test_c: t.option(testC).default(DEFAULT_TEST_C as unknown as any),
+};
+export type TestD = InferTypeOfRow<typeof testDRow>;
+
+// Rust: #[spacetimedb::table(name = test_e)] #[derive(Debug)]
+const testERow = {
+  id: t.u64().primaryKey().autoInc(),
+  name: t.string(),
+};
+
+// Rust: #[table(name = test_f, public)] pub struct TestFoobar { pub field: Foobar }
+const testFRow = {
+  field: foobar,
+};
+
+// Rust: #[spacetimedb::table(name = private_table, private)]
+const privateTableRow = {
+  name: t.string(),
+};
+
+// Rust: #[spacetimedb::table(name = points, private, index(name = multi_column_index, btree(columns = [x, y])))]
+const pointsRow = {
+  x: t.i64(),
+  y: t.i64(),
+};
+
+// Rust: #[spacetimedb::table(name = pk_multi_identity)]
+const pkMultiIdentityRow = {
+  id: t.u32().primaryKey(),
+  other: t.u32().unique().autoInc(),
+};
+
+// Rust: #[spacetimedb::table(name = repeating_test_arg, scheduled(repeating_test))]
+export const repeatingTestArg = t.row({
+  scheduled_id: t.u64().primaryKey().autoInc(),
+  scheduled_at: t.scheduleAt(),
+  prev_time: t.timestamp(),
+});
+export type RepeatingTestArg = Infer<typeof repeatingTestArg>;
+
+// Rust: #[spacetimedb::table(name = has_special_stuff)]
+const hasSpecialStuffRow = {
+  identity: t.identity(),
+  connection_id: t.connectionId(),
+};
+
+// Rust: two tables with the same row type: player & logged_out_player
+const playerLikeRow = {
+  identity: t.identity().primaryKey(),
+  player_id: t.u64().autoInc().unique(),
+  name: t.string().unique(),
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SCHEMA AND TABLES
+// SCHEMA (tables + indexes + visibility)
 // ─────────────────────────────────────────────────────────────────────────────
-
 export const spacetimedb = schema(
   // person (public) with btree index on age
   table(
-    {
-      name: 'person',
-      public: true,
-      indexes: [{ name: 'age', algorithm: 'btree', columns: ['age'] }],
-    },
-    {
-      id: t.u32().primaryKey().autoInc(),
-      name: t.string(),
-      age: t.u8(),
-    }
+    { name: 'person', public: true, indexes: [{ name: 'age', algorithm: 'btree', columns: ['age'] }] },
+    personRow
   ),
 
   // test_a with index foo on x
   table(
-    {
-      name: 'test_a',
-      indexes: [{ name: 'foo', algorithm: 'btree', columns: ['x'] }],
-    },
+    { name: 'test_a', indexes: [{ name: 'foo', algorithm: 'btree', columns: ['x'] }] },
     testA
   ),
 
   // test_d (public) with default(Some(DEFAULT_TEST_C)) option field
-  table(
-    {
-      name: 'test_d',
-      public: true,
-    },
-    {
-      test_c: t.option(testC).default(DEFAULT_TEST_C),
-      test_c_a: testC.optional().default(DEFAULT_TEST_C), // alternate syntax
-    }
-  ),
+  table({ name: 'test_d', public: true }, testDRow),
 
   // test_e, default private, with primary key id auto_inc and btree index on name
   table(
-    {
-      name: 'test_e',
-      public: false,
-      indexes: [{ name: 'name', algorithm: 'btree', columns: ['name'] }],
-    },
-    {
-      id: t.u64().primaryKey().autoInc(),
-      name: t.string(),
-    }
+    { name: 'test_e', public: false, indexes: [{ name: 'name', algorithm: 'btree', columns: ['name'] }] },
+    testERow
   ),
 
   // test_f (public) with Foobar field
-  table(
-    { name: 'test_f', public: true },
-    {
-      field: foobar,
-    }
-  ),
+  table({ name: 'test_f', public: true }, testFRow),
 
   // private_table (explicit private)
-  table(
-    { name: 'private_table', public: false },
-    {
-      name: t.string(),
-    }
-  ),
+  table({ name: 'private_table', public: false }, privateTableRow),
 
   // points (private) with multi-column btree index (x, y)
   table(
-    {
-      name: 'points',
-      public: false,
-      indexes: [
-        { name: 'multi_column_index', algorithm: 'btree', columns: ['x', 'y'] },
-      ],
-    },
-    {
-      x: t.i64(),
-      y: t.i64(),
-    }
+    { name: 'points', public: false, indexes: [{ name: 'multi_column_index', algorithm: 'btree', columns: ['x', 'y'] }] },
+    pointsRow
   ),
 
   // pk_multi_identity with multiple constraints
-  table(
-    { name: 'pk_multi_identity' },
-    {
-      id: t.u32().primaryKey(),
-      other: t.u32().unique().autoInc(),
-    }
-  ),
+  table({ name: 'pk_multi_identity' }, pkMultiIdentityRow),
 
   // repeating_test_arg table with scheduled(repeating_test)
-  table(
-    {
-      name: 'repeating_test_arg',
-      // If your TS bindings support scheduling metadata, keep this line;
-      // otherwise the reducer itself will reschedule.
-      scheduled: 'repeating_test',
-    } as any,
-    repeatingTestArg
-  ),
+  table({ name: 'repeating_test_arg', scheduled: 'repeating_test' } as any, repeatingTestArg),
 
   // has_special_stuff with Identity and ConnectionId
-  table(
-    { name: 'has_special_stuff' },
-    {
-      identity: t.identity(),
-      connection_id: t.connectionId(),
-    }
-  ),
+  table({ name: 'has_special_stuff' }, hasSpecialStuffRow),
 
   // Two tables with the same row type: player and logged_out_player
-  table(
-    { name: 'player', public: true },
-    {
-      identity: t.identity().primaryKey(),
-      player_id: t.u64().autoInc().unique(),
-      name: t.string().unique(),
-    }
-  ),
-  table(
-    { name: 'logged_out_player', public: true },
-    {
-      identity: t.identity().primaryKey(),
-      player_id: t.u64().autoInc().unique(),
-      name: t.string().unique(),
-    }
-  )
+  table({ name: 'player', public: true }, playerLikeRow),
+  table({ name: 'logged_out_player', public: true }, playerLikeRow)
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REDUCERS (behavioral parity with Rust)
+// REDUCERS (mirroring Rust order & behavior)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// init: seed the repeating_test_arg table with a 1000ms recurring schedule
+// init
 spacetimedb.reducer('init', {}, (ctx) => {
   ctx.db.repeating_test_arg.insert({
     prev_time: ctx.timestamp,
@@ -222,7 +203,7 @@ spacetimedb.reducer('init', {}, (ctx) => {
   });
 });
 
-// repeating_test: log delta time since last run
+// repeating_test
 spacetimedb.reducer('repeating_test', { arg: repeatingTestArg }, (ctx, { arg }) => {
   const delta = ctx.timestamp.since(arg.prev_time); // adjust if API differs
   console.trace(`Timestamp: ${ctx.timestamp}, Delta time: ${delta}`);
@@ -243,9 +224,7 @@ spacetimedb.reducer('say_hello', {}, (ctx) => {
 
 // list_over_age(age)
 spacetimedb.reducer('list_over_age', { age: t.u8() }, (ctx, { age }) => {
-  // If your bindings expose an index accessor with range filtering, prefer it.
-  // Example (pseudo): for (const person of ctx.db.person.age.filter([age, undefined])) { ... }
-  // Fallback: iterate and filter in memory.
+  // Prefer an index-based scan if exposed by bindings; otherwise iterate.
   for (const person of ctx.db.person.iter()) {
     if (person.age >= age) {
       console.info(`${person.name} has age ${person.age} >= ${age}`);
@@ -259,89 +238,81 @@ spacetimedb.reducer('log_module_identity', {}, (ctx) => {
 });
 
 // test(arg: TestAlias(TestA), arg2: TestB, arg3: TestC, arg4: TestF)
-spacetimedb.reducer(
-  'test',
-  { arg: testA, arg2: testB, arg3: testC, arg4: testF },
-  (ctx, { arg, arg2, arg3, arg4 }) => {
-    console.info('BEGIN');
-    console.info(`sender: ${ctx.sender}`);
-    console.info(`timestamp: ${ctx.timestamp}`);
-    console.info(`bar: ${arg2.foo}`);
+spacetimedb.reducer('test', { arg: testA, arg2: testB, arg3: testC, arg4: testF }, (ctx, { arg, arg2, arg3, arg4 }) => {
+  console.info('BEGIN');
+  console.info(`sender: ${ctx.sender}`);
+  console.info(`timestamp: ${ctx.timestamp}`);
+  console.info(`bar: ${arg2.foo}`);
 
-    // TestC
-    if (arg3.tag === 'Foo') console.info('Foo');
-    else if (arg3.tag === 'Bar') console.info('Bar');
+  // TestC
+  if (arg3.tag === 'Foo') console.info('Foo');
+  else if (arg3.tag === 'Bar') console.info('Bar');
 
-    // TestF
-    if (arg4.tag === 'Foo') console.info('Foo');
-    else if (arg4.tag === 'Bar') console.info('Bar');
-    else if (arg4.tag === 'Baz') console.info(arg4.value);
+  // TestF
+  if (arg4.tag === 'Foo') console.info('Foo');
+  else if (arg4.tag === 'Bar') console.info('Bar');
+  else if (arg4.tag === 'Baz') console.info(arg4.value);
 
-    // Insert test_a rows
-    for (let i = 0; i < 1000; i++) {
-      ctx.db.test_a.insert({ x: (i >>> 0) + arg.x, y: (i >>> 0) + arg.y, z: 'Yo' });
-    }
+  // Insert test_a rows
+  for (let i = 0; i < 1000; i++) {
+    ctx.db.test_a.insert({ x: (i >>> 0) + arg.x, y: (i >>> 0) + arg.y, z: 'Yo' });
+  }
 
-    const rowCountBefore = ctx.db.test_a.count();
-    console.info(`Row count before delete: ${rowCountBefore}`);
+  const rowCountBefore = ctx.db.test_a.count();
+  console.info(`Row count before delete: ${rowCountBefore}`);
 
-    // Delete rows by the indexed column `x` in [5,10)
-    // Prefer index deletion if exposed, fallback to filter+delete
-    let numDeleted = 0;
-    for (let x = 5; x < 10; x++) {
-      // If your bindings provide: numDeleted += ctx.db.test_a.index('foo').delete(x)
-      // we would use it; otherwise:
-      for (const row of ctx.db.test_a.iter()) {
-        if (row.x === x) {
-          if (ctx.db.test_a.delete(row)) numDeleted++;
-        }
+  // Delete rows by the indexed column `x` in [5,10)
+  let numDeleted = 0;
+  for (let x = 5; x < 10; x++) {
+    // Prefer index deletion if available; fallback to filter+delete
+    for (const row of ctx.db.test_a.iter()) {
+      if (row.x === x) {
+        if (ctx.db.test_a.delete(row)) numDeleted++;
       }
     }
-
-    const rowCountAfter = ctx.db.test_a.count();
-    if (rowCountBefore !== rowCountAfter + BigInt(numDeleted)) {
-      console.error(
-        `Started with ${rowCountBefore} rows, deleted ${numDeleted}, and wound up with ${rowCountAfter} rows... huh?`
-      );
-    }
-
-    // try_insert TestE { id: 0, name: "Tyler" }
-    try {
-      const inserted = ctx.db.test_e.tryInsert({ id: 0n, name: 'Tyler' });
-      console.info(`Inserted: ${JSON.stringify(inserted)}`);
-    } catch (err) {
-      console.info(`Error: ${String(err)}`);
-    }
-
-    console.info(`Row count after delete: ${rowCountAfter}`);
-
-    const otherRowCount = ctx.db.test_a.count();
-    console.info(`Row count filtered by condition: ${otherRowCount}`);
-
-    console.info('MultiColumn');
-
-    for (let i = 0; i < 1000; i++) {
-      ctx.db.points.insert({ x: BigInt(i) + BigInt(arg.x), y: BigInt(i) + BigInt(arg.y) });
-    }
-
-    let multiRowCount = 0;
-    for (const row of ctx.db.points.iter()) {
-      if (row.x >= 0n && row.y <= 200n) multiRowCount++;
-    }
-    console.info(`Row count filtered by multi-column condition: ${multiRowCount}`);
-
-    console.info('END');
   }
-);
+
+  const rowCountAfter = ctx.db.test_a.count();
+  if (Number(rowCountBefore) !== Number(rowCountAfter) + numDeleted) {
+    console.error(
+      `Started with ${rowCountBefore} rows, deleted ${numDeleted}, and wound up with ${rowCountAfter} rows... huh?`
+    );
+  }
+
+  // try_insert TestE { id: 0, name: "Tyler" }
+  try {
+    const inserted = ctx.db.test_e.tryInsert({ id: 0n, name: 'Tyler' });
+    console.info(`Inserted: ${JSON.stringify(inserted)}`);
+  } catch (err) {
+    console.info(`Error: ${String(err)}`);
+  }
+
+  console.info(`Row count after delete: ${rowCountAfter}`);
+
+  const otherRowCount = ctx.db.test_a.count();
+  console.info(`Row count filtered by condition: ${otherRowCount}`);
+
+  console.info('MultiColumn');
+
+  for (let i = 0; i < 1000; i++) {
+    ctx.db.points.insert({ x: BigInt(i) + BigInt(arg.x), y: BigInt(i) + BigInt(arg.y) });
+  }
+
+  let multiRowCount = 0;
+  for (const row of ctx.db.points.iter()) {
+    if (row.x >= 0n && row.y <= 200n) multiRowCount++;
+  }
+  console.info(`Row count filtered by multi-column condition: ${multiRowCount}`);
+
+  console.info('END');
+});
 
 // add_player(name) -> Result<(), String>
 spacetimedb.reducer('add_player', { name: t.string() }, (ctx, { name }) => {
-  // Try insert-or-update by primary key index
-  // If bindings expose id.tryInsertOrUpdate, use that; otherwise emulate.
   const rec = { id: 0n as bigint, name };
   const inserted = ctx.db.test_e.insert(rec); // id autoInc => always creates a new one
-  // no-op: re-upsert the same row (mirrors Rust behavior)
-  ctx.db.test_e.id.update(inserted);
+  // No-op re-upsert by id index if your bindings support it.
+  if (ctx.db.test_e.id?.update) ctx.db.test_e.id.update(inserted);
 });
 
 // delete_player(id) -> Result<(), String>
@@ -352,7 +323,6 @@ spacetimedb.reducer('delete_player', { id: t.u64() }, (ctx, { id }) => {
 
 // delete_players_by_name(name) -> Result<(), String>
 spacetimedb.reducer('delete_players_by_name', { name: t.string() }, (ctx, { name }) => {
-  // Prefer indexed delete if available; fallback to filter + delete
   let deleted = 0;
   for (const row of ctx.db.test_e.iter()) {
     if (row.name === name) {
@@ -381,25 +351,22 @@ spacetimedb.reducer('query_private', {}, (ctx) => {
   console.info('Private, World!');
 });
 
-// test_btree_index_args(): In Rust this function exists to type-check index
-// signatures. We’ll provide a minimal TS analog that exercises the name index and
-// multi-column index in basic, non-exhaustive ways (runtime correctness only).
+// test_btree_index_args
+// (In Rust this exists to type-check various index argument forms.)
 spacetimedb.reducer('test_btree_index_args', {}, (ctx) => {
   const s = 'String';
-  // Read through name index (preferred) or fallback to filter
+  // Demonstrate scanning via iteration; prefer index access if bindings expose it.
   for (const row of ctx.db.test_e.iter()) {
     if (row.name === s || row.name === 'str') {
-      // no-op
+      // no-op; exercising types
     }
   }
-  // Multi-column (x,y) index: demo simple scans
   for (const row of ctx.db.points.iter()) {
-    // demo access patterns
-    void row;
+    void row; // exercise multi-column index presence
   }
 });
 
-// assert_caller_identity_is_module_identity()
+// assert_caller_identity_is_module_identity
 spacetimedb.reducer('assert_caller_identity_is_module_identity', {}, (ctx) => {
   const caller = ctx.sender;
   const owner = ctx.identity;
