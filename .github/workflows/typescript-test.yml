@@ -103,14 +103,10 @@ jobs:
       - name: Check for changes
         working-directory: crates/bindings-typescript
         run: |
-          # This was copied from SpacetimeDB/tools/check-diff.sh.
-          # It's required because `spacetime generate` creates lines with the SpacetimeDB commit
-          # version, which would make this `git diff` check very brittle if included.
-          PATTERN='^// This was generated using spacetimedb cli version.*'
-          if ! git diff --exit-code --ignore-matching-lines="$PATTERN" -- examples/quickstart-chat/src/module_bindings; then
+          tools/check-diff.sh crates/bindings-typescript/examples/quickstart-chat/src/module_bindings || {
             echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
             exit 1
-          fi
+          }
 
       # - name: Start SpacetimeDB
       #   run: |
