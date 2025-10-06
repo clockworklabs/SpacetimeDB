@@ -112,7 +112,7 @@ const config: Config = {
         alt: 'SpacetimeDB Logo',
         src: 'images/logo.svg',
       },
-      hideOnScroll: true,
+      hideOnScroll: false,
       items: [
         {
           href: 'https://spacetimedb.com/install',
