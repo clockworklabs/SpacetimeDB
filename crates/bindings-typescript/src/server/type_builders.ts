@@ -1,4 +1,3 @@
-import type { U } from 'vitest/dist/chunks/environment.d.cL3nLXbE.js';
 import {
   AlgebraicType,
   ConnectionId,
@@ -2688,6 +2687,7 @@ export const t = {
    *
    * @returns A new {@link ProductBuilder} instance with no fields.
    */
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   unit(): ProductBuilder<{}> {
     return new ProductBuilder({});
   },

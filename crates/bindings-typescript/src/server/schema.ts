@@ -1,7 +1,13 @@
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
 import { MODULE_DEF } from './runtime';
-import { ColumnBuilder, type RowObj, type TypeBuilder } from './type_builders';
+import {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  type ColumnBuilder,
+  type RowObj,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  type TypeBuilder,
+} from './type_builders';
 import type { AlgebraicTypeRef, TableSchema, UntypedTableDef } from './table';
 import {
   clientConnected,
@@ -137,6 +143,7 @@ class Schema<S extends UntypedSchemaDef> {
    * });
    * ```
    */
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   init(fn: Reducer<S, {}>): void {
     init({}, fn);
   }
@@ -157,6 +164,7 @@ class Schema<S extends UntypedSchemaDef> {
    *   }
    * );
    */
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientConnected(fn: Reducer<S, {}>): void {
     clientConnected({}, fn);
   }
@@ -178,6 +186,7 @@ class Schema<S extends UntypedSchemaDef> {
    * );
    * ```
    */
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientDisconnected(fn: Reducer<S, {}>): void {
     clientDisconnected({}, fn);
   }

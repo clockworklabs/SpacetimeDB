@@ -585,11 +585,12 @@ const console_level_warn = 1;
 const console_level_info = 2;
 const console_level_debug = 3;
 const console_level_trace = 4;
-const console_level_panic = 101;
+const _console_level_panic = 101;
 
 const timerMap = new Map<string, u32>();
 
-let console: Console = {
+const console: Console = {
+  // @ts-expect-error we want a blank prototype, but typescript complains
   __proto__: {},
   [Symbol.toStringTag]: 'console',
   assert: (condition = false, ...data: any[]) => {
@@ -610,7 +611,7 @@ let console: Console = {
   log: (...data: any[]) => {
     sys.console_log(console_level_info, fmtLog(...data));
   },
-  table: (tabularData: any, properties: any) => {
+  table: (tabularData: any, _properties: any) => {
     sys.console_log(console_level_info, fmtLog(tabularData));
   },
   trace: (...data: any[]) => {
@@ -619,14 +620,14 @@ let console: Console = {
   warn: (...data: any[]) => {
     sys.console_log(console_level_warn, fmtLog(...data));
   },
-  dir: (item: any, options: any) => {},
-  dirxml: (...data: any[]) => {},
+  dir: (_item: any, _options: any) => {},
+  dirxml: (..._data: any[]) => {},
   // Counting
-  count: (label = 'default') => {},
-  countReset: (label = 'default') => {},
+  count: (_label = 'default') => {},
+  countReset: (_label = 'default') => {},
   // Grouping
-  group: (...data: any[]) => {},
-  groupCollapsed: (...data: any[]) => {},
+  group: (..._data: any[]) => {},
+  groupCollapsed: (..._data: any[]) => {},
   groupEnd: () => {},
   // Timing
   time: (label = 'default') => {
@@ -652,7 +653,7 @@ let console: Console = {
   timeStamp: () => {},
   profile: () => {},
   profileEnd: () => {},
-} as any;
+};
 
 (console as any).Console = console;
 
