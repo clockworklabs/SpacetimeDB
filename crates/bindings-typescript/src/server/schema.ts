@@ -1,6 +1,6 @@
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
-import { MODULE_DEF } from './runtime';
+import { MODULE_DEF, registerModuleHooks } from './runtime';
 import {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type ColumnBuilder,
@@ -256,6 +256,8 @@ export function schema(
     | [readonly TableSchema<any, any, any>[]]
     | readonly TableSchema<any, any, any>[]
 ): Schema<UntypedSchemaDef> {
+  registerModuleHooks();
+
   const handles: readonly TableSchema<any, any, any>[] =
     args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
 

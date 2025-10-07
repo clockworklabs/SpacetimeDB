@@ -155,13 +155,13 @@ function initSys() {
   freeze(sys);
 }
 
-globalThis.__call_reducer__ = function __call_reducer__(
+const __call_reducer__: typeof globalThis.__call_reducer__ = (
   reducer_id,
   sender,
   conn_id,
   timestamp,
   args_buf
-) {
+) => {
   initSys();
   const args_type = AlgebraicType.Product(
     MODULE_DEF.reducers[reducer_id].params
@@ -183,7 +183,7 @@ globalThis.__call_reducer__ = function __call_reducer__(
   return { tag: 'ok' };
 };
 
-globalThis.__describe_module__ = function __describe_module__() {
+const __describe_module__: typeof globalThis.__describe_module__ = () => {
   initSys();
 
   const writer = new BinaryWriter(128);
@@ -194,6 +194,14 @@ globalThis.__describe_module__ = function __describe_module__() {
   );
   return writer.getBuffer();
 };
+
+let hooksRegistered = false;
+export function registerModuleHooks() {
+  if (hooksRegistered) return;
+  hooksRegistered = true;
+  globalThis.__call_reducer__ = __call_reducer__;
+  globalThis.__describe_module__ = __describe_module__;
+}
 
 let DB_VIEW: DbView<any> | null = null;
 function getDbView() {
