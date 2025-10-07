@@ -125,7 +125,7 @@ $ spacetime sql incr-migration-demo 'SELECT * FROM character'
  <snip>    | "Gefjon" | 2     | (Fighter = ())
 ```
 
-See [the SATS JSON reference](/docs/sats-json) for more on the encoding of arguments to `spacetime call`.
+See [the SATS JSON reference](/sats-json) for more on the encoding of arguments to `spacetime call`.
 
 Now we want to add a new feature: each player should be able to align themselves with the forces of good or evil, so we can get some healthy competition going between our players. We'll start each character off with `Alliance::Neutral`, and then offer them a reducer `choose_alliance` to set it to either `Alliance::Good` or `Alliance::Evil`. Our first attempt will be to add a new column to the type `Character`:
 
