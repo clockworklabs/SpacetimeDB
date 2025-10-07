@@ -98,21 +98,20 @@ fn main() -> anyhow::Result<()> {
         )
         .get_matches();
 
-    let version = matches.get_one::<String>("upgrade_version").unwrap();
     if let Some(path) = matches.get_one::<PathBuf>("spacetime-path") {
         env::set_current_dir(path).ok();
-    }
-
-    let current_dir = env::current_dir().expect("No current directory!");
-    let dir_name = current_dir.file_name().expect("No current directory!");
-    if dir_name != "SpacetimeDB" && dir_name != "public" {
-        anyhow::bail!("You must execute this binary from inside of the SpacetimeDB directory, or use --spacetime-path");
     }
 
     let unparsed_version_arg = matches.get_one::<String>("upgrade_version").unwrap();
     let semver = Version::parse(unparsed_version_arg).expect("Invalid semver provided to upgrade-version");
     let full_version = format!("{}.{}.{}", semver.major, semver.minor, semver.patch);
     let wildcard_patch = format!("{}.{}.*", semver.major, semver.minor);
+
+    let current_dir = env::current_dir().expect("No current directory!");
+    let dir_name = current_dir.file_name().expect("No current directory!");
+    if dir_name != "SpacetimeDB" && dir_name != "public" {
+        anyhow::bail!("You must execute this binary from inside of the SpacetimeDB directory, or use --spacetime-path");
+    }
 
     if matches.get_flag("rust-and-cli") {
         // Use `=` for dependency versions, to avoid issues where Cargo automatically rolls forward to later minor versions.
