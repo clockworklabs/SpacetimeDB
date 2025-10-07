@@ -292,7 +292,17 @@ unicode-normalization = "0.1.23"
 url = "2.3.1"
 urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
-v8 = "140.2"
+# we're pinning exact versions of v8 and several of its dependencies,
+# since we've had several problems with Cargo aggressively upgrading transitive dependencies of v8
+# to pre-1.0 versions that it considers compatible.
+# From https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#version-requirement-syntax :
+# > Versions are considered compatible if their left-most non-zero major/minor/patch component is the same.
+# > This is different from SemVer which considers all pre-1.0.0 packages to be incompatible.
+v8 = "=140.2"
+ry_temporal_capi = "=0.0.11-ry.1"
+temporal_rs = "=0.0.11"
+timezone_provider = "=0.0.11"
+# End of pinned v8 transitive deps.
 walkdir = "2.2.5"
 wasmbin = "0.6"
 webbrowser = "1.0.2"
