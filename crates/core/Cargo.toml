@@ -113,7 +113,12 @@ tracing.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
+# See note in workspace Cargo.toml about pinning v8 dependencies.
 v8.workspace = true
+ry_temporal_capi.workspace = true
+temporal_rs.workspace = true
+timezone_provider.workspace = true
+# End of pinned v8 transitive deps.
 wasmtime.workspace = true
 jwks.workspace = true
 async_cache = "0.3.1"
