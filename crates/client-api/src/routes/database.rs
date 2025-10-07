@@ -579,7 +579,7 @@ async fn resolve_and_authenticate<S: ControlStateDelegate>(
 
 #[derive(Deserialize)]
 pub struct DeleteDatabaseParams {
-    name_or_identity: NameOrIdentity,
+    pub name_or_identity: NameOrIdentity,
 }
 
 pub async fn delete_database<S: ControlStateDelegate>(
