@@ -11,7 +11,7 @@ We'll implement a command-line client for the module created in our Rust or C# M
 
 ## Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/modules/rust/quickstart) or [C# Module Quickstart](/docs/modules/c-sharp/quickstart) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/modules/rust/quickstart) or [C# Module Quickstart](/modules/c-sharp/quickstart) guides:
 
 ```bash
 cd quickstart-chat
@@ -427,7 +427,7 @@ fn on_sub_applied(ctx: &SubscriptionEventContext) {
 
 ### Notify about failed subscriptions
 
-It's possible for SpacetimeDB to reject subscriptions. This happens most often because of a typo in the SQL queries, but can be due to use of SQL features that SpacetimeDB doesn't support. See [SQL Support: Subscriptions](/docs/sql#subscriptions) for more information about what subscription queries SpacetimeDB supports.
+It's possible for SpacetimeDB to reject subscriptions. This happens most often because of a typo in the SQL queries, but can be due to use of SQL features that SpacetimeDB doesn't support. See [SQL Support: Subscriptions](/sql#subscriptions) for more information about what subscription queries SpacetimeDB supports.
 
 In our case, we're pretty confident that our queries are valid, but if SpacetimeDB rejects them, we want to know about it. Our callback will print the error, then exit the process.
 
@@ -509,7 +509,7 @@ User <my-name> connected.
 
 You can find the full code for this client [in the Rust client SDK's examples](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/sdk/examples/quickstart-chat).
 
-Check out the [Rust client SDK Reference](/docs/sdks/rust) for a more comprehensive view of the SpacetimeDB Rust client SDK.
+Check out the [Rust client SDK Reference](/sdks/rust) for a more comprehensive view of the SpacetimeDB Rust client SDK.
 
 Our basic terminal interface has some limitations. Incoming messages can appear while the user is typing, which is less than ideal. Additionally, the user's input gets mixed with the program's output, making messages the user sends appear twice. You might want to try improving the interface by using [Rustyline](https://crates.io/crates/rustyline), [Cursive](https://crates.io/crates/cursive), or even creating a full-fledged GUI.
 

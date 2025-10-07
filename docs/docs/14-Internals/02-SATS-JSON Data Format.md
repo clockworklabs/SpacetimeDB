@@ -4,7 +4,7 @@ slug: /sats-json
 
 # SATS-JSON Data Format
 
-The Spacetime Algebraic Type System JSON format defines how Spacetime `AlgebraicType`s and `AlgebraicValue`s are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the [HTTP Databases API](/docs/http/database) and the WebSocket text protocol. Note that SATS-JSON is not self-describing, and so a SATS value represented in JSON requires knowing the value's schema to meaningfully understand it - for example, it's not possible to tell whether a JSON object with a single field is a `ProductValue` with one element or a `SumValue`.
+The Spacetime Algebraic Type System JSON format defines how Spacetime `AlgebraicType`s and `AlgebraicValue`s are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the [HTTP Databases API](/http/database) and the WebSocket text protocol. Note that SATS-JSON is not self-describing, and so a SATS value represented in JSON requires knowing the value's schema to meaningfully understand it - for example, it's not possible to tell whether a JSON object with a single field is a `ProductValue` with one element or a `SumValue`.
 
 ## Values
 
@@ -170,4 +170,4 @@ SATS array and map types are homogeneous, meaning that each array has a single e
 
 ### `AlgebraicTypeRef`
 
-`AlgebraicTypeRef`s are JSON-encoded as non-negative integers. These are indices into a typespace, like the one returned by the [`GET /v1/database/:name_or_identity/schema` HTTP endpoint](/docs/http/database#get-v1databasename_or_identityschema).
+`AlgebraicTypeRef`s are JSON-encoded as non-negative integers. These are indices into a typespace, like the one returned by the [`GET /v1/database/:name_or_identity/schema` HTTP endpoint](/http/database#get-v1databasename_or_identityschema).

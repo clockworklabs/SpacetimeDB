@@ -15,12 +15,12 @@ In the following sections, we'll cover the basics of server modules and how to c
 
 Rust is the only fully supported language for server modules. Rust is a great option for server modules because it is fast, safe, and has a small runtime.
 
-- [Rust Module Reference](/docs/modules/rust)
-- [Rust Module Quickstart Guide](/docs/modules/rust/quickstart)
+- [Rust Module Reference](/modules/rust)
+- [Rust Module Quickstart Guide](/modules/rust/quickstart)
 
 ### C
 
 We have C# support available. C# can be a good choice for developers who are already using Unity or .net for their client applications.
 
-- [C# Module Reference](/docs/modules/c-sharp)
-- [C# Module Quickstart Guide](/docs/modules/c-sharp/quickstart)
+- [C# Module Reference](/modules/c-sharp)
+- [C# Module Quickstart Guide](/modules/c-sharp/quickstart)

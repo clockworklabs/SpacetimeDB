@@ -27,12 +27,12 @@ Please file an issue [here](https://github.com/clockworklabs/SpacetimeDB/issues)
 
 ## Blackhol.io Tutorial - Basic Multiplayer
 
-First you'll get started with the core client/server setup. For part 2, you'll be able to choose between [Rust](/docs/modules/rust) or [C#](/docs/modules/c-sharp) for your server module language:
+First you'll get started with the core client/server setup. For part 2, you'll be able to choose between [Rust](/modules/rust) or [C#](/modules/c-sharp) for your server module language:
 
-- [Part 1 - Setup](/docs/unreal/part-1)
-- [Part 2 - Connecting to SpacetimeDB](/docs/unreal/part-2)
-- [Part 3 - Gameplay](/docs/unreal/part-3)
-- [Part 4 - Moving and Colliding](/docs/unreal/part-4)
+- [Part 1 - Setup](/unreal/part-1)
+- [Part 2 - Connecting to SpacetimeDB](/unreal/part-2)
+- [Part 3 - Gameplay](/unreal/part-3)
+- [Part 4 - Moving and Colliding](/unreal/part-4)
 
 ## Blackhol.io Tutorial - Advanced
 
