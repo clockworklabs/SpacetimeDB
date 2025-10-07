@@ -1,0 +1,11 @@
+{
+  "templates": [
+    {
+      "name": "Quickstart (Rust)",
+      "server_lang": "rust",
+      "client_lang": "rust",
+      "server_source": "clockworklabs/SpacetimeDB/modules/quickstart-chat",
+      "client_source": "clockworklabs/SpacetimeDB/./sdks/rust/examples/quickstart-chat"
+    },
+  ]
+}
