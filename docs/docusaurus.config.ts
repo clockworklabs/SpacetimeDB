@@ -1,6 +1,5 @@
 import type { Config } from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
-import { type InkeepConfig } from '@inkeep/cxkit-docusaurus';
 import rehypeShiki, { RehypeShikiOptions } from '@shikijs/rehype';
 import bash from 'shiki/langs/bash.mjs';
 import c from 'shiki/langs/c.mjs';
@@ -29,17 +28,6 @@ const shikiTheme = {
 };
 shikiTheme.colors!['editor.background'] =
   'var(--clockworklabs-code-background-color)';
-
-const inkeepConfig: Partial<InkeepConfig> = {
-  baseSettings: {
-    apiKey: '13504c49fb56b7c09a5ea0bcd68c2b55857661be4d6d311b',
-    organizationDisplayName: 'SpacetimeDB',
-    primaryBrandColor: '#4cf490',
-    colorMode: {
-      forcedColorMode: 'dark',
-    },
-  },
-};
 
 const config: Config = {
   title: 'SpacetimeDB docs',
@@ -107,13 +95,13 @@ const config: Config = {
 
   themeConfig: {
     navbar: {
-      title: 'SpacetimeDB',
       logo: {
         alt: 'SpacetimeDB Logo',
-        src: 'images/logo.svg',
+        src: 'https://spacetimedb.com/images/brand.png',
       },
       hideOnScroll: false,
       items: [
+        { type: 'search', position: 'left' },
         {
           href: 'https://spacetimedb.com/install',
           label: 'Install',
@@ -127,11 +115,6 @@ const config: Config = {
         {
           href: 'https://spacetimedb.com/maincloud',
           label: 'Maincloud',
-          position: 'right',
-        },
-        {
-          href: 'https://spacetimedb.com/docs',
-          label: 'Docs',
           position: 'right',
         },
         {
@@ -152,21 +135,13 @@ const config: Config = {
       disableSwitch: true,
       defaultMode: 'light',
     },
+    algolia: {
+      appId: 'QBC7Z9KXS2',
+      apiKey: 'f51e6f1768e1000129f66abc8dd45d55',
+      indexName: 'Docs',
+      contextualSearch: true,
+    },
   } satisfies Preset.ThemeConfig,
-
-  plugins: [
-    [
-      '@inkeep/cxkit-docusaurus',
-      {
-        SearchBar: {
-          ...inkeepConfig,
-        },
-        ChatButton: {
-          ...inkeepConfig,
-        },
-      },
-    ],
-  ],
 };
 
 export default config;
