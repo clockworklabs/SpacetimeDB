@@ -121,7 +121,7 @@ fn main() -> anyhow::Result<()> {
 
         // root Cargo.toml
         edit_toml("Cargo.toml", |doc| {
-            doc["workspace"]["package"]["version"] = toml_edit::value(version);
+            doc["workspace"]["package"]["version"] = toml_edit::value(full_version.clone());
             for (key, dep) in doc["workspace"]["dependencies"]
                 .as_table_like_mut()
                 .expect("workspace.dependencies is not a table")
@@ -134,7 +134,7 @@ fn main() -> anyhow::Result<()> {
         })?;
 
         edit_toml("crates/cli/src/subcommands/project/rust/Cargo._toml", |doc| {
-            // Only set major.minor.* for the spacetimedb dependency.
+            // Only use major.minor for the spacetimedb dependency.
             // See https://github.com/clockworklabs/SpacetimeDB/issues/2724.
             //
             // Note: This is meaningfully different than setting just major.minor.
