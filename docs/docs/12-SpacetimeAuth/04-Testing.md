@@ -1,5 +1,6 @@
 ---
 title: Testing
+slug: /spacetimeauth/testing
 ---
 
 # Testing Your SpacetimeAuth Setup with OIDC Debugger

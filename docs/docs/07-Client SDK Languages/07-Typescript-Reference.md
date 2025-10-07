@@ -1,5 +1,6 @@
 ---
 title: TypeScript Reference
+slug: /sdks/typescript
 ---
 
 # The SpacetimeDB Typescript client SDK

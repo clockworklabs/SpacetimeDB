@@ -1,3 +1,7 @@
+---
+slug: /http/database
+---
+
 # `/v1/database`
 
 The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime databases in a variety of ways, including retrieving information, creating and deleting databases, invoking reducers and evaluating SQL queries.

@@ -1,5 +1,6 @@
 ---
 title: C# Quickstart
+slug: /modules/c-sharp/quickstart
 ---
 
 # C# Module Quickstart

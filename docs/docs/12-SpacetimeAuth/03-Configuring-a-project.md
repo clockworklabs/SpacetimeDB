@@ -1,5 +1,6 @@
 ---
 title: Configuring your project
+slug: /spacetimeauth/configure-project
 ---
 
 # Configuring a SpacetimeAuth Project

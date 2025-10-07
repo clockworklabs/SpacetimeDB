@@ -1,6 +1,7 @@
 ---
 title: Rust Reference
 toc_max_heading_level: 6
+slug: /sdks/rust
 ---
 
 # The SpacetimeDB Rust client SDK
