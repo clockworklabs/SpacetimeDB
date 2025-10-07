@@ -98,6 +98,7 @@ fn main() -> anyhow::Result<()> {
         )
         .get_matches();
 
+    let version = matches.get_one::<String>("upgrade_version").unwrap();
     if let Some(path) = matches.get_one::<PathBuf>("spacetime-path") {
         env::set_current_dir(path).ok();
     }
