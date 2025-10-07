@@ -106,6 +106,10 @@ strong {
   color: var(--clockworklabs-strong-color);
 }
 
+footer {
+  display: none;
+}
+
 .navbar {
   background-color: var(--ifm-background-color);
   border-bottom: 1px solid var(--clockworklabs-navbar-border-color);
