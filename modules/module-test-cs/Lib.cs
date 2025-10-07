@@ -150,6 +150,16 @@ public partial struct RepeatingTestArg
     public Timestamp prev_time;
 }
 
+[Table(Name = "nonrepeating_test_arg", Scheduled = nameof(Module.nonrepeating_test), ScheduledAt = nameof(scheduled_at))]
+public partial struct NonrepeatingTestArg
+{
+    [PrimaryKey]
+    [AutoInc]
+    public ulong scheduled_id;
+    public ScheduleAt scheduled_at;
+    public Timestamp prev_time;
+}
+
 [Table(Name = "has_special_stuff")]
 public partial struct HasSpecialStuff
 {
@@ -205,10 +215,28 @@ static partial class Module
             scheduled_id = 0,
             scheduled_at = new TimeDuration(1000000)
         });
+        
+        var currentTime = ctx.Timestamp;
+        var oneSeconds = new TimeDuration { Microseconds = 1_000_000 };
+        var futureTimestamp = currentTime + oneSeconds;
+        
+        ctx.Db.nonrepeating_test_arg.Insert(new NonrepeatingTestArg
+        {
+            prev_time = ctx.Timestamp,
+            scheduled_id = 0,
+            scheduled_at = new ScheduleAt.Time(futureTimestamp)
+        });
     }
 
     [Reducer]
     public static void repeating_test(ReducerContext ctx, RepeatingTestArg arg)
+    {
+        var deltaTime = ctx.Timestamp.TimeDurationSince(arg.prev_time);
+        Log.Trace($"Timestamp: {ctx.Timestamp}, Delta time: {deltaTime}");
+    }
+    
+    [Reducer]
+    public static void nonrepeating_test(ReducerContext ctx, NonrepeatingTestArg arg)
     {
         var deltaTime = ctx.Timestamp.TimeDurationSince(arg.prev_time);
         Log.Trace($"Timestamp: {ctx.Timestamp}, Delta time: {deltaTime}");

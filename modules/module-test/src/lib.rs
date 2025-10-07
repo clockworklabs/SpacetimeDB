@@ -3,7 +3,7 @@ use spacetimedb::log;
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
-    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
+    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp,
 };
 
 pub type TestAlias = TestA;
@@ -138,6 +138,15 @@ pub struct RepeatingTestArg {
     prev_time: Timestamp,
 }
 
+#[spacetimedb::table(name = nonrepeating_test_arg, scheduled(nonrepeating_test))]
+pub struct NonrepeatingTestArg {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: spacetimedb::ScheduleAt,
+    prev_time: Timestamp,
+}
+
 #[spacetimedb::table(name = has_special_stuff)]
 pub struct HasSpecialStuff {
     identity: Identity,
@@ -189,6 +198,16 @@ pub fn init(ctx: &ReducerContext) {
         scheduled_id: 0,
         scheduled_at: duration!("1000ms").into(),
     });
+
+    let current_time = ctx.timestamp;
+    let one_second = TimeDuration::from_micros(1_000_000);
+    let future_timestamp: Timestamp = current_time + one_second;
+
+    ctx.db.nonrepeating_test_arg().insert(NonrepeatingTestArg {
+        prev_time: ctx.timestamp,
+        scheduled_id: 1,
+        scheduled_at: future_timestamp.into(),
+    });
 }
 
 #[spacetimedb::reducer]
@@ -198,6 +217,19 @@ pub fn repeating_test(ctx: &ReducerContext, arg: RepeatingTestArg) {
         .duration_since(arg.prev_time)
         .expect("arg.prev_time is later than ctx.timestamp... huh?");
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
+}
+
+#[spacetimedb::reducer]
+pub fn nonrepeating_test(ctx: &ReducerContext, arg: NonrepeatingTestArg) {
+    let delta_time = ctx
+        .timestamp
+        .duration_since(arg.prev_time)
+        .expect("arg.prev_time is later than ctx.timestamp... huh?");
+    log::trace!(
+        "This reducers runs only once, at Timestamp: {:?}, Delta time: {:?}",
+        ctx.timestamp,
+        delta_time
+    );
 }
 
 #[spacetimedb::reducer]
