@@ -1,5 +1,6 @@
 ---
 title: PostgreSQL Wire Protocol (PGWire)
+slug: /docs/sql/pg-wire
 ---
 
 # PostgreSQL Wire Protocol (PGWire) Compatibility

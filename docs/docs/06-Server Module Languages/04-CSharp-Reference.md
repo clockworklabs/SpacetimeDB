@@ -1,5 +1,6 @@
 ---
 title: C# Reference
+slug: /modules/c-sharp
 toc_max_heading_level: 6
 ---
 

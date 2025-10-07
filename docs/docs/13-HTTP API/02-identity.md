@@ -1,3 +1,7 @@
+---
+slug: /http/identity
+---
+
 # `/v1/identity`
 
 The HTTP endpoints in `/v1/identity` allow clients to generate and manage Spacetime public identities and private tokens.

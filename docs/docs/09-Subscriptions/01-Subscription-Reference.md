@@ -1,5 +1,6 @@
 ---
 title: Subscription Reference
+slug: /subscriptions
 ---
 
 import Tabs from '@theme/Tabs';

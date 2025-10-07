@@ -1,5 +1,6 @@
 ---
 title: CLI Reference
+slug: /cli-reference
 ---
 
 # Command-Line Help for `spacetime`
