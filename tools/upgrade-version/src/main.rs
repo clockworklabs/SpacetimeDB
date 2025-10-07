@@ -116,7 +116,7 @@ fn main() -> anyhow::Result<()> {
     if matches.get_flag("rust-and-cli") {
         // Use `=` for dependency versions, to avoid issues where Cargo automatically rolls forward to later minor versions.
         // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
-        let dep_version = format!("={}", full_version);
+        let dep_version = format!("={full_version}");
 
         // root Cargo.toml
         edit_toml("Cargo.toml", |doc| {
