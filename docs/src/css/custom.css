@@ -10,16 +10,19 @@
   --ifm-background-color: #060606;
   --ifm-color-content: #b6c0cf;
   --ifm-toc-border-color: #f4f6fc1c;
+  --ifm-toc-link-color: #b6c0cf;
   --ifm-code-background: #0d0d0e;
   --ifm-code-padding-horizontal: 0.125rem;
   --ifm-code-padding-vertical: 0.25rem;
   --ifm-hr-background-color: #f4f6fc1c;
   --ifm-blockquote-color: #b6c0cf;
+  --ifm-menu-color: #b6c0cf;
   --ifm-menu-link-sublist-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 24 24"><path fill="rgb(182, 192, 207, 0.5)" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"></path></svg>');
   --ifm-breadcrumb-separator: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><path fill="rgb(182, 192, 207)" d="M79.093 0 48.907 30.187 146.72 128l-97.813 97.813L79.093 256l128-128z"/></svg>');
   --ifm-alert-background-color-highlight: #4d3800;
   --ifm-alert-foreground-color: #fff8e6;
   --ifm-alert-border-color: #e6a700;
+  --ifm-background-surface-color: var(--clockworklabs-code-background-color);
 
   --clockworklabs-title-color: #f4f6fc;
   --clockworklabs-code-color: #fbdc8e;
@@ -118,14 +121,14 @@ strong {
   background-color: var(--ifm-background-color);
 }
 
-[data-theme='light'] .DocSearch {
+.DocSearch {
   --docsearch-text-color: var(--ifm-font-color-base);
   --docsearch-muted-color: var(--ifm-color-secondary-darkest);
   --docsearch-container-background: rgba(47, 55, 69, 0.7);
   /* Modal */
   --docsearch-modal-background: var(--ifm-background-color);
   /* Search box */
-  --docsearch-searchbox-background: var(--ifm-background-color);
+  --docsearch-searchbox-background: #262629;
   --docsearch-searchbox-focus-background: var(--ifm-color-black);
   /* Hit */
   --docsearch-hit-color: var(--ifm-font-color-base);
@@ -138,4 +141,24 @@ strong {
     var(--ifm-color-emphasis-200) 0%,
     var(--ifm-color-emphasis-100) 100%
   );
+
+  --docsearch-footer-shadow: 0 -1px 0 0 var(--ifm-toc-border-color);
+
+  width: 15rem;
+}
+
+/* Make the page content left aligned */
+.container {
+  margin: 0 2rem 0;
+}
+
+@media screen and (max-width: 996px) {
+  /* Make the page content full width on smaller screens */
+  .container {
+    margin: 0;
+  }
+
+  .DocSearch {
+    width: inherit;
+  }
 }
