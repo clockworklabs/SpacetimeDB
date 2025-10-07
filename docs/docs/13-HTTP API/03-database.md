@@ -228,10 +228,10 @@ For more information about WebSocket headers, see [RFC 6455](https://datatracker
 | `Sec-WebSocket-Version`  | `13`                                                                  |
 | `Sec-WebSocket-Key`      | A 16-byte value, generated randomly by the client, encoded as Base64. |
 
-The SpacetimeDB binary WebSocket protocol, `v1.bsatn.spacetimedb`, encodes messages as well as reducer and row data using [BSATN](/docs/bsatn).
+The SpacetimeDB binary WebSocket protocol, `v1.bsatn.spacetimedb`, encodes messages as well as reducer and row data using [BSATN](/bsatn).
 Its messages are defined [here](https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/client-api-messages/src/websocket.rs).
 
-The SpacetimeDB text WebSocket protocol, `v1.json.spacetimedb`, encodes messages according to the [SATS-JSON format](/docs/sats-json).
+The SpacetimeDB text WebSocket protocol, `v1.json.spacetimedb`, encodes messages according to the [SATS-JSON format](/sats-json).
 
 #### Optional Headers
 
@@ -446,6 +446,6 @@ Returns a JSON array of statement results, each of which takes the form:
 }
 ```
 
-The `schema` will be a [JSON-encoded `ProductType`](/docs/sats-json) describing the type of the returned rows.
+The `schema` will be a [JSON-encoded `ProductType`](/sats-json) describing the type of the returned rows.
 
-The `rows` will be an array of [JSON-encoded `ProductValue`s](/docs/sats-json), each of which conforms to the `schema`.
+The `rows` will be an array of [JSON-encoded `ProductValue`s](/sats-json), each of which conforms to the `schema`.

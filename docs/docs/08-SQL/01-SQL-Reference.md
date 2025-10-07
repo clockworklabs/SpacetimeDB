@@ -3,6 +3,9 @@ title: SQL Reference
 slug: /sql
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # SQL Support
 
 SpacetimeDB supports two subsets of SQL:
