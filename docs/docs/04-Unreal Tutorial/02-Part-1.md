@@ -49,7 +49,7 @@ For **Project Location**, use your `blackholio` directory (created in the previo
 
 Click **Create** to generate the blank project.
 
-![Create Blank Project](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-1-01-create-project.png)
+![Create Blank Project](/images/unreal/part-1-01-create-project.png)
 
 ### Import the SpacetimeDB Unreal SDK
 
@@ -76,8 +76,8 @@ Before beginning make sure to close the Unreal project and IDE.
    - This should create `/client_unreal/Plugins/SpacetimeDbSdk`.
 3. In the root of the Unreal project, right click the client_unreal.uproject and select **Generate Visual Studio project files**. On Windows 11 you may need to expand **Show more options** to select the generate option.
 
-![Generate project files](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-1-02-01-generate-project.png)
-![Generate project files](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-1-02-02-generate-project.png)
+![Generate project files](/images/unreal/part-1-02-01-generate-project.png)
+![Generate project files](/images/unreal/part-1-02-02-generate-project.png)
 
 ### Create the GameManager Actor
 
@@ -105,7 +105,7 @@ Set up the empty level, add the new `GameManager` to the level, and add lighting
    - Expand **All Classes**, search for **GameManager**, highlight it, and click **Select**.
    - Name the blueprint `BP_GameManager`.
 
-   ![Pick Parent Class](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-1-03-create-blueprint.png)
+   ![Pick Parent Class](/images/unreal/part-1-03-create-blueprint.png)
 
 3. **Update Maps & Modes**
    - Open **Edit -> Project Settings** in the top menu, then select **Project -> Maps & Modes** on the left.
