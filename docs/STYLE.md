@@ -381,11 +381,11 @@ Start the conclusion with a sentence or paragraph that reminds the reader what t
 
 If this tutorial is part of a series, link to the next entry:
 
-> You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart). If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1).
+> You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/sdks/rust/quickstart), [C#](/sdks/c-sharp/quickstart), or [TypeScript](/sdks/typescript/quickstart). If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/unity/part-1).
 
 If this tutorial is about a specific component, link to its reference page:
 
-> Check out the [Rust SDK Reference](/docs/sdks/rust) for a more comprehensive view of the SpacetimeDB Rust SDK.
+> Check out the [Rust SDK Reference](/sdks/rust) for a more comprehensive view of the SpacetimeDB Rust SDK.
 
 If this tutorial is the end of a series, or ends with a reasonably complete app, throw in some ideas about how the reader could extend it:
 

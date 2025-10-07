@@ -12,7 +12,7 @@ The subscription API allows a client to replicate a subset of a database.
 It does so by registering SQL queries, which we call subscriptions, through a database connection.
 A client will only receive updates for rows that match the subscriptions it has registered.
 
-For more information on syntax and requirements see the [SQL docs](/docs/sql#subscriptions).
+For more information on syntax and requirements see the [SQL docs](/sql#subscriptions).
 
 This guide describes the two main interfaces that comprise the API - `SubscriptionBuilder` and `SubscriptionHandle`.
 By using these interfaces, you can create efficient and responsive client applications that only receive the data they need.
@@ -312,7 +312,7 @@ All other subscriptions continue to remain in effect.
 
 ### 1. Writing Efficient SQL Queries
 
-For writing efficient SQL queries, see our [SQL Best Practices Guide](/docs/sql#best-practices-for-performance-and-scalability).
+For writing efficient SQL queries, see our [SQL Best Practices Guide](/sql#best-practices-for-performance-and-scalability).
 
 ### 2. Group Subscriptions with the Same Lifetime Together
 
