@@ -1,4 +1,4 @@
-use self::de::property;
+use self::budget::{energy_from_elapsed, with_timeout_and_cb_every};
 use self::error::{
     catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CodeError, ExcResult, JsStackTrace,
     TerminationError, Throwable,
@@ -13,16 +13,14 @@ use super::UpdateDatabaseResult;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
-    DescribeError, EnergyStats, ExecuteResult, ExecutionTimings, InstanceCommon, ReducerOp, ReducerResult,
+    DescribeError, ExecuteResult, ExecutionTimings, InstanceCommon, ReducerOp, ReducerResult,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::wasmtime::{epoch_ticker, ticks_in_duration, EPOCH_TICKS_PER_SECOND};
+use crate::host::wasmtime::EPOCH_TICKS_PER_SECOND;
 use crate::host::Scheduler;
 use crate::{module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
 use core::ffi::c_void;
-use core::sync::atomic::{AtomicBool, Ordering};
-use core::time::Duration;
-use core::{ptr, str};
+use core::str;
 use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
@@ -32,10 +30,11 @@ use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
-    scope, Context, ContextScope, Function, Isolate, IsolateHandle, Local, MapFnTo, OwnedIsolate, PinScope,
-    ResolveModuleCallback, ScriptOrigin, Value,
+    scope, Context, ContextScope, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope, ResolveModuleCallback,
+    ScriptOrigin, Value,
 };
 
+mod budget;
 mod de;
 mod error;
 mod from_value;
@@ -378,9 +377,7 @@ impl JsInstance {
                 self.instance.take_from_isolate(&mut isolate);
 
                 // Derive energy stats.
-                let used = duration_to_budget(timings.total_duration);
-                let remaining = budget - used;
-                let energy = EnergyStats { budget, remaining };
+                let energy = energy_from_elapsed(budget, timings.total_duration);
 
                 // Fetch the currently used heap size in V8.
                 // The used size is ostensibly fairer than the total size.
@@ -487,92 +484,6 @@ pub(crate) fn with_scope<R>(isolate: &mut OwnedIsolate, logic: impl FnOnce(&mut 
     let context = Context::new(scope, Default::default());
     let scope = &mut ContextScope::new(scope, context);
     logic(scope)
-}
-
-/// Runs `logic` concurrently wth a thread that will terminate JS execution
-/// when `budget` has been used up.
-///
-/// Every `callback_every` ticks, `callback` is called.
-fn with_timeout_and_cb_every<R>(
-    _handle: IsolateHandle,
-    _callback_every: u64,
-    _callback: InterruptCallback,
-    _budget: ReducerBudget,
-    logic: impl FnOnce() -> R,
-) -> R {
-    // Start the concurrent thread.
-    // TODO(v8): This currently leads to UB as there are bugs in th v8 crate.
-    //let timeout_thread_cancel_flag = run_timeout_and_cb_every(handle, callback_every, callback, budget);
-
-    #[allow(clippy::let_and_return)]
-    let ret = logic();
-
-    // Cancel the execution timeout in `run_timeout_and_cb_every`.
-    //timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
-
-    ret
-}
-
-/// A callback passed to [`IsolateHandle::request_interrupt`].
-type InterruptCallback = extern "C" fn(&mut Isolate, *mut c_void);
-
-/// Spawns a thread that will terminate execution
-/// when `budget` has been used up.
-///
-/// Every `callback_every` ticks, `callback` is called.
-#[allow(dead_code)]
-fn run_timeout_and_cb_every(
-    handle: IsolateHandle,
-    callback_every: u64,
-    callback: InterruptCallback,
-    budget: ReducerBudget,
-) -> Arc<AtomicBool> {
-    // When `execution_done_flag` is set, the ticker thread will stop.
-    let execution_done_flag = Arc::new(AtomicBool::new(false));
-    let execution_done_flag2 = execution_done_flag.clone();
-
-    let timeout = budget_to_duration(budget);
-    let max_ticks = ticks_in_duration(timeout);
-
-    let mut num_ticks = 0;
-    epoch_ticker(move || {
-        // Check if execution completed.
-        if execution_done_flag2.load(Ordering::Relaxed) {
-            return None;
-        }
-
-        // We've reached the number of ticks to call `callback`.
-        if num_ticks % callback_every == 0 && handle.request_interrupt(callback, ptr::null_mut()) {
-            return None;
-        }
-
-        if num_ticks == max_ticks {
-            // Execution still ongoing while budget has been exhausted.
-            // Terminate V8 execution.
-            // This implements "gas" for v8.
-            handle.terminate_execution();
-        }
-
-        num_ticks += 1;
-        Some(())
-    });
-
-    execution_done_flag
-}
-
-/// Converts a [`ReducerBudget`] to a [`Duration`].
-#[allow(dead_code)]
-fn budget_to_duration(_budget: ReducerBudget) -> Duration {
-    // TODO(v8): This is fake logic that allows a maximum timeout.
-    // Replace with sensible math.
-    Duration::MAX
-}
-
-/// Converts a [`Duration`] to a [`ReducerBudget`].
-fn duration_to_budget(_duration: Duration) -> ReducerBudget {
-    // TODO(v8): This is fake logic that allows minimum energy usage.
-    // Replace with sensible math.
-    ReducerBudget::ZERO
 }
 
 /// Calls free function `fun` with `args`.

@@ -1,13 +1,13 @@
 use std::rc::Rc;
 
-use super::de::{deserialize_js, scratch_buf};
+use super::de::{deserialize_js, property, scratch_buf};
 use super::error::{module_exception, ExcResult, ExceptionThrown, TypeError};
 use super::from_value::cast;
 use super::ser::serialize_to_js;
 use super::string::{str_from_ident, StringConst};
 use super::{
-    call_free_fun, env_on_isolate, exception_already_thrown, property, BufferTooSmall, CodeError, JsInstanceEnv,
-    JsStackTrace, TerminationError, Throwable,
+    call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace,
+    TerminationError, Throwable,
 };
 use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
