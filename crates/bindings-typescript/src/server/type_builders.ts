@@ -13,6 +13,8 @@ import {
   type TimestampAlgebraicType,
 } from '..';
 import type { OptionAlgebraicType } from '../lib/option';
+import { addType, MODULE_DEF } from './runtime';
+import type { CoerceRow } from './table';
 import { set, type Set } from './type_util';
 
 /**
@@ -154,10 +156,16 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
    *
    * e.g. `string` corresponds to `AlgebraicType.String`
    */
-  readonly algebraicType: SpacetimeType;
+  readonly algebraicType: SpacetimeType | AlgebraicTypeVariants.Ref;
 
-  constructor(algebraicType: SpacetimeType) {
+  constructor(algebraicType: SpacetimeType | AlgebraicTypeVariants.Ref) {
     this.algebraicType = algebraicType;
+  }
+
+  resolveType(): SpacetimeType {
+    let ty: AlgebraicType = this.algebraicType;
+    while (ty.tag === 'Ref') ty = MODULE_DEF.typespace.types[ty.value];
+    return ty as SpacetimeType;
   }
 
   optional(): OptionBuilder<typeof this> {
@@ -1142,7 +1150,7 @@ export class ProductBuilder<Elements extends ElementsObj>
   >
   implements Defaultable<TypeScriptTypeFromElementsObj<Elements>, any>
 {
-  constructor(elements: Elements) {
+  constructor(elements: Elements, name?: string) {
     function elementsArrayFromElementsObj<Obj extends ElementsObj>(obj: Obj) {
       return Object.entries(obj).map(([name, { algebraicType }]) => ({
         name,
@@ -1150,9 +1158,12 @@ export class ProductBuilder<Elements extends ElementsObj>
       }));
     }
     super(
-      AlgebraicType.Product({
-        elements: elementsArrayFromElementsObj(elements),
-      })
+      addType(
+        name,
+        AlgebraicType.Product({
+          elements: elementsArrayFromElementsObj(elements),
+        })
+      )
     );
   }
   default(
@@ -1172,26 +1183,25 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
     value: { elements: ElementsArrayFromRowObj<Row> };
   }
 > {
+  row: CoerceRow<Row>;
   constructor(row: Row) {
-    function elementsArrayFromRowObj<Obj extends RowObj>(obj: Obj) {
-      return Object.entries(obj).map(([name, innerObj]) => {
-        let innerType: AlgebraicType;
-        if (innerObj instanceof ColumnBuilder) {
-          innerType = innerObj.typeBuilder.algebraicType;
-        } else {
-          innerType = innerObj.algebraicType;
-        }
-        return {
-          name,
-          algebraicType: innerType!,
-        };
-      });
-    }
-    super(
-      AlgebraicType.Product({
-        elements: elementsArrayFromRowObj(row) as ElementsArrayFromRowObj<Row>,
-      })
-    );
+    const mappedRow = Object.fromEntries(
+      Object.entries(row).map(([name, builder]) => [
+        name,
+        builder instanceof ColumnBuilder
+          ? builder
+          : new ColumnBuilder(builder, {}),
+      ])
+    ) as CoerceRow<Row>;
+
+    const elements = Object.entries(mappedRow).map(([name, builder]) => ({
+      name,
+      algebraicType: builder.typeBuilder.algebraicType,
+    })) as ElementsArrayFromRowObj<Row>;
+
+    super(addType(undefined, AlgebraicType.Product({ elements })));
+
+    this.row = mappedRow;
   }
 }
 
@@ -1199,7 +1209,7 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
   TypeScriptTypeFromVariantsObj<Variants>,
   { tag: 'Sum'; value: { variants: VariantsArrayFromVariantsObj<Variants> } }
 > {
-  constructor(variants: Variants) {
+  constructor(variants: Variants, name?: string) {
     function variantsArrayFromVariantsObj<Variants extends VariantsObj>(
       variants: Variants
     ) {
@@ -1209,9 +1219,12 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
       }));
     }
     super(
-      AlgebraicType.Sum({
-        variants: variantsArrayFromVariantsObj(variants),
-      })
+      addType(
+        name,
+        AlgebraicType.Sum({
+          variants: variantsArrayFromVariantsObj(variants),
+        })
+      )
     );
   }
   default(
@@ -2633,8 +2646,8 @@ export const t = {
    * values must be {@link TypeBuilder}s.
    * @returns A new {@link ProductBuilder} instance
    */
-  object<Obj extends ElementsObj>(obj: Obj): ProductBuilder<Obj> {
-    return new ProductBuilder(obj);
+  object<Obj extends ElementsObj>(name: string, obj: Obj): ProductBuilder<Obj> {
+    return new ProductBuilder(obj, name);
   },
 
   /**
@@ -2678,8 +2691,8 @@ export const t = {
    * types must be `TypeBuilder`s.
    * @returns A new {@link SumBuilder} instance
    */
-  enum<Obj extends VariantsObj>(obj: Obj): SumBuilder<Obj> {
-    return new SumBuilder(obj);
+  enum<Obj extends VariantsObj>(name: string, obj: Obj): SumBuilder<Obj> {
+    return new SumBuilder(obj, name);
   },
 
   /**

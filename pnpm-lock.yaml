@@ -50,6 +50,9 @@ importers:
       base64-js:
         specifier: ^1.5.1
         version: 1.5.1
+      fast-text-encoding:
+        specifier: ^1.0.0
+        version: 1.0.6
       prettier:
         specifier: ^3.3.3
         version: 3.6.2

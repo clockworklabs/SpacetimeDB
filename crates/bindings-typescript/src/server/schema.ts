@@ -17,6 +17,7 @@ import {
   type ParamsObj,
   type Reducer,
 } from './reducers';
+import type { AlgebraicTypeVariants } from '../lib/algebraic_type';
 
 /**
  * An untyped representation of the database schema.
@@ -118,7 +119,7 @@ class Schema<S extends UntypedSchemaDef> {
    * );
    * ```
    */
-  reducer<Params extends ParamsObj | RowObj>(
+  reducer<Params extends ParamsObj>(
     name: string,
     params: Params,
     fn: Reducer<S, Params>
@@ -268,23 +269,31 @@ export function schema(
   // type reference, inserting the product type reference into the
   // table.
   let productTypeRef: AlgebraicTypeRef = 0;
-  const typespace: Typespace = {
-    types: [],
-  };
-  handles.forEach(h => {
-    const tableType = h.rowSpacetimeType;
-    // Insert the table type into the typespace
-    typespace.types.push(tableType);
-    h.tableDef.productTypeRef = productTypeRef;
-    // Increment the product type reference
-    productTypeRef++;
-  });
+  // const typespace: Typespace = {
+  //   types: [],
+  // };
+  // handles.forEach(h => {
+  //   const tableType = h.rowSpacetimeType;
+  //   // Insert the table type into the typespace
+  //   // typespace.types.push(tableType);
+  //   // h.tableDef.productTypeRef = productTypeRef;
+  //   // Increment the product type reference
+  //   productTypeRef++;
+  // });
 
   // Side-effect:
   // Modify the `MODULE_DEF` which will be read by
   // __describe_module__
   MODULE_DEF.tables.push(...tableDefs);
-  MODULE_DEF.typespace = typespace;
+  // MODULE_DEF.typespace = typespace;
+  // throw new Error(
+  //   MODULE_DEF.tables
+  //     .map(t => {
+  //       const p = MODULE_DEF.typespace.types[t.productTypeRef];
+  //       return `${t.name}: ${t.productTypeRef} ${p && (p as AlgebraicTypeVariants.Product).value.elements.map(x => x.name)}`;
+  //     })
+  //     .join('\n')
+  // );
 
-  return new Schema(tableDefs, typespace);
+  return new Schema(tableDefs, MODULE_DEF.typespace);
 }

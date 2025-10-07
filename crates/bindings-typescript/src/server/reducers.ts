@@ -15,8 +15,7 @@ export type ParamsObj = Record<string, TypeBuilder<any, any>>;
 /**
  * Helper to convert a ParamsObj or RowObj into an object type
  */
-type ParamsAsObject<ParamDef extends ParamsObj | RowObj> =
-  InferTypeOfRow<ParamDef>;
+type ParamsAsObject<ParamDef extends ParamsObj> = InferTypeOfRow<ParamDef>;
 
 /**
  * Defines a SpacetimeDB reducer function.
@@ -44,10 +43,10 @@ type ParamsAsObject<ParamDef extends ParamsObj | RowObj> =
  * );
  * ```
  */
-export type Reducer<S extends UntypedSchemaDef, Params extends RowObj> = (
+export type Reducer<S extends UntypedSchemaDef, Params extends ParamsObj> = (
   ctx: ReducerCtx<S>,
   payload: ParamsAsObject<Params>
-) => void;
+) => void | { tag: 'ok' } | { tag: 'err'; value: string };
 
 /**
  * A type representing the database view, mapping table names to their corresponding Table handles.
@@ -102,10 +101,7 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
  * );
  * ```
  */
-export function reducer<
-  S extends UntypedSchemaDef,
-  Params extends ParamsObj | RowObj,
->(
+export function reducer<S extends UntypedSchemaDef, Params extends ParamsObj>(
   name: string,
   params: Params,
   fn: (ctx: ReducerCtx<S>, payload: ParamsAsObject<Params>) => void

@@ -4,6 +4,7 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  AlgebraicType as __AlgebraicTypeType,
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
@@ -12,7 +13,6 @@ import {
   TimeDuration as __TimeDuration,
   Timestamp as __Timestamp,
   deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
   type TableHandle as __TableHandle,
 } from '../../index';
@@ -48,6 +48,8 @@ export type AlgebraicType =
   | AlgebraicTypeVariants.F32
   | AlgebraicTypeVariants.F64;
 
+let algebraic_type_type: AlgebraicType | null = null;
+
 // A value with helper functions to construct the type.
 export const AlgebraicType = {
   // Helper functions for constructing each variant of the tagged union.
@@ -56,7 +58,7 @@ export const AlgebraicType = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  Ref: (value: number): AlgebraicType => ({ tag: 'Ref', value }),
+  Ref: (value: number): AlgebraicTypeVariants.Ref => ({ tag: 'Ref', value }),
   Sum: (value: SumType): AlgebraicType => ({ tag: 'Sum', value }),
   Product: (value: ProductType): AlgebraicType => ({ tag: 'Product', value }),
   Array: (value: AlgebraicType): AlgebraicType => ({ tag: 'Array', value }),
@@ -78,84 +80,85 @@ export const AlgebraicType = {
   F64: { tag: 'F64' } as const,
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        { name: 'Ref', algebraicType: __AlgebraicTypeValue.U32 },
-        { name: 'Sum', algebraicType: SumType.getTypeScriptAlgebraicType() },
-        {
-          name: 'Product',
-          algebraicType: ProductType.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'Array',
-          algebraicType: AlgebraicType.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'String',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'Bool',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'I8',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'U8',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'I16',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'U16',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'I32',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'U32',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'I64',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'U64',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'I128',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'U128',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'I256',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'U256',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'F32',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'F64',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-      ],
-    });
+    if (algebraic_type_type) return algebraic_type_type;
+    algebraic_type_type = __AlgebraicTypeValue.Sum({ variants: [] });
+    algebraic_type_type.value.variants.push(
+      { name: 'Ref', algebraicType: __AlgebraicTypeValue.U32 },
+      { name: 'Sum', algebraicType: SumType.getTypeScriptAlgebraicType() },
+      {
+        name: 'Product',
+        algebraicType: ProductType.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'Array',
+        algebraicType: AlgebraicType.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'String',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'Bool',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'I8',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'U8',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'I16',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'U16',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'I32',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'U32',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'I64',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'U64',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'I128',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'U128',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'I256',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'U256',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'F32',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'F64',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      }
+    );
+    return algebraic_type_type;
   },
 
   serialize(writer: __BinaryWriter, value: AlgebraicType): void {

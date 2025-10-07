@@ -1,5 +1,8 @@
-import type { Reducer } from 'react';
-import { AlgebraicType, ProductType } from '../lib/algebraic_type';
+import {
+  AlgebraicType,
+  ProductType,
+  type AlgebraicTypeVariants,
+} from '../lib/algebraic_type';
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
@@ -17,9 +20,17 @@ import {
   type UniqueIndex,
   type RangedIndex,
 } from './indexes';
-import { type RowType, type Table, type TableMethods } from './table';
-import { type DbView, type ReducerCtx } from './reducers';
-import type { RowObj } from './type_builders';
+import {
+  type AlgebraicTypeRef,
+  type RowType,
+  type Table,
+  type TableMethods,
+} from './table';
+import { type DbView, type ReducerCtx, type Reducer } from './reducers';
+import type { RowBuilder, RowObj } from './type_builders';
+
+import * as _syscalls from 'spacetime:sys@1.0';
+import type { u16, u32, u128, u256 } from 'spacetime:sys@1.0';
 
 /**
  * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
@@ -33,6 +44,40 @@ export const MODULE_DEF: RawModuleDefV9 = {
   rowLevelSecurity: [],
 };
 
+const COMPOUND_TYPES = new Map<
+  AlgebraicTypeVariants.Product | AlgebraicTypeVariants.Sum,
+  AlgebraicTypeVariants.Ref
+>();
+
+export function addType<T extends AlgebraicType>(
+  name: string | undefined,
+  ty: T
+): T | AlgebraicTypeVariants.Ref {
+  if (
+    (ty.tag === 'Product' && ty.value.elements.length > 0) ||
+    (ty.tag === 'Sum' && ty.value.variants.length > 0)
+  ) {
+    let r = COMPOUND_TYPES.get(ty);
+    if (r == null) {
+      r = AlgebraicType.Ref(MODULE_DEF.typespace.types.length);
+      MODULE_DEF.typespace.types.push(ty);
+      COMPOUND_TYPES.set(ty, r);
+      if (name != null)
+        MODULE_DEF.types.push({
+          name: {
+            scope: [],
+            name,
+          },
+          ty: r.value,
+          customOrdering: true,
+        });
+    }
+    return r;
+  } else {
+    return ty;
+  }
+}
+
 /**
  * internal: pushReducer() helper used by reducer() and lifecycle wrappers
  *
@@ -43,10 +88,12 @@ export const MODULE_DEF: RawModuleDefV9 = {
  */
 export function pushReducer(
   name: string,
-  params: RowObj,
+  params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
   lifecycle?: RawReducerDefV9['lifecycle']
 ): void {
+  registerModuleHooks();
+
   const paramType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
@@ -65,104 +112,24 @@ export function pushReducer(
 
 const REDUCERS: Reducer<any, any>[] = [];
 
-type u8 = number;
-type u16 = number;
-type u32 = number;
-type u64 = bigint;
-type u128 = bigint;
-type u256 = bigint;
-
-declare global {
-  function table_id_from_name(name: string): u32;
-  function index_id_from_name(name: string): u32;
-  function datastore_table_row_count(table_id: u32): u64;
-  function datastore_table_scan_bsatn(table_id: u32): u32;
-  function datastore_index_scan_range_bsatn(
-    index_id: u32,
-    prefix: Uint8Array,
-    prefix_elems: u16,
-    rstart: Uint8Array,
-    rend: Uint8Array
-  ): u32;
-  function row_iter_bsatn_advance(
-    iter: u32,
-    buffer_max_len: u32
-  ): [boolean, Uint8Array];
-  function row_iter_bsatn_close(iter: u32): void;
-  function datastore_insert_bsatn(table_id: u32, row: Uint8Array): Uint8Array;
-  function datastore_update_bsatn(
-    table_id: u32,
-    index_id: u32,
-    row: Uint8Array
-  ): Uint8Array;
-  function datastore_delete_by_index_scan_range_bsatn(
-    index_id: u32,
-    prefix: Uint8Array,
-    prefix_elems: u16,
-    rstart: Uint8Array,
-    rend: Uint8Array
-  ): u32;
-  function datastore_delete_all_by_eq_bsatn(
-    table_id: u32,
-    relation: Uint8Array
-  ): u32;
-  function volatile_nonatomic_schedule_immediate(
-    reducer_name: string,
-    args: Uint8Array
-  ): void;
-  function console_log(level: u8, message: string): void;
-  function console_timer_start(name: string): u32;
-  function console_timer_end(span_id: u32): void;
-  function identity(): { __identity__: u256 };
-
-  function __call_reducer__(
-    reducer_id: u32,
-    sender: u256,
-    conn_id: u128,
-    timestamp: bigint,
-    args: Uint8Array
-  ): void;
-  function __describe_module__(): Uint8Array;
-}
-
 const { freeze } = Object;
 
-const _syscalls = () => ({
-  table_id_from_name,
-  index_id_from_name,
-  datastore_table_row_count,
-  datastore_table_scan_bsatn,
-  datastore_index_scan_range_bsatn,
-  row_iter_bsatn_advance,
-  row_iter_bsatn_close,
-  datastore_insert_bsatn,
-  datastore_update_bsatn,
-  datastore_delete_by_index_scan_range_bsatn,
-  datastore_delete_all_by_eq_bsatn,
-  volatile_nonatomic_schedule_immediate,
-  console_log,
-  console_timer_start,
-  console_timer_end,
-  identity,
-});
+const sys: typeof _syscalls = freeze(
+  Object.fromEntries(
+    Object.entries(_syscalls).map(([name, syscall]) => [
+      name,
+      wrapSyscall(syscall),
+    ])
+  ) as typeof _syscalls
+);
 
-const sys = {} as ReturnType<typeof _syscalls>;
-function initSys() {
-  if (Object.isFrozen(sys)) return;
-  for (const [name, syscall] of Object.entries(_syscalls())) {
-    (sys as any)[name] = wrapSyscall(syscall);
-  }
-  freeze(sys);
-}
-
-const __call_reducer__: typeof globalThis.__call_reducer__ = (
-  reducer_id,
-  sender,
-  conn_id,
-  timestamp,
-  args_buf
-) => {
-  initSys();
+export function __call_reducer__(
+  reducer_id: u32,
+  sender: u256,
+  conn_id: u128,
+  timestamp: bigint,
+  args_buf: Uint8Array
+): { tag: 'ok' } | { tag: 'err'; value: string } {
   const args_type = AlgebraicType.Product(
     MODULE_DEF.reducers[reducer_id].params
   );
@@ -173,34 +140,27 @@ const __call_reducer__: typeof globalThis.__call_reducer__ = (
   const ctx: ReducerCtx<any> = freeze({
     sender: new Identity(sender),
     get identity() {
-      return new Identity(_syscalls().identity().__identity__);
+      return new Identity(sys.identity().__identity__);
     },
     timestamp: new Timestamp(timestamp),
     connection_id: ConnectionId.nullIfZero(new ConnectionId(conn_id)),
     db: getDbView(),
   });
-  REDUCERS[reducer_id](ctx, args);
-  return { tag: 'ok' };
-};
+  return REDUCERS[reducer_id](ctx, args) ?? { tag: 'ok' };
+}
 
-const __describe_module__: typeof globalThis.__describe_module__ = () => {
-  initSys();
-
+export function __describe_module__(): Uint8Array {
   const writer = new BinaryWriter(128);
-  AlgebraicType.serializeValue(
-    writer,
-    RawModuleDef.getTypeScriptAlgebraicType(),
-    RawModuleDef.V9(MODULE_DEF)
-  );
+  RawModuleDef.serialize(writer, RawModuleDef.V9(MODULE_DEF));
   return writer.getBuffer();
-};
+}
 
 let hooksRegistered = false;
 export function registerModuleHooks() {
   if (hooksRegistered) return;
   hooksRegistered = true;
-  globalThis.__call_reducer__ = __call_reducer__;
-  globalThis.__describe_module__ = __describe_module__;
+  // globalThis.__call_reducer__ = __call_reducer__;
+  // globalThis.__describe_module__ = __describe_module__;
 }
 
 let DB_VIEW: DbView<any> | null = null;

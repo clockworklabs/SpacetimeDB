@@ -7,6 +7,7 @@ import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type { AllUnique } from './constraints';
 import type { TryInsertError } from './errors';
 import type { ColumnIndex, IndexColumns, Indexes, IndexOpts } from './indexes';
+import { MODULE_DEF } from './runtime';
 import {
   RowBuilder,
   type ColumnBuilder,
@@ -214,9 +215,8 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     row = new RowBuilder(row);
   }
 
-  let nextColId = 0;
-  row.algebraicType.value.elements.forEach(elem => {
-    colIds.set(elem.name, nextColId++);
+  row.resolveType().value.elements.forEach((elem, i) => {
+    colIds.set(elem.name, i);
     colNameList.push(elem.name);
   });
 
@@ -228,9 +228,8 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   let scheduleAtCol: ColId | undefined;
 
-  for (const [name, builder] of Object.entries(row)) {
-    const meta: ColumnMetadata<any> =
-      'columnMetadata' in builder ? builder.columnMetadata : {};
+  for (const [name, builder] of Object.entries(row.row)) {
+    const meta: ColumnMetadata<any> = builder.columnMetadata;
 
     if (meta.isPrimaryKey) {
       pk.push(colIds.get(name)!);
@@ -309,11 +308,10 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // Temporarily set the type ref to 0. We will set this later
   // in the schema function.
-  const productTypeRef = 0;
 
   const tableDef: RawTableDefV9 = {
     name,
-    productTypeRef,
+    productTypeRef: row.algebraicType.value as number,
     primaryKey: pk,
     indexes,
     constraints,
@@ -330,8 +328,14 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
   };
 
+  MODULE_DEF.types.push({
+    customOrdering: true,
+    name: { scope: [], name },
+    ty: row.algebraicType.value as number,
+  });
+
   const productType = AlgebraicType.Product({
-    elements: row.algebraicType.value.elements.map(elem => {
+    elements: row.resolveType().value.elements.map(elem => {
       return { name: elem.name, algebraicType: elem.algebraicType };
     }),
   });
@@ -340,7 +344,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableName: name,
     rowSpacetimeType: productType,
     tableDef,
-    idxs: userIndexes as OptsIndices<Opts>,
+    idxs: indexes as OptsIndices<Opts>,
     rowType: {} as CoerceRow<Row>,
   };
 }
