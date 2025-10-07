@@ -19,20 +19,20 @@ SpacetimeAuth dashboard: [https://spacetimedb.com/spacetimeauth](https://spaceti
 You can also click on your profile icon in the top right corner and select
 "SpacetimeAuth" from the dropdown menu.
 
-![Access the menu](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-menu-access.png)
+![Access the menu](/images/spacetimeauth/menu-access.png)
 
 ## 2. Creating a New Project
 
 Once you're in the SpacetimeAuth dashboard, you can create a new project by
 clicking the "New Project" button.
 
-![Create project](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-new-project.png)
+![Create project](/images/spacetimeauth/new-project.png)
 
 ## 3. Exploring the Dashboard
 
 After creating a project, you can access the dashboard by clicking on the project
 name in the list of projects.
-![Project list](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-projects-list.png)
+![Project list](/images/spacetimeauth/projects-list.png)
 
 The dashboard provides you with multiple tabs to manage different aspects of
 your project:
@@ -47,7 +47,7 @@ your project:
   etc.) that can be used to authenticate users in your project.
 - **Customization**: Live editor to customize colors, logos, and authentication methods.
 
-![Project overview](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-project-overview.png)
+![Project overview](/images/spacetimeauth/project-overview.png)
 
 ## 4. Next Steps
 
