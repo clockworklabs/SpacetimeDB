@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 
 use chrono::{Datelike, Local};
-use clap::{Arg, Command};
+use clap::{Arg, ArgGroup, Command};
 use duct::cmd;
 use regex::Regex;
 use semver::Version;
@@ -89,6 +89,12 @@ fn main() -> anyhow::Result<()> {
                 .long("csharp")
                 .action(clap::ArgAction::SetTrue)
                 .help("Also bump versions in C# SDK and templates"),
+        )
+        .group(
+            ArgGroup::new("update-targets")
+                .args(["typescript", "rust-and-cli", "csharp"])
+                .required(true)
+                .multiple(true),
         )
         .get_matches();
 
