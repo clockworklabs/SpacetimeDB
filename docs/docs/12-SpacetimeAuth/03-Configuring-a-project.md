@@ -24,7 +24,7 @@ post logout URIs, and name.
 
 You can manage clients by navigating to the "Clients" tab in your
 SpacetimeAuth project dashboard.
-![Clients tab](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-clients-tab.png)
+![Clients tab](/images/spacetimeauth/clients-tab.png)
 Every project comes with a default client that you can use to get started.
 You can also create additional clients by clicking the "Create Client" button.
 
@@ -45,7 +45,7 @@ When creating or editing a client, you can configure the following settings:
 Remember to keep your client secret secure, **never** expose it in client-side code or public repositories. You can freely share the client ID as it is not sensitive information. Client secrets are only used during the `client_credentials` flow, allowing you to get a token with no user context (the `sub` claim will be set to the client ID).`
 :::
 
-![Edit client](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-edit-client.png)
+![Edit client](/images/spacetimeauth/edit-client.png)
 
 ### Scopes and Claims
 
@@ -101,7 +101,7 @@ For example the username claim is mapped to the standard `preferred_username` cl
 You can manage identity providers by navigating to the "Identity Providers" tab
 in your SpacetimeAuth project dashboard.
 
-![Identity Providers tab](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/spacetimeauth-identity-providers.png)
+![Identity Providers tab](/images/spacetimeauth/identity-providers.png)
 
 Since SpacetimeAuth acts as a client for the external identity provider,
 you need to provide the client ID and client secret obtained
