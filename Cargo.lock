@@ -6025,6 +6025,7 @@ dependencies = [
  "reqwest 0.12.15",
  "rustc-demangle",
  "rustc-hash 2.1.1",
+ "ry_temporal_capi",
  "scopeguard",
  "semver",
  "serde",
@@ -6064,10 +6065,12 @@ dependencies = [
  "strum",
  "tabled",
  "tempfile",
+ "temporal_rs",
  "thin-vec",
  "thiserror 1.0.69",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
+ "timezone_provider 0.0.11",
  "tokio",
  "tokio-metrics",
  "tokio-stream",
@@ -7107,14 +7110,16 @@ checksum = "7807e330b12e288b847a3e2a2b0dcd41ca764d0f90f9e8940f02c6ddd68cd2d7"
 dependencies = [
  "combine",
  "core_maths",
+ "iana-time-zone",
  "icu_calendar",
  "icu_locale",
  "ixdtf",
  "jiff-tzdb",
  "num-traits",
- "timezone_provider",
+ "timezone_provider 0.0.14",
  "tinystr 0.8.1",
  "tzif",
+ "web-time",
  "writeable 0.6.1",
 ]
 
@@ -7290,6 +7295,17 @@ checksum = "3526739392ec93fd8b359c8e98514cb3e8e021beb4e5f597b00a0221f8ed8a49"
 dependencies = [
  "num-conv",
  "time-core",
+]
+
+[[package]]
+name = "timezone_provider"
+version = "0.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d1fc912f1a2ced7bc0cfed255b2ab58cdcf8df442f11bc02c8f3b9245588d4c"
+dependencies = [
+ "tinystr 0.8.1",
+ "zerotrie",
+ "zerovec 0.11.4",
 ]
 
 [[package]]
