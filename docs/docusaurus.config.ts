@@ -38,6 +38,7 @@ const config: Config = {
   baseUrl: '/',
 
   onBrokenLinks: 'throw',
+  onBrokenAnchors: 'throw',
   markdown: {
     hooks: {
       onBrokenMarkdownImages: 'throw',
@@ -98,6 +99,7 @@ const config: Config = {
       logo: {
         alt: 'SpacetimeDB Logo',
         src: 'https://spacetimedb.com/images/brand.png',
+        href: 'https://spacetimedb.com',
       },
       hideOnScroll: false,
       items: [

@@ -82,20 +82,20 @@ You write SQL queries specifying what information a client is interested in -- f
 
 Every SpacetimeDB database contains a collection of [stored procedures](https://en.wikipedia.org/wiki/Stored_procedure) and schema definitions. Such a collection is called a **module**, which can be written in C# or Rust. They specify a database schema and the business logic that responds to client requests. Modules are administered using the `spacetime` CLI tool.
 
-- [Rust](/docs/modules/rust) - [(Quickstart)](/docs/modules/rust/quickstart)
-- [C#](/docs/modules/c-sharp) - [(Quickstart)](/docs/modules/c-sharp/quickstart)
+- [Rust](/modules/rust) - [(Quickstart)](/modules/rust/quickstart)
+- [C#](/modules/c-sharp) - [(Quickstart)](/modules/c-sharp/quickstart)
 
 ### Client-side SDKs
 
 **Clients** are applications that connect to SpacetimeDB databases. The `spacetime` CLI tool supports automatically generating interface code that makes it easy to interact with a particular database.
 
-- [Rust](/docs/sdks/rust) - [(Quickstart)](/docs/sdks/rust/quickstart)
-- [C#](/docs/sdks/c-sharp) - [(Quickstart)](/docs/sdks/c-sharp/quickstart)
-- [TypeScript](/docs/sdks/typescript) - [(Quickstart)](/docs/sdks/typescript/quickstart)
+- [Rust](/sdks/rust) - [(Quickstart)](/sdks/rust/quickstart)
+- [C#](/sdks/c-sharp) - [(Quickstart)](/sdks/c-sharp/quickstart)
+- [TypeScript](/sdks/typescript) - [(Quickstart)](/sdks/typescript/quickstart)
 
 ### Unity
 
-SpacetimeDB was designed first and foremost as the backend for multiplayer Unity games. To learn more about using SpacetimeDB with Unity, jump on over to the [SpacetimeDB Unity Tutorial](/docs/unity/part-1).
+SpacetimeDB was designed first and foremost as the backend for multiplayer Unity games. To learn more about using SpacetimeDB with Unity, jump on over to the [SpacetimeDB Unity Tutorial](/unity/part-1).
 
 ## Key architectural concepts
 
@@ -273,7 +273,7 @@ public static void World(ReducerContext ctx)
 ```
 
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](/docs/modules/c-sharp#scheduled-reducers) to run at an interval,
+a reducer can [schedule another reducer](/modules/c-sharp#scheduled-reducers) to run at an interval,
 or at a specific time.
 
 </TabItem>
@@ -317,7 +317,7 @@ def identity_from_claims(issuer: str, subject: str) -> [u8; 32]:
    return identity_big_endian_bytes
 ```
 
-You can obtain a JWT from our turnkey identity provider [SpacetimeAuth](docs/XX-SpacetimeAuth), or you can get one from any OpenID Connect compliant identity provider.
+You can obtain a JWT from our turnkey identity provider [SpacetimeAuth](/spacetimeauth), or you can get one from any OpenID Connect compliant identity provider.
 
 ### ConnectionId
 
@@ -343,7 +343,7 @@ A user has a single [`Identity`](#identity), but may open multiple connections t
    Just install our command line tool and then upload your application to the cloud.
 
 1. How do I create a new database with SpacetimeDB?
-   Follow our [Quick Start](/docs/getting-started) guide!
+   Follow our [Quick Start](/getting-started) guide!
 
 1. How do I create a Unity game with SpacetimeDB?
-   Follow our [Unity Tutorial](/docs/unity) guide!
+   Follow our [Unity Tutorial](/unity) guide!
