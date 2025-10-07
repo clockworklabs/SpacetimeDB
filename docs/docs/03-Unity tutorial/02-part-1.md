@@ -1,5 +1,6 @@
 ---
 title: 1 - Setup
+slug: /unity/part-1
 ---
 
 # Unity Tutorial - Part 1 - Setup
