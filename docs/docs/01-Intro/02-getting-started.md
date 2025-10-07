@@ -6,7 +6,7 @@ slug: /getting-started
 
 To develop SpacetimeDB databases locally, you will need to run the Standalone version of the server.
 
-1. [Install](/install) the SpacetimeDB CLI (Command Line Interface)
+1. [Install](https://spacetimedb.com/install) the SpacetimeDB CLI (Command Line Interface)
 2. Run the start command:
 
 ```bash
