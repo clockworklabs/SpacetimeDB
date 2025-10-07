@@ -107,5 +107,5 @@ actions they are allowed to perform.
 
 ## Getting Started
 
-Check out our [Creating a project guide](/spacetimeauth/create-project) to
+Check out our [Creating a project guide](/spacetimeauth/creating-a-project) to
 learn how to create and configure a SpacetimeAuth project.

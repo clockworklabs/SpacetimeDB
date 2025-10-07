@@ -657,8 +657,8 @@ column
     ;
 ```
 
-[sdk]: /docs/sdks/rust#subscribe-to-queries
-[http]: /docs/http/database#post-v1databasename_or_identitysql
-[cli]: /docs/cli-reference#spacetime-sql
-[Identity]: /docs#identity
-[ConnectionId]: /docs#connectionid
+[sdk]: /sdks/rust#subscribe-to-queries
+[http]: /http/database#post-v1databasename_or_identitysql
+[cli]: /cli-reference#spacetime-sql
+[Identity]: /#identity
+[ConnectionId]: /#connectionid

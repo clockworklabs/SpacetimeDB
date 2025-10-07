@@ -83,7 +83,7 @@ This parameter is automatically bound to the requesting client's [Identity].
 
 Note that module owners have unrestricted access to all tables regardless of RLS.
 
-[Identity]: /docs/#identity
+[Identity]: /#identity
 
 ### Semantic Constraints
 
@@ -330,11 +330,11 @@ they do apply to the subscriptions that use them.
 For example, it is valid for an RLS rule to have more joins than are supported by subscriptions.
 However a client will not be able to subscribe to the table for which that rule is defined.
 
-[reference docs]: /docs/sql#subscriptions
+[reference docs]: /sql#subscriptions
 
 ## Best Practices
 
 1. Use `:sender` for client specific filtering.
 2. Follow the [SQL best practices] for optimizing your RLS rules.
 
-[SQL best practices]: /docs/sql#best-practices-for-performance-and-scalability
+[SQL best practices]: /sql#best-practices-for-performance-and-scalability

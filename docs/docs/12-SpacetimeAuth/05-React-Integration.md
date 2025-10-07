@@ -20,8 +20,8 @@ in React.
 ## Prerequisites
 
 1. Create a SpacetimeAuth project and configure a client as described in the
-   [Getting Started](/spacetimeauth/create-project) and
-   [Configuration](/spacetimeauth/configure-project) guides.
+   [Getting Started](/spacetimeauth/creating-a-project) and
+   [Configuration](/spacetimeauth/configuring-a-project) guides.
 2. Have a React application set up. You can use Create React App or any other
    React framework.
 3. Install the `react-oidc-context` package in your React application:
