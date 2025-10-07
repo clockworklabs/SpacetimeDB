@@ -1,6 +1,6 @@
 ---
 title: Configuring your project
-slug: /spacetimeauth/configure-project
+slug: /spacetimeauth/configuring-a-project
 ---
 
 # Configuring a SpacetimeAuth Project
@@ -137,5 +137,5 @@ Now that you have created and configured a SpacetimeAuth project, you can
 start integrating it into your application. Before writing code, we recommend
 verifying your setup with a quick test.
 
-- [Test your configuration with OIDC Debugger](/spacetimeauth/testing-authentication)
+- [Test your configuration with OIDC Debugger](/spacetimeauth/testing)
 - [React integration guide](/spacetimeauth/react-integration)
