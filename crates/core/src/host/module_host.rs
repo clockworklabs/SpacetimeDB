@@ -327,8 +327,10 @@ pub enum Module {
 }
 
 pub enum Instance {
-    Wasm(super::wasmtime::ModuleInstance),
-    Js(super::v8::JsInstance),
+    // Box these instances because they're very different sizes,
+    // which makes Clippy sad and angry.
+    Wasm(Box<super::wasmtime::ModuleInstance>),
+    Js(Box<super::v8::JsInstance>),
 }
 
 impl Module {
@@ -354,8 +356,8 @@ impl Module {
     }
     fn create_instance(&self) -> Instance {
         match self {
-            Module::Wasm(module) => Instance::Wasm(module.create_instance()),
-            Module::Js(module) => Instance::Js(module.create_instance()),
+            Module::Wasm(module) => Instance::Wasm(Box::new(module.create_instance())),
+            Module::Js(module) => Instance::Js(Box::new(module.create_instance())),
         }
     }
     fn host_type(&self) -> HostType {
