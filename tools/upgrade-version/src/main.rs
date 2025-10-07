@@ -93,7 +93,8 @@ fn main() -> anyhow::Result<()> {
         .group(
             ArgGroup::new("update-targets")
                 .args(["typescript", "rust-and-cli", "csharp"])
-                .required(true),
+                .required(true)
+                .multiple(true),
         )
         .get_matches();
 
