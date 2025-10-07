@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 
 use chrono::{Datelike, Local};
-use clap::{Arg, Command};
+use clap::{Arg, ArgGroup, Command};
 use duct::cmd;
 use regex::Regex;
 use semver::Version;
@@ -90,6 +90,11 @@ fn main() -> anyhow::Result<()> {
                 .action(clap::ArgAction::SetTrue)
                 .help("Also bump versions in C# SDK and templates"),
         )
+        .group(
+            ArgGroup::new("update-targets")
+                .args(["typescript", "rust-and-cli", "csharp"])
+                .required(true),
+        )
         .get_matches();
 
     let version = matches.get_one::<String>("upgrade_version").unwrap();
@@ -103,6 +108,9 @@ fn main() -> anyhow::Result<()> {
         anyhow::bail!("You must execute this binary from inside of the SpacetimeDB directory, or use --spacetime-path");
     }
 
+    let semver = Version::parse(version).expect("Invalid semver provided to upgrade-version");
+    let major_minor = format!("{}.{}.*", semver.major, semver.minor);
+
     if matches.get_flag("rust-and-cli") {
         // root Cargo.toml
         edit_toml("Cargo.toml", |doc| {
@@ -113,17 +121,18 @@ fn main() -> anyhow::Result<()> {
                 .iter_mut()
             {
                 if key.get().starts_with("spacetime") {
-                    dep["version"] = toml_edit::value(version)
+                    // Use major.minor.* for this dependency, to avoid issues where Cargo automatically rolls forward
+                    // to later minor versions.
+                    // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
+                    dep["version"] = toml_edit::value(major_minor.clone())
                 }
             }
         })?;
 
         edit_toml("crates/cli/src/subcommands/project/rust/Cargo._toml", |doc| {
-            // Only set major.minor for the spacetimedb dependency, drop the patch component.
+            // Only use major.minor for the spacetimedb dependency.
             // See https://github.com/clockworklabs/SpacetimeDB/issues/2724.
-            let v = Version::parse(version).expect("Invalid semver provided to upgrade-version");
-            let major_minor = format!("{}.{}", v.major, v.minor);
-            doc["dependencies"]["spacetimedb"] = toml_edit::value(major_minor);
+            doc["dependencies"]["spacetimedb"] = toml_edit::value(major_minor.clone());
         })?;
 
         process_license_file("LICENSE.txt", version);
