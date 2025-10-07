@@ -1,5 +1,6 @@
 ---
 title: 1 - Setup
+slug: /unreal/part-1
 ---
 
 # Unreal Tutorial - Part 1 - Setup

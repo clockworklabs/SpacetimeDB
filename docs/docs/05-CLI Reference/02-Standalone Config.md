@@ -1,5 +1,6 @@
 ---
 title: Standalone Configuration
+slug: /cli-reference/standalone-config
 ---
 
 # `spacetimedb-standalone` configuration

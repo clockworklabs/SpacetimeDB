@@ -1,5 +1,6 @@
 ---
 title: BSATN Data Format
+slug: /bsatn
 ---
 
 # Binary SATN Format (BSATN)

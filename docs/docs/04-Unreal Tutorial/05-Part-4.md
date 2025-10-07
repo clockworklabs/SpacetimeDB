@@ -1,5 +1,6 @@
 ---
 title: 4 - Moving and Colliding
+slug: /unreal/part-4
 ---
 
 import Tabs from '@theme/Tabs';

@@ -1,5 +1,6 @@
 ---
 title: Rust Reference
+slug: /modules/rust
 ---
 
 # Rust Module SDK Reference

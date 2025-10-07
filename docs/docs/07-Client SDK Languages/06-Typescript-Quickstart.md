@@ -1,5 +1,6 @@
 ---
 title: TypeScript Quickstart
+slug: /sdks/typescript/quickstart
 ---
 
 # TypeScript Client SDK Quickstart

@@ -1,5 +1,6 @@
 ---
 title: 2 - Connecting to SpacetimeDB
+slug: /unreal/part-2
 ---
 
 import Tabs from '@theme/Tabs';

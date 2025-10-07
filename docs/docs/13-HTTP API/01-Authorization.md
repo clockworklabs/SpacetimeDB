@@ -1,5 +1,6 @@
 ---
 title: Authorization
+slug: /http/authorization
 ---
 
 # SpacetimeDB HTTP Authorization

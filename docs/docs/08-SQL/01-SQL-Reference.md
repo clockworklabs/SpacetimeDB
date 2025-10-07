@@ -1,5 +1,6 @@
 ---
 title: SQL Reference
+slug: /sql
 ---
 
 # SQL Support
