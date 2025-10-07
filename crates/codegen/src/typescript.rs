@@ -167,10 +167,12 @@ impl Lang for TypeScript {
  * but to directly chain method calls,
  * like `ctx.db.{accessor_method}.on_insert(...)`.
  */
-export class {table_handle} {{
+export class {table_handle}<TableName extends string> implements __TableHandle<TableName> {{
 "
         );
         out.indent(1);
+        writeln!(out, "// phantom type to track the table name");
+        writeln!(out, "readonly tableName!: TableName;");
         writeln!(out, "tableCache: __TableCache<{row_type}>;");
         writeln!(out);
         writeln!(out, "constructor(tableCache: __TableCache<{row_type}>) {{");
@@ -364,7 +366,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
                 .expect("Failed to generate table due to validation errors");
             writeln!(out, "{}: {{", table.name);
             out.indent(1);
-            writeln!(out, "tableName: \"{}\",", table.name);
+            writeln!(out, "tableName: \"{}\" as const,", table.name);
             writeln!(out, "rowType: {row_type}.getTypeScriptAlgebraicType(),");
             if let Some(pk) = schema.pk() {
                 // This is left here so we can release the codegen change before releasing a new
@@ -610,7 +612,7 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
         let table_handle = table_name_pascalcase.clone() + "TableHandle";
         let type_ref = table.product_type_ref;
         let row_type = type_ref_name(module, type_ref);
-        writeln!(out, "get {table_name_camelcase}(): {table_handle} {{");
+        writeln!(out, "get {table_name_camelcase}(): {table_handle}<'{table_name}'> {{");
         out.with_indent(|out| {
             writeln!(out, "// clientCache is a private property");
             writeln!(
@@ -687,6 +689,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "DbConnectionBuilder as __DbConnectionBuilder",
         "TableCache as __TableCache",
         "BinaryWriter as __BinaryWriter",
+        "type TableHandle as __TableHandle",
         "type CallReducerFlags as __CallReducerFlags",
         "type EventContextInterface as __EventContextInterface",
         "type ReducerEventContextInterface as __ReducerEventContextInterface",
