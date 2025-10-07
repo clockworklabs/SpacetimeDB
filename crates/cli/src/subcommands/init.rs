@@ -1,3 +1,4 @@
+mod template;
 use crate::util::ModuleLanguage;
 use crate::Config;
 use crate::{detect::find_executable, util::UNSTABLE_WARNING};
@@ -5,6 +6,7 @@ use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
+use template as init_template;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("init")
@@ -12,16 +14,53 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("project-path")
                 .value_parser(clap::value_parser!(PathBuf))
-                .default_value(".")
                 .help("The path where we will create the spacetime project"),
         )
         .arg(
+            Arg::new("name")
+                .short('n')
+                .long("name")
+                .value_name("NAME")
+                .help("Project name (defaults to directory name if not provided)"),
+        )
+        .arg(
             Arg::new("lang")
-                .required(true)
                 .short('l')
                 .long("lang")
                 .help("The spacetime module language.")
                 .value_parser(clap::value_parser!(ModuleLanguage)),
+        )
+        .arg(
+            Arg::new("server-lang")
+                .long("server-lang")
+                .value_name("LANG")
+                .help("Server language: rust, csharp, typescript"),
+        )
+        .arg(
+            Arg::new("template")
+                .short('t')
+                .long("template")
+                .value_name("TEMPLATE")
+                .help("Template ID or GitHub repository (owner/repo or URL)"),
+        )
+        .arg(
+            Arg::new("client-lang")
+                .long("client-lang")
+                .value_name("LANG")
+                .help("Client language: rust, csharp, typescript, none"),
+        )
+        .arg(
+            Arg::new("local")
+                .long("local")
+                .action(clap::ArgAction::SetTrue)
+                .help("Use local deployment instead of Maincloud (non-interactive mode only)"),
+        )
+        .arg(
+            Arg::new("non-interactive")
+                .short('y')
+                .long("non-interactive")
+                .action(clap::ArgAction::SetTrue)
+                .help("Run in non-interactive mode with default or provided options"),
         )
 }
 
@@ -113,58 +152,93 @@ fn check_for_git() -> bool {
     false
 }
 
-pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     eprintln!("{UNSTABLE_WARNING}\n");
 
-    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-    let project_lang = *args.get_one::<ModuleLanguage>("lang").unwrap();
+    let project_path = args.get_one::<PathBuf>("project-path");
+    let template = args.get_one::<String>("template");
+    let non_interactive = args.get_flag("non-interactive");
+    let lang = args.get_one::<ModuleLanguage>("lang");
+    let server_lang = args.get_one::<String>("server-lang");
+    let client_lang = args.get_one::<String>("client-lang");
 
-    // Create the project path, or make sure the target project path is empty.
-    if project_path.exists() {
-        if !project_path.is_dir() {
-            return Err(anyhow::anyhow!(
-                "Path {} exists but is not a directory. A new SpacetimeDB project must be initialized in an empty directory.",
-                project_path.display()
-            ));
-        }
+    // Determine if we should run in non-interactive mode
+    let is_non_interactive =
+        non_interactive || template.is_some() || lang.is_some() || server_lang.is_some() || client_lang.is_some();
 
-        if std::fs::read_dir(project_path).unwrap().count() > 0 {
-            return Err(anyhow::anyhow!(
-                "Cannot create new SpacetimeDB project in non-empty directory: {}",
-                project_path.display()
-            ));
-        }
-    } else {
-        create_directory(project_path)?;
+    if is_non_interactive {
+        return init_template::exec_non_interactive_init(&mut config, args).await;
     }
 
-    match project_lang {
-        ModuleLanguage::Rust => exec_init_rust(args).await,
-        ModuleLanguage::Csharp => exec_init_csharp(args).await,
-    }
+    // Interactive mode
+    let path = project_path.cloned().unwrap_or_else(|| PathBuf::from("."));
+    init_template::exec_interactive_init(&mut config, &path).await
 }
 
-pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-
+pub fn init_rust_project(project_path: &Path) -> Result<(), anyhow::Error> {
     let export_files = vec![
-        (include_str!("project/rust/Cargo._toml"), "Cargo.toml"),
-        (include_str!("project/rust/lib._rs"), "src/lib.rs"),
-        (include_str!("project/rust/_gitignore"), ".gitignore"),
-        (include_str!("project/rust/config._toml"), ".cargo/config.toml"),
+        (
+            include_str!("../../templates/basic-rust/server/Cargo.toml"),
+            "Cargo.toml",
+        ),
+        (
+            include_str!("../../templates/basic-rust/server/src/lib.rs"),
+            "src/lib.rs",
+        ),
+        (
+            include_str!("../../templates/basic-rust/server/.gitignore"),
+            ".gitignore",
+        ),
+        (
+            include_str!("../../templates/basic-rust/server/.cargo/config.toml"),
+            ".cargo/config.toml",
+        ),
     ];
 
     for data_file in export_files {
         let path = project_path.join(data_file.1);
-
         create_directory(path.parent().unwrap())?;
-
         std::fs::write(path, data_file.0)?;
     }
 
-    // Check all dependencies
     check_for_cargo();
     check_for_git();
+
+    Ok(())
+}
+
+pub fn init_csharp_project(project_path: &Path) -> Result<(), anyhow::Error> {
+    let export_files = vec![
+        (
+            include_str!("../../templates/basic-c-sharp/server/StdbModule.csproj"),
+            "StdbModule.csproj",
+        ),
+        (include_str!("../../templates/basic-c-sharp/server/Lib.cs"), "Lib.cs"),
+        (
+            include_str!("../../templates/basic-c-sharp/server/.gitignore"),
+            ".gitignore",
+        ),
+        (
+            include_str!("../../templates/basic-c-sharp/server/global.json"),
+            "global.json",
+        ),
+    ];
+
+    check_for_dotnet();
+    check_for_git();
+
+    for data_file in export_files {
+        let path = project_path.join(data_file.1);
+        create_directory(path.parent().unwrap())?;
+        std::fs::write(path, data_file.0)?;
+    }
+
+    Ok(())
+}
+
+pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
+    init_rust_project(project_path)?;
 
     println!(
         "{}",
@@ -176,25 +250,7 @@ pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
 
 pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-
-    let export_files = vec![
-        (include_str!("project/csharp/StdbModule._csproj"), "StdbModule.csproj"),
-        (include_str!("project/csharp/Lib._cs"), "Lib.cs"),
-        (include_str!("project/csharp/_gitignore"), ".gitignore"),
-        (include_str!("project/csharp/global._json"), "global.json"),
-    ];
-
-    // Check all dependencies
-    check_for_dotnet();
-    check_for_git();
-
-    for data_file in export_files {
-        let path = project_path.join(data_file.1);
-
-        create_directory(path.parent().unwrap())?;
-
-        std::fs::write(path, data_file.0)?;
-    }
+    init_csharp_project(project_path)?;
 
     println!(
         "{}",

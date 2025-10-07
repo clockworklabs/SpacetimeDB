@@ -1,0 +1,11 @@
+{
+  "name": "spacetimedb-server",
+  "license": "ISC",
+  "type": "module",
+  "scripts": {
+    "build": "spacetime build"
+  },
+  "dependencies": {
+    "spacetimedb": "^1.5.0"
+  }
+}

@@ -16,7 +16,7 @@
     "spacetime:publish": "spacetime publish chat --project-path server --server testnet"
   },
   "dependencies": {
-    "spacetimedb": "workspace:*",
+    "spacetimedb": "^1.5.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
