@@ -9,14 +9,14 @@ In this guide, you'll learn how to use TypeScript to create a SpacetimeDB client
 
 Please note that TypeScript is supported as a client language only. **Before you get started on this guide**, you should complete one of the quickstart guides for creating a SpacetimeDB server module listed below.
 
-- [Rust](/docs/modules/rust/quickstart)
-- [C#](/docs/modules/c-sharp/quickstart)
+- [Rust](/modules/rust/quickstart)
+- [C#](/modules/c-sharp/quickstart)
 
 By the end of this introduction, you will have created a basic single page web app which connects to the `quickstart-chat` database created in the above module quickstart guides.
 
 ## Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/modules/rust/quickstart) or [C# Module Quickstart](/docs/modules/c-sharp/quickstart) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/modules/rust/quickstart) or [C# Module Quickstart](/modules/c-sharp/quickstart) guides:
 
 ```bash
 cd quickstart-chat
@@ -467,7 +467,7 @@ spacetime generate --lang typescript --out-dir client/src/module_bindings --proj
 
 :::note
 
-This command assumes you've already created a server module in `quickstart-chat/server`. If you haven't completed one of the server module quickstart guides, you can follow either the [Rust](/docs/modules/rust/quickstart) or [C#](/docs/modules/c-sharp/quickstart) module quickstart to create one and then return here.
+This command assumes you've already created a server module in `quickstart-chat/server`. If you haven't completed one of the server module quickstart guides, you can follow either the [Rust](/modules/rust/quickstart) or [C#](/modules/c-sharp/quickstart) module quickstart to create one and then return here.
 
 :::
 
@@ -764,4 +764,4 @@ At this point you've learned how to create a basic TypeScript client for your Sp
 
 ## What's next?
 
-We covered a lot here, but we haven't covered everything. Take a look at our [reference documentation](/docs/sdks/typescript) to find out how you can use SpacetimeDB in more advanced ways, including managing reducer errors and subscribing to reducer events.
+We covered a lot here, but we haven't covered everything. Take a look at our [reference documentation](/sdks/typescript) to find out how you can use SpacetimeDB in more advanced ways, including managing reducer errors and subscribing to reducer events.

@@ -336,7 +336,7 @@ class SubscriptionBuilder {
 
 Subscribe to a set of queries.
 
-See [the SpacetimeDB SQL Reference](/docs/sql#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
+See [the SpacetimeDB SQL Reference](/sql#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
 
 ##### Method `subscribeToAllTables`
 

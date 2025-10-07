@@ -39,7 +39,7 @@ Generate a short-lived access token which can be used in untrusted contexts, e.g
 
 | Name            | Value                                                                         |
 | --------------- | ----------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http/authorization). |
+| `Authorization` | A Spacetime token [encoded as Basic authorization](/http/authorization). |
 
 #### Returns
 
@@ -81,7 +81,7 @@ Associate an email with a Spacetime identity.
 
 | Name            | Value                                                                         |
 | --------------- | ----------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http/authorization). |
+| `Authorization` | A Spacetime token [encoded as Basic authorization](/http/authorization). |
 
 ## `GET /v1/identity/:identity/databases`
 
@@ -119,7 +119,7 @@ Verify the validity of an identity/token pair.
 
 | Name            | Value                                                                         |
 | --------------- | ----------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http/authorization). |
+| `Authorization` | A Spacetime token [encoded as Basic authorization](/http/authorization). |
 
 #### Returns
 
