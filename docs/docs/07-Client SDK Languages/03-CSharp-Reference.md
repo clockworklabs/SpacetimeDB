@@ -8,19 +8,19 @@ slug: /sdks/c-sharp
 
 The SpacetimeDB client for C# contains all the tools you need to build native clients for SpacetimeDB modules using C#.
 
-| Name                                                              | Description                                                                                              |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| [Project setup](#project-setup)                                   | Configure a C# project to use the SpacetimeDB C# client SDK.                                             |
-| [Generate module bindings](#generate-module-bindings)             | Use the SpacetimeDB CLI to generate module-specific types and interfaces.                                |
-| [`DbConnection` type](#type-dbconnection)                         | A connection to a remote database.                                                                       |
-| [`IDbContext` interface](#interface-idbcontext)                   | Methods for interacting with the remote database.                                                        |
-| [`EventContext` type](#type-eventcontext)                         | Implements [`IDbContext`](##interface-idbcontext) for [row callbacks](#callback-oninsert).               |
-| [`ReducerEventContext` type](#type-reducereventcontext)           | Implements [`IDbContext`](##interface-idbcontext) for [reducer callbacks](#observe-and-invoke-reducers). |
-| [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | Implements [`IDbContext`](##interface-idbcontext) for [subscription callbacks](#subscribe-to-queries).   |
-| [`ErrorContext` type](#type-errorcontext)                         | Implements [`IDbContext`](##interface-idbcontext) for error-related callbacks.                           |
-| [Access the client cache](#access-the-client-cache)               | Access to your local view of the database.                                                               |
-| [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers.  |
-| [Identify a client](#identify-a-client)                           | Types for identifying users and client connections.                                                      |
+| Name                                                              | Description                                                                                             |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [Project setup](#project-setup)                                   | Configure a C# project to use the SpacetimeDB C# client SDK.                                            |
+| [Generate module bindings](#generate-module-bindings)             | Use the SpacetimeDB CLI to generate module-specific types and interfaces.                               |
+| [`DbConnection` type](#type-dbconnection)                         | A connection to a remote database.                                                                      |
+| [`IDbContext` interface](#interface-idbcontext)                   | Methods for interacting with the remote database.                                                       |
+| [`EventContext` type](#type-eventcontext)                         | Implements [`IDbContext`](#interface-idbcontext) for [row callbacks](#callback-oninsert).               |
+| [`ReducerEventContext` type](#type-reducereventcontext)           | Implements [`IDbContext`](#interface-idbcontext) for [reducer callbacks](#observe-and-invoke-reducers). |
+| [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | Implements [`IDbContext`](#interface-idbcontext) for [subscription callbacks](#subscribe-to-queries).   |
+| [`ErrorContext` type](#type-errorcontext)                         | Implements [`IDbContext`](#interface-idbcontext) for error-related callbacks.                           |
+| [Access the client cache](#access-the-client-cache)               | Access to your local view of the database.                                                              |
+| [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers. |
+| [Identify a client](#identify-a-client)                           | Types for identifying users and client connections.                                                     |
 
 ## Project setup
 

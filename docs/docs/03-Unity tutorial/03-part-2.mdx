@@ -10,11 +10,11 @@ import TabItem from '@theme/TabItem';
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-This progressive tutorial is continued from [part 1](/docs/unity/part-1).
+This progressive tutorial is continued from [part 1](/unity/part-1).
 
 ## Create a Server Module
 
-If you have not already installed the `spacetime` CLI, check out our [Getting Started](/docs/getting-started) guide for instructions on how to install.
+If you have not already installed the `spacetime` CLI, check out our [Getting Started](/getting-started) guide for instructions on how to install.
 
 In your `blackholio` directory, run the following command to initialize the SpacetimeDB server module project with your desired language:
 
@@ -143,11 +143,11 @@ The `[PrimaryKey]` attribute, specifies that the `id` field should be used as th
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
-You can learn more the `table` macro in our [Rust module reference](/docs/modules/rust).
+You can learn more the `table` macro in our [Rust module reference](/modules/rust).
 
 </TabItem>
 <TabItem value="csharp" label="C#">
-You can learn more the `Table` attribute in our [C# module reference](/docs/modules/c-sharp).
+You can learn more the `Table` attribute in our [C# module reference](/modules/c-sharp).
 </TabItem>
 </Tabs>
 
@@ -644,7 +644,7 @@ public class GameManager : MonoBehaviour
 
 Here we configure the connection to the database, by passing it some callbacks in addition to providing the `SERVER_URI` and `MODULE_NAME` to the connection. When the client connects, the SpacetimeDB SDK will call the `HandleConnect` method, allowing us to start up the game.
 
-In our `HandleConnect` callback we build a subscription and are calling `Subscribe` and subscribing to all data in the database. This will cause SpacetimeDB to synchronize the state of all your tables with your Unity client's SpacetimeDB SDK's "client cache". You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/docs/sql) enumerates the operations that are accepted in our SQL syntax.
+In our `HandleConnect` callback we build a subscription and are calling `Subscribe` and subscribing to all data in the database. This will cause SpacetimeDB to synchronize the state of all your tables with your Unity client's SpacetimeDB SDK's "client cache". You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/sql) enumerates the operations that are accepted in our SQL syntax.
 
 ---
 
@@ -678,4 +678,4 @@ spacetime logs blackholio
 
 You've learned how to setup a Unity project with the SpacetimeDB SDK, write a basic SpacetimeDB server module, and how to connect your Unity client to SpacetimeDB. That's pretty much all there is to the setup. You're now ready to start building the game.
 
-In the [next part](/docs/unity/part-3), we'll build out the functionality of the game and you'll learn how to access your table data and call reducers in Unity.
+In the [next part](/unity/part-3), we'll build out the functionality of the game and you'll learn how to access your table data and call reducers in Unity.
