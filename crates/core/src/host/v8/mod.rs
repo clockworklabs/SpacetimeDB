@@ -341,13 +341,8 @@ impl JsInstance {
                     with_timeout_and_cb_every(handle, EPOCH_TICKS_PER_SECOND, cb_log_long_running, budget, || {
                         // Enter the scope.
                         with_scope(&mut isolate, |scope| {
-                            let res = catch_exception(scope, |scope| {
-                                // Prepare the JS module that has `__call_reducer__`.
-                                let (module, _) = eval_user_module(scope, &self.program)?;
-                                let object = module_object(scope, module)?;
-                                Ok(object)
-                            })
-                            .map_err(anyhow::Error::from);
+                            // Prepare the JS module that has `__call_reducer__`.
+                            let res = eval_user_module_catch(scope, &self.program);
 
                             let env = env_on_isolate(scope);
 
@@ -406,7 +401,7 @@ fn find_source_map(code: &str) -> Option<&str> {
     })
 }
 
-/// Compile, instantiate, and evaluate `code` as a module.
+/// Compiles, instantiate, and evaluate `code` as a module.
 fn eval_module<'scope>(
     scope: &PinScope<'scope, '_>,
     resource_name: Local<'scope, Value>,
@@ -455,13 +450,29 @@ fn eval_module<'scope>(
     Ok((module, value))
 }
 
-/// Compile, instantiate, and evaluate the user module with `code`.
+/// Compiles, instantiate, and evaluate the user module with `code`.
 fn eval_user_module<'scope>(
     scope: &PinScope<'scope, '_>,
     code: &str,
 ) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, Value>)> {
     let name = str_from_ident!(spacetimedb_module).string(scope).into();
     eval_module(scope, name, 0, code, resolve_sys_module)
+}
+
+/// Compiles, instantiate, and evaluate the user module with `code`
+/// and catch any exceptions.
+///
+/// Returns the module's object.
+fn eval_user_module_catch<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    program: &str,
+) -> anyhow::Result<Local<'scope, Object>> {
+    catch_exception(scope, |scope| {
+        let (module, _) = eval_user_module(scope, program)?;
+        let object = module_object(scope, module)?;
+        Ok(object)
+    })
+    .map_err(Into::into)
 }
 
 /// Runs `logic` on `isolate`, providing the former with a [`PinScope`].
@@ -553,13 +564,7 @@ fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
     let handle = isolate.thread_safe_handle();
     with_timeout_and_cb_every(handle, callback_every, callback, budget, || {
         with_scope(&mut isolate, |scope| {
-            let object = catch_exception(scope, |scope| {
-                let (module, _) = eval_user_module(scope, program)?;
-                let object = module_object(scope, module)?;
-                Ok(object)
-            })
-            .map_err(Into::into)
-            .map_err(DescribeError::Setup)?;
+            let object = eval_user_module_catch(scope, program).map_err(DescribeError::Setup)?;
 
             run_describer(log_traceback, || {
                 catch_exception(scope, |scope| {
