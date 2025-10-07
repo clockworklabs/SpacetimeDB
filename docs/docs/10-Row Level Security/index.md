@@ -1,5 +1,6 @@
 ---
 title: Row Level Security
+slug: /rls
 ---
 
 import Tabs from '@theme/Tabs';

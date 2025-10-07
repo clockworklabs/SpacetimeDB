@@ -1,5 +1,6 @@
 ---
 title: Overview
+slug: /modules
 ---
 
 # Server Module Overview
@@ -17,7 +18,7 @@ Rust is the only fully supported language for server modules. Rust is a great op
 - [Rust Module Reference](/docs/modules/rust)
 - [Rust Module Quickstart Guide](/docs/modules/rust/quickstart)
 
-### C #
+### C
 
 We have C# support available. C# can be a good choice for developers who are already using Unity or .net for their client applications.
 

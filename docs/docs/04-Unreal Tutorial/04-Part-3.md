@@ -1,5 +1,6 @@
 ---
 title: 3 - Gameplay
+slug: /unreal/part-3
 ---
 
 import Tabs from '@theme/Tabs';

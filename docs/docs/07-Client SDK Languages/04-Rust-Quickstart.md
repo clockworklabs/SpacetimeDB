@@ -1,5 +1,6 @@
 ---
 title: Rust Quickstart
+slug: /sdks/rust/quickstart
 ---
 
 # Rust Client SDK Quick Start

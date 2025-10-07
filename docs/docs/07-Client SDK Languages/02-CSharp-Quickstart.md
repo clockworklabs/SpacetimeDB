@@ -1,5 +1,6 @@
 ---
 title: C# Quickstart
+slug: /sdks/c-sharp/quickstart
 ---
 
 # C# Client SDK Quick Start

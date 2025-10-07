@@ -1,5 +1,6 @@
 ---
 title: Rust Quickstart
+slug: /modules/rust/quickstart
 ---
 
 # Rust Module Quickstart

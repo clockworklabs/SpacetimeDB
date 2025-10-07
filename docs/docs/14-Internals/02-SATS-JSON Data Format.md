@@ -1,3 +1,7 @@
+---
+slug: /sats-json
+---
+
 # SATS-JSON Data Format
 
 The Spacetime Algebraic Type System JSON format defines how Spacetime `AlgebraicType`s and `AlgebraicValue`s are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the [HTTP Databases API](/docs/http/database) and the WebSocket text protocol. Note that SATS-JSON is not self-describing, and so a SATS value represented in JSON requires knowing the value's schema to meaningfully understand it - for example, it's not possible to tell whether a JSON object with a single field is a `ProductValue` with one element or a `SumValue`.

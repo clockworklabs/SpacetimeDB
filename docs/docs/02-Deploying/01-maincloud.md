@@ -1,5 +1,6 @@
 ---
 title: Maincloud
+slug: /deploying/maincloud
 ---
 
 # Deploy to Maincloud

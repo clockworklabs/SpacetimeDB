@@ -1,6 +1,7 @@
 ---
 title: C# Reference
 toc_max_heading_level: 6
+slug: /sdks/c-sharp
 ---
 
 # The SpacetimeDB C# client SDK

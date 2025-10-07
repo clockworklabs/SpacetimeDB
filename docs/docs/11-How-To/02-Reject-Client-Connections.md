@@ -1,3 +1,7 @@
+---
+slug: /how-to/reject-client-connections
+---
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
