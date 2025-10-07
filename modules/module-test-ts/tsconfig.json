@@ -20,7 +20,6 @@
     "useDefineForClassFields": true,
 
     // Crucial when using esbuild/swc/babel instead of tsc emit:
-    "verbatimModuleSyntax": true,
     "isolatedModules": true
   },
   "include": ["src/index.ts", "tests/**/*", "vitest.config.ts", "tsup.config.ts"],

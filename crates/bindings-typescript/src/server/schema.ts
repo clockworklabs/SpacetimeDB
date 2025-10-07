@@ -119,12 +119,28 @@ class Schema<S extends UntypedSchemaDef> {
    * );
    * ```
    */
-  reducer<Params extends ParamsObj>(
+  reducer<Params extends ParamsObj | RowObj>(
     name: string,
     params: Params,
     fn: Reducer<S, Params>
+  ): void;
+  reducer(name: string, fn: Reducer<S, {}>): void;
+  reducer<Params extends ParamsObj | RowObj>(
+    name: string,
+    paramsOrFn: Params | Reducer<S, any>,
+    fn?: Reducer<S, Params>
   ): void {
-    reducer(name, params, fn);
+    if (typeof paramsOrFn === 'function') {
+      // This is the case where params are omitted.
+      // The second argument is the reducer function.
+      // We pass an empty object for the params.
+      reducer(name, {}, paramsOrFn);
+    } else {
+      // This is the case where params are provided.
+      // The second argument is the params object, and the third is the function.
+      // The `fn` parameter is guaranteed to be defined here.
+      reducer(name, paramsOrFn, fn!);
+    }
   }
 
   /**

@@ -2642,12 +2642,25 @@ export const t = {
    * are essentially the same as objects in JavaScript/TypeScript.
    * Properties of the object must also be {@link TypeBuilder}s.
    * Represented as an object with specific properties in TypeScript.
+   *
+   * @param name (optional) A display name for the product type. If omitted, an anonymous product type is created.
    * @param obj The object defining the properties of the type, whose property
    * values must be {@link TypeBuilder}s.
-   * @returns A new {@link ProductBuilder} instance
+   * @returns A new {@link ProductBuilder} instance.
    */
-  object<Obj extends ElementsObj>(name: string, obj: Obj): ProductBuilder<Obj> {
-    return new ProductBuilder(obj, name);
+  object: ((nameOrObj: any, maybeObj?: any) => {
+    if (typeof nameOrObj === 'string') {
+      if (!maybeObj) {
+        throw new TypeError(
+          'When providing a name, you must also provide the object.'
+        );
+      }
+      return new ProductBuilder(maybeObj, nameOrObj);
+    }
+    return new ProductBuilder(nameOrObj, undefined);
+  }) as {
+    <Obj extends ElementsObj>(name: string, obj: Obj): ProductBuilder<Obj>;
+    <Obj extends ElementsObj>(obj: Obj): ProductBuilder<Obj>;
   },
 
   /**
@@ -2687,12 +2700,25 @@ export const t = {
    * are similar to enums or unions in languages like Rust or TypeScript respectively.
    * Each variant of the enum must be a {@link TypeBuilder}.
    * Represented as a union of string literals in TypeScript.
+   *
+   * @param name (optional) A display name for the sum type. If omitted, an anonymous sum type is created.
    * @param obj The object defining the variants of the enum, whose variant
-   * types must be `TypeBuilder`s.
-   * @returns A new {@link SumBuilder} instance
+   * types must be {@link TypeBuilder}s.
+   * @returns A new {@link SumBuilder} instance.
    */
-  enum<Obj extends VariantsObj>(name: string, obj: Obj): SumBuilder<Obj> {
-    return new SumBuilder(obj, name);
+  enum: ((nameOrObj: any, maybeObj?: any) => {
+    if (typeof nameOrObj === 'string') {
+      if (!maybeObj) {
+        throw new TypeError(
+          'When providing a name, you must also provide the variants object.'
+        );
+      }
+      return new SumBuilder(maybeObj, nameOrObj);
+    }
+    return new SumBuilder(nameOrObj, undefined);
+  }) as {
+    <Obj extends VariantsObj>(name: string, obj: Obj): SumBuilder<Obj>;
+    <Obj extends VariantsObj>(obj: Obj): SumBuilder<Obj>;
   },
 
   /**

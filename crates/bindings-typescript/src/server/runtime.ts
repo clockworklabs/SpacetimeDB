@@ -127,18 +127,16 @@ const sys: typeof _syscalls = freeze(
 );
 
 export function __call_reducer__(
-  reducer_id: u32,
+  reducerId: u32,
   sender: u256,
-  conn_id: u128,
+  connId: u128,
   timestamp: bigint,
-  args_buf: Uint8Array
+  argsBuf: Uint8Array
 ): { tag: 'ok' } | { tag: 'err'; value: string } {
-  const args_type = AlgebraicType.Product(
-    MODULE_DEF.reducers[reducer_id].params
-  );
+  const argsType = AlgebraicType.Product(MODULE_DEF.reducers[reducerId].params);
   const args = AlgebraicType.deserializeValue(
-    new BinaryReader(args_buf),
-    args_type
+    new BinaryReader(argsBuf),
+    argsType
   );
   const ctx: ReducerCtx<any> = freeze({
     sender: new Identity(sender),
@@ -146,10 +144,10 @@ export function __call_reducer__(
       return new Identity(sys.identity().__identity__);
     },
     timestamp: new Timestamp(timestamp),
-    connection_id: ConnectionId.nullIfZero(new ConnectionId(conn_id)),
+    connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
     db: getDbView(),
   });
-  return REDUCERS[reducer_id](ctx, args) ?? { tag: 'ok' };
+  return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
 }
 
 export function __describe_module__(): Uint8Array {

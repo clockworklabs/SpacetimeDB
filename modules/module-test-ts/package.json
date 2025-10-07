@@ -7,7 +7,8 @@
     "build": "tsup"
   },
   "dependencies": {
-    "fast-text-encoding": "^1.0.0"
+    "fast-text-encoding": "^1.0.0",
+    "spacetimedb": "workspace:^"
   },
   "devDependencies": {
     "tsup": "^8.1.0"

@@ -1,4 +1,4 @@
-import { TextDecoder } from 'fast-text-encoding';
+import 'fast-text-encoding';
 
 export default class BinaryReader {
   /**

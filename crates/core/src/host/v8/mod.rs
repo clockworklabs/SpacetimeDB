@@ -650,6 +650,7 @@ fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
     let budget = ReducerBudget::DEFAULT_BUDGET;
     let callback_every = EPOCH_TICKS_PER_SECOND;
     extern "C" fn callback(_: &mut Isolate, _: *mut c_void) {}
+    println!("program   = {}", program);
 
     let mut isolate = Isolate::new(<_>::default());
     let handle = isolate.thread_safe_handle();

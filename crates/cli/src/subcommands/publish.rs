@@ -129,8 +129,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         println!("(JS) Skipping build. Instead we are publishing {}", path.display());
         (path.clone(), "Js")
     } else {
-        let path = build::exec_with_argstring(config.clone(), path_to_project, build_options).await?;
-        (path, "Wasm")
+        build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
     };
     let program_bytes = fs::read(path_to_program)?;
 

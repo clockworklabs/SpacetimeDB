@@ -119,7 +119,7 @@ export default defineConfig([
     clean: true,
     platform: 'neutral', // flip to 'node' if you actually rely on Node builtins
     treeshake: 'smallest',
-    external: ['undici'],
+    external: ['undici', /^spacetime:sys.*$/],
     noExternal: ['base64-js'],
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
