@@ -10,7 +10,7 @@ import TabItem from '@theme/TabItem';
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-This progressive tutorial is continued from [part 3](/docs/unreal/part-3).
+This progressive tutorial is continued from [part 3](/unreal/part-3).
 
 ### Moving the player
 

@@ -34,14 +34,14 @@ You are now ready to start developing SpacetimeDB modules. See below for a quick
 
 ### Server (Module)
 
-- [Rust](/docs/modules/rust/quickstart)
-- [C#](/docs/modules/c-sharp/quickstart)
+- [Rust](/modules/rust/quickstart)
+- [C#](/modules/c-sharp/quickstart)
 
 ⚡**Note:** Rust is [roughly 2x faster](https://faun.dev/c/links/faun/c-vs-rust-vs-go-a-performance-benchmarking-in-kubernetes/) than C#
 
 ### Client
 
-- [Rust](/docs/sdks/rust/quickstart)
-- [C# (Standalone)](/docs/sdks/c-sharp/quickstart)
-- [C# (Unity)](/docs/unity/part-1)
-- [Typescript](/docs/sdks/typescript/quickstart)
+- [Rust](/sdks/rust/quickstart)
+- [C# (Standalone)](/sdks/c-sharp/quickstart)
+- [C# (Unity)](/unity/part-1)
+- [Typescript](/sdks/typescript/quickstart)

@@ -26,7 +26,7 @@ implemented, or behave differently:
 
 - **Protocol Version**: Only _PGWire_ protocol _version 3.0_ is supported, and only the _Simple Query Protocol_, and
   without parameterized queries.
-- **SQL Features**: Only the subset of SQL features documented in the [SQL documentation](/docs/sql) are
+- **SQL Features**: Only the subset of SQL features documented in the [SQL documentation](/sql) are
   supported. Subscription queries do not update in real time.
 - **Authentication**: SpacetimeDB does not implement database users or roles. The connection string
   `user_name@database_name` ignores `user_name`; only `database_name` is used. Authentication is based on the _auth
@@ -98,7 +98,7 @@ eval "$(spacetime login show --token | python3 ~/token.py)"
 ## Examples
 
 In the following example, we assume you are using the `quickstart-chat` database created in
-the [Rust Module Quickstart](/docs/modules/rust/quickstart) or [C# Module Quickstart](/docs/modules/c-sharp/quickstart),
+the [Rust Module Quickstart](/modules/rust/quickstart) or [C# Module Quickstart](/modules/c-sharp/quickstart),
 and have set the `auth token` as shown above.
 
 ### Using `psql`

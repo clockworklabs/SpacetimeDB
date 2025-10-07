@@ -366,7 +366,7 @@ impl SubscriptionBuilder {
 
 Subscribe to a set of queries. `queries` should be a string or an array, vec or slice of strings.
 
-See [the SpacetimeDB SQL Reference](/docs/sql#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
+See [the SpacetimeDB SQL Reference](/sql#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
 
 ##### Method `subscribe_to_all_tables`
 
