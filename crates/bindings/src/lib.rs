@@ -667,16 +667,16 @@ pub use spacetimedb_bindings_macro::table;
 pub use spacetimedb_bindings_macro::reducer;
 
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
-/// The other is [`SenderViewContext`].
+/// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
-pub struct ViewContext {
+pub struct AnonymousViewContext {
     pub db: LocalReadOnly,
 }
 
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
-/// The other is [`ViewContext`].
+/// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
-pub struct SenderViewContext {
+pub struct ViewContext {
     pub sender: Identity,
     pub connection_id: Option<ConnectionId>,
     pub db: LocalReadOnly,
@@ -780,14 +780,14 @@ impl ReducerContext {
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
     }
 
-    /// Create a pure read-only view context (no sender).
-    pub fn as_view(&self) -> ViewContext {
-        ViewContext { db: LocalReadOnly {} }
+    /// Create an anonymous (no sender) read-only view context
+    pub fn as_anonymous_read_only(&self) -> AnonymousViewContext {
+        AnonymousViewContext { db: LocalReadOnly {} }
     }
 
     /// Create a sender-bound read-only view context using this reducer's caller.
-    pub fn as_sender_view(&self) -> SenderViewContext {
-        SenderViewContext {
+    pub fn as_read_only(&self) -> ViewContext {
+        ViewContext {
             sender: self.sender,
             connection_id: self.connection_id,
             db: LocalReadOnly {},

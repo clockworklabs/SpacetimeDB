@@ -48,7 +48,7 @@ pub fn find_person(ctx: &ReducerContext, id: i32) {
 
 #[spacetimedb::reducer]
 pub fn find_person_read_only(ctx: &ReducerContext, id: i32) {
-    let ctx = ctx.as_view();
+    let ctx = ctx.as_read_only();
     match ctx.db.person().id().find(&id) {
         Some(person) => log::info!("UNIQUE FOUND: id {}: {}", id, person.name),
         None => log::info!("UNIQUE NOT FOUND: id {}", id),
@@ -72,7 +72,7 @@ pub fn find_person_by_nick(ctx: &ReducerContext, nick: String) {
 
 #[spacetimedb::reducer]
 pub fn find_person_by_nick_read_only(ctx: &ReducerContext, nick: String) {
-    let ctx = ctx.as_view();
+    let ctx = ctx.as_read_only();
     match ctx.db.person().nick().find(&nick) {
         Some(person) => log::info!("UNIQUE FOUND: id {}: {}", person.id, person.nick),
         None => log::info!("UNIQUE NOT FOUND: nick {}", nick),
@@ -101,7 +101,7 @@ pub fn find_nonunique_person(ctx: &ReducerContext, id: i32) {
 
 #[spacetimedb::reducer]
 pub fn find_nonunique_person_read_only(ctx: &ReducerContext, id: i32) {
-    let ctx = ctx.as_view();
+    let ctx = ctx.as_read_only();
     for person in ctx.db.nonunique_person().id().filter(&id) {
         log::info!("NONUNIQUE FOUND: id {}: {}", id, person.name)
     }
@@ -179,7 +179,7 @@ fn find_indexed_people(ctx: &ReducerContext, surname: String) {
 
 #[spacetimedb::reducer]
 fn find_indexed_people_read_only(ctx: &ReducerContext, surname: String) {
-    let ctx = ctx.as_view();
+    let ctx = ctx.as_read_only();
     for person in ctx.db.indexed_person().surname().filter(&surname) {
         log::info!("INDEXED FOUND: id {}: {}, {}", person.id, person.surname, person.given_name);
     }
