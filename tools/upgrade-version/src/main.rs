@@ -103,14 +103,10 @@ fn main() -> anyhow::Result<()> {
         anyhow::bail!("You must execute this binary from inside of the SpacetimeDB directory, or use --spacetime-path");
     }
 
-    let semver = Version::parse(version).expect("Invalid semver provided to upgrade-version");
-    let major_minor = format!("{}.{}.*", semver.major, semver.minor);
-    let full_version = format!("{}.{}.{}", semver.major, semver.minor, semver.patch);
-
     if matches.get_flag("rust-and-cli") {
         // Use `=` for dependency versions, to avoid issues where Cargo automatically rolls forward to later minor versions.
         // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
-        let dep_version = format!("={}", full_version);
+        let dep_version = format!("={}", version);
 
         // root Cargo.toml
         edit_toml("Cargo.toml", |doc| {
@@ -132,7 +128,9 @@ fn main() -> anyhow::Result<()> {
             //
             // Note: This is meaningfully different than setting just major.minor.
             // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
-            doc["dependencies"]["spacetimedb"] = toml_edit::value(major_minor.clone());
+            let v = Version::parse(version).expect("Invalid semver provided to upgrade-version");
+            let major_minor = format!("{}.{}.*", v.major, v.minor);
+            doc["dependencies"]["spacetimedb"] = toml_edit::value(major_minor);
         })?;
 
         process_license_file("LICENSE.txt", version);
