@@ -98,7 +98,6 @@ fn main() -> anyhow::Result<()> {
         )
         .get_matches();
 
-    let version = matches.get_one::<String>("upgrade_version").unwrap();
     if let Some(path) = matches.get_one::<PathBuf>("spacetime-path") {
         env::set_current_dir(path).ok();
     }
@@ -111,21 +110,23 @@ fn main() -> anyhow::Result<()> {
 
     let semver = Version::parse(version).expect("Invalid semver provided to upgrade-version");
     let major_minor = format!("{}.{}.*", semver.major, semver.minor);
+    let full_version = format!("{}.{}.{}", semver.major, semver.minor, semver.patch);
 
     if matches.get_flag("rust-and-cli") {
+        // Use `=` for dependency versions, to avoid issues where Cargo automatically rolls forward to later minor versions.
+        // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
+        let dep_version = format!("={}", full_version);
+
         // root Cargo.toml
         edit_toml("Cargo.toml", |doc| {
-            doc["workspace"]["package"]["version"] = toml_edit::value(version);
+            doc["workspace"]["package"]["version"] = toml_edit::value(full_version.clone());
             for (key, dep) in doc["workspace"]["dependencies"]
                 .as_table_like_mut()
                 .expect("workspace.dependencies is not a table")
                 .iter_mut()
             {
                 if key.get().starts_with("spacetime") {
-                    // Use major.minor.* for this dependency, to avoid issues where Cargo automatically rolls forward
-                    // to later minor versions.
-                    // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
-                    dep["version"] = toml_edit::value(major_minor.clone())
+                    dep["version"] = toml_edit::value(dep_version.clone())
                 }
             }
         })?;
