@@ -98,14 +98,14 @@ fn main() -> anyhow::Result<()> {
         )
         .get_matches();
 
-    if let Some(path) = matches.get_one::<PathBuf>("spacetime-path") {
-        env::set_current_dir(path).ok();
-    }
-
     let unparsed_version_arg = matches.get_one::<String>("upgrade_version").unwrap();
     let semver = Version::parse(unparsed_version_arg).expect("Invalid semver provided to upgrade-version");
     let full_version = format!("{}.{}.{}", semver.major, semver.minor, semver.patch);
     let wildcard_patch = format!("{}.{}.*", semver.major, semver.minor);
+
+    if let Some(path) = matches.get_one::<PathBuf>("spacetime-path") {
+        env::set_current_dir(path).ok();
+    }
 
     let current_dir = env::current_dir().expect("No current directory!");
     let dir_name = current_dir.file_name().expect("No current directory!");
@@ -133,7 +133,7 @@ fn main() -> anyhow::Result<()> {
         })?;
 
         edit_toml("crates/cli/src/subcommands/project/rust/Cargo._toml", |doc| {
-            // Only use major.minor for the spacetimedb dependency.
+            // Only set major.minor.* for the spacetimedb dependency.
             // See https://github.com/clockworklabs/SpacetimeDB/issues/2724.
             //
             // Note: This is meaningfully different than setting just major.minor.
