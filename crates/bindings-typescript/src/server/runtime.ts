@@ -6,6 +6,7 @@ import {
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
+import type RawScopedTypeNameV9 from '../lib/autogen/raw_scoped_type_name_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
 import { ConnectionId } from '../lib/connection_id';
@@ -64,10 +65,7 @@ export function addType<T extends AlgebraicType>(
       COMPOUND_TYPES.set(ty, r);
       if (name != null)
         MODULE_DEF.types.push({
-          name: {
-            scope: [],
-            name,
-          },
+          name: splitName(name),
           ty: r.value,
           customOrdering: true,
         });
@@ -76,6 +74,11 @@ export function addType<T extends AlgebraicType>(
   } else {
     return ty;
   }
+}
+
+export function splitName(name: string): RawScopedTypeNameV9 {
+  const scope = name.split('.');
+  return { name: scope.pop()!, scope };
 }
 
 /**

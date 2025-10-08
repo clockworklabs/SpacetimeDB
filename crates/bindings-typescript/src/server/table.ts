@@ -7,7 +7,7 @@ import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type { AllUnique } from './constraints';
 import type { TryInsertError } from './errors';
 import type { ColumnIndex, IndexColumns, Indexes, IndexOpts } from './indexes';
-import { MODULE_DEF } from './runtime';
+import { MODULE_DEF, splitName } from './runtime';
 import {
   RowBuilder,
   type ColumnBuilder,
@@ -330,7 +330,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   MODULE_DEF.types.push({
     customOrdering: true,
-    name: { scope: [], name },
+    name: splitName(name),
     ty: row.algebraicType.value as number,
   });
 

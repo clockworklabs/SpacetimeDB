@@ -32,8 +32,7 @@ export const testB = t.object('TestB', {
 export type TestB = Infer<typeof testB>;
 
 // Rust: #[derive(SpacetimeType)] #[sats(name = "Namespace.TestC")] enum TestC { Foo, Bar }
-// TODO: support enum name attribute in TS bindings
-export const testC = t.enum('TestC', {
+export const testC = t.enum('Namespace.TestC', {
   Foo: t.unit(),
   Bar: t.unit(),
 });
@@ -57,8 +56,7 @@ export const foobar = t.enum('Foobar', {
 export type Foobar = Infer<typeof foobar>;
 
 // Rust: #[derive(SpacetimeType)] #[sats(name = "Namespace.TestF")] enum TestF { Foo, Bar, Baz(String) }
-// TODO: support enum name attribute in TS bindings
-export const testF = t.enum('TestF', {
+export const testF = t.enum('Namespace.TestF', {
   Foo: t.unit(),
   Bar: t.unit(),
   Baz: t.string(),
