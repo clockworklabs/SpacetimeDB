@@ -26,7 +26,7 @@ use core::{ptr, str};
 use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
@@ -614,7 +614,7 @@ fn call_call_reducer<'scope>(
     let sender = serialize_to_js(scope, &sender.to_u256())?;
     let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
     let timestamp = serialize_to_js(scope, &timestamp)?;
-    let reducer_args = serialize_to_js(scope, &reducer_args.tuple.elements)?;
+    let reducer_args = serialize_to_js(scope, reducer_args.get_bsatn())?;
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     // Get the function on the global proxy object and convert to a function.
@@ -677,8 +677,16 @@ fn call_describe_module<'scope>(
     let raw_mod_js = call_free_fun(scope, fun, &[])?;
 
     // Deserialize the raw module.
-    let raw_mod: RawModuleDef = deserialize_js(scope, raw_mod_js)?;
-    Ok(raw_mod)
+    let raw_mod = cast!(
+        scope,
+        raw_mod_js,
+        v8::Uint8Array,
+        "bytes return from __describe_module__"
+    )
+    .map_err(|e| e.throw(scope))?;
+
+    let bytes = raw_mod.get_contents(&mut []);
+    bsatn::from_slice::<RawModuleDef>(bytes).map_err(|_e| error::TypeError("invalid bsatn module def").throw(scope))
 }
 
 #[cfg(test)]
