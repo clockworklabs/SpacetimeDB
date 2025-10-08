@@ -789,6 +789,10 @@ impl Lang for Csharp<'_> {
                             "\"{reducer_str_name}\" => BSATNHelpers.Decode<Reducer.{reducer_name}>(encodedArgs),"
                         );
                     }
+					writeln!(
+                        output,
+                        r#""" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),"#
+                    );
                     writeln!(
                         output,
                         r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
