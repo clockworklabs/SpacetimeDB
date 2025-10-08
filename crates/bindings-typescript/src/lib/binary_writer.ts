@@ -1,5 +1,4 @@
 import { fromByteArray } from 'base64-js';
-import 'fast-text-encoding';
 
 export default class BinaryWriter {
   #buffer: Uint8Array;

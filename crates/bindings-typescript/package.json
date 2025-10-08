@@ -19,7 +19,9 @@
   "license": "ISC",
   "author": "Clockwork Labs",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/server/polyfills.ts"
+  ],
   "scripts": {
     "build:js": "tsup",
     "build:types": "tsc -p tsconfig.build.json",

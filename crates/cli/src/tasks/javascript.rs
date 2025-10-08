@@ -1,9 +1,12 @@
+use regex::Regex;
 use rolldown::{Bundler, BundlerOptions, Either, SourceMapType};
 use rolldown_utils::indexmap::FxIndexMap;
+use rolldown_utils::js_regex::HybridRegex;
+use rolldown_utils::pattern_filter::StringOrRegex;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use tokio::runtime::{Builder, Handle, Runtime};
-use std::fs;
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
@@ -38,7 +41,10 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         input: Some(vec!["./src/index.ts".to_string().into()]),
         cwd: Some(cwd),
         sourcemap: Some(SourceMapType::Inline),
-        external: None, // SpacetimeDB modules do not have any external dependencies.
+        external: Some(rolldown::IsExternal::StringOrRegex(vec![
+            // Mark the bindings as external so we don't get a warning.
+            StringOrRegex::Regex(HybridRegex::Optimize(Regex::new("spacetime:sys.*").unwrap())),
+        ])),
         platform: Some(rolldown::Platform::Browser), // Browser is the correct choice here because it doesn't inject Node.js polyfills.
         shim_missing_exports: Some(false),
         name: None,
@@ -69,11 +75,7 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         // Wrapper around https://docs.rs/oxc_resolver/latest/oxc_resolver/struct.ResolveOptions.html, see also https://rolldown.rs/guide/features#module-resolution
         resolve: Some(rolldown::ResolveOptions {
             // Prefer environment-neutral exports
-            condition_names: Some(vec![
-                "production".into(),
-                "import".into(),
-                "default".into(),
-            ]),
+            condition_names: Some(vec!["production".into(), "import".into(), "default".into()]),
             main_fields: Some(vec!["exports".into(), "module".into(), "main".into()]),
             extensions: Some(vec![
                 ".ts".into(),

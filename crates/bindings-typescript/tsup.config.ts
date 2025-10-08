@@ -118,9 +118,19 @@ export default defineConfig([
     sourcemap: true,
     clean: true,
     platform: 'neutral', // flip to 'node' if you actually rely on Node builtins
-    treeshake: 'smallest',
+    banner: {
+      js:
+        'typeof globalThis!=="undefined"&&(' +
+        '(globalThis.global=globalThis.global||globalThis),' +
+        '(globalThis.window=globalThis.window||globalThis));'
+    },
+    treeshake: {
+      moduleSideEffects: [
+        'src/server/polyfills.ts',
+      ]
+    },
     external: ['undici', /^spacetime:sys.*$/],
-    noExternal: ['base64-js'],
+    noExternal: ['base64-js', 'fast-text-encoding'],
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
@@ -181,5 +191,5 @@ export default defineConfig([
   | Options
   | Options[]
   | ((
-      overrideOptions: Options
-    ) => Options | Options[] | Promise<Options | Options[]>);
+    overrideOptions: Options
+  ) => Options | Options[] | Promise<Options | Options[]>);

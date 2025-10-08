@@ -237,9 +237,6 @@ importers:
 
   modules/module-test-ts:
     dependencies:
-      fast-text-encoding:
-        specifier: ^1.0.0
-        version: 1.0.6
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
