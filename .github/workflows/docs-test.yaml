@@ -1,9 +1,9 @@
 name: Docs - Test
+permissions:
+  contents: read
 
 on:
   pull_request:
-    branches:
-      - master
 
 jobs:
   build:
