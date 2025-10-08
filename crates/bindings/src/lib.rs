@@ -666,6 +666,53 @@ pub use spacetimedb_bindings_macro::table;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::reducer;
 
+/// Marks a function as a spacetimedb view.
+///
+/// A view is a function with read-only access to the database.
+///
+/// The first argument of a view is always a [`&ViewContext`] or [`&AnonymousViewContext`].
+/// The former can only read from the database whereas latter can also access info about the caller.
+///
+/// After this, a view can take any number of arguments just like reducers.
+/// These arguments must implement the [`SpacetimeType`], [`Serialize`], and [`Deserialize`] traits.
+/// All of these traits can be derived at once by marking a type with `#[derive(SpacetimeType)]`.
+///
+/// Views return `Vec<T>` where `T` is a `SpacetimeType`.
+///
+/// ```no_run
+/// # mod demo {
+/// use spacetimedb::{view, table, AnonymousViewContext, ViewContext};
+///
+/// #[table(name = player)]
+/// struct Player {
+///     #[unique]
+///     identity: Identity,
+///     #[index(btree)]
+///     level: u32,
+/// }
+///
+/// #[view(public)]
+/// pub fn player(ctx: &ViewContext) -> Vec<Player> {
+///     ctx.db.player().identity().find(ctx.sender).into_iter().collect()
+/// }
+///
+/// #[view(public, anonymous)]
+/// pub fn player(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
+///     ctx.db.player().level().filter(level).collect()
+/// }
+/// # }
+/// ```
+///
+/// Just like reducers, views are limited in their ability to interact with the outside world.
+/// They have no access to any network or filesystem interfaces.
+/// Calling methods from [`std::io`], [`std::net`], or [`std::fs`] will result in runtime errors.
+///
+/// Views are callable by reducers and other views simply by passing their `ViewContext`..
+/// This is a regular function call.
+/// The callee will run within the caller's transaction.
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::view;
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.

@@ -1,3 +1,29 @@
+error: views must be declared as #[view(public)]; public is required
+  --> tests/ui/views.rs:74:1
+   |
+74 | #[view]
+   | ^^^^^^^
+   |
+   = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: A view must have `&ViewContext` as its first argument
+  --> tests/ui/views.rs:81:1
+   |
+81 | fn view_def_no_context() -> Vec<Player> {
+   | ^^
+
+error: An anonymous view must have `&AnonymousViewContext` as its first argument
+  --> tests/ui/views.rs:99:1
+   |
+99 | fn anonymous_view_def_no_context() -> Vec<Player> {
+   | ^^
+
+error: views must return `Vec<T>` where `T` is a `SpacetimeType`
+   --> tests/ui/views.rs:117:1
+    |
+117 | fn view_def_no_return(_: &ViewContext) {}
+    | ^^
+
 error[E0599]: no method named `iter` found for reference `&test__ViewHandle` in the current scope
   --> tests/ui/views.rs:15:34
    |
@@ -25,6 +51,9 @@ error[E0599]: `&test__ViewHandle` is not an iterator
            which is required by `&mut test__ViewHandle: Iterator`
 note: the trait `Iterator` must be implemented
   --> $RUST/core/src/iter/traits/iterator.rs
+   |
+   | pub trait Iterator {
+   | ^^^^^^^^^^^^^^^^^^
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `count`, perhaps you need to implement one of them:
            candidate #1: `Table`
@@ -44,16 +73,19 @@ error[E0599]: no method named `insert` found for reference `&test__ViewHandle` i
            candidate #4: `ppv_lite86::types::Vec4`
 
 error[E0599]: no method named `try_insert` found for reference `&test__ViewHandle` in the current scope
-  --> tests/ui/views.rs:36:25
-   |
-36 |     read_only.db.test().try_insert(Test { id: 0, x: 0 });
-   |                         ^^^^^^^^^^
-   |
-   = help: items from traits can only be used if the trait is implemented and in scope
-   = note: the following trait defines an item `try_insert`, perhaps you need to implement it:
-           candidate #1: `Table`
+ --> tests/ui/views.rs:36:25
+  |
+ 36 |     read_only.db.test().try_insert(Test { id: 0, x: 0 });
+    |                         ^^^^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is implemented and in scope
+    = note: the following trait defines an item `try_insert`, perhaps you need to implement it:
+            candidate #1: `Table`
 help: there is a method `try_into` with a similar name, but with different arguments
-  --> $RUST/core/src/convert/mod.rs
+   --> $RUST/core/src/convert/mod.rs
+    |
+    |     fn try_into(self) -> Result<T, Self::Error>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error[E0599]: no method named `delete` found for reference `&test__ViewHandle` in the current scope
   --> tests/ui/views.rs:43:25
@@ -82,3 +114,253 @@ error[E0599]: no method named `delete` found for struct `RangedIndexReadOnly` in
    |
 64 |     read_only.db.test().x().delete(0u32..);
    |                             ^^^^^^ method not found in `RangedIndexReadOnly<test__TableHandle, (u32,), x>`
+
+error[E0277]: invalid view signature
+ --> tests/ui/views.rs:87:4
+  |
+ 86 | #[view(public)]
+    | --------------- required by a bound introduced by this call
+ 87 | fn view_def_wrong_context_1(_: &ReducerContext) -> Vec<Player> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ReducerContext) -> Vec<Player> {view_def_wrong_context_1}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `register_view`
+   --> src/rt.rs
+    |
+    | pub fn register_view<'a, A, I, T>(_: impl View<'a, A, T>)
+    |                                           ^^^^^^^^^^^^^^ required by this bound in `register_view`
+
+error[E0277]: A view must have `&ViewContext` as its first argument
+  --> tests/ui/views.rs:87:32
+   |
+87 | fn view_def_wrong_context_1(_: &ReducerContext) -> Vec<Player> {
+   |                                ^^^^^^^^^^^^^^^ the trait `ViewContextArg` is not implemented for `&ReducerContext`
+   |
+   = help: the trait `ViewContextArg` is implemented for `&ViewContext`
+
+error[E0277]: invalid view signature
+  --> tests/ui/views.rs:87:4
+   |
+86 | #[view(public)]
+   | --------------- required by a bound introduced by this call
+87 | fn view_def_wrong_context_1(_: &ReducerContext) -> Vec<Player> {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+   |
+   = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ReducerContext) -> Vec<Player> {view_def_wrong_context_1}`
+   = note:
+   = note: view signatures must match:
+   = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn>`
+   = note: where each `Ti` implements `SpacetimeType`.
+   = note:
+note: required by a bound in `invoke_view`
+  --> src/rt.rs
+   |
+   | pub fn invoke_view<'a, A: Args<'a>, T: SpacetimeType + Serialize>(
+   |        ----------- required by a bound in this function
+   |     view: impl View<'a, A, T>,
+   |                ^^^^^^^^^^^^^^ required by this bound in `invoke_view`
+
+error[E0277]: invalid view signature
+ --> tests/ui/views.rs:93:4
+  |
+ 92 | #[view(public)]
+    | --------------- required by a bound introduced by this call
+ 93 | fn view_def_wrong_context_2(_: &AnonymousViewContext) -> Vec<Player> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a AnonymousViewContext) -> Vec<Player> {view_def_wrong_context_2}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `register_view`
+   --> src/rt.rs
+    |
+    | pub fn register_view<'a, A, I, T>(_: impl View<'a, A, T>)
+    |                                           ^^^^^^^^^^^^^^ required by this bound in `register_view`
+
+error[E0277]: A view must have `&ViewContext` as its first argument
+  --> tests/ui/views.rs:93:32
+   |
+93 | fn view_def_wrong_context_2(_: &AnonymousViewContext) -> Vec<Player> {
+   |                                ^^^^^^^^^^^^^^^^^^^^^ the trait `ViewContextArg` is not implemented for `&AnonymousViewContext`
+   |
+   = help: the trait `ViewContextArg` is implemented for `&ViewContext`
+
+error[E0277]: invalid view signature
+  --> tests/ui/views.rs:93:4
+   |
+92 | #[view(public)]
+   | --------------- required by a bound introduced by this call
+93 | fn view_def_wrong_context_2(_: &AnonymousViewContext) -> Vec<Player> {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+   |
+   = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a AnonymousViewContext) -> Vec<Player> {view_def_wrong_context_2}`
+   = note:
+   = note: view signatures must match:
+   = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn>`
+   = note: where each `Ti` implements `SpacetimeType`.
+   = note:
+note: required by a bound in `invoke_view`
+  --> src/rt.rs
+   |
+   | pub fn invoke_view<'a, A: Args<'a>, T: SpacetimeType + Serialize>(
+   |        ----------- required by a bound in this function
+   |     view: impl View<'a, A, T>,
+   |                ^^^^^^^^^^^^^^ required by this bound in `invoke_view`
+
+error[E0277]: invalid view signature
+   --> tests/ui/views.rs:105:4
+    |
+104 | #[view(public, anonymous)]
+    | -------------------------- required by a bound introduced by this call
+105 | fn anonymous_view_def_wrong_context_1(_: &ReducerContext) -> Vec<Player> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ReducerContext) -> Vec<Player> {anonymous_view_def_wrong_context_1}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&AnonymousViewContext, [T1, ...]) -> Vec<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `register_anonymous_view`
+   --> src/rt.rs
+    |
+    | pub fn register_anonymous_view<'a, A, I, T>(_: impl AnonymousView<'a, A, T>)
+    |                                                     ^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `register_anonymous_view`
+
+error[E0277]: An anonymous view must have `&AnonymousViewContext` as its first argument
+   --> tests/ui/views.rs:105:42
+    |
+105 | fn anonymous_view_def_wrong_context_1(_: &ReducerContext) -> Vec<Player> {
+    |                                          ^^^^^^^^^^^^^^^ the trait `AnonymousViewContextArg` is not implemented for `&ReducerContext`
+    |
+    = help: the trait `AnonymousViewContextArg` is implemented for `&AnonymousViewContext`
+
+error[E0277]: invalid view signature
+   --> tests/ui/views.rs:105:4
+    |
+104 | #[view(public, anonymous)]
+    | -------------------------- required by a bound introduced by this call
+105 | fn anonymous_view_def_wrong_context_1(_: &ReducerContext) -> Vec<Player> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ReducerContext) -> Vec<Player> {anonymous_view_def_wrong_context_1}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&AnonymousViewContext, [T1, ...]) -> Vec<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `invoke_anonymous_view`
+   --> src/rt.rs
+    |
+ 78 | pub fn invoke_anonymous_view<'a, A: Args<'a>, T: SpacetimeType + Serialize>(
+    |        --------------------- required by a bound in this function
+ 79 |     view: impl AnonymousView<'a, A, T>,
+    |                ^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `invoke_anonymous_view`
+
+error[E0277]: invalid view signature
+   --> tests/ui/views.rs:111:4
+    |
+110 | #[view(public, anonymous)]
+    | -------------------------- required by a bound introduced by this call
+111 | fn anonymous_view_def_wrong_context_2(_: &ViewContext) -> Vec<Player> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> Vec<Player> {anonymous_view_def_wrong_context_2}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&AnonymousViewContext, [T1, ...]) -> Vec<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `register_anonymous_view`
+   --> src/rt.rs
+    |
+    | pub fn register_anonymous_view<'a, A, I, T>(_: impl AnonymousView<'a, A, T>)
+    |                                                     ^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `register_anonymous_view`
+
+error[E0277]: An anonymous view must have `&AnonymousViewContext` as its first argument
+   --> tests/ui/views.rs:111:42
+    |
+111 | fn anonymous_view_def_wrong_context_2(_: &ViewContext) -> Vec<Player> {
+    |                                          ^^^^^^^^^^^^ the trait `AnonymousViewContextArg` is not implemented for `&ViewContext`
+    |
+    = help: the trait `AnonymousViewContextArg` is implemented for `&AnonymousViewContext`
+
+error[E0277]: invalid view signature
+   --> tests/ui/views.rs:111:4
+    |
+110 | #[view(public, anonymous)]
+    | -------------------------- required by a bound introduced by this call
+111 | fn anonymous_view_def_wrong_context_2(_: &ViewContext) -> Vec<Player> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> Vec<Player> {anonymous_view_def_wrong_context_2}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&AnonymousViewContext, [T1, ...]) -> Vec<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `invoke_anonymous_view`
+   --> src/rt.rs
+    |
+ 78 | pub fn invoke_anonymous_view<'a, A: Args<'a>, T: SpacetimeType + Serialize>(
+    |        --------------------- required by a bound in this function
+ 79 |     view: impl AnonymousView<'a, A, T>,
+    |                ^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `invoke_anonymous_view`
+
+error[E0277]: invalid view signature
+   --> tests/ui/views.rs:121:4
+    |
+120 | #[view(public)]
+    | --------------- required by a bound introduced by this call
+121 | fn view_def_wrong_return(_: &ViewContext) -> Option<Player> {
+    |    ^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> Option<Player> {view_def_wrong_return}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `register_view`
+   --> src/rt.rs
+    |
+    | pub fn register_view<'a, A, I, T>(_: impl View<'a, A, T>)
+    |                                           ^^^^^^^^^^^^^^ required by this bound in `register_view`
+
+error[E0277]: Views must return `Vec<T>` where `T` is a `SpacetimeType`
+   --> tests/ui/views.rs:121:46
+    |
+121 | fn view_def_wrong_return(_: &ViewContext) -> Option<Player> {
+    |                                              ^^^^^^^^^^^^^^ the trait `ViewReturn` is not implemented for `Option<Player>`
+    |
+    = help: the trait `ViewReturn` is implemented for `Vec<T>`
+
+error[E0277]: invalid view signature
+   --> tests/ui/views.rs:121:4
+    |
+120 | #[view(public)]
+    | --------------- required by a bound introduced by this call
+121 | fn view_def_wrong_return(_: &ViewContext) -> Option<Player> {
+    |    ^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> Option<Player> {view_def_wrong_return}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `invoke_view`
+   --> src/rt.rs
+    |
+ 50 | pub fn invoke_view<'a, A: Args<'a>, T: SpacetimeType + Serialize>(
+    |        ----------- required by a bound in this function
+ 51 |     view: impl View<'a, A, T>,
+    |                ^^^^^^^^^^^^^^ required by this bound in `invoke_view`

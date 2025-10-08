@@ -379,6 +379,7 @@ pub enum RawMiscModuleExportV9 {
     ColumnDefaultValue(RawColumnDefaultValueV9),
     /// A procedure definition.
     Procedure(RawProcedureDefV9),
+    View(RawViewDefV9),
 }
 
 /// Marks a particular table's column as having a particular default.
@@ -394,6 +395,38 @@ pub struct RawColumnDefaultValueV9 {
     /// A BSATN-encoded [`AlgebraicValue`] valid at the table column's type.
     /// (We cannot use `AlgebraicValue` directly as it isn't `Spacetimetype`.)
     pub value: Box<[u8]>,
+}
+
+/// A view definition.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawViewDefV9 {
+    /// The name of the view.
+    pub name: RawIdentifier,
+
+    /// Is this view anonymous?
+    pub is_anonymous: bool,
+
+    /// The types and optional names of the parameters, in order.
+    /// This `ProductType` need not be registered in the typespace.
+    pub params: ProductType,
+
+    /// A reference to a `ProductType` containing the columns of this view.
+    /// This is the single source of truth for the view's columns.
+    /// All elements of the `ProductType` must have names.
+    ///
+    /// Like all types in the module, this must have the [default element ordering](crate::db::default_element_ordering),
+    /// UNLESS a custom ordering is declared via a `RawTypeDefv9` for this type.
+    pub return_type: AlgebraicType,
+
+    /// Currently unused, but we may want to define indexes on materialized views in the future.
+    pub indexes: Vec<RawIndexDefV9>,
+
+    /// Whether this view is public or private.
+    /// Only public is supported right now.
+    /// Private views may be added in the future.
+    pub access: TableAccess,
 }
 
 /// A type declaration.
@@ -690,6 +723,23 @@ impl RawModuleDefV9Builder {
                 params,
                 return_type,
             }))
+    }
+
+    pub fn add_view(
+        &mut self,
+        name: impl Into<RawIdentifier>,
+        is_anonymous: bool,
+        params: ProductType,
+        return_type: AlgebraicType,
+    ) {
+        self.module.misc_exports.push(RawMiscModuleExportV9::View(RawViewDefV9 {
+            name: name.into(),
+            is_anonymous,
+            params,
+            return_type,
+            indexes: vec![],
+            access: TableAccess::Public,
+        }));
     }
 
     /// Add a row-level security policy to the module.
