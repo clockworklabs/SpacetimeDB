@@ -2170,9 +2170,8 @@ fn send_to_client_v1(
     tx_offset: Option<TxOffset>,
     message: impl Into<SerializableMessage>,
 ) {
-    if let Err(e) = client.send_message(tx_offset, OutboundMessage::V1(message.into())) {
-        tracing::debug!(%client.id, "failed to send update message to client: {e}")
-    }
+    // BitCraft hotfix: suppress noisy send failures for disconnected clients.
+    let _ = client.send_message(tx_offset, OutboundMessage::V1(message.into()));
 }
 fn send_to_client(
     client: &ClientConnectionSender,
@@ -2181,9 +2180,8 @@ fn send_to_client(
     //message: impl Into<SerializableMessage>,
 ) {
     tracing::trace!(client = %client.id, tx_offset, "send_to_client");
-    if let Err(e) = client.send_message(tx_offset, message) {
-        tracing::debug!(%client.id, "failed to send update message to client: {e}")
-    }
+    // BitCraft hotfix: suppress noisy send failures for disconnected clients.
+    let _ = client.send_message(tx_offset, message);
 }
 
 #[cfg(test)]

@@ -1,7 +1,6 @@
 use super::instrumentation::CallTimes;
 use super::*;
 use crate::client::ClientActorId;
-use crate::database_logger;
 use crate::db::sql::ast::SchemaViewer;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
@@ -1126,13 +1125,7 @@ impl InstanceCommon {
                 (self.handle_outer_error(&result.stats.energy, reducer_name), None)
             }
             Err(ExecutionError::User(err)) => {
-                log_reducer_error(
-                    inst.replica_ctx(),
-                    timestamp,
-                    reducer_name,
-                    &err,
-                    &self.info.module_hash,
-                );
+                record_reducer_error(inst.replica_ctx(), reducer_name, &self.info.module_hash);
                 (EventStatus::FailedUser(err.into()), None)
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
@@ -1150,13 +1143,7 @@ impl InstanceCommon {
                     Ok(()) => (EventStatus::Committed(DatabaseUpdate::default()), return_value),
                     Err(err) => {
                         let err = err.to_string();
-                        log_reducer_error(
-                            inst.replica_ctx(),
-                            timestamp,
-                            reducer_name,
-                            &err,
-                            &self.info.module_hash,
-                        );
+                        record_reducer_error(inst.replica_ctx(), reducer_name, &self.info.module_hash);
                         (EventStatus::FailedInternal(err), None)
                     }
                 }
@@ -1923,27 +1910,12 @@ fn maybe_log_long_running_function(reducer_name: &str, total_duration: Duration)
     }
 }
 
-/// Logs an error `message` for `reducer` at `timestamp` into `replica_ctx`.
-fn log_reducer_error(
-    replica_ctx: &ReplicaContext,
-    timestamp: Timestamp,
-    reducer: &str,
-    message: &str,
-    module_hash: &Hash,
-) {
-    use database_logger::Record;
-
+/// Count reducer errors without emitting the noisy per-error logs (BitCraft hotfix).
+fn record_reducer_error(replica_ctx: &ReplicaContext, reducer: &str, module_hash: &Hash) {
     WORKER_METRICS
         .sender_errors
         .with_label_values(&replica_ctx.database_identity, module_hash, reducer)
         .inc();
-
-    let record = Record {
-        ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
-        function: Some(reducer),
-        ..Record::injected(message)
-    };
-    replica_ctx.logger.write(database_logger::LogLevel::Error, &record, &());
 }
 
 /*

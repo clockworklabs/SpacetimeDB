@@ -3369,7 +3369,6 @@ impl ModuleHost {
             message_id,
             timer,
         };
-        log::debug!("One-off query: {}", params.query);
         self.one_off_query_with_params(OneOffQueryRequest::Json(params)).await
     }
 
@@ -3396,7 +3395,6 @@ impl ModuleHost {
             timer,
             rlb_pool,
         };
-        log::debug!("One-off query: {}", params.query);
         self.one_off_query_with_params(OneOffQueryRequest::Bsatn(params)).await
     }
 
@@ -3487,6 +3485,21 @@ impl ModuleHost {
         rlb_pool: &impl RowListBuilderSource<F>,
         into_rows: impl FnOnce(RawIdentifier, F::List) -> R,
     ) -> Result<(R, ExecutionMetrics), anyhow::Error> {
+        // BitCraft hotfix: start these joins from the smaller building/claim tables.
+        // Keep this in the shared execution path so it applies to both v1 and v2 clients.
+        const BUILDING_STATE_SQL: &str = "SELECT location_state.* FROM location_state JOIN building_state ON building_state.entity_id = location_state.entity_id";
+        const CLAIM_STATE_SQL: &str = "SELECT location_state.* FROM location_state JOIN claim_state ON claim_state.owner_building_entity_id = location_state.entity_id";
+
+        const OPT_BUILDING_STATE_SQL: &str = "SELECT location_state.* FROM building_state JOIN location_state ON building_state.entity_id = location_state.entity_id";
+        const OPT_CLAIM_STATE_SQL: &str = "SELECT location_state.* FROM claim_state JOIN location_state ON claim_state.owner_building_entity_id = location_state.entity_id";
+
+        let query = match query {
+            BUILDING_STATE_SQL => OPT_BUILDING_STATE_SQL,
+            CLAIM_STATE_SQL => OPT_CLAIM_STATE_SQL,
+            query => query,
+        };
+        log::info!("One-off query: {query}");
+
         let schema_tx = SchemaViewer::new(tx, auth);
 
         let (
@@ -3621,7 +3634,6 @@ impl ModuleHost {
             timer: _timer,
             rlb_pool,
         };
-        log::debug!("One-off query: {}", params.query);
         self.one_off_query_with_params(OneOffQueryRequest::V2(params)).await
     }
 
