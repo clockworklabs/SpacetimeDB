@@ -43,19 +43,25 @@ pub trait Reducer<'de, A: Args<'de>> {
     fn invoke(&self, ctx: &ReducerContext, args: A) -> ReducerResult;
 }
 
-/// A trait for types that can *describe* a reducer.
-pub trait ReducerInfo {
-    /// The name of the reducer.
+/// A trait for types that can *describe* a callable function such as a reducer or view.
+pub trait FnInfo {
+    /// The type of function to invoke.
+    type Invoke;
+
+    /// The name of the function.
     const NAME: &'static str;
 
-    /// The lifecycle of the reducer, if there is one.
+    /// The lifecycle of the function, if there is one.
     const LIFECYCLE: Option<LifecycleReducer> = None;
 
-    /// A description of the parameter names of the reducer.
+    /// A description of the parameter names of the function.
     const ARG_NAMES: &'static [Option<&'static str>];
 
-    /// The function to call to invoke the reducer.
-    const INVOKE: ReducerFn;
+    /// The function to invoke.
+    const INVOKE: Self::Invoke;
+
+    /// The return type of this function.
+    fn return_type(typespace: &mut impl TypespaceBuilder) -> Option<ProductType>;
 }
 
 /// A trait of types representing the arguments of a reducer.
@@ -70,7 +76,7 @@ pub trait Args<'de>: Sized {
     fn serialize_seq_product<S: SerializeSeqProduct>(&self, prod: &mut S) -> Result<(), S::Error>;
 
     /// Returns the schema for this reducer provided a `typespace`.
-    fn schema<I: ReducerInfo>(typespace: &mut impl TypespaceBuilder) -> ProductType;
+    fn schema<I: FnInfo<Invoke = ReducerFn>>(typespace: &mut impl TypespaceBuilder) -> ProductType;
 }
 
 /// A trait of types representing the result of executing a reducer.
@@ -239,7 +245,7 @@ macro_rules! impl_reducer {
 
             #[inline]
             #[allow(non_snake_case, irrefutable_let_patterns)]
-            fn schema<Info: ReducerInfo>(_typespace: &mut impl TypespaceBuilder) -> ProductType {
+            fn schema<Info: FnInfo>(_typespace: &mut impl TypespaceBuilder) -> ProductType {
                 // Extract the names of the arguments.
                 let [.., $($T),*] = Info::ARG_NAMES else { panic!() };
                 ProductType::new(vec![
@@ -362,7 +368,7 @@ impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
 }
 
 /// Registers a describer for the reducer `I` with arguments `A`.
-pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
+pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         module.inner.add_reducer(I::NAME, params, I::LIFECYCLE);
@@ -619,7 +625,7 @@ macro_rules! __make_register_reftype {
 
 #[cfg(feature = "unstable")]
 #[doc(hidden)]
-pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, A>, R2: ReducerInfo>(
+pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, A>, R2: FnInfo<Invoke = ReducerFn>>(
     _reducer: R,
     args: A,
 ) {
