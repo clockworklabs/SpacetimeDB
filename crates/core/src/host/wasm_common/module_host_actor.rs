@@ -469,8 +469,8 @@ impl InstanceCommon {
             }) {
                 Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
                 Err(err) => {
-                    log::info!("reducer returned error: {err}");
-                    log_reducer_error(replica_ctx, timestamp, reducer_name, &err);
+                    // log::info!("reducer returned error: {err}");
+                    // log_reducer_error(replica_ctx, timestamp, reducer_name, &err);
                     EventStatus::Failed(err.into())
                 }
             },

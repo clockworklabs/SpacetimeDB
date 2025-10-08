@@ -1627,7 +1627,7 @@ fn send_to_client(
 ) {
     tracing::trace!(client = %client.id, tx_offset, "send_to_client");
     if let Err(e) = client.send_message(tx_offset, message) {
-        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+        // tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }
 }
 
