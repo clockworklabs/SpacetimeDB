@@ -104,7 +104,7 @@ fn register_sys_module<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
     )
 }
 
-const SYS_MODULE_NAME: &StringConst = str_from_ident!(spacetimedb_sys);
+const SYS_MODULE_NAME: &StringConst = &StringConst::new("spacetime:sys@1.0");
 
 /// The return type of a module -> host syscall.
 pub(super) type FnRet<'scope> = ExcResult<Local<'scope, Value>>;
