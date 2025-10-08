@@ -701,15 +701,29 @@ pub struct PrePublishParams {
 pub struct PrePublishQueryParams {
     #[serde(default)]
     style: PrettyPrintStyle,
+    #[serde(default)]
+    host_type: HostType,
 }
 
 pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PrePublishParams { name_or_identity }): Path<PrePublishParams>,
-    Query(PrePublishQueryParams { style }): Query<PrePublishQueryParams>,
+    Query(PrePublishQueryParams { style, host_type }): Query<PrePublishQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PrePublishResult>> {
+    // Feature gate V8 modules.
+    // The host must've been compiled with the `unstable` feature.
+    // TODO(v8): ungate this when V8 is ready to ship.
+    #[cfg(not(feature = "unstable"))]
+    if host_type == HostType::Js {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "JS host type requires a host with unstable features",
+        )
+            .into());
+    }
+
     // User should not be able to print migration plans for a database that they do not own
     let database_identity = resolve_and_authenticate(&ctx, &name_or_identity, &auth).await?;
     let style = match style {
@@ -723,7 +737,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
                 database_identity,
                 program_bytes: body.into(),
                 num_replicas: None,
-                host_type: HostType::Wasm,
+                host_type,
             },
             style,
         )
