@@ -258,8 +258,8 @@ fn with_span<'scope, R>(
 /// Throws a `TypeError` if:
 /// - `name` is not `string`.
 fn table_id_from_name(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<TableId> {
-    let name: &str = deserialize_js(scope, args.get(0))?;
-    Ok(env_on_isolate(scope).instance_env.table_id_from_name(name)?)
+    let name: String = deserialize_js(scope, args.get(0))?;
+    Ok(env_on_isolate(scope).instance_env.table_id_from_name(&name)?)
 }
 
 /// Module ABI that finds the `IndexId` for an index name.
@@ -294,8 +294,8 @@ fn table_id_from_name(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArgume
 /// Throws a `TypeError`:
 /// - if `name` is not `string`.
 fn index_id_from_name(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<IndexId> {
-    let name: &str = deserialize_js(scope, args.get(0))?;
-    Ok(env_on_isolate(scope).instance_env.index_id_from_name(name)?)
+    let name: String = deserialize_js(scope, args.get(0))?;
+    Ok(env_on_isolate(scope).instance_env.index_id_from_name(&name)?)
 }
 
 /// Module ABI that returns the number of rows currently in table identified by `table_id`.
