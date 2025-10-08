@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
-use super::module_host::{CallReducerParams, DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime};
+use super::module_host::{CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation::CallTimes;
@@ -15,7 +15,7 @@ use crate::{module_host_context::ModuleCreationContext, replica_context::Replica
 use core::ffi::c_void;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
-use core::{iter, ptr, str};
+use core::{ptr, str};
 use de::deserialize_js;
 use error::{
     catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CodeError, FnRet, JsStackTrace,
@@ -51,7 +51,7 @@ pub struct V8Runtime {
 }
 
 impl ModuleRuntime for V8Runtime {
-    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<Module> {
         V8_RUNTIME_GLOBAL.make_actor(mcc)
     }
 }
@@ -88,7 +88,7 @@ impl V8RuntimeInner {
 }
 
 impl ModuleRuntime for V8RuntimeInner {
-    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<Module> {
         #![allow(unreachable_code, unused_variables)]
 
         log::trace!(
@@ -110,40 +110,30 @@ impl ModuleRuntime for V8RuntimeInner {
         // Validate and create a common module rom the raw definition.
         let common = build_common_module_from_raw(mcc, desc)?;
 
-        Ok(JsModule { common, program })
+        Ok(Module::Js(JsModule { common, program }))
     }
 }
 
 #[derive(Clone)]
-struct JsModule {
+pub struct JsModule {
     common: ModuleCommon,
     program: Arc<str>,
 }
 
-impl DynModule for JsModule {
-    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+impl JsModule {
+    pub fn replica_ctx(&self) -> &Arc<ReplicaContext> {
         self.common.replica_ctx()
     }
 
-    fn scheduler(&self) -> &Scheduler {
+    pub fn scheduler(&self) -> &Scheduler {
         self.common.scheduler()
     }
-}
 
-impl Module for JsModule {
-    type Instance = JsInstance;
-
-    type InitialInstances<'a> = iter::Empty<JsInstance>;
-
-    fn initial_instances(&mut self) -> Self::InitialInstances<'_> {
-        iter::empty()
-    }
-
-    fn info(&self) -> Arc<ModuleInfo> {
+    pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info().clone()
     }
 
-    fn create_instance(&self) -> Self::Instance {
+    pub fn create_instance(&self) -> JsInstance {
         // TODO(v8): do we care about preinits / setup or are they unnecessary?
 
         let common = &self.common;
@@ -292,7 +282,7 @@ impl JsInstanceEnv {
     }
 }
 
-struct JsInstance {
+pub struct JsInstance {
     /// Information common to instances of all runtimes.
     ///
     /// (The type is shared, the data is not.)
@@ -308,12 +298,12 @@ struct JsInstance {
     program: Arc<str>,
 }
 
-impl ModuleInstance for JsInstance {
-    fn trapped(&self) -> bool {
+impl JsInstance {
+    pub fn trapped(&self) -> bool {
         self.common.trapped
     }
 
-    fn update_database(
+    pub fn update_database(
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
@@ -324,7 +314,7 @@ impl ModuleInstance for JsInstance {
             .update_database(replica_ctx, program, old_module_info, policy)
     }
 
-    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
+    pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
         let replica_ctx = &self.instance.get_mut().replica_ctx().clone();
 
         self.common

@@ -76,7 +76,20 @@ pub struct NodeStatus {
     pub state: String,
 }
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize, serde::Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Default,
+    Serialize,
+    Deserialize,
+    serde::Deserialize,
+    strum::AsRefStr,
+    strum::Display,
 )]
 #[repr(i32)]
 pub enum HostType {
