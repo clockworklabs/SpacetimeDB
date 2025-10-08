@@ -789,7 +789,7 @@ impl Lang for Csharp<'_> {
                             "\"{reducer_str_name}\" => BSATNHelpers.Decode<Reducer.{reducer_name}>(encodedArgs),"
                         );
                     }
-					writeln!(
+                    writeln!(
                         output,
                         r#""" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),"#
                     );
