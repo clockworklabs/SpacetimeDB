@@ -415,7 +415,7 @@ fn eval_module<'scope>(
     script_id: i32,
     code: &str,
     resolve_deps: impl MapFnTo<ResolveModuleCallback<'scope>>,
-) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, Value>)> {
+) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
     // Get the source map, if any.
     let source_map_url = find_source_map(code)
         .map(|sm| sm.into_string(scope))
@@ -454,6 +454,15 @@ fn eval_module<'scope>(
     // Evaluate the module.
     let value = module.evaluate(scope).ok_or_else(exception_already_thrown)?;
 
+    if module.get_status() == v8::ModuleStatus::Errored {
+        return Err(error::ExceptionValue(module.get_exception()).throw(scope));
+    }
+
+    let value = value.cast::<v8::Promise>();
+    if value.state() == v8::PromiseState::Pending {
+        return Err(error::TypeError("module has top-level await and is pending").throw(scope));
+    }
+
     Ok((module, value))
 }
 
@@ -461,7 +470,7 @@ fn eval_module<'scope>(
 fn eval_user_module<'scope>(
     scope: &PinScope<'scope, '_>,
     code: &str,
-) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, Value>)> {
+) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
     let name = str_from_ident!(spacetimedb_module).string(scope).into();
     eval_module(scope, name, 0, code, resolve_sys_module)
 }
