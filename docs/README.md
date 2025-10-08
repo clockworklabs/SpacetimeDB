@@ -49,17 +49,10 @@ For more information on how to use Docusaurus, see the
 
 1. Make sure you have [Node.js](https://nodejs.org/) installed
    (version 22 or higher is recommended).
-2. Clone the repository and navigate to this directory.
+2. Clone the repository and navigate to the `docs` directory.
 3. Install the dependencies: `pnpm install`
-
-#### Running the Development Server
-
-```
-pnpm start
-```
-
-This command starts a local development server and opens up a browser window.
-Most changes are reflected live without having to restart the server.
+4. Run the development server: `pnpm start`, which will start a local server and open a browser window.
+   All changes you make to the markdown files will be reflected live in the browser.
 
 ## License
 
