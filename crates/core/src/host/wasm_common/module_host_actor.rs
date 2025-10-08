@@ -12,8 +12,7 @@ use crate::energy::{EnergyMonitor, ReducerBudget, ReducerFingerprint};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
-    CallReducerParams, DatabaseUpdate, DynModule, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
-    ModuleInstance,
+    CallReducerParams, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
 };
 use crate::host::{ArgsTuple, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
 use crate::identity::Identity;
@@ -83,7 +82,7 @@ pub struct ExecuteResult {
     pub call_result: Result<Result<(), Box<str>>, anyhow::Error>,
 }
 
-pub(crate) struct WasmModuleHostActor<T: WasmModule> {
+pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
     initial_instance: Option<Box<WasmModuleInstance<T::Instance>>>,
     common: ModuleCommon,
@@ -171,30 +170,20 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     }
 }
 
-impl<T: WasmModule> DynModule for WasmModuleHostActor<T> {
-    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+impl<T: WasmModule> WasmModuleHostActor<T> {
+    pub fn replica_ctx(&self) -> &Arc<ReplicaContext> {
         self.common.replica_ctx()
     }
 
-    fn scheduler(&self) -> &Scheduler {
+    pub fn scheduler(&self) -> &Scheduler {
         self.common.scheduler()
     }
-}
 
-impl<T: WasmModule> Module for WasmModuleHostActor<T> {
-    type Instance = WasmModuleInstance<T::Instance>;
-
-    type InitialInstances<'a> = Option<Self::Instance>;
-
-    fn initial_instances(&mut self) -> Self::InitialInstances<'_> {
-        self.initial_instance.take().map(|x| *x)
-    }
-
-    fn info(&self) -> Arc<ModuleInfo> {
+    pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info()
     }
 
-    fn create_instance(&self) -> Self::Instance {
+    pub fn create_instance(&self) -> WasmModuleInstance<T::Instance> {
         let common = &self.common;
         let env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
         // this shouldn't fail, since we already called module.create_instance()
@@ -221,12 +210,12 @@ impl<T: WasmInstance> std::fmt::Debug for WasmModuleInstance<T> {
     }
 }
 
-impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
-    fn trapped(&self) -> bool {
+impl<T: WasmInstance> WasmModuleInstance<T> {
+    pub fn trapped(&self) -> bool {
         self.common.trapped
     }
 
-    fn update_database(
+    pub fn update_database(
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
@@ -237,7 +226,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             .update_database(replica_ctx, program, old_module_info, policy)
     }
 
-    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+    pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
         crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(tx, params))
     }
 }
