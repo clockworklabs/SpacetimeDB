@@ -1,9 +1,9 @@
 name: Docs - Test
+permissions:
+  contents: read
 
 on:
   pull_request:
-    branches:
-      - master
 
 jobs:
   build:
@@ -42,3 +42,12 @@ jobs:
       - name: Docusaurus build
         working-directory: docs
         run: pnpm build
+
+      # TEMPORARY - Needs to be removed and placed in docs-publish.yaml
+      - name: Publish docs to S3
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.DOCS_AWS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.DOCS_AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: "stdb-docs-jlvc"
+          source_dir: docs/build
