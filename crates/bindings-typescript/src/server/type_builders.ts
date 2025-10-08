@@ -2660,7 +2660,8 @@ export const t = {
     return new ProductBuilder(nameOrObj, undefined);
   }) as {
     <Obj extends ElementsObj>(name: string, obj: Obj): ProductBuilder<Obj>;
-    <Obj extends ElementsObj>(obj: Obj): ProductBuilder<Obj>;
+    // TODO: Currently names are not optional
+    // <Obj extends ElementsObj>(obj: Obj): ProductBuilder<Obj>;
   },
 
   /**
@@ -2718,7 +2719,8 @@ export const t = {
     return new SumBuilder(nameOrObj, undefined);
   }) as {
     <Obj extends VariantsObj>(name: string, obj: Obj): SumBuilder<Obj>;
-    <Obj extends VariantsObj>(obj: Obj): SumBuilder<Obj>;
+    // TODO: Currently names are not optional
+    // <Obj extends VariantsObj>(obj: Obj): SumBuilder<Obj>;
   },
 
   /**

@@ -46,7 +46,7 @@ type _ = MustBeNever<Row2>;
 
 // Test type inference on a type with a nested object
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const point = t.object({
+const point = t.object('Point', {
   x: t.i32(),
   y: t.f64(),
   z: t.object('Foo', {
