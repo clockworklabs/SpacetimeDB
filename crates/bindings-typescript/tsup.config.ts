@@ -122,12 +122,10 @@ export default defineConfig([
       js:
         'typeof globalThis!=="undefined"&&(' +
         '(globalThis.global=globalThis.global||globalThis),' +
-        '(globalThis.window=globalThis.window||globalThis));'
+        '(globalThis.window=globalThis.window||globalThis));',
     },
     treeshake: {
-      moduleSideEffects: [
-        'src/server/polyfills.ts',
-      ]
+      moduleSideEffects: ['src/server/polyfills.ts'],
     },
     external: ['undici', /^spacetime:sys.*$/],
     noExternal: ['base64-js', 'fast-text-encoding'],
@@ -191,5 +189,5 @@ export default defineConfig([
   | Options
   | Options[]
   | ((
-    overrideOptions: Options
-  ) => Options | Options[] | Promise<Options | Options[]>);
+      overrideOptions: Options
+    ) => Options | Options[] | Promise<Options | Options[]>);
