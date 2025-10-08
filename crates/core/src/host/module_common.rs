@@ -4,7 +4,7 @@
 use crate::{
     energy::EnergyMonitor,
     host::{
-        module_host::{DynModule, ModuleInfo},
+        module_host::ModuleInfo,
         wasm_common::{module_host_actor::DescribeError, DESCRIBE_MODULE_DUNDER},
         Scheduler,
     },
@@ -80,12 +80,12 @@ impl ModuleCommon {
     }
 }
 
-impl DynModule for ModuleCommon {
-    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+impl ModuleCommon {
+    pub fn replica_ctx(&self) -> &Arc<ReplicaContext> {
         &self.replica_context
     }
 
-    fn scheduler(&self) -> &Scheduler {
+    pub fn scheduler(&self) -> &Scheduler {
         &self.scheduler
     }
 }
