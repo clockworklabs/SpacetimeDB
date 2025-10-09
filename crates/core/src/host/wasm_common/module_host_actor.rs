@@ -75,11 +75,14 @@ pub struct ExecutionTimings {
     pub wasm_instance_env_call_times: CallTimes,
 }
 
+/// The result that `__call_reducer__` produces during normal non-trap execution.
+pub type ReducerResult = Result<(), Box<str>>;
+
 pub struct ExecuteResult {
     pub energy: EnergyStats,
     pub timings: ExecutionTimings,
     pub memory_allocation: usize,
-    pub call_result: Result<Result<(), Box<str>>, anyhow::Error>,
+    pub call_result: anyhow::Result<ReducerResult>,
 }
 
 pub struct WasmModuleHostActor<T: WasmModule> {
@@ -117,8 +120,10 @@ impl From<TypeRefError> for InitializationError {
 
 #[derive(thiserror::Error, Debug)]
 pub enum DescribeError {
-    #[error("bad signature for descriptor function")]
-    Signature,
+    #[error("bad signature for descriptor function: {0}")]
+    Signature(anyhow::Error),
+    #[error("error when preparing descriptor function: {0}")]
+    Setup(anyhow::Error),
     #[error("error decoding module description: {0}")]
     Decode(#[from] DecodeError),
     #[error(transparent)]
