@@ -1,3 +1,4 @@
+use self::budget::{cb_log_long_running, cb_noop};
 use self::budget::{energy_from_elapsed, with_timeout_and_cb_every};
 use self::error::{
     catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CodeError, ExcResult, JsStackTrace,
@@ -17,7 +18,6 @@ use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::wasmtime::EPOCH_TICKS_PER_SECOND;
 use crate::host::Scheduler;
 use crate::{module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
-use core::ffi::c_void;
 use core::str;
 use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
@@ -316,17 +316,6 @@ impl JsInstance {
 
         self.common
             .call_reducer_with_tx(replica_ctx, tx, params, log_traceback, |tx, op, budget| {
-                /// Called by a thread separate to V8 execution
-                /// every [`EPOCH_TICKS_PER_SECOND`] ticks (~every 1 second)
-                /// to log that the reducer is still running.
-                extern "C" fn cb_log_long_running(isolate: &mut Isolate, _: *mut c_void) {
-                    let env = env_on_isolate(isolate);
-                    let database = env.instance_env.replica_ctx.database_identity;
-                    let reducer = env.reducer_name();
-                    let dur = env.reducer_start().elapsed();
-                    tracing::warn!(reducer, ?database, "JavaScript has been running for {dur:?}");
-                }
-
                 // TODO(v8): snapshots
                 // Prepare the isolate with the env.
                 let mut isolate = Isolate::new(<_>::default());
@@ -504,11 +493,10 @@ fn call_free_fun<'scope>(
 fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
     let budget = ReducerBudget::DEFAULT_BUDGET;
     let callback_every = EPOCH_TICKS_PER_SECOND;
-    extern "C" fn callback(_: &mut Isolate, _: *mut c_void) {}
 
     let mut isolate = Isolate::new(<_>::default());
     let handle = isolate.thread_safe_handle();
-    with_timeout_and_cb_every(handle, callback_every, callback, budget, || {
+    with_timeout_and_cb_every(handle, callback_every, cb_noop, budget, || {
         with_scope(&mut isolate, |scope| {
             eval_user_module_catch(scope, program).map_err(DescribeError::Setup)?;
 

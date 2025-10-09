@@ -4,6 +4,7 @@
 //! as V8 has no native notion of gas/fuel,
 //! so we have to invent one using time and timeouts.
 
+use super::env_on_isolate;
 use crate::host::wasm_common::module_host_actor::EnergyStats;
 use crate::host::wasmtime::{epoch_ticker, ticks_in_duration};
 use core::ptr;
@@ -40,6 +41,21 @@ pub(super) fn with_timeout_and_cb_every<R>(
 
 /// A callback passed to [`IsolateHandle::request_interrupt`].
 pub(super) type InterruptCallback = extern "C" fn(&mut Isolate, *mut c_void);
+
+/// An [`InterruptCallback`] used by `call_reducer`,
+/// and called by a thread separate to V8 execution
+/// every [`EPOCH_TICKS_PER_SECOND`] ticks (~every 1 second)
+/// to log that the reducer is still running.
+pub(super) extern "C" fn cb_log_long_running(isolate: &mut Isolate, _: *mut c_void) {
+    let env = env_on_isolate(isolate);
+    let database = env.instance_env.replica_ctx.database_identity;
+    let reducer = env.reducer_name();
+    let dur = env.reducer_start().elapsed();
+    tracing::warn!(reducer, ?database, "JavaScript has been running for {dur:?}");
+}
+
+/// An [`InterruptCallback`] that does nothing.
+pub(super) extern "C" fn cb_noop(_: &mut Isolate, _: *mut c_void) {}
 
 /// Spawns a thread that will terminate execution
 /// when `budget` has been used up.
