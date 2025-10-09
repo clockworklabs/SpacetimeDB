@@ -77,6 +77,9 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          workspaces: |
+            .
+            modules/quickstart-chat
           shared-key: quickstart-chat-test
 
       - name: Install SpacetimeDB CLI from the local checkout
