@@ -455,11 +455,16 @@ fn eval_module<'scope>(
     let value = module.evaluate(scope).ok_or_else(exception_already_thrown)?;
 
     if module.get_status() == v8::ModuleStatus::Errored {
+        // If there's an exception while evaluating the code of the module, `evaluate()` won't
+        // throw, but instead the status will be `Errored` and the exception can be obtained from
+        // `get_exception()`.
         return Err(error::ExceptionValue(module.get_exception()).throw(scope));
     }
 
     let value = value.cast::<v8::Promise>();
     if value.state() == v8::PromiseState::Pending {
+        // If the user were to put top-level `await new Promise((resolve) => { /* do nothing */ })`
+        // the module value would never actually resolve. For now, reject this entirely.
         return Err(error::TypeError("module has top-level await and is pending").throw(scope));
     }
 

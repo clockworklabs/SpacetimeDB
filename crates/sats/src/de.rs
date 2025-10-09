@@ -749,6 +749,8 @@ impl<'de, D: Deserializer<'de>> VariantAccess<'de> for SomeAccess<D> {
     }
 }
 
+/// A `Deserializer` that represents a unit value.
+// used in the implementation of `VariantAccess for NoneAccess`
 pub struct UnitAccess<E>(PhantomData<E>);
 
 impl<E: Error> UnitAccess<E> {
