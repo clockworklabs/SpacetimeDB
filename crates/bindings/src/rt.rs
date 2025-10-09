@@ -2,7 +2,6 @@
 
 use crate::table::IndexAlgo;
 use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table};
-use spacetimedb_bindings_sys::raw;
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
 use spacetimedb_lib::de::{self, Deserialize, Error as _, SeqProductAccess};
@@ -529,10 +528,7 @@ const NO_SUCH_BYTES: u16 = errno::NO_SUCH_BYTES.get();
 /// Look up the jwt associated with `connection_id`.
 pub fn get_jwt(connection_id: ConnectionId) -> Option<String> {
     let mut buf = IterBuf::take();
-    let mut source: BytesSource = BytesSource::INVALID;
-    unsafe {
-        raw::get_jwt(connection_id.as_le_byte_array().as_ptr(), &mut source);
-    };
+    let source = sys::get_jwt(connection_id.as_le_byte_array())?;
     if source == BytesSource::INVALID {
         return None;
     }

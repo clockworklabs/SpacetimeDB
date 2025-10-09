@@ -20,6 +20,7 @@ use wasmtime::{AsContext, Caller, StoreContextMut};
 
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 
+use crate::error::NodesError;
 #[cfg(not(feature = "spacetimedb-wasm-instance-env-times"))]
 use instrumentation::noop as span;
 #[cfg(feature = "spacetimedb-wasm-instance-env-times")]
@@ -1361,32 +1362,45 @@ impl WasmInstanceEnv {
     ///
     /// This must be called inside a transaction (because it reads from a system table).
     ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    ///
     /// # Traps
     ///
     /// Traps if:
     ///
     /// - `connection_id` does not point to a valid little-endian `ConnectionId`.
-    /// - This is called outside a transaction.
+    /// - `target_ptr` is NULL or `target_ptr[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///  - The `ByteSourceId` to be written to `target_ptr` would overflow [`u32::MAX`].
     pub fn get_jwt(
         caller: Caller<'_, Self>,
         connection_id: WasmPtr<ConnectionId>,
         target_ptr: WasmPtr<u32>,
-    ) -> RtResult<()> {
-        Self::with_span(caller, AbiCall::GetJwt, |caller| {
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::GetJwt, target_ptr, |caller| {
             let (mem, env) = Self::mem_env(caller);
             let cid = ConnectionId::read_from(mem, connection_id)?;
-            let jwt = match env.instance_env.tx.get()?.get_jwt_payload(cid)? {
+            let jwt = match env
+                .instance_env
+                .tx
+                .get()
+                .map_err(NodesError::from)?
+                .get_jwt_payload(cid)
+                .map_err(anyhow::Error::from)?
+            {
                 None => {
-                    // Consider logging here, since this should only happen during an upgrade.
-                    0u32.write_to(mem, target_ptr)?;
-                    return Ok(());
+                    // We should consider logging a warning here, since we don't expect any
+                    // connection ids to not have a JWT after we migrate.
+                    return Ok(0u32);
                 }
                 Some(jwt) => jwt,
             };
             let b = bytes::Bytes::from(jwt);
             let source_id = env.create_bytes_source(b)?;
-            source_id.0.write_to(mem, target_ptr)?;
-            Ok(())
+            Ok(source_id.0)
         })
     }
 
