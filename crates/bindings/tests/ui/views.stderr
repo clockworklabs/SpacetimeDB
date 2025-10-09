@@ -10,9 +10,9 @@ error[E0599]: no method named `iter` found for reference `&test__ViewHandle` in 
            candidate #2: `bitflags::traits::Flags`
 
 error[E0599]: `&test__ViewHandle` is not an iterator
-  --> tests/ui/views.rs:22:33
-   |
-3  | #[table(name = test)]
+ --> tests/ui/views.rs:22:33
+  |
+ 3 | #[table(name = test)]
    | ------------------- doesn't satisfy `test__ViewHandle: Iterator`
 ...
 22 |     let _ = read_only.db.test().count();
