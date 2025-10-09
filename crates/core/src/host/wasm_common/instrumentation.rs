@@ -124,3 +124,8 @@ impl CallTimes {
         std::mem::take(self)
     }
 }
+
+#[cfg(not(feature = "spacetimedb-wasm-instance-env-times"))]
+pub use noop as span;
+#[cfg(feature = "spacetimedb-wasm-instance-env-times")]
+pub use op as span;

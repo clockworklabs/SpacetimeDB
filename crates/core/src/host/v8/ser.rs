@@ -2,7 +2,8 @@
 
 use super::de::intern_field_name;
 use super::error::{exception_already_thrown, ExcResult, ExceptionThrown, RangeError, Throwable, TypeError};
-use super::key_cache::{get_or_create_key_cache, KeyCache};
+use super::string_const::{TAG, VALUE};
+use super::syscall::FnRet;
 use super::to_value::ToValue;
 use derive_more::From;
 use spacetimedb_sats::{
@@ -10,39 +11,24 @@ use spacetimedb_sats::{
     ser::{self, Serialize},
     u256,
 };
-use v8::{Array, ArrayBuffer, HandleScope, IntegrityLevel, Local, Object, Uint8Array, Value};
+use v8::{Array, ArrayBuffer, IntegrityLevel, Local, Object, PinScope, Uint8Array, Value};
 
 /// Serializes `value` into a V8 into `scope`.
-pub(super) fn serialize_to_js<'scope>(
-    scope: &mut HandleScope<'scope>,
-    value: &impl Serialize,
-) -> ExcResult<Local<'scope, Value>> {
-    let key_cache = get_or_create_key_cache(scope);
-    let key_cache = &mut *key_cache.borrow_mut();
-    value
-        .serialize(Serializer::new(scope, key_cache))
-        .map_err(|e| e.throw(scope))
+pub(super) fn serialize_to_js<'scope>(scope: &PinScope<'scope, '_>, value: &impl Serialize) -> FnRet<'scope> {
+    value.serialize(Serializer::new(scope)).map_err(|e| e.throw(scope))
 }
 
 /// Deserializes to V8 values.
-struct Serializer<'this, 'scope> {
+#[derive(Copy, Clone)]
+struct Serializer<'this, 'scope, 'isolate> {
     /// The scope to serialize values into.
-    scope: &'this mut HandleScope<'scope>,
-    /// A cache for frequently used strings.
-    key_cache: &'this mut KeyCache,
+    scope: &'this PinScope<'scope, 'isolate>,
 }
 
-impl<'this, 'scope> Serializer<'this, 'scope> {
+impl<'this, 'scope, 'isolate> Serializer<'this, 'scope, 'isolate> {
     /// Creates a new serializer into `scope`.
-    pub fn new(scope: &'this mut HandleScope<'scope>, key_cache: &'this mut KeyCache) -> Self {
-        Self { scope, key_cache }
-    }
-
-    fn reborrow(&mut self) -> Serializer<'_, 'scope> {
-        Serializer {
-            scope: self.scope,
-            key_cache: self.key_cache,
-        }
+    pub fn new(scope: &'this PinScope<'scope, 'isolate>) -> Self {
+        Self { scope }
     }
 }
 
@@ -58,7 +44,7 @@ enum Error {
 }
 
 impl<'scope> Throwable<'scope> for Error {
-    fn throw(self, scope: &mut HandleScope<'scope>) -> ExceptionThrown {
+    fn throw(self, scope: &PinScope<'scope, '_>) -> ExceptionThrown {
         match self {
             Self::StringTooLarge(len) => {
                 RangeError(format!("`{len}` bytes is too large to be a JS string")).throw(scope)
@@ -92,20 +78,20 @@ macro_rules! serialize_primitive {
 /// However, the values of existing properties may be modified,
 /// which can be useful if the module wants to modify a property
 /// and then send the object back.
-fn seal_object(scope: &mut HandleScope<'_>, object: &Object) -> ExcResult<()> {
+fn seal_object(scope: &PinScope<'_, '_>, object: &Object) -> ExcResult<()> {
     let _ = object
         .set_integrity_level(scope, IntegrityLevel::Sealed)
         .ok_or_else(exception_already_thrown)?;
     Ok(())
 }
 
-impl<'this, 'scope> ser::Serializer for Serializer<'this, 'scope> {
+impl<'this, 'scope, 'isolate> ser::Serializer for Serializer<'this, 'scope, 'isolate> {
     type Ok = Local<'scope, Value>;
     type Error = Error;
 
-    type SerializeArray = SerializeArray<'this, 'scope>;
+    type SerializeArray = SerializeArray<'this, 'scope, 'isolate>;
     type SerializeSeqProduct = Self::SerializeNamedProduct;
-    type SerializeNamedProduct = SerializeNamedProduct<'this, 'scope>;
+    type SerializeNamedProduct = SerializeNamedProduct<'this, 'scope, 'isolate>;
 
     // Serialization of primitive types defers to `ToValue`.
     serialize_primitive!(serialize_bool, bool);
@@ -150,7 +136,7 @@ impl<'this, 'scope> ser::Serializer for Serializer<'this, 'scope> {
     }
 
     fn serialize_named_product(self, _len: usize) -> Result<Self::SerializeNamedProduct, Self::Error> {
-        // TODO(noa): this can be more efficient if we tell it the names ahead of time
+        // TODO(v8, noa): this can be more efficient if we tell it the names ahead of time
         let object = Object::new(self.scope);
         Ok(SerializeNamedProduct {
             inner: self,
@@ -160,22 +146,19 @@ impl<'this, 'scope> ser::Serializer for Serializer<'this, 'scope> {
     }
 
     fn serialize_variant<T: Serialize + ?Sized>(
-        mut self,
+        self,
         tag: u8,
         var_name: Option<&str>,
         value: &T,
     ) -> Result<Self::Ok, Self::Error> {
         // Serialize the payload.
-        let value_value: Local<'scope, Value> = value.serialize(self.reborrow())?;
+        let value_value: Local<'scope, Value> = value.serialize(self)?;
         // Figure out the tag.
         let tag_value: Local<'scope, Value> = intern_field_name(self.scope, var_name, tag as usize).into();
         let values = [tag_value, value_value];
 
         // The property keys are always `"tag"` an `"value"`.
-        let names = [
-            self.key_cache.tag(self.scope).into(),
-            self.key_cache.value(self.scope).into(),
-        ];
+        let names = [TAG.string(self.scope).into(), VALUE.string(self.scope).into()];
 
         // Stitch together the object.
         let prototype = v8::null(self.scope).into();
@@ -186,19 +169,19 @@ impl<'this, 'scope> ser::Serializer for Serializer<'this, 'scope> {
 }
 
 /// Serializes array elements and finalizes the JS array.
-struct SerializeArray<'this, 'scope> {
-    inner: Serializer<'this, 'scope>,
+struct SerializeArray<'this, 'scope, 'isolate> {
+    inner: Serializer<'this, 'scope, 'isolate>,
     array: Local<'scope, Array>,
     next_index: u32,
 }
 
-impl<'scope> ser::SerializeArray for SerializeArray<'_, 'scope> {
+impl<'scope> ser::SerializeArray for SerializeArray<'_, 'scope, '_> {
     type Ok = Local<'scope, Value>;
     type Error = Error;
 
     fn serialize_element<T: Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
         // Serialize the current `elem`ent.
-        let value = elem.serialize(self.inner.reborrow())?;
+        let value = elem.serialize(self.inner)?;
 
         // Set the value to the array slot at `index`.
         let index = self.next_index;
@@ -216,13 +199,13 @@ impl<'scope> ser::SerializeArray for SerializeArray<'_, 'scope> {
 }
 
 /// Serializes into JS objects where field names are turned into property names.
-struct SerializeNamedProduct<'this, 'scope> {
-    inner: Serializer<'this, 'scope>,
+struct SerializeNamedProduct<'this, 'scope, 'isolate> {
+    inner: Serializer<'this, 'scope, 'isolate>,
     object: Local<'scope, Object>,
     next_index: usize,
 }
 
-impl<'scope> ser::SerializeSeqProduct for SerializeNamedProduct<'_, 'scope> {
+impl<'scope> ser::SerializeSeqProduct for SerializeNamedProduct<'_, 'scope, '_> {
     type Ok = Local<'scope, Value>;
     type Error = Error;
 
@@ -235,7 +218,7 @@ impl<'scope> ser::SerializeSeqProduct for SerializeNamedProduct<'_, 'scope> {
     }
 }
 
-impl<'scope> ser::SerializeNamedProduct for SerializeNamedProduct<'_, 'scope> {
+impl<'scope> ser::SerializeNamedProduct for SerializeNamedProduct<'_, 'scope, '_> {
     type Ok = Local<'scope, Value>;
     type Error = Error;
 
@@ -245,10 +228,10 @@ impl<'scope> ser::SerializeNamedProduct for SerializeNamedProduct<'_, 'scope> {
         elem: &T,
     ) -> Result<(), Self::Error> {
         // Serialize the field value.
-        let value = elem.serialize(self.inner.reborrow())?;
+        let value = elem.serialize(self.inner)?;
 
         // Figure out the object property to use.
-        let scope = &mut *self.inner.scope;
+        let scope = self.inner.scope;
         let index = self.next_index;
         self.next_index += 1;
         let key = intern_field_name(scope, field_name, index).into();

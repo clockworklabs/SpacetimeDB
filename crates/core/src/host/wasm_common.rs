@@ -322,7 +322,7 @@ impl<I: ResourceIndex> ResourceSlab<I> {
 decl_index!(RowIterIdx => std::vec::IntoIter<Vec<u8>>);
 pub(super) type RowIters = ResourceSlab<RowIterIdx>;
 
-pub(super) struct TimingSpan {
+pub(crate) struct TimingSpan {
     pub start: Instant,
     pub name: String,
 }
@@ -339,6 +339,7 @@ impl TimingSpan {
 decl_index!(TimingSpanIdx => TimingSpan);
 pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 
+/// Converts a [`NodesError`] to an error code, if possible.
 pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
     match err {
         NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
@@ -362,6 +363,18 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
         },
         _ => None,
     }
+}
+
+/// Converts a [`NodesError`] to an error code and logs, if possible.
+pub fn err_to_errno_and_log<C: From<u16>>(func: AbiCall, err: NodesError) -> anyhow::Result<C> {
+    let Some(errno) = err_to_errno(&err) else {
+        return Err(AbiRuntimeError { func, err }.into());
+    };
+    log::debug!(
+        "abi call to {func} returned an errno: {errno} ({})",
+        errno::strerror(errno).unwrap_or("<unknown>")
+    );
+    Ok(errno.get().into())
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -19,6 +19,7 @@ required-features = [] # Features required to build this target (N/A for lib)
 [features]
 # Perfmaps for profiling modules
 perfmap = ["spacetimedb-core/perfmap"]
+unstable = ["spacetimedb-client-api/unstable"]
 
 [dependencies]
 spacetimedb-client-api-messages.workspace = true
