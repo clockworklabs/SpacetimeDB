@@ -33,12 +33,12 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm,
-    RawIndexDefV9, RawMiscModuleExportV9, RawModuleDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9, RawScheduleDefV9,
-    RawScopedTypeNameV9, RawSequenceDefV9, RawSql, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess,
-    TableType,
+    RawIndexDefV9, RawMiscModuleExportV9, RawModuleDefV9, RawProcedureDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9,
+    RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9, RawSql, RawTableDefV9, RawTypeDefV9,
+    RawUniqueConstraintDataV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
-use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ReducerId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 
@@ -103,6 +103,12 @@ pub struct ModuleDef {
     /// and must be preserved for future calls to `__call_reducer__`.
     reducers: IndexMap<Identifier, ReducerDef>,
 
+    /// The procedures of the module definition.
+    ///
+    /// Like `reducers`, this uses [`IndexMap`] to preserve order
+    /// so that `__call_procedure__` receives stable integer IDs.
+    procedures: IndexMap<Identifier, ProcedureDef>,
+
     /// A map from lifecycle reducer kind to reducer id.
     lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
 
@@ -159,6 +165,11 @@ impl ModuleDef {
     /// The reducers of the module definition.
     pub fn reducers(&self) -> impl Iterator<Item = &ReducerDef> {
         self.reducers.values()
+    }
+
+    /// The procedures of the module definition.
+    pub fn procedures(&self) -> impl Iterator<Item = &ProcedureDef> {
+        self.procedures.values()
     }
 
     /// The type definitions of the module definition.
@@ -241,6 +252,23 @@ impl ModuleDef {
     /// Look up a reducer by its id.
     pub fn get_reducer_by_id(&self, id: ReducerId) -> Option<&ReducerDef> {
         self.reducers.get_index(id.idx()).map(|(_, def)| def)
+    }
+
+    /// Convenience method to look up a procedure, possibly by a string, returning its id as well.
+    pub fn procedure_full<K: ?Sized + Hash + Equivalent<Identifier>>(
+        &self,
+        name: &K,
+    ) -> Option<(ProcedureId, &ProcedureDef)> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.procedures.get_full(name).map(|(idx, _, def)| (idx.into(), def))
+    }
+
+    pub fn procedure_by_id(&self, id: ProcedureId) -> &ProcedureDef {
+        &self.procedures[id.idx()]
+    }
+
+    pub fn get_procedure_by_id(&self, id: ProcedureId) -> Option<&ProcedureDef> {
+        self.procedures.get_index(id.idx()).map(|(_, def)| def)
     }
 
     /// Looks up a lifecycle reducer defined in the module.
@@ -342,13 +370,18 @@ impl From<ModuleDef> for RawModuleDefV9 {
             typespace_for_generate: _,
             refmap: _,
             row_level_security_raw,
+            procedures,
         } = val;
 
         RawModuleDefV9 {
             tables: to_raw(tables),
             reducers: reducers.into_iter().map(|(_, def)| def.into()).collect(),
             types: to_raw(types),
-            misc_exports: vec![],
+            // TODO: Do we need to include default values here?
+            misc_exports: procedures
+                .into_iter()
+                .map(|(_, def)| RawMiscModuleExportV9::Procedure(def.into()))
+                .collect(),
             typespace,
             row_level_security: row_level_security_raw.into_iter().map(|(_, def)| def).collect(),
         }
@@ -745,7 +778,30 @@ impl From<RowLevelSecurityDef> for RawRowLevelSecurityDefV9 {
     }
 }
 
-/// Marks a table as a timer table for a scheduled reducer.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Ord, PartialOrd)]
+pub enum FunctionKind {
+    /// Functions which have not yet been determined to be reducers or procedures.
+    ///
+    /// Used as a placeholder during module validation,
+    /// when pre-processing [`ScheduleDef`]s prior to validating their scheduled functions.
+    /// Will never appear in a fully-validated [`ModuleDef`],
+    /// and should not be placed in errors either.
+    Unknown,
+    Reducer,
+    Procedure,
+}
+
+impl fmt::Display for FunctionKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            FunctionKind::Unknown => "exported function",
+            FunctionKind::Reducer => "reducer",
+            FunctionKind::Procedure => "procedure",
+        })
+    }
+}
+
+/// Marks a table as a timer table for a scheduled reducer or procedure.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ScheduleDef {
@@ -762,16 +818,18 @@ pub struct ScheduleDef {
     /// Must be named `scheduled_id` and be of type `u64`.
     pub id_column: ColId,
 
-    /// The name of the reducer to call. Not yet an `Identifier` because
-    /// reducer names are not currently validated.
-    pub reducer_name: Identifier,
+    /// The name of the reducer or procedure to call.
+    pub function_name: Identifier,
+
+    /// Whether the `function_name` refers to a reducer or a procedure.
+    pub function_kind: FunctionKind,
 }
 
 impl From<ScheduleDef> for RawScheduleDefV9 {
     fn from(val: ScheduleDef) -> Self {
         RawScheduleDefV9 {
             name: Some(val.name),
-            reducer_name: val.reducer_name.into(),
+            reducer_name: val.function_name.into(),
             scheduled_at_column: val.at_column,
         }
     }
@@ -902,7 +960,7 @@ impl From<ScopedTypeName> for RawScopedTypeNameV9 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ReducerDef {
-    /// The name of the reducer. This must be unique within the module.
+    /// The name of the reducer. This must be unique within the module's set of reducers and procedures.
     pub name: Identifier,
 
     /// The parameters of the reducer.
@@ -925,6 +983,47 @@ impl From<ReducerDef> for RawReducerDefV9 {
             name: val.name.into(),
             params: val.params,
             lifecycle: val.lifecycle,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct ProcedureDef {
+    /// The name of the procedure.
+    ///
+    /// This must be unique within the module's set of reducers and procedures.
+    pub name: Identifier,
+
+    /// The parameters of the procedure.
+    ///
+    /// This `ProductType` need not be registered in the module's `Typespace`.
+    pub params: ProductType,
+
+    /// The parameters of the procedure, formatted for client codegen.
+    ///
+    /// This `ProductType` need not be registered in the module's `TypespaceForGenerate`.
+    pub params_for_generate: ProductTypeDef,
+
+    /// The return type of the procedure.
+    ///
+    /// If this is a non-special compound type, it should be registered in the module's `Typespace`
+    /// and indirected through an [`AlgebraicType::Ref`].
+    pub return_type: AlgebraicType,
+
+    /// The return type of the procedure.
+    ///
+    /// If this is a non-special compound type, it should be registered in the module's `TypespaceForGenerate`
+    /// and indirected through an [`AlgebraicTypeUse::Ref`].
+    pub return_type_for_generate: AlgebraicTypeUse,
+}
+
+impl From<ProcedureDef> for RawProcedureDefV9 {
+    fn from(val: ProcedureDef) -> Self {
+        RawProcedureDefV9 {
+            name: val.name.into(),
+            params: val.params,
+            return_type: val.return_type,
         }
     }
 }

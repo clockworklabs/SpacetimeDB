@@ -6,9 +6,8 @@ use enum_map::Enum;
 use once_cell::sync::OnceCell;
 use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::serde::SeedWrapper;
-use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::ProductValue;
-use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
+use spacetimedb_schema::def::deserialize::{ArgsSeed, ProcedureArgsDeserializeSeed, ReducerArgsDeserializeSeed};
 
 mod disk_storage;
 mod host_controller;
@@ -31,6 +30,9 @@ pub use host_controller::{
 pub use module_host::{ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;
 
+/// Encoded arguments to a database function.
+///
+/// Despite the name, this may be arguments to either a reducer or a procedure.
 #[derive(Debug)]
 pub enum ReducerArgs {
     Json(ByteString),
@@ -39,13 +41,23 @@ pub enum ReducerArgs {
 }
 
 impl ReducerArgs {
+    #[allow(unused)]
+    fn into_tuple_for_procedure(
+        self,
+        seed: ProcedureArgsDeserializeSeed,
+    ) -> Result<ArgsTuple, InvalidProcedureArguments> {
+        self._into_tuple(seed).map_err(|err| InvalidProcedureArguments {
+            err,
+            procedure: (*seed.inner_def().name).into(),
+        })
+    }
     fn into_tuple(self, seed: ReducerArgsDeserializeSeed) -> Result<ArgsTuple, InvalidReducerArguments> {
         self._into_tuple(seed).map_err(|err| InvalidReducerArguments {
             err,
-            reducer: (*seed.reducer_def().name).into(),
+            reducer: (*seed.inner_def().name).into(),
         })
     }
-    fn _into_tuple(self, seed: ReducerArgsDeserializeSeed) -> anyhow::Result<ArgsTuple> {
+    fn _into_tuple(self, seed: impl ArgsSeed) -> anyhow::Result<ArgsTuple> {
         Ok(match self {
             ReducerArgs::Json(json) => ArgsTuple {
                 tuple: from_json_seed(&json, SeedWrapper(seed))?,
@@ -58,10 +70,7 @@ impl ReducerArgs {
                 json: OnceCell::new(),
             },
             ReducerArgs::Nullary => {
-                anyhow::ensure!(
-                    seed.reducer_def().params.elements.is_empty(),
-                    "failed to typecheck args"
-                );
+                anyhow::ensure!(seed.params().elements.is_empty(), "failed to typecheck args");
                 ArgsTuple::nullary()
             }
         })
@@ -112,6 +121,14 @@ pub struct InvalidReducerArguments {
     #[source]
     err: anyhow::Error,
     reducer: Box<str>,
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("invalid arguments for procedure {procedure}: {err}")]
+pub struct InvalidProcedureArguments {
+    #[source]
+    err: anyhow::Error,
+    procedure: Box<str>,
 }
 
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {
