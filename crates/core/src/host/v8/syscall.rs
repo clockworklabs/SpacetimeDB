@@ -298,6 +298,17 @@ fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<(AbiVersion,
     Ok((abi_version, hooks.cast()))
 }
 
+/// Gets a handle to the `__call_reducer__` property on `object`.
+pub(super) fn call_reducer_fun<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    object: Local<'scope, Object>,
+) -> ExcResult<Local<'scope, Function>> {
+    let key = str_from_ident!(__call_reducer__).string(scope);
+    let object = property(scope, object, key)?;
+    let fun = cast!(scope, object, Function, "module function hook `__call_reducer__`").map_err(|e| e.throw(scope))?;
+    Ok(fun)
+}
+
 /// Calls the `__call_reducer__` hook, if it's been registered.
 pub(super) fn call_call_reducer<'scope>(
     scope: &mut PinScope<'scope, '_>,
@@ -323,9 +334,7 @@ pub(super) fn call_call_reducer<'scope>(
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     // Get the function on the global proxy object and convert to a function.
-    let call_reducer_key = str_from_ident!(__call_reducer__).string(scope);
-    let object = property(scope, hooks_obj, call_reducer_key)?;
-    let fun = cast!(scope, object, Function, "function export for `__call_reducer__`").map_err(|e| e.throw(scope))?;
+    let fun = call_reducer_fun(scope, hooks_obj)?;
 
     // Call the function.
     let ret = call_free_fun(scope, fun, args)?;
@@ -336,16 +345,25 @@ pub(super) fn call_call_reducer<'scope>(
     Ok(user_res)
 }
 
+/// Gets a handle to the `__describe_module__` property on `object`.
+fn describe_module_fun<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    object: Local<'scope, Object>,
+) -> ExcResult<Local<'scope, Function>> {
+    let key = str_from_ident!(__describe_module__).string(scope);
+    let object = property(scope, object, key)?;
+    let fun =
+        cast!(scope, object, Function, "module function hook `__describe_module__`").map_err(|e| e.throw(scope))?;
+    Ok(fun)
+}
+
 /// Calls the `__describe_module__` hook, if it's been registered.
 pub(super) fn call_describe_module<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<RawModuleDef> {
     let (abi_ver, hooks_obj) = get_hooks(scope)?;
     let AbiVersion::V1 = abi_ver;
 
     // Get the function on `object` and convert to a function.
-    let describe_module_key = str_from_ident!(__describe_module__).string(scope);
-    let object = property(scope, hooks_obj, describe_module_key)?;
-    let fun =
-        cast!(scope, object, Function, "function export for `__describe_module__`").map_err(|e| e.throw(scope))?;
+    let fun = describe_module_fun(scope, hooks_obj)?;
 
     // Call the function.
     let raw_mod_js = call_free_fun(scope, fun, &[])?;
@@ -355,7 +373,7 @@ pub(super) fn call_describe_module<'scope>(scope: &mut PinScope<'scope, '_>) -> 
         scope,
         raw_mod_js,
         v8::Uint8Array,
-        "bytes return from __describe_module__"
+        "bytes return from `__describe_module__`"
     )
     .map_err(|e| e.throw(scope))?;
 
