@@ -149,7 +149,7 @@ pub enum IndexAlgo<'a> {
 }
 
 pub struct ScheduleDesc<'a> {
-    pub reducer_name: &'a str,
+    pub reducer_or_procedure_name: &'a str,
     pub scheduled_at_column: u16,
 }
 

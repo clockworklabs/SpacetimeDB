@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
-use super::module_host::{CallReducerParams, Module, ModuleInfo, ModuleRuntime};
+use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation::CallTimes;
@@ -52,7 +52,7 @@ pub struct V8Runtime {
 
 impl ModuleRuntime for V8Runtime {
     fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<Module> {
-        V8_RUNTIME_GLOBAL.make_actor(mcc)
+        V8_RUNTIME_GLOBAL.make_actor(mcc).map(Module::Js)
     }
 }
 
@@ -374,6 +374,13 @@ impl JsInstance {
                 };
                 (tx, exec_result)
             })
+    }
+
+    pub async fn call_procedure(
+        &mut self,
+        _params: CallProcedureParams,
+    ) -> Result<super::ProcedureCallResult, super::ProcedureCallError> {
+        todo!("JS/TS module procedure support")
     }
 }
 

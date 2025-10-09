@@ -8,6 +8,7 @@
 //
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
+mod procedure;
 mod reducer;
 mod sats;
 mod table;
@@ -102,6 +103,14 @@ mod sym {
             self.0
         }
     }
+}
+
+#[proc_macro_attribute]
+pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
+        let args = procedure::ProcedureArgs::parse(args)?;
+        procedure::procedure_impl(args, original_function)
+    })
 }
 
 #[proc_macro_attribute]

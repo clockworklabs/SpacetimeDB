@@ -922,20 +922,20 @@ pub struct ScheduleSchema {
     /// The name of the schedule.
     pub schedule_name: Box<str>,
 
-    /// The name of the reducer to call.
-    pub reducer_name: Box<str>,
+    /// The name of the reducer or procedure to call.
+    pub function_name: Box<str>,
 
     /// The column containing the `ScheduleAt` enum.
     pub at_column: ColId,
 }
 
 impl ScheduleSchema {
-    pub fn for_test(name: impl Into<Box<str>>, reducer: impl Into<Box<str>>, at: impl Into<ColId>) -> Self {
+    pub fn for_test(name: impl Into<Box<str>>, function: impl Into<Box<str>>, at: impl Into<ColId>) -> Self {
         Self {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
             schedule_name: name.into(),
-            reducer_name: reducer.into(),
+            function_name: function.into(),
             at_column: at.into(),
         }
     }
@@ -955,7 +955,7 @@ impl Schema for ScheduleSchema {
             table_id: parent_id,
             schedule_id: id,
             schedule_name: (*def.name).into(),
-            reducer_name: (*def.reducer_name).into(),
+            function_name: (*def.function_name).into(),
             at_column: def.at_column,
             // Ignore def.at_column and id_column. Those are recovered at runtime.
         }
@@ -964,9 +964,9 @@ impl Schema for ScheduleSchema {
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.schedule_name[..], &def.name[..], "Schedule name mismatch");
         ensure_eq!(
-            &self.reducer_name[..],
-            &def.reducer_name[..],
-            "Schedule reducer name mismatch"
+            &self.function_name[..],
+            &def.function_name[..],
+            "Schedule function name mismatch"
         );
         Ok(())
     }

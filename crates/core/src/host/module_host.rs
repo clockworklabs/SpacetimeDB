@@ -1,4 +1,8 @@
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
+use super::host_controller::ProcedureCallResult;
+use super::{
+    ArgsTuple, InvalidProcedureArguments, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId,
+    ReducerOutcome, Scheduler,
+};
 use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
@@ -43,16 +47,17 @@ use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_primitives::TableId;
+use spacetimedb_primitives::{ProcedureId, TableId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
-use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
+use spacetimedb_schema::def::deserialize::{ProcedureArgsDeserializeSeed, ReducerArgsDeserializeSeed};
+use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
 use std::collections::VecDeque;
 use std::fmt;
+use std::future::Future;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -395,6 +400,13 @@ impl Instance {
             Instance::Js(inst) => inst.call_reducer(tx, params),
         }
     }
+
+    async fn call_procedure(&mut self, params: CallProcedureParams) -> Result<ProcedureCallResult, ProcedureCallError> {
+        match self {
+            Instance::Wasm(inst) => inst.call_procedure(params).await,
+            Instance::Js(inst) => inst.call_procedure(params).await,
+        }
+    }
 }
 
 /// Creates the table for `table_def` in `stdb`.
@@ -490,6 +502,15 @@ pub struct CallReducerParams {
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
     pub reducer_id: ReducerId,
+    pub args: ArgsTuple,
+}
+
+pub struct CallProcedureParams {
+    pub timestamp: Timestamp,
+    pub caller_identity: Identity,
+    pub caller_connection_id: ConnectionId,
+    pub timer: Option<Instant>,
+    pub procedure_id: ProcedureId,
     pub args: ArgsTuple,
 }
 
@@ -642,6 +663,20 @@ pub enum ReducerCallError {
 }
 
 #[derive(thiserror::Error, Debug)]
+pub enum ProcedureCallError {
+    #[error(transparent)]
+    Args(#[from] InvalidProcedureArguments),
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error("no such procedure")]
+    NoSuchProcedure,
+    #[error("Procedure terminated due to insufficient budget")]
+    OutOfEnergy,
+    #[error("The WASM instance encountered a fatal error: {0}")]
+    InternalError(String),
+}
+
+#[derive(thiserror::Error, Debug)]
 pub enum InitDatabaseError {
     #[error(transparent)]
     Args(#[from] InvalidReducerArguments),
@@ -761,6 +796,35 @@ impl ModuleHost {
         })
     }
 
+    async fn call_async_with_instance<Fun, Fut, R>(&self, label: &str, f: Fun) -> Result<R, NoSuchModule>
+    where
+        Fun: (FnOnce(Instance) -> Fut) + Send + 'static,
+        Fut: Future<Output = (R, Instance)> + Send + 'static,
+        R: Send + 'static,
+    {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("procedure {label} panicked");
+            (self.on_panic)();
+        });
+
+        let instance = self.instance_manager.lock().await.get_instance();
+
+        let (res, instance) = self
+            .executor
+            .run_job(async move {
+                drop(timer_guard);
+                f(instance).await
+            })
+            .await;
+
+        self.instance_manager.lock().await.return_instance(instance);
+
+        Ok(res)
+    }
+
     /// Run a function on the JobThread for this module which has access to the module instance.
     async fn call<F, R>(&self, label: &str, f: F) -> Result<R, NoSuchModule>
     where
@@ -778,6 +842,7 @@ impl ModuleHost {
 
         // If a reducer call panics, we **must** ensure to call `self.on_panic`
         // so that the module is discarded by the host controller.
+        // TODO(pgoldman,procedures): Determine if this is still true.
         scopeguard::defer_on_unwind!({
             log::warn!("reducer {label} panicked");
             (self.on_panic)();
@@ -1194,6 +1259,79 @@ impl ModuleHost {
         res
     }
 
+    pub async fn call_procedure(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        timer: Option<Instant>,
+        procedure_name: &str,
+        args: ReducerArgs,
+    ) -> Result<ProcedureCallResult, ProcedureCallError> {
+        let res = async {
+            let (procedure_id, procedure_def) = self
+                .info
+                .module_def
+                .procedure_full(procedure_name)
+                .ok_or(ProcedureCallError::NoSuchProcedure)?;
+            self.call_procedure_inner(
+                caller_identity,
+                caller_connection_id,
+                timer,
+                procedure_id,
+                procedure_def,
+                args,
+            )
+            .await
+        }
+        .await;
+
+        let log_message = match &res {
+            Err(ProcedureCallError::NoSuchProcedure) => Some(format!(
+                "External attempt to call nonexistent procedure \"{procedure_name}\" failed. Have you run `spacetime generate` recently?"
+            )),
+            Err(ProcedureCallError::Args(_)) => Some(format!(
+                "External attempt to call procedure \"{procedure_name}\" failed, invalid arguments.\n\
+                 This is likely due to a mismatched client schema, have you run `spacetime generate` recently?"
+            )),
+            _ => None,
+        };
+
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, procedure_name, &log_message)
+        }
+
+        res
+    }
+
+    async fn call_procedure_inner(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        timer: Option<Instant>,
+        procedure_id: ProcedureId,
+        procedure_def: &ProcedureDef,
+        args: ReducerArgs,
+    ) -> Result<ProcedureCallResult, ProcedureCallError> {
+        let procedure_seed = ProcedureArgsDeserializeSeed(self.info.module_def.typespace().with_type(procedure_def));
+        let args = args.into_tuple_for_procedure(procedure_seed)?;
+        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
+
+        self.call_async_with_instance(&procedure_def.name, async move |mut inst| {
+            let res = inst
+                .call_procedure(CallProcedureParams {
+                    timestamp: Timestamp::now(),
+                    caller_identity,
+                    caller_connection_id,
+                    timer,
+                    procedure_id,
+                    args,
+                })
+                .await;
+            (res, inst)
+        })
+        .await?
+    }
+
     // Scheduled reducers require a different function here to call their reducer
     // because their reducer arguments are stored in the database and need to be fetched
     // within the same transaction as the reducer call.
@@ -1277,11 +1415,11 @@ impl ModuleHost {
         self.module.scheduler().closed().await;
     }
 
-    pub fn inject_logs(&self, log_level: LogLevel, reducer_name: &str, message: &str) {
+    pub fn inject_logs(&self, log_level: LogLevel, function_name: &str, message: &str) {
         self.replica_ctx().logger.write(
             log_level,
             &Record {
-                function: Some(reducer_name),
+                function: Some(function_name),
                 ..Record::injected(message)
             },
             &(),

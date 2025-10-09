@@ -593,6 +593,21 @@ pub mod raw {
     // See comment on previous `extern "C"` block re: ABI version.
     #[link(wasm_import_module = "spacetime_10.1")]
     extern "C" {
+        /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
+        ///
+        /// Returns immediately if `wake_at_micros_since_unix_epoch` is in the past.
+        ///
+        /// Upon resuming, returns the current timestamp as microseconds since the Unix epoch.
+        ///
+        /// Not particularly useful, except for testing SpacetimeDB internals related to suspending procedure execution.
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - The calling WASM instance is holding open a transaction.
+        /// - The calling WASM instance is not executing a procedure.
+        pub fn procedure_sleep_until(wake_at_micros_since_unix_epoch: i64) -> i64;
+
         /// Read the remaining length of a [`BytesSource`] and write it to `out`.
         ///
         /// Note that the host automatically frees byte sources which are exhausted.
@@ -1167,5 +1182,14 @@ impl Drop for RowIter {
         unsafe {
             raw::row_iter_bsatn_close(self.raw);
         }
+    }
+}
+
+pub mod procedure {
+    #[inline]
+    pub fn sleep_until(wake_at_timestamp: i64) -> i64 {
+        // Safety: Just calling an `extern "C"` function.
+        // Nothing weird happening here.
+        unsafe { super::raw::procedure_sleep_until(wake_at_timestamp) }
     }
 }

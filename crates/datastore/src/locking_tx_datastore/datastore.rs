@@ -3313,7 +3313,7 @@ mod tests {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
             schedule_name: "schedule".into(),
-            reducer_name: "reducer".into(),
+            function_name: "reducer".into(),
             at_column: 1.into(),
         };
         let sum_ty = AlgebraicType::sum([("foo", AlgebraicType::Bool), ("bar", AlgebraicType::U16)]);

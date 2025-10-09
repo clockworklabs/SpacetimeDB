@@ -1,10 +1,10 @@
 #![allow(clippy::disallowed_names)]
-use spacetimedb::log;
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
-    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
+    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp,
 };
+use spacetimedb::{log, ProcedureContext};
 
 pub type TestAlias = TestA;
 
@@ -436,4 +436,54 @@ fn assert_caller_identity_is_module_identity(ctx: &ReducerContext) {
     } else {
         log::info!("Called by the owner {owner}");
     }
+}
+
+#[spacetimedb::procedure]
+fn this_is_a_procedure(_ctx: &mut ProcedureContext) {
+    panic!("nah")
+}
+
+#[derive(SpacetimeType)]
+pub struct MyProcedureResult {
+    foo: String,
+    bar: i32,
+}
+
+#[spacetimedb::procedure]
+fn this_procedure_returns_something(ctx: &mut ProcedureContext) -> MyProcedureResult {
+    MyProcedureResult {
+        foo: format!("The time is {}", ctx.timestamp),
+        bar: 100,
+    }
+}
+
+#[spacetimedb::procedure]
+fn this_procedure_sleeps(ctx: &mut ProcedureContext) -> String {
+    let before = ctx.timestamp;
+    let until = before + TimeDuration::from_micros(1000000);
+    ctx.sleep_until(until);
+    let after = ctx.timestamp;
+    format!("Started at {before}, requested to sleep until {until}, woke at {after}")
+}
+
+#[spacetimedb::table(
+    name = scheduled_procedure_arg,
+    scheduled(scheduled_procedure)
+)]
+pub struct ScheduledProcedureArg {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: spacetimedb::ScheduleAt,
+    arg: String,
+}
+
+#[spacetimedb::procedure]
+fn scheduled_procedure(ctx: &mut ProcedureContext, arg: ScheduledProcedureArg) {
+    log::info!(
+        "Scheduled procedure called by {} at {}: {}",
+        ctx.sender,
+        ctx.timestamp,
+        arg.arg
+    );
 }
