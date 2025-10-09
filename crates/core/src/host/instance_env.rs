@@ -1,13 +1,14 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
-use crate::database_logger::{BacktraceProvider, LogLevel, Record};
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
+use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_lib::Timestamp;
+use spacetimedb_lib::{Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -19,6 +20,7 @@ use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::vec::IntoIter;
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -171,6 +173,11 @@ impl InstanceEnv {
         }
     }
 
+    /// Returns the database's identity.
+    pub fn database_identity(&self) -> &Identity {
+        &self.replica_ctx.database.database_identity
+    }
+
     /// Signal to this `InstanceEnv` that a reducer call is beginning.
     pub fn start_reducer(&mut self, ts: Timestamp) {
         self.start_time = ts;
@@ -181,13 +188,42 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
+    pub(crate) fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
         self.replica_ctx.logger.write(level, record, bt);
         log::trace!(
             "MOD({}): {}",
             self.replica_ctx.database_identity.to_abbreviated_hex(),
             record.message
         );
+    }
+
+    /// End a console timer by logging the span at INFO level.
+    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
+        let elapsed = span.start.elapsed();
+        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+
+        /// A backtrace provider that provides nothing.
+        struct Noop;
+        impl BacktraceProvider for Noop {
+            fn capture(&self) -> Box<dyn ModuleBacktrace> {
+                Box::new(Noop)
+            }
+        }
+        impl ModuleBacktrace for Noop {
+            fn frames(&self) -> Vec<BacktraceFrame<'_>> {
+                Vec::new()
+            }
+        }
+
+        let record = Record {
+            ts: chrono::Utc::now(),
+            target: None,
+            filename: None,
+            line_number: None,
+            function,
+            message: &message,
+        };
+        self.console_log(LogLevel::Info, &record, &Noop);
     }
 
     /// Project `cols` in `row_ref` encoded in BSATN to `buffer`
@@ -469,6 +505,33 @@ impl InstanceEnv {
         tx.metrics.bytes_scanned += bytes_scanned;
 
         Ok(chunks)
+    }
+
+    pub fn fill_buffer_from_iter(
+        iter: &mut IntoIter<Vec<u8>>,
+        mut buffer: &mut [u8],
+        chunk_pool: &mut ChunkPool,
+    ) -> usize {
+        let mut written = 0;
+        // Fill the buffer as much as possible.
+        while let Some(chunk) = iter.as_slice().first() {
+            let Some((buf_chunk, rest)) = buffer.split_at_mut_checked(chunk.len()) else {
+                // Cannot fit chunk into the buffer,
+                // either because we already filled it too much,
+                // or because it is too small.
+                break;
+            };
+            buf_chunk.copy_from_slice(chunk);
+            written += chunk.len();
+            buffer = rest;
+
+            // Advance the iterator, as we used a chunk.
+            // SAFETY: We peeked one `chunk`, so there must be one at least.
+            let chunk = unsafe { iter.next().unwrap_unchecked() };
+            chunk_pool.put(chunk);
+        }
+
+        written
     }
 }
 

@@ -42,7 +42,10 @@ pub use spacetimedb_lib::TimeDuration;
 pub use spacetimedb_lib::Timestamp;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
-pub use table::{AutoIncOverflow, RangedIndex, Table, TryInsertError, UniqueColumn, UniqueConstraintViolation};
+pub use table::{
+    AutoIncOverflow, RangedIndex, RangedIndexReadOnly, Table, TryInsertError, UniqueColumn, UniqueColumnReadOnly,
+    UniqueConstraintViolation,
+};
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
 
@@ -664,6 +667,22 @@ pub use spacetimedb_bindings_macro::table;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::reducer;
 
+/// One of two possible types that can be passed as the first argument to a `#[view]`.
+/// The other is [`ViewContext`].
+/// Use this type if the view does not depend on the caller's identity.
+pub struct AnonymousViewContext {
+    pub db: LocalReadOnly,
+}
+
+/// One of two possible types that can be passed as the first argument to a `#[view]`.
+/// The other is [`AnonymousViewContext`].
+/// Use this type if the view depends on the caller's identity.
+pub struct ViewContext {
+    pub sender: Identity,
+    pub connection_id: Option<ConnectionId>,
+    pub db: LocalReadOnly,
+}
+
 /// The context that any reducer is provided with.
 ///
 /// This must be the first argument of the reducer. Clients of the module will
@@ -784,6 +803,20 @@ impl ReducerContext {
         // As such, we've just defined a host call
         // which reads the module identity out of the `InstanceEnv`.
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+    }
+
+    /// Create an anonymous (no sender) read-only view context
+    pub fn as_anonymous_read_only(&self) -> AnonymousViewContext {
+        AnonymousViewContext { db: LocalReadOnly {} }
+    }
+
+    /// Create a sender-bound read-only view context using this reducer's caller.
+    pub fn as_read_only(&self) -> ViewContext {
+        ViewContext {
+            sender: self.sender,
+            connection_id: self.connection_id,
+            db: LocalReadOnly {},
+        }
     }
 }
 
@@ -926,6 +959,9 @@ impl JwtClaims {
         &self.payload
     }
 }
+/// The read-only version of [`Local`]
+#[non_exhaustive]
+pub struct LocalReadOnly {}
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]

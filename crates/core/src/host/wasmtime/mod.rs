@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
-use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
+use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
 
 use crate::energy::{EnergyQuanta, ReducerBudget};
 use crate::error::NodesError;
@@ -13,11 +13,11 @@ use crate::module_host_context::ModuleCreationContext;
 mod wasm_instance_env;
 mod wasmtime_module;
 
-use wasmtime_module::WasmtimeModule;
+use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
 
 use self::wasm_instance_env::WasmInstanceEnv;
 
-use super::wasm_common::module_host_actor::InitializationError;
+use super::wasm_common::module_host_actor::{InitializationError, WasmModuleInstance};
 use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
 
 pub struct WasmtimeRuntime {
@@ -27,7 +27,23 @@ pub struct WasmtimeRuntime {
 
 const EPOCH_TICK_LENGTH: Duration = Duration::from_millis(10);
 
-const EPOCH_TICKS_PER_SECOND: u64 = Duration::from_secs(1).div_duration_f64(EPOCH_TICK_LENGTH) as u64;
+pub(crate) const EPOCH_TICKS_PER_SECOND: u64 = ticks_in_duration(Duration::from_secs(1));
+
+pub(crate) const fn ticks_in_duration(duration: Duration) -> u64 {
+    duration.div_duration_f64(EPOCH_TICK_LENGTH) as u64
+}
+
+pub(crate) fn epoch_ticker(mut on_tick: impl 'static + Send + FnMut() -> Option<()>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(EPOCH_TICK_LENGTH);
+        loop {
+            interval.tick().await;
+            let Some(()) = on_tick() else {
+                return;
+            };
+        }
+    });
+}
 
 impl WasmtimeRuntime {
     pub fn new(data_dir: Option<&ServerDataDir>) -> Self {
@@ -36,7 +52,17 @@ impl WasmtimeRuntime {
             .cranelift_opt_level(wasmtime::OptLevel::Speed)
             .consume_fuel(true)
             .epoch_interruption(true)
-            .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
+            .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable)
+            // We need async support to enable suspending execution of procedures
+            // when waiting for e.g. HTTP responses or the transaction lock.
+            // We don't enable either fuel-based or epoch-based yielding
+            // (see https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.epoch_deadline_async_yield_and_update
+            // and https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.fuel_async_yield_interval)
+            // so reducers will always execute to completion during the first `Future::poll` call,
+            // and procedures will only yield when performing an asynchronous operation.
+            // These futures are executed on a separate single-threaded executor not related to the "global" Tokio runtime,
+            // which is responsible only for executing WASM. See `crate::util::jobs` for this infrastructure.
+            .async_support(true);
 
         // Offer a compile-time flag for enabling perfmap generation,
         // so `perf` can display JITted symbol names.
@@ -53,13 +79,10 @@ impl WasmtimeRuntime {
         let engine = Engine::new(&config).unwrap();
 
         let weak_engine = engine.weak();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(EPOCH_TICK_LENGTH);
-            loop {
-                interval.tick().await;
-                let Some(engine) = weak_engine.upgrade() else { break };
-                engine.increment_epoch();
-            }
+        epoch_ticker(move || {
+            let engine = weak_engine.upgrade()?;
+            engine.increment_epoch();
+            Some(())
         });
 
         let mut linker = Box::new(Linker::new(&engine));
@@ -83,9 +106,13 @@ impl WasmtimeRuntime {
     }
 }
 
+pub type Module = WasmModuleHostActor<WasmtimeModule>;
+pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
+
 impl ModuleRuntime for WasmtimeRuntime {
-    fn make_actor(&self, mcc: ModuleCreationContext) -> anyhow::Result<impl super::module_host::Module> {
-        let module = Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
+    fn make_actor(&self, mcc: ModuleCreationContext) -> anyhow::Result<super::module_host::Module> {
+        let module =
+            wasmtime::Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
         let func_imports = module
             .imports()
@@ -101,7 +128,9 @@ impl ModuleRuntime for WasmtimeRuntime {
 
         let module = WasmtimeModule::new(module);
 
-        WasmModuleHostActor::new(mcc, module).map_err(Into::into)
+        WasmModuleHostActor::new(mcc, module)
+            .map_err(Into::into)
+            .map(super::module_host::Module::Wasm)
     }
 }
 
