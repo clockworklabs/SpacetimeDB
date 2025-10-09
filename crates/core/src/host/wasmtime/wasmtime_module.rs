@@ -185,7 +185,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let describer = self
             .instance
             .get_typed_func::<u32, ()>(&mut self.store, describer_func_name)
-            .map_err(|_| DescribeError::Signature)?;
+            .map_err(DescribeError::Signature)?;
 
         let sink = self.store.data_mut().setup_standard_bytes_sink();
 

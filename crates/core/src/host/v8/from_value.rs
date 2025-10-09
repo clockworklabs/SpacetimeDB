@@ -1,8 +1,4 @@
-#![allow(dead_code)]
-
-use crate::host::v8::error::ExceptionValue;
-
-use super::error::{IntoException as _, TypeError, ValueResult};
+use super::error::{ExceptionValue, IntoException as _, TypeError, ValueResult};
 use bytemuck::{AnyBitPattern, NoUninit};
 use spacetimedb_sats::{i256, u256};
 use v8::{BigInt, Boolean, Int32, Local, Number, PinScope, Uint32, Value};

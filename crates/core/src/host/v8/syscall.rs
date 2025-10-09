@@ -1,10 +1,10 @@
 use super::de::{deserialize_js, scratch_buf};
-use super::error::{ExcResult, ExceptionThrown};
+use super::error::{module_exception, ExcResult, ExceptionThrown};
 use super::ser::serialize_to_js;
-use super::string_const::{str_from_ident, StringConst};
+use super::string::{str_from_ident, StringConst};
 use super::{
-    env_on_isolate, exception_already_thrown, global, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace,
-    TerminationError, Throwable,
+    env_on_isolate, exception_already_thrown, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace, TerminationError,
+    Throwable,
 };
 use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
@@ -15,79 +15,117 @@ use crate::host::AbiCall;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{errno, ColId, IndexId, TableId};
 use spacetimedb_sats::Serialize;
-use v8::{Function, FunctionCallbackArguments, Local, PinScope, Value};
+use v8::{
+    callback_scope, ConstructorBehavior, Context, FixedArray, Function, FunctionCallbackArguments, Local, Module,
+    PinCallbackScope, PinScope, Value,
+};
 
-/// Registers all module -> host syscalls.
-pub(super) fn register_host_funs(scope: &mut PinScope<'_, '_>) -> ExcResult<()> {
-    macro_rules! register {
-        ($wrapper:ident, $abi_call:expr, $fun:ident) => {
-            register_host_fun(scope, str_from_ident!($fun), |s, a| {
-                $wrapper($abi_call, s, a, $fun)
-            })?;
-        };
+/// A dependency resolver for the user's module
+/// that will resolve `spacetimedb_sys` to a module that exposes the ABI.
+pub(super) fn resolve_sys_module<'s>(
+    context: Local<'s, Context>,
+    spec: Local<'s, v8::String>,
+    _attrs: Local<'s, FixedArray>,
+    _referrer: Local<'s, Module>,
+) -> Option<Local<'s, Module>> {
+    callback_scope!(unsafe scope, context);
+
+    if spec == SYS_MODULE_NAME.string(scope) {
+        Some(register_sys_module(scope))
+    } else {
+        module_exception(scope, spec).throw(scope);
+        None
+    }
+}
+
+/// Registers all module -> host syscalls in the JS module `spacetimedb_sys`.
+fn register_sys_module<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    let module_name = SYS_MODULE_NAME.string(scope);
+
+    macro_rules! create_synthetic_module {
+        ($(($wrapper:ident, $abi_call:expr, $fun:ident),)*) => {{
+            let export_names = &[$(str_from_ident!($fun).string(scope)),*];
+            let eval_steps = |context, module| {
+                callback_scope!(unsafe scope, context);
+                $(
+                    register_module_fun(scope, &module, str_from_ident!($fun), |s, a| {
+                        $wrapper($abi_call, s, a, $fun)
+                    })?;
+                )*
+
+                Some(v8::undefined(scope).into())
+            };
+
+            Module::create_synthetic_module(scope, module_name, export_names, eval_steps)
+        }}
     }
 
-    register!(with_sys_result, AbiCall::TableIdFromName, table_id_from_name);
-    register!(with_sys_result, AbiCall::IndexIdFromName, index_id_from_name);
-    register!(
-        with_sys_result,
-        AbiCall::DatastoreTableRowCount,
-        datastore_table_row_count
-    );
-    register!(
-        with_sys_result,
-        AbiCall::DatastoreTableScanBsatn,
-        datastore_table_scan_bsatn
-    );
-    register!(
-        with_sys_result,
-        AbiCall::DatastoreIndexScanRangeBsatn,
-        datastore_index_scan_range_bsatn
-    );
-    register!(with_sys_result, AbiCall::RowIterBsatnAdvance, row_iter_bsatn_advance);
-    register!(with_span, AbiCall::RowIterBsatnClose, row_iter_bsatn_close);
-    register!(with_sys_result, AbiCall::DatastoreInsertBsatn, datastore_insert_bsatn);
-    register!(with_sys_result, AbiCall::DatastoreUpdateBsatn, datastore_update_bsatn);
-    register!(
-        with_sys_result,
-        AbiCall::DatastoreDeleteByIndexScanRangeBsatn,
-        datastore_delete_by_index_scan_range_bsatn
-    );
-    register!(
-        with_sys_result,
-        AbiCall::DatastoreDeleteAllByEqBsatn,
-        datastore_delete_all_by_eq_bsatn
-    );
-    register!(
-        with_span,
-        AbiCall::VolatileNonatomicScheduleImmediate,
-        volatile_nonatomic_schedule_immediate
-    );
-    register!(with_span, AbiCall::ConsoleLog, console_log);
-    register!(with_span, AbiCall::ConsoleTimerStart, console_timer_start);
-    register!(with_span, AbiCall::ConsoleTimerEnd, console_timer_end);
-    register!(with_sys_result, AbiCall::Identity, identity);
-    Ok(())
+    create_synthetic_module!(
+        (with_sys_result, AbiCall::TableIdFromName, table_id_from_name),
+        (with_sys_result, AbiCall::IndexIdFromName, index_id_from_name),
+        (
+            with_sys_result,
+            AbiCall::DatastoreTableRowCount,
+            datastore_table_row_count
+        ),
+        (
+            with_sys_result,
+            AbiCall::DatastoreTableScanBsatn,
+            datastore_table_scan_bsatn
+        ),
+        (
+            with_sys_result,
+            AbiCall::DatastoreIndexScanRangeBsatn,
+            datastore_index_scan_range_bsatn
+        ),
+        (with_sys_result, AbiCall::RowIterBsatnAdvance, row_iter_bsatn_advance),
+        (with_span, AbiCall::RowIterBsatnClose, row_iter_bsatn_close),
+        (with_sys_result, AbiCall::DatastoreInsertBsatn, datastore_insert_bsatn),
+        (with_sys_result, AbiCall::DatastoreUpdateBsatn, datastore_update_bsatn),
+        (
+            with_sys_result,
+            AbiCall::DatastoreDeleteByIndexScanRangeBsatn,
+            datastore_delete_by_index_scan_range_bsatn
+        ),
+        (
+            with_sys_result,
+            AbiCall::DatastoreDeleteAllByEqBsatn,
+            datastore_delete_all_by_eq_bsatn
+        ),
+        (
+            with_span,
+            AbiCall::VolatileNonatomicScheduleImmediate,
+            volatile_nonatomic_schedule_immediate
+        ),
+        (with_span, AbiCall::ConsoleLog, console_log),
+        (with_span, AbiCall::ConsoleTimerStart, console_timer_start),
+        (with_span, AbiCall::ConsoleTimerEnd, console_timer_end),
+        (with_sys_result, AbiCall::Identity, identity),
+    )
 }
+
+const SYS_MODULE_NAME: &StringConst = str_from_ident!(spacetimedb_sys);
 
 /// The return type of a module -> host syscall.
 pub(super) type FnRet<'scope> = ExcResult<Local<'scope, Value>>;
 
-/// Registers a module -> host syscall in `scope`
-/// where the function has `name` and `body`
-fn register_host_fun(
-    scope: &mut PinScope<'_, '_>,
+/// Registers a function in `module`
+/// where the function has `name` and does `body`.
+fn register_module_fun(
+    scope: &mut PinCallbackScope<'_, '_>,
+    module: &Local<'_, Module>,
     name: &'static StringConst,
     body: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> FnRet<'scope>,
-) -> ExcResult<()> {
-    let name = name.string(scope).into();
-    let fun = Function::new(scope, adapt_fun(body))
-        .ok_or_else(exception_already_thrown)?
-        .into();
-    global(scope)
-        .set(scope, name, fun)
-        .ok_or_else(exception_already_thrown)?;
-    Ok(())
+) -> Option<bool> {
+    // Convert the name.
+    let name = name.string(scope);
+
+    // Convert the function.
+    let fun = Function::builder(adapt_fun(body)).constructor_behavior(ConstructorBehavior::Throw);
+    let fun = fun.build(scope)?.into();
+
+    // Set the export on the module.
+    module.set_synthetic_module_export(scope, name, fun)
 }
 
 /// A flag set in [`handle_nodes_error`].
@@ -1016,7 +1054,7 @@ fn console_timer_start<'scope>(
 /// ```
 ///
 /// # Types
-///s
+///
 /// - `u32` is `number` in JS restricted to unsigned 32-bit integers.
 ///
 /// # Returns
