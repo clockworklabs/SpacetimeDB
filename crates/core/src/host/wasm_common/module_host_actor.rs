@@ -8,12 +8,11 @@ use tracing::span::EnteredSpan;
 use super::instrumentation::CallTimes;
 use crate::client::ClientConnectionSender;
 use crate::database_logger;
-use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
+use crate::energy::{EnergyMonitor, ReducerBudget, ReducerFingerprint};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
-    CallReducerParams, DatabaseUpdate, DynModule, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
-    ModuleInstance,
+    CallReducerParams, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
 };
 use crate::host::{ArgsTuple, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
 use crate::identity::Identity;
@@ -60,9 +59,15 @@ pub trait WasmInstance: Send + Sync + 'static {
 }
 
 pub struct EnergyStats {
-    pub used: EnergyQuanta,
-    pub wasmtime_fuel_used: u64,
+    pub budget: ReducerBudget,
     pub remaining: ReducerBudget,
+}
+
+impl EnergyStats {
+    /// Returns the used energy amount.
+    fn used(&self) -> ReducerBudget {
+        (self.budget.get() - self.remaining.get()).into()
+    }
 }
 
 pub struct ExecutionTimings {
@@ -77,7 +82,7 @@ pub struct ExecuteResult {
     pub call_result: Result<Result<(), Box<str>>, anyhow::Error>,
 }
 
-pub(crate) struct WasmModuleHostActor<T: WasmModule> {
+pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
     initial_instance: Option<Box<WasmModuleInstance<T::Instance>>>,
     common: ModuleCommon,
@@ -160,44 +165,25 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, instance: T::Instance) -> WasmModuleInstance<T::Instance> {
-        let common = InstanceCommon {
-            info: self.common.info(),
-            energy_monitor: self.common.energy_monitor(),
-            // will be updated on the first reducer call
-            allocated_memory: 0,
-            metric_wasm_memory_bytes: WORKER_METRICS
-                .wasm_memory_bytes
-                .with_label_values(self.common.database_identity()),
-            trapped: false,
-        };
+        let common = InstanceCommon::new(&self.common);
         WasmModuleInstance { instance, common }
     }
 }
 
-impl<T: WasmModule> DynModule for WasmModuleHostActor<T> {
-    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+impl<T: WasmModule> WasmModuleHostActor<T> {
+    pub fn replica_ctx(&self) -> &Arc<ReplicaContext> {
         self.common.replica_ctx()
     }
 
-    fn scheduler(&self) -> &Scheduler {
+    pub fn scheduler(&self) -> &Scheduler {
         self.common.scheduler()
     }
-}
 
-impl<T: WasmModule> Module for WasmModuleHostActor<T> {
-    type Instance = WasmModuleInstance<T::Instance>;
-
-    type InitialInstances<'a> = Option<Self::Instance>;
-
-    fn initial_instances(&mut self) -> Self::InitialInstances<'_> {
-        self.initial_instance.take().map(|x| *x)
-    }
-
-    fn info(&self) -> Arc<ModuleInfo> {
+    pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info()
     }
 
-    fn create_instance(&self) -> Self::Instance {
+    pub fn create_instance(&self) -> WasmModuleInstance<T::Instance> {
         let common = &self.common;
         let env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
         // this shouldn't fail, since we already called module.create_instance()
@@ -224,12 +210,12 @@ impl<T: WasmInstance> std::fmt::Debug for WasmModuleInstance<T> {
     }
 }
 
-impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
-    fn trapped(&self) -> bool {
+impl<T: WasmInstance> WasmModuleInstance<T> {
+    pub fn trapped(&self) -> bool {
         self.common.trapped
     }
 
-    fn update_database(
+    pub fn update_database(
         &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
@@ -240,7 +226,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             .update_database(replica_ctx, program, old_module_info, policy)
     }
 
-    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+    pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
         crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(tx, params))
     }
 }
@@ -273,6 +259,19 @@ pub(crate) struct InstanceCommon {
 }
 
 impl InstanceCommon {
+    pub(crate) fn new(module: &ModuleCommon) -> Self {
+        Self {
+            info: module.info(),
+            energy_monitor: module.energy_monitor(),
+            // Will be updated on the first reducer call.
+            allocated_memory: 0,
+            metric_wasm_memory_bytes: WORKER_METRICS
+                .wasm_memory_bytes
+                .with_label_values(module.database_identity()),
+            trapped: false,
+        }
+    }
+
     #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn update_database(
         &mut self,
@@ -412,14 +411,16 @@ impl InstanceCommon {
             call_result,
         } = result;
 
+        let energy_used = energy.used();
+        let energy_quanta_used = energy_used.into();
         vm_metrics.report(
-            energy.wasmtime_fuel_used,
+            energy_used.get(),
             timings.total_duration,
             &timings.wasm_instance_env_call_times,
         );
 
         self.energy_monitor
-            .record_reducer(&energy_fingerprint, energy.used, timings.total_duration);
+            .record_reducer(&energy_fingerprint, energy_quanta_used, timings.total_duration);
         if self.allocated_memory != memory_allocation {
             self.metric_wasm_memory_bytes.set(memory_allocation as i64);
             self.allocated_memory = memory_allocation;
@@ -427,7 +428,7 @@ impl InstanceCommon {
 
         reducer_span
             .record("timings.total_duration", tracing::field::debug(timings.total_duration))
-            .record("energy.used", tracing::field::debug(energy.used));
+            .record("energy.used", tracing::field::debug(energy_used));
 
         maybe_log_long_running_reducer(reducer_name, timings.total_duration);
         reducer_span.exit();
@@ -486,7 +487,7 @@ impl InstanceCommon {
                 args,
             },
             status,
-            energy_quanta_used: energy.used,
+            energy_quanta_used,
             host_execution_duration: timings.total_duration,
             request_id,
             timer,
@@ -495,7 +496,7 @@ impl InstanceCommon {
 
         ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
-            energy_used: energy.used,
+            energy_used: energy_quanta_used,
             execution_duration: timings.total_duration,
         }
     }

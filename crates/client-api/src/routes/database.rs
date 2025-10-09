@@ -525,6 +525,8 @@ pub struct PublishDatabaseQueryParams {
     token: Option<Hash>,
     #[serde(default)]
     policy: MigrationPolicy,
+    #[serde(default)]
+    host_type: HostType,
     parent: Option<NameOrIdentity>,
 }
 
@@ -536,11 +538,24 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         num_replicas,
         token,
         policy,
+        host_type,
         parent,
     }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
+    // Feature gate V8 modules.
+    // The host must've been compiled with the `unstable` feature.
+    // TODO(v8): ungate this when V8 is ready to ship.
+    #[cfg(not(feature = "unstable"))]
+    if host_type == HostType::Js {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "JS host type requires a host with unstable features",
+        )
+            .into());
+    }
+
     let (database_identity, db_name) = get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
 
     log::trace!("Publishing to the identity: {}", database_identity.to_hex());
@@ -590,7 +605,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                 database_identity,
                 program_bytes: body.into(),
                 num_replicas,
-                host_type: HostType::Wasm,
+                host_type,
                 parent,
             },
             schema_migration_policy,

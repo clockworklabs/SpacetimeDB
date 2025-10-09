@@ -4,11 +4,16 @@ use super::wasm_instance_env::WasmInstanceEnv;
 use super::{Mem, WasmtimeFuel, EPOCH_TICKS_PER_SECOND};
 use crate::energy::ReducerBudget;
 use crate::host::instance_env::InstanceEnv;
+use crate::host::module_common::run_describer;
 use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
 use crate::host::wasm_common::*;
 use crate::util::string_from_utf8_lossy_owned;
+use futures_util::FutureExt;
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
-use wasmtime::{AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace};
+use wasmtime::{
+    AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace, WasmParams,
+    WasmResults,
+};
 
 fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
     log::info!("{func_type} \"{func}\" runtime error: {e}");
@@ -85,15 +90,34 @@ fn handle_error_sink_code(code: i32, error: Vec<u8>) -> Result<(), Box<str>> {
 
 const CALL_FAILURE: i32 = HOST_CALL_FAILURE.get() as i32;
 
+/// Invoke `typed_func` and assert that it doesn't yield.
+///
+/// Our Wasmtime is configured for `async` execution, and will panic if we use the non-async [`TypedFunc::call`].
+/// The `async` config is necessary to allow procedures to suspend, e.g. when making HTTP calls or acquiring transactions.
+/// However, most of the WASM we execute, incl. reducers and startup functions, should never block/yield.
+/// Rather than crossing our fingers and trusting, we run [`TypedFunc::call_async`] in [`FutureExt::now_or_never`],
+/// an "async executor" which invokes [`std::task::Future::poll`] exactly once.
+fn call_sync_typed_func<Args: WasmParams, Ret: WasmResults>(
+    typed_func: &TypedFunc<Args, Ret>,
+    store: &mut Store<WasmInstanceEnv>,
+    args: Args,
+) -> anyhow::Result<Ret> {
+    let fut = typed_func.call_async(store, args);
+    fut.now_or_never()
+        .expect("`call_async` of supposedly synchronous WASM function returned `Poll::Pending`")
+}
+
 impl module_host_actor::WasmInstancePre for WasmtimeModule {
     type Instance = WasmtimeInstance;
 
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
         let env = WasmInstanceEnv::new(env);
         let mut store = Store::new(self.module.module().engine(), env);
-        let instance = self
-            .module
-            .instantiate(&mut store)
+        let instance_fut = self.module.instantiate_async(&mut store);
+
+        let instance = instance_fut
+            .now_or_never()
+            .expect("`instantiate_async` did not immediately return `Ready`")
             .map_err(InitializationError::Instantiation)?;
 
         let mem = Mem::extract(&instance, &mut store).unwrap();
@@ -114,16 +138,15 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
 
         for preinit in &func_names.preinits {
             let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
-            func.call(&mut store, ())
-                .map_err(|err| InitializationError::RuntimeError {
-                    err,
-                    func: preinit.clone(),
-                })?;
+            call_sync_typed_func(&func, &mut store, ()).map_err(|err| InitializationError::RuntimeError {
+                err,
+                func: preinit.clone(),
+            })?;
         }
 
         if let Ok(init) = instance.get_typed_func::<u32, i32>(&mut store, SETUP_DUNDER) {
             let setup_error = store.data_mut().setup_standard_bytes_sink();
-            let res = init.call(&mut store, setup_error);
+            let res = call_sync_typed_func(&init, &mut store, setup_error);
             let error = store.data_mut().take_standard_bytes_sink();
             match res {
                 // TODO: catch this and return the error message to the http client
@@ -158,29 +181,20 @@ pub struct WasmtimeInstance {
 impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn extract_descriptions(&mut self) -> Result<Vec<u8>, DescribeError> {
         let describer_func_name = DESCRIBE_MODULE_DUNDER;
-        let store = &mut self.store;
 
-        let describer = self.instance.get_func(&mut *store, describer_func_name).unwrap();
-        let describer = describer
-            .typed::<u32, ()>(&mut *store)
+        let describer = self
+            .instance
+            .get_typed_func::<u32, ()>(&mut self.store, describer_func_name)
             .map_err(|_| DescribeError::Signature)?;
 
-        let sink = store.data_mut().setup_standard_bytes_sink();
+        let sink = self.store.data_mut().setup_standard_bytes_sink();
 
-        let start = std::time::Instant::now();
-        log::trace!("Start describer \"{describer_func_name}\"...");
-
-        let result = describer.call(&mut *store, sink);
-
-        let duration = start.elapsed();
-        log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros());
-
-        result
-            .inspect_err(|err| log_traceback("describer", describer_func_name, err))
-            .map_err(DescribeError::RuntimeError)?;
+        run_describer(log_traceback, || {
+            call_sync_typed_func(&describer, &mut self.store, sink)
+        })?;
 
         // Fetch the bsatn returned by the describer call.
-        let bytes = store.data_mut().take_standard_bytes_sink();
+        let bytes = self.store.data_mut().take_standard_bytes_sink();
 
         Ok(bytes)
     }
@@ -192,11 +206,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> module_host_actor::ExecuteResult {
         let store = &mut self.store;
-        // note that ReducerBudget being a u64 is load-bearing here - although we convert budget right back into
-        // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
-        // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
+        // Set the fuel budget in WASM.
         set_store_fuel(store, budget.into());
-        let original_fuel = get_store_fuel(store);
         store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
 
         // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
@@ -208,7 +219,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, args_bytes, op.timestamp);
 
-        let call_result = self.call_reducer.call(
+        let call_result = call_sync_typed_func(
+            &self.call_reducer,
             &mut *store,
             (
                 op.id.0,
@@ -231,14 +243,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result.map(|code| handle_error_sink_code(code, error));
 
+        // Compute fuel and heap usage.
         let remaining_fuel = get_store_fuel(store);
-
         let remaining: ReducerBudget = remaining_fuel.into();
-        let energy = module_host_actor::EnergyStats {
-            used: (budget - remaining).into(),
-            wasmtime_fuel_used: original_fuel.0 - remaining_fuel.0,
-            remaining,
-        };
+        let energy = module_host_actor::EnergyStats { budget, remaining };
         let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
         module_host_actor::ExecuteResult {

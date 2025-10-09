@@ -91,6 +91,12 @@ pub struct CallTimes {
     times: EnumMap<AbiCall, Duration>,
 }
 
+impl Default for CallTimes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CallTimes {
     /// Create a new timing structure, with times for all calls set to zero.
     pub fn new() -> Self {
@@ -115,6 +121,11 @@ impl CallTimes {
     /// will `take`` the CallTimes after running a reducer and report the taken times,
     /// leaving a fresh zeroed CallTimes for the next reducer invocation.
     pub fn take(&mut self) -> CallTimes {
-        std::mem::replace(self, Self::new())
+        std::mem::take(self)
     }
 }
+
+#[cfg(not(feature = "spacetimedb-wasm-instance-env-times"))]
+pub use noop as span;
+#[cfg(feature = "spacetimedb-wasm-instance-env-times")]
+pub use op as span;

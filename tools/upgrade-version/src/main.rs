@@ -104,6 +104,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     if matches.get_flag("rust-and-cli") {
+        // Use `=` for dependency versions, to avoid issues where Cargo automatically rolls forward to later minor versions.
+        // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
+        let dep_version = format!("={version}");
+
         // root Cargo.toml
         edit_toml("Cargo.toml", |doc| {
             doc["workspace"]["package"]["version"] = toml_edit::value(version);
@@ -113,16 +117,19 @@ fn main() -> anyhow::Result<()> {
                 .iter_mut()
             {
                 if key.get().starts_with("spacetime") {
-                    dep["version"] = toml_edit::value(version)
+                    dep["version"] = toml_edit::value(dep_version.clone())
                 }
             }
         })?;
 
         edit_toml("crates/cli/src/subcommands/project/rust/Cargo._toml", |doc| {
-            // Only set major.minor for the spacetimedb dependency, drop the patch component.
+            // Only set major.minor.* for the spacetimedb dependency.
             // See https://github.com/clockworklabs/SpacetimeDB/issues/2724.
+            //
+            // Note: This is meaningfully different than setting just major.minor.
+            // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
             let v = Version::parse(version).expect("Invalid semver provided to upgrade-version");
-            let major_minor = format!("{}.{}", v.major, v.minor);
+            let major_minor = format!("{}.{}.*", v.major, v.minor);
             doc["dependencies"]["spacetimedb"] = toml_edit::value(major_minor);
         })?;
 
