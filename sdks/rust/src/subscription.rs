@@ -539,7 +539,7 @@ mod test {
         let _ = query.clone().into_queries();
         let _ = <[Box<str>; 1] as IntoQueries>::into_queries([query.clone()]);
         let _ = [query.clone()].into_queries();
-        let slice: &[Box<str>] = &[query.clone()];
+        let slice: &[Box<str>] = std::slice::from_ref(&query);
         let _ = <&[Box<str>] as IntoQueries>::into_queries(slice);
         let _ = slice.into_queries();
         let _ = <Vec<Box<str>> as IntoQueries>::into_queries(vec![query.clone()]);
@@ -554,7 +554,7 @@ mod test {
         let _ = query.clone().into_queries();
         let _ = <[String; 1] as IntoQueries>::into_queries([query.clone()]);
         let _ = [query.clone()].into_queries();
-        let slice: &[String] = &[query.clone()];
+        let slice: &[String] = std::slice::from_ref(&query);
         let _ = <&[String] as IntoQueries>::into_queries(slice);
         let _ = slice.into_queries();
         let _ = <Vec<String> as IntoQueries>::into_queries(vec![query.clone()]);

@@ -33,7 +33,7 @@ pub trait Datastore {
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
     }
 
-    fn table_scan(&self, table_id: TableId) -> Result<TableScanIter> {
+    fn table_scan(&self, table_id: TableId) -> Result<TableScanIter<'_>> {
         self.table(table_id)
             .map(|table| table.scan_rows(self.blob_store()))
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
@@ -44,7 +44,7 @@ pub trait Datastore {
         table_id: TableId,
         index_id: IndexId,
         key: &AlgebraicValue,
-    ) -> Result<IndexScanPointIter> {
+    ) -> Result<IndexScanPointIter<'_>> {
         self.table(table_id)
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
             .and_then(|table| {
@@ -60,7 +60,7 @@ pub trait Datastore {
         table_id: TableId,
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Result<IndexScanRangeIter> {
+    ) -> Result<IndexScanRangeIter<'_>> {
         self.table(table_id)
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
             .and_then(|table| {
@@ -93,7 +93,7 @@ pub trait DeltaStore {
         index_id: IndexId,
         delta: Delta,
         range: impl RangeBounds<AlgebraicValue>,
-    ) -> impl Iterator<Item = Row>;
+    ) -> impl Iterator<Item = Row<'_>>;
 
     fn index_scan_point_for_delta(
         &self,
@@ -101,9 +101,9 @@ pub trait DeltaStore {
         index_id: IndexId,
         delta: Delta,
         point: &AlgebraicValue,
-    ) -> impl Iterator<Item = Row>;
+    ) -> impl Iterator<Item = Row<'_>>;
 
-    fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter {
+    fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter<'_> {
         match inserts {
             true => DeltaScanIter {
                 iter: self.inserts_for_table(table_id),

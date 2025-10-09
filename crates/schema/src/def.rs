@@ -253,7 +253,7 @@ impl ModuleDef {
     pub fn reducer_arg_deserialize_seed<K: ?Sized + Hash + Equivalent<Identifier>>(
         &self,
         name: &K,
-    ) -> Option<(ReducerId, ReducerArgsDeserializeSeed)> {
+    ) -> Option<(ReducerId, ReducerArgsDeserializeSeed<'_>)> {
         let (id, reducer) = self.reducer_full(name)?;
         Some((id, ReducerArgsDeserializeSeed(self.typespace.with_type(reducer))))
     }
