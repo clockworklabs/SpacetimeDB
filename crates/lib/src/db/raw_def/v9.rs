@@ -524,7 +524,7 @@ impl RawModuleDefV9Builder {
         &mut self,
         name: impl Into<RawIdentifier>,
         product_type_ref: AlgebraicTypeRef,
-    ) -> RawTableDefBuilder {
+    ) -> RawTableDefBuilder<'_> {
         let name = name.into();
         RawTableDefBuilder {
             module_def: &mut self.module,
@@ -549,7 +549,7 @@ impl RawModuleDefV9Builder {
         table_name: impl Into<RawIdentifier>,
         product_type: impl Into<spacetimedb_sats::ProductType>,
         custom_ordering: bool,
-    ) -> RawTableDefBuilder {
+    ) -> RawTableDefBuilder<'_> {
         let table_name = table_name.into();
 
         let product_type_ref = self.add_algebraic_type(
@@ -569,7 +569,7 @@ impl RawModuleDefV9Builder {
         table_name: impl Into<RawIdentifier>,
         mut product_type: spacetimedb_sats::ProductType,
         custom_ordering: bool,
-    ) -> RawTableDefBuilder {
+    ) -> RawTableDefBuilder<'_> {
         self.add_expand_product_type_for_tests(&mut 0, &mut product_type);
 
         self.build_table_with_new_type(table_name, product_type, custom_ordering)

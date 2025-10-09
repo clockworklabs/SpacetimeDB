@@ -1,12 +1,19 @@
-#![allow(dead_code)]
-
+use self::de::{deserialize_js, property};
+use self::error::{
+    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CodeError, ExcResult, JsStackTrace,
+    TerminationError, Throwable,
+};
+use self::from_value::cast;
+use self::ser::serialize_to_js;
+use self::string::{str_from_ident, IntoJsString};
+use self::syscall::{resolve_sys_module, FnRet};
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
-    DescribeError, EnergyStats, ExecuteResult, ExecutionTimings, InstanceCommon, ReducerOp,
+    DescribeError, EnergyStats, ExecuteResult, ExecutionTimings, InstanceCommon, ReducerOp, ReducerResult,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::wasmtime::{epoch_ticker, ticks_in_duration, EPOCH_TICKS_PER_SECOND};
@@ -16,13 +23,6 @@ use core::ffi::c_void;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 use core::{ptr, str};
-use de::deserialize_js;
-use error::{
-    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CodeError, FnRet, JsStackTrace,
-    TerminationError, Throwable,
-};
-use from_value::cast;
-use ser::serialize_to_js;
 use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
@@ -30,17 +30,17 @@ use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
-use string_const::str_from_ident;
-use syscall::register_host_funs;
+use v8::script_compiler::{compile_module, Source};
 use v8::{
-    scope, Context, ContextScope, Function, Isolate, IsolateHandle, Local, Object, OwnedIsolate, PinScope, Value,
+    scope, Context, ContextScope, Function, Isolate, IsolateHandle, Local, MapFnTo, Object, OwnedIsolate, PinScope,
+    ResolveModuleCallback, ScriptOrigin, Value,
 };
 
 mod de;
 mod error;
 mod from_value;
 mod ser;
-mod string_const;
+mod string;
 mod syscall;
 mod to_value;
 
@@ -330,32 +330,53 @@ impl JsInstance {
                     tracing::warn!(reducer, ?database, "JavaScript has been running for {dur:?}");
                 }
 
-                // Start timer and prepare the isolate with the env.
+                // TODO(v8): snapshots
+                // Prepare the isolate with the env.
                 let mut isolate = Isolate::new(<_>::default());
-                self.instance.get_mut().instance_env.start_reducer(op.timestamp);
                 self.instance.move_to_isolate(&mut isolate);
 
-                // TODO(v8): snapshots
-                // Call the reducer.
-                let (mut isolate, (tx, call_result)) = with_script(
-                    isolate,
-                    &self.program,
-                    EPOCH_TICKS_PER_SECOND,
-                    cb_log_long_running,
-                    budget,
-                    |scope, _| {
-                        let (tx, call_result) = env_on_isolate(scope)
-                            .instance_env
-                            .tx
-                            .clone()
-                            .set(tx, || call_call_reducer_from_op(scope, op));
-                        (tx, call_result)
-                    },
-                );
+                // Start the budget timeout and long-running logger.
+                let handle = isolate.thread_safe_handle();
+                let (tx, call_result, timings) =
+                    with_timeout_and_cb_every(handle, EPOCH_TICKS_PER_SECOND, cb_log_long_running, budget, || {
+                        // Enter the scope.
+                        with_scope(&mut isolate, |scope| {
+                            let res = catch_exception(scope, |scope| {
+                                // Prepare the JS module that has `__call_reducer__`.
+                                let (module, _) = eval_user_module(scope, &self.program)?;
+                                let object = module_object(scope, module)?;
+                                Ok(object)
+                            })
+                            .map_err(anyhow::Error::from);
 
-                // Steal back the env and finish timings.
+                            let env = env_on_isolate(scope);
+
+                            // Start the timer.
+                            // We'd like this tightly around `__call_reducer__`.
+                            env.start_reducer(op.name, op.timestamp);
+
+                            // Call `__call_reducer__` with `tx` provided.
+                            // It should not be available before.
+                            let (tx, call_result) = match res {
+                                Ok(object) => env.instance_env.tx.clone().set(tx, || {
+                                    catch_exception(scope, |scope| {
+                                        let res = call_call_reducer_from_op(scope, object, op)?;
+                                        Ok(res)
+                                    })
+                                    .map_err(anyhow::Error::from)
+                                }),
+                                Err(err) => (tx, Err(err)),
+                            };
+
+                            // Finish timings.
+                            let timings = env_on_isolate(scope).finish_reducer();
+
+                            (tx, call_result, timings)
+                        })
+                    });
+
+                // Steal back the env.
                 self.instance.take_from_isolate(&mut isolate);
-                let timings = self.instance.get_mut().finish_reducer();
 
                 // Derive energy stats.
                 let used = duration_to_budget(timings.total_duration);
@@ -377,64 +398,121 @@ impl JsInstance {
     }
 }
 
-fn with_script<R>(
-    isolate: OwnedIsolate,
-    code: &str,
-    callback_every: u64,
-    callback: InterruptCallback,
-    budget: ReducerBudget,
-    logic: impl for<'scope> FnOnce(&mut PinScope<'scope, '_>, Local<'scope, Value>) -> R,
-) -> (OwnedIsolate, R) {
-    with_scope(isolate, callback_every, callback, budget, |scope| {
-        let code = v8::String::new(scope, code).unwrap();
-        let script_val = v8::Script::compile(scope, code, None).unwrap().run(scope).unwrap();
-
-        register_host_funs(scope).unwrap();
-
-        logic(scope, script_val)
+/// Finds the source map in `code`, if any.
+fn find_source_map(code: &str) -> Option<&str> {
+    let sm_ref = "//# sourceMappingURL=";
+    code.match_indices(sm_ref).find_map(|(i, _)| {
+        let (before, after) = code.split_at(i);
+        (before.is_empty() || before.ends_with(['\r', '\n']))
+            .then(|| &after.lines().next().unwrap_or(after)[sm_ref.len()..])
     })
 }
 
-/// Sets up an isolate and run `logic` with a [`HandleScope`].
-pub(crate) fn with_scope<R>(
-    mut isolate: OwnedIsolate,
-    callback_every: u64,
-    callback: InterruptCallback,
-    budget: ReducerBudget,
-    logic: impl FnOnce(&mut PinScope<'_, '_>) -> R,
-) -> (OwnedIsolate, R) {
+/// Compile, instantiate, and evaluate `code` as a module.
+fn eval_module<'scope>(
+    scope: &PinScope<'scope, '_>,
+    resource_name: Local<'scope, Value>,
+    script_id: i32,
+    code: &str,
+    resolve_deps: impl MapFnTo<ResolveModuleCallback<'scope>>,
+) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, Value>)> {
+    // Get the source map, if any.
+    let source_map_url = find_source_map(code)
+        .map(|sm| sm.into_string(scope))
+        .transpose()
+        .map_err(|e| e.into_range_error().throw(scope))?
+        .map(Into::into);
+
+    // Convert the code to a string.
+    let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
+
+    // Assemble the source.
+    let origin = ScriptOrigin::new(
+        scope,
+        resource_name,
+        0,
+        0,
+        false,
+        script_id,
+        source_map_url,
+        false,
+        false,
+        true,
+        None,
+    );
+    let source = &mut Source::new(code, Some(&origin));
+
+    // Compile the module.
+    let module = compile_module(scope, source).ok_or_else(exception_already_thrown)?;
+
+    // Instantiate the module.
+    module
+        .instantiate_module(scope, resolve_deps)
+        .filter(|x| *x)
+        .ok_or_else(exception_already_thrown)?;
+
+    // Evaluate the module.
+    let value = module.evaluate(scope).ok_or_else(exception_already_thrown)?;
+
+    Ok((module, value))
+}
+
+/// Compile, instantiate, and evaluate the user module with `code`.
+fn eval_user_module<'scope>(
+    scope: &PinScope<'scope, '_>,
+    code: &str,
+) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, Value>)> {
+    let name = str_from_ident!(spacetimedb_module).string(scope).into();
+    eval_module(scope, name, 0, code, resolve_sys_module)
+}
+
+/// Runs `logic` on `isolate`, providing the former with a [`PinScope`].
+pub(crate) fn with_scope<R>(isolate: &mut OwnedIsolate, logic: impl FnOnce(&mut PinScope<'_, '_>) -> R) -> R {
     isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
-    let isolate_handle = isolate.thread_safe_handle();
 
-    let with_isolate = |isolate: &mut OwnedIsolate| -> R {
-        scope!(let scope, isolate);
-        let context = Context::new(scope, Default::default());
-        let scope = &mut ContextScope::new(scope, context);
-        logic(scope)
-    };
+    scope!(let scope, isolate);
+    let context = Context::new(scope, Default::default());
+    let scope = &mut ContextScope::new(scope, context);
+    logic(scope)
+}
 
-    let timeout_thread_cancel_flag = run_reducer_timeout(callback_every, callback, budget, isolate_handle);
+/// Runs `logic` concurrently wth a thread that will terminate JS execution
+/// when `budget` has been used up.
+///
+/// Every `callback_every` ticks, `callback` is called.
+fn with_timeout_and_cb_every<R>(
+    _handle: IsolateHandle,
+    _callback_every: u64,
+    _callback: InterruptCallback,
+    _budget: ReducerBudget,
+    logic: impl FnOnce() -> R,
+) -> R {
+    // Start the concurrent thread.
+    // TODO(v8): This currently leads to UB as there are bugs in th v8 crate.
+    //let timeout_thread_cancel_flag = run_timeout_and_cb_every(handle, callback_every, callback, budget);
 
-    let ret = with_isolate(&mut isolate);
+    #[allow(clippy::let_and_return)]
+    let ret = logic();
 
-    // Cancel the execution timeout in `run_reducer_timeout`.
-    timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
+    // Cancel the execution timeout in `run_timeout_and_cb_every`.
+    //timeout_thread_cancel_flag.store(true, Ordering::Relaxed);
 
-    (isolate, ret)
+    ret
 }
 
 /// A callback passed to [`IsolateHandle::request_interrupt`].
 type InterruptCallback = extern "C" fn(&mut Isolate, *mut c_void);
 
-/// Spawns a thread that will terminate reducer execution
+/// Spawns a thread that will terminate execution
 /// when `budget` has been used up.
 ///
 /// Every `callback_every` ticks, `callback` is called.
-fn run_reducer_timeout(
+#[allow(dead_code)]
+fn run_timeout_and_cb_every(
+    handle: IsolateHandle,
     callback_every: u64,
     callback: InterruptCallback,
     budget: ReducerBudget,
-    isolate_handle: IsolateHandle,
 ) -> Arc<AtomicBool> {
     // When `execution_done_flag` is set, the ticker thread will stop.
     let execution_done_flag = Arc::new(AtomicBool::new(false));
@@ -451,7 +529,7 @@ fn run_reducer_timeout(
         }
 
         // We've reached the number of ticks to call `callback`.
-        if num_ticks % callback_every == 0 && isolate_handle.request_interrupt(callback, ptr::null_mut()) {
+        if num_ticks % callback_every == 0 && handle.request_interrupt(callback, ptr::null_mut()) {
             return None;
         }
 
@@ -459,7 +537,7 @@ fn run_reducer_timeout(
             // Execution still ongoing while budget has been exhausted.
             // Terminate V8 execution.
             // This implements "gas" for v8.
-            isolate_handle.terminate_execution();
+            handle.terminate_execution();
         }
 
         num_ticks += 1;
@@ -470,6 +548,7 @@ fn run_reducer_timeout(
 }
 
 /// Converts a [`ReducerBudget`] to a [`Duration`].
+#[allow(dead_code)]
 fn budget_to_duration(_budget: ReducerBudget) -> Duration {
     // TODO(v8): This is fake logic that allows a maximum timeout.
     // Replace with sensible math.
@@ -483,16 +562,14 @@ fn duration_to_budget(_duration: Duration) -> ReducerBudget {
     ReducerBudget::ZERO
 }
 
-/// Returns the global object.
-fn global<'scope>(scope: &PinScope<'scope, '_>) -> Local<'scope, Object> {
-    scope.get_current_context().global(scope)
-}
-
-/// Returns the global property `key`.
-fn get_global_property<'scope>(scope: &PinScope<'scope, '_>, key: Local<'scope, v8::String>) -> FnRet<'scope> {
-    global(scope)
-        .get(scope, key.into())
-        .ok_or_else(exception_already_thrown)
+/// Returns a module's object.
+fn module_object<'scope>(
+    scope: &PinScope<'scope, '_>,
+    module: Local<'scope, v8::Module>,
+) -> ExcResult<Local<'scope, Object>> {
+    let ns = module.get_module_namespace();
+    let object = cast!(scope, ns, Object, "object for module").map_err(|e| e.throw(scope))?;
+    Ok(object)
 }
 
 /// Calls free function `fun` with `args`.
@@ -505,10 +582,15 @@ fn call_free_fun<'scope>(
     fun.call(scope, receiver, args).ok_or_else(exception_already_thrown)
 }
 
-// Calls the `__call_reducer__` function on the global proxy object using `op`.
-fn call_call_reducer_from_op(scope: &mut PinScope<'_, '_>, op: ReducerOp<'_>) -> anyhow::Result<Result<(), Box<str>>> {
+/// Calls the `__call_reducer__` function on `object` using `op`.
+fn call_call_reducer_from_op<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    object: Local<'scope, Object>,
+    op: ReducerOp<'_>,
+) -> ExcResult<ReducerResult> {
     call_call_reducer(
         scope,
+        object,
         op.id.into(),
         op.caller_identity,
         op.caller_connection_id,
@@ -517,40 +599,36 @@ fn call_call_reducer_from_op(scope: &mut PinScope<'_, '_>, op: ReducerOp<'_>) ->
     )
 }
 
-// Calls the `__call_reducer__` function on the global proxy object.
-fn call_call_reducer(
-    scope: &mut PinScope<'_, '_>,
+/// Calls the `__call_reducer__` property on `object` as a function.
+fn call_call_reducer<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    object: Local<'scope, Object>,
     reducer_id: u32,
     sender: &Identity,
     conn_id: &ConnectionId,
     timestamp: i64,
     reducer_args: &ArgsTuple,
-) -> anyhow::Result<Result<(), Box<str>>> {
+) -> ExcResult<ReducerResult> {
+    // Serialize the arguments.
+    let reducer_id = serialize_to_js(scope, &reducer_id)?;
+    let sender = serialize_to_js(scope, &sender.to_u256())?;
+    let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
+    let timestamp = serialize_to_js(scope, &timestamp)?;
+    let reducer_args = serialize_to_js(scope, &reducer_args.tuple.elements)?;
+    let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
+
+    // Get the function on the global proxy object and convert to a function.
     let call_reducer_key = str_from_ident!(__call_reducer__).string(scope);
+    let object = property(scope, object, call_reducer_key)?;
+    let fun = cast!(scope, object, Function, "function export for `__call_reducer__`").map_err(|e| e.throw(scope))?;
 
-    catch_exception(scope, |scope| {
-        // Serialize the arguments.
-        let reducer_id = serialize_to_js(scope, &reducer_id)?;
-        let sender = serialize_to_js(scope, &sender.to_u256())?;
-        let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
-        let timestamp = serialize_to_js(scope, &timestamp)?;
-        let reducer_args = serialize_to_js(scope, &reducer_args.tuple.elements)?;
-        let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
+    // Call the function.
+    let ret = call_free_fun(scope, fun, args)?;
 
-        // Get the function on the global proxy object and convert to a function.
-        let object = get_global_property(scope, call_reducer_key)?;
-        let fun =
-            cast!(scope, object, Function, "function export for `__call_reducer__`").map_err(|e| e.throw(scope))?;
+    // Deserialize the user result.
+    let user_res = deserialize_js(scope, ret)?;
 
-        // Call the function.
-        let ret = call_free_fun(scope, fun, args)?;
-
-        // Deserialize the user result.
-        let user_res = deserialize_js(scope, ret)?;
-
-        Ok(user_res)
-    })
-    .map_err(Into::into)
+    Ok(user_res)
 }
 
 /// Extracts the raw module def by running `__describe_module__` in `program`.
@@ -559,35 +637,48 @@ fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
     let callback_every = EPOCH_TICKS_PER_SECOND;
     extern "C" fn callback(_: &mut Isolate, _: *mut c_void) {}
 
-    let (_, ret) = with_script(
-        Isolate::new(<_>::default()),
-        program,
-        callback_every,
-        callback,
-        budget,
-        |scope, _| run_describer(log_traceback, || call_describe_module(scope)),
-    );
-    ret
+    let mut isolate = Isolate::new(<_>::default());
+    let handle = isolate.thread_safe_handle();
+    with_timeout_and_cb_every(handle, callback_every, callback, budget, || {
+        with_scope(&mut isolate, |scope| {
+            let object = catch_exception(scope, |scope| {
+                let (module, _) = eval_user_module(scope, program)?;
+                let object = module_object(scope, module)?;
+                Ok(object)
+            })
+            .map_err(Into::into)
+            .map_err(DescribeError::Setup)?;
+
+            run_describer(log_traceback, || {
+                catch_exception(scope, |scope| {
+                    let def = call_describe_module(scope, object)?;
+                    Ok(def)
+                })
+                .map_err(Into::into)
+            })
+        })
+    })
 }
 
-// Calls the `__describe_module__` function on the global proxy object to extract a [`RawModuleDef`].
-fn call_describe_module(scope: &mut PinScope<'_, '_>) -> anyhow::Result<RawModuleDef> {
+/// Calls the `__describe_module__` property,
+/// on `object` as a function,
+/// to extract a [`RawModuleDef`].
+fn call_describe_module<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    object: Local<'scope, Object>,
+) -> ExcResult<RawModuleDef> {
+    // Get the function on `object` and convert to a function.
     let describe_module_key = str_from_ident!(__describe_module__).string(scope);
+    let object = property(scope, object, describe_module_key)?;
+    let fun =
+        cast!(scope, object, Function, "function export for `__describe_module__`").map_err(|e| e.throw(scope))?;
 
-    catch_exception(scope, |scope| {
-        // Get the function on the global proxy object and convert to a function.
-        let object = get_global_property(scope, describe_module_key)?;
-        let fun =
-            cast!(scope, object, Function, "function export for `__describe_module__`").map_err(|e| e.throw(scope))?;
+    // Call the function.
+    let raw_mod_js = call_free_fun(scope, fun, &[])?;
 
-        // Call the function.
-        let raw_mod_js = call_free_fun(scope, fun, &[])?;
-
-        // Deserialize the raw module.
-        let raw_mod: RawModuleDef = deserialize_js(scope, raw_mod_js)?;
-        Ok(raw_mod)
-    })
-    .map_err(Into::into)
+    // Deserialize the raw module.
+    let raw_mod: RawModuleDef = deserialize_js(scope, raw_mod_js)?;
+    Ok(raw_mod)
 }
 
 #[cfg(test)]
@@ -607,12 +698,32 @@ mod test {
         })
     }
 
+    /// Returns the global object.
+    fn global<'scope>(scope: &PinScope<'scope, '_>) -> Local<'scope, Object> {
+        scope.get_current_context().global(scope)
+    }
+
+    fn with_script_catch<T>(
+        code: &str,
+        logic: impl for<'scope> FnOnce(&mut PinScope<'scope, '_>, Local<'scope, Object>) -> ExcResult<T>,
+    ) -> anyhow::Result<T> {
+        with_script(code, |scope, _| {
+            catch_exception(scope, |scope| {
+                let object = global(scope);
+                let ret = logic(scope, object)?;
+                Ok(ret)
+            })
+            .map_err(anyhow::Error::from)
+        })
+    }
+
     #[test]
     fn call_call_reducer_works() {
         let call = |code| {
-            with_script(code, |scope, _| {
+            with_script_catch(code, |scope, object| {
                 call_call_reducer(
                     scope,
+                    object,
                     42,
                     &Identity::ONE,
                     &ConnectionId::ZERO,
@@ -683,7 +794,7 @@ js error Uncaught Error: foobar
                 };
             }
         "#;
-        let raw_mod = with_script(code, |scope, _| call_describe_module(scope).unwrap());
-        assert_eq!(raw_mod, RawModuleDef::V9(<_>::default()));
+        let raw_mod = with_script_catch(code, call_describe_module).map_err(|e| e.to_string());
+        assert_eq!(raw_mod, Ok(RawModuleDef::V9(<_>::default())));
     }
 }
