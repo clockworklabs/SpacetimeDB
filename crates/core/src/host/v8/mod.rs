@@ -353,9 +353,9 @@ impl JsInstance {
                             // Call `__call_reducer__` with `tx` provided.
                             // It should not be available before.
                             let (tx, call_result) = match res {
-                                Ok(object) => env.instance_env.tx.clone().set(tx, || {
+                                Ok((global, mod_object)) => env.instance_env.tx.clone().set(tx, || {
                                     catch_exception(scope, |scope| {
-                                        let res = call_call_reducer_from_op(scope, object, op)?;
+                                        let res = call_call_reducer_from_op(scope, global, mod_object, op)?;
                                         Ok(res)
                                     })
                                     .map_err(anyhow::Error::from)
@@ -462,15 +462,16 @@ fn eval_user_module<'scope>(
 /// Compiles, instantiate, and evaluate the user module with `code`
 /// and catch any exceptions.
 ///
-/// Returns the module's object.
+/// Returns the global object and the module's object.
 fn eval_user_module_catch<'scope>(
     scope: &mut PinScope<'scope, '_>,
     program: &str,
-) -> anyhow::Result<Local<'scope, Object>> {
+) -> anyhow::Result<(Local<'scope, Object>, Local<'scope, Object>)> {
     catch_exception(scope, |scope| {
         let (module, _) = eval_user_module(scope, program)?;
-        let object = module_object(scope, module)?;
-        Ok(object)
+        let mod_object = module_object(scope, module)?;
+        let global = global(scope);
+        Ok((global, mod_object))
     })
     .map_err(Into::into)
 }
@@ -495,6 +496,28 @@ fn module_object<'scope>(
     Ok(object)
 }
 
+/// Returns the global object.
+fn global<'scope>(scope: &PinScope<'scope, '_>) -> Local<'scope, Object> {
+    scope.get_current_context().global(scope)
+}
+
+/// Returns the property `key` of `obj_a` if it exists and of `obj_b` otherwise.
+fn property_with_fallback<'scope>(
+    scope: &PinScope<'scope, '_>,
+    obj_a: Local<'scope, Object>,
+    obj_b: Local<'scope, Object>,
+    key: impl Into<Local<'scope, Value>>,
+) -> FnRet<'scope> {
+    let key = key.into();
+
+    let object = if obj_a.has(scope, key).ok_or_else(exception_already_thrown)? {
+        obj_a
+    } else {
+        obj_b
+    };
+    property(scope, object, key)
+}
+
 /// Calls free function `fun` with `args`.
 fn call_free_fun<'scope>(
     scope: &PinScope<'scope, '_>,
@@ -505,15 +528,17 @@ fn call_free_fun<'scope>(
     fun.call(scope, receiver, args).ok_or_else(exception_already_thrown)
 }
 
-/// Calls the `__call_reducer__` function on `object` using `op`.
+/// Calls the `__call_reducer__` function on `global` / `mod_object` using `op`.
 fn call_call_reducer_from_op<'scope>(
     scope: &mut PinScope<'scope, '_>,
-    object: Local<'scope, Object>,
+    global: Local<'scope, Object>,
+    mod_object: Local<'scope, Object>,
     op: ReducerOp<'_>,
 ) -> ExcResult<ReducerResult> {
     call_call_reducer(
         scope,
-        object,
+        global,
+        mod_object,
         op.id.into(),
         op.caller_identity,
         op.caller_connection_id,
@@ -523,9 +548,11 @@ fn call_call_reducer_from_op<'scope>(
 }
 
 /// Calls the `__call_reducer__` property on `object` as a function.
+#[allow(clippy::too_many_arguments)]
 fn call_call_reducer<'scope>(
     scope: &mut PinScope<'scope, '_>,
-    object: Local<'scope, Object>,
+    global: Local<'scope, Object>,
+    mod_object: Local<'scope, Object>,
     reducer_id: u32,
     sender: &Identity,
     conn_id: &ConnectionId,
@@ -541,9 +568,7 @@ fn call_call_reducer<'scope>(
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     // Get the function on the global proxy object and convert to a function.
-    let call_reducer_key = str_from_ident!(__call_reducer__).string(scope);
-    let object = property(scope, object, call_reducer_key)?;
-    let fun = cast!(scope, object, Function, "function export for `__call_reducer__`").map_err(|e| e.throw(scope))?;
+    let fun = call_reducer_fun(scope, global, mod_object)?;
 
     // Call the function.
     let ret = call_free_fun(scope, fun, args)?;
@@ -552,6 +577,18 @@ fn call_call_reducer<'scope>(
     let user_res = deserialize_js(scope, ret)?;
 
     Ok(user_res)
+}
+
+/// Gets a handle to the `__call_reducer__` property on `global` / `mod_object`.
+fn call_reducer_fun<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    global: Local<'scope, Object>,
+    mod_object: Local<'scope, Object>,
+) -> ExcResult<Local<'scope, Function>> {
+    let key = str_from_ident!(__call_reducer__).string(scope);
+    let object = property_with_fallback(scope, global, mod_object, key)?;
+    let fun = cast!(scope, object, Function, "function export for `__call_reducer__`").map_err(|e| e.throw(scope))?;
+    Ok(fun)
 }
 
 /// Extracts the raw module def by running `__describe_module__` in `program`.
@@ -564,31 +601,51 @@ fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
     let handle = isolate.thread_safe_handle();
     with_timeout_and_cb_every(handle, callback_every, callback, budget, || {
         with_scope(&mut isolate, |scope| {
-            let object = eval_user_module_catch(scope, program).map_err(DescribeError::Setup)?;
-
-            run_describer(log_traceback, || {
-                catch_exception(scope, |scope| {
-                    let def = call_describe_module(scope, object)?;
-                    Ok(def)
-                })
-                .map_err(Into::into)
-            })
+            let (def, ..) = extract_description_raw(scope, program)?;
+            Ok(def)
         })
     })
 }
 
+/// Extracts the raw module def by running `__describe_module__` in `program`.
+fn extract_description_raw<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    program: &str,
+) -> Result<(RawModuleDef, Local<'scope, Object>, Local<'scope, Object>), DescribeError> {
+    let (global, mod_object) = eval_user_module_catch(scope, program).map_err(DescribeError::Setup)?;
+
+    run_describer(log_traceback, || {
+        catch_exception(scope, |scope| {
+            let def = call_describe_module(scope, global, mod_object)?;
+            Ok((def, mod_object, global))
+        })
+        .map_err(Into::into)
+    })
+}
+
+/// Gets a handle to the `__describe_module__` property on `global` / `mod_object`.
+fn describe_module_fun<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    global: Local<'scope, Object>,
+    mod_object: Local<'scope, Object>,
+) -> ExcResult<Local<'scope, Function>> {
+    let key = str_from_ident!(__describe_module__).string(scope);
+    let object = property_with_fallback(scope, global, mod_object, key)?;
+    let fun =
+        cast!(scope, object, Function, "function export for `__describe_module__`").map_err(|e| e.throw(scope))?;
+    Ok(fun)
+}
+
 /// Calls the `__describe_module__` property,
-/// on `object` as a function,
+/// on `global` / `mod_object` as a function,
 /// to extract a [`RawModuleDef`].
 fn call_describe_module<'scope>(
     scope: &mut PinScope<'scope, '_>,
-    object: Local<'scope, Object>,
+    global: Local<'scope, Object>,
+    mod_object: Local<'scope, Object>,
 ) -> ExcResult<RawModuleDef> {
-    // Get the function on `object` and convert to a function.
-    let describe_module_key = str_from_ident!(__describe_module__).string(scope);
-    let object = property(scope, object, describe_module_key)?;
-    let fun =
-        cast!(scope, object, Function, "function export for `__describe_module__`").map_err(|e| e.throw(scope))?;
+    // Get the function on `global` / `mod_object` and convert to a function.
+    let fun = describe_module_fun(scope, global, mod_object)?;
 
     // Call the function.
     let raw_mod_js = call_free_fun(scope, fun, &[])?;
@@ -615,19 +672,18 @@ mod test {
         })
     }
 
-    /// Returns the global object.
-    fn global<'scope>(scope: &PinScope<'scope, '_>) -> Local<'scope, Object> {
-        scope.get_current_context().global(scope)
-    }
-
     fn with_script_catch<T>(
         code: &str,
-        logic: impl for<'scope> FnOnce(&mut PinScope<'scope, '_>, Local<'scope, Object>) -> ExcResult<T>,
+        logic: impl for<'scope> FnOnce(
+            &mut PinScope<'scope, '_>,
+            Local<'scope, Object>,
+            Local<'scope, Object>,
+        ) -> ExcResult<T>,
     ) -> anyhow::Result<T> {
         with_script(code, |scope, _| {
             catch_exception(scope, |scope| {
                 let object = global(scope);
-                let ret = logic(scope, object)?;
+                let ret = logic(scope, object, object)?;
                 Ok(ret)
             })
             .map_err(anyhow::Error::from)
@@ -637,10 +693,11 @@ mod test {
     #[test]
     fn call_call_reducer_works() {
         let call = |code| {
-            with_script_catch(code, |scope, object| {
+            with_script_catch(code, |scope, global, mod_obj| {
                 call_call_reducer(
                     scope,
-                    object,
+                    global,
+                    mod_obj,
                     42,
                     &Identity::ONE,
                     &ConnectionId::ZERO,
