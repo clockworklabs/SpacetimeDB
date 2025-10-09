@@ -1,0 +1,84 @@
+error[E0599]: no method named `iter` found for reference `&test__ViewHandle` in the current scope
+  --> tests/ui/views.rs:15:34
+   |
+15 |     for _ in read_only.db.test().iter() {}
+   |                                  ^^^^ method not found in `&test__ViewHandle`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following traits define an item `iter`, perhaps you need to implement one of them:
+           candidate #1: `Table`
+           candidate #2: `bitflags::traits::Flags`
+
+error[E0599]: `&test__ViewHandle` is not an iterator
+  --> tests/ui/views.rs:22:33
+   |
+3  | #[table(name = test)]
+   | ------------------- doesn't satisfy `test__ViewHandle: Iterator`
+...
+22 |     let _ = read_only.db.test().count();
+   |                                 ^^^^^ `&test__ViewHandle` is not an iterator
+   |
+   = note: the following trait bounds were not satisfied:
+           `&test__ViewHandle: Iterator`
+           which is required by `&mut &test__ViewHandle: Iterator`
+           `test__ViewHandle: Iterator`
+           which is required by `&mut test__ViewHandle: Iterator`
+note: the trait `Iterator` must be implemented
+  --> $RUST/core/src/iter/traits/iterator.rs
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following traits define an item `count`, perhaps you need to implement one of them:
+           candidate #1: `Table`
+   = note: the trait `Iterator` defines an item `count`, but is explicitly unimplemented
+
+error[E0599]: no method named `insert` found for reference `&test__ViewHandle` in the current scope
+  --> tests/ui/views.rs:29:25
+   |
+29 |     read_only.db.test().insert(Test { id: 0, x: 0 });
+   |                         ^^^^^^ method not found in `&test__ViewHandle`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following traits define an item `insert`, perhaps you need to implement one of them:
+           candidate #1: `Table`
+           candidate #2: `bitflags::traits::Flags`
+           candidate #3: `ppv_lite86::types::Vec2`
+           candidate #4: `ppv_lite86::types::Vec4`
+
+error[E0599]: no method named `try_insert` found for reference `&test__ViewHandle` in the current scope
+  --> tests/ui/views.rs:36:25
+   |
+36 |     read_only.db.test().try_insert(Test { id: 0, x: 0 });
+   |                         ^^^^^^^^^^
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `try_insert`, perhaps you need to implement it:
+           candidate #1: `Table`
+help: there is a method `try_into` with a similar name, but with different arguments
+  --> $RUST/core/src/convert/mod.rs
+
+error[E0599]: no method named `delete` found for reference `&test__ViewHandle` in the current scope
+  --> tests/ui/views.rs:43:25
+   |
+43 |     read_only.db.test().delete(Test { id: 0, x: 0 });
+   |                         ^^^^^^ method not found in `&test__ViewHandle`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `delete`, perhaps you need to implement it:
+           candidate #1: `Table`
+
+error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly` in the current scope
+  --> tests/ui/views.rs:50:30
+   |
+50 |     read_only.db.test().id().delete(&0);
+   |                              ^^^^^^ method not found in `UniqueColumnReadOnly<test__TableHandle, u32, id>`
+
+error[E0599]: no method named `update` found for struct `UniqueColumnReadOnly` in the current scope
+  --> tests/ui/views.rs:57:30
+   |
+57 |     read_only.db.test().id().update(Test { id: 0, x: 0 });
+   |                              ^^^^^^ method not found in `UniqueColumnReadOnly<test__TableHandle, u32, id>`
+
+error[E0599]: no method named `delete` found for struct `RangedIndexReadOnly` in the current scope
+  --> tests/ui/views.rs:64:29
+   |
+64 |     read_only.db.test().x().delete(0u32..);
+   |                             ^^^^^^ method not found in `RangedIndexReadOnly<test__TableHandle, (u32,), x>`
