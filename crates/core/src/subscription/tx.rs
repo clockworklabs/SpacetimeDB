@@ -171,7 +171,7 @@ impl DeltaStore for DeltaTx<'_> {
         index_id: IndexId,
         delta: Delta,
         range: impl RangeBounds<AlgebraicValue>,
-    ) -> impl Iterator<Item = Row> {
+    ) -> impl Iterator<Item = Row<'_>> {
         fn scan_index<'a>(
             data: Option<&'a TxData>,
             indexes: &'a DeltaTableIndexes,
@@ -221,7 +221,7 @@ impl DeltaStore for DeltaTx<'_> {
         index_id: IndexId,
         delta: Delta,
         point: &AlgebraicValue,
-    ) -> impl Iterator<Item = Row> {
+    ) -> impl Iterator<Item = Row<'_>> {
         self.index_scan_range_for_delta(table_id, index_id, delta, point)
     }
 }

@@ -1524,7 +1524,7 @@ where
                 last_logged_percentage = percentage;
             }
         // Print _something_ even if we don't know what's still ahead.
-        } else if tx_offset % 10_000 == 0 {
+        } else if tx_offset.is_multiple_of(10_000) {
             log::info!("[{database_identity}] Loading transaction {tx_offset}");
         }
     };

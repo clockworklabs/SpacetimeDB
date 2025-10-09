@@ -3,7 +3,7 @@
 # See the README for commands to run.
 
 # sync with: ../../rust-toolchain.toml
-FROM rust:1.88.0
+FROM rust:1.90.0
 
 RUN apt-get update && \
     apt-get install -y valgrind bash && \

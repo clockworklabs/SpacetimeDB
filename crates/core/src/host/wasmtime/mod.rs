@@ -269,7 +269,7 @@ impl MemView {
 
     /// Lossily get a utf8 slice of wasm memory given a pointer and a length, converting any
     /// non-utf8 bytes to `U+FFFD REPLACEMENT CHARACTER`.
-    fn deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Cow<str>, MemError> {
+    fn deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Cow<'_, str>, MemError> {
         self.deref_slice(offset, len).map(String::from_utf8_lossy)
     }
 
