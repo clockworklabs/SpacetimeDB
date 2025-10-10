@@ -67,7 +67,7 @@ async fn send_request(
     let mut builder = client.delete(request_path);
     builder = add_auth_header_opt(builder, auth);
     if let Some(token) = confirmation_token {
-        builder = builder.query(&[("token", token.to_string())]);
+        builder = builder.query(&[("token", token)]);
     }
     builder.send().await
 }
