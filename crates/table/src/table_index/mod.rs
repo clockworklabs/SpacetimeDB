@@ -1278,6 +1278,8 @@ impl TableIndex {
             | (BtreeI128(_), BtreeI128(_))
             | (BtreeU256(_), BtreeU256(_))
             | (BtreeI256(_), BtreeI256(_))
+            | (BtreeF32(_), BtreeF32(_))
+            | (BtreeF64(_), BtreeF64(_))
             | (BtreeString(_), BtreeString(_))
             | (BtreeAV(_), BtreeAV(_)) => Ok(()),
             // For unique indices, we'll need to see if everything in `other` can be added to `idx`.
@@ -1295,6 +1297,8 @@ impl TableIndex {
             (UniqueBtreeI128(idx), UniqueBtreeI128(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
             (UniqueBtreeU256(idx), UniqueBtreeU256(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
             (UniqueBtreeI256(idx), UniqueBtreeI256(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
+            (UniqueBtreeF32(idx), UniqueBtreeF32(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
+            (UniqueBtreeF64(idx), UniqueBtreeF64(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
             (UniqueBtreeString(idx), UniqueBtreeString(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
             (UniqueBtreeAV(idx), UniqueBtreeAV(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
             (UniqueDirectU8(idx), UniqueDirectU8(other)) => idx.can_merge(other, ignore),
