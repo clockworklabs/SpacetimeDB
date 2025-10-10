@@ -56,6 +56,11 @@ export class Timestamp {
     return Timestamp.fromDate(new Date());
   }
 
+  /** Convert to milliseconds since Unix epoch (truncates microseconds). */
+  toMillis(): bigint {
+    return this.microsSinceUnixEpoch / 1000n;
+  }
+
   /**
    * Get a `Timestamp` representing the same point in time as `date`.
    */
@@ -90,5 +95,28 @@ export class Timestamp {
       this.__timestamp_micros_since_unix_epoch__ -
         other.__timestamp_micros_since_unix_epoch__
     );
+  }
+}
+
+/** A generator for monotonically increasing Timestamps by millisecond increments. */
+export class ClockGenerator {
+  private microsSinceUnixEpoch: bigint;
+
+  constructor(start: Timestamp) {
+    this.microsSinceUnixEpoch = start.microsSinceUnixEpoch;
+  }
+
+  /** Returns the next Timestamp, guaranteed to be greater than the previous.
+   *
+   * UUIDv7 requires monotonic millisecond timestamps, so each tick
+   * increases the timestamp by at least 1 millisecond (1_000 microseconds).
+   * */
+  tick(): Timestamp {
+    this.microsSinceUnixEpoch += 1000n;
+    return new Timestamp(this.microsSinceUnixEpoch);
+  }
+
+  static from(t: Timestamp): ClockGenerator {
+    return new ClockGenerator(t);
   }
 }

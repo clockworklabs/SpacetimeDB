@@ -1,5 +1,6 @@
 import { TimeDuration } from './time_duration';
 import { Timestamp } from './timestamp';
+import { Uuid } from './uuid';
 import { ConnectionId } from './connection_id';
 import type BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
@@ -66,6 +67,7 @@ export const AlgebraicType: {
   createScheduleAtType(): AlgebraicTypeType;
   createTimestampType(): AlgebraicTypeType;
   createTimeDurationType(): AlgebraicTypeType;
+  createUuidType(): AlgebraicTypeType;
   serializeValue(
     writer: BinaryWriter,
     ty: AlgebraicTypeType,
@@ -116,6 +118,9 @@ export const AlgebraicType: {
   },
   createTimeDurationType: function (): AlgebraicTypeType {
     return TimeDuration.getAlgebraicType();
+  },
+  createUuidType: function (): AlgebraicTypeType {
+    return Uuid.getAlgebraicType();
   },
   serializeValue: function (
     writer: BinaryWriter,
@@ -379,6 +384,10 @@ export const ProductType: {
       if (ty.elements[0].name === '__connection_id__') {
         return new ConnectionId(reader.readU128());
       }
+
+      if (ty.elements[0].name === '__uuid__') {
+        return new Uuid(reader.readU128());
+      }
     }
 
     for (const element of ty.elements) {
@@ -406,6 +415,10 @@ export const ProductType: {
 
       if (ty.elements[0].name === '__connection_id__') {
         return (value as ConnectionId).__connection_id__;
+      }
+
+      if (ty.elements[0].name === '__uuid__') {
+        return (value as Uuid).__uuid__;
       }
     }
     // The fallback is to serialize and base64 encode the bytes.
