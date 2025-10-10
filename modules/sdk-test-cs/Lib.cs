@@ -36,6 +36,7 @@ public static partial class Module
             Identity Identity,
             ConnectionId ConnectionId,
             Timestamp Timestamp,
+            Uuid Uuid,
             List<byte> Bytes,
             List<int> Ints,
             List<string> Strings,
@@ -74,6 +75,7 @@ public static partial class Module
         public ConnectionId r;
         public Timestamp s;
         public TimeDuration t;
+        public Uuid u;
     }
 
     [SpacetimeDB.Type]
@@ -99,6 +101,7 @@ public static partial class Module
         public List<ConnectionId> r;
         public List<Timestamp> s;
         public List<TimeDuration> t;
+        public List<Uuid> u;
     }
 
     [SpacetimeDB.Table(Name = "one_u8", Public = true)]
@@ -315,6 +318,18 @@ public static partial class Module
     public static void insert_one_connection_id(ReducerContext ctx, ConnectionId a)
     {
         ctx.Db.one_connection_id.Insert(new OneConnectionId { a = a });
+    }
+
+    [SpacetimeDB.Table(Name = "one_uuid", Public = true)]
+    public partial struct OneUuid
+    {
+        public Uuid u;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_one_uuid(ReducerContext ctx, Uuid u)
+    {
+        ctx.Db.one_uuid.Insert(new OneUuid { u = u });
     }
 
     [SpacetimeDB.Table(Name = "one_timestamp", Public = true)]
@@ -617,6 +632,18 @@ public static partial class Module
         ctx.Db.vec_connection_id.Insert(new VecConnectionId { a = a });
     }
 
+    [SpacetimeDB.Table(Name = "vec_uuid", Public = true)]
+    public partial struct VecUuid
+    {
+        public List<Uuid> u;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_vec_uuid(ReducerContext ctx, List<Uuid> u)
+    {
+        ctx.Db.vec_uuid.Insert(new VecUuid { u = u });
+    }
+
     [SpacetimeDB.Table(Name = "vec_timestamp", Public = true)]
     public partial struct VecTimestamp
     {
@@ -738,6 +765,18 @@ public static partial class Module
     public static void insert_option_identity(ReducerContext ctx, Identity? i)
     {
         ctx.Db.option_identity.Insert(new OptionIdentity { i = i });
+    }
+
+    [SpacetimeDB.Table(Name = "option_uuid", Public = true)]
+    public partial struct OptionUuid
+    {
+        public Uuid? u;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_option_uuid(ReducerContext ctx, Uuid? u)
+    {
+        ctx.Db.option_uuid.Insert(new OptionUuid { u = u });
     }
 
     [SpacetimeDB.Table(Name = "option_simple_enum", Public = true)]
@@ -1223,6 +1262,33 @@ public static partial class Module
         ctx.Db.unique_connection_id.a.Delete(a);
     }
 
+    [SpacetimeDB.Table(Name = "unique_uuid", Public = true)]
+    public partial struct UniqueUuid
+    {
+        [SpacetimeDB.Unique]
+        public Uuid u;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_uuid(ReducerContext ctx, Uuid u, int data)
+    {
+        ctx.Db.unique_uuid.Insert(new UniqueUuid { u = u, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_uuid(ReducerContext ctx, Uuid u, int data)
+    {
+        var key = u;
+        ctx.Db.unique_uuid.u.Update(new UniqueUuid { u = u, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_uuid(ReducerContext ctx, Uuid u)
+    {
+        ctx.Db.unique_uuid.u.Delete(u);
+    }
+
     [SpacetimeDB.Table(Name = "pk_u8", Public = true)]
     public partial struct PkU8
     {
@@ -1689,6 +1755,33 @@ public static partial class Module
         ctx.Db.pk_connection_id.a.Delete(a);
     }
 
+    [SpacetimeDB.Table(Name = "pk_uuid", Public = true)]
+    public partial struct PkUuid
+    {
+        [SpacetimeDB.PrimaryKey]
+        public Uuid u;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_pk_uuid(ReducerContext ctx, Uuid u, int data)
+    {
+        ctx.Db.pk_uuid.Insert(new PkUuid { u = u, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_pk_uuid(ReducerContext ctx, Uuid u, int data)
+    {
+        var key = u;
+        ctx.Db.pk_uuid.u.Update(new PkUuid { u = u, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_pk_uuid(ReducerContext ctx, Uuid u)
+    {
+        ctx.Db.pk_uuid.u.Delete(u);
+    }
+
     [SpacetimeDB.Table(Name = "pk_simple_enum", Public = true)]
     public partial struct PkSimpleEnum
     {
@@ -1973,6 +2066,18 @@ public static partial class Module
         ctx.Db.one_timestamp.Insert(new OneTimestamp { t = ctx.Timestamp });
     }
 
+    [SpacetimeDB.Reducer]
+    public static void insert_call_uuid_v4(ReducerContext ctx)
+    {
+        ctx.Db.one_uuid.Insert(new OneUuid { u = ctx.NewUuidV4() });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_call_uuid_v7(ReducerContext ctx)
+    {
+        ctx.Db.one_uuid.Insert(new OneUuid { u = ctx.NewUuidV7() });
+    }
+
     [SpacetimeDB.Table(Name = "table_holds_table", Public = true)]
     public partial struct TableHoldsTable
     {
@@ -2081,5 +2186,27 @@ public static partial class Module
             ctx.Db.indexed_simple_enum.n.Delete(a);
             ctx.Db.indexed_simple_enum.Insert(new IndexedSimpleEnum { n = b });
         }
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void sorted_uuids_insert(ReducerContext ctx)
+    {
+        for (int i = 0; i < 1000; i++)
+        {
+            var uuid = ctx.NewUuidV7();
+
+            ctx.Db.pk_uuid.Insert(new PkUuid { u = uuid, data = 0 });
+        }
+
+        // Verify UUIDs are sorted
+        Uuid? lastUuid = null;
+        foreach (var row in ctx.Db.pk_uuid.Iter())
+        {
+            if (lastUuid.HasValue && lastUuid.Value.CompareTo(row.u) >= 0)
+            {
+                throw new Exception("UUIDs are not sorted correctly");
+            }
+            lastUuid = row.u;
+        };
     }
 }
