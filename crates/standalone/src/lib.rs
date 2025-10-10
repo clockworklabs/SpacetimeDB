@@ -497,7 +497,7 @@ pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path:
         args.extend(["--jwt-key-dir".as_ref(), cert_dir.as_os_str()])
     }
     let args = start::cli().try_get_matches_from(args)?;
-    start::exec(&args, JobCores::default()).await
+    start::exec(&args, JobCores::without_pinned_cores(tokio::runtime::Handle::current())).await
 }
 
 #[cfg(test)]
@@ -537,11 +537,22 @@ mod tests {
             websocket: WebSocketOptions::default(),
         };
 
-        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default()).await?;
+        let _env = StandaloneEnv::init(
+            config,
+            &ca,
+            data_dir.clone(),
+            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
+        )
+        .await?;
         // Ensure that we have a lock.
-        assert!(StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default())
-            .await
-            .is_err());
+        assert!(StandaloneEnv::init(
+            config,
+            &ca,
+            data_dir.clone(),
+            JobCores::without_pinned_cores(tokio::runtime::Handle::current())
+        )
+        .await
+        .is_err());
 
         Ok(())
     }

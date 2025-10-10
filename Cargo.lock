@@ -5997,6 +5997,7 @@ dependencies = [
  "fs2",
  "fs_extra",
  "futures",
+ "futures-util",
  "hashbrown 0.15.3",
  "hex",
  "hostname",
@@ -7102,8 +7103,7 @@ dependencies = [
 [[package]]
 name = "temporal_rs"
 version = "0.0.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7807e330b12e288b847a3e2a2b0dcd41ca764d0f90f9e8940f02c6ddd68cd2d7"
+source = "git+https://github.com/boa-dev/temporal?tag=v0.0.11#1980ece2d4ebf796d0fe62645392599f64d7b130"
 dependencies = [
  "combine",
  "core_maths",
@@ -7294,9 +7294,8 @@ dependencies = [
 
 [[package]]
 name = "timezone_provider"
-version = "0.0.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f357f8e2cddee6a7b56b69fbb4cab30a7e82914c80ee7f9a5eb799ee3de3f24d"
+version = "0.0.11"
+source = "git+https://github.com/boa-dev/temporal?tag=v0.0.11#1980ece2d4ebf796d0fe62645392599f64d7b130"
 dependencies = [
  "tinystr 0.8.1",
  "zerotrie",
@@ -8157,6 +8156,7 @@ checksum = "f38dbf42dc56a6fe41ccd77211ea8ec90855de05e52cd00df5a0a3bca87d6147"
 dependencies = [
  "addr2line 0.22.0",
  "anyhow",
+ "async-trait",
  "bitflags 2.9.0",
  "bumpalo",
  "cc",
@@ -8187,6 +8187,7 @@ dependencies = [
  "wasmtime-component-macro",
  "wasmtime-cranelift",
  "wasmtime-environ",
+ "wasmtime-fiber",
  "wasmtime-jit-icache-coherence",
  "wasmtime-slab",
  "wasmtime-versioned-export-macros",
@@ -8291,6 +8292,21 @@ dependencies = [
  "wasmparser",
  "wasmprinter",
  "wasmtime-types",
+]
+
+[[package]]
+name = "wasmtime-fiber"
+version = "25.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "665ccc1bb0f28496e6fa02e94c575ee9ad6e3202c7df8591e5dda78106d5aa4a"
+dependencies = [
+ "anyhow",
+ "cc",
+ "cfg-if",
+ "rustix 0.38.44",
+ "wasmtime-asm-macros",
+ "wasmtime-versioned-export-macros",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

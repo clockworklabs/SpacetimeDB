@@ -232,7 +232,7 @@ mod tests {
         row: &ProductValue,
         access: StAccess,
     ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
-        let schema = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()], access)?;
+        let schema = create_table_with_rows(db, tx, table_name, head.clone(), std::slice::from_ref(row), access)?;
         let table = mem_table(schema.table_id, schema.get_row_type().clone(), [row.clone()]);
 
         let data = DatabaseTableUpdate {
