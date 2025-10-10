@@ -1,6 +1,8 @@
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::ProductType;
+use spacetimedb_lib::{Hash, Identity, ProductType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SqlStmtResult<Row> {
@@ -26,4 +28,22 @@ impl SqlStmtStats {
             rows_updated: metrics.rows_updated,
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DatabaseTree {
+    pub root: DatabaseTreeNode,
+    pub children: Vec<DatabaseTree>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DatabaseTreeNode {
+    pub database_identity: Identity,
+    pub database_names: BTreeSet<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DatabaseDeleteConfirmationResponse {
+    pub database_tree: DatabaseTree,
+    pub confirmation_token: Hash,
 }

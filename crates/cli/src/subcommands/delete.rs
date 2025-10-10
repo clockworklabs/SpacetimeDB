@@ -1,4 +1,3 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 
 use crate::common_args;
@@ -6,8 +5,11 @@ use crate::config::Config;
 use crate::util::{add_auth_header_opt, database_identity, get_auth_header, y_or_n, AuthHeader};
 use clap::{Arg, ArgMatches};
 use http::StatusCode;
+use itertools::Itertools as _;
 use reqwest::Response;
-use spacetimedb_lib::{Hash, Identity};
+use spacetimedb_client_api_messages::http::{DatabaseDeleteConfirmationResponse, DatabaseTree, DatabaseTreeNode};
+use spacetimedb_lib::Hash;
+use tokio::io::AsyncWriteExt as _;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("delete")
@@ -36,11 +38,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let response = send_request(&client, &request_path, &auth_header, None).await?;
     match response.status() {
         StatusCode::PRECONDITION_REQUIRED => {
-            let confirm = response.json::<ConfirmationResponse>().await?;
-            println!("WARNING: Deleting the database {identity} will also delete its children:");
-            confirm.print_database_tree_info(io::stdout())?;
+            let confirm = response.json::<DatabaseDeleteConfirmationResponse>().await?;
+            println!("WARNING: Deleting the database {identity} will also delete its children!");
+            if !force {
+                print_database_tree_info(&confirm.database_tree).await?;
+            }
             if y_or_n(force, "Do you want to proceed deleting above databases?")? {
-                send_request(&client, &request_path, &auth_header, Some(confirm.token))
+                send_request(&client, &request_path, &auth_header, Some(confirm.confirmation_token))
                     .await?
                     .error_for_status()?;
             } else {
@@ -68,53 +72,101 @@ async fn send_request(
     builder.send().await
 }
 
-#[derive(serde::Deserialize)]
-struct ConfirmationResponse {
-    database_tree: DatabaseTreeInfo,
-    token: Hash,
+async fn print_database_tree_info(tree: &DatabaseTree) -> io::Result<()> {
+    tokio::io::stdout()
+        .write_all(as_termtree(tree).to_string().as_bytes())
+        .await
 }
 
-impl ConfirmationResponse {
-    pub fn print_database_tree_info(&self, mut out: impl io::Write) -> anyhow::Result<()> {
-        let fmt_names = |names: &BTreeSet<String>| match names.len() {
-            0 => <_>::default(),
-            1 => format!(": {}", names.first().unwrap()),
-            _ => format!(": {names:?}"),
-        };
+fn as_termtree(tree: &DatabaseTree) -> termtree::Tree<String> {
+    let mut stack: Vec<(&DatabaseTree, bool)> = vec![];
+    stack.push((tree, false));
 
-        let tree_info = &self.database_tree;
+    let mut built: Vec<termtree::Tree<String>> = <_>::default();
 
-        write!(out, "{}{}", tree_info.root.identity, fmt_names(&tree_info.root.names))?;
-        for (identity, info) in &tree_info.children {
-            let names = fmt_names(&info.names);
-            let parent = info
-                .parent
-                .map(|parent| format!(" (parent: {parent})"))
-                .unwrap_or_default();
-
-            write!(out, "{identity}{parent}{names}")?;
+    while let Some((node, visited)) = stack.pop() {
+        if visited {
+            let mut term_node = termtree::Tree::new(fmt_tree_node(&node.root));
+            term_node.leaves = built.drain(built.len() - node.children.len()..).collect();
+            term_node.leaves.reverse();
+            built.push(term_node);
+        } else {
+            stack.push((node, true));
+            stack.extend(node.children.iter().rev().map(|child| (child, false)));
         }
-
-        Ok(())
     }
+
+    built
+        .pop()
+        .expect("database tree contains a root and we pushed it last")
 }
 
-// TODO: Should below types be in client-api?
-
-#[derive(serde::Deserialize)]
-pub struct DatabaseTreeInfo {
-    root: RootDatabase,
-    children: BTreeMap<Identity, DatabaseInfo>,
+fn fmt_tree_node(node: &DatabaseTreeNode) -> String {
+    format!(
+        "{}{}",
+        node.database_identity,
+        if node.database_names.is_empty() {
+            <_>::default()
+        } else {
+            format!(": {}", node.database_names.iter().join(", "))
+        }
+    )
 }
 
-#[derive(serde::Deserialize)]
-pub struct RootDatabase {
-    identity: Identity,
-    names: BTreeSet<String>,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_client_api_messages::http::{DatabaseTree, DatabaseTreeNode};
+    use spacetimedb_lib::{sats::u256, Identity};
 
-#[derive(serde::Deserialize)]
-pub struct DatabaseInfo {
-    names: BTreeSet<String>,
-    parent: Option<Identity>,
+    #[test]
+    fn render_termtree() {
+        let tree = DatabaseTree {
+            root: DatabaseTreeNode {
+                database_identity: Identity::ONE,
+                database_names: ["parent".into()].into(),
+            },
+            children: vec![
+                DatabaseTree {
+                    root: DatabaseTreeNode {
+                        database_identity: Identity::from_u256(u256::new(2)),
+                        database_names: ["child".into()].into(),
+                    },
+                    children: vec![
+                        DatabaseTree {
+                            root: DatabaseTreeNode {
+                                database_identity: Identity::from_u256(u256::new(3)),
+                                database_names: ["grandchild".into()].into(),
+                            },
+                            children: vec![],
+                        },
+                        DatabaseTree {
+                            root: DatabaseTreeNode {
+                                database_identity: Identity::from_u256(u256::new(5)),
+                                database_names: [].into(),
+                            },
+                            children: vec![],
+                        },
+                    ],
+                },
+                DatabaseTree {
+                    root: DatabaseTreeNode {
+                        database_identity: Identity::from_u256(u256::new(4)),
+                        database_names: ["sibling".into(), "bro".into()].into(),
+                    },
+                    children: vec![],
+                },
+            ],
+        };
+        pretty_assertions::assert_eq!(
+            "\
+0000000000000000000000000000000000000000000000000000000000000001: parent
+├── 0000000000000000000000000000000000000000000000000000000000000004: bro, sibling
+└── 0000000000000000000000000000000000000000000000000000000000000002: child
+    ├── 0000000000000000000000000000000000000000000000000000000000000005
+    └── 0000000000000000000000000000000000000000000000000000000000000003: grandchild
+",
+            &as_termtree(&tree).to_string()
+        );
+    }
 }
