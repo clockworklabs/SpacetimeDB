@@ -64,6 +64,7 @@ tabled.workspace = true
 tar.workspace = true
 tempfile.workspace = true
 termcolor.workspace = true
+termtree.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
@@ -74,6 +75,9 @@ walkdir.workspace = true
 wasmbin.workspace = true
 webbrowser.workspace = true
 clap-markdown.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }

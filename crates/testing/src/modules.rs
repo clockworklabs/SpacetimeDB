@@ -205,6 +205,7 @@ impl CompiledModule {
                 program_bytes,
                 num_replicas: None,
                 host_type: HostType::Wasm,
+                parent: None,
             },
             MigrationPolicy::Compatible,
         )

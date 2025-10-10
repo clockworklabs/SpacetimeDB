@@ -369,6 +369,28 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         Ok(())
     }
 
+    async fn clear_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+        let database = self
+            .control_db
+            .get_database_by_identity(database_identity)?
+            .with_context(|| format!("Database `{database_identity}` does not exist"))?;
+
+        anyhow::ensure!(
+            &database.owner_identity == caller_identity,
+            "Permission denied: `{caller_identity}` does not own database `{database_identity}`"
+        );
+
+        let mut num_replicas = 0;
+        for instance in self.control_db.get_replicas_by_database(database.id)? {
+            self.delete_replica(instance.id).await?;
+            num_replicas -= 1;
+        }
+
+        self.schedule_replicas(database.id, num_replicas).await?;
+
+        Ok(())
+    }
+
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
         let balance = self
             .control_db

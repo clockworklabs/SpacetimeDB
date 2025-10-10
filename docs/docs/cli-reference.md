@@ -92,6 +92,10 @@ Run `spacetime help publish` for more detailed information.
 * `-j`, `--js-path <JS_FILE>` — UNSTABLE: The system path (absolute or relative) to the javascript file we should publish, instead of building the project.
 * `--break-clients` — Allow breaking changes when publishing to an existing database identity. This will break existing clients.
 * `--anonymous` — Perform this action with an anonymous identity
+* `--parent <PARENT>` — A valid domain or identity of an existing database that should be the parent of this database.
+
+  If a parent is given, the new database inherits the team permissions from the parent.
+  A parent can only be set when a database is created, not when it is updated.
 * `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 
