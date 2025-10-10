@@ -829,43 +829,43 @@ using UnityEngine;
 
 public class CircleController : EntityController
 {
- public static Color[] ColorPalette = new[]
- {
+    public static Color[] ColorPalette = new[]
+    {
         //Yellow
-  (Color)new Color32(175, 159, 49, 255),
-  (Color)new Color32(175, 116, 49, 255),
+        (Color)new Color32(175, 159, 49, 255),
+        (Color)new Color32(175, 116, 49, 255),
 
         //Purple
         (Color)new Color32(112, 47, 252, 255),
-  (Color)new Color32(51, 91, 252, 255),
+        (Color)new Color32(51, 91, 252, 255),
 
         //Red
         (Color)new Color32(176, 54, 54, 255),
-  (Color)new Color32(176, 109, 54, 255),
-  (Color)new Color32(141, 43, 99, 255),
+        (Color)new Color32(176, 109, 54, 255),
+        (Color)new Color32(141, 43, 99, 255),
 
         //Blue
         (Color)new Color32(2, 188, 250, 255),
-  (Color)new Color32(7, 50, 251, 255),
-  (Color)new Color32(2, 28, 146, 255),
- };
+        (Color)new Color32(7, 50, 251, 255),
+        (Color)new Color32(2, 28, 146, 255),
+    };
 
     private PlayerController Owner;
 
     public void Spawn(Circle circle, PlayerController owner)
     {
         base.Spawn(circle.EntityId);
-  SetColor(ColorPalette[circle.PlayerId % ColorPalette.Length]);
+        SetColor(ColorPalette[circle.PlayerId % ColorPalette.Length]);
 
         this.Owner = owner;
         GetComponentInChildren<TMPro.TextMeshProUGUI>().text = owner.Username;
     }
 
- public override void OnDelete(EventContext context)
- {
-  base.OnDelete(context);
+    public override void OnDelete(EventContext context)
+    {
+        base.OnDelete(context);
         Owner.OnCircleDeleted(this);
- }
+    }
 }
 ```
 
@@ -884,21 +884,21 @@ using UnityEngine;
 
 public class FoodController : EntityController
 {
- public static Color[] ColorPalette = new[]
- {
-  (Color)new Color32(119, 252, 173, 255),
-  (Color)new Color32(76, 250, 146, 255),
-  (Color)new Color32(35, 246, 120, 255),
+    public static Color[] ColorPalette = new[]
+    {
+        (Color)new Color32(119, 252, 173, 255),
+        (Color)new Color32(76, 250, 146, 255),
+        (Color)new Color32(35, 246, 120, 255),
 
-  (Color)new Color32(119, 251, 201, 255),
-  (Color)new Color32(76, 249, 184, 255),
-  (Color)new Color32(35, 245, 165, 255),
- };
+        (Color)new Color32(119, 251, 201, 255),
+        (Color)new Color32(76, 249, 184, 255),
+        (Color)new Color32(35, 245, 165, 255),
+    };
 
     public void Spawn(Food food)
     {
         base.Spawn(food.EntityId);
-  SetColor(ColorPalette[EntityId % ColorPalette.Length]);
+        SetColor(ColorPalette[EntityId % ColorPalette.Length]);
     }
 }
 ```
@@ -916,28 +916,28 @@ using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
- const int SEND_UPDATES_PER_SEC = 20;
- const float SEND_UPDATES_FREQUENCY = 1f / SEND_UPDATES_PER_SEC;
+    const int SEND_UPDATES_PER_SEC = 20;
+    const float SEND_UPDATES_FREQUENCY = 1f / SEND_UPDATES_PER_SEC;
 
     public static PlayerController Local { get; private set; }
 
- private uint PlayerId;
+    private uint PlayerId;
     private float LastMovementSendTimestamp;
     private Vector2? LockInputPosition;
- private List<CircleController> OwnedCircles = new List<CircleController>();
+    private List<CircleController> OwnedCircles = new List<CircleController>();
 
- public string Username => GameManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
- public int NumberOfOwnedCircles => OwnedCircles.Count;
- public bool IsLocalPlayer => this == Local;
+    public string Username => GameManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
+    public int NumberOfOwnedCircles => OwnedCircles.Count;
+    public bool IsLocalPlayer => this == Local;
 
- public void Initialize(Player player)
+    public void Initialize(Player player)
     {
         PlayerId = player.PlayerId;
         if (player.Identity == GameManager.LocalIdentity)
         {
             Local = this;
         }
- }
+    }
 
     private void OnDestroy()
     {
@@ -958,20 +958,20 @@ public class PlayerController : MonoBehaviour
     }
 
     public void OnCircleDeleted(CircleController deletedCircle)
- {
-  // This means we got eaten
-  if (OwnedCircles.Remove(deletedCircle) && IsLocalPlayer && OwnedCircles.Count == 0)
-  {
-   // DeathScreen.Instance.SetVisible(true);
-  }
- }
+    {
+        // This means we got eaten
+        if (OwnedCircles.Remove(deletedCircle) && IsLocalPlayer && OwnedCircles.Count == 0)
+        {
+            // DeathScreen.Instance.SetVisible(true);
+        }
+    }
 
- public uint TotalMass()
+    public uint TotalMass()
     {
         return (uint)OwnedCircles
             .Select(circle => GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
-   .Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
- }
+            .Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
+    }
 
     public Vector2? CenterOfMass()
     {
@@ -991,24 +991,24 @@ public class PlayerController : MonoBehaviour
         }
 
         return totalPos / totalMass;
- }
+    }
 
- private void OnGUI()
- {
-  if (!IsLocalPlayer || !GameManager.IsConnected())
-  {
-   return;
-  }
+    private void OnGUI()
+    {
+        if (!IsLocalPlayer || !GameManager.IsConnected())
+        {
+            return;
+        }
 
-  GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
- }
+        GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
+    }
 
- //Automated testing members
- private bool testInputEnabled;
- private Vector2 testInput;
+    //Automated testing members
+    private bool testInputEnabled;
+    private Vector2 testInput;
 
- public void SetTestInput(Vector2 input) => testInput = input;
- public void EnableTestInput() => testInputEnabled = true;
+    public void SetTestInput(Vector2 input) => testInput = input;
+    public void EnableTestInput() => testInputEnabled = true;
 }
 ```
 
@@ -1022,41 +1022,41 @@ using UnityEngine;
 
 public class PrefabManager : MonoBehaviour
 {
- private static PrefabManager Instance;
+    private static PrefabManager Instance;
 
- public CircleController CirclePrefab;
- public FoodController FoodPrefab;
- public PlayerController PlayerPrefab;
+    public CircleController CirclePrefab;
+    public FoodController FoodPrefab;
+    public PlayerController PlayerPrefab;
 
- private void Awake()
- {
-  Instance = this;
- }
+    private void Awake()
+    {
+        Instance = this;
+    }
 
- public static CircleController SpawnCircle(Circle circle, PlayerController owner)
- {
-  var entityController = Instantiate(Instance.CirclePrefab);
-  entityController.name = $"Circle - {circle.EntityId}";
-  entityController.Spawn(circle, owner);
-  owner.OnCircleSpawned(entityController);
-  return entityController;
- }
+    public static CircleController SpawnCircle(Circle circle, PlayerController owner)
+    {
+        var entityController = Instantiate(Instance.CirclePrefab);
+        entityController.name = $"Circle - {circle.EntityId}";
+        entityController.Spawn(circle, owner);
+        owner.OnCircleSpawned(entityController);
+        return entityController;
+    }
 
- public static FoodController SpawnFood(Food food)
- {
-  var entityController = Instantiate(Instance.FoodPrefab);
-  entityController.name = $"Food - {food.EntityId}";
-  entityController.Spawn(food);
-  return entityController;
- }
+    public static FoodController SpawnFood(Food food)
+    {
+        var entityController = Instantiate(Instance.FoodPrefab);
+        entityController.name = $"Food - {food.EntityId}";
+        entityController.Spawn(food);
+        return entityController;
+    }
 
- public static PlayerController SpawnPlayer(Player player)
- {
-  var playerController = Instantiate(Instance.PlayerPrefab);
-  playerController.name = $"PlayerController - {player.Name}";
-  playerController.Initialize(player);
-  return playerController;
- }
+    public static PlayerController SpawnPlayer(Player player)
+    {
+        var playerController = Instantiate(Instance.PlayerPrefab);
+        playerController.name = $"PlayerController - {player.Name}";
+        playerController.Initialize(player);
+        return playerController;
+    }
 }
 ```
 
@@ -1072,7 +1072,7 @@ Add a couple dictionaries at the top of your `GameManager` class which we'll use
     public static DbConnection Conn { get; private set; }
 
     public static Dictionary<uint, EntityController> Entities = new Dictionary<uint, EntityController>();
- public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
+    public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
 ```
 
 Next lets add some callbacks when rows change in the database. Modify the `HandleConnect` method as below.
@@ -1173,7 +1173,7 @@ public class CameraController : MonoBehaviour
 {
     public static float WorldSize = 0.0f;
 
- private void LateUpdate()
+    private void LateUpdate()
     {
         var arenaCenterTransform = new Vector3(WorldSize / 2, WorldSize / 2, -10.0f);
         if (PlayerController.Local == null || !GameManager.IsConnected())
@@ -1199,16 +1199,16 @@ public class CameraController : MonoBehaviour
             transform.position = arenaCenterTransform;
         }
 
-  float targetCameraSize = CalculateCameraSize(PlayerController.Local);
-  Camera.main.orthographicSize = Mathf.Lerp(Camera.main.orthographicSize, targetCameraSize, Time.deltaTime * 2);
- }
+        float targetCameraSize = CalculateCameraSize(PlayerController.Local);
+        Camera.main.orthographicSize = Mathf.Lerp(Camera.main.orthographicSize, targetCameraSize, Time.deltaTime * 2);
+    }
 
- private float CalculateCameraSize(PlayerController player)
- {
-  return 50f + //Base size
+    private float CalculateCameraSize(PlayerController player)
+    {
+        return 50f + //Base size
             Mathf.Min(50, player.TotalMass() / 5) + //Increase camera size with mass
             Mathf.Min(player.NumberOfOwnedCircles - 1, 1) * 30; //Zoom out when player splits
- }
+    }
 }
 ```
 
