@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::iter;
 
 use serde::{Deserialize, Serialize};
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -34,6 +35,19 @@ impl SqlStmtStats {
 pub struct DatabaseTree {
     pub root: DatabaseTreeNode,
     pub children: Vec<DatabaseTree>,
+}
+
+impl DatabaseTree {
+    pub fn iter(&self) -> impl Iterator<Item = &DatabaseTreeNode> + '_ {
+        let mut stack = vec![self];
+        iter::from_fn(move || {
+            let node = stack.pop()?;
+            for child in node.children.iter().rev() {
+                stack.push(child);
+            }
+            Some(&node.root)
+        })
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
