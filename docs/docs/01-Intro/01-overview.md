@@ -14,7 +14,7 @@ You can run SpacetimeDB as a standalone database server via the `spacetime` CLI 
 
 You can find the instructions to install the CLI tool for your platform [here](https://spacetimedb.com/install).
 
-To get started running your own standalone instance of SpacetimeDB check out our [Getting Started Guide](docs/01-Intro/02-getting-started.md).
+To get started running your own standalone instance of SpacetimeDB check out our [Getting Started Guide](/getting-started).
 
 ## What is SpacetimeDB?
 
