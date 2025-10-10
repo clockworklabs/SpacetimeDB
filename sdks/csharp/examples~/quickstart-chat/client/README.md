@@ -3,8 +3,8 @@ See [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB)/modules/quicksta
 
 ## Regenerating bindings
 
-To regenerate bindings: clone SpacetimeDB next to this repo, then in the root of this repo:
+To regenerate bindings: clone SpacetimeDB next to this repo, then in `sdks/csharp` of this repo:
 
 ```bash
-tools~/gen-quickstart.sh ../SpacetimeDB
+tools~/gen-quickstart.sh
 ```

@@ -316,7 +316,7 @@ impl SystemLogger {
         self.inner.write(LogLevel::Error, &Self::record(msg), &())
     }
 
-    fn record(message: &str) -> Record {
+    fn record(message: &str) -> Record<'_> {
         Record::injected(message)
     }
 }

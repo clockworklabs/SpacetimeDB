@@ -423,9 +423,8 @@ mod tests {
 
     async fn assert_validation_fails<T: TokenValidator>(validator: &T, token: &str) -> anyhow::Result<()> {
         let result = validator.validate_token(token).await;
-        if result.is_ok() {
-            let claims = result.unwrap();
-            anyhow::bail!("Validation succeeded when it should have failed: {claims:?}");
+        if let Ok(claims) = result {
+            anyhow::bail!("Validation succeeded when it should have failed: {:?}", claims);
         }
         Ok(())
     }

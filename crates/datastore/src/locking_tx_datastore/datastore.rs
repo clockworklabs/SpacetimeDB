@@ -2369,7 +2369,7 @@ mod tests {
         let one = product![1];
         let insert_assert_and_remove = |tx: &mut MutTxId, ins: &ProductValue, exp: &ProductValue| -> ResultTest<()> {
             insert(&datastore, tx, table_id, ins)?;
-            assert_eq!(all_rows(&datastore, tx, table_id), [exp.clone()]);
+            assert_eq!(all_rows(&datastore, tx, table_id), std::slice::from_ref(exp));
             datastore.delete_by_rel_mut_tx(tx, table_id, [exp.clone()]);
             assert_eq!(all_rows(&datastore, tx, table_id), []);
             Ok(())
@@ -3219,7 +3219,7 @@ mod tests {
             datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should still exist",
         );
-        assert_eq!(all_rows(&datastore, &tx, table_id), [row.clone()]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), std::slice::from_ref(&row));
 
         // Now drop the table again and commit.
         assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
