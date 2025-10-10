@@ -233,8 +233,8 @@ rayon = "1.8"
 rayon-core = "1.11.0"
 regex = "1"
 reqwest = { version = "0.12", features = ["stream", "json"] }
-rolldown = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-beta.41" }
-rolldown_utils = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-beta.41" }
+rolldown = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-beta.42" }
+rolldown_utils = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-beta.42" }
 ron = "0.8"
 rusqlite = { version = "0.29.0", features = ["bundled", "column_decltype"] }
 rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
