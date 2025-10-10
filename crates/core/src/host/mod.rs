@@ -145,6 +145,8 @@ pub enum AbiCall {
     ConsoleTimerStart,
     ConsoleTimerEnd,
     Identity,
+    JwtLength,
+    GetJwt,
 
     VolatileNonatomicScheduleImmediate,
 }

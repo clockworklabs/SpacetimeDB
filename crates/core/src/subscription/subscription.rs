@@ -212,10 +212,10 @@ impl IncrementalJoin {
     /// An error is returned if the expression is not well-formed.
     pub fn new(expr: &QueryExpr) -> anyhow::Result<Self> {
         if expr.query.len() != 1 {
-            return Err(anyhow::anyhow!("expected a single index join, but got {:#?}", expr));
+            return Err(anyhow::anyhow!("expected a single index join, but got {expr:#?}"));
         }
         let expr::Query::IndexJoin(ref join) = expr.query[0] else {
-            return Err(anyhow::anyhow!("expected a single index join, but got {:#?}", expr));
+            return Err(anyhow::anyhow!("expected a single index join, but got {expr:#?}"));
         };
 
         let index_table = join

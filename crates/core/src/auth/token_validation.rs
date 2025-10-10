@@ -232,7 +232,7 @@ impl TokenValidator for CachingOidcTokenValidator {
             .cache
             .get(raw_issuer.clone().into())
             .await
-            .ok_or_else(|| anyhow::anyhow!("Error fetching public key for issuer {}", raw_issuer))?;
+            .ok_or_else(|| anyhow::anyhow!("Error fetching public key for issuer {raw_issuer}"))?;
         validator.validate_token(token).await
     }
 }

@@ -1176,7 +1176,7 @@ impl FromStr for StVarName {
             ST_VARNAME_SLOW_QRY => Ok(StVarName::SlowQryThreshold),
             ST_VARNAME_SLOW_SUB => Ok(StVarName::SlowSubThreshold),
             ST_VARNAME_SLOW_INC => Ok(StVarName::SlowIncThreshold),
-            _ => Err(anyhow::anyhow!("Invalid system variable {}", s)),
+            _ => Err(anyhow::anyhow!("Invalid system variable {s}")),
         }
     }
 }

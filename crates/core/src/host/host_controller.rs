@@ -695,7 +695,7 @@ async fn update_module(
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.database_identity();
     match stored_program_hash(db)? {
-        None => Err(anyhow!("database `{}` not yet initialized", addr)),
+        None => Err(anyhow!("database `{addr}` not yet initialized")),
         Some(stored) => {
             let res = if stored == program.hash {
                 info!("database `{}` up to date with program `{}`", addr, program.hash);
