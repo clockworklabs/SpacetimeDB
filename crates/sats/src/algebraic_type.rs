@@ -5,7 +5,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::product_type::{CONNECTION_ID_TAG, IDENTITY_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG};
+use crate::product_type::{CONNECTION_ID_TAG, IDENTITY_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG, UUID_TAG};
 use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG};
 use crate::typespace::Typespace;
 use crate::{i256, u256};
@@ -187,6 +187,11 @@ impl AlgebraicType {
         matches!(self, Self::Product(p) if p.is_time_duration())
     }
 
+    /// Returns whether this type is the conventional `UUID` type.
+    pub fn is_uuid(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_uuid())
+    }
+
     /// Returns whether this type is the conventional `ScheduleAt` type.
     pub fn is_schedule_at(&self) -> bool {
         matches!(self, Self::Sum(p) if p.is_schedule_at())
@@ -324,6 +329,11 @@ impl AlgebraicType {
     /// Construct a copy of the time-delta `TimeDuration` type.
     pub fn time_duration() -> Self {
         AlgebraicType::product([(TIME_DURATION_TAG, AlgebraicType::I64)])
+    }
+
+    /// Construct a copy of the `UUID` type.
+    pub fn uuid() -> Self {
+        AlgebraicType::product([(UUID_TAG, AlgebraicType::U128)])
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
@@ -735,6 +745,8 @@ mod tests {
         assert!(AlgebraicType::timestamp().is_special());
         assert!(AlgebraicType::time_duration().is_special());
         assert!(AlgebraicType::time_duration().is_time_duration());
+        assert!(AlgebraicType::uuid().is_uuid());
+        assert!(AlgebraicType::uuid().is_special());
     }
 
     #[test]

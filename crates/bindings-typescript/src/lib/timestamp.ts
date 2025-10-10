@@ -92,3 +92,20 @@ export class Timestamp {
     );
   }
 }
+
+export class ClockGenerator {
+    private microsSinceUnixEpoch: bigint;
+
+    constructor(start: Timestamp) {
+        this.microsSinceUnixEpoch = start.microsSinceUnixEpoch;
+    }
+
+    tick(): Timestamp {
+        this.microsSinceUnixEpoch += 1n;
+        return new Timestamp(this.microsSinceUnixEpoch);
+    }
+
+    static from(t: Timestamp): ClockGenerator {
+        return new ClockGenerator(t);
+    }
+}

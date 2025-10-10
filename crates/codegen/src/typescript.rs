@@ -1068,6 +1068,7 @@ fn needs_parens_within_array(ty: &AlgebraicTypeUse) -> bool {
         | AlgebraicTypeUse::ConnectionId
         | AlgebraicTypeUse::Timestamp
         | AlgebraicTypeUse::TimeDuration
+        | AlgebraicTypeUse::Uuid
         | AlgebraicTypeUse::Primitive(_)
         | AlgebraicTypeUse::Array(_)
         | AlgebraicTypeUse::Ref(_) // We use the type name for these.
@@ -1098,6 +1099,7 @@ pub fn write_type<W: Write>(
             out,
             "{{ tag: \"Interval\", value: __TimeDuration }} | {{ tag: \"Time\", value: __Timestamp }}"
         )?,
+        AlgebraicTypeUse::Uuid => write!(out, "__Uuid")?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write_type(module, out, inner_ty, ref_prefix, ref_suffix)?;
             write!(out, " | undefined")?;
@@ -1160,6 +1162,7 @@ fn convert_algebraic_type<'a>(
         AlgebraicTypeUse::ConnectionId => write!(out, "__AlgebraicTypeValue.createConnectionIdType()"),
         AlgebraicTypeUse::Timestamp => write!(out, "__AlgebraicTypeValue.createTimestampType()"),
         AlgebraicTypeUse::TimeDuration => write!(out, "__AlgebraicTypeValue.createTimeDurationType()"),
+        AlgebraicTypeUse::Uuid => write!(out, "__AlgebraicTypeValue.createUuidType()"),
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "__AlgebraicTypeValue.createOptionType(");
             convert_algebraic_type(module, out, inner_ty, ref_prefix);

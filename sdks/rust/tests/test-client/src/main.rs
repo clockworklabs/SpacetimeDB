@@ -9,11 +9,11 @@ use std::sync::{Arc, Barrier, Mutex};
 use module_bindings::*;
 
 use rand::RngCore;
-use spacetimedb_sdk::TableWithPrimaryKey;
 use spacetimedb_sdk::{
     credentials, i256, u256, unstable::CallReducerFlags, Compression, ConnectionId, DbConnectionBuilder, DbContext,
     Event, Identity, ReducerEvent, Status, SubscriptionHandle, Table, TimeDuration, Timestamp,
 };
+use spacetimedb_sdk::{TableWithPrimaryKey, Uuid};
 use test_counter::TestCounter;
 
 mod simple_test_table;
@@ -1148,6 +1148,7 @@ fn every_primitive_struct() -> EveryPrimitiveStruct {
         r: ConnectionId::ZERO,
         s: Timestamp::from_micros_since_unix_epoch(9876543210),
         t: TimeDuration::from_micros(-67_419_000_000_003),
+        u: Uuid::NIL,
     }
 }
 
@@ -1173,6 +1174,7 @@ fn every_vec_struct() -> EveryVecStruct {
         r: vec![ConnectionId::ZERO],
         s: vec![Timestamp::from_micros_since_unix_epoch(9876543210)],
         t: vec![TimeDuration::from_micros(-67_419_000_000_003)],
+        u: vec![Uuid::NIL],
     }
 }
 
@@ -1512,6 +1514,7 @@ fn exec_insert_primitives_as_strings() {
                 s.r.to_string(),
                 s.s.to_string(),
                 s.t.to_string(),
+                s.u.to_string(),
             ];
 
             ctx.db.vec_string().on_insert(move |ctx, row| {

@@ -266,6 +266,36 @@ impl From<Timestamp> for AlgebraicValue {
     }
 }
 
+/// A generator for monotonically increasing [`Timestamp`]s.
+#[derive(Debug, Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ClockGenerator {
+    t: Timestamp,
+}
+
+impl ClockGenerator {
+    /// Create a new `CLockGenerator` initialized to the given `start` time.
+    pub fn new(start: Timestamp) -> Self {
+        Self { t: start }
+    }
+
+    /// Returns the next `Timestamp` in the sequence, guaranteed to be
+    /// greater than the previous one returned by this method.
+    pub fn tick(&mut self) -> Timestamp {
+        self.t.__timestamp_micros_since_unix_epoch__ = self
+            .t
+            .__timestamp_micros_since_unix_epoch__
+            .checked_add(1)
+            .expect("ClockGenerator overflowed i64 microseconds");
+        self.t
+    }
+}
+
+impl From<Timestamp> for ClockGenerator {
+    fn from(t: Timestamp) -> Self {
+        Self::new(t)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

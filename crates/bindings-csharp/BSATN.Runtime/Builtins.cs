@@ -2,6 +2,7 @@ namespace SpacetimeDB;
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using SpacetimeDB.BSATN;
 
 internal static class Util
@@ -603,5 +604,150 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
                 ]
             );
         // --- / customized ---
+    }
+}
+
+public sealed class ClockGenerator(Timestamp start)
+{
+    private long _microsSinceUnixEpoch = start.MicrosecondsSinceUnixEpoch;
+
+    public Timestamp Tick()
+    {
+        checked
+        {
+            _microsSinceUnixEpoch += 1;
+        }
+        return new Timestamp(_microsSinceUnixEpoch);
+    }
+
+    public static implicit operator ClockGenerator(Timestamp t) => new(t);
+}
+
+/// <summary>
+/// A universally unique identifier (UUID).
+///
+/// Wraps the native <see cref="Guid"/> type and provides methods
+/// to generate nil, random (v4), and time-ordered (v7) UUIDs.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public readonly record struct Uuid : IEquatable<Uuid>, IComparable, IComparable<Uuid>
+{
+    private readonly U128 value;
+    internal Uuid(U128 val) => value = val;
+    public static readonly Uuid NIL = new(FromGuid(Guid.Empty));
+
+    public static Uuid Nil() => NIL;
+
+    public static U128 FromGuid(Guid guid)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        guid.TryWriteBytes(bytes);
+        if (BitConverter.IsLittleEndian)
+        {
+            var lower = BitConverter.ToUInt64(bytes);
+            var upper = BitConverter.ToUInt64(bytes[8..]);
+            return new U128(upper, lower);
+        }
+        else
+        {
+            var upper = BitConverter.ToUInt64(bytes);
+            var lower = BitConverter.ToUInt64(bytes[8..]);
+            return new U128(upper, lower);
+        }
+    }
+
+    /// <summary>
+    /// Creates a new random UUID (version 4).
+    /// </summary>
+    public static Uuid NewV4() => new(FromGuid(Guid.NewGuid()));
+
+    /// <summary>
+    /// Creates a time-ordered UUID (version 7) using the current UTC time and random bytes.
+    /// </summary>
+    public static Uuid NewV7(ClockGenerator clock)
+    {
+        var millis = clock.Tick().ToTimeDurationSinceUnixEpoch().Microseconds / 1000;
+        return NewV7(millis);
+    }
+
+    /// <summary>
+    /// Creates a UUIDv7 using the given timestamp with random bytes.
+    /// </summary>
+    public static Uuid NewV7(long millisSinceUnixEpoch)
+    {
+        // TODO: Convert to ` CreateVersion7` from .NET 9 when we can.
+        if (millisSinceUnixEpoch < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(millisSinceUnixEpoch), "Timestamp precedes Unix epoch");
+        }
+
+        // Generate random 16 bytes
+        var bytes = Guid.NewGuid().ToByteArray();
+
+        // Insert 48-bit timestamp (big endian)
+        bytes[0] = (byte)((millisSinceUnixEpoch >> 40) & 0xFF);
+        bytes[1] = (byte)((millisSinceUnixEpoch >> 32) & 0xFF);
+        bytes[2] = (byte)((millisSinceUnixEpoch >> 24) & 0xFF);
+        bytes[3] = (byte)((millisSinceUnixEpoch >> 16) & 0xFF);
+        bytes[4] = (byte)((millisSinceUnixEpoch >> 8) & 0xFF);
+        bytes[5] = (byte)(millisSinceUnixEpoch & 0xFF);
+
+        // Set version (0111) and variant (10xx)
+        bytes[6] = (byte)((bytes[6] & 0x0F) | 0x70);
+        bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
+
+        return new Uuid(FromGuid(new Guid(bytes)));
+    }
+
+    /// <summary>
+    /// Creates a UUIDv7 using a monotonic clock source.
+    /// </summary>
+    public static Uuid NewV7FromClock(ref ClockGenerator clock)
+    {
+        var millis = clock.Tick().MicrosecondsSinceUnixEpoch / 1000;
+        return NewV7(millis);
+    }
+
+    /// <summary>
+    /// Parses a UUID from its string representation.
+    /// </summary>
+    public static Uuid Parse(string s) => new(FromGuid(Guid.Parse(s)));
+
+    public override readonly string ToString() => value.ToGuid().ToString();
+
+    public readonly int CompareTo(Uuid other) => value.ToGuid().CompareTo(other.value.ToGuid());
+    /// <inheritdoc cref="IComparable.CompareTo(object)" />
+    public int CompareTo(object? value)
+    {
+        if (value is Uuid other)
+        {
+            return CompareTo(other);
+        }
+        else if (value is null)
+        {
+            return 1;
+        }
+        else
+        {
+            throw new ArgumentException("Argument must be a Uuid", nameof(value));
+        }
+    }
+    public static bool operator <(Uuid l, Uuid r) => l.CompareTo(r) < 0;
+    public static bool operator >(Uuid l, Uuid r) => l.CompareTo(r) > 0;
+
+
+    public readonly partial struct BSATN : IReadWrite<Uuid>
+    {
+        public Uuid Read(BinaryReader reader) => new(new SpacetimeDB.BSATN.U128Stdb().Read(reader));
+        public void Write(BinaryWriter writer, Uuid value) => new SpacetimeDB.BSATN.U128Stdb().Write(writer, value.value);
+        // --- / auto-generated ---
+
+        // --- customized ---
+        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
+            // Return a Product directly, not a Ref, because this is a special type.
+            new AlgebraicType.Product([
+                // Using this specific name here is important.
+                new("__uuid__", new AlgebraicType.U128(default))
+            ]);
     }
 }

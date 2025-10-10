@@ -7792,6 +7792,7 @@ dependencies = [
  "spacetimedb-metrics",
  "spacetimedb-primitives 1.6.0",
  "thiserror 1.0.69",
+ "uuid",
 ]
 
 [[package]]

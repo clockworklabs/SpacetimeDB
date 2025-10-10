@@ -175,7 +175,8 @@ record ColumnDeclaration : MemberDeclaration
                     SpecialType.System_String or SpecialType.System_Boolean => true,
                     SpecialType.None => type.ToString()
                         is "SpacetimeDB.ConnectionId"
-                            or "SpacetimeDB.Identity",
+                            or "SpacetimeDB.Identity"
+                            or "SpacetimeDB.Uuid",
                     _ => false,
                 }
             )

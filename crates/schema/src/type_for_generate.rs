@@ -284,6 +284,9 @@ pub enum AlgebraicTypeUse {
     /// The special `TimeDuration` type.
     TimeDuration,
 
+    /// The special `Uuid` type.
+    Uuid,
+
     /// The unit type (empty product).
     /// This is *distinct* from a use of a definition of a product type with no elements.
     Unit,
@@ -378,6 +381,8 @@ impl TypespaceForGenerateBuilder<'_> {
             Ok(AlgebraicTypeUse::Timestamp)
         } else if ty.is_time_duration() {
             Ok(AlgebraicTypeUse::TimeDuration)
+        } else if ty.is_uuid() {
+            Ok(AlgebraicTypeUse::Uuid)
         } else if ty.is_unit() {
             Ok(AlgebraicTypeUse::Unit)
         } else if ty.is_never() {

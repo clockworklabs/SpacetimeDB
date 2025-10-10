@@ -21,6 +21,7 @@ pub use rand08 as rand;
 
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
+use rand08::RngCore;
 #[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
@@ -39,6 +40,7 @@ pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
 pub use spacetimedb_lib::Timestamp;
+pub use spacetimedb_lib::Uuid;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{
@@ -417,6 +419,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::table;
 
+use crate::sats::timestamp::ClockGenerator;
 /// Marks a function as a spacetimedb reducer.
 ///
 /// A reducer is a function with read/write access to the database
@@ -792,6 +795,18 @@ impl ReducerContext {
             connection_id: self.connection_id,
             db: LocalReadOnly {},
         }
+    }
+
+    pub fn new_uuid_v4(&self) -> Uuid {
+        let mut bytes = [0u8; 16];
+        self.rng().fill_bytes(&mut bytes);
+        Uuid::new_v4_from_random_bytes(bytes)
+    }
+
+    pub fn new_uuid_v7(&self, clock: &mut ClockGenerator) -> Result<Uuid, Box<dyn std::error::Error>> {
+        let mut bytes = [0u8; 10];
+        self.rng().fill_bytes(&mut bytes);
+        Ok(Uuid::new_v7_from_timestamp(clock, &bytes)?)
     }
 }
 

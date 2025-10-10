@@ -3641,6 +3641,7 @@ fn should_pass_by_value_in_delegate(_module: &ModuleDef, ty: &AlgebraicTypeUse) 
         AlgebraicTypeUse::ConnectionId => false, // FSpacetimeDBConnectionId is a USTRUCT
         AlgebraicTypeUse::Timestamp => false,    // FSpacetimeDBTimestamp is a USTRUCT
         AlgebraicTypeUse::TimeDuration => false, // FSpacetimeDBTimeDuration is a USTRUCT
+        AlgebraicTypeUse::Uuid => false,         // FGuid is a USTRUCT
         // Custom structs/enums use const references
         AlgebraicTypeUse::Ref(_) => false,
         AlgebraicTypeUse::Array(_) => false, // Arrays use const references
@@ -3680,6 +3681,7 @@ fn is_blueprintable(module: &ModuleDef, ty: &AlgebraicTypeUse) -> bool {
         AlgebraicTypeUse::ConnectionId => true,
         AlgebraicTypeUse::Timestamp => true,
         AlgebraicTypeUse::TimeDuration => true,
+        AlgebraicTypeUse::Uuid => true,
         AlgebraicTypeUse::ScheduleAt => true, // ScheduleAt is blueprintable as a property (TObjectPtr)
         AlgebraicTypeUse::Unit => true,
         AlgebraicTypeUse::Ref(r) => {
@@ -3715,6 +3717,7 @@ fn is_type_blueprintable_for_delegates(module: &ModuleDef, ty: &AlgebraicTypeUse
         AlgebraicTypeUse::ConnectionId => true,
         AlgebraicTypeUse::Timestamp => true,
         AlgebraicTypeUse::TimeDuration => true,
+        AlgebraicTypeUse::Uuid => true,
         AlgebraicTypeUse::ScheduleAt => true,
         AlgebraicTypeUse::Unit => true,
         AlgebraicTypeUse::Ref(r) => {
@@ -4140,6 +4143,7 @@ fn cpp_ty_fmt_impl<'a>(
         AlgebraicTypeUse::Timestamp => f.write_str("FSpacetimeDBTimestamp"),
         AlgebraicTypeUse::TimeDuration => f.write_str("FSpacetimeDBTimeDuration"),
         AlgebraicTypeUse::ScheduleAt => f.write_str("FSpacetimeDBScheduleAt"),
+        AlgebraicTypeUse::Uuid => f.write_str("FGuid"),
         AlgebraicTypeUse::Unit => f.write_str("FSpacetimeDBUnit"),
 
         // --------- references to user-defined types ---------
@@ -4195,6 +4199,7 @@ fn cpp_ty_init_fmt_impl<'a>(ty: &'a AlgebraicTypeUse) -> impl fmt::Display + 'a 
         AlgebraicTypeUse::Timestamp => f.write_str(""),
         AlgebraicTypeUse::TimeDuration => f.write_str(""),
         AlgebraicTypeUse::ScheduleAt => f.write_str(""),
+        AlgebraicTypeUse::Uuid => f.write_str(""),
         AlgebraicTypeUse::Unit => f.write_str(""),
         // --------- references to user-defined types ---------
         AlgebraicTypeUse::Ref(_r) => f.write_str(""),
@@ -4231,7 +4236,7 @@ fn collect_includes_for_type(
             collect_includes_for_type(module, inner, out, module_name);
         }
         // Builtin types that require Builtins.h (also includes LargeIntegers.h)
-        Identity | ConnectionId | Timestamp | TimeDuration | ScheduleAt => {
+        Identity | ConnectionId | Timestamp | TimeDuration | ScheduleAt | Uuid => {
             out.insert("Types/Builtins.h".to_string());
         }
         // Large integer primitives also need Builtins.h (for LargeIntegers.h)

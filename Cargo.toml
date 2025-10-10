@@ -294,7 +294,7 @@ unicode-ident = "1.0.12"
 unicode-normalization = "0.1.23"
 url = "2.3.1"
 urlencoding = "2.1.2"
-uuid = { version = "1.18.1", features = ["v4"] }
+uuid = { version = "1.18.1", default-features = false }
 v8 = "140.2"
 walkdir = "2.2.5"
 wasmbin = "0.6"
