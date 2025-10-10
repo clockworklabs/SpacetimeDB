@@ -151,7 +151,7 @@ impl UniqueDirectIndex {
     }
 
     /// Returns an iterator yielding all the [`RowPointer`] that correspond to the provided `range`.
-    pub fn seek_range(&self, range: &impl RangeBounds<usize>) -> UniqueDirectIndexRangeIter {
+    pub fn seek_range(&self, range: &impl RangeBounds<usize>) -> UniqueDirectIndexRangeIter<'_> {
         // The upper bound of possible key.
         // This isn't necessarily the real max key actually present in the index,
         // due to possible deletions.

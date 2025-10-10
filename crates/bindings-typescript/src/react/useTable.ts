@@ -7,6 +7,7 @@ import {
 } from 'react';
 import { useSpacetimeDB } from './useSpacetimeDB';
 import { DbConnectionImpl, TableCache } from '../sdk/db_connection_impl';
+import type { TableNamesFromDb } from '../sdk/table_handle';
 
 export interface UseQueryCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
@@ -212,8 +213,9 @@ type ColumnsFromRow<R> = {
 export function useTable<
   DbConnection extends DbConnectionImpl,
   RowType extends Record<string, any>,
-  TableName extends keyof DbConnection['db'] &
-    string = keyof DbConnection['db'] & string,
+  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
+    DbConnection['db']
+  >,
 >(
   tableName: TableName,
   where: Expr<ColumnsFromRow<RowType>>,
@@ -256,8 +258,9 @@ export function useTable<
 export function useTable<
   DbConnection extends DbConnectionImpl,
   RowType extends Record<string, any>,
-  TableName extends keyof DbConnection['db'] &
-    string = keyof DbConnection['db'] & string,
+  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
+    DbConnection['db']
+  >,
 >(
   tableName: TableName,
   callbacks?: UseQueryCallbacks<RowType>
@@ -266,8 +269,9 @@ export function useTable<
 export function useTable<
   DbConnection extends DbConnectionImpl,
   RowType extends Record<string, any>,
-  TableName extends keyof DbConnection['db'] &
-    string = keyof DbConnection['db'] & string,
+  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
+    DbConnection['db']
+  >,
 >(
   tableName: TableName,
   whereClauseOrCallbacks?:

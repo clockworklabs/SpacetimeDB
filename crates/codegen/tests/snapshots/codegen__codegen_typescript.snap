@@ -30,6 +30,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type AddPlayer = {
@@ -92,6 +93,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type AddPrivate = {
@@ -154,6 +156,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Add = {
@@ -218,6 +221,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type AssertCallerIdentityIsModuleIdentity = {};
@@ -277,6 +281,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Baz = {
@@ -340,6 +345,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type ClientConnected = {};
@@ -399,6 +405,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type DeletePlayer = {
@@ -461,6 +468,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type DeletePlayersByName = {
@@ -523,6 +531,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Baz } from "./baz_type";
 // Mark import as potentially unused
@@ -599,6 +608,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Baz as BazType } from "./baz_type";
 // Mark import as potentially unused
@@ -638,6 +648,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { HasSpecialStuff } from "./has_special_stuff_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -653,7 +664,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.hasSpecialStuff.on_insert(...)`.
  */
-export class HasSpecialStuffTableHandle {
+export class HasSpecialStuffTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<HasSpecialStuff>;
 
   constructor(tableCache: __TableCache<HasSpecialStuff>) {
@@ -713,6 +726,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type HasSpecialStuff = {
@@ -780,6 +794,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 // Import and reexport all reducer arg types
@@ -875,11 +890,11 @@ export { NamespaceTestF };
 const REMOTE_MODULE = {
   tables: {
     has_special_stuff: {
-      tableName: "has_special_stuff",
+      tableName: "has_special_stuff" as const,
       rowType: HasSpecialStuff.getTypeScriptAlgebraicType(),
     },
     logged_out_player: {
-      tableName: "logged_out_player",
+      tableName: "logged_out_player" as const,
       rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: "identity",
       primaryKeyInfo: {
@@ -888,7 +903,7 @@ const REMOTE_MODULE = {
       },
     },
     person: {
-      tableName: "person",
+      tableName: "person" as const,
       rowType: Person.getTypeScriptAlgebraicType(),
       primaryKey: "id",
       primaryKeyInfo: {
@@ -897,7 +912,7 @@ const REMOTE_MODULE = {
       },
     },
     pk_multi_identity: {
-      tableName: "pk_multi_identity",
+      tableName: "pk_multi_identity" as const,
       rowType: PkMultiIdentity.getTypeScriptAlgebraicType(),
       primaryKey: "id",
       primaryKeyInfo: {
@@ -906,7 +921,7 @@ const REMOTE_MODULE = {
       },
     },
     player: {
-      tableName: "player",
+      tableName: "player" as const,
       rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: "identity",
       primaryKeyInfo: {
@@ -915,15 +930,15 @@ const REMOTE_MODULE = {
       },
     },
     points: {
-      tableName: "points",
+      tableName: "points" as const,
       rowType: Point.getTypeScriptAlgebraicType(),
     },
     private_table: {
-      tableName: "private_table",
+      tableName: "private_table" as const,
       rowType: PrivateTable.getTypeScriptAlgebraicType(),
     },
     repeating_test_arg: {
-      tableName: "repeating_test_arg",
+      tableName: "repeating_test_arg" as const,
       rowType: RepeatingTestArg.getTypeScriptAlgebraicType(),
       primaryKey: "scheduledId",
       primaryKeyInfo: {
@@ -932,15 +947,15 @@ const REMOTE_MODULE = {
       },
     },
     test_a: {
-      tableName: "test_a",
+      tableName: "test_a" as const,
       rowType: TestA.getTypeScriptAlgebraicType(),
     },
     test_d: {
-      tableName: "test_d",
+      tableName: "test_d" as const,
       rowType: TestD.getTypeScriptAlgebraicType(),
     },
     test_e: {
-      tableName: "test_e",
+      tableName: "test_e" as const,
       rowType: TestE.getTypeScriptAlgebraicType(),
       primaryKey: "id",
       primaryKeyInfo: {
@@ -949,7 +964,7 @@ const REMOTE_MODULE = {
       },
     },
     test_f: {
-      tableName: "test_f",
+      tableName: "test_f" as const,
       rowType: TestFoobar.getTypeScriptAlgebraicType(),
     },
   },
@@ -1328,62 +1343,62 @@ export class SetReducerFlags {
 export class RemoteTables {
   constructor(private connection: __DbConnectionImpl) {}
 
-  get hasSpecialStuff(): HasSpecialStuffTableHandle {
+  get hasSpecialStuff(): HasSpecialStuffTableHandle<'has_special_stuff'> {
     // clientCache is a private property
     return new HasSpecialStuffTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<HasSpecialStuff>(REMOTE_MODULE.tables.has_special_stuff));
   }
 
-  get loggedOutPlayer(): LoggedOutPlayerTableHandle {
+  get loggedOutPlayer(): LoggedOutPlayerTableHandle<'logged_out_player'> {
     // clientCache is a private property
     return new LoggedOutPlayerTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.logged_out_player));
   }
 
-  get person(): PersonTableHandle {
+  get person(): PersonTableHandle<'person'> {
     // clientCache is a private property
     return new PersonTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Person>(REMOTE_MODULE.tables.person));
   }
 
-  get pkMultiIdentity(): PkMultiIdentityTableHandle {
+  get pkMultiIdentity(): PkMultiIdentityTableHandle<'pk_multi_identity'> {
     // clientCache is a private property
     return new PkMultiIdentityTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<PkMultiIdentity>(REMOTE_MODULE.tables.pk_multi_identity));
   }
 
-  get player(): PlayerTableHandle {
+  get player(): PlayerTableHandle<'player'> {
     // clientCache is a private property
     return new PlayerTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.player));
   }
 
-  get points(): PointsTableHandle {
+  get points(): PointsTableHandle<'points'> {
     // clientCache is a private property
     return new PointsTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Point>(REMOTE_MODULE.tables.points));
   }
 
-  get privateTable(): PrivateTableTableHandle {
+  get privateTable(): PrivateTableTableHandle<'private_table'> {
     // clientCache is a private property
     return new PrivateTableTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<PrivateTable>(REMOTE_MODULE.tables.private_table));
   }
 
-  get repeatingTestArg(): RepeatingTestArgTableHandle {
+  get repeatingTestArg(): RepeatingTestArgTableHandle<'repeating_test_arg'> {
     // clientCache is a private property
     return new RepeatingTestArgTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<RepeatingTestArg>(REMOTE_MODULE.tables.repeating_test_arg));
   }
 
-  get testA(): TestATableHandle {
+  get testA(): TestATableHandle<'test_a'> {
     // clientCache is a private property
     return new TestATableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestA>(REMOTE_MODULE.tables.test_a));
   }
 
-  get testD(): TestDTableHandle {
+  get testD(): TestDTableHandle<'test_d'> {
     // clientCache is a private property
     return new TestDTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestD>(REMOTE_MODULE.tables.test_d));
   }
 
-  get testE(): TestETableHandle {
+  get testE(): TestETableHandle<'test_e'> {
     // clientCache is a private property
     return new TestETableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestE>(REMOTE_MODULE.tables.test_e));
   }
 
-  get testF(): TestFTableHandle {
+  get testF(): TestFTableHandle<'test_f'> {
     // clientCache is a private property
     return new TestFTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestFoobar>(REMOTE_MODULE.tables.test_f));
   }
@@ -1433,6 +1448,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type ListOverAge = {
@@ -1495,6 +1511,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type LogModuleIdentity = {};
@@ -1554,6 +1571,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Player } from "./player_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -1569,7 +1587,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.loggedOutPlayer.on_insert(...)`.
  */
-export class LoggedOutPlayerTableHandle {
+export class LoggedOutPlayerTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<Player>;
 
   constructor(tableCache: __TableCache<Player>) {
@@ -1703,6 +1723,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import * as NamespaceTestCVariants from './namespace_test_c_variants'
 
@@ -1772,6 +1793,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Foo = { tag: "Foo" };
@@ -1806,6 +1828,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import * as NamespaceTestFVariants from './namespace_test_f_variants'
 
@@ -1878,6 +1901,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Foo = { tag: "Foo" };
@@ -1913,6 +1937,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Person } from "./person_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -1928,7 +1953,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.person.on_insert(...)`.
  */
-export class PersonTableHandle {
+export class PersonTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<Person>;
 
   constructor(tableCache: __TableCache<Person>) {
@@ -2018,6 +2045,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Person = {
@@ -2085,6 +2113,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { PkMultiIdentity } from "./pk_multi_identity_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2100,7 +2129,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.pkMultiIdentity.on_insert(...)`.
  */
-export class PkMultiIdentityTableHandle {
+export class PkMultiIdentityTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<PkMultiIdentity>;
 
   constructor(tableCache: __TableCache<PkMultiIdentity>) {
@@ -2212,6 +2243,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type PkMultiIdentity = {
@@ -2277,6 +2309,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Player } from "./player_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2292,7 +2325,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.player.on_insert(...)`.
  */
-export class PlayerTableHandle {
+export class PlayerTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<Player>;
 
   constructor(tableCache: __TableCache<Player>) {
@@ -2426,6 +2461,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Player = {
@@ -2493,6 +2529,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Point = {
@@ -2558,6 +2595,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Point } from "./point_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2573,7 +2611,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.points.on_insert(...)`.
  */
-export class PointsTableHandle {
+export class PointsTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<Point>;
 
   constructor(tableCache: __TableCache<Point>) {
@@ -2633,6 +2673,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { PrivateTable } from "./private_table_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2648,7 +2689,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.privateTable.on_insert(...)`.
  */
-export class PrivateTableTableHandle {
+export class PrivateTableTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<PrivateTable>;
 
   constructor(tableCache: __TableCache<PrivateTable>) {
@@ -2708,6 +2751,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type PrivateTable = {
@@ -2771,6 +2815,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type QueryPrivate = {};
@@ -2830,6 +2875,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { RepeatingTestArg } from "./repeating_test_arg_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2845,7 +2891,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.repeatingTestArg.on_insert(...)`.
  */
-export class RepeatingTestArgTableHandle {
+export class RepeatingTestArgTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<RepeatingTestArg>;
 
   constructor(tableCache: __TableCache<RepeatingTestArg>) {
@@ -2935,6 +2983,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type RepeatingTestArg = {
@@ -3002,6 +3051,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 import { RepeatingTestArg } from "./repeating_test_arg_type";
@@ -3068,6 +3118,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type SayHello = {};
@@ -3127,6 +3178,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { TestA } from "./test_a_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -3142,7 +3194,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.testA.on_insert(...)`.
  */
-export class TestATableHandle {
+export class TestATableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<TestA>;
 
   constructor(tableCache: __TableCache<TestA>) {
@@ -3202,6 +3256,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type TestA = {
@@ -3269,6 +3324,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type TestB = {
@@ -3332,6 +3388,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type TestBtreeIndexArgs = {};
@@ -3391,6 +3448,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { TestD } from "./test_d_type";
 import { NamespaceTestC } from "./namespace_test_c_type";
@@ -3410,7 +3468,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.testD.on_insert(...)`.
  */
-export class TestDTableHandle {
+export class TestDTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<TestD>;
 
   constructor(tableCache: __TableCache<TestD>) {
@@ -3470,6 +3530,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { NamespaceTestC } from "./namespace_test_c_type";
 // Mark import as potentially unused
@@ -3537,6 +3598,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { TestE } from "./test_e_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -3552,7 +3614,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.testE.on_insert(...)`.
  */
-export class TestETableHandle {
+export class TestETableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<TestE>;
 
   constructor(tableCache: __TableCache<TestE>) {
@@ -3642,6 +3706,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type TestE = {
@@ -3707,6 +3772,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { TestFoobar } from "./test_foobar_type";
 import { Foobar } from "./foobar_type";
@@ -3726,7 +3792,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.testF.on_insert(...)`.
  */
-export class TestFTableHandle {
+export class TestFTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<TestFoobar>;
 
   constructor(tableCache: __TableCache<TestFoobar>) {
@@ -3786,6 +3854,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Foobar } from "./foobar_type";
 // Mark import as potentially unused
@@ -3853,6 +3922,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 import { TestA } from "./test_a_type";

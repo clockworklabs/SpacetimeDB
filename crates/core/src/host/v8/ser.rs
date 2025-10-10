@@ -1,8 +1,8 @@
-#![allow(dead_code)]
-
 use super::de::intern_field_name;
-use super::error::{exception_already_thrown, ExcResult, ExceptionThrown, RangeError, Throwable, TypeError};
-use super::string_const::{TAG, VALUE};
+use super::error::{
+    exception_already_thrown, ArrayTooLongError, ExcResult, ExceptionThrown, StringTooLongError, Throwable, TypeError,
+};
+use super::string::{IntoJsString, TAG, VALUE};
 use super::syscall::FnRet;
 use super::to_value::ToValue;
 use derive_more::From;
@@ -37,21 +37,15 @@ impl<'this, 'scope, 'isolate> Serializer<'this, 'scope, 'isolate> {
 enum Error {
     Custom(String),
     Thrown(ExceptionThrown),
-    #[from(ignore)]
-    StringTooLarge(usize),
-    #[from(ignore)]
-    ArrayLengthTooLarge(usize),
+    StringTooLong(StringTooLongError),
+    ArrayLengthTooLong(ArrayTooLongError),
 }
 
 impl<'scope> Throwable<'scope> for Error {
     fn throw(self, scope: &PinScope<'scope, '_>) -> ExceptionThrown {
         match self {
-            Self::StringTooLarge(len) => {
-                RangeError(format!("`{len}` bytes is too large to be a JS string")).throw(scope)
-            }
-            Self::ArrayLengthTooLarge(len) => {
-                RangeError(format!("`{len}` elements are too many for a JS array")).throw(scope)
-            }
+            Self::StringTooLong(err) => err.into_range_error().throw(scope),
+            Self::ArrayLengthTooLong(err) => err.into_range_error().throw(scope),
             Self::Thrown(thrown) => thrown,
             Self::Custom(msg) => TypeError(msg).throw(scope),
         }
@@ -111,9 +105,10 @@ impl<'this, 'scope, 'isolate> ser::Serializer for Serializer<'this, 'scope, 'iso
     serialize_primitive!(serialize_f32, f32);
 
     fn serialize_str(self, string: &str) -> Result<Self::Ok, Self::Error> {
-        v8::String::new(self.scope, string)
+        string
+            .into_string(self.scope)
             .map(Into::into)
-            .ok_or(Error::StringTooLarge(string.len()))
+            .map_err(Error::StringTooLong)
     }
 
     fn serialize_bytes(self, bytes: &[u8]) -> Result<Self::Ok, Self::Error> {
@@ -123,7 +118,7 @@ impl<'this, 'scope, 'isolate> ser::Serializer for Serializer<'this, 'scope, 'iso
     }
 
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
-        let len = len.try_into().map_err(|_| Error::ArrayLengthTooLarge(len))?;
+        let len = len.try_into().map_err(|_| ArrayTooLongError { len })?;
         Ok(SerializeArray {
             array: Array::new(self.scope, len),
             inner: self,
