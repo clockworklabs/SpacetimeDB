@@ -21,12 +21,7 @@ import {
   type UniqueIndex,
   type RangedIndex,
 } from './indexes';
-import {
-  type AlgebraicTypeRef,
-  type RowType,
-  type Table,
-  type TableMethods,
-} from './table';
+import { type RowType, type Table, type TableMethods } from './table';
 import { type DbView, type ReducerCtx, type Reducer } from './reducers';
 import type { RowBuilder, RowObj } from './type_builders';
 

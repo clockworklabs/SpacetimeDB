@@ -195,7 +195,7 @@ pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];
 pub enum ModuleLanguage {
     Csharp,
     Rust,
-    Javascript
+    Javascript,
 }
 impl clap::ValueEnum for ModuleLanguage {
     fn value_variants<'a>() -> &'a [Self] {
@@ -205,7 +205,14 @@ impl clap::ValueEnum for ModuleLanguage {
         match self {
             Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs", "C#", "CSharp"])),
             Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs", "Rust"])),
-            Self::Javascript => Some(clap::builder::PossibleValue::new("javascript").aliases(["js", "JavaScript", "TypeScript", "ts", "ECMAScript", "es"])),
+            Self::Javascript => Some(clap::builder::PossibleValue::new("javascript").aliases([
+                "js",
+                "JavaScript",
+                "TypeScript",
+                "ts",
+                "ECMAScript",
+                "es",
+            ])),
         }
     }
 }

@@ -103,9 +103,7 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
             // TODO(cloutiertyler): I actually think we should probably just always do production mode event in debug builds
             (
                 "process.env.NODE_ENV".to_string(),
-                if build_debug { "development" } else { "production" }
-                    .to_string()
-                    .into(),
+                if build_debug { "development" } else { "production" }.into(),
             ),
         ])),
         extend: Some(false), // Not relevant for us, this is for extending global variables in UMD/IIFE bundles and we have ESM only.
@@ -173,5 +171,5 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         eprintln!("Rolldown warning: {w}");
     });
 
-    return Ok(project_path.join("dist").join("bundle.js"));
+    Ok(project_path.join("dist").join("bundle.js"))
 }

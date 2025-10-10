@@ -8,7 +8,7 @@ import {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type TypeBuilder,
 } from './type_builders';
-import type { AlgebraicTypeRef, TableSchema, UntypedTableDef } from './table';
+import type { TableSchema, UntypedTableDef } from './table';
 import {
   clientConnected,
   clientDisconnected,
@@ -17,7 +17,6 @@ import {
   type ParamsObj,
   type Reducer,
 } from './reducers';
-import type { AlgebraicTypeVariants } from '../lib/algebraic_type';
 
 /**
  * An untyped representation of the database schema.
@@ -124,6 +123,7 @@ class Schema<S extends UntypedSchemaDef> {
     params: Params,
     fn: Reducer<S, Params>
   ): void;
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   reducer(name: string, fn: Reducer<S, {}>): void;
   reducer<Params extends ParamsObj | RowObj>(
     name: string,
@@ -279,23 +279,6 @@ export function schema(
     args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
 
   const tableDefs = handles.map(h => h.tableDef);
-
-  // Traverse the tables in order. For each newly encountered
-  // insert the type into the typespace and increment the product
-  // type reference, inserting the product type reference into the
-  // table.
-  let productTypeRef: AlgebraicTypeRef = 0;
-  // const typespace: Typespace = {
-  //   types: [],
-  // };
-  // handles.forEach(h => {
-  //   const tableType = h.rowSpacetimeType;
-  //   // Insert the table type into the typespace
-  //   // typespace.types.push(tableType);
-  //   // h.tableDef.productTypeRef = productTypeRef;
-  //   // Increment the product type reference
-  //   productTypeRef++;
-  // });
 
   // Side-effect:
   // Modify the `MODULE_DEF` which will be read by

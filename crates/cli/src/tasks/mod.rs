@@ -8,9 +8,13 @@ use self::rust::build_rust;
 
 use duct::cmd;
 
-pub fn build(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) -> anyhow::Result<(PathBuf, &'static str)> {
+pub fn build(
+    project_path: &Path,
+    lint_dir: Option<&Path>,
+    build_debug: bool,
+) -> anyhow::Result<(PathBuf, &'static str)> {
     let lang = util::detect_module_language(project_path)?;
-    let output_path= match lang {
+    let output_path = match lang {
         ModuleLanguage::Rust => build_rust(project_path, lint_dir, build_debug),
         ModuleLanguage::Csharp => build_csharp(project_path, build_debug),
         ModuleLanguage::Javascript => build_javascript(project_path, build_debug),
@@ -46,5 +50,5 @@ pub fn build(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) ->
 }
 
 pub mod csharp;
-pub mod rust;
 pub mod javascript;
+pub mod rust;

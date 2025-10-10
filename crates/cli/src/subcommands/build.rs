@@ -1,5 +1,4 @@
 use crate::Config;
-use cargo_metadata::semver::Op;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use std::ffi::OsString;
