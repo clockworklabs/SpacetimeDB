@@ -3,10 +3,10 @@ import {
   AlgebraicType,
   ConnectionId,
   Identity,
-  t,
   type IdentityTokenMessage,
 } from '../src/index';
 import type { ColumnBuilder } from '../src/server';
+import { t } from '../src/server/type_builders';
 
 describe('TypeBuilder', () => {
   it('builds the correct algebraic type for a point', () => {
@@ -15,7 +15,7 @@ describe('TypeBuilder', () => {
       y: t.f64(),
       z: t.f64(),
     });
-    expect(point.algebraicType).toEqual({
+    expect(point.resolveType()).toEqual({
       tag: 'Product',
       value: {
         elements: [
@@ -32,7 +32,7 @@ describe('TypeBuilder', () => {
       a: t.string(),
       b: t.number(),
     });
-    expect(sumType.algebraicType).toEqual({
+    expect(sumType.resolveType()).toEqual({
       tag: 'Sum',
       value: {
         variants: [

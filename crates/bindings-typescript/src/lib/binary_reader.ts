@@ -1,5 +1,3 @@
-import { TextDecoder } from 'fast-text-encoding';
-
 export default class BinaryReader {
   /**
    * The DataView used to read values from the binary data.

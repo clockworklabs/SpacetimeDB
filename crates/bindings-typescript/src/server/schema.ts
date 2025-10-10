@@ -1,6 +1,5 @@
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
-import { MODULE_DEF, registerModuleHooks } from './runtime';
 import {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type ColumnBuilder,
@@ -8,7 +7,7 @@ import {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type TypeBuilder,
 } from './type_builders';
-import type { AlgebraicTypeRef, TableSchema, UntypedTableDef } from './table';
+import type { TableSchema, UntypedTableDef } from './table';
 import {
   clientConnected,
   clientDisconnected,
@@ -17,7 +16,60 @@ import {
   type ParamsObj,
   type Reducer,
 } from './reducers';
-import type { AlgebraicTypeVariants } from '../lib/algebraic_type';
+import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
+import {
+  AlgebraicType,
+  type AlgebraicTypeVariants,
+} from '../lib/algebraic_type';
+import type RawScopedTypeNameV9 from '../lib/autogen/raw_scoped_type_name_v_9_type';
+
+/**
+ * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
+ */
+export const MODULE_DEF: RawModuleDefV9 = {
+  typespace: { types: [] },
+  tables: [],
+  reducers: [],
+  types: [],
+  miscExports: [],
+  rowLevelSecurity: [],
+};
+
+const COMPOUND_TYPES = new Map<
+  AlgebraicTypeVariants.Product | AlgebraicTypeVariants.Sum,
+  AlgebraicTypeVariants.Ref
+>();
+
+export function addType<T extends AlgebraicType>(
+  name: string | undefined,
+  ty: T
+): T | AlgebraicTypeVariants.Ref {
+  if (
+    (ty.tag === 'Product' && ty.value.elements.length > 0) ||
+    (ty.tag === 'Sum' && ty.value.variants.length > 0)
+  ) {
+    let r = COMPOUND_TYPES.get(ty);
+    if (r == null) {
+      r = AlgebraicType.Ref(MODULE_DEF.typespace.types.length);
+      MODULE_DEF.typespace.types.push(ty);
+      COMPOUND_TYPES.set(ty, r);
+      if (name != null)
+        MODULE_DEF.types.push({
+          name: splitName(name),
+          ty: r.value,
+          customOrdering: true,
+        });
+    }
+    return r;
+  } else {
+    return ty;
+  }
+}
+
+export function splitName(name: string): RawScopedTypeNameV9 {
+  const scope = name.split('.');
+  return { name: scope.pop()!, scope };
+}
 
 /**
  * An untyped representation of the database schema.
@@ -119,12 +171,29 @@ class Schema<S extends UntypedSchemaDef> {
    * );
    * ```
    */
-  reducer<Params extends ParamsObj>(
+  reducer<Params extends ParamsObj | RowObj>(
     name: string,
     params: Params,
     fn: Reducer<S, Params>
+  ): void;
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  reducer(name: string, fn: Reducer<S, {}>): void;
+  reducer<Params extends ParamsObj | RowObj>(
+    name: string,
+    paramsOrFn: Params | Reducer<S, any>,
+    fn?: Reducer<S, Params>
   ): void {
-    reducer(name, params, fn);
+    if (typeof paramsOrFn === 'function') {
+      // This is the case where params are omitted.
+      // The second argument is the reducer function.
+      // We pass an empty object for the params.
+      reducer(name, {}, paramsOrFn);
+    } else {
+      // This is the case where params are provided.
+      // The second argument is the params object, and the third is the function.
+      // The `fn` parameter is guaranteed to be defined here.
+      reducer(name, paramsOrFn, fn!);
+    }
   }
 
   /**
@@ -257,29 +326,10 @@ export function schema(
     | [readonly TableSchema<any, any, any>[]]
     | readonly TableSchema<any, any, any>[]
 ): Schema<UntypedSchemaDef> {
-  registerModuleHooks();
-
   const handles: readonly TableSchema<any, any, any>[] =
     args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
 
   const tableDefs = handles.map(h => h.tableDef);
-
-  // Traverse the tables in order. For each newly encountered
-  // insert the type into the typespace and increment the product
-  // type reference, inserting the product type reference into the
-  // table.
-  let productTypeRef: AlgebraicTypeRef = 0;
-  // const typespace: Typespace = {
-  //   types: [],
-  // };
-  // handles.forEach(h => {
-  //   const tableType = h.rowSpacetimeType;
-  //   // Insert the table type into the typespace
-  //   // typespace.types.push(tableType);
-  //   // h.tableDef.productTypeRef = productTypeRef;
-  //   // Increment the product type reference
-  //   productTypeRef++;
-  // });
 
   // Side-effect:
   // Modify the `MODULE_DEF` which will be read by

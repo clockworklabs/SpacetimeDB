@@ -1,12 +1,6 @@
-import {
-  AlgebraicType,
-  ProductType,
-  type AlgebraicTypeVariants,
-} from '../lib/algebraic_type';
+import { AlgebraicType } from '../lib/algebraic_type';
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
-import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
-import type RawScopedTypeNameV9 from '../lib/autogen/raw_scoped_type_name_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
 import { ConnectionId } from '../lib/connection_id';
@@ -21,99 +15,12 @@ import {
   type UniqueIndex,
   type RangedIndex,
 } from './indexes';
-import {
-  type AlgebraicTypeRef,
-  type RowType,
-  type Table,
-  type TableMethods,
-} from './table';
-import { type DbView, type ReducerCtx, type Reducer } from './reducers';
-import type { RowBuilder, RowObj } from './type_builders';
+import { type RowType, type Table, type TableMethods } from './table';
+import { type DbView, type ReducerCtx, REDUCERS } from './reducers';
+import { MODULE_DEF } from './schema';
 
 import * as _syscalls from 'spacetime:sys@1.0';
 import type { u16, u32, u128, u256 } from 'spacetime:sys@1.0';
-
-/**
- * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
- */
-export const MODULE_DEF: RawModuleDefV9 = {
-  typespace: { types: [] },
-  tables: [],
-  reducers: [],
-  types: [],
-  miscExports: [],
-  rowLevelSecurity: [],
-};
-
-const COMPOUND_TYPES = new Map<
-  AlgebraicTypeVariants.Product | AlgebraicTypeVariants.Sum,
-  AlgebraicTypeVariants.Ref
->();
-
-export function addType<T extends AlgebraicType>(
-  name: string | undefined,
-  ty: T
-): T | AlgebraicTypeVariants.Ref {
-  if (
-    (ty.tag === 'Product' && ty.value.elements.length > 0) ||
-    (ty.tag === 'Sum' && ty.value.variants.length > 0)
-  ) {
-    let r = COMPOUND_TYPES.get(ty);
-    if (r == null) {
-      r = AlgebraicType.Ref(MODULE_DEF.typespace.types.length);
-      MODULE_DEF.typespace.types.push(ty);
-      COMPOUND_TYPES.set(ty, r);
-      if (name != null)
-        MODULE_DEF.types.push({
-          name: splitName(name),
-          ty: r.value,
-          customOrdering: true,
-        });
-    }
-    return r;
-  } else {
-    return ty;
-  }
-}
-
-export function splitName(name: string): RawScopedTypeNameV9 {
-  const scope = name.split('.');
-  return { name: scope.pop()!, scope };
-}
-
-/**
- * internal: pushReducer() helper used by reducer() and lifecycle wrappers
- *
- * @param name - The name of the reducer.
- * @param params - The parameters for the reducer.
- * @param fn - The reducer function.
- * @param lifecycle - Optional lifecycle hooks for the reducer.
- */
-export function pushReducer(
-  name: string,
-  params: RowObj | RowBuilder<RowObj>,
-  fn: Reducer<any, any>,
-  lifecycle?: RawReducerDefV9['lifecycle']
-): void {
-  registerModuleHooks();
-
-  const paramType: ProductType = {
-    elements: Object.entries(params).map(([n, c]) => ({
-      name: n,
-      algebraicType: ('typeBuilder' in c ? c.typeBuilder : c).algebraicType,
-    })),
-  };
-
-  MODULE_DEF.reducers.push({
-    name,
-    params: paramType,
-    lifecycle, // <- lifecycle flag lands here
-  });
-
-  REDUCERS.push(fn);
-}
-
-const REDUCERS: Reducer<any, any>[] = [];
 
 const { freeze } = Object;
 
@@ -127,18 +34,16 @@ const sys: typeof _syscalls = freeze(
 );
 
 export function __call_reducer__(
-  reducer_id: u32,
+  reducerId: u32,
   sender: u256,
-  conn_id: u128,
+  connId: u128,
   timestamp: bigint,
-  args_buf: Uint8Array
+  argsBuf: Uint8Array
 ): { tag: 'ok' } | { tag: 'err'; value: string } {
-  const args_type = AlgebraicType.Product(
-    MODULE_DEF.reducers[reducer_id].params
-  );
+  const argsType = AlgebraicType.Product(MODULE_DEF.reducers[reducerId].params);
   const args = AlgebraicType.deserializeValue(
-    new BinaryReader(args_buf),
-    args_type
+    new BinaryReader(argsBuf),
+    argsType
   );
   const ctx: ReducerCtx<any> = freeze({
     sender: new Identity(sender),
@@ -146,24 +51,16 @@ export function __call_reducer__(
       return new Identity(sys.identity().__identity__);
     },
     timestamp: new Timestamp(timestamp),
-    connection_id: ConnectionId.nullIfZero(new ConnectionId(conn_id)),
+    connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
     db: getDbView(),
   });
-  return REDUCERS[reducer_id](ctx, args) ?? { tag: 'ok' };
+  return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
 }
 
 export function __describe_module__(): Uint8Array {
   const writer = new BinaryWriter(128);
   RawModuleDef.serialize(writer, RawModuleDef.V9(MODULE_DEF));
   return writer.getBuffer();
-}
-
-let hooksRegistered = false;
-export function registerModuleHooks() {
-  if (hooksRegistered) return;
-  hooksRegistered = true;
-  // globalThis.__call_reducer__ = __call_reducer__;
-  // globalThis.__describe_module__ = __describe_module__;
 }
 
 let DB_VIEW: DbView<any> | null = null;

@@ -1,73 +1,71 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
-import { ScheduleAt } from '../../../crates/bindings-typescript/src';
+import { ScheduleAt } from 'spacetimedb';
 import {
   schema,
   table,
   t,
   type Infer,
   type InferTypeOfRow,
-} from '../../../crates/bindings-typescript/src/server';
+} from 'spacetimedb/server';
 
-export {
-  __call_reducer__,
-  __describe_module__,
-} from '../../../crates/bindings-typescript/src/server';
+// TODO: Remove
+export { __call_reducer__, __describe_module__ } from 'spacetimedb/server';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPE ALIASES
 // ─────────────────────────────────────────────────────────────────────────────
 // Rust: pub type TestAlias = TestA
-export type TestAlias = TestA;
+type TestAlias = TestA;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUPPORT TYPES (SpacetimeType equivalents)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Rust: #[derive(SpacetimeType)] pub struct TestB { foo: String }
-export const testB = t.object('TestB', {
+const testB = t.object('TestB', {
   foo: t.string(),
 });
-export type TestB = Infer<typeof testB>;
+type TestB = Infer<typeof testB>;
 
 // Rust: #[derive(SpacetimeType)] #[sats(name = "Namespace.TestC")] enum TestC { Foo, Bar }
-export const testC = t.enum('Namespace.TestC', {
+const testC = t.enum('Namespace.TestC', {
   Foo: t.unit(),
   Bar: t.unit(),
 });
-export type TestC = Infer<typeof testC>;
+type TestC = Infer<typeof testC>;
 
 // Rust: const DEFAULT_TEST_C: TestC = TestC::Foo;
-export const DEFAULT_TEST_C: TestC = { tag: 'Foo', value: {} } as const;
+const DEFAULT_TEST_C: TestC = { tag: 'Foo', value: {} } as const;
 
 // Rust: #[derive(SpacetimeType)] pub struct Baz { pub field: String }
-export const Baz = t.object('Baz', {
+const Baz = t.object('Baz', {
   field: t.string(),
 });
-export type Baz = Infer<typeof Baz>;
+type Baz = Infer<typeof Baz>;
 
 // Rust: #[derive(SpacetimeType)] pub enum Foobar { Baz(Baz), Bar, Har(u32) }
-export const foobar = t.enum('Foobar', {
+const foobar = t.enum('Foobar', {
   Baz: Baz,
   Bar: t.unit(),
   Har: t.u32(),
 });
-export type Foobar = Infer<typeof foobar>;
+type Foobar = Infer<typeof foobar>;
 
 // Rust: #[derive(SpacetimeType)] #[sats(name = "Namespace.TestF")] enum TestF { Foo, Bar, Baz(String) }
-export const testF = t.enum('Namespace.TestF', {
+const testF = t.enum('Namespace.TestF', {
   Foo: t.unit(),
   Bar: t.unit(),
   Baz: t.string(),
 });
-export type TestF = Infer<typeof testF>;
+type TestF = Infer<typeof testF>;
 
 // Rust: #[derive(Deserialize)] pub struct Foo<'a> { pub field: &'a str }
 // In TS we simply model as a struct and provide a BSATN deserializer placeholder.
-export const Foo = t.object('Foo', { field: t.string() });
-export type Foo = Infer<typeof Foo>;
-export function Foo_baz_bsatn(_bytes: Uint8Array): Foo {
+const Foo = t.object('Foo', { field: t.string() });
+type Foo = Infer<typeof Foo>;
+function Foo_baz_bsatn(_bytes: Uint8Array): Foo {
   // If your bindings expose a bsatn decode helper, use it here.
   // return bsatn.fromSlice(bytes, Foo);
   throw new Error('Implement BSATN decode for Foo if needed');
@@ -85,19 +83,19 @@ const personRow = {
 };
 
 // Rust: #[spacetimedb::table(name = test_a, index(name = foo, btree(columns = [x])))]
-export const testA = t.row({
+const testA = t.row({
   x: t.u32(),
   y: t.u32(),
   z: t.string(),
 });
-export type TestA = Infer<typeof testA>;
+type TestA = Infer<typeof testA>;
 
 // Rust: #[table(name = test_d, public)] struct TestD { #[default(Some(DEFAULT_TEST_C))] test_c: Option<TestC>, }
 // NOTE: If your Option default requires wrapping, adjust to your bindings’ Option encoding.
 const testDRow = {
   test_c: t.option(testC).default(DEFAULT_TEST_C as unknown as any),
 };
-export type TestD = InferTypeOfRow<typeof testDRow>;
+type TestD = InferTypeOfRow<typeof testDRow>;
 
 // Rust: #[spacetimedb::table(name = test_e)] #[derive(Debug)]
 const testERow = {
@@ -128,12 +126,12 @@ const pkMultiIdentityRow = {
 };
 
 // Rust: #[spacetimedb::table(name = repeating_test_arg, scheduled(repeating_test))]
-export const repeatingTestArg = t.row({
+const repeatingTestArg = t.row({
   scheduled_id: t.u64().primaryKey().autoInc(),
   scheduled_at: t.scheduleAt(),
   prev_time: t.timestamp(),
 });
-export type RepeatingTestArg = Infer<typeof repeatingTestArg>;
+type RepeatingTestArg = Infer<typeof repeatingTestArg>;
 
 // Rust: #[spacetimedb::table(name = has_special_stuff)]
 const hasSpecialStuffRow = {
@@ -151,7 +149,7 @@ const playerLikeRow = {
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEMA (tables + indexes + visibility)
 // ─────────────────────────────────────────────────────────────────────────────
-export const spacetimedb = schema(
+const spacetimedb = schema(
   // person (public) with btree index on age
   table(
     {

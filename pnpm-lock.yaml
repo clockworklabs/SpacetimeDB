@@ -69,6 +69,9 @@ importers:
       '@size-limit/file':
         specifier: ^11.2.0
         version: 11.2.0(size-limit@11.2.0)
+      '@types/fast-text-encoding':
+        specifier: ^1.0.3
+        version: 1.0.3
       '@types/react':
         specifier: ^19.1.13
         version: 19.1.13
@@ -234,9 +237,9 @@ importers:
 
   modules/module-test-ts:
     dependencies:
-      fast-text-encoding:
-        specifier: ^1.0.0
-        version: 1.0.6
+      spacetimedb:
+        specifier: workspace:^
+        version: link:../../crates/bindings-typescript
     devDependencies:
       tsup:
         specifier: ^8.1.0
@@ -826,6 +829,9 @@ packages:
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
+
+  '@types/fast-text-encoding@1.0.3':
+    resolution: {integrity: sha512-bbGJt6IyiuyAhPOX7htQDDzv2bDGJdWyd6X+e1BcdPzU3e5jyjOdB86LoTSoE80faY9v8Wt7/ix3Sp+coRJ03Q==}
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
@@ -2839,6 +2845,8 @@ snapshots:
   '@types/deep-eql@4.0.2': {}
 
   '@types/estree@1.0.8': {}
+
+  '@types/fast-text-encoding@1.0.3': {}
 
   '@types/json-schema@7.0.15': {}
 
