@@ -8,6 +8,7 @@
 //
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
+mod guard;
 mod reducer;
 mod sats;
 mod table;
@@ -268,4 +269,9 @@ pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> S
             };
         })
     })
+}
+
+#[proc_macro_attribute]
+pub fn guard(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    guard::guard(args, item)
 }
