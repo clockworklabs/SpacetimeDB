@@ -14,16 +14,16 @@ namespace SpacetimeDB.Types
     public sealed partial class Entity
     {
         [DataMember(Name = "entity_id")]
-        public uint EntityId;
+        public int EntityId;
         [DataMember(Name = "position")]
         public DbVector2 Position;
         [DataMember(Name = "mass")]
-        public uint Mass;
+        public int Mass;
 
         public Entity(
-            uint EntityId,
+            int EntityId,
             DbVector2 Position,
-            uint Mass
+            int Mass
         )
         {
             this.EntityId = EntityId;

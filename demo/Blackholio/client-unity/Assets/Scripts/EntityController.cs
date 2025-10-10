@@ -12,14 +12,14 @@ public abstract class EntityController : MonoBehaviour
 
 	private static readonly int ShaderColorProperty = Shader.PropertyToID("_Color");
 
-	[DoNotSerialize] public uint EntityId;
+	[DoNotSerialize] public int EntityId;
 
 	protected float LerpTime;
 	protected Vector3 LerpStartPosition;
 	protected Vector3 LerpTargetPosition;
 	protected Vector3 TargetScale;
 
-	protected virtual void Spawn(uint entityId)
+	protected virtual void Spawn(int entityId)
 	{
 		EntityId = entityId;
 
@@ -82,12 +82,12 @@ public abstract class EntityController : MonoBehaviour
 		transform.localScale = Vector3.Lerp(transform.localScale, TargetScale, Time.deltaTime * 8);
 	}
 
-	public static Vector3 MassToScale(uint mass)
+	public static Vector3 MassToScale(int mass)
 	{
 		var diameter = MassToDiameter(mass);
 		return new Vector3(diameter, diameter, 1);
 	}
 
-	public static float MassToRadius(uint mass) => Mathf.Sqrt(mass);
-	public static float MassToDiameter(uint mass) => MassToRadius(mass) * 2;
+	public static float MassToRadius(int mass) => Mathf.Sqrt(mass);
+	public static float MassToDiameter(int mass) => MassToRadius(mass) * 2;
 }

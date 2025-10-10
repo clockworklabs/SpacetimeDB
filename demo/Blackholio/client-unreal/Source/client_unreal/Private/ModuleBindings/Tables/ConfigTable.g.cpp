@@ -13,7 +13,7 @@ void UConfigTable::PostInitialize()
     Data = MakeShared<UClientCache<FConfigType>>();
 
     TSharedPtr<FTableCache<FConfigType>> ConfigTable = Data->GetOrAdd(TableName);
-    ConfigTable->AddUniqueConstraint<uint32>("id", [](const FConfigType& Row) -> const uint32& {
+    ConfigTable->AddUniqueConstraint<int32>("id", [](const FConfigType& Row) -> const int32& {
         return Row.Id; });
 
     Id = NewObject<UConfigIdUniqueIndex>(this);
@@ -26,7 +26,7 @@ FTableAppliedDiff<FConfigType> UConfigTable::Update(TArray<FWithBsatn<FConfigTyp
 {
     FTableAppliedDiff<FConfigType> Diff = BaseUpdate<FConfigType>(InsertsRef, DeletesRef, Data, TableName);
 
-    Diff.DeriveUpdatesByPrimaryKey<uint32>(
+    Diff.DeriveUpdatesByPrimaryKey<int32>(
         [](const FConfigType& Row) 
         {
             return Row.Id; 

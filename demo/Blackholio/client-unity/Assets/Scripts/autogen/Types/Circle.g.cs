@@ -14,9 +14,9 @@ namespace SpacetimeDB.Types
     public sealed partial class Circle
     {
         [DataMember(Name = "entity_id")]
-        public uint EntityId;
+        public int EntityId;
         [DataMember(Name = "player_id")]
-        public uint PlayerId;
+        public int PlayerId;
         [DataMember(Name = "direction")]
         public DbVector2 Direction;
         [DataMember(Name = "speed")]
@@ -25,8 +25,8 @@ namespace SpacetimeDB.Types
         public SpacetimeDB.Timestamp LastSplitTime;
 
         public Circle(
-            uint EntityId,
-            uint PlayerId,
+            int EntityId,
+            int PlayerId,
             DbVector2 Direction,
             float Speed,
             SpacetimeDB.Timestamp LastSplitTime

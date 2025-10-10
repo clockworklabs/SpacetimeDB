@@ -24,8 +24,8 @@ public class GameManager : MonoBehaviour
     public static Identity LocalIdentity { get; private set; }
     public static DbConnection Conn { get; private set; }
 
-    public static Dictionary<uint, EntityController> Entities = new Dictionary<uint, EntityController>();
-    public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
+    public static Dictionary<int, EntityController> Entities = new Dictionary<int, EntityController>();
+    public static Dictionary<int, PlayerController> Players = new Dictionary<int, PlayerController>();
 
     private void Start()
     {
@@ -102,19 +102,19 @@ public class GameManager : MonoBehaviour
     {
         Debug.Log("Subscription applied!");
         OnSubscriptionApplied?.Invoke();
-        
+
         // Once we have the initial subscription sync'd to the client cache
         // Get the world size from the config table and set up the arena
         var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
         SetupArena(worldSize);
-        
+
         // Check to see if we already have a player, if we don't we'll need to create one
         var player = ctx.Db.Player.Identity.Find(LocalIdentity);
         if (string.IsNullOrEmpty(player.Name))
         {
             // The player has to choose a username
             UIUsernameChooser.Instance.Show(true);
-            
+
             // When our username is updated, hide the username chooser
             Conn.Db.Player.OnUpdate += (_, _, newPlayer) =>
             {
@@ -123,14 +123,18 @@ public class GameManager : MonoBehaviour
                     UIUsernameChooser.Instance.Show(false);
                 }
             };
-        } else {
+        }
+        else
+        {
             // We already have a player
             if (ctx.Db.Circle.PlayerId.Filter(player.PlayerId).Any())
             {
                 // We already have at least one circle, we should just be able to start
                 // playing immediately.
                 UIUsernameChooser.Instance.Show(false);
-            } else {
+            }
+            else
+            {
                 // Create a new circle for our player.
                 ctx.Reducers.EnterGame(player.Name);
             }
@@ -209,7 +213,7 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    private static PlayerController GetOrCreatePlayer(uint playerId)
+    private static PlayerController GetOrCreatePlayer(int playerId)
     {
         if (!Players.TryGetValue(playerId, out var playerController))
         {
