@@ -142,6 +142,7 @@ where
 
     let database = ctx
         .get_database_by_identity(&db_identity)
+        .await
         .unwrap()
         .ok_or(StatusCode::NOT_FOUND)?;
 
