@@ -906,7 +906,7 @@ const REMOTE_MODULE = {
       rowType: HasSpecialStuff.getTypeScriptAlgebraicType(),
     },
     indexed_option_field: {
-      tableName: "indexed_option_field",
+      tableName: "indexed_option_field" as const,
       rowType: IndexedOptionField.getTypeScriptAlgebraicType(),
     },
     logged_out_player: {
@@ -984,7 +984,7 @@ const REMOTE_MODULE = {
       rowType: TestFoobar.getTypeScriptAlgebraicType(),
     },
     unique_option_field: {
-      tableName: "unique_option_field",
+      tableName: "unique_option_field" as const,
       rowType: UniqueOptionField.getTypeScriptAlgebraicType(),
     },
   },
@@ -1412,7 +1412,7 @@ export class RemoteTables {
     return new HasSpecialStuffTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<HasSpecialStuff>(REMOTE_MODULE.tables.has_special_stuff));
   }
 
-  get indexedOptionField(): IndexedOptionFieldTableHandle {
+  get indexedOptionField(): IndexedOptionFieldTableHandle<'indexed_option_field'> {
     // clientCache is a private property
     return new IndexedOptionFieldTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<IndexedOptionField>(REMOTE_MODULE.tables.indexed_option_field));
   }
@@ -1472,7 +1472,7 @@ export class RemoteTables {
     return new TestFTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestFoobar>(REMOTE_MODULE.tables.test_f));
   }
 
-  get uniqueOptionField(): UniqueOptionFieldTableHandle {
+  get uniqueOptionField(): UniqueOptionFieldTableHandle<'unique_option_field'> {
     // clientCache is a private property
     return new UniqueOptionFieldTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<UniqueOptionField>(REMOTE_MODULE.tables.unique_option_field));
   }
@@ -1522,6 +1522,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type IndexedOptionFieldExample = {};
@@ -1581,6 +1582,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { IndexedOptionField } from "./indexed_option_field_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -1596,7 +1598,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.indexedOptionField.on_insert(...)`.
  */
-export class IndexedOptionFieldTableHandle {
+export class IndexedOptionFieldTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<IndexedOptionField>;
 
   constructor(tableCache: __TableCache<IndexedOptionField>) {
@@ -1656,6 +1660,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type IndexedOptionField = {
@@ -4275,6 +4280,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type UniqueOptionFieldExample = {};
@@ -4334,6 +4340,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { UniqueOptionField } from "./unique_option_field_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -4349,7 +4356,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.uniqueOptionField.on_insert(...)`.
  */
-export class UniqueOptionFieldTableHandle {
+export class UniqueOptionFieldTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<UniqueOptionField>;
 
   constructor(tableCache: __TableCache<UniqueOptionField>) {
@@ -4409,6 +4418,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type UniqueOptionField = {
