@@ -20,15 +20,21 @@ const TEMPLATES_FILE_PATH: &str = "crates/cli/.init-templates.json";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TemplateDefinition {
-    pub name: String,
-    pub server_lang: String,
-    pub client_lang: String,
+    pub id: String,
+    pub description: String,
     pub server_source: String,
     pub client_source: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HighlightDefinition {
+    pub name: String,
+    pub template_id: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct TemplatesList {
+    highlights: Vec<HighlightDefinition>,
     templates: Vec<TemplateDefinition>,
 }
 
@@ -79,6 +85,7 @@ impl ClientLanguage {
 
 pub struct TemplateConfig {
     pub project_name: String,
+    pub project_path: PathBuf,
     pub template_type: TemplateType,
     pub server_lang: ServerLanguage,
     pub client_lang: ClientLanguage,
@@ -87,7 +94,7 @@ pub struct TemplateConfig {
     pub use_local: bool,
 }
 
-pub async fn fetch_templates_list() -> Result<Vec<TemplateDefinition>> {
+pub async fn fetch_templates_list() -> Result<(Vec<HighlightDefinition>, Vec<TemplateDefinition>)> {
     let content = if let Ok(file_path) = env::var("SPACETIMEDB_CLI_TEMPLATES_FILE") {
         eprintln!("Loading templates list from local file: {}", file_path);
         std::fs::read_to_string(&file_path)
@@ -125,7 +132,7 @@ pub async fn fetch_templates_list() -> Result<Vec<TemplateDefinition>> {
     let templates_list: TemplatesList =
         serde_json::from_str(&content).context("Failed to parse templates list JSON")?;
 
-    Ok(templates_list.templates)
+    Ok((templates_list.highlights, templates_list.templates))
 }
 
 pub async fn check_and_prompt_login(config: &mut Config) -> Result<bool> {
@@ -153,21 +160,15 @@ pub async fn check_and_prompt_login(config: &mut Config) -> Result<bool> {
     }
 }
 
-pub async fn exec_interactive_init(config: &mut Config, project_path: &Path) -> Result<()> {
+pub async fn exec_interactive_init(config: &mut Config, _project_path: &Path) -> Result<()> {
     let use_local = !check_and_prompt_login(config).await?;
 
     let mut template_config = interactive_init().await?;
     template_config.use_local = use_local;
 
-    let actual_project_path = if project_path == Path::new(".") {
-        PathBuf::from(&template_config.project_name)
-    } else {
-        project_path.to_path_buf()
-    };
+    ensure_empty_directory(&template_config.project_name, &template_config.project_path)?;
 
-    ensure_empty_directory(&template_config.project_name, &actual_project_path)?;
-
-    init_from_template(&template_config, &actual_project_path)?;
+    init_from_template(&template_config, &template_config.project_path)?;
 
     Ok(())
 }
@@ -198,6 +199,7 @@ pub async fn exec_template_init(
 
     let template_config = TemplateConfig {
         project_name: project_name.clone(),
+        project_path: actual_project_path.clone(),
         template_type: TemplateType::GitHub,
         server_lang: ServerLanguage::Rust,
         client_lang: ClientLanguage::None,
@@ -244,27 +246,35 @@ pub async fn interactive_init() -> Result<TemplateConfig> {
             if input.trim().is_empty() {
                 return Err("Project name cannot be empty".to_string());
             }
+            Ok(())
+        })
+        .interact_text()?;
+
+    let project_path: String = Input::with_theme(&theme)
+        .with_prompt("Project path")
+        .default(format!("./{}", project_name))
+        .validate_with(|input: &String| -> Result<(), String> {
+            if input.trim().is_empty() {
+                return Err("Project path cannot be empty".to_string());
+            }
 
             let path = Path::new(input);
             if path.exists() {
                 if !path.is_dir() {
-                    return Err(format!(
-                        "A file named '{}' already exists. Please choose a different name.",
-                        input
-                    ));
+                    return Err(format!("A file exists at '{}'. Please choose a different path.", input));
                 }
                 match std::fs::read_dir(path) {
                     Ok(entries) => {
                         if entries.count() > 0 {
                             return Err(format!(
-                                "Directory '{}' already exists and is not empty. Please choose a different name.",
+                                "Directory '{}' already exists and is not empty. Please choose a different path.",
                                 input
                             ));
                         }
                     }
                     Err(_) => {
                         return Err(format!(
-                            "Cannot access directory '{}'. Please choose a different name.",
+                            "Cannot access directory '{}'. Please choose a different path.",
                             input
                         ));
                     }
@@ -274,45 +284,88 @@ pub async fn interactive_init() -> Result<TemplateConfig> {
         })
         .interact_text()?;
 
-    let templates = fetch_templates_list().await?;
+    let (highlights, templates) = fetch_templates_list().await?;
 
-    let mut template_choices: Vec<String> = templates.iter().map(|t| t.name.clone()).collect();
-    template_choices.push("Empty project".to_string());
-    template_choices.push("Custom GitHub repository".to_string());
+    let mut client_choices: Vec<String> = highlights
+        .iter()
+        .map(|h| {
+            let template = templates.iter().find(|t| t.id == h.template_id);
+            match template {
+                Some(t) => format!("{} - {}", h.name, t.description),
+                None => h.name.clone(),
+            }
+        })
+        .collect();
+    client_choices.push("other".to_string());
+    client_choices.push("none".to_string());
 
-    let template_selection = Select::with_theme(&theme)
-        .with_prompt("Select template")
-        .items(&template_choices)
+    let client_selection = Select::with_theme(&theme)
+        .with_prompt("Select client")
+        .items(&client_choices)
         .default(0)
         .interact()?;
 
-    let empty_index = templates.len();
-    let custom_index = templates.len() + 1;
+    let other_index = highlights.len();
+    let none_index = highlights.len() + 1;
 
-    let (template_type, server_lang, client_lang, github_repo, template_def) = if template_selection < templates.len() {
-        let template = &templates[template_selection];
-        let server_lang = match template.server_lang.as_str() {
-            "rust" => ServerLanguage::Rust,
-            "csharp" => ServerLanguage::Csharp,
-            "typescript" => ServerLanguage::TypeScript,
-            _ => ServerLanguage::Rust,
-        };
-        let client_lang = match template.client_lang.as_str() {
-            "rust" => ClientLanguage::Rust,
-            "csharp" => ClientLanguage::Csharp,
-            "typescript" => ClientLanguage::TypeScript,
-            "none" => ClientLanguage::None,
-            _ => ClientLanguage::TypeScript,
-        };
-        (
-            TemplateType::Builtin,
-            server_lang,
-            client_lang,
-            None,
-            Some(template.clone()),
-        )
-    } else if template_selection == empty_index {
-        let server_lang_choices = vec!["Rust", "C#", "TypeScript", "None"];
+    if client_selection < highlights.len() {
+        let highlight = &highlights[client_selection];
+        let template = templates
+            .iter()
+            .find(|t| t.id == highlight.template_id)
+            .ok_or_else(|| anyhow::anyhow!("Template {} not found", highlight.template_id))?;
+
+        Ok(TemplateConfig {
+            project_name,
+            project_path: PathBuf::from(project_path),
+            template_type: TemplateType::Builtin,
+            server_lang: ServerLanguage::Rust,
+            client_lang: ClientLanguage::TypeScript,
+            github_repo: None,
+            template_def: Some(template.clone()),
+            use_local: true,
+        })
+    } else if client_selection == other_index {
+        loop {
+            let template_id: String = Input::with_theme(&theme)
+                .with_prompt("Template ID or GitHub repository (owner/repo). Press 'l' to list available templates")
+                .interact_text()?;
+
+            if template_id == "l" || template_id == "L" {
+                eprintln!("\n{}", "Available templates:".bold());
+                for template in &templates {
+                    eprintln!("  {} - {}", template.id, template.description);
+                }
+                eprintln!();
+                continue;
+            }
+
+            if let Some(template) = templates.iter().find(|t| t.id == template_id) {
+                return Ok(TemplateConfig {
+                    project_name: project_name.clone(),
+                    project_path: PathBuf::from(&project_path),
+                    template_type: TemplateType::Builtin,
+                    server_lang: ServerLanguage::Rust,
+                    client_lang: ClientLanguage::TypeScript,
+                    github_repo: None,
+                    template_def: Some(template.clone()),
+                    use_local: true,
+                });
+            } else {
+                return Ok(TemplateConfig {
+                    project_name: project_name.clone(),
+                    project_path: PathBuf::from(&project_path),
+                    template_type: TemplateType::GitHub,
+                    server_lang: ServerLanguage::Rust,
+                    client_lang: ClientLanguage::None,
+                    github_repo: Some(template_id),
+                    template_def: None,
+                    use_local: true,
+                });
+            }
+        }
+    } else {
+        let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
         let server_lang_selection = Select::with_theme(&theme)
             .with_prompt("Select server language")
             .items(&server_lang_choices)
@@ -323,50 +376,20 @@ pub async fn interactive_init() -> Result<TemplateConfig> {
             0 => ServerLanguage::Rust,
             1 => ServerLanguage::Csharp,
             2 => ServerLanguage::TypeScript,
-            _ => ServerLanguage::None,
+            _ => ServerLanguage::Rust,
         };
 
-        let client_lang_choices = vec!["Rust", "C#", "TypeScript", "None"];
-        let client_lang_selection = Select::with_theme(&theme)
-            .with_prompt("Select client language")
-            .items(&client_lang_choices)
-            .default(0)
-            .interact()?;
-
-        let client_lang = match client_lang_selection {
-            0 => ClientLanguage::Rust,
-            1 => ClientLanguage::Csharp,
-            2 => ClientLanguage::TypeScript,
-            _ => ClientLanguage::None,
-        };
-
-        if server_lang == ServerLanguage::None && client_lang == ClientLanguage::None {
-            anyhow::bail!("At least one of server or client language must be selected");
-        }
-
-        (TemplateType::Empty, server_lang, client_lang, None, None)
-    } else {
-        let repo: String = Input::with_theme(&theme)
-            .with_prompt("GitHub repository (owner/repo or full URL)")
-            .interact_text()?;
-        (
-            TemplateType::GitHub,
-            ServerLanguage::Rust,
-            ClientLanguage::None,
-            Some(repo),
-            None,
-        )
-    };
-
-    Ok(TemplateConfig {
-        project_name,
-        template_type,
-        server_lang,
-        client_lang,
-        github_repo,
-        template_def,
-        use_local: true,
-    })
+        Ok(TemplateConfig {
+            project_name,
+            project_path: PathBuf::from(project_path),
+            template_type: TemplateType::Empty,
+            server_lang,
+            client_lang: ClientLanguage::None,
+            github_repo: None,
+            template_def: None,
+            use_local: true,
+        })
+    }
 }
 
 fn clone_git_subdirectory(repo_url: &str, subdir: &str, target: &Path) -> Result<()> {
@@ -716,13 +739,14 @@ fn init_empty_typescript_server(_server_dir: &Path, _project_name: &str) -> Resu
     todo!()
 }
 
-fn print_next_steps(config: &TemplateConfig, project_path: &Path) -> Result<()> {
+fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> Result<()> {
     eprintln!();
     eprintln!("{}", "Next steps:".bold());
 
-    let rel_path = project_path
+    let rel_path = config
+        .project_path
         .strip_prefix(std::env::current_dir()?)
-        .unwrap_or(project_path);
+        .unwrap_or(&config.project_path);
 
     if rel_path != Path::new(".") && rel_path != Path::new("") {
         eprintln!("  cd {}", rel_path.display());
