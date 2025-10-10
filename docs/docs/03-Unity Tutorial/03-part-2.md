@@ -229,10 +229,10 @@ Let's create a few tables to represent entities in our game by adding the follow
 [Table(Name = "entity", Public = true)]
 public partial struct Entity
 {
- [PrimaryKey, AutoInc]
- public uint entity_id;
- public DbVector2 position;
- public uint mass;
+    [PrimaryKey, AutoInc]
+    public uint entity_id;
+    public DbVector2 position;
+    public uint mass;
 }
 
 [Table(Name = "circle", Public = true)]
@@ -250,8 +250,8 @@ public partial struct Circle
 [Table(Name = "food", Public = true)]
 public partial struct Food
 {
- [PrimaryKey]
- public uint entity_id;
+    [PrimaryKey]
+    public uint entity_id;
 }
 ```
 
@@ -295,11 +295,11 @@ There's a few new concepts we should touch on. First of all, we are using the `#
 [Table(Name = "player", Public = true)]
 public partial struct Player
 {
- [PrimaryKey]
- public Identity identity;
- [Unique, AutoInc]
- public uint player_id;
- public string name;
+    [PrimaryKey]
+    public Identity identity;
+    [Unique, AutoInc]
+    public uint player_id;
+    public string name;
 }
 ```
 
@@ -564,7 +564,7 @@ public class GameManager : MonoBehaviour
     public float borderThickness = 2;
     public Material borderMaterial;
 
- public static GameManager Instance { get; private set; }
+    public static GameManager Instance { get; private set; }
     public static Identity LocalIdentity { get; private set; }
     public static DbConnection Conn { get; private set; }
 
