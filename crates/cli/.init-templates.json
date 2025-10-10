@@ -1,0 +1,87 @@
+{
+  "highlights": [
+    { "name": "React", "template_id": "basic-react" },
+    { "name": "Unity", "template_id": "basic-unity" },
+    { "name": "Unreal", "template_id": "basic-unreal" }
+  ],
+  "templates": [
+    {
+      "id": "basic-rust",
+      "description": "Bare minimum client and server using Rust with only stubs for code",
+      "server_source": "crates/cli/templates/basic-rust/server",
+      "client_source": "crates/cli/templates/basic-rust/client"
+    },
+    {
+      "id": "basic-c-sharp",
+      "description": "Bare minimum client and server using C# with only stubs for code",
+      "server_source": "crates/cli/templates/basic-c-sharp/server",
+      "client_source": "crates/cli/templates/basic-c-sharp/client"
+    },
+    {
+      "id": "basic-typescript",
+      "description": "Bare minimum client and server using TypeScript with only stubs for code",
+      "server_source": "crates/cli/templates/basic-typescript/server",
+      "client_source": "crates/cli/templates/basic-typescript/client"
+    },
+    {
+      "id": "basic-react",
+      "description": "Bare minimum React client and TypeScript server",
+      "server_source": "crates/cli/templates/basic-react/server",
+      "client_source": "crates/cli/templates/basic-react/client"
+    },
+    {
+      "id": "basic-unity",
+      "description": "Bare minimum Unity client and C# server",
+      "server_source": "crates/cli/templates/basic-unity/server",
+      "client_source": "crates/cli/templates/basic-unity/client"
+    },
+    {
+      "id": "basic-unreal",
+      "description": "Bare minimum Unreal client and C# server",
+      "server_source": "crates/cli/templates/basic-unreal/server",
+      "client_source": "crates/cli/templates/basic-unreal/client"
+    },
+    {
+      "id": "quickstart-chat-rust",
+      "description": "Rust server/client implementing quickstart chat",
+      "server_source": "crates/cli/templates/quickstart-chat-rust/server",
+      "client_source": "crates/cli/templates/quickstart-chat-rust/client"
+    },
+    {
+      "id": "quickstart-chat-c-sharp",
+      "description": "C# server/client implementing quickstart chat",
+      "server_source": "crates/cli/templates/quickstart-chat-c-sharp/server",
+      "client_source": "crates/cli/templates/quickstart-chat-c-sharp/client"
+    },
+    {
+      "id": "quickstart-chat-typescript",
+      "description": "TypeScript server/client implementing quickstart chat",
+      "server_source": "crates/cli/templates/quickstart-chat-typescript/server",
+      "client_source": "crates/cli/templates/quickstart-chat-typescript/client"
+    },
+    {
+      "id": "quickstart-chat-react",
+      "description": "TypeScript server with React client",
+      "server_source": "crates/cli/templates/quickstart-chat-react/server",
+      "client_source": "crates/cli/templates/quickstart-chat-react/client"
+    },
+    {
+      "id": "blackholio-unity",
+      "description": "C# server/client set up with Blackholio project",
+      "server_source": "crates/cli/templates/blackholio-unity/server",
+      "client_source": "crates/cli/templates/blackholio-unity/client"
+    },
+    {
+      "id": "blackholio-unreal",
+      "description": "C++ server/client",
+      "server_source": "crates/cli/templates/blackholio-unreal/server",
+      "client_source": "crates/cli/templates/blackholio-unreal/client"
+    },
+    {
+      "id": "blackholio-unreal-blueprints",
+      "description": "C++ server with Blueprints client",
+      "server_source": "crates/cli/templates/blackholio-unreal-blueprints/server",
+      "client_source": "crates/cli/templates/blackholio-unreal-blueprints/client"
+    }
+  ]
+}
