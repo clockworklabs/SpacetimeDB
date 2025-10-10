@@ -390,7 +390,8 @@ const _VLG_CAN_STORE_FCR: () = assert!(VarLenGranule::SIZE.len() >= MIN_ROW_SIZE
 
 /// Pointers properly aligned for a [`VarLenGranule`] must be properly aligned for [`FreeCellRef`].
 /// This is the case as the former's alignment is a multiple of the latter's alignment.
-const _VLG_ALIGN_MULTIPLE_OF_FCR: () = assert!(mem::align_of::<VarLenGranule>() % mem::align_of::<FreeCellRef>() == 0);
+const _VLG_ALIGN_MULTIPLE_OF_FCR: () =
+    assert!(mem::align_of::<VarLenGranule>().is_multiple_of(mem::align_of::<FreeCellRef>()));
 
 /// The actual row data of a [`Page`].
 type RowData = [Byte; PageOffset::PAGE_END.idx()];

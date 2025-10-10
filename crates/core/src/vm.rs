@@ -709,7 +709,14 @@ pub(crate) mod tests {
     fn create_inv_table(db: &RelationalDB, tx: &mut MutTx) -> ResultTest<(Arc<TableSchema>, ProductValue)> {
         let schema_ty = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
-        let schema = create_table_with_rows(db, tx, "inventory", schema_ty.clone(), &[row.clone()], StAccess::Public)?;
+        let schema = create_table_with_rows(
+            db,
+            tx,
+            "inventory",
+            schema_ty.clone(),
+            std::slice::from_ref(&row),
+            StAccess::Public,
+        )?;
         Ok((schema, row))
     }
 

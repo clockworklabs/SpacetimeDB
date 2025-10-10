@@ -122,7 +122,7 @@ impl DeltaStore for MutTxId {
         _: IndexId,
         _: spacetimedb_lib::query::Delta,
         _: impl RangeBounds<AlgebraicValue>,
-    ) -> impl Iterator<Item = Row> {
+    ) -> impl Iterator<Item = Row<'_>> {
         std::iter::empty()
     }
 
@@ -134,7 +134,7 @@ impl DeltaStore for MutTxId {
         _: IndexId,
         _: spacetimedb_lib::query::Delta,
         _: &AlgebraicValue,
-    ) -> impl Iterator<Item = Row> {
+    ) -> impl Iterator<Item = Row<'_>> {
         std::iter::empty()
     }
 }
