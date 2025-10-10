@@ -51,7 +51,7 @@ For more information on how to use Docusaurus, see the
    (version 22 or higher is recommended).
 2. Clone the repository and navigate to the `docs` directory.
 3. Install the dependencies: `pnpm install`
-4. Run the development server: `pnpm start`, which will start a local server and open a browser window.
+4. Run the development server: `pnpm dev`, which will start a local server and open a browser window.
    All changes you make to the markdown files will be reflected live in the browser.
 
 ## License
