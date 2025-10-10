@@ -9,7 +9,8 @@ import {
   type TransactionCtx,
 } from '../lib/procedures';
 import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
-import { Timestamp } from '../lib/timestamp';
+import { Timestamp, ClockGenerator } from '../lib/timestamp';
+import { Uuid } from '../lib/uuid';
 import { httpClient } from './http_internal';
 import { callUserFunction, makeReducerCtx, sys } from './runtime';
 
@@ -67,6 +68,19 @@ export function callProcedure(
       } catch (e) {
         throw new Error('transaction retry failed again', { cause: e });
       }
+    },
+    /** Create a new UUIDv4 using built-in RNG. */
+    newUuidV4(): Uuid {
+      // TODO: Use a spacetime RNG when available
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      return Uuid.fromRandomBytesV4(bytes);
+    },
+
+    /** Create a new UUIDv7 using the provided ClockGenerator. */
+    newUuidV7(clock: ClockGenerator): Uuid {
+      // TODO: Use a spacetime RNG when available
+      const bytes = crypto.getRandomValues(new Uint8Array(10));
+      return Uuid.fromUnixMillisV7(clock.tick().toMillis(), bytes);
     },
   };
   freeze(ctx);

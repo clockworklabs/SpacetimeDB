@@ -1,0 +1,290 @@
+use crate::timestamp::ClockGenerator;
+use crate::{de::Deserialize, impl_st, ser::Serialize, AlgebraicType, AlgebraicValue};
+use std::fmt;
+use uuid::{Builder, Uuid as UUID};
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(u8)]
+pub enum Version {
+    /// The "nil" (all zeros) UUID.
+    Nil = 0u8,
+    /// Version 4: Random.
+    V4 = 4,
+    /// Version 7: Timestamp and random.
+    V7 = 7,
+    /// The "max" (all ones) UUID.
+    Max = 0xff,
+}
+
+#[derive(Debug, Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[sats(crate = crate)]
+pub struct Uuid {
+    __uuid__: u128,
+}
+
+impl Uuid {
+    /// The nil UUID (all zeros).
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// # use spacetimedb_sats::uuid::Uuid;
+    /// let uuid = Uuid::NIL;
+    ///
+    /// assert_eq!(
+    ///     "00000000-0000-0000-0000-000000000000",
+    ///     uuid.to_string(),
+    /// );
+    /// ```
+    pub const NIL: Self = Self {
+        __uuid__: UUID::nil().as_u128(),
+    };
+
+    /// The max UUID (all ones).
+    ///
+    /// Example:
+    /// ```
+    /// # use spacetimedb_sats::uuid::Uuid;
+    /// let uuid = Uuid::MAX;
+    ///
+    /// assert_eq!(
+    ///     "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    ///     uuid.to_string(),
+    /// );
+    /// ```
+    pub const MAX: Self = Self {
+        __uuid__: UUID::max().as_u128(),
+    };
+
+    /// Create a UUIDv4 from explicit random bytes.
+    ///
+    /// This method assumes the bytes are already sufficiently random, it will only
+    /// set the appropriate bits for the UUID version and variant.
+    ///
+    /// # Example
+    /// ```
+    /// # use spacetimedb_sats::uuid::Uuid;
+    /// // Use the `ReducerContext::rng()` method to generate random bytes in reducers,
+    /// // or call `ReducerContext::new_uuid_v4`
+    /// let random_bytes = [0u8; 16];
+    /// let uuid = Uuid::from_random_bytes_v4(random_bytes);
+    ///
+    /// assert_eq!(
+    ///     "00000000-0000-4000-8000-000000000000",
+    ///     uuid.to_string(),
+    /// );
+    /// ```
+    pub fn from_random_bytes_v4(counter_random_bytes: [u8; 16]) -> Self {
+        Self {
+            __uuid__: Builder::from_random_bytes(counter_random_bytes).into_uuid().as_u128(),
+        }
+    }
+
+    /// Create a UUIDv7 from a UNIX timestamp (milliseconds) and 10 random bytes.
+    ///
+    /// This method will set the variant field within the counter bytes without attempting to shift
+    /// the surrounding data. Callers using the counter as a monotonic value should be careful not to
+    /// store significant data in the 2 least significant bits of the 3rd byte.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use spacetimedb_sats::uuid::Uuid;
+    /// let millis = 1_686_000_000_000u64;
+    /// // Use the `ReducerContext::rng()` method to generate random bytes in reducers,
+    /// // or call `ReducerContext::new_uuid_v7`
+    /// let random_bytes = [0u8; 10];
+    /// let uuid = Uuid::from_unix_millis_v7(millis, &random_bytes);
+    ///
+    /// assert_eq!(
+    ///     "01888d6e-5c00-7000-8000-000000000000",
+    ///     uuid.to_string(),
+    /// );
+    /// ```
+    pub fn from_unix_millis_v7(millis: u64, counter_random_bytes: &[u8; 10]) -> Self {
+        Self {
+            __uuid__: Builder::from_unix_timestamp_millis(millis, counter_random_bytes)
+                .into_uuid()
+                .as_u128(),
+        }
+    }
+
+    /// Generate a UUIDv7 using a monotonic clock generator.
+    ///
+    /// This method will set the variant field within the counter bytes without attempting to shift
+    /// the surrounding data. Callers using the counter as a monotonic value should be careful not to
+    /// store significant data in the 2 least significant bits of the 3rd byte.
+    ///
+    /// # Example
+    /// ```
+    /// # use spacetimedb_sats::uuid::Uuid;
+    /// # use spacetimedb_sats::timestamp::{Timestamp, ClockGenerator};
+    /// let mut clock = ClockGenerator::new(Timestamp::from_micros_since_unix_epoch(1_686_000_000_000));
+    /// // Use the `ReducerContext::rng()` method to generate random bytes in reducers,
+    /// // or call `ReducerContext::new_uuid_v7`
+    /// let random_bytes = [0u8; 10];
+    /// let uuid = Uuid::from_clock_v7(&mut clock, &random_bytes).unwrap();
+    ///
+    /// assert_eq!(
+    ///     "0000647e-5181-7000-8000-000000000000",
+    ///     uuid.to_string(),
+    /// );
+    /// ```
+    pub fn from_clock_v7(clock: &mut ClockGenerator, counter_random_bytes: &[u8; 10]) -> anyhow::Result<Self> {
+        let timestamp = clock.tick();
+        let millis = timestamp
+            .to_duration_since_unix_epoch()
+            .map_err(|err| anyhow::anyhow!("cannot create v7 UUID from timestamp before Unix epoch: {err:?}"))?
+            .as_millis()
+            .try_into()?;
+        Ok(Uuid::from_unix_millis_v7(millis, counter_random_bytes))
+    }
+
+    /// Parse a UUID from a string representation.
+    ///
+    /// Any of the formats generated by this module (simple, hyphenated, urn,
+    /// Microsoft GUID) are supported by this parsing function.
+    ///
+    /// # Example
+    /// ```
+    /// # use spacetimedb_sats::uuid::Uuid;
+    /// let s = "01888d6e-5c00-7000-8000-000000000000";
+    /// let uuid = Uuid::parse_str(s).unwrap();
+    ///
+    /// assert_eq!(
+    ///     s,
+    ///     uuid.to_string(),
+    /// );
+    /// ```
+    pub fn parse_str(s: &str) -> Result<Self, uuid::Error> {
+        Ok(Self {
+            __uuid__: UUID::parse_str(s)?.as_u128(),
+        })
+    }
+
+    /// Returns the version of the UUID.
+    ///
+    /// This represents the algorithm used to generate the value.
+    /// If the version field doesn't contain a recognized version then `None`
+    /// is returned.
+    pub fn get_version(&self) -> Option<Version> {
+        match self.to_uuid().get_version() {
+            Some(uuid::Version::Nil) => Some(Version::Nil),
+            Some(uuid::Version::Random) => Some(Version::V4),
+            Some(uuid::Version::SortRand) => Some(Version::V7),
+            Some(uuid::Version::Max) => Some(Version::Max),
+            _ => None,
+        }
+    }
+
+    /// Convert to the `uuid` crate's `Uuid` type.
+    pub fn to_uuid(self) -> UUID {
+        UUID::from_u128(self.__uuid__)
+    }
+
+    pub fn from_u128(u: u128) -> Self {
+        Self { __uuid__: u }
+    }
+
+    pub fn as_u128(&self) -> u128 {
+        self.__uuid__
+    }
+}
+
+impl_st!([] Uuid, AlgebraicType::uuid());
+
+impl fmt::Display for Uuid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_uuid())
+    }
+}
+
+impl From<Uuid> for AlgebraicValue {
+    fn from(value: Uuid) -> Self {
+        AlgebraicValue::product([value.as_u128().into()])
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::timestamp::Timestamp;
+    use crate::GroundSpacetimeType;
+    use rand::RngCore;
+
+    #[test]
+    fn uuid_type_matches() {
+        assert_eq!(AlgebraicType::uuid(), Uuid::get_type());
+        assert!(Uuid::get_type().is_uuid());
+        assert!(Uuid::get_type().is_special());
+    }
+
+    #[test]
+    fn round_trip() {
+        let u1 = Uuid::NIL;
+        let s = u1.to_string();
+        let u2 = Uuid::parse_str(&s).unwrap();
+        assert_eq!(u1, u2);
+        assert_eq!(u1.as_u128(), u2.as_u128());
+        assert_eq!(u1.to_uuid(), u2.to_uuid());
+        assert_eq!(s, u2.to_string());
+    }
+
+    #[test]
+    fn to_string() {
+        for u in [
+            Uuid::NIL,
+            Uuid::from_u128(0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128),
+            Uuid::MAX,
+        ] {
+            let s = u.to_string();
+            let u2 = Uuid::parse_str(&s).unwrap();
+            assert_eq!(u, u2);
+        }
+    }
+
+    #[test]
+    fn version() {
+        let u_nil = Uuid::NIL;
+        assert_eq!(u_nil.get_version(), Some(Version::Nil));
+
+        let u_max = Uuid::MAX;
+        assert_eq!(u_max.get_version(), Some(Version::Max));
+
+        assert_eq!(0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF, u128::MAX);
+
+        let u_v4 = Uuid::from_random_bytes_v4([0u8; 16]);
+        assert_eq!(u_v4.get_version(), Some(Version::V4));
+
+        let u_v7 = Uuid::from_unix_millis_v7(1_686_000_000_000u64, &[0u8; 10]);
+        assert_eq!(u_v7.get_version(), Some(Version::V7));
+    }
+
+    #[test]
+    fn ordered() {
+        let u1 = Uuid::from_u128(1);
+        let u2 = Uuid::from_u128(2);
+        assert!(u1 < u2);
+        assert!(u2 > u1);
+        assert_eq!(u1, u1);
+        assert_ne!(u1, u2);
+
+        let mut clock = ClockGenerator::new(Timestamp::now());
+        let uuids = (0..1000)
+            .map(|_| {
+                let mut bytes = [0u8; 10];
+                rand::rng().fill_bytes(&mut bytes);
+                Uuid::from_clock_v7(&mut clock, &bytes).unwrap()
+            })
+            .collect::<Vec<Uuid>>();
+
+        for (pos, pair) in uuids.windows(2).enumerate() {
+            assert!(
+                pair[0] < pair[1],
+                "UUIDs are not ordered at {pos}: {} !< {}",
+                pair[0],
+                pair[1]
+            );
+        }
+    }
+}

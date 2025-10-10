@@ -136,6 +136,18 @@ fn unreal_insert_call_timestamp() {
     make_test("InsertCallTimestampTest").run();
 }
 
+#[test]
+#[serial(Group2)]
+fn unreal_insert_call_uuid_v4() {
+    make_test("InsertCallUuidV4Test").run();
+}
+
+#[test]
+#[serial(Group2)]
+fn unreal_insert_call_uuid_v7() {
+    make_test("InsertCallUuidV7Test").run();
+}
+
 // ---------------- GROUP 3 ----------------
 #[test]
 #[serial(Group3)]
