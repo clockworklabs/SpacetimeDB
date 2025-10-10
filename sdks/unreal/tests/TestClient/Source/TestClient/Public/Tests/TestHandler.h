@@ -383,7 +383,7 @@ public:
 	FTestClientOptionalIdentity ExpectedIdentityType;
 	FTestClientOptionalSimpleEnum ExpectedEnumType;
 	FTestClientOptionalEveryPrimitiveStruct ExpectedEveryPrimitiveStructType;
-	FTestClientOptionalVecInt32 ExpectedVecOptionI32Type;
+	FTestClientOptionalVecOptionalInt32 ExpectedVecOptionI32Type;
 };
 
 UCLASS()

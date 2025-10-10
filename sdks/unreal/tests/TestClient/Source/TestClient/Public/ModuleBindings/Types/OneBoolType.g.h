@@ -12,7 +12,7 @@ struct TESTCLIENT_API FOneBoolType
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    bool B = false;;
+    bool B = false;
 
     FORCEINLINE bool operator==(const FOneBoolType& Other) const
     {

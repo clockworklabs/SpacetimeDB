@@ -1007,14 +1007,14 @@ bool FInsertOptionSomeTest::RunTest(const FString &Parameters)
 					Handler->ExpectedIdentityType = FTestClientOptionalIdentity(Identity);
 					Handler->ExpectedEnumType = FTestClientOptionalSimpleEnum(ESimpleEnumType::Zero);
 					Handler->ExpectedEveryPrimitiveStructType = FTestClientOptionalEveryPrimitiveStruct();
-					Handler->ExpectedVecOptionI32Type = FTestClientOptionalVecInt32(TArray({ FTestClientOptionalInt32(0), FTestClientOptionalInt32() }));
+					Handler->ExpectedVecOptionI32Type = FTestClientOptionalVecOptionalInt32(TArray({ FTestClientOptionalInt32(0), FTestClientOptionalInt32() }));
 
 					Ctx.Reducers->InsertOptionI32(FTestClientOptionalInt32(0));
 					Ctx.Reducers->InsertOptionString(FTestClientOptionalString("string"));
 					Ctx.Reducers->InsertOptionIdentity(FTestClientOptionalIdentity(Identity));
 					Ctx.Reducers->InsertOptionSimpleEnum(FTestClientOptionalSimpleEnum(ESimpleEnumType::Zero));
 					Ctx.Reducers->InsertOptionEveryPrimitiveStruct(FTestClientOptionalEveryPrimitiveStruct());
-					Ctx.Reducers->InsertOptionVecOptionI32(FTestClientOptionalVecInt32(TArray({ FTestClientOptionalInt32(0), FTestClientOptionalInt32() })));
+					Ctx.Reducers->InsertOptionVecOptionI32(FTestClientOptionalVecOptionalInt32(TArray({ FTestClientOptionalInt32(0), FTestClientOptionalInt32() })));
 				}); });
 
 	// Wait for the test counter to signal completion.
@@ -1068,7 +1068,7 @@ bool FInsertOptionNoneTest::RunTest(const FString &Parameters)
 					Ctx.Reducers->InsertOptionIdentity(FTestClientOptionalIdentity());
 					Ctx.Reducers->InsertOptionSimpleEnum(FTestClientOptionalSimpleEnum());
 					Ctx.Reducers->InsertOptionEveryPrimitiveStruct(FTestClientOptionalEveryPrimitiveStruct());
-					Ctx.Reducers->InsertOptionVecOptionI32(FTestClientOptionalVecInt32());
+					Ctx.Reducers->InsertOptionVecOptionI32(FTestClientOptionalVecOptionalInt32());
 				}); });
 
 	// Wait for the test counter to signal completion.

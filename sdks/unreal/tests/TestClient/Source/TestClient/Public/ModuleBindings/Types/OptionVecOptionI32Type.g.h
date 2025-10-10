@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
 #include "ModuleBindings/Optionals/TestClientOptionalInt32.g.h"
-#include "ModuleBindings/Optionals/TestClientOptionalVecInt32.g.h"
+#include "ModuleBindings/Optionals/TestClientOptionalVecOptionalInt32.g.h"
 #include "OptionVecOptionI32Type.g.generated.h"
 
 USTRUCT(BlueprintType)
@@ -14,7 +14,7 @@ struct TESTCLIENT_API FOptionVecOptionI32Type
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    FTestClientOptionalVecInt32 V;
+    FTestClientOptionalVecOptionalInt32 V;
 
     FORCEINLINE bool operator==(const FOptionVecOptionI32Type& Other) const
     {

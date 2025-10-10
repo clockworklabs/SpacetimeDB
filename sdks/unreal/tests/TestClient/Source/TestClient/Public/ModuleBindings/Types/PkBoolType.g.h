@@ -12,7 +12,7 @@ struct TESTCLIENT_API FPkBoolType
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    bool B = false;;
+    bool B = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     int32 Data = 0;
