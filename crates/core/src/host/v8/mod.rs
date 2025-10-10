@@ -801,19 +801,7 @@ js error Uncaught Error: foobar
     fn call_describe_module_works() {
         let code = r#"
             function __describe_module__() {
-                return {
-                    "tag": "V9",
-                    "value": {
-                        "typespace": {
-                            "types": [],
-                        },
-                        "tables": [],
-                        "reducers": [],
-                        "types": [],
-                        "misc_exports": [],
-                        "row_level_security": [],
-                    },
-                };
+                return new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
             }
         "#;
         let raw_mod = with_script_catch(code, call_describe_module).map_err(|e| e.to_string());
