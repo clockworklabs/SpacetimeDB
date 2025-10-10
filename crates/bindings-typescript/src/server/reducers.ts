@@ -1,11 +1,17 @@
+import type { ProductType } from '../lib/algebraic_type';
 import Lifecycle from '../lib/autogen/lifecycle_type';
+import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
 import type { ConnectionId } from '../lib/connection_id';
 import type { Identity } from '../lib/identity';
 import type { Timestamp } from '../lib/timestamp';
-import { pushReducer } from './runtime';
-import type { UntypedSchemaDef } from './schema';
+import { MODULE_DEF, type UntypedSchemaDef } from './schema';
 import type { Table } from './table';
-import type { InferTypeOfRow, RowObj, TypeBuilder } from './type_builders';
+import type {
+  InferTypeOfRow,
+  RowBuilder,
+  RowObj,
+  TypeBuilder,
+} from './type_builders';
 
 /**
  * Helper to extract the parameter types from an object type
@@ -69,6 +75,38 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
 }>;
+
+/**
+ * internal: pushReducer() helper used by reducer() and lifecycle wrappers
+ *
+ * @param name - The name of the reducer.
+ * @param params - The parameters for the reducer.
+ * @param fn - The reducer function.
+ * @param lifecycle - Optional lifecycle hooks for the reducer.
+ */
+export function pushReducer(
+  name: string,
+  params: RowObj | RowBuilder<RowObj>,
+  fn: Reducer<any, any>,
+  lifecycle?: RawReducerDefV9['lifecycle']
+): void {
+  const paramType: ProductType = {
+    elements: Object.entries(params).map(([n, c]) => ({
+      name: n,
+      algebraicType: ('typeBuilder' in c ? c.typeBuilder : c).algebraicType,
+    })),
+  };
+
+  MODULE_DEF.reducers.push({
+    name,
+    params: paramType,
+    lifecycle, // <- lifecycle flag lands here
+  });
+
+  REDUCERS.push(fn);
+}
+
+export const REDUCERS: Reducer<any, any>[] = [];
 
 /**
  * Defines a SpacetimeDB reducer function.

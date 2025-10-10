@@ -7,7 +7,7 @@ import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type { AllUnique } from './constraints';
 import type { TryInsertError } from './errors';
 import type { ColumnIndex, IndexColumns, Indexes, IndexOpts } from './indexes';
-import { MODULE_DEF, splitName } from './runtime';
+import { MODULE_DEF, splitName } from './schema';
 import {
   RowBuilder,
   type ColumnBuilder,

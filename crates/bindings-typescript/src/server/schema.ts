@@ -1,6 +1,5 @@
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
-import { MODULE_DEF, registerModuleHooks } from './runtime';
 import {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type ColumnBuilder,
@@ -17,6 +16,60 @@ import {
   type ParamsObj,
   type Reducer,
 } from './reducers';
+import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
+import {
+  AlgebraicType,
+  type AlgebraicTypeVariants,
+} from '../lib/algebraic_type';
+import type RawScopedTypeNameV9 from '../lib/autogen/raw_scoped_type_name_v_9_type';
+
+/**
+ * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
+ */
+export const MODULE_DEF: RawModuleDefV9 = {
+  typespace: { types: [] },
+  tables: [],
+  reducers: [],
+  types: [],
+  miscExports: [],
+  rowLevelSecurity: [],
+};
+
+const COMPOUND_TYPES = new Map<
+  AlgebraicTypeVariants.Product | AlgebraicTypeVariants.Sum,
+  AlgebraicTypeVariants.Ref
+>();
+
+export function addType<T extends AlgebraicType>(
+  name: string | undefined,
+  ty: T
+): T | AlgebraicTypeVariants.Ref {
+  if (
+    (ty.tag === 'Product' && ty.value.elements.length > 0) ||
+    (ty.tag === 'Sum' && ty.value.variants.length > 0)
+  ) {
+    let r = COMPOUND_TYPES.get(ty);
+    if (r == null) {
+      r = AlgebraicType.Ref(MODULE_DEF.typespace.types.length);
+      MODULE_DEF.typespace.types.push(ty);
+      COMPOUND_TYPES.set(ty, r);
+      if (name != null)
+        MODULE_DEF.types.push({
+          name: splitName(name),
+          ty: r.value,
+          customOrdering: true,
+        });
+    }
+    return r;
+  } else {
+    return ty;
+  }
+}
+
+export function splitName(name: string): RawScopedTypeNameV9 {
+  const scope = name.split('.');
+  return { name: scope.pop()!, scope };
+}
 
 /**
  * An untyped representation of the database schema.
@@ -273,8 +326,6 @@ export function schema(
     | [readonly TableSchema<any, any, any>[]]
     | readonly TableSchema<any, any, any>[]
 ): Schema<UntypedSchemaDef> {
-  registerModuleHooks();
-
   const handles: readonly TableSchema<any, any, any>[] =
     args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
 
