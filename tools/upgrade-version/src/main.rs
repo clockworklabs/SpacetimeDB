@@ -90,9 +90,16 @@ fn main() -> anyhow::Result<()> {
                 .action(clap::ArgAction::SetTrue)
                 .help("Also bump versions in C# SDK and templates"),
         )
+        .arg(
+            Arg::new("all")
+                .long("all")
+                .action(clap::ArgAction::SetTrue)
+                .help("Update all targets (equivalent to --typescript --rust-and-cli --csharp)")
+                .conflicts_with_all(["typescript", "rust-and-cli", "csharp"]),
+        )
         .group(
             ArgGroup::new("update-targets")
-                .args(["typescript", "rust-and-cli", "csharp"])
+                .args(["all", "typescript", "rust-and-cli", "csharp"])
                 .required(true)
                 .multiple(true),
         )
@@ -113,7 +120,7 @@ fn main() -> anyhow::Result<()> {
         anyhow::bail!("You must execute this binary from inside of the SpacetimeDB directory, or use --spacetime-path");
     }
 
-    if matches.get_flag("rust-and-cli") {
+    if matches.get_flag("rust-and-cli") || matches.get_flag("all") {
         // Use `=` for dependency versions, to avoid issues where Cargo automatically rolls forward to later minor versions.
         // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
         let dep_version = format!("={full_version}");
@@ -146,11 +153,11 @@ fn main() -> anyhow::Result<()> {
         cmd!("cargo", "check").run().expect("Cargo check failed!");
     }
 
-    if matches.get_flag("typescript") {
+    if matches.get_flag("typescript") || matches.get_flag("all") {
         rewrite_json_version_inplace("crates/bindings-typescript/package.json", &full_version)?;
     }
 
-    if matches.get_flag("csharp") {
+    if matches.get_flag("csharp") || matches.get_flag("all") {
         // Helpers for XML edits
         fn rewrite_xml_tag_value(path: &str, tag: &str, new_value: &str) -> anyhow::Result<()> {
             let contents = fs::read_to_string(path)?;
