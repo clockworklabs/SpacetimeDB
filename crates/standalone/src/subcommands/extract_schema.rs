@@ -38,6 +38,7 @@ impl HostType {
     fn from_extension(ext: &str) -> Option<Self> {
         match ext {
             "wasm" => Some(Self::Wasm),
+            "js" => Some(Self::Js),
             _ => None,
         }
     }

@@ -4,6 +4,7 @@ import { ConnectionId } from './connection_id';
 import type BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
 import { Identity } from './identity';
+import { Option } from './option';
 import {
   AlgebraicType as AlgebraicTypeType,
   AlgebraicType as AlgebraicTypeValue,
@@ -54,6 +55,10 @@ export type AlgebraicType = AlgebraicTypeType;
  * Algebraic Type utilities.
  */
 export const AlgebraicType: {
+  Sum<T extends SumType>(value: T): { tag: 'Sum'; value: T };
+  Product<T extends ProductType>(value: T): { tag: 'Product'; value: T };
+  Array<T extends AlgebraicType>(value: T): { tag: 'Array'; value: T };
+
   createOptionType(innerType: AlgebraicTypeType): AlgebraicTypeType;
   createIdentityType(): AlgebraicTypeType;
   createConnectionIdType(): AlgebraicTypeType;
@@ -72,16 +77,20 @@ export const AlgebraicType: {
   intoMapKey(ty: AlgebraicTypeType, value: any): ComparablePrimitive;
 } & typeof AlgebraicTypeValue = {
   ...AlgebraicTypeValue,
+  Sum: <T extends SumType>(value: T): { tag: 'Sum'; value: T } => ({
+    tag: 'Sum',
+    value,
+  }),
+  Product: <T extends ProductType>(value: T): { tag: 'Product'; value: T } => ({
+    tag: 'Product',
+    value,
+  }),
+  Array: <T extends AlgebraicType>(value: T): { tag: 'Array'; value: T } => ({
+    tag: 'Array',
+    value,
+  }),
   createOptionType: function (innerType: AlgebraicTypeType): AlgebraicTypeType {
-    return AlgebraicTypeValue.Sum({
-      variants: [
-        { name: 'some', algebraicType: innerType },
-        {
-          name: 'none',
-          algebraicType: AlgebraicTypeValue.Product({ elements: [] }),
-        },
-      ],
-    });
+    return Option.getAlgebraicType(innerType);
   },
   createIdentityType: function (): AlgebraicTypeType {
     return Identity.getAlgebraicType();
@@ -365,6 +374,8 @@ export const ProductType: {
     return writer.toBase64();
   },
 };
+
+export type SumType = SumTypeType;
 
 /**
  * Unlike most languages, sums in SATS are *[structural]* and not nominal.

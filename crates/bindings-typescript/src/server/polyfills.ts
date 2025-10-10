@@ -1,0 +1,1 @@
+import 'fast-text-encoding';

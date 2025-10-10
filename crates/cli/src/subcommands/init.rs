@@ -141,6 +141,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     match project_lang {
         ModuleLanguage::Rust => exec_init_rust(args).await,
         ModuleLanguage::Csharp => exec_init_csharp(args).await,
+        ModuleLanguage::Javascript => exec_init_typescript(args).await,
     }
 }
 
@@ -186,6 +187,34 @@ pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Check all dependencies
     check_for_dotnet();
+    check_for_git();
+
+    for data_file in export_files {
+        let path = project_path.join(data_file.1);
+
+        create_directory(path.parent().unwrap())?;
+
+        std::fs::write(path, data_file.0)?;
+    }
+
+    println!(
+        "{}",
+        format!("Project successfully created at path: {}", project_path.display()).green()
+    );
+
+    Ok(())
+}
+
+pub async fn exec_init_typescript(args: &ArgMatches) -> anyhow::Result<()> {
+    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
+
+    let export_files = vec![
+        (include_str!("project/typescript/tsconfig._json"), "tsconfig.json"),
+        (include_str!("project/typescript/index._ts"), "src/index.ts"),
+        (include_str!("project/typescript/_gitignore"), ".gitignore"),
+    ];
+
+    // Check all dependencies
     check_for_git();
 
     for data_file in export_files {

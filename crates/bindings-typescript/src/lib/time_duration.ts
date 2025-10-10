@@ -1,5 +1,14 @@
 import { AlgebraicType } from './algebraic_type';
 
+export type TimeDurationAlgebraicType = {
+  tag: 'Product';
+  value: {
+    elements: [
+      { name: '__time_duration_micros__'; algebraicType: { tag: 'I64' } },
+    ];
+  };
+};
+
 /**
  * A difference between two points in time, represented as a number of microseconds.
  */
@@ -12,7 +21,7 @@ export class TimeDuration {
    * Get the algebraic type representation of the {@link TimeDuration} type.
    * @returns The algebraic type representation of the type.
    */
-  static getAlgebraicType(): AlgebraicType {
+  static getAlgebraicType(): TimeDurationAlgebraicType {
     return AlgebraicType.Product({
       elements: [
         {

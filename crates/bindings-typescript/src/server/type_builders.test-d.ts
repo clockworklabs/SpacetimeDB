@@ -1,4 +1,5 @@
-import { t, type AlgebraicTypeVariants } from '..';
+import { t } from '../server';
+import { type AlgebraicTypeVariants } from '..';
 import type {
   I32ColumnBuilder,
   I64ColumnBuilder,
@@ -38,16 +39,17 @@ const row2 = {
   bar: t.i32().primaryKey(),
   idx: t.i64().index('btree').unique(),
 };
+// @ts-expect-error this should error
 type Row2 = InferTypeOfRow<typeof row2>;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _ = MustBeNever<Row2>;
 
 // Test type inference on a type with a nested object
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const point = t.object({
+const point = t.object('Point', {
   x: t.i32(),
   y: t.f64(),
-  z: t.object({
+  z: t.object('Foo', {
     foo: t.string(),
   }),
 });
@@ -63,7 +65,7 @@ const _point: Point = {
 
 // Test type inference on an enum
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const e = t.enum({
+const e = t.enum('E', {
   A: t.string(),
   B: t.number(),
 });

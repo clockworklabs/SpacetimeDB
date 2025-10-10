@@ -105,7 +105,7 @@ pub enum CompilationMode {
 
 impl CompiledModule {
     pub fn compile(name: &str, mode: CompilationMode) -> Self {
-        let path = spacetimedb_cli::build(
+        let (path, _) = spacetimedb_cli::build(
             &module_path(name),
             Some(PathBuf::from("src")).as_deref(),
             mode == CompilationMode::Debug,
