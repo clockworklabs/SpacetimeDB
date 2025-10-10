@@ -36,6 +36,50 @@ namespace SpacetimeDB
             Timestamp = time;
             SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
         }
+
+        /// <summary>
+        /// Create a new UUIDv4 using the built-in RNG.
+        /// </summary>
+        /// <remarks>
+        /// This method fills the random bytes using the context RNG.
+        /// </remarks>
+        /// <example>
+        /// <code>
+        /// var uuid = ctx.NewUuidV4();
+        /// Console.WriteLine(uuid);
+        /// </code>
+        /// </example>
+        public Uuid NewUuidV4()
+        {
+            var bytes = new byte[16];
+            Rng.NextBytes(bytes);
+            return Uuid.FromRandomBytesV4(bytes);
+        }
+
+        /// <summary>
+        /// Create a new UUIDv7 using the provided <see cref="ClockGenerator"/>.
+        /// </summary>
+        /// <remarks>
+        /// This method fills the random bytes using the context RNG.
+        ///
+        /// **NOTE**: To preserve monotonicity guarantees, do not call this from multiple
+        /// threads or contexts sharing the same <see cref="ClockGenerator"/>.
+        ///
+        /// Prefer to create a single <see cref="ClockGenerator"/> per context and reuse it for all UUIDv7 generation for the same `table` or operation.
+        /// </remarks>
+        /// <example>
+        /// <code>
+        /// var clock = new ClockGenerator(ctx.Timestamp);
+        /// var uuid = ctx.NewUuidV7(clock);
+        /// Console.WriteLine(uuid);
+        /// </code>
+        /// </example>
+        public Uuid NewUuidV7(ClockGenerator clock)
+        {
+            var bytes = new byte[10];
+            Rng.NextBytes(bytes);
+            return Uuid.FromClockV7(clock, bytes);
+        }
     }
 
     public sealed record ProcedureContext : Internal.IProcedureContext

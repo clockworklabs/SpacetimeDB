@@ -7,10 +7,11 @@ import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
+import { Timestamp } from '../lib/timestamp';
+import BinaryReader from '../lib/binary_reader';
+import BinaryWriter from '../lib/binary_writer';
 import {
   type Index,
   type IndexVal,
@@ -27,7 +28,6 @@ import {
 } from '../lib/reducers';
 import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
-import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
 import { bsatnBaseSize, toCamelCase } from '../lib/util';
 import {
@@ -210,13 +210,19 @@ export const hooks: ModuleHooks = {
       MODULE_DEF.typespace
     );
     const senderIdentity = new Identity(sender);
-    const ctx: ReducerCtx<any> = freeze(
-      makeReducerCtx(
-        senderIdentity,
-        new Timestamp(timestamp),
-        ConnectionId.nullIfZero(new ConnectionId(connId))
-      )
-    );
+    const ctx: ReducerCtx<any> = freeze({
+      sender: senderIdentity,
+      get identity() {
+        return new Identity(sys.identity().__identity__);
+      },
+      timestamp: new Timestamp(timestamp),
+      connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
+      db: getDbView(),
+      senderAuth: AuthCtxImpl.fromSystemTables(
+        ConnectionId.nullIfZero(new ConnectionId(connId)),
+        senderIdentity
+      ),
+    });
     try {
       return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
     } catch (e) {
