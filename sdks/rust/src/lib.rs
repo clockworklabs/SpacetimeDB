@@ -33,7 +33,7 @@ pub use table::{Table, TableWithPrimaryKey};
 
 pub use spacetime_module::SubscriptionHandle;
 pub use spacetimedb_client_api_messages::websocket::Compression;
-pub use spacetimedb_lib::{ConnectionId, Identity, ScheduleAt, TimeDuration, Timestamp};
+pub use spacetimedb_lib::{ClockGenerator, ConnectionId, Identity, ScheduleAt, TimeDuration, Timestamp, Uuid};
 pub use spacetimedb_sats::{i256, u256};
 
 #[doc(hidden)]
@@ -60,7 +60,7 @@ pub mod __codegen {
     pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
     pub use crate::{
         ConnectionId, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent, ScheduleAt, Table,
-        TableWithPrimaryKey, TimeDuration, Timestamp,
+        TableWithPrimaryKey, TimeDuration, Timestamp, Uuid,
     };
 }
 

@@ -17,6 +17,7 @@ use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+use spacetimedb_sats::uuid::Uuid;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
 use spacetimedb_sql_parser::parser::recursion;
@@ -166,6 +167,7 @@ fn op_supports_type(_op: BinOp, t: &AlgebraicType) -> bool {
         || t.is_identity()
         || t.is_connection_id()
         || t.is_timestamp()
+        || t.is_uuid()
 }
 
 /// Parse an integer literal into an [AlgebraicValue]
@@ -233,6 +235,11 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         ConnectionId::from_hex(value)
             .map(AlgebraicValue::from)
             .with_context(|| "Could not parse connection id")
+    };
+    let to_uuid = || {
+        Uuid::parse_str(value)
+            .map(AlgebraicValue::from)
+            .map_err(|err| anyhow!(err))
     };
     let to_i256 = |decimal: &BigDecimal| {
         i256::from_str_radix(
@@ -354,6 +361,7 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         t if t.is_bytes() => to_bytes(),
         t if t.is_identity() => to_identity(),
         t if t.is_connection_id() => to_connection_id(),
+        t if t.is_uuid() => to_uuid(),
         t => bail!("Literal values for type {} are not supported", fmt_algebraic_type(t)),
     }
 }

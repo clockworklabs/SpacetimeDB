@@ -93,8 +93,28 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn insert_call_timestamp() {
-                make_test("insert-call-timestamp").run();
+            fn insert_call_uuid_v4() {
+                make_test("insert-call-uuid-v4").run();
+            }
+
+            #[test]
+            fn insert_call_uuid_v7() {
+                make_test("insert-call-uuid-v7").run();
+            }
+
+            #[test]
+            fn insert_uuid() {
+                make_test("insert-uuid").run();
+            }
+
+            #[test]
+            fn delete_uuid() {
+                make_test("delete-uuid").run();
+            }
+
+            #[test]
+            fn update_uuid() {
+                make_test("delete-uuid").run();
             }
 
             #[test]
@@ -259,6 +279,11 @@ macro_rules! declare_tests_with_suffix {
             #[test]
             fn overlapping_subscriptions() {
                 make_test("overlapping-subscriptions").run();
+            }
+
+            #[test]
+            fn sorted_uuids_insert() {
+                make_test("sorted-uuids-insert").run();
             }
         }
     };

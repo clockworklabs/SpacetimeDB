@@ -1,5 +1,5 @@
 use crate::module_bindings::*;
-use spacetimedb_sdk::{i256, u256, ConnectionId, Event, Identity, Table, Timestamp};
+use spacetimedb_sdk::{i256, u256, ConnectionId, Event, Identity, Table, Timestamp, Uuid};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -193,6 +193,14 @@ impl_simple_test_table! {
         accessor_method = one_timestamp;
     }
 
+    OneUuid {
+        Contents = Uuid;
+        field_name = u;
+        insert_reducer = insert_one_uuid;
+        insert_reducer_event = InsertOneUuid;
+        accessor_method = one_uuid;
+    }
+
     OneSimpleEnum {
         Contents = SimpleEnum;
         field_name = e;
@@ -378,6 +386,14 @@ impl_simple_test_table! {
         accessor_method = vec_timestamp;
     }
 
+    VecUuid {
+        Contents = Vec<Uuid>;
+        field_name = u;
+        insert_reducer = insert_vec_uuid;
+        insert_reducer_event = InsertVecUuid;
+        accessor_method = vec_uuid;
+    }
+
     VecSimpleEnum {
         Contents = Vec<SimpleEnum>;
         field_name = e;
@@ -441,6 +457,13 @@ impl_simple_test_table! {
         insert_reducer = insert_option_identity;
         insert_reducer_event = InsertOptionIdentity;
         accessor_method = option_identity;
+    }
+    OptionUuid {
+        Contents = Option<Uuid>;
+        field_name = u;
+        insert_reducer = insert_option_uuid;
+        insert_reducer_event = InsertOptionUuid;
+        accessor_method = option_uuid;
     }
     OptionSimpleEnum {
         Contents = Option<SimpleEnum>;

@@ -686,6 +686,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "ConnectionId as __ConnectionId",
         "Timestamp as __Timestamp",
         "TimeDuration as __TimeDuration",
+        "Uuid as __Uuid",
         "DbConnectionBuilder as __DbConnectionBuilder",
         "TableCache as __TableCache",
         "BinaryWriter as __BinaryWriter",
@@ -1068,6 +1069,7 @@ fn needs_parens_within_array(ty: &AlgebraicTypeUse) -> bool {
         | AlgebraicTypeUse::ConnectionId
         | AlgebraicTypeUse::Timestamp
         | AlgebraicTypeUse::TimeDuration
+        | AlgebraicTypeUse::Uuid
         | AlgebraicTypeUse::Primitive(_)
         | AlgebraicTypeUse::Array(_)
         | AlgebraicTypeUse::Ref(_) // We use the type name for these.
@@ -1094,6 +1096,7 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::ConnectionId => write!(out, "__ConnectionId")?,
         AlgebraicTypeUse::Timestamp => write!(out, "__Timestamp")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__TimeDuration")?,
+        AlgebraicTypeUse::Uuid => write!(out, "__Uuid")?,
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
             "{{ tag: \"Interval\", value: __TimeDuration }} | {{ tag: \"Time\", value: __Timestamp }}"
@@ -1160,6 +1163,7 @@ fn convert_algebraic_type<'a>(
         AlgebraicTypeUse::ConnectionId => write!(out, "__AlgebraicTypeValue.createConnectionIdType()"),
         AlgebraicTypeUse::Timestamp => write!(out, "__AlgebraicTypeValue.createTimestampType()"),
         AlgebraicTypeUse::TimeDuration => write!(out, "__AlgebraicTypeValue.createTimeDurationType()"),
+        AlgebraicTypeUse::Uuid => write!(out, "__AlgebraicTypeValue.createUuidType()"),
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "__AlgebraicTypeValue.createOptionType(");
             convert_algebraic_type(module, out, inner_ty, ref_prefix);

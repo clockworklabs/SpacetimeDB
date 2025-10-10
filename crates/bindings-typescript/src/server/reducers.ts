@@ -3,7 +3,8 @@ import Lifecycle from '../lib/autogen/lifecycle_type';
 import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
 import type { ConnectionId } from '../lib/connection_id';
 import type { Identity } from '../lib/identity';
-import type { Timestamp } from '../lib/timestamp';
+import type { Timestamp, ClockGenerator } from '../lib/timestamp';
+import type { Uuid } from '../lib/uuid';
 import { MODULE_DEF, type UntypedSchemaDef } from './schema';
 import type { Table } from './table';
 import type {
@@ -117,6 +118,11 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
   authCtx: AuthCtx;
+  /** Create a new UUIDv4 using built-in RNG. */
+  newUuidV4(): Uuid;
+
+  /** Create a new UUIDv7 using the provided ClockGenerator. */
+  newUuidV7(clock: ClockGenerator): Uuid;
 }>;
 
 /**

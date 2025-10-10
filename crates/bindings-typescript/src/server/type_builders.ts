@@ -5,12 +5,14 @@ import {
   ScheduleAt,
   TimeDuration,
   Timestamp,
+  Uuid,
   Option,
   type AlgebraicTypeVariants,
   type ConnectionIdAlgebraicType,
   type IdentityAlgebraicType,
   type TimeDurationAlgebraicType,
   type TimestampAlgebraicType,
+  type UuidAlgebraicType,
 } from '..';
 import type { OptionAlgebraicType } from '../lib/option';
 import { addType, MODULE_DEF } from './schema';
@@ -420,21 +422,25 @@ export class U16Builder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): U16ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new U16ColumnBuilder(this, set(defaultMetadata, { isUnique: true }));
   }
+
   primaryKey(): U16ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new U16ColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): U16ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
     return new U16ColumnBuilder(
       this,
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: number
   ): U16ColumnBuilder<Set<DefaultMetadata, 'defaultValue', number>> {
@@ -457,6 +463,7 @@ export class U32Builder
   constructor() {
     super(AlgebraicType.U32);
   }
+
   index(): U32ColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -469,21 +476,25 @@ export class U32Builder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): U32ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new U32ColumnBuilder(this, set(defaultMetadata, { isUnique: true }));
   }
+
   primaryKey(): U32ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new U32ColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): U32ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
     return new U32ColumnBuilder(
       this,
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: number
   ): U32ColumnBuilder<Set<DefaultMetadata, 'defaultValue', number>> {
@@ -506,6 +517,7 @@ export class U64Builder
   constructor() {
     super(AlgebraicType.U64);
   }
+
   index(): U64ColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -518,21 +530,25 @@ export class U64Builder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): U64ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new U64ColumnBuilder(this, set(defaultMetadata, { isUnique: true }));
   }
+
   primaryKey(): U64ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new U64ColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): U64ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
     return new U64ColumnBuilder(
       this,
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: bigint
   ): U64ColumnBuilder<Set<DefaultMetadata, 'defaultValue', bigint>> {
@@ -555,6 +571,7 @@ export class U128Builder
   constructor() {
     super(AlgebraicType.U128);
   }
+
   index(): U128ColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -567,24 +584,28 @@ export class U128Builder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): U128ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new U128ColumnBuilder(
       this,
       set(defaultMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): U128ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new U128ColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): U128ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
     return new U128ColumnBuilder(
       this,
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: bigint
   ): U128ColumnBuilder<Set<DefaultMetadata, 'defaultValue', bigint>> {
@@ -607,6 +628,7 @@ export class U256Builder
   constructor() {
     super(AlgebraicType.U256);
   }
+
   index(): U256ColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -619,24 +641,28 @@ export class U256Builder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): U256ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new U256ColumnBuilder(
       this,
       set(defaultMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): U256ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new U256ColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): U256ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
     return new U256ColumnBuilder(
       this,
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: bigint
   ): U256ColumnBuilder<Set<DefaultMetadata, 'defaultValue', bigint>> {
@@ -659,6 +685,7 @@ export class I8Builder
   constructor() {
     super(AlgebraicType.I8);
   }
+
   index(): I8ColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -671,21 +698,25 @@ export class I8Builder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I8ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new I8ColumnBuilder(this, set(defaultMetadata, { isUnique: true }));
   }
+
   primaryKey(): I8ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new I8ColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I8ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
     return new I8ColumnBuilder(
       this,
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: number
   ): I8ColumnBuilder<Set<DefaultMetadata, 'defaultValue', number>> {
@@ -708,6 +739,7 @@ export class I16Builder
   constructor() {
     super(AlgebraicType.I16);
   }
+
   index(): I16ColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -720,21 +752,25 @@ export class I16Builder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I16ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new I16ColumnBuilder(this, set(defaultMetadata, { isUnique: true }));
   }
+
   primaryKey(): I16ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new I16ColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I16ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
     return new I16ColumnBuilder(
       this,
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: number
   ): I16ColumnBuilder<Set<DefaultMetadata, 'defaultValue', number>> {
@@ -758,6 +794,7 @@ export class I32Builder
   constructor() {
     super(AlgebraicType.I32);
   }
+
   index(): I32ColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -770,21 +807,25 @@ export class I32Builder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I32ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new I32ColumnBuilder(this, set(defaultMetadata, { isUnique: true }));
   }
+
   primaryKey(): I32ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new I32ColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I32ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
     return new I32ColumnBuilder(
       this,
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: number
   ): I32ColumnBuilder<Set<DefaultMetadata, 'defaultValue', number>> {
@@ -807,6 +848,7 @@ export class I64Builder
   constructor() {
     super(AlgebraicType.I64);
   }
+
   index(): I64ColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -819,21 +861,25 @@ export class I64Builder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I64ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new I64ColumnBuilder(this, set(defaultMetadata, { isUnique: true }));
   }
+
   primaryKey(): I64ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new I64ColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I64ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
     return new I64ColumnBuilder(
       this,
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: bigint
   ): I64ColumnBuilder<Set<DefaultMetadata, 'defaultValue', bigint>> {
@@ -856,6 +902,7 @@ export class I128Builder
   constructor() {
     super(AlgebraicType.I128);
   }
+
   index(): I128ColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -868,24 +915,28 @@ export class I128Builder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I128ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new I128ColumnBuilder(
       this,
       set(defaultMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): I128ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new I128ColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I128ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
     return new I128ColumnBuilder(
       this,
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: bigint
   ): I128ColumnBuilder<Set<DefaultMetadata, 'defaultValue', bigint>> {
@@ -908,6 +959,7 @@ export class I256Builder
   constructor() {
     super(AlgebraicType.I256);
   }
+
   index(): I256ColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -920,24 +972,28 @@ export class I256Builder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I256ColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new I256ColumnBuilder(
       this,
       set(defaultMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): I256ColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new I256ColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I256ColumnBuilder<Set<DefaultMetadata, 'isAutoIncrement', true>> {
     return new I256ColumnBuilder(
       this,
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: bigint
   ): I256ColumnBuilder<Set<DefaultMetadata, 'defaultValue', bigint>> {
@@ -955,6 +1011,7 @@ export class F32Builder
   constructor() {
     super(AlgebraicType.F32);
   }
+
   default(
     value: number
   ): F32ColumnBuilder<Set<DefaultMetadata, 'defaultValue', number>> {
@@ -972,6 +1029,7 @@ export class F64Builder
   constructor() {
     super(AlgebraicType.F64);
   }
+
   default(
     value: number
   ): F64ColumnBuilder<Set<DefaultMetadata, 'defaultValue', number>> {
@@ -993,6 +1051,7 @@ export class BoolBuilder
   constructor() {
     super(AlgebraicType.Bool);
   }
+
   index(): BoolColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -1005,18 +1064,21 @@ export class BoolBuilder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): BoolColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new BoolColumnBuilder(
       this,
       set(defaultMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): BoolColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
     return new BoolColumnBuilder(
       this,
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   default(
     value: boolean
   ): BoolColumnBuilder<Set<DefaultMetadata, 'defaultValue', boolean>> {
@@ -1038,6 +1100,7 @@ export class StringBuilder
   constructor() {
     super(AlgebraicType.String);
   }
+
   index(): StringColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -1050,12 +1113,14 @@ export class StringBuilder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): StringColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new StringColumnBuilder(
       this,
       set(defaultMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): StringColumnBuilder<
     Set<DefaultMetadata, 'isPrimaryKey', true>
   > {
@@ -1064,6 +1129,7 @@ export class StringBuilder
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   default(
     value: string
   ): StringColumnBuilder<Set<DefaultMetadata, 'defaultValue', string>> {
@@ -1089,6 +1155,7 @@ export class ArrayBuilder<Element extends TypeBuilder<any, any>>
   constructor(element: Element) {
     super(AlgebraicType.Array(element.algebraicType));
   }
+
   default(
     value: Array<InferTypeOfTypeBuilder<Element>>
   ): ArrayColumnBuilder<Element, Set<DefaultMetadata, 'defaultValue', any>> {
@@ -1121,6 +1188,7 @@ export class OptionBuilder<Value extends TypeBuilder<any, any>>
     }
     super(Option.getAlgebraicType(innerType));
   }
+
   default(
     value: InferTypeOfTypeBuilder<Value> | undefined
   ): OptionColumnBuilder<
@@ -1155,6 +1223,7 @@ export class ProductBuilder<Elements extends ElementsObj>
         algebraicType,
       }));
     }
+
     super(
       addType(
         name,
@@ -1164,6 +1233,7 @@ export class ProductBuilder<Elements extends ElementsObj>
       )
     );
   }
+
   default(
     value: ObjectType<Elements>
   ): ProductColumnBuilder<Elements, Set<DefaultMetadata, 'defaultValue', any>> {
@@ -1183,6 +1253,7 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
 > {
   row: CoerceRow<Row>;
   nameProvided: boolean;
+
   constructor(row: Row, name?: string) {
     const mappedRow = Object.fromEntries(
       Object.entries(row).map(([name, builder]) => [
@@ -1218,6 +1289,7 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
         algebraicType,
       }));
     }
+
     super(
       addType(
         name,
@@ -1227,6 +1299,7 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
       )
     );
   }
+
   default(
     value: EnumType<Variants>
   ): SumColumnBuilder<Variants, Set<DefaultMetadata, 'defaultValue', any>> {
@@ -1273,6 +1346,7 @@ export class SimpleSumBuilder<Variants extends SimpleVariantsObj>
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   primaryKey(): SimpleSumColumnBuilder<
     Variants,
     Set<DefaultMetadata, 'isPrimaryKey', true>
@@ -1295,6 +1369,7 @@ export class IdentityBuilder
   constructor() {
     super(Identity.getAlgebraicType());
   }
+
   index(): IdentityColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -1307,12 +1382,14 @@ export class IdentityBuilder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): IdentityColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new IdentityColumnBuilder(
       this,
       set(defaultMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): IdentityColumnBuilder<
     Set<DefaultMetadata, 'isPrimaryKey', true>
   > {
@@ -1321,6 +1398,7 @@ export class IdentityBuilder
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): IdentityColumnBuilder<
     Set<DefaultMetadata, 'isAutoIncrement', true>
   > {
@@ -1329,6 +1407,7 @@ export class IdentityBuilder
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: Identity
   ): IdentityColumnBuilder<Set<DefaultMetadata, 'defaultValue', Identity>> {
@@ -1350,6 +1429,7 @@ export class ConnectionIdBuilder
   constructor() {
     super(ConnectionId.getAlgebraicType());
   }
+
   index(): ConnectionIdColumnBuilder<
     Set<DefaultMetadata, 'indexType', 'btree'>
   >;
@@ -1364,12 +1444,14 @@ export class ConnectionIdBuilder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): ConnectionIdColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new ConnectionIdColumnBuilder(
       this,
       set(defaultMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): ConnectionIdColumnBuilder<
     Set<DefaultMetadata, 'isPrimaryKey', true>
   > {
@@ -1378,6 +1460,7 @@ export class ConnectionIdBuilder
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): ConnectionIdColumnBuilder<
     Set<DefaultMetadata, 'isAutoIncrement', true>
   > {
@@ -1386,6 +1469,7 @@ export class ConnectionIdBuilder
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: ConnectionId
   ): ConnectionIdColumnBuilder<
@@ -1409,6 +1493,7 @@ export class TimestampBuilder
   constructor() {
     super(Timestamp.getAlgebraicType());
   }
+
   index(): TimestampColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -1421,12 +1506,14 @@ export class TimestampBuilder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): TimestampColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new TimestampColumnBuilder(
       this,
       set(defaultMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): TimestampColumnBuilder<
     Set<DefaultMetadata, 'isPrimaryKey', true>
   > {
@@ -1435,6 +1522,7 @@ export class TimestampBuilder
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): TimestampColumnBuilder<
     Set<DefaultMetadata, 'isAutoIncrement', true>
   > {
@@ -1443,6 +1531,7 @@ export class TimestampBuilder
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: Timestamp
   ): TimestampColumnBuilder<Set<DefaultMetadata, 'defaultValue', Timestamp>> {
@@ -1464,6 +1553,7 @@ export class TimeDurationBuilder
   constructor() {
     super(TimeDuration.getAlgebraicType());
   }
+
   index(): TimeDurationColumnBuilder<
     Set<DefaultMetadata, 'indexType', 'btree'>
   >;
@@ -1478,12 +1568,14 @@ export class TimeDurationBuilder
       set(defaultMetadata, { indexType: algorithm })
     );
   }
+
   unique(): TimeDurationColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
     return new TimeDurationColumnBuilder(
       this,
       set(defaultMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): TimeDurationColumnBuilder<
     Set<DefaultMetadata, 'isPrimaryKey', true>
   > {
@@ -1492,6 +1584,7 @@ export class TimeDurationBuilder
       set(defaultMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): TimeDurationColumnBuilder<
     Set<DefaultMetadata, 'isAutoIncrement', true>
   > {
@@ -1500,12 +1593,62 @@ export class TimeDurationBuilder
       set(defaultMetadata, { isAutoIncrement: true })
     );
   }
+
   default(
     value: TimeDuration
   ): TimeDurationColumnBuilder<
     Set<DefaultMetadata, 'defaultValue', TimeDuration>
   > {
     return new TimeDurationColumnBuilder(
+      this,
+      set(defaultMetadata, { defaultValue: value })
+    );
+  }
+}
+
+export class UuidBuilder
+  extends TypeBuilder<Uuid, UuidAlgebraicType>
+  implements
+    Indexable<Uuid, UuidAlgebraicType>,
+    Uniqueable<Uuid, UuidAlgebraicType>,
+    PrimaryKeyable<Uuid, UuidAlgebraicType>,
+    Defaultable<Uuid, UuidAlgebraicType>
+{
+  constructor() {
+    super(Uuid.getAlgebraicType());
+  }
+
+  index(): UuidColumnBuilder<Set<DefaultMetadata, 'indexType', 'btree'>>;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): UuidColumnBuilder<Set<DefaultMetadata, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): UuidColumnBuilder<Set<DefaultMetadata, 'indexType', IndexTypes>> {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { indexType: algorithm })
+    );
+  }
+
+  unique(): UuidColumnBuilder<Set<DefaultMetadata, 'isUnique', true>> {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { isUnique: true })
+    );
+  }
+
+  primaryKey(): UuidColumnBuilder<Set<DefaultMetadata, 'isPrimaryKey', true>> {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { isPrimaryKey: true })
+    );
+  }
+
+  default(
+    value: Uuid
+  ): UuidColumnBuilder<Set<DefaultMetadata, 'defaultValue', Uuid>> {
+    return new UuidColumnBuilder(
       this,
       set(defaultMetadata, { defaultValue: value })
     );
@@ -1582,24 +1725,28 @@ export class U8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): U8ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U8ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): U8ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new U8ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): U8ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new U8ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: number): U8ColumnBuilder<Set<M, 'defaultValue', number>> {
     return new U8ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -1631,24 +1778,28 @@ export class U16ColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): U16ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U16ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): U16ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new U16ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): U16ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new U16ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: number): U16ColumnBuilder<Set<M, 'defaultValue', number>> {
     return new U16ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -1680,24 +1831,28 @@ export class U32ColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): U32ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U32ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): U32ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new U32ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): U32ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new U32ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: number): U32ColumnBuilder<Set<M, 'defaultValue', number>> {
     return new U32ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -1729,24 +1884,28 @@ export class U64ColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): U64ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U64ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): U64ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new U64ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): U64ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new U64ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: bigint): U64ColumnBuilder<Set<M, 'defaultValue', bigint>> {
     return new U64ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -1778,24 +1937,28 @@ export class U128ColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): U128ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U128ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): U128ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new U128ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): U128ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new U128ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: bigint): U128ColumnBuilder<Set<M, 'defaultValue', bigint>> {
     return new U128ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -1827,24 +1990,28 @@ export class U256ColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): U256ColumnBuilder<Set<M, 'isUnique', true>> {
     return new U256ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): U256ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new U256ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): U256ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new U256ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: bigint): U256ColumnBuilder<Set<M, 'defaultValue', bigint>> {
     return new U256ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -1874,24 +2041,28 @@ export class I8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I8ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I8ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): I8ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new I8ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I8ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new I8ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: number): I8ColumnBuilder<Set<M, 'defaultValue', number>> {
     return new I8ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -1923,24 +2094,28 @@ export class I16ColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I16ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I16ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): I16ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new I16ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I16ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new I16ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: number): I16ColumnBuilder<Set<M, 'defaultValue', number>> {
     return new I16ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -1972,24 +2147,28 @@ export class I32ColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I32ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I32ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): I32ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new I32ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I32ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new I32ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: number): I32ColumnBuilder<Set<M, 'defaultValue', number>> {
     return new I32ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -2021,24 +2200,28 @@ export class I64ColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I64ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I64ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): I64ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new I64ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I64ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new I64ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: bigint): I64ColumnBuilder<Set<M, 'defaultValue', bigint>> {
     return new I64ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -2070,24 +2253,28 @@ export class I128ColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I128ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I128ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): I128ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new I128ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I128ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new I128ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: bigint): I128ColumnBuilder<Set<M, 'defaultValue', bigint>> {
     return new I128ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -2119,24 +2306,28 @@ export class I256ColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): I256ColumnBuilder<Set<M, 'isUnique', true>> {
     return new I256ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): I256ColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new I256ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   autoInc(): I256ColumnBuilder<Set<M, 'isAutoIncrement', true>> {
     return new I256ColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isAutoIncrement: true })
     );
   }
+
   default(value: bigint): I256ColumnBuilder<Set<M, 'defaultValue', bigint>> {
     return new I256ColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -2195,18 +2386,21 @@ export class BoolColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): BoolColumnBuilder<Set<M, 'isUnique', true>> {
     return new BoolColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): BoolColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new BoolColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   default(value: boolean): BoolColumnBuilder<Set<M, 'defaultValue', boolean>> {
     return new BoolColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -2237,18 +2431,21 @@ export class StringColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): StringColumnBuilder<Set<M, 'isUnique', true>> {
     return new StringColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): StringColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new StringColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   default(value: string): StringColumnBuilder<Set<M, 'defaultValue', string>> {
     return new StringColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
@@ -2386,6 +2583,7 @@ export class SimpleSumColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   primaryKey(): SimpleSumColumnBuilder<
     Variants,
     Set<DefaultMetadata, 'isPrimaryKey', true>
@@ -2419,18 +2617,21 @@ export class IdentityColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): IdentityColumnBuilder<Set<M, 'isUnique', true>> {
     return new IdentityColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): IdentityColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new IdentityColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   default(
     value: Identity
   ): IdentityColumnBuilder<Set<M, 'defaultValue', Identity>> {
@@ -2463,18 +2664,21 @@ export class ConnectionIdColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): ConnectionIdColumnBuilder<Set<M, 'isUnique', true>> {
     return new ConnectionIdColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): ConnectionIdColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new ConnectionIdColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   default(
     value: ConnectionId
   ): ConnectionIdColumnBuilder<Set<M, 'defaultValue', ConnectionId>> {
@@ -2507,18 +2711,21 @@ export class TimestampColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): TimestampColumnBuilder<Set<M, 'isUnique', true>> {
     return new TimestampColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): TimestampColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new TimestampColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   default(
     value: Timestamp
   ): TimestampColumnBuilder<Set<M, 'defaultValue', Timestamp>> {
@@ -2551,22 +2758,68 @@ export class TimeDurationColumnBuilder<
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
+
   unique(): TimeDurationColumnBuilder<Set<M, 'isUnique', true>> {
     return new TimeDurationColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
+
   primaryKey(): TimeDurationColumnBuilder<Set<M, 'isPrimaryKey', true>> {
     return new TimeDurationColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
+
   default(
     value: TimeDuration
   ): TimeDurationColumnBuilder<Set<M, 'defaultValue', TimeDuration>> {
     return new TimeDurationColumnBuilder(this.typeBuilder, {
+      ...this.columnMetadata,
+      defaultValue: value,
+    });
+  }
+}
+
+export class UuidColumnBuilder<M extends ColumnMetadata<Uuid> = DefaultMetadata>
+  extends ColumnBuilder<Uuid, UuidAlgebraicType, M>
+  implements
+    Indexable<Uuid, UuidAlgebraicType>,
+    Uniqueable<Uuid, UuidAlgebraicType>,
+    PrimaryKeyable<Uuid, UuidAlgebraicType>,
+    Defaultable<Uuid, UuidAlgebraicType>
+{
+  index(): UuidColumnBuilder<Set<M, 'indexType', 'btree'>>;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): UuidColumnBuilder<Set<M, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): UuidColumnBuilder<Set<M, 'indexType', IndexTypes>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { indexType: algorithm })
+    );
+  }
+
+  unique(): UuidColumnBuilder<Set<M, 'isUnique', true>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { isUnique: true })
+    );
+  }
+
+  primaryKey(): UuidColumnBuilder<Set<M, 'isPrimaryKey', true>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { isPrimaryKey: true })
+    );
+  }
+
+  default(value: Uuid): UuidColumnBuilder<Set<M, 'defaultValue', Uuid>> {
+    return new UuidColumnBuilder(this.typeBuilder, {
       ...this.columnMetadata,
       defaultValue: value,
     });
@@ -2891,6 +3144,15 @@ export const t = {
    */
   timeDuration: (): TimeDurationBuilder => {
     return new TimeDurationBuilder();
+  },
+
+  /**
+   * This is a convenience method for creating a column with the {@link Uuid} type.
+   * You can create a column of the same type by constructing an `object` with a single `__uuid__` element.
+   * @returns A new {@link TypeBuilder} instance with the {@link Uuid} type.
+   */
+  uuid: (): UuidBuilder => {
+    return new UuidBuilder();
   },
 } as const;
 export default t;

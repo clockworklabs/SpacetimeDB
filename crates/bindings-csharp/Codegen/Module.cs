@@ -175,7 +175,8 @@ record ColumnDeclaration : MemberDeclaration
                     SpecialType.System_String or SpecialType.System_Boolean => true,
                     SpecialType.None => type.ToString()
                         is "SpacetimeDB.ConnectionId"
-                            or "SpacetimeDB.Identity",
+                            or "SpacetimeDB.Identity"
+                            or "SpacetimeDB.Uuid",
                     _ => false,
                 }
             )
@@ -1116,15 +1117,58 @@ public class Module : IIncrementalGenerator
                             // We need this property to be non-static for parity with client SDK.
                             public Identity Identity => Internal.IReducerContext.GetIdentity();
 
-                    internal ReducerContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time) {
+                            internal ReducerContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time) {
                                 Sender = identity;
                                 ConnectionId = connectionId;
                                 Rng = random;
                                 Timestamp = time;
                                 AuthCtx = AuthCtx.BuildFromSystemTables(connectionId, identity);
                             }
-                        }
+                        
 
+                            /// <summary>
+                            /// Create a new UUIDv4 using the built-in RNG.
+                            /// </summary>
+                            /// <remarks>
+                            /// This method fills 16 random bytes using the context RNG,
+                            /// sets version and variant bits for UUIDv4, and returns the result.
+                            /// </remarks>
+                            /// <example>
+                            /// <code>
+                            /// var uuid = ctx.NewUuidV4();
+                            /// Console.WriteLine(uuid);
+                            /// </code>
+                            /// </example>
+                            public Uuid NewUuidV4()
+                            {
+                                var bytes = new byte[16];
+                                Rng.NextBytes(bytes);
+                                return Uuid.FromRandomBytesV4(bytes);
+                            }
+
+                            /// <summary>
+                            /// Create a new UUIDv7 using the provided <see cref="ClockGenerator"/>.
+                            /// </summary>
+                            /// <remarks>
+                            /// To preserve monotonicity guarantees, do not call this from multiple
+                            /// threads or contexts sharing the same <see cref="ClockGenerator"/>.
+                            /// Use a dedicated instance per logical context.
+                            /// </remarks>
+                            /// <example>
+                            /// <code>
+                            /// var clock = new ClockGenerator(ctx.Timestamp);
+                            /// var uuid = ctx.NewUuidV7(clock);
+                            /// Console.WriteLine(uuid);
+                            /// </code>
+                            /// </example>
+                            public Uuid NewUuidV7(ClockGenerator clock)
+                            {
+                                var bytes = new byte[10];
+                                Rng.NextBytes(bytes);
+                                return Uuid.FromClockV7(clock, bytes);
+                            }
+                        }
+                        
                         namespace Internal.TableHandles {
                             {{string.Join("\n", tableViews.Select(v => v.view))}}
                         }
