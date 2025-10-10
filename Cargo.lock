@@ -7097,6 +7097,7 @@ dependencies = [
 name = "spacetimedb"
 version = "1.8.0"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "derive_more 0.99.20",
  "getrandom 0.2.16",
@@ -7895,6 +7896,7 @@ dependencies = [
  "spacetimedb-metrics",
  "spacetimedb-primitives 1.8.0",
  "thiserror 1.0.69",
+ "uuid",
 ]
 
 [[package]]

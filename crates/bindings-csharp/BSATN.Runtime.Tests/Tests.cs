@@ -1,6 +1,7 @@
 namespace SpacetimeDB;
 
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography;
 using CsCheck;
 using SpacetimeDB.BSATN;
 using Xunit;
@@ -860,5 +861,64 @@ public static partial class BSATNRuntimeTests
             },
             iter: 10_000
         );
+    }
+
+    [Fact]
+    public static void UUidRoundTrip()
+    {
+        var u1 = Uuid.NIL;
+        var s = u1.ToString();
+        var u2 = Uuid.Parse(s);
+        Assert.Equal(u1, u2);
+        Assert.Equal(u1.ToGuid(), u2.ToGuid());
+        Assert.Equal(s, u2.ToString());
+    }
+
+    [Fact]
+    public static void UuidOrdered()
+    {
+        var u1 = new Uuid(new U128(1, 0));
+        var u2 = new Uuid(new U128(2, 0));
+
+        Assert.True(u1 < u2);
+        Assert.True(u2 > u1);
+        Assert.Equal(u1, u1);
+        Assert.NotEqual(u1, u2);
+
+        var clock = new ClockGenerator(new Timestamp());
+
+        var uuids = Enumerable
+            .Range(0, 1000)
+            .Select(_ =>
+            {
+                var bytes = new byte[10];
+                RandomNumberGenerator.Fill(bytes);
+                return Uuid.FromClockV7(clock, bytes);
+            })
+            .ToList();
+
+        for (var i = 0; i < uuids.Count - 1; i++)
+        {
+            var a = uuids[i];
+            var b = uuids[i + 1];
+
+            Assert.True(a < b, $"UUIDs are not ordered at {i}: {a} !< {b}");
+        }
+    }
+
+    [Fact]
+    public static void UuidVariant()
+    {
+        var u = Uuid.NIL;
+        Assert.Equal(Uuid.UuidVariant.Nil, u.GetVariant());
+
+        var randomBytes = new byte[16];
+        RandomNumberGenerator.Fill(randomBytes);
+        u = Uuid.FromRandomBytesV4(randomBytes);
+        Assert.Equal(Uuid.UuidVariant.V4, u.GetVariant());
+
+        var clock = new ClockGenerator(new Timestamp());
+        u = Uuid.FromClockV7(clock, randomBytes.AsSpan()[..10]);
+        Assert.Equal(Uuid.UuidVariant.V7, u.GetVariant()); // Version nibble
     }
 }

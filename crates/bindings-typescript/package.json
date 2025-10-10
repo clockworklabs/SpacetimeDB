@@ -158,7 +158,8 @@
   "dependencies": {
     "base64-js": "^1.5.1",
     "fast-text-encoding": "^1.0.0",
-    "prettier": "^3.3.3"
+    "prettier": "^3.3.3",
+    "uuid": "^13.0.0"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
