@@ -79,7 +79,7 @@ impl UniqueDirectFixedCapIndex {
     }
 
     /// Returns an iterator yielding all the [`RowPointer`] that correspond to the provided `range`.
-    pub fn seek_range(&self, range: &impl RangeBounds<usize>) -> UniqueDirectFixedCapIndexRangeIter {
+    pub fn seek_range(&self, range: &impl RangeBounds<usize>) -> UniqueDirectFixedCapIndexRangeIter<'_> {
         // Translate `range` to `start..end`.
         let end = match range.end_bound() {
             Bound::Included(&e) => e + 1,

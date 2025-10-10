@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use bytemuck::{NoUninit, Pod};
 use spacetimedb_sats::{i256, u256};
 use v8::{BigInt, Boolean, Integer, Local, Number, PinScope, Value};
@@ -110,18 +108,12 @@ pub(in super::super) mod test {
     use core::fmt::Debug;
     use proptest::prelude::*;
     use spacetimedb_sats::proptest::{any_i256, any_u256};
-    use v8::{scope, Context, ContextScope, Isolate};
+    use v8::Isolate;
 
-    /// Sets up V8 and runs `logic` with a [`HandleScope`].
+    /// Sets up V8 and runs `logic` with a [`PinScope`].
     pub(in super::super) fn with_scope<R>(logic: impl FnOnce(&mut PinScope<'_, '_>) -> R) -> R {
         V8Runtime::init_for_test();
-        let isolate = &mut Isolate::new(<_>::default());
-        isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
-        scope!(let scope, isolate);
-        let context = Context::new(scope, Default::default());
-        let scope = &mut ContextScope::new(scope, context);
-
-        logic(scope)
+        super::super::with_scope(&mut Isolate::new(<_>::default()), logic)
     }
 
     /// Roundtrips `rust_val` via `ToValue` to the V8 representation
