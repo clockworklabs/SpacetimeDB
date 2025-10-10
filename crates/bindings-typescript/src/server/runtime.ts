@@ -149,7 +149,10 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
     },
   };
 
-  const tableView = tableMethods as Table<any>;
+  const tableView = Object.assign(
+    Object.create(null),
+    tableMethods
+  ) as Table<any>;
 
   for (const indexDef of table.indexes) {
     const index_id = sys.index_id_from_name(indexDef.name!);
