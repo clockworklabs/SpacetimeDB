@@ -10,18 +10,6 @@ error: const parameters are not allowed on tables
 14 | struct ConstParam<const X: u8> {}
    |                   ^^^^^^^^^^^
 
-error[E0412]: cannot find type `ReducerContext` in this scope
-  --> tests/ui/tables.rs:30:1
-   |
-30 | #[spacetimedb::reducer]
-   | ^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
-   |
-   = note: this error originates in the attribute macro `spacetimedb::reducer` (in Nightly builds, run with -Z macro-backtrace for more info)
-help: consider importing this struct
-   |
- 1 + use spacetimedb::ReducerContext;
-   |
-
 error[E0277]: the trait bound `Test: SpacetimeType` is not satisfied
  --> tests/ui/tables.rs:5:8
   |
