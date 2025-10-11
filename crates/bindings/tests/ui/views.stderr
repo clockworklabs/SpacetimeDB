@@ -51,9 +51,6 @@ error[E0599]: `&test__ViewHandle` is not an iterator
            which is required by `&mut test__ViewHandle: Iterator`
 note: the trait `Iterator` must be implemented
   --> $RUST/core/src/iter/traits/iterator.rs
-   |
-   | pub trait Iterator {
-   | ^^^^^^^^^^^^^^^^^^
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `count`, perhaps you need to implement one of them:
            candidate #1: `Table`
@@ -73,19 +70,16 @@ error[E0599]: no method named `insert` found for reference `&test__ViewHandle` i
            candidate #4: `ppv_lite86::types::Vec4`
 
 error[E0599]: no method named `try_insert` found for reference `&test__ViewHandle` in the current scope
- --> tests/ui/views.rs:36:25
-  |
- 36 |     read_only.db.test().try_insert(Test { id: 0, x: 0 });
-    |                         ^^^^^^^^^^
-    |
-    = help: items from traits can only be used if the trait is implemented and in scope
-    = note: the following trait defines an item `try_insert`, perhaps you need to implement it:
-            candidate #1: `Table`
+  --> tests/ui/views.rs:36:25
+   |
+36 |     read_only.db.test().try_insert(Test { id: 0, x: 0 });
+   |                         ^^^^^^^^^^
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `try_insert`, perhaps you need to implement it:
+           candidate #1: `Table`
 help: there is a method `try_into` with a similar name, but with different arguments
-   --> $RUST/core/src/convert/mod.rs
-    |
-    |     fn try_into(self) -> Result<T, Self::Error>;
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  --> $RUST/core/src/convert/mod.rs
 
 error[E0599]: no method named `delete` found for reference `&test__ViewHandle` in the current scope
   --> tests/ui/views.rs:43:25

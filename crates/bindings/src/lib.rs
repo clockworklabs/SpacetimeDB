@@ -710,6 +710,10 @@ pub use spacetimedb_bindings_macro::reducer;
 /// Views are callable by reducers and other views simply by passing their `ViewContext`..
 /// This is a regular function call.
 /// The callee will run within the caller's transaction.
+///
+///
+/// [`&ViewContext`]: `ViewContext`
+/// [`&AnonymousViewContext`]: `AnonymousViewContext`
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::view;
 
