@@ -260,6 +260,12 @@ class Schema<S extends UntypedSchemaDef> {
   clientDisconnected(fn: Reducer<S, {}>): void {
     clientDisconnected({}, fn);
   }
+
+  clientVisibilityFilter = {
+    sql(filter: string): void {
+      MODULE_DEF.rowLevelSecurity.push({ sql: filter });
+    },
+  };
 }
 
 /**

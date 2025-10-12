@@ -924,9 +924,6 @@ const BTreeU32 = table(
   }
 );
 
-// #[spacetimedb::client_visibility_filter]
-// const USERS_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM users WHERE identity = :sender");
-
 const Users = table(
   { name: 'users', public: true },
   {
@@ -953,6 +950,10 @@ const spacetimedb = schema(
 for (const { reducers } of allTables) {
   reducers(spacetimedb as any);
 }
+
+spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM users WHERE identity = :sender'
+);
 
 spacetimedb.reducer(
   'update_pk_simple_enum',
@@ -1125,8 +1126,7 @@ spacetimedb.reducer(
 
 spacetimedb.reducer('no_op_succeeds', _ctx => {});
 
-// #[spacetimedb::client_visibility_filter]
-// const ONE_U8_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM one_u8");
+spacetimedb.clientVisibilityFilter.sql('SELECT * FROM one_u8');
 
 spacetimedb.reducer(
   'send_scheduled_message',
