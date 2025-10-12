@@ -94,6 +94,7 @@ impl ModuleHandle {
 pub struct CompiledModule {
     name: String,
     path: PathBuf,
+    host_type: HostType,
     program_bytes: OnceLock<Vec<u8>>,
 }
 
@@ -105,7 +106,7 @@ pub enum CompilationMode {
 
 impl CompiledModule {
     pub fn compile(name: &str, mode: CompilationMode) -> Self {
-        let (path, _) = spacetimedb_cli::build(
+        let (path, host_type) = spacetimedb_cli::build(
             &module_path(name),
             Some(PathBuf::from("src")).as_deref(),
             mode == CompilationMode::Debug,
@@ -114,6 +115,7 @@ impl CompiledModule {
         Self {
             name: name.to_owned(),
             path,
+            host_type: host_type.parse().unwrap(),
             program_bytes: OnceLock::new(),
         }
     }
@@ -127,7 +129,7 @@ impl CompiledModule {
     }
 
     pub async fn extract_schema(&self) -> ModuleDef {
-        spacetimedb::host::extract_schema(self.program_bytes().into(), HostType::Wasm)
+        spacetimedb::host::extract_schema(self.program_bytes().into(), self.host_type)
             .await
             .unwrap()
     }
@@ -204,7 +206,7 @@ impl CompiledModule {
                 database_identity: db_identity,
                 program_bytes,
                 num_replicas: None,
-                host_type: HostType::Wasm,
+                host_type: self.host_type,
             },
             MigrationPolicy::Compatible,
         )
