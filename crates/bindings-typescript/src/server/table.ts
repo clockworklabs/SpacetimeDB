@@ -153,11 +153,7 @@ export type TableSchema<
   Row extends Record<string, ColumnBuilder<any, any, any>>,
   Idx extends readonly IndexOpts<keyof Row & string>[],
 > = {
-  /**
-   * The TypeScript phantom type. This is not stored at runtime,
-   * but is visible to the compiler
-   */
-  readonly rowType: Row;
+  readonly rowType: RowBuilder<Row>;
 
   /**
    * The name of the table.
@@ -341,10 +337,10 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   });
 
   return {
+    rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
     rowSpacetimeType: productType,
     tableDef,
     idxs: indexes as OptsIndices<Opts>,
-    rowType: {} as CoerceRow<Row>,
   };
 }

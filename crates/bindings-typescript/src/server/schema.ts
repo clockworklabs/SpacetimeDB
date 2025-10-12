@@ -86,7 +86,7 @@ type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
     /** @type {UntypedTableDef} */
     readonly [i in keyof T]: {
       name: T[i]['tableName'];
-      columns: T[i]['rowType'];
+      columns: T[i]['rowType']['row'];
       indexes: T[i]['idxs'];
     };
   };

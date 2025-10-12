@@ -81,7 +81,7 @@ type ElementsArrayFromRowObj<Obj extends RowObj> = Array<
  *
  * e.g. { a: I32TypeBuilder, b: StringBuilder } -> { a: number, b: string }
  */
-type TypeScriptTypeFromRowObj<Row extends RowObj> = {
+type RowType<Row extends RowObj> = {
   [K in keyof Row]: InferTypeOfTypeBuilder<CollapseColumn<Row[K]>>;
 };
 
@@ -109,11 +109,14 @@ type ElementsArrayFromElementsObj<Obj extends ElementsObj> = Array<
  *
  * e.g. { a: I32TypeBuilder, b: StringBuilder } -> { a: number, b: string }
  */
-type TypeScriptTypeFromElementsObj<Elements extends ElementsObj> = {
+type ObjectType<Elements extends ElementsObj> = {
   [K in keyof Elements]: InferTypeOfTypeBuilder<Elements[K]>;
 };
 
 type VariantsObj = Record<string, TypeBuilder<any, any>>;
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+type UnitBuilder = ProductBuilder<{}>;
+type SimpleVariantsObj = Record<string, UnitBuilder>;
 
 /**
  * A type which converts the elements of ElementsObj to a TypeScript object type.
@@ -122,7 +125,7 @@ type VariantsObj = Record<string, TypeBuilder<any, any>>;
  *
  * e.g. { A: I32TypeBuilder, B: StringBuilder } -> { tag: "A", value: number } | { tag: "B", value: string }
  */
-type TypeScriptTypeFromVariantsObj<Variants extends VariantsObj> = {
+type EnumType<Variants extends VariantsObj> = {
   [K in keyof Variants]: { tag: K; value: InferTypeOfTypeBuilder<Variants[K]> };
 }[keyof Variants];
 
@@ -1142,13 +1145,13 @@ export class OptionBuilder<Value extends TypeBuilder<any, any>>
 
 export class ProductBuilder<Elements extends ElementsObj>
   extends TypeBuilder<
-    TypeScriptTypeFromElementsObj<Elements>,
+    ObjectType<Elements>,
     {
       tag: 'Product';
       value: { elements: ElementsArrayFromElementsObj<Elements> };
     }
   >
-  implements Defaultable<TypeScriptTypeFromElementsObj<Elements>, any>
+  implements Defaultable<ObjectType<Elements>, any>
 {
   constructor(elements: Elements, name?: string) {
     function elementsArrayFromElementsObj<Obj extends ElementsObj>(obj: Obj) {
@@ -1167,7 +1170,7 @@ export class ProductBuilder<Elements extends ElementsObj>
     );
   }
   default(
-    value: TypeScriptTypeFromElementsObj<Elements>
+    value: ObjectType<Elements>
   ): ProductColumnBuilder<Elements, Set<DefaultMetadata, 'defaultValue', any>> {
     return new ProductColumnBuilder(
       this,
@@ -1177,7 +1180,7 @@ export class ProductBuilder<Elements extends ElementsObj>
 }
 
 export class RowBuilder<Row extends RowObj> extends TypeBuilder<
-  TypeScriptTypeFromRowObj<Row>,
+  RowType<Row>,
   {
     tag: 'Product';
     value: { elements: ElementsArrayFromRowObj<Row> };
@@ -1206,7 +1209,7 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
 }
 
 export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
-  TypeScriptTypeFromVariantsObj<Variants>,
+  EnumType<Variants>,
   { tag: 'Sum'; value: { variants: VariantsArrayFromVariantsObj<Variants> } }
 > {
   constructor(variants: Variants, name?: string) {
@@ -1228,11 +1231,58 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
     );
   }
   default(
-    value: TypeScriptTypeFromVariantsObj<Variants>
+    value: EnumType<Variants>
   ): SumColumnBuilder<Variants, Set<DefaultMetadata, 'defaultValue', any>> {
     return new SumColumnBuilder(
       this,
       set(defaultMetadata, { defaultValue: value })
+    );
+  }
+}
+
+export class SimpleSumBuilder<Variants extends SimpleVariantsObj>
+  extends SumBuilder<Variants>
+  implements
+    Indexable<
+      EnumType<Variants>,
+      {
+        tag: 'Sum';
+        value: { variants: VariantsArrayFromVariantsObj<Variants> };
+      }
+    >,
+    PrimaryKeyable<
+      EnumType<Variants>,
+      {
+        tag: 'Sum';
+        value: { variants: VariantsArrayFromVariantsObj<Variants> };
+      }
+    >
+{
+  index(): SimpleSumColumnBuilder<
+    Variants,
+    Set<DefaultMetadata, 'indexType', 'btree'>
+  >;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): SimpleSumColumnBuilder<Variants, Set<DefaultMetadata, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): SimpleSumColumnBuilder<
+    Variants,
+    Set<DefaultMetadata, 'indexType', IndexTypes>
+  > {
+    return new SimpleSumColumnBuilder(
+      this,
+      set(defaultMetadata, { indexType: algorithm })
+    );
+  }
+  primaryKey(): SimpleSumColumnBuilder<
+    Variants,
+    Set<DefaultMetadata, 'isPrimaryKey', true>
+  > {
+    return new SimpleSumColumnBuilder(
+      this,
+      set(defaultMetadata, { isPrimaryKey: true })
     );
   }
 }
@@ -2269,57 +2319,83 @@ export class OptionColumnBuilder<
 
 export class ProductColumnBuilder<
     Elements extends ElementsObj,
-    M extends ColumnMetadata<
-      TypeScriptTypeFromElementsObj<Elements>
-    > = DefaultMetadata,
+    M extends ColumnMetadata<ObjectType<Elements>> = DefaultMetadata,
   >
   extends ColumnBuilder<
-    TypeScriptTypeFromElementsObj<Elements>,
+    ObjectType<Elements>,
     {
       tag: 'Product';
       value: { elements: ElementsArrayFromElementsObj<Elements> };
     },
     M
   >
-  implements
-    Defaultable<
-      TypeScriptTypeFromElementsObj<Elements>,
-      AlgebraicTypeVariants.Product
-    >
+  implements Defaultable<ObjectType<Elements>, AlgebraicTypeVariants.Product>
 {
   default(
-    value: TypeScriptTypeFromElementsObj<Elements>
+    value: ObjectType<Elements>
   ): ProductColumnBuilder<Elements, Set<DefaultMetadata, 'defaultValue', any>> {
     return new ProductColumnBuilder(
       this.typeBuilder,
-      set(defaultMetadata, { defaultValue: value })
+      set(this.columnMetadata, { defaultValue: value })
     );
   }
 }
 
 export class SumColumnBuilder<
     Variants extends VariantsObj,
-    M extends ColumnMetadata<
-      TypeScriptTypeFromVariantsObj<Variants>
-    > = DefaultMetadata,
+    M extends ColumnMetadata<EnumType<Variants>> = DefaultMetadata,
   >
   extends ColumnBuilder<
-    TypeScriptTypeFromVariantsObj<Variants>,
+    EnumType<Variants>,
     { tag: 'Sum'; value: { variants: VariantsArrayFromVariantsObj<Variants> } },
     M
   >
-  implements
-    Defaultable<
-      TypeScriptTypeFromVariantsObj<Variants>,
-      AlgebraicTypeVariants.Sum
-    >
+  implements Defaultable<EnumType<Variants>, AlgebraicTypeVariants.Sum>
 {
   default(
-    value: TypeScriptTypeFromVariantsObj<Variants>
+    value: EnumType<Variants>
   ): SumColumnBuilder<Variants, Set<DefaultMetadata, 'defaultValue', any>> {
     return new SumColumnBuilder(
       this.typeBuilder,
-      set(defaultMetadata, { defaultValue: value })
+      set(this.columnMetadata, { defaultValue: value })
+    );
+  }
+}
+
+export class SimpleSumColumnBuilder<
+    Variants extends VariantsObj,
+    M extends ColumnMetadata<EnumType<Variants>> = DefaultMetadata,
+  >
+  extends SumColumnBuilder<Variants, M>
+  implements
+    Indexable<EnumType<Variants>, AlgebraicTypeVariants.Sum>,
+    PrimaryKeyable<EnumType<Variants>, AlgebraicTypeVariants.Sum>
+{
+  index(): SimpleSumColumnBuilder<
+    Variants,
+    Set<DefaultMetadata, 'indexType', 'btree'>
+  >;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): SimpleSumColumnBuilder<Variants, Set<DefaultMetadata, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): SimpleSumColumnBuilder<
+    Variants,
+    Set<DefaultMetadata, 'indexType', IndexTypes>
+  > {
+    return new SimpleSumColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { indexType: algorithm })
+    );
+  }
+  primaryKey(): SimpleSumColumnBuilder<
+    Variants,
+    Set<DefaultMetadata, 'isPrimaryKey', true>
+  > {
+    return new SimpleSumColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
 }
@@ -2708,16 +2784,31 @@ export const t = {
    * @returns A new {@link SumBuilder} instance.
    */
   enum: ((nameOrObj: any, maybeObj?: any) => {
+    let obj: VariantsObj = nameOrObj;
+    let name: string | undefined = undefined;
     if (typeof nameOrObj === 'string') {
       if (!maybeObj) {
         throw new TypeError(
           'When providing a name, you must also provide the variants object.'
         );
       }
-      return new SumBuilder(maybeObj, nameOrObj);
+      obj = maybeObj;
+      name = nameOrObj;
     }
-    return new SumBuilder(nameOrObj, undefined);
+    if (
+      Object.values(obj).every(x => {
+        const ty: AlgebraicType = x.resolveType();
+        return ty.tag === 'Product' && ty.value.elements.length === 0;
+      })
+    ) {
+      return new SimpleSumBuilder(obj as SimpleVariantsObj, name);
+    }
+    return new SumBuilder(obj, name);
   }) as {
+    <Obj extends SimpleVariantsObj>(
+      name: string,
+      obj: Obj
+    ): SimpleSumBuilder<Obj>;
     <Obj extends VariantsObj>(name: string, obj: Obj): SumBuilder<Obj>;
     // TODO: Currently names are not optional
     // <Obj extends VariantsObj>(obj: Obj): SumBuilder<Obj>;
@@ -2728,8 +2819,7 @@ export const t = {
    *
    * @returns A new {@link ProductBuilder} instance with no fields.
    */
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  unit(): ProductBuilder<{}> {
+  unit(): UnitBuilder {
     return new ProductBuilder({});
   },
 

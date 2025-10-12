@@ -3,4 +3,5 @@ packages:
   - 'crates/bindings-typescript/test-app'
   - 'crates/bindings-typescript/examples/quickstart-chat'
   - 'modules/module-test-ts'
+  - 'modules/sdk-test-ts'
   - 'docs'

@@ -23,6 +23,6 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true
   },
-  "include": ["src/index.ts", "tests/**/*", "vitest.config.ts", "tsup.config.ts"],
+  "include": ["src/index.ts", "tests/**/*"],
   "exclude": ["node_modules", "**/__tests__/*", "dist/**/*"]
 }

@@ -47,4 +47,13 @@ export class TimeDuration {
   static fromMillis(millis: number): TimeDuration {
     return new TimeDuration(BigInt(millis) * TimeDuration.MICROS_PER_MILLIS);
   }
+
+  toString(): string {
+    const micros = this.micros;
+    const sign = micros < 0 ? '-' : '+';
+    const pos = micros < 0 ? -micros : micros;
+    const secs = pos / 1_000_000n;
+    const micros_remaining = pos % 1_000_000n;
+    return `${sign}${secs}.${String(micros_remaining).padStart(6, '0')}`;
+  }
 }
