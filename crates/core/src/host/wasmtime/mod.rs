@@ -7,7 +7,7 @@ use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
 
 use crate::energy::{EnergyQuanta, ReducerBudget};
 use crate::error::NodesError;
-use crate::host::module_host::ModuleRuntime;
+use crate::host::module_host::{Instance, ModuleRuntime};
 use crate::module_host_context::ModuleCreationContext;
 
 mod wasm_instance_env;
@@ -110,7 +110,10 @@ pub type Module = WasmModuleHostActor<WasmtimeModule>;
 pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
 
 impl ModuleRuntime for WasmtimeRuntime {
-    fn make_actor(&self, mcc: ModuleCreationContext) -> anyhow::Result<super::module_host::Module> {
+    fn make_actor(
+        &self,
+        mcc: ModuleCreationContext,
+    ) -> anyhow::Result<(super::module_host::Module, super::module_host::Instance)> {
         let module =
             wasmtime::Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
@@ -128,9 +131,11 @@ impl ModuleRuntime for WasmtimeRuntime {
 
         let module = WasmtimeModule::new(module);
 
-        WasmModuleHostActor::new(mcc, module)
-            .map_err(Into::into)
-            .map(super::module_host::Module::Wasm)
+        let (module, init_inst) = WasmModuleHostActor::new(mcc.into_limited(), module)?;
+        let module = super::module_host::Module::Wasm(module);
+        let init_inst = Instance::Wasm(Box::new(init_inst));
+
+        Ok((module, init_inst))
     }
 }
 

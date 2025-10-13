@@ -108,12 +108,20 @@ pub(in super::super) mod test {
     use core::fmt::Debug;
     use proptest::prelude::*;
     use spacetimedb_sats::proptest::{any_i256, any_u256};
-    use v8::Isolate;
+    use v8::{scope, Context, ContextScope, Isolate};
 
     /// Sets up V8 and runs `logic` with a [`PinScope`].
     pub(in super::super) fn with_scope<R>(logic: impl FnOnce(&mut PinScope<'_, '_>) -> R) -> R {
         V8Runtime::init_for_test();
-        super::super::with_scope(&mut Isolate::new(<_>::default()), logic)
+
+        let mut isolate = Isolate::new(<_>::default());
+        isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
+
+        scope!(let scope, &mut isolate);
+        let context = Context::new(scope, Default::default());
+        let scope = &mut ContextScope::new(scope, context);
+
+        logic(scope)
     }
 
     /// Roundtrips `rust_val` via `ToValue` to the V8 representation

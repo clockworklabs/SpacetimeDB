@@ -318,7 +318,9 @@ impl ReducersMap {
 /// A runtime that can create modules.
 pub trait ModuleRuntime {
     /// Creates a module based on the context `mcc`.
-    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<Module>;
+    ///
+    /// Also returns the initial instance for the module.
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<(Module, Instance)>;
 }
 
 pub enum Module {
@@ -530,7 +532,7 @@ impl CreateInstanceTimeMetric {
 }
 
 impl ModuleInstanceManager {
-    fn new(module: Arc<Module>, database_identity: Identity) -> Self {
+    fn new(module: Arc<Module>, init_inst: Instance, database_identity: Identity) -> Self {
         let host_type = module.host_type();
         let create_instance_time_metric = CreateInstanceTimeMetric {
             metric: WORKER_METRICS
@@ -539,8 +541,13 @@ impl ModuleInstanceManager {
             host_type,
             database_identity,
         };
+
+        // Add the first instance.
+        let mut instances = VecDeque::new();
+        instances.push_front(init_inst);
+
         Self {
-            instances: Default::default(),
+            instances,
             module,
             create_instance_time_metric,
         }
@@ -666,6 +673,7 @@ pub enum ClientConnectedError {
 impl ModuleHost {
     pub(super) fn new(
         module: Module,
+        init_inst: Instance,
         on_panic: impl Fn() + Send + Sync + 'static,
         executor: SingleCoreExecutor,
         database_identity: Identity,
@@ -676,7 +684,8 @@ impl ModuleHost {
 
         let module_clone = module.clone();
 
-        let instance_manager = Arc::new(Mutex::new(ModuleInstanceManager::new(module_clone, database_identity)));
+        let instance_manager = ModuleInstanceManager::new(module_clone, init_inst, database_identity);
+        let instance_manager = Arc::new(Mutex::new(instance_manager));
 
         ModuleHost {
             info,

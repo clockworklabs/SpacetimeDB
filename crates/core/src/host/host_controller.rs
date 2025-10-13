@@ -603,14 +603,14 @@ async fn make_module_host(
         let start = Instant::now();
         let module_host = match host_type {
             HostType::Wasm => {
-                let actor = runtimes.wasmtime.make_actor(mcc)?;
+                let (actor, init_inst) = runtimes.wasmtime.make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister, executor, database_identity)
+                ModuleHost::new(actor, init_inst, unregister, executor, database_identity)
             }
             HostType::Js => {
-                let actor = runtimes.v8.make_actor(mcc)?;
+                let (actor, init_inst) = runtimes.v8.make_actor(mcc)?;
                 trace!("v8::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister, executor, database_identity)
+                ModuleHost::new(actor, init_inst, unregister, executor, database_identity)
             }
         };
         Ok((program, module_host))
