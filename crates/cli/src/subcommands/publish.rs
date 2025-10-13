@@ -395,3 +395,67 @@ async fn call_pre_publish(
     let pre_publish_result: PrePublishResult = res.json_or_error().await?;
     Ok(Some(pre_publish_result))
 }
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_matches;
+    use spacetimedb_lib::Identity;
+
+    use super::*;
+
+    #[test]
+    fn validate_none_arguments_returns_none_values() {
+        assert_matches!(validate_name_and_parent(None, None), Ok((None, None)));
+        assert_matches!(validate_name_and_parent(Some("foo"), None), Ok((Some(_), None)));
+        assert_matches!(validate_name_and_parent(None, Some("foo")), Ok((None, Some(_))));
+    }
+
+    #[test]
+    fn validate_valid_arguments_returns_arguments() {
+        let name = "child";
+        let parent = "parent";
+        let result = (Some(name), Some(parent));
+        assert_matches!(
+            validate_name_and_parent(Some(name), Some(parent)),
+            Ok(val) if val == result
+        );
+    }
+
+    #[test]
+    fn validate_parent_and_path_name_returns_error_unless_parent_equal() {
+        assert_matches!(
+            validate_name_and_parent(Some("parent/child"), Some("parent")),
+            Ok((Some("child"), Some("parent")))
+        );
+        assert_matches!(validate_name_and_parent(Some("parent/child"), Some("cousin")), Err(_));
+    }
+
+    #[test]
+    fn validate_more_than_two_path_segments_are_an_error() {
+        assert_matches!(validate_name_and_parent(Some("proc/net/tcp"), None), Err(_));
+        assert_matches!(validate_name_and_parent(Some("proc//net"), None), Err(_));
+    }
+
+    #[test]
+    fn validate_trailing_slash_is_an_error() {
+        assert_matches!(validate_name_and_parent(Some("foo//"), None), Err(_));
+        assert_matches!(validate_name_and_parent(Some("foo/bar/"), None), Err(_));
+    }
+
+    #[test]
+    fn validate_parent_cant_have_slash() {
+        assert_matches!(validate_name_and_parent(Some("child"), Some("par/ent")), Err(_));
+        assert_matches!(validate_name_and_parent(Some("child"), Some("parent/")), Err(_));
+    }
+
+    #[test]
+    fn validate_name_or_parent_can_be_identities() {
+        let parent = Identity::ZERO.to_string();
+        let child = Identity::ONE.to_string();
+
+        assert_matches!(
+            validate_name_and_parent(Some(&child), Some(&parent)),
+            Ok(res) if res == (Some(&child), Some(&parent))
+        );
+    }
+}

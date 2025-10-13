@@ -1,5 +1,4 @@
 from .. import Smoketest, random_string
-import unittest
 import json
 
 class Domains(Smoketest):
@@ -26,13 +25,11 @@ class Domains(Smoketest):
         with self.assertRaises(Exception):
             self.spacetime("logs", orig_name)
 
-    @unittest.expectedFailure
     def test_subdomain_behavior(self):
         """Test how we treat the / character in published names"""
 
         root_name = random_string()
         self.publish_module(root_name)
-        id_to_rename = self.database_identity
 
         self.publish_module(f"{root_name}/test")
 
