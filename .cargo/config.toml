@@ -3,3 +3,4 @@ rustflags = ["--cfg", "tokio_unstable"]
 
 [alias]
 bump-versions = "run -p upgrade-version --"
+ci = "run -p ci --"

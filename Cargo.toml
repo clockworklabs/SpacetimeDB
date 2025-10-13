@@ -46,6 +46,7 @@ members = [
   "sdks/rust/tests/test-client",
   "sdks/rust/tests/test-counter",
   "sdks/rust/tests/connect_disconnect_client",
+  "tools/ci",
   "tools/upgrade-version",
   "tools/license-check",
   "crates/bindings-typescript/test-app/server",

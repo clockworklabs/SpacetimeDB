@@ -21,7 +21,7 @@ jobs:
         include:
           - { runner: spacetimedb-runner, smoketest_args: --docker }
           - { runner: windows-latest, smoketest_args: --no-build-cli }
-        runner: [ spacetimedb-runner, windows-latest ]
+        runner: [spacetimedb-runner, windows-latest]
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Find Git ref
@@ -76,8 +76,8 @@ jobs:
       - name: Install psycopg2
         run: python -m pip install psycopg2-binary
       - name: Run smoketests
-        # Note: clear_database and replication only work in private
-        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication
+        run: cargo ci smoketests -- ${{ matrix.smoketest_args }}
+
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose down
@@ -109,26 +109,9 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Create /stdb dir
-        run: |
-          sudo mkdir /stdb
-          sudo chmod 777 /stdb
-
       - name: Run cargo test
         #Note: Unreal tests will be run separately
-        run: cargo test --all -- --skip unreal
-
-      - name: Check that the test outputs are up-to-date
-        run: bash tools/check-diff.sh
-
-      - name: Ensure C# autogen bindings are up-to-date
-        run: |
-          cargo run -p spacetimedb-codegen --example regen-csharp-moduledef
-          bash tools/check-diff.sh crates/bindings-csharp
-
-      - name: C# bindings tests
-        working-directory: crates/bindings-csharp
-        run: dotnet test -warnaserror
+        run: cargo ci test
 
   lints:
     name: Lints
@@ -145,29 +128,7 @@ jobs:
           global-json-file: global.json
 
       - name: Run cargo fmt
-        run: cargo fmt --all -- --check
-
-      - name: Run cargo clippy
-        run: cargo clippy --all --tests --benches -- -D warnings
-
-      - name: Run C# formatting check
-        working-directory: crates/bindings-csharp
-        run: |
-          dotnet tool restore
-          dotnet csharpier --check .
-
-      - name: Run `cargo doc` for bindings crate
-        # `bindings` is the only crate we care strongly about documenting,
-        # since we link to its docs.rs from our website.
-        # We won't pass `--no-deps`, though,
-        # since we want everything reachable through it to also work.
-        # This includes `sats` and `lib`.
-        working-directory: crates/bindings
-        env:
-          # Make `cargo doc` exit with error on warnings, most notably broken links
-          RUSTDOCFLAGS: '--deny warnings'
-        run: |
-          cargo doc
+        run: cargo ci lint
 
   wasm_bindings:
     name: Build and test wasm bindings
@@ -179,20 +140,7 @@ jobs:
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
       - name: Run bindgen tests
-        run: cargo test -p spacetimedb-codegen
-
-      # Make sure the `Cargo.lock` file reflects the latest available versions.
-      # This is what users would end up with on a fresh module, so we want to
-      # catch any compile errors arising from a different transitive closure
-      # of dependencies than what is in the workspace lock file.
-      #
-      # For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
-      - name: Update dependencies
-        run: cargo update
-
-      - name: Build module-test
-        run: cargo run -p spacetimedb-cli -- build --project-path modules/module-test
-
+        run: cargo ci wasm-bindings
 
   publish_checks:
     name: Check that packages are publishable
@@ -245,19 +193,9 @@ jobs:
         run: sudo apt install -y libssl-dev
 
       - name: Build spacetimedb-update
-        run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
-
-      - name: Run self-install
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          ROOT_DIR="$(mktemp -d)"
-          # NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
-          # My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
-          # happens very frequently on the `macos-runner`, but we haven't seen it on any others).
-          cargo run --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
-          "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
+        run: cargo ci update-flow --target=${{ matrix.target }}
 
   unreal_engine_tests:
     name: Unreal Engine Tests
@@ -296,6 +234,15 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Install unreal engine test dependencies
+        working-directory: sdks/unreal
+        env:
+          UE_ROOT_PATH: /home/ue4/UnrealEngine
+        run: |
+
+          apt-get update
+          apt-get install -y acl curl ca-certificates
+
       - name: Run Unreal Engine tests
         working-directory: sdks/unreal
         env:
