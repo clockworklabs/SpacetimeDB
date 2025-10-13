@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Provides budget, energy, timeout, and long-running logging facilities.
 //!
 //! These are all driven by [`with_timeout_and_cb_every`] for V8 modules
@@ -61,7 +63,6 @@ pub(super) extern "C" fn cb_noop(_: &mut Isolate, _: *mut c_void) {}
 /// when `budget` has been used up.
 ///
 /// Every `callback_every` ticks, `callback` is called.
-#[allow(dead_code)]
 fn run_timeout_and_cb_every(
     handle: IsolateHandle,
     callback_every: u64,
