@@ -109,10 +109,23 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
       - name: Create /stdb dir
         run: |
           sudo mkdir /stdb
           sudo chmod 777 /stdb
+
+      - name: Build typescript module sdk
+        working-directory: crates/bindings-typescript
+        run: pnpm build
 
       - name: Run cargo test
         #Note: Unreal tests will be run separately
