@@ -196,7 +196,7 @@ async fn fill_log(path: PathBuf) {
         let clog = Commitlog::open(CommitLogDir::from_path_unchecked(path), default_options()).unwrap();
         let payload = random_payload::gen_payload();
         for _ in 0..100 {
-            clog.append_maybe_flush(payload).unwrap();
+            clog.append_maybe_flush(payload, None).unwrap();
         }
         clog.flush_and_sync().unwrap();
     })

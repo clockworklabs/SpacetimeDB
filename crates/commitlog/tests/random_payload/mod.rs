@@ -25,7 +25,7 @@ fn smoke() {
     let n_txs = 500;
     let payload = gen_payload();
     for _ in 0..n_txs {
-        clog.append_maybe_flush(payload).unwrap();
+        clog.append_maybe_flush(payload, None).unwrap();
     }
     let committed_offset = clog.flush_and_sync().unwrap();
 
@@ -53,7 +53,7 @@ fn resets() {
 
     let payload = gen_payload();
     for _ in 0..50 {
-        clog.append_maybe_flush(payload).unwrap();
+        clog.append_maybe_flush(payload, None).unwrap();
     }
     clog.flush_and_sync().unwrap();
 
@@ -92,7 +92,7 @@ fn compression() {
     // random data doesn't compress well, so try and have there be repetition
     let payloads = (0..4).map(|_| gen_payload()).cycle().take(1024).collect::<Vec<_>>();
     for payload in &payloads {
-        clog.append_maybe_flush(*payload).unwrap();
+        clog.append_maybe_flush(*payload, None).unwrap();
     }
     clog.flush_and_sync().unwrap();
 
