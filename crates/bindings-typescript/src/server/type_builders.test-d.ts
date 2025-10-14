@@ -29,6 +29,20 @@ const _row: Row = {
   idx: 100n,
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const rowOptionOptional = {
+  foo: t.string().optional().optional(),
+};
+type RowOptionOptional = InferTypeOfRow<typeof rowOptionOptional>;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _rowOptionOptionalNone: RowOptionOptional = {
+  foo: undefined,
+};
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _rowOptionOptionalSome: RowOptionOptional = {
+  foo: 'hello',
+};
+
 // Test that a row must not allow non-TypeBuilder or ColumnBuilder values
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const row2 = {
