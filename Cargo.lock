@@ -6142,6 +6142,7 @@ name = "spacetimedb-durability"
 version = "1.5.0"
 dependencies = [
  "anyhow",
+ "futures",
  "itertools 0.12.1",
  "log",
  "spacetimedb-commitlog",

@@ -12,6 +12,7 @@ test = []
 
 [dependencies]
 anyhow.workspace = true
+futures.workspace = true
 itertools.workspace = true
 log.workspace = true
 spacetimedb-commitlog.workspace = true

@@ -9,7 +9,7 @@ description = "Implementation of the SpacetimeDB commitlog."
 
 [features]
 default = ["serde"]
-streaming = ["dep:async-stream", "dep:bytes", "dep:futures", "dep:tokio", "dep:tokio-util"]
+streaming = ["dep:async-stream", "dep:bytes", "dep:tokio", "dep:tokio-util"]
 # Enable types + impls useful for testing
 test = ["dep:env_logger"]
 
@@ -18,7 +18,7 @@ async-stream = { workspace = true, optional = true }
 bitflags.workspace = true
 bytes= { workspace = true, optional = true }
 crc32c.workspace = true
-futures = { workspace = true, optional = true}
+futures.workspace = true
 itertools.workspace = true
 log.workspace = true
 memmap2 = "0.9.4"

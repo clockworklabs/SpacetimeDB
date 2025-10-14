@@ -5,6 +5,7 @@ use std::{
     sync::RwLock,
 };
 
+use futures::channel::mpsc;
 use log::trace;
 use repo::Repo;
 use spacetimedb_paths::server::CommitLogDir;
@@ -390,19 +391,35 @@ impl<T: Encode> Commitlog<T> {
     /// I.e. the argument is not guaranteed to be flushed after the method
     /// returns. If that is desired, [`Self::flush`] must be called explicitly.
     ///
+    /// If writing `txdata` to the commitlog results in a new segment file being opened,
+    /// we will send a message down `on_new_segment`.
+    /// This will be hooked up to the `request_snapshot` channel of a `SnapshotWorker`.
+    ///
     /// # Errors
     ///
     /// If the log needs to be flushed, but an I/O error occurs, ownership of
     /// `txdata` is returned back to the caller alongside the [`io::Error`].
     ///
     /// The value can then be used to retry appending.
-    pub fn append_maybe_flush(&self, txdata: T) -> Result<(), error::Append<T>> {
+    pub fn append_maybe_flush(
+        &self,
+        txdata: T,
+        on_new_segment: Option<&mpsc::UnboundedSender<()>>,
+    ) -> Result<(), error::Append<T>> {
         let mut inner = self.inner.write().unwrap();
 
         if let Err(txdata) = inner.append(txdata) {
             if let Err(source) = inner.commit() {
                 return Err(error::Append { txdata, source });
             }
+
+            // We've moved to a new segment, so send on that channel to take a snapshot.
+            if let Some(on_new_segment) = on_new_segment {
+                // No need to handle the error here: if the snapshot worker is closed we'll eventually close too,
+                // and we don't want to die prematurely if there are still TXes to write.
+                let _ = on_new_segment.unbounded_send(());
+            }
+
             // `inner.commit.n` must be zero at this point
             let res = inner.append(txdata);
             debug_assert!(res.is_ok(), "failed to append while holding write lock");
