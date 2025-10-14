@@ -69,4 +69,8 @@ export class Identity {
   static zero(): Identity {
     return new Identity(0n);
   }
+
+  toString(): string {
+    return this.toHexString();
+  }
 }
