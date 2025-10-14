@@ -38,7 +38,8 @@ git push -u origin a-branch-name-that-describes-my-change
 
 #### CLI Reference Section
 1. Run `cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md`
-2. Run `pnpm format`
+2. Run `pnpm install`
+3. Run `pnpm format`
 
 ### Checking Links
 
