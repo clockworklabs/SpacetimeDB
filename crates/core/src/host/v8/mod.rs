@@ -26,7 +26,7 @@ use core::{ptr, str};
 use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
@@ -415,7 +415,7 @@ fn eval_module<'scope>(
     script_id: i32,
     code: &str,
     resolve_deps: impl MapFnTo<ResolveModuleCallback<'scope>>,
-) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, Value>)> {
+) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
     // Get the source map, if any.
     let source_map_url = find_source_map(code)
         .map(|sm| sm.into_string(scope))
@@ -454,6 +454,20 @@ fn eval_module<'scope>(
     // Evaluate the module.
     let value = module.evaluate(scope).ok_or_else(exception_already_thrown)?;
 
+    if module.get_status() == v8::ModuleStatus::Errored {
+        // If there's an exception while evaluating the code of the module, `evaluate()` won't
+        // throw, but instead the status will be `Errored` and the exception can be obtained from
+        // `get_exception()`.
+        return Err(error::ExceptionValue(module.get_exception()).throw(scope));
+    }
+
+    let value = value.cast::<v8::Promise>();
+    if value.state() == v8::PromiseState::Pending {
+        // If the user were to put top-level `await new Promise((resolve) => { /* do nothing */ })`
+        // the module value would never actually resolve. For now, reject this entirely.
+        return Err(error::TypeError("module has top-level await and is pending").throw(scope));
+    }
+
     Ok((module, value))
 }
 
@@ -461,7 +475,7 @@ fn eval_module<'scope>(
 fn eval_user_module<'scope>(
     scope: &PinScope<'scope, '_>,
     code: &str,
-) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, Value>)> {
+) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
     let name = str_from_ident!(spacetimedb_module).string(scope).into();
     eval_module(scope, name, 0, code, resolve_sys_module)
 }
@@ -614,7 +628,7 @@ fn call_call_reducer<'scope>(
     let sender = serialize_to_js(scope, &sender.to_u256())?;
     let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
     let timestamp = serialize_to_js(scope, &timestamp)?;
-    let reducer_args = serialize_to_js(scope, &reducer_args.tuple.elements)?;
+    let reducer_args = serialize_to_js(scope, reducer_args.get_bsatn())?;
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     // Get the function on the global proxy object and convert to a function.
@@ -677,8 +691,16 @@ fn call_describe_module<'scope>(
     let raw_mod_js = call_free_fun(scope, fun, &[])?;
 
     // Deserialize the raw module.
-    let raw_mod: RawModuleDef = deserialize_js(scope, raw_mod_js)?;
-    Ok(raw_mod)
+    let raw_mod = cast!(
+        scope,
+        raw_mod_js,
+        v8::Uint8Array,
+        "bytes return from __describe_module__"
+    )
+    .map_err(|e| e.throw(scope))?;
+
+    let bytes = raw_mod.get_contents(&mut []);
+    bsatn::from_slice::<RawModuleDef>(bytes).map_err(|_e| error::TypeError("invalid bsatn module def").throw(scope))
 }
 
 #[cfg(test)]
@@ -779,19 +801,7 @@ js error Uncaught Error: foobar
     fn call_describe_module_works() {
         let code = r#"
             function __describe_module__() {
-                return {
-                    "tag": "V9",
-                    "value": {
-                        "typespace": {
-                            "types": [],
-                        },
-                        "tables": [],
-                        "reducers": [],
-                        "types": [],
-                        "misc_exports": [],
-                        "row_level_security": [],
-                    },
-                };
+                return new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
             }
         "#;
         let raw_mod = with_script_catch(code, call_describe_module).map_err(|e| e.to_string());
