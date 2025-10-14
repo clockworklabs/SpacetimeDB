@@ -3,9 +3,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { type RowObj, schema, t, table } from 'spacetimedb/server';
 
-// TODO: Remove
-export { __call_reducer__, __describe_module__ } from 'spacetimedb/server';
-
 const SimpleEnum = t.enum('SimpleEnum', {
   Zero: t.unit(),
   One: t.unit(),
