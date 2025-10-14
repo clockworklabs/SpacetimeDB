@@ -587,8 +587,7 @@ fn call_free_fun<'scope>(
 
 /// Calls the `__call_reducer__` hook, if it's been registered.
 fn call_call_reducer_from_op<'scope>(scope: &mut PinScope<'scope, '_>, op: ReducerOp<'_>) -> ExcResult<ReducerResult> {
-    syscall::call_call_reducer(scope, op)?
-        .ok_or_else(|| error::TypeError("__call_reducer__ was never registered").throw(scope))
+    syscall::call_call_reducer(scope, op)
 }
 
 /// Extracts the raw module def by running `__describe_module__` in `program`.
@@ -621,8 +620,7 @@ fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
 
 /// Calls the `__describe_module__` hook, if it's been registered.
 fn call_describe_module<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<RawModuleDef> {
-    syscall::call_describe_module(scope)?
-        .ok_or_else(|| error::TypeError("__describe_module__ was never registered").throw(scope))
+    syscall::call_describe_module(scope)
 }
 
 #[cfg(test)]

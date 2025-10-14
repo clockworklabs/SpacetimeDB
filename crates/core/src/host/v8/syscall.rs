@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use super::de::{deserialize_js, scratch_buf};
 use super::error::{module_exception, ExcResult, ExceptionThrown, TypeError};
 use super::from_value::cast;
@@ -268,29 +270,39 @@ fn with_span<'scope, R>(
 /// Returns nothing.
 fn register_hooks<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
     let hooks = super::cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
-    scope.get_current_context().set_embedder_data(HOOKS_SLOT, hooks.into());
+    let ctx = scope.get_current_context();
+    ctx.set_embedder_data(HOOKS_SLOT, hooks.into());
+    ctx.set_slot(Rc::new(AbiVersion::V1));
     Ok(v8::undefined(scope).into())
 }
 
-/// The `v8::Context::{get,set}_embedder_data` slot that holds the `spacetime:sys@1.x`
-/// hooks object.
+/// The `v8::Context::{get,set}_embedder_data` slot that holds the hooks object.
 const HOOKS_SLOT: i32 = 20;
 
-fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> Option<Local<'scope, Object>> {
-    scope
-        .get_current_context()
+#[derive(Copy, Clone)]
+enum AbiVersion {
+    V1,
+}
+
+fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<(AbiVersion, Local<'scope, Object>)> {
+    let ctx = scope.get_current_context();
+    let abi_version = *ctx
+        .get_slot::<AbiVersion>()
+        .ok_or_else(|| TypeError("module hooks were never registered").throw(scope))?;
+
+    let hooks = ctx
         .get_embedder_data(scope, HOOKS_SLOT)
-        .and_then(|val| val.try_cast().ok())
+        .expect("if AbiVersion is set hooks must be set");
+    Ok((abi_version, hooks.cast()))
 }
 
 /// Calls the `__call_reducer__` hook, if it's been registered.
 pub(super) fn call_call_reducer<'scope>(
     scope: &mut PinScope<'scope, '_>,
     op: ReducerOp<'_>,
-) -> ExcResult<Option<ReducerResult>> {
-    let Some(hooks_obj) = get_hooks(scope) else {
-        return Ok(None);
-    };
+) -> ExcResult<ReducerResult> {
+    let (abi_ver, hooks_obj) = get_hooks(scope)?;
+    let AbiVersion::V1 = abi_ver;
 
     let ReducerOp {
         id: ReducerId(reducer_id),
@@ -319,14 +331,13 @@ pub(super) fn call_call_reducer<'scope>(
     // Deserialize the user result.
     let user_res = deserialize_js(scope, ret)?;
 
-    Ok(Some(user_res))
+    Ok(user_res)
 }
 
 /// Calls the `__describe_module__` hook, if it's been registered.
-pub(super) fn call_describe_module<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<Option<RawModuleDef>> {
-    let Some(hooks_obj) = get_hooks(scope) else {
-        return Ok(None);
-    };
+pub(super) fn call_describe_module<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<RawModuleDef> {
+    let (abi_ver, hooks_obj) = get_hooks(scope)?;
+    let AbiVersion::V1 = abi_ver;
 
     // Get the function on `object` and convert to a function.
     let describe_module_key = str_from_ident!(__describe_module__).string(scope);
@@ -349,7 +360,7 @@ pub(super) fn call_describe_module<'scope>(scope: &mut PinScope<'scope, '_>) -> 
     let bytes = raw_mod.get_contents(&mut []);
     let module =
         bsatn::from_slice::<RawModuleDef>(bytes).map_err(|_e| TypeError("invalid bsatn module def").throw(scope))?;
-    Ok(Some(module))
+    Ok(module)
 }
 
 /// Module ABI that finds the `TableId` for a table name.
