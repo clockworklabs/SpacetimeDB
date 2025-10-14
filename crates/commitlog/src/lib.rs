@@ -158,8 +158,12 @@ impl<T> Commitlog<T> {
     /// This is only necessary when opening the commitlog for writing. See the
     /// free-standing functions in this module for how to traverse a read-only
     /// commitlog.
-    pub fn open(root: CommitLogDir, opts: Options) -> io::Result<Self> {
-        let inner = commitlog::Generic::open(repo::Fs::new(root)?, opts)?;
+    pub fn open(
+        root: CommitLogDir,
+        opts: Options,
+        on_new_segment: Option<mpsc::UnboundedSender<()>>,
+    ) -> io::Result<Self> {
+        let inner = commitlog::Generic::open(repo::Fs::new(root, on_new_segment)?, opts)?;
 
         Ok(Self {
             inner: RwLock::new(inner),
@@ -401,23 +405,12 @@ impl<T: Encode> Commitlog<T> {
     /// `txdata` is returned back to the caller alongside the [`io::Error`].
     ///
     /// The value can then be used to retry appending.
-    pub fn append_maybe_flush(
-        &self,
-        txdata: T,
-        on_new_segment: Option<&mpsc::UnboundedSender<()>>,
-    ) -> Result<(), error::Append<T>> {
+    pub fn append_maybe_flush(&self, txdata: T) -> Result<(), error::Append<T>> {
         let mut inner = self.inner.write().unwrap();
 
         if let Err(txdata) = inner.append(txdata) {
             if let Err(source) = inner.commit() {
                 return Err(error::Append { txdata, source });
-            }
-
-            // We've moved to a new segment, so send on that channel to take a snapshot.
-            if let Some(on_new_segment) = on_new_segment {
-                // No need to handle the error here: if the snapshot worker is closed we'll eventually close too,
-                // and we don't want to die prematurely if there are still TXes to write.
-                let _ = on_new_segment.unbounded_send(());
             }
 
             // `inner.commit.n` must be zero at this point
@@ -543,7 +536,7 @@ impl<T: Encode> Commitlog<T> {
 ///
 /// Unlike `open`, no segment will be created in an empty `repo`.
 pub fn committed_meta(root: CommitLogDir) -> Result<Option<segment::Metadata>, error::SegmentMetadata> {
-    commitlog::committed_meta(repo::Fs::new(root)?)
+    commitlog::committed_meta(repo::Fs::new(root, None)?)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`
@@ -564,7 +557,7 @@ pub fn commits_from(
     root: CommitLogDir,
     offset: u64,
 ) -> io::Result<impl Iterator<Item = Result<StoredCommit, error::Traversal>>> {
-    commitlog::commits_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset)
+    commitlog::commits_from(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, offset)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`
@@ -599,7 +592,7 @@ where
     D::Error: From<error::Traversal>,
     T: 'a,
 {
-    commitlog::transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::transactions_from(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
 }
 
 /// Traverse the commitlog located at the `root` directory from the start and
@@ -625,7 +618,7 @@ where
     D: Decoder,
     D::Error: From<error::Traversal> + From<io::Error>,
 {
-    commitlog::fold_transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::fold_transactions_from(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
 }
 
 pub fn fold_transaction_range<D>(root: CommitLogDir, range: impl RangeBounds<u64>, de: D) -> Result<(), D::Error>
@@ -633,5 +626,5 @@ where
     D: Decoder,
     D::Error: From<error::Traversal> + From<io::Error>,
 {
-    commitlog::fold_transaction_range(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, range, de)
+    commitlog::fold_transaction_range(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, range, de)
 }

@@ -3003,7 +3003,8 @@ mod tests {
             row_ty,
         }));
         {
-            let clog = Commitlog::<()>::open(dir.commit_log(), Default::default()).expect("failed to open commitlog");
+            let clog =
+                Commitlog::<()>::open(dir.commit_log(), Default::default(), None).expect("failed to open commitlog");
             let decoder = Decoder(Rc::clone(&inputs));
             clog.fold_transactions(decoder).unwrap();
         }

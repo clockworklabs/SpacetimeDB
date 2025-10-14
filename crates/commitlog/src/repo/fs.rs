@@ -1,6 +1,7 @@
 use std::fs::{self, File};
 use std::io;
 
+use futures::channel::mpsc;
 use log::{debug, warn};
 use spacetimedb_fs_utils::compression::{compress_with_zstd, CompressReader};
 use spacetimedb_paths::server::{CommitLogDir, SegmentFile};
@@ -29,15 +30,21 @@ const SEGMENT_FILE_EXT: &str = ".stdb.log";
 pub struct Fs {
     /// The base directory within which segment files will be stored.
     root: CommitLogDir,
+
+    /// Channel through which to send a message whenever we create a new segment.
+    ///
+    /// The other end of this channel will be a `SnapshotWorker`,
+    /// which will capture a snapshot each time we rotate segments.
+    on_new_segment: Option<mpsc::UnboundedSender<()>>,
 }
 
 impl Fs {
     /// Create a commitlog repository which stores segments in the directory `root`.
     ///
     /// `root` must name an extant, accessible, writeable directory.
-    pub fn new(root: CommitLogDir) -> io::Result<Self> {
+    pub fn new(root: CommitLogDir, on_new_segment: Option<mpsc::UnboundedSender<()>>) -> io::Result<Self> {
         root.create()?;
-        Ok(Self { root })
+        Ok(Self { root, on_new_segment })
     }
 
     /// Get the filename for a segment starting with `offset` within this
@@ -94,6 +101,14 @@ impl Repo for Fs {
                 }
 
                 Err(e)
+            })
+            .inspect(|_| {
+                // We're rotating commitlog segments, so we should also take a snapshot at the earliest opportunity.
+                if let Some(on_new_segment) = self.on_new_segment.as_ref() {
+                    // No need to handle the error here: if the snapshot worker is closed we'll eventually close too,
+                    // and we don't want to die prematurely if there are still TXes to write.
+                    let _ = on_new_segment.unbounded_send(());
+                }
             })
     }
 

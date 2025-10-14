@@ -92,7 +92,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     ) -> io::Result<Self> {
         info!("open local durability");
 
-        let clog = Arc::new(Commitlog::open(root, opts.commitlog)?);
+        let clog = Arc::new(Commitlog::open(root, opts.commitlog, on_new_segment)?);
         let (queue, rx) = mpsc::unbounded_channel();
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
@@ -104,7 +104,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
                 queue_depth: queue_depth.clone(),
                 max_records_in_commit: opts.commitlog.max_records_in_commit,
             }
-            .run(on_new_segment),
+            .run(),
         );
         rt.spawn(
             FlushAndSyncTask {
@@ -180,7 +180,7 @@ struct PersisterTask<T> {
 
 impl<T: Encode + Send + Sync + 'static> PersisterTask<T> {
     #[instrument(name = "durability::local::persister_task", skip_all)]
-    async fn run(mut self, on_new_segment: Option<futures::channel::mpsc::UnboundedSender<()>>) {
+    async fn run(mut self) {
         info!("starting persister task");
 
         while let Some(txdata) = self.rx.recv().await {
@@ -193,9 +193,9 @@ impl<T: Encode + Send + Sync + 'static> PersisterTask<T> {
             // Otherwise, try `Commitlog::append` as a fast-path which doesn't
             // require `spawn_blocking`.
             if self.max_records_in_commit.get() == 1 {
-                self.flush_append(txdata, true, on_new_segment.clone()).await;
+                self.flush_append(txdata, true).await;
             } else if let Err(retry) = self.clog.append(txdata) {
-                self.flush_append(retry, false, on_new_segment.clone()).await
+                self.flush_append(retry, false).await
             }
 
             trace!("appended txdata");
@@ -205,18 +205,12 @@ impl<T: Encode + Send + Sync + 'static> PersisterTask<T> {
     }
 
     #[instrument(skip_all)]
-    async fn flush_append(
-        &self,
-        txdata: Txdata<T>,
-        flush_after: bool,
-        on_new_segment: Option<futures::channel::mpsc::UnboundedSender<()>>,
-    ) {
+    async fn flush_append(&self, txdata: Txdata<T>, flush_after: bool) {
         let clog = self.clog.clone();
         let task = spawn_blocking(move || {
             let mut retry = Some(txdata);
             while let Some(txdata) = retry.take() {
-                if let Err(error::Append { txdata, source }) = clog.append_maybe_flush(txdata, on_new_segment.as_ref())
-                {
+                if let Err(error::Append { txdata, source }) = clog.append_maybe_flush(txdata) {
                     flush_error(source);
                     retry = Some(txdata);
                 }
