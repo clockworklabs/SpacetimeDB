@@ -15,7 +15,7 @@ struct TESTCLIENT_API FIndexedTable2Type
     uint32 PlayerId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    float PlayerSnazz = 0.f;
+    float PlayerSnazz = 0.0f;
 
     FORCEINLINE bool operator==(const FIndexedTable2Type& Other) const
     {
