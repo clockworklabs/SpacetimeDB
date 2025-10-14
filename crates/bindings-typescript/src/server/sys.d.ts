@@ -6,6 +6,20 @@ declare module 'spacetime:sys@1.0' {
   export type u128 = bigint;
   export type u256 = bigint;
 
+  export type ModuleHooks = {
+    __describe_module__(): Uint8Array;
+
+    __call_reducer__(
+      reducerId: u32,
+      sender: u256,
+      connId: u128,
+      timestamp: bigint,
+      argsBuf: Uint8Array
+    ): { tag: 'ok' } | { tag: 'err'; value: string };
+  };
+
+  export function register_hooks(hooks: ModuleHooks);
+
   export function table_id_from_name(name: string): u32;
   export function index_id_from_name(name: string): u32;
   export function datastore_table_row_count(table_id: u32): u64;

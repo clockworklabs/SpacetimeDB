@@ -20,7 +20,7 @@ import { type DbView, type ReducerCtx, REDUCERS } from './reducers';
 import { MODULE_DEF } from './schema';
 
 import * as _syscalls from 'spacetime:sys@1.0';
-import type { u16, u32, u128, u256 } from 'spacetime:sys@1.0';
+import type { u16, u32, ModuleHooks } from 'spacetime:sys@1.0';
 
 const { freeze } = Object;
 
@@ -33,35 +33,32 @@ const sys: typeof _syscalls = freeze(
   ) as typeof _syscalls
 );
 
-export function __call_reducer__(
-  reducerId: u32,
-  sender: u256,
-  connId: u128,
-  timestamp: bigint,
-  argsBuf: Uint8Array
-): { tag: 'ok' } | { tag: 'err'; value: string } {
-  const argsType = AlgebraicType.Product(MODULE_DEF.reducers[reducerId].params);
-  const args = AlgebraicType.deserializeValue(
-    new BinaryReader(argsBuf),
-    argsType
-  );
-  const ctx: ReducerCtx<any> = freeze({
-    sender: new Identity(sender),
-    get identity() {
-      return new Identity(sys.identity().__identity__);
-    },
-    timestamp: new Timestamp(timestamp),
-    connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
-    db: getDbView(),
-  });
-  return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
-}
-
-export function __describe_module__(): Uint8Array {
-  const writer = new BinaryWriter(128);
-  RawModuleDef.serialize(writer, RawModuleDef.V9(MODULE_DEF));
-  return writer.getBuffer();
-}
+export const hooks: ModuleHooks = {
+  __describe_module__() {
+    const writer = new BinaryWriter(128);
+    RawModuleDef.serialize(writer, RawModuleDef.V9(MODULE_DEF));
+    return writer.getBuffer();
+  },
+  __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
+    const argsType = AlgebraicType.Product(
+      MODULE_DEF.reducers[reducerId].params
+    );
+    const args = AlgebraicType.deserializeValue(
+      new BinaryReader(argsBuf),
+      argsType
+    );
+    const ctx: ReducerCtx<any> = freeze({
+      sender: new Identity(sender),
+      get identity() {
+        return new Identity(sys.identity().__identity__);
+      },
+      timestamp: new Timestamp(timestamp),
+      connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
+      db: getDbView(),
+    });
+    return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
+  },
+};
 
 let DB_VIEW: DbView<any> | null = null;
 function getDbView() {

@@ -3,9 +3,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { schema, t, table } from 'spacetimedb/server';
 
-// TODO: Remove
-export { __call_reducer__, __describe_module__ } from 'spacetimedb/server';
-
 const Connected = table(
   { name: 'connected', public: true },
   { identity: t.identity() }
