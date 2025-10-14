@@ -82,7 +82,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     ///
     /// Background tasks are spawned onto the provided tokio runtime.
     ///
-    /// The `on_new_segment` callback will be invoked whenever we begin a new commitlog segment.
+    /// We will send a message down the `on_new_segment` channel whenever we begin a new commitlog segment.
     /// This is used to capture a snapshot each new segment.
     pub fn open(
         root: CommitLogDir,
