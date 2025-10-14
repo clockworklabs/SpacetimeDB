@@ -2,12 +2,11 @@ use std::{
     io,
     num::{NonZeroU16, NonZeroU64},
     ops::RangeBounds,
-    sync::RwLock,
+    sync::{Arc, RwLock},
 };
 
-use futures::channel::mpsc;
 use log::trace;
-use repo::Repo;
+use repo::{fs::OnNewSegmentFn, Repo};
 use spacetimedb_paths::server::CommitLogDir;
 
 pub mod commit;
@@ -158,11 +157,7 @@ impl<T> Commitlog<T> {
     /// This is only necessary when opening the commitlog for writing. See the
     /// free-standing functions in this module for how to traverse a read-only
     /// commitlog.
-    pub fn open(
-        root: CommitLogDir,
-        opts: Options,
-        on_new_segment: Option<mpsc::UnboundedSender<()>>,
-    ) -> io::Result<Self> {
+    pub fn open(root: CommitLogDir, opts: Options, on_new_segment: Option<Arc<OnNewSegmentFn>>) -> io::Result<Self> {
         let inner = commitlog::Generic::open(repo::Fs::new(root, on_new_segment)?, opts)?;
 
         Ok(Self {

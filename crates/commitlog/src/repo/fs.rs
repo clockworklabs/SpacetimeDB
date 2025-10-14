@@ -1,7 +1,7 @@
 use std::fs::{self, File};
 use std::io;
+use std::sync::Arc;
 
-use futures::channel::mpsc;
 use log::{debug, warn};
 use spacetimedb_fs_utils::compression::{compress_with_zstd, CompressReader};
 use spacetimedb_paths::server::{CommitLogDir, SegmentFile};
@@ -24,9 +24,11 @@ const SEGMENT_FILE_EXT: &str = ".stdb.log";
 // - io_uring
 //
 
+pub type OnNewSegmentFn = dyn Fn() + Send + Sync + 'static;
+
 /// A commitlog repository [`Repo`] which stores commits in ordinary files on
 /// disk.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Fs {
     /// The base directory within which segment files will be stored.
     root: CommitLogDir,
@@ -35,14 +37,20 @@ pub struct Fs {
     ///
     /// The other end of this channel will be a `SnapshotWorker`,
     /// which will capture a snapshot each time we rotate segments.
-    on_new_segment: Option<mpsc::UnboundedSender<()>>,
+    on_new_segment: Option<Arc<OnNewSegmentFn>>,
+}
+
+impl std::fmt::Debug for Fs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Fs").field("root", &self.root).finish_non_exhaustive()
+    }
 }
 
 impl Fs {
     /// Create a commitlog repository which stores segments in the directory `root`.
     ///
     /// `root` must name an extant, accessible, writeable directory.
-    pub fn new(root: CommitLogDir, on_new_segment: Option<mpsc::UnboundedSender<()>>) -> io::Result<Self> {
+    pub fn new(root: CommitLogDir, on_new_segment: Option<Arc<OnNewSegmentFn>>) -> io::Result<Self> {
         root.create()?;
         Ok(Self { root, on_new_segment })
     }
@@ -107,7 +115,7 @@ impl Repo for Fs {
                 if let Some(on_new_segment) = self.on_new_segment.as_ref() {
                     // No need to handle the error here: if the snapshot worker is closed we'll eventually close too,
                     // and we don't want to die prematurely if there are still TXes to write.
-                    let _ = on_new_segment.unbounded_send(());
+                    on_new_segment();
                 }
             })
     }

@@ -23,6 +23,8 @@ use tracing::instrument;
 
 use crate::{Durability, DurableOffset, History, TxOffset};
 
+pub use spacetimedb_commitlog::repo::OnNewSegmentFn;
+
 /// [`Local`] configuration.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
@@ -88,7 +90,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
         root: CommitLogDir,
         rt: tokio::runtime::Handle,
         opts: Options,
-        on_new_segment: Option<futures::channel::mpsc::UnboundedSender<()>>,
+        on_new_segment: Option<Arc<OnNewSegmentFn>>,
     ) -> io::Result<Self> {
         info!("open local durability");
 

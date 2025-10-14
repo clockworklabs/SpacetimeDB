@@ -59,8 +59,7 @@ impl Compression {
 #[derive(Clone)]
 pub struct SnapshotWorker {
     snapshot_created: watch::Sender<TxOffset>,
-    request_snapshot: mpsc::UnboundedSender<()>,
-    replace_state: mpsc::UnboundedSender<SnapshotDatabaseState>,
+    request_snapshot: mpsc::UnboundedSender<Request>,
     snapshot_repository: Arc<SnapshotRepository>,
 }
 
@@ -74,12 +73,10 @@ impl SnapshotWorker {
         let database = snapshot_repository.database_identity();
         let latest_snapshot = snapshot_repository.latest_snapshot().ok().flatten().unwrap_or(0);
         let (snapshot_created, _) = watch::channel(latest_snapshot);
-        let (request_snapshot_tx, request_snapshot_rx) = mpsc::unbounded();
-        let (replace_state_tx, replace_state_rx) = mpsc::unbounded();
+        let (request_tx, request_rx) = mpsc::unbounded();
 
         let actor = SnapshotWorkerActor {
-            snapshot_requests: request_snapshot_rx,
-            replace_state_requests: replace_state_rx,
+            snapshot_requests: request_rx,
             snapshot_repo: snapshot_repository.clone(),
             snapshot_created: snapshot_created.clone(),
             metrics: SnapshotMetrics::new(database),
@@ -93,8 +90,7 @@ impl SnapshotWorker {
 
         Self {
             snapshot_created,
-            request_snapshot: request_snapshot_tx,
-            replace_state: replace_state_tx,
+            request_snapshot: request_tx,
             snapshot_repository,
         }
     }
@@ -104,8 +100,8 @@ impl SnapshotWorker {
     ///
     /// This is called during construction of a [super::relational_db::RelationalDB].
     pub(crate) fn set_state(&self, state: SnapshotDatabaseState) {
-        self.replace_state
-            .unbounded_send(state)
+        self.request_snapshot
+            .unbounded_send(Request::ReplaceState(state))
             .expect("snapshot worker panicked");
     }
 
@@ -118,18 +114,21 @@ impl SnapshotWorker {
     ///
     /// The snapshot will be taken at some point in the future.
     /// The request is dropped if the handle is not yet fully initialized.
+    ///
+    /// Panics if the snapshot worker has closed the receive end of its queue(s),
+    /// which is likely due to it having panicked.
     pub fn request_snapshot(&self) {
         self.request_snapshot
-            .unbounded_send(())
+            .unbounded_send(Request::TakeSnapshot)
             .expect("snapshot worker panicked");
     }
 
-    /// Get a handle to the channel used by [`Self::request_snapshot`].
+    /// Like [`Self::request_snapshot`], but doesn't propogate panics from the worker.
     ///
-    /// We use this rather than [`Self::request_snapshot`] via the persistence/commitlog
-    /// to simplify crate dependencies.
-    pub fn request_snapshot_sender(&self) -> mpsc::UnboundedSender<()> {
-        self.request_snapshot.clone()
+    /// Used by the durability to request snapshots on commitlog segment rotation,
+    /// since the durability should continue writing queued TXes even if the snapshot worker panics.
+    pub fn request_snapshot_ignore_closed(&self) {
+        let _ = self.request_snapshot.unbounded_send(Request::TakeSnapshot);
     }
 
     /// Subscribe to the [TxOffset]s of snapshots created by this worker.
@@ -158,9 +157,13 @@ impl SnapshotMetrics {
 
 type WeakDatabaseState = Weak<RwLock<CommittedState>>;
 
+enum Request {
+    TakeSnapshot,
+    ReplaceState(SnapshotDatabaseState),
+}
+
 struct SnapshotWorkerActor {
-    snapshot_requests: mpsc::UnboundedReceiver<()>,
-    replace_state_requests: mpsc::UnboundedReceiver<SnapshotDatabaseState>,
+    snapshot_requests: mpsc::UnboundedReceiver<Request>,
     snapshot_repo: Arc<SnapshotRepository>,
     snapshot_created: watch::Sender<TxOffset>,
     metrics: SnapshotMetrics,
@@ -184,35 +187,21 @@ impl SnapshotWorkerActor {
     /// processed.
     async fn run(mut self) {
         let mut database_state: Option<WeakDatabaseState> = None;
-        loop {
-            tokio::select! {
-                // Biased because we want to update the state before we take snapshots if both happen at the same time:
-                // no sense trying to take a snapshot of a state we've already thrown away!
-                biased;
-                new_state = self.replace_state_requests.next() => {
-                    if let Some(new_state) = new_state {
-                        database_state = Some(Arc::downgrade(&new_state));
-                    } else {
-                        // `replace_state_requests` sender is closed, so die.
-                        break
-                    }
-                },
-                snapshot_req = self.snapshot_requests.next() => {
-                    if snapshot_req.is_some() {
-                        let res = self
+        while let Some(req) = self.snapshot_requests.next().await {
+            match req {
+                Request::TakeSnapshot => {
+                    let res = self
                         .maybe_take_snapshot(database_state.as_ref())
                         .await
                         .inspect_err(|e| warn!("SnapshotWorker: {e:#}"));
-                        if let Ok(snapshot_offset) = res {
-                            self.maybe_compress_snapshots(snapshot_offset).await;
-                            self.snapshot_created.send_replace(snapshot_offset);
-                        }
-                    } else {
-                        // `snapshot_requests` sender is closed, so die.
-                        break
+                    if let Ok(snapshot_offset) = res {
+                        self.maybe_compress_snapshots(snapshot_offset).await;
+                        self.snapshot_created.send_replace(snapshot_offset);
                     }
                 }
-
+                Request::ReplaceState(new_state) => {
+                    database_state = Some(Arc::downgrade(&new_state));
+                }
             }
         }
     }
