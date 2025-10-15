@@ -4,7 +4,6 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeType,
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
@@ -13,6 +12,7 @@ import {
   TimeDuration as __TimeDuration,
   Timestamp as __Timestamp,
   deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
   type TableHandle as __TableHandle,
 } from '../../index';
@@ -48,7 +48,7 @@ export type AlgebraicType =
   | AlgebraicTypeVariants.F32
   | AlgebraicTypeVariants.F64;
 
-let algebraic_type_type: AlgebraicType | null = null;
+let _cached_AlgebraicType_type_value: __AlgebraicTypeType | null = null;
 
 // A value with helper functions to construct the type.
 export const AlgebraicType = {
@@ -59,9 +59,15 @@ export const AlgebraicType = {
   // assert!(foo.value === 42);
   // ```
   Ref: (value: number): AlgebraicTypeVariants.Ref => ({ tag: 'Ref', value }),
-  Sum: (value: SumType): AlgebraicType => ({ tag: 'Sum', value }),
-  Product: (value: ProductType): AlgebraicType => ({ tag: 'Product', value }),
-  Array: (value: AlgebraicType): AlgebraicType => ({ tag: 'Array', value }),
+  Sum: (value: SumType): AlgebraicTypeVariants.Sum => ({ tag: 'Sum', value }),
+  Product: (value: ProductType): AlgebraicTypeVariants.Product => ({
+    tag: 'Product',
+    value,
+  }),
+  Array: (value: AlgebraicType): AlgebraicTypeVariants.Array => ({
+    tag: 'Array',
+    value,
+  }),
   String: { tag: 'String' } as const,
   Bool: { tag: 'Bool' } as const,
   I8: { tag: 'I8' } as const,
@@ -80,9 +86,12 @@ export const AlgebraicType = {
   F64: { tag: 'F64' } as const,
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (algebraic_type_type) return algebraic_type_type;
-    algebraic_type_type = __AlgebraicTypeValue.Sum({ variants: [] });
-    algebraic_type_type.value.variants.push(
+    if (_cached_AlgebraicType_type_value)
+      return _cached_AlgebraicType_type_value;
+    _cached_AlgebraicType_type_value = __AlgebraicTypeValue.Sum({
+      variants: [],
+    });
+    _cached_AlgebraicType_type_value.value.variants.push(
       { name: 'Ref', algebraicType: __AlgebraicTypeValue.U32 },
       { name: 'Sum', algebraicType: SumType.getTypeScriptAlgebraicType() },
       {
@@ -158,7 +167,7 @@ export const AlgebraicType = {
         algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
       }
     );
-    return algebraic_type_type;
+    return _cached_AlgebraicType_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: AlgebraicType): void {
