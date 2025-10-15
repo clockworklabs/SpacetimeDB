@@ -63,11 +63,9 @@ function newFood(entity_id: number): Food {
   };
 }
 
-export const spacetimedb = schema(
-  table({ name: 'entity' }, entityRow),
-  table({ name: 'circle' }, circleRow),
-  table({ name: 'food' }, foodRow),
-);
+export const entityTable = table({ name: 'entity' }, entityRow);
+export const circleTable = table({ name: 'circle' }, circleRow);
+export const foodTable = table({ name: 'food' }, foodRow);
 
 function massToRadius(mass: number): number {
   return Math.sqrt(mass);

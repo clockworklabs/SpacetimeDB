@@ -76,14 +76,12 @@ const btree_each_column_u32_u64_u64_tRow = t.row("btree_each_column_u32_u64_u64_
 });
 type btree_each_column_u32_u64_u64_t = InferTypeOfRow<typeof btree_each_column_u32_u64_u64_tRow>;
 
-export const spacetimedb = schema(
-  table({ name: 'unique_0_u32_u64_str' }, unique_0_u32_u64_str_tRow),
-  table({ name: 'no_index_u32_u64_str' }, no_index_u32_u64_str_tRow),
-  table({ name: 'btree_each_column_u32_u64_str' }, btree_each_column_u32_u64_str_tRow),
-  table({ name: 'unique_0_u32_u64_u64' }, unique_0_u32_u64_u64_tRow),
-  table({ name: 'no_index_u32_u64_u64' }, no_index_u32_u64_u64_tRow),
-  table({ name: 'btree_each_column_u32_u64_u64' }, btree_each_column_u32_u64_u64_tRow),
-);
+export const unique_0_u32_u64_strTable = table({ name: 'unique_0_u32_u64_str' }, unique_0_u32_u64_str_tRow);
+export const no_index_u32_u64_strTable = table({ name: 'no_index_u32_u64_str' }, no_index_u32_u64_str_tRow);
+export const btree_each_column_u32_u64_strTable = table({ name: 'btree_each_column_u32_u64_str' }, btree_each_column_u32_u64_str_tRow);
+export const unique_0_u32_u64_u64Table = table({ name: 'unique_0_u32_u64_u64' }, unique_0_u32_u64_u64_tRow);
+export const no_index_u32_u64_u64Table = table({ name: 'no_index_u32_u64_u64' }, no_index_u32_u64_u64_tRow);
+export const btree_each_column_u32_u64_u64Table = table({ name: 'btree_each_column_u32_u64_u64' }, btree_each_column_u32_u64_u64_tRow);
 
 // ---------- empty ----------
 
