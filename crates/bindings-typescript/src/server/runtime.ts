@@ -331,7 +331,7 @@ function bsatnBaseSize(typespace: Typespace, ty: AlgebraicType): number {
     if (min === Infinity) min = 0;
     return 4 + min;
   } else if (ty.tag == 'Array') {
-    return 4 + assumedArrayLength * bsatnBaseSize(typespace, ty);
+    return 4 + assumedArrayLength * bsatnBaseSize(typespace, ty.value);
   }
   return {
     String: 4 + assumedArrayLength,
