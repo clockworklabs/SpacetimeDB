@@ -38,6 +38,7 @@ jobs:
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
           cd sdks/csharp
+          dotnet pack SpacetimeDB.ClientSDK/SpacetimeDB.ClientSDK.csproj -o ../../nupkgs
           ./tools~/write-nuget-config.sh ../..
 
       - name: Run .NET tests
