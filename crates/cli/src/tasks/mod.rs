@@ -8,6 +8,7 @@ use self::rust::build_rust;
 
 use duct::cmd;
 
+// TODO: Replace the returned `&'static str` with a copy of `HostType` from core.
 pub fn build(
     project_path: &Path,
     lint_dir: Option<&Path>,
