@@ -88,8 +88,10 @@ Publishing bundles your code into a JavaScript bundle, and creates a database an
 Re-publishing updates your module in place with [automatic migrations](#automatic-migrations) where possible:
 
 ```bash
-spacetime publish <DATABASE_NAME>
+spacetime publish <MY_DATABASE_NAME>
 ```
+
+where `<MY_DATABASE_NAME>` is the name of your existing database.
 
 You can also generate client bindings for your schema with `spacetime generate`. See the [client SDK documentation](https://spacetimedb.com/docs/sdks/typescript#generate-module-bindings) for more information.
 
@@ -99,7 +101,7 @@ SpacetimeDB transpiles and bundles your code into a JavaScript bundle that confo
 
 ## Publishing Flow
 
-When you run `spacetime publish [DATABASE_IDENTITY]`, the following happens:
+When you run `spacetime publish <DATABASE_NAME>`, the following happens:
 
 * The host locates or creates the target database.
 * The new schema is compared against the current version; if compatible, an [automatic migration](#automatic-migrations) runs.
@@ -505,14 +507,16 @@ Forbidden without manual migration:
 * ❌ Alter scheduling status
 * ❌ Add new constraints that invalidate existing data
 
-To fully reset, run:
+> **Warning:** The following deletes all data stored in the database.
+
+To fully reset your database and clear all data, run:
 
 ```bash
-spacetime publish --clear-database <IDENTITY>
-spacetime publish -c <IDENTITY>
+spacetime publish --clear-database <DATABASE_NAME>
+# or
+spacetime publish -c <DATABASE_NAME>
 ```
 
-> **Warning:** This deletes all data stored in the database.
 
 # Logging & Diagnostics
 
