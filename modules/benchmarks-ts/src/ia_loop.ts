@@ -292,14 +292,14 @@ function moveAgent(ctx, agent: GameEnemyAiAgentState, agentCoord: SmallHexTile, 
         });
     }
 
-    const mobileEntity = ctx.db.game_mobile_entity_state.entity_id.find(entityId);
-    if (mobileEntity == null) {
+    const mobileEntityRes = ctx.db.game_mobile_entity_state.entity_id.find(entityId);
+    if (mobileEntityRes == null) {
         throw new Error("GameMobileEntityState Entity ID not found");
     }
     const mobileEntity = {
         entity_id: entityId,
-        location_x: mobileEntity.location_x + 1,
-        location_y: mobileEntity.location_y + 1,
+        location_x: mobileEntityRes.location_x + 1,
+        location_y: mobileEntityRes.location_y + 1,
         timestamp: agent.next_action_timestamp,
     };
 
