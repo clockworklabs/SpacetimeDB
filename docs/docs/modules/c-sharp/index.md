@@ -199,7 +199,7 @@ After modifying your project, you can run:
 
 to update the module attached to your database. Note that SpacetimeDB tries to [automatically migrate](#automatic-migrations) your database schema whenever you run `spacetime publish`.
 
-You can also generate code for clients of your module using the `spacetime generate` command. See the [client SDK documentation] for more information.
+You can also generate code for clients of your module using the `spacetime generate` command. See the [client SDK documentation](/docs/sdks/c-sharp#generate-module-bindings) for more information.
 
 # How it works
 
