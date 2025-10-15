@@ -58,12 +58,6 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
 
-          # Use a different linker. Otherwise, the build fails with some obscure linker error that
-          # seems to be a result of us producing a massive PDB file.
-          # I (@bfops) tried a variety of other link options besides switching linkers, but this
-          # seems to be the only thing that worked.
-          $env:RUSTFLAGS='-Clinker=lld-link'
-
           cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
           Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
