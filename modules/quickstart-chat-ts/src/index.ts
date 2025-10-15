@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
-import { schema, t, table } from 'spacetimedb/server';
+import { schema, t, table, SenderError } from 'spacetimedb/server';
 
 const User = table(
   { name: 'user', public: true },
@@ -19,31 +19,27 @@ const Message = table(
 
 const spacetimedb = schema(User, Message);
 
-function validateName(name: string): { tag: 'err'; value: string } | null {
-  if (!name) return { tag: 'err', value: 'Names must not be empty' };
-  return null;
+function validateName(name: string) {
+  if (!name) throw new SenderError('Names must not be empty');
 }
 
 spacetimedb.reducer('set_name', { name: t.string() }, (ctx, { name }) => {
-  let err = validateName(name);
-  if (err) return err;
+  validateName(name);
   const user = ctx.db.user.identity.find(ctx.sender);
-  if (!user) return { tag: 'err', value: 'Cannot set name for unknown user' };
+  if (!user) throw new SenderError('Cannot set name for unknown user');
   console.info(`User ${ctx.sender} sets name to ${name}`);
   ctx.db.user.identity.update({ ...user, name });
 });
 
-function validateMessage(text: string): { tag: 'err'; value: string } | null {
-  if (!text) return { tag: 'err', value: 'Messages must not be empty' };
-  return null;
+function validateMessage(text: string) {
+  if (!text) throw new SenderError('Messages must not be empty');
 }
 
 spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
   // Things to consider:
   // - Rate-limit messages per-user.
   // - Reject messages from unnamed user.
-  const err = validateMessage(text);
-  if (err) return err;
+  validateMessage(text);
   console.info(`User ${ctx.sender}: ${text}`);
   ctx.db.message.insert({
     sender: ctx.sender,

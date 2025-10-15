@@ -7,7 +7,7 @@ import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import { Timestamp } from '../lib/timestamp';
 import { BinaryReader, BinaryWriter } from '../sdk';
-import { SpacetimeError } from './errors';
+import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
 import {
   type Index,
@@ -56,7 +56,14 @@ export const hooks: ModuleHooks = {
       connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
       db: getDbView(),
     });
-    return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
+    try {
+      return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
+    } catch (e) {
+      if (e instanceof SenderError) {
+        return { tag: 'err', value: e.message };
+      }
+      throw e;
+    }
   },
 };
 
@@ -423,7 +430,7 @@ function wrapSyscall<F extends (...args: any[]) => any>(
           hasOwn(e, '__code_error__') &&
           typeof e.__code_error__ == 'number'
         ) {
-          throw new SpacetimeError(e.__code_error__);
+          throw new SpacetimeHostError(e.__code_error__);
         }
         throw e;
       }
