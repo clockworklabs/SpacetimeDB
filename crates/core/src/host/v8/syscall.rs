@@ -271,8 +271,10 @@ fn with_span<'scope, R>(
 fn register_hooks<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
     let hooks = super::cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
     let ctx = scope.get_current_context();
-    ctx.set_embedder_data(HOOKS_SLOT, hooks.into());
+    // `set_slot`` creates the annex - needs to be called first
+    // because `set_embedder_data` is currently buggy
     ctx.set_slot(Rc::new(AbiVersion::V1));
+    ctx.set_embedder_data(HOOKS_SLOT, hooks.into());
     Ok(v8::undefined(scope).into())
 }
 
