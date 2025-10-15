@@ -205,12 +205,14 @@ impl clap::ValueEnum for ModuleLanguage {
         match self {
             Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs", "C#", "CSharp"])),
             Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs", "Rust"])),
-            Self::Javascript => Some(clap::builder::PossibleValue::new("javascript").aliases([
-                "js",
+            Self::Javascript => Some(clap::builder::PossibleValue::new("typescript").aliases([
                 "JavaScript",
+                "javascript",
+                "js",
                 "TypeScript",
                 "ts",
                 "ECMAScript",
+                "ecmascript",
                 "es",
             ])),
         }

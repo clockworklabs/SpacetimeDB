@@ -209,6 +209,7 @@ pub async fn exec_init_typescript(args: &ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
 
     let export_files = vec![
+        (include_str!("project/typescript/package._json"), "package.json"),
         (include_str!("project/typescript/tsconfig._json"), "tsconfig.json"),
         (include_str!("project/typescript/index._ts"), "src/index.ts"),
         (include_str!("project/typescript/_gitignore"), ".gitignore"),
