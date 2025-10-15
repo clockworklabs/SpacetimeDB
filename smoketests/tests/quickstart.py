@@ -43,17 +43,13 @@ def _parse_quickstart(doc_path: Path, language: str) -> str:
     # So we could have a different db for each language
     return "\n".join(blocks).replace("quickstart-chat", f"quickstart-chat-{language}") + end
 
-
 def _dotnet_add_package(project_path: Path, package_name: str, source_path: Path):
     """Add a local NuGet package to a .NET project"""
-    sources = run_cmd("dotnet", "nuget", "list", "source", cwd=project_path, capture_stderr=True)
-    # Is the source already added?
-    if package_name in sources:
-        run_cmd("dotnet", "nuget", "remove", "source", package_name, cwd=project_path, capture_stderr=True)
-    run_cmd("dotnet", "nuget", "add", "source", source_path, "--name", package_name, cwd=project_path,
-            capture_stderr=True)
-    run_cmd("dotnet", "add", "package", package_name, cwd=project_path, capture_stderr=True)
-
+    run_cmd("dotnet", "nuget", "add", "source", source_path, "--name", "local-source", cwd=project_path,
+     capture_stderr=True)
+    run_cmd("dotnet", "add", "package", package_name, "--source", source_path, "--no-restore", cwd=project_path,
+     capture_stderr=True)
+    run_cmd("dotnet", "restore", "--source", source_path, cwd=project_path, capture_stderr=True)
 
 class BaseQuickstart(Smoketest):
     AUTOPUBLISH = False
