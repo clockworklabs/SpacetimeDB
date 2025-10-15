@@ -100,7 +100,7 @@ impl NameOrIdentity {
     ) -> anyhow::Result<Result<Identity, &DatabaseName>> {
         Ok(match self {
             Self::Identity(identity) => Ok(Identity::from(*identity)),
-            Self::Name(name) => ctx.lookup_identity(name.as_ref())?.ok_or(name),
+            Self::Name(name) => ctx.lookup_identity(name.as_ref()).await?.ok_or(name),
         })
     }
 
