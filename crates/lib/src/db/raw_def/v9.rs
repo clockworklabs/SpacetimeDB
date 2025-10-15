@@ -372,7 +372,7 @@ pub struct RawRowLevelSecurityDefV9 {
 /// If/when we define `RawModuleDefV10`, these should allbe moved out of `misc_exports` and into their own fields.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
-#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord, derive_more::From))]
 #[non_exhaustive]
 pub enum RawMiscModuleExportV9 {
     /// A default value for a column added during a supervised automigration.
@@ -408,6 +408,11 @@ pub struct RawViewDefV9 {
     /// Is this view anonymous?
     pub is_anonymous: bool,
 
+    /// Whether this view is public or private.
+    /// Only public is supported right now.
+    /// Private views may be added in the future.
+    pub is_public: bool,
+
     /// The types and optional names of the parameters, in order.
     /// This `ProductType` need not be registered in the typespace.
     pub params: ProductType,
@@ -422,11 +427,6 @@ pub struct RawViewDefV9 {
 
     /// Currently unused, but we may want to define indexes on materialized views in the future.
     pub indexes: Vec<RawIndexDefV9>,
-
-    /// Whether this view is public or private.
-    /// Only public is supported right now.
-    /// Private views may be added in the future.
-    pub access: TableAccess,
 }
 
 /// A type declaration.
@@ -735,10 +735,10 @@ impl RawModuleDefV9Builder {
         self.module.misc_exports.push(RawMiscModuleExportV9::View(RawViewDefV9 {
             name: name.into(),
             is_anonymous,
+            is_public: true,
             params,
             return_type,
             indexes: vec![],
-            access: TableAccess::Public,
         }));
     }
 

@@ -5,6 +5,7 @@ use crate::{def::validate::Result, error::TypeLocation};
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
+use spacetimedb_lib::db::raw_def::v9::RawViewDefV9;
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
 use spacetimedb_sats::{bsatn::de::Deserializer, de::DeserializeSeed, WithTypespace};
@@ -54,12 +55,18 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
         .collect_all_errors::<Vec<_>>();
 
-    let (procedures, non_procedure_misc_exports) =
+    let (procedures, misc_exports) =
         misc_exports
             .into_iter()
             .partition::<Vec<RawMiscModuleExportV9>, _>(|misc_export| {
                 matches!(misc_export, RawMiscModuleExportV9::Procedure(_))
             });
+
+    let (views, misc_exports) = misc_exports
+        .into_iter()
+        .partition::<Vec<RawMiscModuleExportV9>, _>(|misc_export| {
+            matches!(misc_export, RawMiscModuleExportV9::View(_))
+        });
 
     let procedures = procedures
         .into_iter()
@@ -77,6 +84,21 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         // Collect into a `Vec` first to preserve duplicate names.
         // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
         .collect_all_errors::<Vec<_>>();
+
+    let views = views
+        .into_iter()
+        .map(|view| {
+            let RawMiscModuleExportV9::View(view) = view else {
+                unreachable!("Already partitioned views separate from other `RawMiscModuleExportV9` variants");
+            };
+            view
+        })
+        .map(|view| {
+            validator
+                .validate_view_def(view)
+                .map(|view_def| (view_def.name.clone(), view_def))
+        })
+        .collect_all_errors();
 
     let tables = tables
         .into_iter()
@@ -103,18 +125,17 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         })
         .collect_all_errors::<HashMap<_, _>>();
 
-    let tables_types_reducers_procedures =
-        (tables, types, reducers, procedures)
-            .combine_errors()
-            .and_then(|(mut tables, types, reducers, procedures)| {
-                let ((reducers, procedures), ()) = (
-                    check_function_names_are_unique(reducers, procedures),
-                    check_non_procedure_misc_exports(non_procedure_misc_exports, &validator, &mut tables),
-                )
-                    .combine_errors()?;
-                check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
-                Ok((tables, types, reducers, procedures))
-            });
+    let tables_types_reducers_procedures_views = (tables, types, reducers, procedures, views)
+        .combine_errors()
+        .and_then(|(mut tables, types, reducers, procedures, views)| {
+            let ((reducers, procedures, views), ()) = (
+                check_function_names_are_unique(reducers, procedures, views),
+                check_non_procedure_misc_exports(misc_exports, &validator, &mut tables),
+            )
+                .combine_errors()?;
+            check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
+            Ok((tables, types, reducers, procedures, views))
+        });
 
     let ModuleValidator {
         stored_in_table_def,
@@ -123,14 +144,15 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         ..
     } = validator;
 
-    let (tables, types, reducers, procedures) =
-        (tables_types_reducers_procedures).map_err(|errors| errors.sort_deduplicate())?;
+    let (tables, types, reducers, procedures, views) =
+        (tables_types_reducers_procedures_views).map_err(|errors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
     Ok(ModuleDef {
         tables,
         reducers,
+        views,
         types,
         typespace,
         typespace_for_generate,
@@ -423,6 +445,89 @@ impl ModuleValidator<'_> {
             },
             return_type,
             return_type_for_generate,
+        })
+    }
+
+    /// Validate a view definition.
+    fn validate_view_def(&mut self, view_def: RawViewDefV9) -> Result<ViewDef> {
+        let RawViewDefV9 {
+            name,
+            is_anonymous,
+            is_public,
+            params,
+            return_type,
+            indexes: _,
+        } = view_def;
+
+        let params_for_generate = self.params_for_generate(&params, |position, arg_name| TypeLocation::ViewArg {
+            view_name: Cow::Borrowed(&name),
+            position,
+            arg_name,
+        });
+
+        let return_type_for_generate = self.validate_for_type_use(
+            &TypeLocation::ViewReturn {
+                view_name: Cow::Borrowed(&name),
+            },
+            &return_type,
+        );
+
+        // We exit early if we don't find the product type ref,
+        // since this breaks all the other checks.
+        let product_type_ref = return_type
+            .as_array()
+            .and_then(|array_type| match *array_type.elem_ty {
+                AlgebraicType::Ref(ref_type) => Some(ref_type),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                ValidationErrors::from(ValidationError::InvalidViewReturnType {
+                    view: name.clone(),
+                    ty: return_type.clone().into(),
+                })
+            })?;
+
+        let product_type = self
+            .typespace
+            .get(product_type_ref)
+            .and_then(AlgebraicType::as_product)
+            .ok_or_else(|| {
+                ValidationErrors::from(ValidationError::InvalidProductTypeRef {
+                    table: name.clone(),
+                    ref_: product_type_ref,
+                })
+            })?;
+
+        let mut table_in_progress = TableValidator {
+            raw_name: name.clone(),
+            product_type_ref,
+            product_type,
+            module_validator: self,
+            has_sequence: Default::default(),
+        };
+
+        let columns = (0..product_type.elements.len())
+            .map(|id| table_in_progress.validate_column_def(id.into()))
+            .collect_all_errors();
+
+        // views don't live in the global namespace.
+        let name = identifier(name);
+
+        let (name, params_for_generate, return_type_for_generate, columns) =
+            (name, params_for_generate, return_type_for_generate, columns).combine_errors()?;
+
+        Ok(ViewDef {
+            name,
+            is_anonymous,
+            is_public,
+            params,
+            params_for_generate: ProductTypeDef {
+                elements: params_for_generate,
+                recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
+            },
+            return_type,
+            return_type_for_generate,
+            columns,
         })
     }
 
@@ -1033,10 +1138,16 @@ fn check_scheduled_functions_exist(
 /// Check that all function (reducer and procedure) names are unique,
 /// then re-organize the reducers and procedures into [`IndexMap`]s
 /// for storage in the [`ModuleDef`].
+#[allow(clippy::type_complexity)]
 fn check_function_names_are_unique(
     reducers: Vec<(Identifier, ReducerDef)>,
     procedures: Vec<(Identifier, ProcedureDef)>,
-) -> Result<(IndexMap<Identifier, ReducerDef>, IndexMap<Identifier, ProcedureDef>)> {
+    views: Vec<(Identifier, ViewDef)>,
+) -> Result<(
+    IndexMap<Identifier, ReducerDef>,
+    IndexMap<Identifier, ProcedureDef>,
+    IndexMap<Identifier, ViewDef>,
+)> {
     let mut errors = vec![];
 
     let mut reducers_map = IndexMap::with_capacity(reducers.len());
@@ -1059,7 +1170,17 @@ fn check_function_names_are_unique(
         }
     }
 
-    ErrorStream::add_extra_errors(Ok((reducers_map, procedures_map)), errors)
+    let mut views_map = IndexMap::with_capacity(views.len());
+
+    for (name, def) in views {
+        if reducers_map.contains_key(&name) || procedures_map.contains_key(&name) || views_map.contains_key(&name) {
+            errors.push(ValidationError::DuplicateFunctionName { name });
+        } else {
+            views_map.insert(name, def);
+        }
+    }
+
+    ErrorStream::add_extra_errors(Ok((reducers_map, procedures_map, views_map)), errors)
 }
 
 fn check_non_procedure_misc_exports(

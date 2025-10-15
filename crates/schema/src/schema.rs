@@ -8,6 +8,7 @@
 
 use crate::def::error::{DefType, SchemaError};
 use crate::relation::{combine_constraints, Column, DbTable, FieldName, Header};
+use anyhow::bail;
 use core::mem;
 use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -21,7 +22,7 @@ use std::sync::Arc;
 
 use crate::def::{
     ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
-    SequenceDef, TableDef, UniqueConstraintData,
+    SequenceDef, TableDef, UniqueConstraintData, ViewDef,
 };
 use crate::identifier::Identifier;
 
@@ -585,6 +586,64 @@ pub fn column_schemas_from_defs(module_def: &ModuleDef, columns: &[ColumnDef], t
         .enumerate()
         .map(|(col_pos, def)| ColumnSchema::from_module_def(module_def, def, (), (table_id, col_pos.into())))
         .collect()
+}
+
+impl TableSchema {
+    pub fn try_from_view_def(module_def: &ModuleDef, view_def: &ViewDef) -> anyhow::Result<Self> {
+        module_def.expect_contains(view_def);
+
+        let ViewDef {
+            name,
+            is_anonymous,
+            is_public,
+            params,
+            params_for_generate: _,
+            return_type: _,
+            return_type_for_generate: _,
+            columns,
+        } = view_def;
+
+        let mut columns = column_schemas_from_defs(module_def, columns, TableId::SENTINEL);
+        let n = columns.len();
+
+        for (i, elem) in params.elements.iter().cloned().enumerate() {
+            let Some(col_name) = elem.name else { bail!("hello") };
+            columns.push(ColumnSchema {
+                table_id: TableId::SENTINEL,
+                col_pos: (n + i).into(),
+                col_name,
+                col_type: elem.algebraic_type,
+            });
+        }
+
+        if !is_anonymous {
+            columns.push(ColumnSchema {
+                table_id: TableId::SENTINEL,
+                col_pos: columns.len().into(),
+                col_name: "sender".into(),
+                col_type: AlgebraicType::identity(),
+            });
+        }
+
+        let table_access = if *is_public {
+            StAccess::Public
+        } else {
+            StAccess::Private
+        };
+
+        Ok(TableSchema::new(
+            TableId::SENTINEL,
+            (*name).clone().into(),
+            columns,
+            vec![],
+            vec![],
+            vec![],
+            StTableType::User,
+            table_access,
+            None,
+            None,
+        ))
+    }
 }
 
 impl Schema for TableSchema {
