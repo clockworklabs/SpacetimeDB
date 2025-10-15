@@ -9,4 +9,4 @@ rustflags = ["--cfg", "tokio_unstable"]
 bump-versions = "run -p upgrade-version --"
 
 [target.x86_64-pc-windows-msvc]
-linker = "lld-link.exe"
+linker = "lld-link"
