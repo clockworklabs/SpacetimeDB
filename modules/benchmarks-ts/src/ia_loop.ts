@@ -1,7 +1,6 @@
 // STDB module used for benchmarks based on "realistic" workloads we are focusing in improving.
 
 import { blackBox } from './load';
-import { assert } from "console";
 import {
     schema,
     table,

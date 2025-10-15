@@ -1,6 +1,6 @@
 //! STDB module used for benchmarks based on "realistic" workloads we are focusing in improving.
 
-import { Load, newLoad, blackBox } from './load';
+import { type Load, newLoad, blackBox } from './load';
 import { Timestamp } from 'spacetimedb';
 import {
   schema,

@@ -23,7 +23,6 @@
 // Obviously more could be added...
 
 import { blackBox } from './load';
-import { assert } from "console";
 import {
   schema,
   table,
@@ -188,6 +187,12 @@ spacetimedb.reducer(
   });
 
 // ---------- update ----------
+
+function assert(cond: boolean) {
+  if (!cond) {
+    throw new Error("assertion failed");
+  }
+}
 
 spacetimedb.reducer(
   'update_bulk_unique_0_u32_u64_u64',
