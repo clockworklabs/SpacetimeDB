@@ -368,9 +368,6 @@ export function useTable<
         if (whereClause && !evaluate(whereClause, row)) {
           return;
         }
-        if (tableName === 'message') {
-          console.log('onInsert for messages table:', row);
-        }
         callbacks?.onInsert?.(row);
         if (
           ctx.event !== latestTransactionEvent.current ||
@@ -385,9 +382,6 @@ export function useTable<
       const onDelete = (ctx: any, row: RowType) => {
         if (whereClause && !evaluate(whereClause, row)) {
           return;
-        }
-        if (tableName === 'message') {
-          console.log('onDelete for messages table:', row);
         }
         callbacks?.onDelete?.(row);
         if (

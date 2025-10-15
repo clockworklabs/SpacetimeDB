@@ -3123,20 +3123,20 @@ fn collect_optional_types(module: &ModuleDef) -> HashSet<String> {
 fn get_cpp_type_for_array_element(elem_type_str: &str, _: &ModuleDef, module_name: &str) -> String {
     match elem_type_str {
         "Bool" => "bool".to_string(),
-        "I8" => "int8".to_string(),
-        "U8" => "uint8".to_string(),
-        "I16" => "int16".to_string(),
-        "U16" => "uint16".to_string(),
-        "I32" => "int32".to_string(),
-        "U32" => "uint32".to_string(),
-        "I64" => "int64".to_string(),
-        "U64" => "uint64".to_string(),
-        "F32" => "float".to_string(),
-        "F64" => "double".to_string(),
-        "I128" => "FSpacetimeDBInt128".to_string(),
-        "U128" => "FSpacetimeDBUInt128".to_string(),
-        "I256" => "FSpacetimeDBInt256".to_string(),
-        "U256" => "FSpacetimeDBUInt256".to_string(),
+        "I8" | "Int8" => "int8".to_string(),
+        "U8" | "UInt8" => "uint8".to_string(),
+        "I16" | "Int16" => "int16".to_string(),
+        "U16" | "UInt16" => "uint16".to_string(),
+        "I32" | "Int32" => "int32".to_string(),
+        "U32" | "UInt32" => "uint32".to_string(),
+        "I64" | "Int64" => "int64".to_string(),
+        "U64" | "UInt64" => "uint64".to_string(),
+        "F32" | "Float" => "float".to_string(),
+        "F64" | "Double" => "double".to_string(),
+        "I128" | "Int128" => "FSpacetimeDBInt128".to_string(),
+        "U128" | "UInt128" => "FSpacetimeDBUInt128".to_string(),
+        "I256" | "Int256" => "FSpacetimeDBInt256".to_string(),
+        "U256" | "UInt256" => "FSpacetimeDBUInt256".to_string(),
         "String" => "FString".to_string(),
         "Identity" => "FSpacetimeDBIdentity".to_string(),
         "ConnectionId" => "FSpacetimeDBConnectionId".to_string(),
@@ -3159,20 +3159,20 @@ fn get_array_element_type_name(module: &ModuleDef, elem: &AlgebraicTypeUse) -> S
     match elem {
         AlgebraicTypeUse::Primitive(p) => match p {
             PrimitiveType::Bool => "Bool".to_string(),
-            PrimitiveType::I8 => "I8".to_string(),
-            PrimitiveType::U8 => "U8".to_string(),
-            PrimitiveType::I16 => "I16".to_string(),
-            PrimitiveType::U16 => "U16".to_string(),
-            PrimitiveType::I32 => "I32".to_string(),
-            PrimitiveType::U32 => "U32".to_string(),
-            PrimitiveType::I64 => "I64".to_string(),
-            PrimitiveType::U64 => "U64".to_string(),
-            PrimitiveType::F32 => "F32".to_string(),
-            PrimitiveType::F64 => "F64".to_string(),
-            PrimitiveType::I128 => "I128".to_string(),
-            PrimitiveType::U128 => "U128".to_string(),
-            PrimitiveType::I256 => "I256".to_string(),
-            PrimitiveType::U256 => "U256".to_string(),
+            PrimitiveType::I8 => "Int8".to_string(),
+            PrimitiveType::U8 => "UInt8".to_string(),
+            PrimitiveType::I16 => "Int16".to_string(),
+            PrimitiveType::U16 => "UInt16".to_string(),
+            PrimitiveType::I32 => "Int32".to_string(),
+            PrimitiveType::U32 => "UInt32".to_string(),
+            PrimitiveType::I64 => "Int64".to_string(),
+            PrimitiveType::U64 => "UInt64".to_string(),
+            PrimitiveType::F32 => "Float".to_string(),
+            PrimitiveType::F64 => "Double".to_string(),
+            PrimitiveType::I128 => "Int128".to_string(),
+            PrimitiveType::U128 => "UInt128".to_string(),
+            PrimitiveType::I256 => "Int256".to_string(),
+            PrimitiveType::U256 => "UInt256".to_string(),
         },
         AlgebraicTypeUse::String => "String".to_string(),
         AlgebraicTypeUse::Identity => "Identity".to_string(),
@@ -3183,11 +3183,7 @@ fn get_array_element_type_name(module: &ModuleDef, elem: &AlgebraicTypeUse) -> S
         AlgebraicTypeUse::Ref(r) => type_ref_name(module, *r),
         AlgebraicTypeUse::Option(nested_inner) => {
             // Handle optional elements in arrays like Vec<Option<i32>>
-            let inner_optional_name = get_optional_type_name(module, nested_inner);
-            inner_optional_name
-                .strip_prefix("Optional")
-                .unwrap_or(&inner_optional_name)
-                .to_string()
+            get_optional_type_name(module, nested_inner)
         }
         _ => "Unknown".to_string(),
     }
@@ -3271,15 +3267,15 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
             let module_name_pascal = module_name.to_case(Case::Pascal);
             format!("F{module_name_pascal}{inner_type_str}")
         }
-        _ if inner_type_str.starts_with("Vec") => {
-            // Handle OptionalVecXxx -> should use TArray<FModuleOptionalXxx>
-            let elem_type_str = &inner_type_str[3..]; // Remove "Vec" prefix
+        _ if inner_type_str.starts_with("VecOptional") => {
+            // Handle specific optional array types like OptionalVecOptionalI32, OptionalVecOptionalString, etc.
+            let elem_type_str = &inner_type_str[11..]; // Remove "VecOptional" prefix
             let module_name_pascal = module_name.to_case(Case::Pascal);
             format!("TArray<F{module_name_pascal}Optional{elem_type_str}>")
         }
-        _ if inner_type_str.starts_with("OptionalVec") => {
-            // Handle specific optional array types like OptionalVecI32, OptionalVecString, etc.
-            let elem_type_str = &inner_type_str[11..]; // Remove "OptionalVec" prefix
+        _ if inner_type_str.starts_with("Vec") => {
+            // Handle OptionalVecXxx -> should use TArray<FModuleOptionalXxx>
+            let elem_type_str = &inner_type_str[3..]; // Remove "Vec" prefix
             let cpp_elem_type = get_cpp_type_for_array_element(elem_type_str, module, module_name);
             format!("TArray<{cpp_elem_type}>")
         }
@@ -3295,7 +3291,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
                 type_name == inner_type_str
                     && matches!(
                         module.typespace_for_generate()[type_def.ty],
-                        AlgebraicTypeDef::Sum(_) | AlgebraicTypeDef::PlainEnum(_)
+                        AlgebraicTypeDef::PlainEnum(_)
                     )
             });
 
@@ -3321,41 +3317,10 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
             // Basic types, no extra includes needed
         }
         _ if inner_type_str.starts_with("Vec") => {
-            // Handle OptionalVecXxx -> needs OptionalXxx include
-            let elem_type_str = &inner_type_str[3..]; // Remove "Vec" prefix
-            let module_name_pascal = module_name.to_case(Case::Pascal);
-            extra_includes.push(format!(
-                "ModuleBindings/Optionals/{module_name_pascal}Optional{elem_type_str}.g.h"
-            ));
+            // Not required
         }
         _ if inner_type_str.starts_with("OptionalVec") => {
-            // Handle includes for specific optional array types
-            let elem_type_str = &inner_type_str[11..]; // Remove "OptionalVec" prefix
-            match elem_type_str {
-                "Identity" | "ConnectionId" | "Timestamp" | "TimeDuration" | "ScheduleAt" => {
-                    extra_includes.push("Types/Builtins.h".to_string());
-                }
-                "I128" | "U128" | "I256" | "U256" => {
-                    extra_includes.push("Types/LargeIntegers.h".to_string());
-                }
-                _ if elem_type_str.starts_with("Int32") => {
-                    // Handle nested optional includes like Int32 from OptionalInt32
-                    let module_name_pascal = module_name.to_case(Case::Pascal);
-                    extra_includes.push(format!(
-                        "ModuleBindings/Optionals/{module_name_pascal}OptionalInt32.g.h"
-                    ));
-                }
-                _ if !elem_type_str.starts_with("Bool")
-                    && !elem_type_str.starts_with("I")
-                    && !elem_type_str.starts_with("U")
-                    && !elem_type_str.starts_with("F")
-                    && elem_type_str != "String" =>
-                {
-                    // Custom type, need its header
-                    extra_includes.push(format!("ModuleBindings/Types/{elem_type_str}Type.g.h"));
-                }
-                _ => {} // Primitive types don't need extra includes
-            }
+            // Not required
         }
         _ if inner_type_str.starts_with("Optional") => {
             // Nested optional, need its header
