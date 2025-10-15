@@ -17,7 +17,7 @@ public sealed class AuthCtx
     /// <summary>
     /// Create an AuthCtx for an internal call, with no JWT.
     /// </summary>
-    public static AuthCtx Internal()
+    private static AuthCtx Internal()
     {
         return new AuthCtx(isInternal: true, jwtFactory: () => null);
     }
@@ -25,25 +25,25 @@ public sealed class AuthCtx
     /// <summary>
     /// Create an AuthCtx from a raw JWT payload (JSON claims).
     /// </summary>
-    public static AuthCtx FromJwtPayload(string jwtPayload)
+    private static AuthCtx FromJwtPayload(string jwtPayload, Identity identity)
     {
-        return new AuthCtx(isInternal: false, jwtFactory: () => new JwtClaims(jwtPayload));
+        return new AuthCtx(isInternal: false, jwtFactory: () => new JwtClaims(jwtPayload, identity));
     }
 
-    public static AuthCtx FromOptionalConnectionId(ConnectionId? connectionId)
+    private static AuthCtx FromOptionalConnectionId(ConnectionId? connectionId, Identity identity)
     {
         if (connectionId == null)
         {
             return Internal();
         }
-        return FromConnectionId(connectionId.Value);
+        return FromConnectionId(connectionId.Value, identity);
     }
 
     /// <summary>
     /// Create an AuthCtx that reads JWT for a given connection ID.
     /// Equivalent to Rust's `from_connection_id`.
     /// </summary>
-    public static AuthCtx FromConnectionId(ConnectionId connectionId)
+    public static AuthCtx FromConnectionId(ConnectionId connectionId, Identity identity)
     {
         return new AuthCtx(isInternal: false, jwtFactory: () =>
         {
@@ -55,7 +55,7 @@ public sealed class AuthCtx
                 return null;
             }
             var jwt = System.Text.Encoding.UTF8.GetString(bytes);
-            return jwt != null ? new JwtClaims(jwt) : null;
+            return jwt != null ? new JwtClaims(jwt, identity) : null;
         });
     }
 

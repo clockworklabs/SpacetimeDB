@@ -11,13 +11,17 @@ public sealed class JwtClaims
     private readonly Lazy<JsonDocument> _parsed;
     private readonly Lazy<List<string>> _audience;
 
-    public JwtClaims(string jwt)
+    private readonly Identity _identity;
+    public Identity Identity => _identity;
+
+    private JwtClaims(string jwt, Identity identity)
     {
         _payload = jwt ?? throw new ArgumentNullException(nameof(jwt));
         _parsed = new Lazy<JsonDocument>(() =>
             JsonDocument.Parse(_payload)
         );
         _audience = new Lazy<List<string>>(ExtractAudience);
+        _identity = identity;
     }
 
     private JsonDocument Parsed => _parsed.Value;
@@ -72,7 +76,4 @@ public sealed class JwtClaims
 
     // TODO: Should this be exposed as a JsonDocument, since that it in the stdlib?
     public string RawPayload => _payload;
-
-    // Need to implement hashing.
-    public Identity Identity => throw new NotImplementedException();
 }
