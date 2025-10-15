@@ -50,7 +50,9 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
                 .validate_reducer_def(reducer, ReducerId(idx as u32))
                 .map(|reducer_def| (reducer_def.name.clone(), reducer_def))
         })
-        .collect_all_errors();
+        // Collect into a `Vec` first to preserve duplicate names.
+        // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
+        .collect_all_errors::<Vec<_>>();
 
     let (procedures, non_procedure_misc_exports) =
         misc_exports
@@ -72,7 +74,9 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
                 .validate_procedure_def(procedure)
                 .map(|procedure_def| (procedure_def.name.clone(), procedure_def))
         })
-        .collect_all_errors();
+        // Collect into a `Vec` first to preserve duplicate names.
+        // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
+        .collect_all_errors::<Vec<_>>();
 
     let tables = tables
         .into_iter()
@@ -103,13 +107,12 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         (tables, types, reducers, procedures)
             .combine_errors()
             .and_then(|(mut tables, types, reducers, procedures)| {
-                (
-                    check_scheduled_functions_exist(&mut tables, &reducers, &procedures),
+                let ((reducers, procedures), ()) = (
+                    check_function_names_are_unique(reducers, procedures),
                     check_non_procedure_misc_exports(non_procedure_misc_exports, &validator, &mut tables),
-                    check_function_names_are_unique(&reducers, &procedures),
                 )
                     .combine_errors()?;
-
+                check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 Ok((tables, types, reducers, procedures))
             });
 
@@ -1027,21 +1030,36 @@ fn check_scheduled_functions_exist(
         .collect_all_errors()
 }
 
+/// Check that all function (reducer and procedure) names are unique,
+/// then re-organize the reducers and procedures into [`IndexMap`]s
+/// for storage in the [`ModuleDef`].
 fn check_function_names_are_unique(
-    reducers: &IndexMap<Identifier, ReducerDef>,
-    procedures: &IndexMap<Identifier, ProcedureDef>,
-) -> Result<()> {
-    let names = reducers.keys().collect::<HashSet<_>>();
-    procedures
-        .keys()
-        .map(|name| -> Result<()> {
-            if names.contains(name) {
-                Err(ValidationError::DuplicateFunctionName { name: name.clone() }.into())
-            } else {
-                Ok(())
-            }
-        })
-        .collect_all_errors()
+    reducers: Vec<(Identifier, ReducerDef)>,
+    procedures: Vec<(Identifier, ProcedureDef)>,
+) -> Result<(IndexMap<Identifier, ReducerDef>, IndexMap<Identifier, ProcedureDef>)> {
+    let mut errors = vec![];
+
+    let mut reducers_map = IndexMap::with_capacity(reducers.len());
+
+    for (name, def) in reducers {
+        if reducers_map.contains_key(&name) {
+            errors.push(ValidationError::DuplicateFunctionName { name });
+        } else {
+            reducers_map.insert(name, def);
+        }
+    }
+
+    let mut procedures_map = IndexMap::with_capacity(procedures.len());
+
+    for (name, def) in procedures {
+        if reducers_map.contains_key(&name) || procedures_map.contains_key(&name) {
+            errors.push(ValidationError::DuplicateFunctionName { name });
+        } else {
+            procedures_map.insert(name, def);
+        }
+    }
+
+    ErrorStream::add_extra_errors(Ok((reducers_map, procedures_map)), errors)
 }
 
 fn check_non_procedure_misc_exports(
@@ -1856,5 +1874,47 @@ mod tests {
         assert!(def.lookup::<ConstraintDef>("wacky.constraint()").is_some());
         assert!(def.lookup::<IndexDef>("wacky.index()").is_some());
         assert!(def.lookup::<SequenceDef>("wacky.sequence()").is_some());
+    }
+
+    #[test]
+    fn duplicate_reducer_names() {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        builder.add_reducer("foo", [("i", AlgebraicType::I32)].into(), None);
+        builder.add_reducer("foo", [("name", AlgebraicType::String)].into(), None);
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
+            &name[..] == "foo"
+        });
+    }
+
+    #[test]
+    fn duplicate_procedure_names() {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit());
+        builder.add_procedure("foo", [("name", AlgebraicType::String)].into(), AlgebraicType::unit());
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
+            &name[..] == "foo"
+        });
+    }
+
+    #[test]
+    fn duplicate_procedure_and_reducer_name() {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        builder.add_reducer("foo", [("i", AlgebraicType::I32)].into(), None);
+        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit());
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
+            &name[..] == "foo"
+        });
     }
 }
