@@ -90,6 +90,10 @@ export function pushReducer(
   fn: Reducer<any, any>,
   lifecycle?: RawReducerDefV9['lifecycle']
 ): void {
+  if (existingReducers.has(name))
+    throw new TypeError(`There is already a reducer with the name '${name}'`);
+  existingReducers.add(name);
+
   const paramType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
@@ -106,6 +110,7 @@ export function pushReducer(
   REDUCERS.push(fn);
 }
 
+const existingReducers = new Set<string>();
 export const REDUCERS: Reducer<any, any>[] = [];
 
 /**
