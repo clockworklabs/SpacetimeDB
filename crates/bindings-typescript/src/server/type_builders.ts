@@ -37,12 +37,7 @@ export type Infer<T extends TypeBuilder<any, any>> = InferTypeOfTypeBuilder<T>;
 /**
  * Helper type to extract the type of a row from an object.
  */
-export type InferTypeOfRow<
-  T extends Record<
-    string,
-    ColumnBuilder<any, any, any> | TypeBuilder<any, any>
-  >,
-> = {
+export type InferTypeOfRow<T extends RowObj> = {
   [K in keyof T & string]: InferTypeOfTypeBuilder<CollapseColumn<T[K]>>;
 };
 
