@@ -1,31 +1,32 @@
-import { useState } from 'react'
-import { DbConnection, Person } from './module_bindings'
-import { useSpacetimeDB, useTable } from 'spacetimedb/react'
+import { useState } from 'react';
+import { DbConnection, Person } from './module_bindings';
+import { useSpacetimeDB, useTable } from 'spacetimedb/react';
 
 function App() {
-  const [name, setName] = useState('')
+  const [name, setName] = useState('');
 
-  const conn = useSpacetimeDB<DbConnection>()
-  const { isActive: connected } = conn
+  const conn = useSpacetimeDB<DbConnection>();
+  const { isActive: connected } = conn;
 
   // Subscribe to all people in the database
-  const { rows: people } = useTable<DbConnection, Person>('person')
+  const { rows: people } = useTable<DbConnection, Person>('person');
 
   const addPerson = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!name.trim() || !connected) return
+    e.preventDefault();
+    if (!name.trim() || !connected) return;
 
     // Call the add reducer
-    conn.reducers.add(name)
-    setName('')
-  }
+    conn.reducers.add(name);
+    setName('');
+  };
 
   return (
     <div style={{ padding: '2rem' }}>
       <h1>SpacetimeDB React App</h1>
 
       <div style={{ marginBottom: '1rem' }}>
-        Status: <strong style={{ color: connected ? 'green' : 'red' }}>
+        Status:{' '}
+        <strong style={{ color: connected ? 'green' : 'red' }}>
           {connected ? 'Connected' : 'Disconnected'}
         </strong>
       </div>
@@ -35,7 +36,7 @@ function App() {
           type="text"
           placeholder="Enter name"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={e => setName(e.target.value)}
           style={{ padding: '0.5rem', marginRight: '0.5rem' }}
           disabled={!connected}
         />
@@ -61,7 +62,7 @@ function App() {
         )}
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
