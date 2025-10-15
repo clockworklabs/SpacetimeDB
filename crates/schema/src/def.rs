@@ -263,10 +263,12 @@ impl ModuleDef {
         self.procedures.get_full(name).map(|(idx, _, def)| (idx.into(), def))
     }
 
+    /// Look up a procuedure by its id, panicking if it doesn't exist.
     pub fn procedure_by_id(&self, id: ProcedureId) -> &ProcedureDef {
         &self.procedures[id.idx()]
     }
 
+    /// Look up a procuedure by its id, returning `None` if it doesn't exist.
     pub fn get_procedure_by_id(&self, id: ProcedureId) -> Option<&ProcedureDef> {
         self.procedures.get_index(id.idx()).map(|(_, def)| def)
     }

@@ -83,7 +83,7 @@ pub struct RawModuleDefV9 {
 
     /// Miscellaneous additional module exports.
     ///
-    /// The enum `RawMiscModuleExportV9` can have new variants added
+    /// The enum [`RawMiscModuleExportV9`] can have new variants added
     /// without breaking existing compiled modules.
     /// As such, this acts as a sort of dumping ground for any exports added after we defined `RawModuleDefV9`.
     ///

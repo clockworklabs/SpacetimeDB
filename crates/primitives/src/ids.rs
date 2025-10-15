@@ -2,6 +2,8 @@
 
 use core::fmt;
 
+use enum_as_inner::EnumAsInner;
+
 macro_rules! system_id {
     ($(#[$($doc_comment:tt)*])* pub struct $name:ident(pub $backing_ty:ty);) => {
 
@@ -126,25 +128,8 @@ system_id! {
 /// An id for a function exported from a module, which may be a reducer or a procedure.
 // This is never stored in a system table,
 // but is useful to have defined here to provide a shared language for downstream crates.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumAsInner)]
 pub enum FunctionId {
     Reducer(ReducerId),
     Procedure(ProcedureId),
-}
-
-impl FunctionId {
-    pub fn as_reducer(self) -> Option<ReducerId> {
-        if let Self::Reducer(id) = self {
-            Some(id)
-        } else {
-            None
-        }
-    }
-    pub fn as_procedure(self) -> Option<ProcedureId> {
-        if let Self::Procedure(id) = self {
-            Some(id)
-        } else {
-            None
-        }
-    }
 }

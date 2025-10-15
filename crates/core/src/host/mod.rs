@@ -7,10 +7,7 @@ use once_cell::sync::OnceCell;
 use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::{serde::SeedWrapper, DeserializeSeed};
 use spacetimedb_lib::ProductValue;
-use spacetimedb_schema::def::{
-    deserialize::{ArgsSeed, FunctionDef},
-    ProcedureDef, ReducerDef,
-};
+use spacetimedb_schema::def::deserialize::{ArgsSeed, FunctionDef};
 
 mod disk_storage;
 mod host_controller;
@@ -44,20 +41,10 @@ pub enum FunctionArgs {
 }
 
 impl FunctionArgs {
-    #[allow(unused)]
-    fn into_tuple_for_procedure(
-        self,
-        seed: ArgsSeed<'_, ProcedureDef>,
-    ) -> Result<ArgsTuple, InvalidProcedureArguments> {
-        self._into_tuple(seed).map_err(|err| InvalidProcedureArguments {
+    fn into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> Result<ArgsTuple, InvalidFunctionArguments> {
+        self._into_tuple(seed).map_err(|err| InvalidFunctionArguments {
             err,
-            procedure: (seed.name()).into(),
-        })
-    }
-    fn into_tuple(self, seed: ArgsSeed<'_, ReducerDef>) -> Result<ArgsTuple, InvalidReducerArguments> {
-        self._into_tuple(seed).map_err(|err| InvalidReducerArguments {
-            err,
-            reducer: (seed.name()).into(),
+            function_name: seed.name().into(),
         })
     }
     fn _into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> anyhow::Result<ArgsTuple> {
@@ -118,21 +105,32 @@ impl Default for ArgsTuple {
 // TODO(noa): replace imports from this module with imports straight from primitives.
 pub use spacetimedb_primitives::ReducerId;
 
+/// Inner error type for [`InvalidReducerArguments`] and [`InvalidProcedureArguments`].
 #[derive(thiserror::Error, Debug)]
-#[error("invalid arguments for reducer {reducer}: {err}")]
-pub struct InvalidReducerArguments {
+#[error("invalid arguments for function {function_name}: {err}")]
+pub struct InvalidFunctionArguments {
     #[source]
     err: anyhow::Error,
-    reducer: Box<str>,
+    function_name: Box<str>,
 }
 
+/// Newtype over [`InvalidFunctionArguments`] which renders with the word "reducer".
 #[derive(thiserror::Error, Debug)]
-#[error("invalid arguments for procedure {procedure}: {err}")]
-pub struct InvalidProcedureArguments {
+#[error("invalid arguments for reducer {}: {}", .0.function_name, .0.err)]
+pub struct InvalidReducerArguments(
+    #[from]
     #[source]
-    err: anyhow::Error,
-    procedure: Box<str>,
-}
+    InvalidFunctionArguments,
+);
+
+/// Newtype over [`InvalidFunctionArguments`] which renders with the word "procedure".
+#[derive(thiserror::Error, Debug)]
+#[error("invalid arguments for procedure {}: {}", .0.function_name, .0.err)]
+pub struct InvalidProcedureArguments(
+    #[from]
+    #[source]
+    InvalidFunctionArguments,
+);
 
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {
     let mut de = serde_json::Deserializer::from_str(s);

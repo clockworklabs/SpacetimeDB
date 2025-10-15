@@ -966,7 +966,7 @@ impl Schema for ScheduleSchema {
         ensure_eq!(
             &self.function_name[..],
             &def.function_name[..],
-            "Schedule reducer name mismatch"
+            "Schedule function name mismatch"
         );
         Ok(())
     }

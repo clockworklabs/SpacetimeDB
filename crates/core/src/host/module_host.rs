@@ -9,6 +9,7 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
+use crate::host::InvalidFunctionArguments;
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -972,10 +973,10 @@ impl ModuleHost {
                 log::error!(
                     "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {err}"
                 );
-                InvalidReducerArguments {
+                InvalidReducerArguments(InvalidFunctionArguments {
                     err: err.into(),
-                    reducer: reducer_name.into(),
-                }
+                    function_name: reducer_name.into(),
+                })
                 .into()
             })
         };
@@ -1093,7 +1094,7 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed)?;
+        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(self
@@ -1128,7 +1129,7 @@ impl ModuleHost {
         module_instance: &mut Instance,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed)?;
+        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(module_instance.call_reducer(
@@ -1233,10 +1234,12 @@ impl ModuleHost {
                     Ok(inst.call_reducer(Some(tx), params))
                 }
                 Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
-                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments {
-                    err,
-                    reducer: REDUCER.into(),
-                })),
+                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments(
+                    InvalidFunctionArguments {
+                        err,
+                        function_name: REDUCER.into(),
+                    },
+                ))),
             }
         })
         .await?
