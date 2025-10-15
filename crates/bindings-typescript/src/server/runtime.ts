@@ -7,7 +7,7 @@ import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import { Timestamp } from '../lib/timestamp';
 import { BinaryReader, BinaryWriter } from '../sdk';
-import { AutoIncOverflow, SpacetimeError, UniqueAlreadyExists } from './errors';
+import { SpacetimeError } from './errors';
 import { Range, type Bound } from './range';
 import {
   type Index,
@@ -107,33 +107,19 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
       }
     : null;
 
-  const tryInsert: Table<any>['tryInsert'] = row => {
-    const writer = new BinaryWriter(baseSize);
-    AlgebraicType.serializeValue(writer, rowType, row);
-    let ret_buf;
-    try {
-      ret_buf = sys.datastore_insert_bsatn(table_id, writer.getBuffer());
-    } catch (e) {
-      if (e instanceof UniqueAlreadyExists || e instanceof AutoIncOverflow)
-        return { ok: false, err: e };
-      throw e;
-    }
-    const ret = { ...row };
-    integrate_generated_columns?.(ret, ret_buf);
-
-    return { ok: true, val: ret };
-  };
-
   const tableMethods: TableMethods<any> = {
     count: () => sys.datastore_table_row_count(table_id),
     iter,
     [Symbol.iterator]: () => iter(),
-    insert: (row: RowType<any>): RowType<any> => {
-      const res = tryInsert(row);
-      if (res.ok) return res.val;
-      throw res.err;
+    insert: row => {
+      const writer = new BinaryWriter(baseSize);
+      AlgebraicType.serializeValue(writer, rowType, row);
+      const ret_buf = sys.datastore_insert_bsatn(table_id, writer.getBuffer());
+      const ret = { ...row };
+      integrate_generated_columns?.(ret, ret_buf);
+
+      return { ok: true, val: ret };
     },
-    tryInsert,
     delete: (row: RowType<any>): boolean => {
       const writer = new BinaryWriter(4 + baseSize);
       writer.writeU32(1);

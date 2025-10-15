@@ -29,14 +29,6 @@ export function set<T, F extends string, V>(
 export type Values<T> = T[keyof T];
 
 /**
- * A Result type representing either a success or an error.
- * - `ok: true` with `val`: Indicates a successful operation with the resulting value.
- * - `ok: false` with `err`: Indicates a failed operation with the associated error.
- */
-// TODO: Should we use the same `{ tag: 'Ok', value: T } | { tag: 'Err', value: E }` style as we have for other sum types?
-export type Result<T, E> = { ok: true; val: T } | { ok: false; err: E };
-
-/**
  * A helper type to collapse a tuple into a single type if it has only one element.
  */
 export type CollapseTuple<A extends any[]> = A extends [infer T] ? T : A;

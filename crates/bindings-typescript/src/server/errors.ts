@@ -1,5 +1,3 @@
-import type { CheckAnyMetadata, UntypedTableDef } from './table';
-
 /**
  * Base class for all Spacetime errors.
  * Each subclass must define a static CODE and MESSAGE property.
@@ -225,28 +223,3 @@ const errorProtoypes = new Set(errorSubclasses.map(cls => cls.prototype));
 const errnoToClass = new Map(
   errorSubclasses.map(cls => [cls.CODE as number, cls])
 );
-
-/**
- * A type representing errors that can occur during an insert operation.
- * - `UniqueAlreadyExists`: Error indicating that a unique constraint was violated during the insert.
- * - `AutoIncOverflow`: Error indicating that an auto-increment field has overflowed its maximum value.
- * @template TableDef - The table definition used to determine which errors are applicable.
- * @example
- * ```typescript
- * // Example of handling insert errors
- * const result = table.tryInsert({ id: 1, name: 'Alice' });
- * if (!result.ok) {
- *  if (result.err instanceof UniqueAlreadyExists) {
- *   console.error('Unique constraint violated:', result.err.message);
- * } else if (result.err instanceof AutoIncOverflow) {
- *  console.error('Auto-increment overflow:', result.err.message);
- * }
- * ```
- */
-export type TryInsertError<TableDef extends UntypedTableDef> =
-  | CheckAnyMetadata<
-      TableDef,
-      { isUnique: true } | { isPrimaryKey: true },
-      UniqueAlreadyExists
-    >
-  | CheckAnyMetadata<TableDef, { isAutoIncrement: true }, AutoIncOverflow>;

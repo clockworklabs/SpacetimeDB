@@ -5,7 +5,6 @@ import type RawIndexDefV9 from '../lib/autogen/raw_index_def_v_9_type';
 import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type { AllUnique } from './constraints';
-import type { TryInsertError } from './errors';
 import type { ColumnIndex, IndexColumns, Indexes, IndexOpts } from './indexes';
 import { MODULE_DEF, splitName } from './schema';
 import {
@@ -16,7 +15,7 @@ import {
   type RowObj,
   type TypeBuilder,
 } from './type_builders';
-import type { Prettify, Result, Values } from './type_util';
+import type { Prettify } from './type_util';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
@@ -99,19 +98,6 @@ type OptsIndices<Opts extends TableOpts<any>> = Opts extends {
   : CoerceArray<[]>;
 
 /**
- * A type which is only T if any column in the table has the specified metadata.
- * Otherwise, it resolves to never.
- * @template TableDef - The table definition to check.
- * @template Metadata - The metadata to look for in the table's columns.
- * @template T - The type to return if the metadata is found in any column.
- */
-export type CheckAnyMetadata<
-  TableDef extends UntypedTableDef,
-  Metadata extends ColumnMetadata<any>,
-  T,
-> = Values<TableDef['columns']>['columnMetadata'] extends Metadata ? T : never;
-
-/**
  * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
  *
  * - Row: row shape
@@ -133,13 +119,14 @@ export type TableMethods<TableDef extends UntypedTableDef> = {
   iter(): IterableIterator<RowType<TableDef>>;
   [Symbol.iterator](): IterableIterator<RowType<TableDef>>;
 
-  /** Insert and return the inserted row (auto-increment fields filled). May throw on error. */
+  /**
+   * Insert and return the inserted row (auto-increment fields filled).
+   *
+   * May throw on error:
+   * * If there are any unique or primary key columns in this table, may throw {@link UniqueAlreadyExists}.
+   * * If there are any auto-incrementing columns in this table, may throw {@link AutoIncOverflow}.
+   * */
   insert(row: RowType<TableDef>): RowType<TableDef>;
-
-  /** Like insert, but returns a Result instead of throwing. */
-  tryInsert(
-    row: RowType<TableDef>
-  ): Result<RowType<TableDef>, TryInsertError<TableDef>>;
 
   /** Delete a row equal to `row`. Returns true if something was deleted. */
   delete(row: RowType<TableDef>): boolean;
