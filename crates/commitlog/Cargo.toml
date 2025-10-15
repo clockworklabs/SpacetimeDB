@@ -18,7 +18,7 @@ async-stream = { workspace = true, optional = true }
 bitflags.workspace = true
 bytes= { workspace = true, optional = true }
 crc32c.workspace = true
-futures = { workspace = true, optional = true}
+futures = { workspace = true, optional = true }
 itertools.workspace = true
 log.workspace = true
 memmap2 = "0.9.4"
