@@ -3,9 +3,7 @@
 import { type Load, newLoad, blackBox } from './load';
 import { spacetimedb, type Entity, type Circle, type Food } from './schema';
 import { Timestamp } from 'spacetimedb';
-import {
-  t
-} from 'spacetimedb/server';
+import { t } from 'spacetimedb/server';
 
 function newEntity(id: number, x: number, y: number, mass: number): Entity {
   return {
@@ -15,7 +13,14 @@ function newEntity(id: number, x: number, y: number, mass: number): Entity {
   };
 }
 
-function newCircle(entity_id: number, player_id: number, x: number, y: number, magnitude: number, last_split_time: Timestamp): Circle {
+function newCircle(
+  entity_id: number,
+  player_id: number,
+  x: number,
+  y: number,
+  magnitude: number,
+  last_split_time: Timestamp
+): Circle {
   return {
     entity_id,
     player_id,
@@ -38,7 +43,10 @@ function massToRadius(mass: number): number {
 function isOverlapping(entity1: Entity, entity2: Entity): boolean {
   const entity1Radius = massToRadius(entity1.mass);
   const entity2Radius = massToRadius(entity2.mass);
-  const distance = Math.sqrt((entity1.position.x - entity2.position.x) ** 2 + (entity1.position.y - entity2.position.y) ** 2)
+  const distance = Math.sqrt(
+    (entity1.position.x - entity2.position.x) ** 2 +
+      (entity1.position.y - entity2.position.y) ** 2
+  );
   return distance < Math.max(entity1Radius, entity2Radius);
 }
 
@@ -54,14 +62,7 @@ spacetimedb.reducer('insert_bulk_entity', { count: t.u32() }, insertBulkEntity);
 
 const insertBulkCircle = (ctx, { count }) => {
   for (let id = 0; id < count; id++) {
-    ctx.db.circle.insert(newCircle(
-      id,
-      id,
-      id,
-      id + 5,
-      id * 5,
-      ctx.timestamp,
-    ));
+    ctx.db.circle.insert(newCircle(id, id, id, id + 5, id * 5, ctx.timestamp));
   }
   console.info(`INSERT CIRCLE: ${count}`);
 };
@@ -127,20 +128,34 @@ const crossJoinCircleFood = (ctx, { expected }) => {
   }
 
   console.info(`CROSS JOIN CIRCLE FOOD: ${expected}, processed: ${count}`);
-}
-spacetimedb.reducer('cross_join_circle_food', { expected: t.u32() }, crossJoinCircleFood);
+};
+spacetimedb.reducer(
+  'cross_join_circle_food',
+  { expected: t.u32() },
+  crossJoinCircleFood
+);
 
-spacetimedb.reducer('init_game_circles', { initial_load: t.u32() }, (ctx, { initial_load }) => {
-  const load = newLoad(initial_load);
+spacetimedb.reducer(
+  'init_game_circles',
+  { initial_load: t.u32() },
+  (ctx, { initial_load }) => {
+    const load = newLoad(initial_load);
 
-  insertBulkFood(ctx, { count: load.initialLoad });
-  insertBulkEntity(ctx, { count: load.initialLoad });
-  insertBulkCircle(ctx, { count: load.smallTable });
-});
+    insertBulkFood(ctx, { count: load.initialLoad });
+    insertBulkEntity(ctx, { count: load.initialLoad });
+    insertBulkCircle(ctx, { count: load.smallTable });
+  }
+);
 
-spacetimedb.reducer('init_game_circles', { initial_load: t.u32() }, (ctx, { initial_load }) => {
-  const load = newLoad(initial_load);
+spacetimedb.reducer(
+  'init_game_circles',
+  { initial_load: t.u32() },
+  (ctx, { initial_load }) => {
+    const load = newLoad(initial_load);
 
-  crossJoinCircleFood(ctx, { expected: initial_load * load.smallTable });
-  crossJoinAll(ctx, { expected: initial_load * initial_load * load.smallTable });
-});
+    crossJoinCircleFood(ctx, { expected: initial_load * load.smallTable });
+    crossJoinAll(ctx, {
+      expected: initial_load * initial_load * load.smallTable,
+    });
+  }
+);
