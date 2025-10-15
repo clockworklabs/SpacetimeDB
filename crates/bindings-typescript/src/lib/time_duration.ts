@@ -48,6 +48,7 @@ export class TimeDuration {
     return new TimeDuration(BigInt(millis) * TimeDuration.MICROS_PER_MILLIS);
   }
 
+  /** This outputs the same string format that we use in the host and in Rust modules */
   toString(): string {
     const micros = this.micros;
     const sign = micros < 0 ? '-' : '+';
