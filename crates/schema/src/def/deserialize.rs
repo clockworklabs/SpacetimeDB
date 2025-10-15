@@ -6,77 +6,85 @@ use spacetimedb_lib::{
     ProductType,
 };
 
-pub trait ArgsSeed: for<'de> de::DeserializeSeed<'de, Output = ProductValue> {
+/// Wrapper around a function def that allows deserializing to a [`ProductValue`] at the type of the def's parameter [`ProductType`].
+///
+/// Sensible instantiations for `Def` are [`ProcedureDef`] and [`ReducerDef`].
+pub struct ArgsSeed<'a, Def>(pub sats::WithTypespace<'a, Def>);
+
+// Manual impls of traits rather than derives,
+// 'cause derives are always constrained on all type parameters,
+// even though `ArgsSeed<Def: ?Copy>: Copy` in our case.
+impl<Def> Clone for ArgsSeed<'_, Def> {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+impl<Def> Copy for ArgsSeed<'_, Def> {}
+
+pub trait FunctionDef {
     fn params(&self) -> &ProductType;
+    fn name(&self) -> &str;
 }
 
-/// Define `struct_name` as a newtype wrapper around [`WithTypespace`] of `inner_ty`,
-/// and implement [`de::DeserializeSeed`] and [`de::ProductVisitor`] for that newtype.
-///
-/// `ReducerArgs` (defined in the spacetimedb_core crate) will use this type
-/// to deserialize the arguments to a reducer or procedure
-/// at the appropriate type for that specific function, which is known only at runtime.
-macro_rules! define_args_deserialize_seed {
-    ($struct_vis:vis struct $struct_name:ident($field_vis:vis $inner_ty:ty)) => {
-        #[doc = concat!(
-            "Wrapper around a [`",
-            stringify!($inner_ty),
-            "`] that allows deserializing to a [`ProductValue`] at the type of the def's parameter `ProductType`."
-        )]
-        #[derive(Clone, Copy)]
-        $struct_vis struct $struct_name<'a>($field_vis sats::WithTypespace<'a, $inner_ty> );
-
-        impl<'a> $struct_name<'a> {
-            #[doc = concat!(
-                "Get the inner [`",
-                stringify!($inner_ty),
-                "`] of this seed."
-            )]
-            $struct_vis fn inner_def(&self) -> &'a $inner_ty {
-                self.0.ty()
-            }
-        }
-
-        impl<'de> de::DeserializeSeed<'de> for $struct_name<'_> {
-            type Output = ProductValue;
-
-            fn deserialize<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
-                deserializer.deserialize_product(self)
-            }
-        }
-
-        impl<'de> de::ProductVisitor<'de> for $struct_name<'_> {
-            type Output = ProductValue;
-
-            fn product_name(&self) -> Option<&str> {
-                Some(&self.0.ty().name)
-            }
-            fn product_len(&self) -> usize {
-                self.0.ty().params.elements.len()
-            }
-            fn product_kind(&self) -> de::ProductKind {
-                de::ProductKind::ReducerArgs
-            }
-
-            fn visit_seq_product<A: de::SeqProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-                de::visit_seq_product(self.0.map(|r| &*r.params.elements), &self, tup)
-            }
-
-            fn visit_named_product<A: de::NamedProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-                de::visit_named_product(self.0.map(|r| &*r.params.elements), &self, tup)
-            }
-        }
-
-        impl<'a> ArgsSeed for $struct_name<'a> {
-            fn params(&self) -> &ProductType {
-                &self.0.ty().params
-            }
-        }
+impl FunctionDef for ReducerDef {
+    fn params(&self) -> &ProductType {
+        &self.params
+    }
+    fn name(&self) -> &str {
+        &self.name
     }
 }
 
-define_args_deserialize_seed!(pub struct ReducerArgsDeserializeSeed(pub ReducerDef));
-define_args_deserialize_seed!(pub struct ProcedureArgsDeserializeSeed(pub ProcedureDef));
+impl FunctionDef for ProcedureDef {
+    fn params(&self) -> &ProductType {
+        &self.params
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl<Def: FunctionDef> ArgsSeed<'_, Def> {
+    pub fn name(&self) -> &str {
+        self.0.ty().name()
+    }
+
+    pub fn params(&self) -> &ProductType {
+        self.0.ty().params()
+    }
+}
+
+impl<'de, Def: FunctionDef> de::DeserializeSeed<'de> for ArgsSeed<'_, Def> {
+    type Output = ProductValue;
+
+    fn deserialize<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
+        deserializer.deserialize_product(self)
+    }
+}
+
+impl<'de, Def: FunctionDef> de::ProductVisitor<'de> for ArgsSeed<'_, Def> {
+    type Output = ProductValue;
+
+    fn product_name(&self) -> Option<&str> {
+        Some(self.0.ty().name())
+    }
+
+    fn product_len(&self) -> usize {
+        self.0.ty().params().elements.len()
+    }
+
+    fn product_kind(&self) -> de::ProductKind {
+        de::ProductKind::ReducerArgs
+    }
+
+    fn visit_seq_product<A: de::SeqProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
+        de::visit_seq_product(self.0.map(|r| &*r.params().elements), &self, tup)
+    }
+
+    fn visit_named_product<A: de::NamedProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
+        de::visit_named_product(self.0.map(|r| &*r.params().elements), &self, tup)
+    }
+}
 
 pub struct ReducerArgsWithSchema<'a> {
     value: &'a ProductValue,

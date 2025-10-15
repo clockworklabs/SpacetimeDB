@@ -5,9 +5,12 @@ use derive_more::Display;
 use enum_map::Enum;
 use once_cell::sync::OnceCell;
 use spacetimedb_lib::bsatn;
-use spacetimedb_lib::de::serde::SeedWrapper;
+use spacetimedb_lib::de::{serde::SeedWrapper, DeserializeSeed};
 use spacetimedb_lib::ProductValue;
-use spacetimedb_schema::def::deserialize::{ArgsSeed, ProcedureArgsDeserializeSeed, ReducerArgsDeserializeSeed};
+use spacetimedb_schema::def::{
+    deserialize::{ArgsSeed, FunctionDef},
+    ProcedureDef, ReducerDef,
+};
 
 mod disk_storage;
 mod host_controller;
@@ -44,20 +47,20 @@ impl ReducerArgs {
     #[allow(unused)]
     fn into_tuple_for_procedure(
         self,
-        seed: ProcedureArgsDeserializeSeed,
+        seed: ArgsSeed<'_, ProcedureDef>,
     ) -> Result<ArgsTuple, InvalidProcedureArguments> {
         self._into_tuple(seed).map_err(|err| InvalidProcedureArguments {
             err,
-            procedure: (*seed.inner_def().name).into(),
+            procedure: (seed.name()).into(),
         })
     }
-    fn into_tuple(self, seed: ReducerArgsDeserializeSeed) -> Result<ArgsTuple, InvalidReducerArguments> {
+    fn into_tuple(self, seed: ArgsSeed<'_, ReducerDef>) -> Result<ArgsTuple, InvalidReducerArguments> {
         self._into_tuple(seed).map_err(|err| InvalidReducerArguments {
             err,
-            reducer: (*seed.inner_def().name).into(),
+            reducer: (seed.name()).into(),
         })
     }
-    fn _into_tuple(self, seed: impl ArgsSeed) -> anyhow::Result<ArgsTuple> {
+    fn _into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> anyhow::Result<ArgsTuple> {
         Ok(match self {
             ReducerArgs::Json(json) => ArgsTuple {
                 tuple: from_json_seed(&json, SeedWrapper(seed))?,

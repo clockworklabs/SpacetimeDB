@@ -47,7 +47,7 @@ use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
+use spacetimedb_schema::def::deserialize::ArgsSeed;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
@@ -1090,7 +1090,7 @@ impl ModuleHost {
         reducer_def: &ReducerDef,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
+        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
         let args = args.into_tuple(reducer_seed)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
@@ -1125,7 +1125,7 @@ impl ModuleHost {
         args: ReducerArgs,
         module_instance: &mut Instance,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
+        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
         let args = args.into_tuple(reducer_seed)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 

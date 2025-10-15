@@ -23,7 +23,7 @@ use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::Identifier;
 use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
-use deserialize::ReducerArgsDeserializeSeed;
+use deserialize::ArgsSeed;
 use enum_map::EnumMap;
 use hashbrown::Equivalent;
 use indexmap::IndexMap;
@@ -281,9 +281,9 @@ impl ModuleDef {
     pub fn reducer_arg_deserialize_seed<K: ?Sized + Hash + Equivalent<Identifier>>(
         &self,
         name: &K,
-    ) -> Option<(ReducerId, ReducerArgsDeserializeSeed<'_>)> {
+    ) -> Option<(ReducerId, ArgsSeed<'_, ReducerDef>)> {
         let (id, reducer) = self.reducer_full(name)?;
-        Some((id, ReducerArgsDeserializeSeed(self.typespace.with_type(reducer))))
+        Some((id, ArgsSeed(self.typespace.with_type(reducer))))
     }
 
     /// Look up the name corresponding to an `AlgebraicTypeRef`.
