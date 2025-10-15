@@ -245,8 +245,8 @@ Main();
         _dotnet_add_package(path, "SpacetimeDB.ClientSDK", (STDB_DIR / "sdks/csharp").absolute())
 
     def server_postprocess(self, server_path: Path):
-        _dotnet_add_package(server_path, "SpacetimeDB.Runtime",
-                            (STDB_DIR / "nupkgs").absolute())
+        _dotnet_add_package(server_path, "BSATN.Runtime",
+                            (STDB_DIR / "crates/bindings-csharp/BSATN.Runtime").absolute())
 
     def test_quickstart(self):
         """Run the C# quickstart guides for server and client."""
