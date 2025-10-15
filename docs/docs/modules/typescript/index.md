@@ -607,7 +607,7 @@ import { schema, table, t } from 'spacetimedb/server';
 ## Tables
 
 ```ts
-const Products = table({ name: 'products', public: true }, {
+const products = table({ name: 'products', public: true }, {
   id: t.u32().primaryKey().autoInc(),
   sku: t.string().unique(),
   name: t.string().index('btree'),
@@ -624,15 +624,15 @@ const Products = table({ name: 'products', public: true }, {
 ## Reducers
 
 ```ts
-const spacetimedb = schema(Products);
+const spacetimedb = schema(products);
 
 // Insert a new product
-spacetimedb.reducer('insert_product', Products.rowType, (ctx, product) => {
+spacetimedb.reducer('insert_product', products.rowType, (ctx, product) => {
   ctx.db.products.insert(product);
 });
 
 // Update by SKU (unique key)
-spacetimedb.reducer('update_product_by_sku', Products.rowType, (ctx, product) => {
+spacetimedb.reducer('update_product_by_sku', products.rowType, (ctx, product) => {
   ctx.db.products.sku.update(product);
 });
 
