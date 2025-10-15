@@ -72,8 +72,8 @@ jobs:
       - name: Build and pack C# SDK
         run: |
           cd sdks/csharp
-          dotnet build -c Release
-          dotnet pack -c Release -o ../../nupkgs
+          dotnet build SpacetimeDB.ClientSDK.csproj -c Release
+          dotnet pack SpacetimeDB.ClientSDK.csproj -c Release -o ../../nupkgs
           cat > NuGet.config << EOF
           <?xml version="1.0" encoding="utf-8"?>
           <configuration>
