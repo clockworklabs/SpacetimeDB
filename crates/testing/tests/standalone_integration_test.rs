@@ -1,7 +1,7 @@
 use serial_test::serial;
 use spacetimedb_lib::sats::{product, AlgebraicValue};
 use spacetimedb_testing::modules::{
-    CompilationMode, CompiledModule, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust,
+    CompilationMode, CompiledModule, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust, TypeScript,
     DEFAULT_CONFIG, IN_MEMORY_CONFIG,
 };
 use std::{
@@ -323,6 +323,12 @@ fn test_calling_bench_db_circles_csharp() {
     test_calling_bench_db_circles::<Csharp>();
 }
 
+#[test]
+#[serial]
+fn test_calling_bench_db_circles_typescript() {
+    test_calling_bench_db_circles::<TypeScript>();
+}
+
 fn test_calling_bench_db_ia_loop<L: ModuleLanguage>() {
     L::get_module().with_module_async(DEFAULT_CONFIG, |module| async move {
         #[rustfmt::skip]
@@ -351,4 +357,10 @@ fn test_calling_bench_db_ia_loop_rust() {
 #[serial]
 fn test_calling_bench_db_ia_loop_csharp() {
     test_calling_bench_db_ia_loop::<Csharp>();
+}
+
+#[test]
+#[serial]
+fn test_calling_bench_db_ia_loop_typescript() {
+    test_calling_bench_db_ia_loop::<TypeScript>();
 }
