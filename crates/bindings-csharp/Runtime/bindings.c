@@ -102,6 +102,8 @@ IMPORT(void, identity, (void* id_ptr), (id_ptr));
 
 #define SPACETIME_MODULE_VERSION "spacetime_10.1"
 IMPORT(int16_t, bytes_source_remaining_length, (BytesSource source, uint32_t* out), (source, out));
+
+IMPORT(int16_t, get_jwt, (const uint8_t* connection_id_ptr, BytesSource* bytes_ptr), (connection_id_ptr, bytes_ptr));
 #undef SPACETIME_MODULE_VERSION
 
 #ifndef EXPERIMENTAL_WASM_AOT
