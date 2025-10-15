@@ -1,4 +1,5 @@
 mod template;
+
 use crate::util::ModuleLanguage;
 use crate::Config;
 use crate::{detect::find_executable, util::UNSTABLE_WARNING};
@@ -6,6 +7,7 @@ use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
+
 use template as init_template;
 
 pub fn cli() -> clap::Command {

@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use clap::ArgMatches;
 use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
-use git2::Repository;
 use regex::Regex;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -304,7 +303,7 @@ pub async fn exec_non_interactive_init(config: &mut Config, args: &ArgMatches) -
     Ok(())
 }
 
-pub fn ensure_empty_directory(project_name: &str, project_path: &Path) -> Result<()> {
+pub fn ensure_empty_directory(_project_name: &str, project_path: &Path) -> Result<()> {
     if project_path.exists() {
         if !project_path.is_dir() {
             anyhow::bail!(
@@ -399,7 +398,7 @@ pub async fn interactive_init() -> Result<TemplateConfig> {
         .interact()?;
 
     let other_index = highlights.len();
-    let none_index = highlights.len() + 1;
+    let _none_index = highlights.len() + 1;
 
     if client_selection < highlights.len() {
         let highlight = &highlights[client_selection];
@@ -503,7 +502,7 @@ fn clone_git_subdirectory(repo_url: &str, subdir: &str, target: &Path, branch: O
     let mut fetch_options = git2::FetchOptions::new();
     let mut callbacks = git2::RemoteCallbacks::new();
 
-    callbacks.credentials(|url, username_from_url, allowed_types| {
+    callbacks.credentials(|_url, username_from_url, allowed_types| {
         if allowed_types.contains(git2::CredentialType::SSH_KEY) {
             if let Some(username) = username_from_url {
                 return git2::Cred::ssh_key_from_agent(username);
@@ -553,7 +552,7 @@ fn clone_github_template(repo_input: &str, target: &Path) -> Result<()> {
     let mut fetch_options = git2::FetchOptions::new();
     let mut callbacks = git2::RemoteCallbacks::new();
 
-    callbacks.credentials(|url, username_from_url, allowed_types| {
+    callbacks.credentials(|_url, username_from_url, allowed_types| {
         if allowed_types.contains(git2::CredentialType::SSH_KEY) {
             if let Some(username) = username_from_url {
                 return git2::Cred::ssh_key_from_agent(username);
@@ -623,7 +622,7 @@ fn configure_rust_server(server_dir: &Path, project_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn create_root_package_json(root: &Path, project_name: &str, use_local: bool) -> Result<()> {
+fn create_root_package_json(root: &Path, project_name: &str, _use_local: bool) -> Result<()> {
     let package_json = json!({
         "name": project_name,
         "version": "0.1.0",
