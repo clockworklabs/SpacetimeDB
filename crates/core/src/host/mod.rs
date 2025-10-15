@@ -12,18 +12,21 @@ use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 
 mod disk_storage;
 mod host_controller;
+mod module_common;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
 pub mod scheduler;
 pub mod wasmtime;
+
 // Visible for integration testing.
 pub mod instance_env;
+pub mod v8; // only pub for testing
 mod wasm_common;
 
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
-    DurabilityProvider, ExternalDurability, ExternalStorage, HostController, ProgramStorage, ReducerCallResult,
-    ReducerOutcome,
+    extract_schema, ExternalDurability, ExternalStorage, HostController, MigratePlanResult, ProgramStorage,
+    ReducerCallResult, ReducerOutcome,
 };
 pub use module_host::{ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;
@@ -136,6 +139,7 @@ pub enum AbiCall {
     DatastoreDeleteByIndexScanRangeBsatn,
     DatastoreDeleteAllByEqBsatn,
     BytesSourceRead,
+    BytesSourceRemainingLength,
     BytesSinkWrite,
     ConsoleLog,
     ConsoleTimerStart,

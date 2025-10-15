@@ -1,9 +1,13 @@
-use std::ops::RangeBounds;
+use std::{
+    hash::{Hash, Hasher},
+    ops::RangeBounds,
+};
 
 use anyhow::{anyhow, Result};
 use iter::PlanIter;
 use spacetimedb_lib::{
     bsatn::{EncodeError, ToBsatn},
+    query::Delta,
     sats::impl_serialize,
     AlgebraicValue, ProductValue,
 };
@@ -29,7 +33,7 @@ pub trait Datastore {
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
     }
 
-    fn table_scan(&self, table_id: TableId) -> Result<TableScanIter> {
+    fn table_scan(&self, table_id: TableId) -> Result<TableScanIter<'_>> {
         self.table(table_id)
             .map(|table| table.scan_rows(self.blob_store()))
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
@@ -40,7 +44,7 @@ pub trait Datastore {
         table_id: TableId,
         index_id: IndexId,
         key: &AlgebraicValue,
-    ) -> Result<IndexScanPointIter> {
+    ) -> Result<IndexScanPointIter<'_>> {
         self.table(table_id)
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
             .and_then(|table| {
@@ -56,7 +60,7 @@ pub trait Datastore {
         table_id: TableId,
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Result<IndexScanRangeIter> {
+    ) -> Result<IndexScanRangeIter<'_>> {
         self.table(table_id)
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
             .and_then(|table| {
@@ -83,7 +87,23 @@ pub trait DeltaStore {
     fn inserts_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;
     fn deletes_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;
 
-    fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter {
+    fn index_scan_range_for_delta(
+        &self,
+        table_id: TableId,
+        index_id: IndexId,
+        delta: Delta,
+        range: impl RangeBounds<AlgebraicValue>,
+    ) -> impl Iterator<Item = Row<'_>>;
+
+    fn index_scan_point_for_delta(
+        &self,
+        table_id: TableId,
+        index_id: IndexId,
+        delta: Delta,
+        point: &AlgebraicValue,
+    ) -> impl Iterator<Item = Row<'_>>;
+
+    fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter<'_> {
         match inserts {
             true => DeltaScanIter {
                 iter: self.inserts_for_table(table_id),
@@ -99,6 +119,28 @@ pub trait DeltaStore {
 pub enum Row<'a> {
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
+}
+
+impl PartialEq for Row<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Ptr(x), Self::Ptr(y)) => x == y,
+            (Self::Ref(x), Self::Ref(y)) => x == y,
+            (Self::Ptr(x), Self::Ref(y)) => x == *y,
+            (Self::Ref(x), Self::Ptr(y)) => y == *x,
+        }
+    }
+}
+
+impl Eq for Row<'_> {}
+
+impl Hash for Row<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Ptr(x) => x.hash(state),
+            Self::Ref(x) => x.hash(state),
+        }
+    }
 }
 
 impl Row<'_> {
@@ -213,7 +255,7 @@ impl<'a> Iterator for DeltaScanIter<'a> {
 
 /// Execute a query plan.
 /// The actual execution is driven by `f`.
-pub fn execute_plan<T, R>(plan: &ProjectPlan, tx: &T, f: impl Fn(PlanIter) -> R) -> Result<R>
+pub fn execute_plan<T, R>(plan: &ProjectPlan, tx: &T, f: impl Fn(PlanIter<'_>) -> R) -> Result<R>
 where
     T: Datastore + DeltaStore,
 {

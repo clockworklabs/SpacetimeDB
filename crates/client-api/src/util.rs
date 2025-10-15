@@ -1,4 +1,5 @@
 mod flat_csv;
+pub(crate) mod serde;
 pub mod websocket;
 
 use core::fmt;
@@ -96,10 +97,10 @@ impl NameOrIdentity {
     pub async fn try_resolve(
         &self,
         ctx: &(impl ControlStateReadAccess + ?Sized),
-    ) -> axum::response::Result<Result<Identity, &DatabaseName>> {
+    ) -> anyhow::Result<Result<Identity, &DatabaseName>> {
         Ok(match self {
             Self::Identity(identity) => Ok(Identity::from(*identity)),
-            Self::Name(name) => ctx.lookup_identity(name.as_ref()).map_err(log_and_500)?.ok_or(name),
+            Self::Name(name) => ctx.lookup_identity(name.as_ref())?.ok_or(name),
         })
     }
 
@@ -107,20 +108,23 @@ impl NameOrIdentity {
     /// response if `self` is a [`NameOrIdentity::Name`] for which no
     /// corresponding [`Identity`] is found in the SpacetimeDB DNS.
     pub async fn resolve(&self, ctx: &(impl ControlStateReadAccess + ?Sized)) -> axum::response::Result<Identity> {
-        self.try_resolve(ctx).await?.map_err(|_| StatusCode::NOT_FOUND.into())
+        self.try_resolve(ctx)
+            .await
+            .map_err(log_and_500)?
+            .map_err(|_| StatusCode::NOT_FOUND.into())
     }
 }
 
-impl<'de> serde::Deserialize<'de> for NameOrIdentity {
+impl<'de> ::serde::Deserialize<'de> for NameOrIdentity {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: ::serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
         if let Ok(addr) = Identity::from_hex(&s) {
             Ok(NameOrIdentity::Identity(IdentityForUrl::from(addr)))
         } else {
-            let name: DatabaseName = s.try_into().map_err(serde::de::Error::custom)?;
+            let name: DatabaseName = s.try_into().map_err(::serde::de::Error::custom)?;
             Ok(NameOrIdentity::Name(name))
         }
     }

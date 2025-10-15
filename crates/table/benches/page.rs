@@ -7,13 +7,13 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+use spacetimedb_sats::layout::{row_size_for_type, RowTypeLayout};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue};
 use spacetimedb_table::bflatn_from::serialize_row_from_page;
 use spacetimedb_table::bflatn_to::write_row_to_page;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::eq::eq_row_in_page;
 use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowHash};
-use spacetimedb_table::layout::{row_size_for_type, RowTypeLayout};
 use spacetimedb_table::page::Page;
 use spacetimedb_table::row_hash::hash_row_in_page;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
@@ -234,7 +234,7 @@ const VL_SIZES: [usize; 6] = [
 ];
 
 fn insert_var_len_clean_page(c: &mut Criterion, visitor: &impl VarLenMembers, visitor_name: &str) {
-    let mut group = c.benchmark_group(format!("insert_var_len/{}/clean_page", visitor_name));
+    let mut group = c.benchmark_group(format!("insert_var_len/{visitor_name}/clean_page"));
 
     for len_in_bytes in VL_SIZES {
         group.throughput(Throughput::Bytes(
@@ -258,7 +258,7 @@ fn insert_var_len_clean_page(c: &mut Criterion, visitor: &impl VarLenMembers, vi
 }
 
 fn insert_var_len_dirty_page(c: &mut Criterion, visitor: &impl VarLenMembers, visitor_name: &str) {
-    let mut group = c.benchmark_group(format!("insert_var_len/{}/dirty_page", visitor_name));
+    let mut group = c.benchmark_group(format!("insert_var_len/{visitor_name}/dirty_page"));
 
     for len_in_bytes in VL_SIZES {
         group.throughput(Throughput::Bytes(
@@ -326,7 +326,7 @@ fn insert_opt_str(c: &mut Criterion) {
             clean_page_group.bench_with_input(
                 BenchmarkId::new(
                     "(some_ratio, length_in_bytes)",
-                    format!("({}, {})", some_ratio, data_length_in_bytes),
+                    format!("({some_ratio}, {data_length_in_bytes})"),
                 ),
                 &input,
                 |b, &(some_ratio, _)| {
@@ -335,7 +335,7 @@ fn insert_opt_str(c: &mut Criterion) {
                     unsafe { page.zero_data() };
 
                     let body = |_, _, page: &mut Page| loop {
-                        let insert_none = rng.gen_bool(some_ratio);
+                        let insert_none = rng.random_bool(some_ratio);
                         if !insert_none {
                             if !page.has_space_for_row(fixed_row_size, 0) {
                                 break;
@@ -374,7 +374,7 @@ fn delete_to_approx_fullness_ratio<Row: FixedLenRow>(page: &mut Page, fullness: 
     let row_offsets = page.iter_fixed_len(row_size_for_type::<Row>()).collect::<Vec<_>>();
     let visitor = Row::var_len_visitor();
     for row in row_offsets.into_iter() {
-        let should_keep = rng.gen_bool(fullness);
+        let should_keep = rng.random_bool(fullness);
         if !should_keep {
             unsafe { page.delete_row(row, row_size_for_type::<Row>(), &visitor, &mut NullBlobStore) };
         }
@@ -462,7 +462,7 @@ fn copy_filter_into_fixed_len_keep_ratio<Row: FixedLenRow>(b: &mut Bencher, keep
                 row_size_for_type::<Row>(),
                 &visitor,
                 &mut NullBlobStore,
-                |_page, _row| rng.gen_bool(*keep_ratio),
+                |_page, _row| rng.random_bool(*keep_ratio),
             )
         };
     });
@@ -708,7 +708,7 @@ fn ty_page_visitor(ty: ProductType) -> (RowTypeLayout, Box<Page>, VarLenVisitorP
 #[inline(never)]
 fn insert_product_value_into_page(c: &mut Criterion) {
     for (name, ty, value, null_visitor, aligned_offsets_visitor) in product_value_test_cases() {
-        let mut group = c.benchmark_group(format!("insert_product_value/{}", name));
+        let mut group = c.benchmark_group(format!("insert_product_value/{name}"));
         let (ty, mut page, program_visitor) = ty_page_visitor(ty);
 
         if let Some(null_visitor) = null_visitor {

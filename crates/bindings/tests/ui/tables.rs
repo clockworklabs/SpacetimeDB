@@ -14,7 +14,9 @@ struct TypeParam<T> {
 struct ConstParam<const X: u8> {}
 
 #[derive(spacetimedb::SpacetimeType)]
-enum Alpha { Beta, Gamma }
+struct Alpha {
+    beta: u8,
+}
 
 #[spacetimedb::table(name = delta)]
 struct Delta {
@@ -27,8 +29,8 @@ struct Delta {
 
 #[spacetimedb::reducer]
 fn bad_filter_on_index(ctx: &spacetimedb::ReducerContext) {
-    ctx.db.delta().compound_a().find(Alpha::Beta);
-    ctx.db.delta().compound_b().filter(Alpha::Gamma);
+    ctx.db.delta().compound_a().find(Alpha { beta: 0 });
+    ctx.db.delta().compound_b().filter(Alpha { beta: 1 });
 }
 
 fn main() {}

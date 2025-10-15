@@ -1,33 +1,43 @@
 mod control_db;
-mod energy_monitor;
 pub mod subcommands;
 pub mod util;
 pub mod version;
 
 use crate::control_db::ControlDb;
-use crate::subcommands::start;
-use anyhow::{ensure, Context};
+use crate::subcommands::{extract_schema, start};
+use anyhow::{ensure, Context as _, Ok};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
-use energy_monitor::StandaloneEnergyMonitor;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
-use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
-use spacetimedb::db::relational_db::{self, Durability, Txdata};
-use spacetimedb::db::{db_metrics::DB_METRICS, Config};
-use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DiskStorage, DurabilityProvider, ExternalDurability, HostController, UpdateDatabaseResult};
+use spacetimedb::db;
+use spacetimedb::db::persistence::LocalPersistenceProvider;
+use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
+use spacetimedb::host::{DiskStorage, HostController, MigratePlanResult, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
+use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
+use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
 use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
+use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::traits::Program;
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
+use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
+use spacetimedb_table::page_pool::PagePool;
 use std::sync::Arc;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
+
+#[derive(Clone, Copy)]
+pub struct StandaloneOptions {
+    pub db_config: db::Config,
+    pub websocket: WebSocketOptions,
+}
 
 pub struct StandaloneEnv {
     control_db: ControlDb,
@@ -37,43 +47,36 @@ pub struct StandaloneEnv {
     metrics_registry: prometheus::Registry,
     _pid_file: PidFile,
     auth_provider: auth::DefaultJwtAuthProvider,
+    websocket_options: WebSocketOptions,
 }
 
 impl StandaloneEnv {
     pub async fn init(
-        config: Config,
+        config: StandaloneOptions,
         certs: &CertificateAuthority,
         data_dir: Arc<ServerDataDir>,
+        db_cores: JobCores,
     ) -> anyhow::Result<Arc<Self>> {
         let _pid_file = data_dir.pid_file()?;
         let meta_path = data_dir.metadata_toml();
-        let meta = MetadataFile {
-            version: spacetimedb::config::current_version(),
-            edition: "standalone".to_owned(),
-            client_connection_id: None,
-        };
+        let mut meta = MetadataFile::new("standalone");
         if let Some(existing_meta) = MetadataFile::read(&meta_path).context("failed reading metadata.toml")? {
-            anyhow::ensure!(
-                existing_meta.version_compatible_with(&meta.version) && existing_meta.edition == meta.edition,
-                "metadata.toml indicates that this database is from an incompatible \
-                 version of SpacetimeDB. please run a migration before proceeding."
-            );
+            meta = existing_meta.check_compatibility_and_update(meta)?;
         }
         meta.write(&meta_path).context("failed writing metadata.toml")?;
 
         let control_db = ControlDb::new(&data_dir.control_db()).context("failed to initialize control db")?;
-        let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
+        let energy_monitor = Arc::new(NullEnergyMonitor);
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
-        let durability_provider = Arc::new(StandaloneDurabilityProvider {
-            data_dir: data_dir.clone(),
-        });
+        let persistence_provider = Arc::new(LocalPersistenceProvider::new(data_dir.clone()));
         let host_controller = HostController::new(
             data_dir,
-            config,
+            config.db_config,
             program_store.clone(),
             energy_monitor,
-            durability_provider,
+            persistence_provider,
+            db_cores,
         );
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
@@ -93,26 +96,16 @@ impl StandaloneEnv {
             metrics_registry,
             _pid_file,
             auth_provider: auth_env,
+            websocket_options: config.websocket,
         }))
     }
 
     pub fn data_dir(&self) -> &Arc<ServerDataDir> {
         &self.host_controller.data_dir
     }
-}
 
-struct StandaloneDurabilityProvider {
-    data_dir: Arc<ServerDataDir>,
-}
-
-#[async_trait]
-impl DurabilityProvider for StandaloneDurabilityProvider {
-    async fn durability(&self, replica_id: u64) -> anyhow::Result<ExternalDurability> {
-        let commitlog_dir = self.data_dir.replica(replica_id).commit_log();
-        relational_db::local_durability(commitlog_dir)
-            .await
-            .map(|(durability, disk_size)| (durability as Arc<dyn Durability<TxData = Txdata>>, disk_size))
-            .map_err(Into::into)
+    pub fn page_pool(&self) -> &PagePool {
+        &self.host_controller.page_pool
     }
 }
 
@@ -141,7 +134,7 @@ impl NodeDelegate for StandaloneEnv {
         let database = self
             .control_db
             .get_database_by_id(database_id)?
-            .with_context(|| format!("Database {} not found", database_id))?;
+            .with_context(|| format!("Database {database_id} not found"))?;
 
         self.host_controller
             .get_or_launch_module_host(database, leader.id)
@@ -167,6 +160,7 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
                 id: 0,
                 unschedulable: false,
                 advertise_addr: Some("node:80".to_owned()),
+                pg_addr: Some("node:5432".to_owned()),
             }));
         }
         Ok(None)
@@ -222,24 +216,42 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         &self,
         publisher: &Identity,
         spec: spacetimedb_client_api::DatabaseDef,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
+
+        // standalone does not support replication.
+        let num_replicas = 1;
 
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
-                let initial_program = self.program_store.put(&spec.program_bytes).await?;
+                let program = Program::from_bytes(&spec.program_bytes[..]);
+
                 let mut database = Database {
                     id: 0,
                     database_identity: spec.database_identity,
                     owner_identity: *publisher,
                     host_type: spec.host_type,
-                    initial_program,
+                    initial_program: program.hash,
                 };
+
+                let _hash_for_assert = program.hash;
+
+                // Instantiate a temporary database in order to check that the module is valid.
+                // This will e.g. typecheck RLS filters.
+                self.host_controller
+                    .check_module_validity(database.clone(), program)
+                    .await?;
+
+                let program_hash = self.program_store.put(&spec.program_bytes).await?;
+
+                debug_assert_eq!(_hash_for_assert, program_hash);
+
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
 
-                self.schedule_replicas(database_id, spec.num_replicas).await?;
+                self.schedule_replicas(database_id, num_replicas).await?;
 
                 Ok(None)
             }
@@ -256,19 +268,18 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 let database_id = database.id;
                 let database_identity = database.database_identity;
 
-                let num_replicas = spec.num_replicas;
                 let leader = self
                     .leader(database_id)
                     .await?
                     .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
                 let update_result = leader
-                    .update(database, spec.host_type, spec.program_bytes.into())
+                    .update(database, spec.host_type, spec.program_bytes.into(), policy)
                     .await?;
                 if update_result.was_successful() {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
                     let desired_replicas = num_replicas as usize;
                     if desired_replicas == 0 {
-                        log::info!("Decommissioning all replicas of database {}", database_identity);
+                        log::info!("Decommissioning all replicas of database {database_identity}");
                         for instance in replicas {
                             self.delete_replica(instance.id).await?;
                         }
@@ -302,15 +313,37 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                         }
                     } else {
                         log::debug!(
-                            "Desired replica count {} for database {} already satisfied",
-                            desired_replicas,
-                            database_identity
+                            "Desired replica count {desired_replicas} for database {database_identity} already satisfied"
                         );
                     }
                 }
 
                 anyhow::Ok(Some(update_result))
             }
+        }
+    }
+
+    async fn migrate_plan(
+        &self,
+        spec: spacetimedb_client_api::DatabaseDef,
+        style: PrettyPrintStyle,
+    ) -> anyhow::Result<MigratePlanResult> {
+        let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
+
+        match existing_db {
+            Some(db) => {
+                let host = self
+                    .leader(db.id)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
+                self.host_controller
+                    .migrate_plan(db, spec.host_type, host.replica_id, spec.program_bytes.into(), style)
+                    .await
+            }
+            None => anyhow::bail!(
+                "Database `{}` does not exist",
+                spec.database_identity.to_abbreviated_hex()
+            ),
         }
     }
 
@@ -328,6 +361,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         );
 
         self.control_db.delete_database(database.id)?;
+
         for instance in self.control_db.get_replicas_by_database(database.id)? {
             self.delete_replica(instance.id).await?;
         }
@@ -346,8 +380,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         self.control_db.set_energy_balance(*identity, balance)?;
         Ok(())
     }
-    async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
-        withdraw_energy(&self.control_db, identity, amount)
+    async fn withdraw_energy(&self, _identity: &Identity, _amount: EnergyQuanta) -> anyhow::Result<()> {
+        // The energy balance code is obsolete.
+        Ok(())
     }
 
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult> {
@@ -395,7 +430,7 @@ impl StandaloneEnv {
         Ok(())
     }
 
-    async fn schedule_replicas(&self, database_id: u64, num_replicas: u32) -> Result<(), anyhow::Error> {
+    async fn schedule_replicas(&self, database_id: u64, num_replicas: u8) -> Result<(), anyhow::Error> {
         // Just scheduling a bunch of replicas to the only machine
         for i in 0..num_replicas {
             let replica = Replica {
@@ -438,25 +473,22 @@ impl StandaloneEnv {
     }
 }
 
-fn withdraw_energy(control_db: &ControlDb, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
-    let energy_balance = control_db.get_energy_balance(identity)?;
-    let energy_balance = energy_balance.unwrap_or(EnergyBalance::ZERO);
-    log::trace!("Withdrawing {} from {}", amount, identity);
-    log::trace!("Old balance: {}", energy_balance);
-    let new_balance = energy_balance.saturating_sub_energy(amount);
-    control_db.set_energy_balance(*identity, new_balance)?;
-    Ok(())
+impl HasWebSocketOptions for StandaloneEnv {
+    fn websocket_options(&self) -> WebSocketOptions {
+        self.websocket_options
+    }
 }
 
-pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_subcommand(cmd: &str, args: &ArgMatches, db_cores: JobCores) -> Result<(), anyhow::Error> {
     match cmd {
-        "start" => start::exec(args).await,
+        "start" => start::exec(args, db_cores).await,
+        "extract-schema" => extract_schema::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
 
 pub fn get_subcommands() -> Vec<Command> {
-    vec![start::cli()]
+    vec![start::cli(), extract_schema::cli()]
 }
 
 pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path::Path>) -> anyhow::Result<()> {
@@ -465,7 +497,7 @@ pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path:
         args.extend(["--jwt-key-dir".as_ref(), cert_dir.as_os_str()])
     }
     let args = start::cli().try_get_matches_from(args)?;
-    start::exec(&args).await
+    start::exec(&args, JobCores::without_pinned_cores(tokio::runtime::Handle::current())).await
 }
 
 #[cfg(test)]
@@ -497,13 +529,30 @@ mod tests {
 
         // Create the keys.
         ca.get_or_create_keys()?;
-        let config = Config {
-            storage: Storage::Memory,
+        let config = StandaloneOptions {
+            db_config: db::Config {
+                storage: Storage::Memory,
+                page_pool_max_size: None,
+            },
+            websocket: WebSocketOptions::default(),
         };
 
-        let _env = StandaloneEnv::init(config, &ca, data_dir.clone()).await?;
+        let _env = StandaloneEnv::init(
+            config,
+            &ca,
+            data_dir.clone(),
+            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
+        )
+        .await?;
         // Ensure that we have a lock.
-        assert!(StandaloneEnv::init(config, &ca, data_dir.clone()).await.is_err());
+        assert!(StandaloneEnv::init(
+            config,
+            &ca,
+            data_dir.clone(),
+            JobCores::without_pinned_cores(tokio::runtime::Handle::current())
+        )
+        .await
+        .is_err());
 
         Ok(())
     }

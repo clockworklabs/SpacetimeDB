@@ -1,19 +1,20 @@
 use super::query::{self, Supported};
 use super::subscription::{IncrementalJoin, SupportedQuery};
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue, UpdatesRelValue};
 use crate::messages::websocket::TableUpdate;
+use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, WebsocketFormat};
-use spacetimedb_lib::db::error::AuthError;
-use spacetimedb_lib::relation::DbTable;
-use spacetimedb_lib::{Identity, ProductValue};
+use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate};
+use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::u256;
+use spacetimedb_sats::{u256, ProductValue};
+use spacetimedb_schema::def::error::AuthError;
+use spacetimedb_schema::relation::DbTable;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -37,7 +38,7 @@ use std::time::Duration;
 /// as is the case for incremental joins.
 /// And we want to associate a hash with the entire unit of execution,
 /// rather than an individual plan.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct QueryHash {
     data: [u8; 32],
 }
@@ -49,7 +50,14 @@ impl From<QueryHash> for u256 {
 }
 
 impl QueryHash {
+    /// The zero value of a QueryHash
     pub const NONE: Self = Self { data: [0; 32] };
+
+    /// The min value of a QueryHash
+    pub const MIN: Self = Self::NONE;
+
+    /// The max value of a QueryHash
+    pub const MAX: Self = Self { data: [0xFFu8; 32] };
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self {
@@ -57,8 +65,27 @@ impl QueryHash {
         }
     }
 
-    pub fn from_string(str: &str) -> Self {
+    /// Generate a hash from a query string
+    pub fn from_string(str: &str, identity: Identity, has_param: bool) -> Self {
+        if has_param {
+            return Self::from_string_and_identity(str, identity);
+        }
         Self::from_bytes(str.as_bytes())
+    }
+
+    /// If a query is parameterized with `:sender`, we must use the value of `:sender`,
+    /// i.e. the identity of the caller, when hashing the query text,
+    /// so that two identical queries from different clients aren't hashed to the same value.
+    ///
+    /// TODO: Once we have RLS, this hash must computed after name resolution.
+    /// It can no longer be computed from the source text.
+    pub fn from_string_and_identity(str: &str, identity: Identity) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(str.as_bytes());
+        hasher.update(&identity.to_byte_array());
+        Self {
+            data: hasher.finalize().into(),
+        }
     }
 }
 
@@ -104,7 +131,7 @@ impl PartialEq for ExecutionUnit {
 impl From<SupportedQuery> for ExecutionUnit {
     // Used in tests and benches.
     // TODO(bikeshedding): Remove this impl,
-    // in favor of more explcit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
+    // in favor of more explicit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
     fn from(plan: SupportedQuery) -> Self {
         Self::new(plan, QueryHash::NONE).unwrap()
     }
@@ -208,7 +235,7 @@ impl ExecutionUnit {
 
     /// Evaluate this execution unit against the database using the specified format.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn eval<F: WebsocketFormat>(
+    pub fn eval<F: BuildableWebsocketFormat>(
         &self,
         db: &RelationalDB,
         tx: &Tx,
@@ -228,7 +255,11 @@ impl ExecutionUnit {
             let deletes = F::List::default();
             let qu = QueryUpdate { deletes, inserts };
             let update = F::into_query_update(qu, compression);
-            TableUpdate::new(self.return_table(), self.return_name(), (update, num_rows))
+            TableUpdate::new(
+                self.return_table(),
+                self.return_name(),
+                SingleQueryUpdate { update, num_rows },
+            )
         })
     }
 

@@ -10,6 +10,11 @@ pub mod convert;
 pub mod de;
 pub mod hash;
 pub mod hex;
+pub mod layout;
+#[cfg(feature = "memory-usage")]
+mod memory_usage_impls;
+#[cfg(feature = "memory-usage")]
+pub use spacetimedb_memory_usage as memory_usage;
 pub mod meta_type;
 pub mod primitives;
 pub mod product_type;
@@ -29,12 +34,12 @@ pub mod typespace;
 #[cfg(any(test, feature = "proptest"))]
 pub mod proptest;
 
-#[cfg(feature = "serde")]
+#[cfg(any(test, feature = "serde"))]
 pub mod serde {
     pub use crate::de::serde::{deserialize_from as deserialize, SerdeDeserializer};
     pub use crate::ser::serde::{serialize_to as serialize, SerdeSerializer};
 
-    /// A wrapper around a `serde` error which occured while translating SATS <-> serde.
+    /// A wrapper around a `serde` error which occurred while translating SATS <-> serde.
     #[repr(transparent)]
     pub struct SerdeError<E>(pub E);
 
@@ -72,7 +77,7 @@ pub use crate as sats;
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
 pub use algebraic_value::{i256, u256, AlgebraicValue, F32, F64};
-pub use algebraic_value_hash::hash_bsatn;
+pub use algebraic_value_hash::hash_bsatn_array;
 pub use array_type::ArrayType;
 pub use array_value::ArrayValue;
 pub use product_type::ProductType;
@@ -154,6 +159,23 @@ impl<'a, T: Value> ValueWithType<'a, T> {
 impl<'a, T: Value> ValueWithType<'a, Box<[T]>> {
     pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'a, T>> + use<'_, 'a, T> {
         self.value().iter().map(|val| ValueWithType { ty: self.ty, val })
+    }
+}
+
+impl<T: Value + PartialEq> PartialEq<T> for ValueWithType<'_, T> {
+    fn eq(&self, other: &T) -> bool {
+        self.val == other
+    }
+}
+
+use core::fmt;
+
+impl<T: fmt::Debug + Value<Type: fmt::Debug>> fmt::Debug for ValueWithType<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ValueWithType")
+            .field("type", self.ty())
+            .field("value", self.value())
+            .finish()
     }
 }
 

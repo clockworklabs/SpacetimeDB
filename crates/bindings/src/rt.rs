@@ -4,7 +4,7 @@ use crate::table::IndexAlgo;
 use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
-use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
+use spacetimedb_lib::de::{self, Deserialize, Error as _, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
@@ -202,7 +202,7 @@ impl<'de, A: Args<'de>> de::ProductVisitor<'de> for ArgsVisitor<A> {
         A::visit_seq_product(prod)
     }
     fn visit_named_product<Acc: de::NamedProductAccess<'de>>(self, _prod: Acc) -> Result<Self::Output, Acc::Error> {
-        Err(de::Error::custom("named products not supported"))
+        Err(Acc::Error::named_products_not_supported())
     }
 }
 
@@ -342,29 +342,13 @@ pub fn register_table<T: Table>() {
             table = table.with_schedule(schedule.reducer_name, schedule.scheduled_at_column);
         }
 
+        for col in T::get_default_col_values().iter_mut() {
+            table = table.with_default_column_value(col.col_id, col.value.clone())
+        }
+
         table.finish();
     })
 }
-
-mod sealed_direct_index {
-    pub trait Sealed {}
-}
-#[diagnostic::on_unimplemented(
-    message = "column type must be a one of: `u8`, `u16`, `u32`, or `u64`",
-    label = "should be `u8`, `u16`, `u32`, or `u64`, not `{Self}`"
-)]
-pub trait DirectIndexKey: sealed_direct_index::Sealed {}
-impl sealed_direct_index::Sealed for u8 {}
-impl DirectIndexKey for u8 {}
-impl sealed_direct_index::Sealed for u16 {}
-impl DirectIndexKey for u16 {}
-impl sealed_direct_index::Sealed for u32 {}
-impl DirectIndexKey for u32 {}
-impl sealed_direct_index::Sealed for u64 {}
-impl DirectIndexKey for u64 {}
-
-/// Assert that `T` is a valid column to use direct index on.
-pub const fn assert_column_type_valid_for_direct_index<T: DirectIndexKey>() {}
 
 impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
     fn from(algo: IndexAlgo<'_>) -> RawIndexAlgorithm {
@@ -551,6 +535,28 @@ const NO_SUCH_BYTES: u16 = errno::NO_SUCH_BYTES.get();
 fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
     const INVALID: i16 = NO_SUCH_BYTES as i16;
 
+    // For reducer arguments, the `buf` will almost certainly already be large enough,
+    // as it comes from `IterBuf`, which start at 64KiB.
+    // But reading the remaining length and calling `buf.reserve` is a negligible cost,
+    // and in the future we may want to use this method to read other `BytesSource`s into other buffers.
+    // I (pgoldman 2025-09-26) also value having it as an example of correct usage of `bytes_source_remaining_length`.
+    let len = {
+        let mut len = 0;
+        let ret = unsafe { sys::raw::bytes_source_remaining_length(source, &raw mut len) };
+        match ret {
+            0 => len,
+            INVALID => panic!("invalid source passed"),
+            _ => unreachable!(),
+        }
+    };
+    buf.reserve(buf.len().saturating_sub(len as usize));
+
+    // Because we've reserved space in our buffer already, this loop should be unnecessary.
+    // We expect the first call to `bytes_source_read` to always return `-1`.
+    // I (pgoldman 2025-09-26) am leaving the loop here because there's no downside to it,
+    // and in the future we may want to support `BytesSource`s which don't have a known length ahead of time
+    // (i.e. put arbitrary streams in `BytesSource` on the host side rather than just `Bytes` buffers),
+    // at which point the loop will become useful again.
     loop {
         // Write into the spare capacity of the buffer.
         let buf_ptr = buf.spare_capacity_mut();

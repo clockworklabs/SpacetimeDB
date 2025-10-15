@@ -5,6 +5,9 @@
 flamegraphs/*.svg
 flamegraphs/flamegraph.folded
 
+### MacOS ###
+.DS_Store
+
 ### Node ###
 # Logs
 packages/logs
@@ -213,3 +216,6 @@ new.json
 # Keys
 *.pem
 .ok.sql
+
+# Test data
+!crates/core/testdata/

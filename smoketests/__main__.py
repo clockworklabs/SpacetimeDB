@@ -11,12 +11,13 @@ from . import TEST_DIR, SPACETIME_BIN, exe_suffix, build_template_target
 import smoketests
 import sys
 import logging
+import itertools
 
 def check_docker():
     docker_ps = smoketests.run_cmd("docker", "ps", "--format=json")
     docker_ps = (json.loads(line) for line in docker_ps.splitlines())
     for docker_container in docker_ps:
-        if "node" in docker_container["Image"]:
+        if "node" in docker_container["Image"] or "spacetime" in docker_container["Image"]:
             return docker_container["Names"]
     else:
         print("Docker container not found, is SpacetimeDB running?")
@@ -51,6 +52,7 @@ class ExclusionaryTestLoader(unittest.TestLoader):
 def _convert_select_pattern(pattern):
     return f'*{pattern}*' if '*' not in pattern else pattern
 
+
 TESTPREFIX = "smoketests.tests."
 def main():
     tests = [fname.removesuffix(".py") for fname in os.listdir(TEST_DIR / "tests") if fname.endswith(".py") and fname != "__init__.py"]
@@ -58,6 +60,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("test", nargs="*", default=tests)
     parser.add_argument("--docker", action="store_true")
+    parser.add_argument("--compose-file")
+    parser.add_argument("--no-docker-logs", action="store_true")
     parser.add_argument("--skip-dotnet", action="store_true", help="ignore tests which require dotnet")
     parser.add_argument("--show-all-output", action="store_true", help="show all stdout/stderr from the tests as they're running")
     parser.add_argument("--parallel", action="store_true", help="run test classes in parallel")
@@ -67,11 +71,14 @@ def main():
                         help='Only run tests which match the given substring')
     parser.add_argument("-x", dest="exclude", nargs="*", default=[])
     parser.add_argument("--no-build-cli", action="store_true", help="don't cargo build the cli")
+    parser.add_argument("--list", action="store_true", help="list the tests that would be run, but don't run them")
+    parser.add_argument("--remote-server", action="store", help="Run against a remote server")
+    parser.add_argument("--spacetime-login", action="store_true", help="Use `spacetime login` for these tests (and disable tests that don't work with that)")
     args = parser.parse_args()
 
     if not args.no_build_cli:
         logging.info("Compiling spacetime cli...")
-        smoketests.run_cmd("cargo", "build", "-pspacetimedb-cli", "-pspacetimedb-update", cwd=TEST_DIR.parent, capture_stderr=False)
+        smoketests.run_cmd("cargo", "build", cwd=TEST_DIR.parent, capture_stderr=False)
 
     update_bin_name = "spacetimedb-update" + exe_suffix
     try:
@@ -94,12 +101,27 @@ def main():
     build_template_target()
 
     if args.docker:
-        docker_container = check_docker()
         # have docker logs print concurrently with the test output
-        subprocess.Popen(["docker", "logs", "-f", docker_container])
+        if args.compose_file:
+            smoketests.COMPOSE_FILE = args.compose_file
+        if not args.no_docker_logs:
+            if args.compose_file:
+                subprocess.Popen(["docker", "compose", "-f", args.compose_file, "logs", "-f"])
+            else:
+                docker_container = check_docker()
+                subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
 
-    smoketests.new_identity(TEST_DIR / 'config.toml')
+    if args.remote_server is not None:
+        smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "server", "edit", "localhost", "--url", args.remote_server, "--yes")
+        smoketests.REMOTE_SERVER = True
+
+    if args.spacetime_login:
+        smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "logout")
+        smoketests.spacetime("--config-path", TEST_DIR / 'config.toml', "login")
+        smoketests.USE_SPACETIME_LOGIN = True
+    else:
+        smoketests.new_identity(TEST_DIR / 'config.toml')
 
     if not args.skip_dotnet:
         smoketests.HAVE_DOTNET = check_dotnet()
@@ -116,6 +138,12 @@ def main():
     loader.testNamePatterns = args.testNamePatterns
 
     tests = loader.loadTestsFromNames(testlist)
+    if args.list:
+        print("Selected tests:\n")
+        for test in itertools.chain(*itertools.chain(*tests)):
+            print(f"{test}")
+        exit(0)
+
     buffer = not args.show_all_output
     verbosity = 2
 

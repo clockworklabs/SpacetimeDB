@@ -1,6 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use spacetimedb::error::DBError;
-use spacetimedb::execution_context::Workload;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::identity::AuthCtx;
 use spacetimedb::messages::websocket::BsatnFormat;
@@ -12,10 +11,18 @@ use spacetimedb::subscription::{collect_table_update, TableUpdateType};
 use spacetimedb::{db::relational_db::RelationalDB, messages::websocket::Compression};
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{bsatn, product, AlgebraicType, AlgebraicValue, ProductValue};
+
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
     let schema = &[
@@ -118,16 +125,19 @@ fn eval(c: &mut Criterion) {
             let tx = raw.db.begin_tx(Workload::Subscribe);
             let auth = AuthCtx::for_testing();
             let schema_viewer = &SchemaViewer::new(&tx, &auth);
-            let (plan, table_id, table_name) = compile_subscription(sql, schema_viewer).unwrap();
-            let plan = plan.optimize().map(PipelinedProject::from).unwrap();
+            let (plans, table_id, table_name, _) = compile_subscription(sql, schema_viewer, &auth).unwrap();
+            let plans = plans
+                .into_iter()
+                .map(|plan| plan.optimize().unwrap())
+                .map(PipelinedProject::from)
+                .collect::<Vec<_>>();
             let tx = DeltaTx::from(&tx);
 
             b.iter(|| {
                 drop(black_box(collect_table_update::<_, BsatnFormat>(
-                    &plan,
+                    &plans,
                     table_id,
                     table_name.clone(),
-                    Compression::None,
                     &tx,
                     TableUpdateType::Subscribe,
                 )))

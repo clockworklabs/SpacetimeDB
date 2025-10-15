@@ -3,7 +3,7 @@ use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawIdentifier, RawScopedTypeNa
 use spacetimedb_lib::{ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList, ColSet};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
-use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef};
+use spacetimedb_sats::{bsatn::DecodeError, AlgebraicType, AlgebraicTypeRef};
 use std::borrow::Cow;
 use std::fmt;
 
@@ -62,7 +62,7 @@ pub enum ValidationError {
     #[error("No index found to support unique constraint `{constraint}` for columns `{columns:?}`")]
     UniqueConstraintWithoutIndex { constraint: Box<str>, columns: ColSet },
     #[error("Direct index does not support type `{ty}` in column `{column}` in index `{index}`")]
-    DirectIndexOnNonUnsignedInt {
+    DirectIndexOnBadType {
         index: RawIdentifier,
         column: RawIdentifier,
         ty: PrettyAlgebraicType,
@@ -120,6 +120,16 @@ pub enum ValidationError {
     TableNameReserved { table: Identifier },
     #[error("Row-level security invalid: `{error}`, query: `{sql}")]
     InvalidRowLevelQuery { sql: String, error: String },
+    #[error("Failed to deserialize default value for table {table} column {col_id}: {err}")]
+    ColumnDefaultValueMalformed {
+        table: RawIdentifier,
+        col_id: ColId,
+        err: DecodeError,
+    },
+    #[error("Multiple default values for table {table} column {col_id}")]
+    MultipleColumnDefaultValues { table: RawIdentifier, col_id: ColId },
+    #[error("Table {table} not found")]
+    TableNotFound { table: RawIdentifier },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.
@@ -197,14 +207,14 @@ impl fmt::Display for TypeLocation<'_> {
                 position,
                 arg_name,
             } => {
-                write!(f, "reducer `{}` argument {}", reducer_name, position)?;
+                write!(f, "reducer `{reducer_name}` argument {position}")?;
                 if let Some(arg_name) = arg_name {
-                    write!(f, " (`{}`)", arg_name)?;
+                    write!(f, " (`{arg_name}`)")?;
                 }
                 Ok(())
             }
             TypeLocation::InTypespace { ref_ } => {
-                write!(f, "typespace ref `{}`", ref_)
+                write!(f, "typespace ref `{ref_}`")
             }
         }
     }

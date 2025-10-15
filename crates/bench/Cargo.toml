@@ -40,6 +40,7 @@ bench = false
 spacetimedb-client-api = { path = "../client-api" }
 spacetimedb-core = { path = "../core", features = ["test"] }
 spacetimedb-data-structures.workspace = true
+spacetimedb-datastore.workspace = true
 spacetimedb-execution = { path = "../execution" }
 spacetimedb-lib = { path = "../lib" }
 spacetimedb-paths.workspace = true
@@ -74,6 +75,10 @@ tracing-subscriber.workspace = true
 walkdir.workspace = true
 itertools.workspace = true
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 # only try to build these on linux
 
@@ -85,3 +90,6 @@ itertools.workspace = true
 iai-callgrind = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
 iai-callgrind-runner = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
 iai-callgrind-macros = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
+
+[lints]
+workspace = true

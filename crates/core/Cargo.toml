@@ -15,11 +15,14 @@ path = "src/lib.rs"  # The source file of the target.
 bench = false
 
 [dependencies]
+spacetimedb-auth.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-commitlog.workspace = true
+spacetimedb-datastore.workspace = true
 spacetimedb-durability.workspace = true
+spacetimedb-memory-usage.workspace = true
 spacetimedb-metrics.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-paths.workspace = true
@@ -33,6 +36,7 @@ spacetimedb-snapshot.workspace = true
 spacetimedb-subscription.workspace = true
 spacetimedb-expr.workspace = true
 spacetimedb-execution.workspace = true
+spacetimedb-fs-utils.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
 arrayvec.workspace = true
@@ -46,6 +50,7 @@ bytes.workspace = true
 bytestring.workspace = true
 chrono.workspace = true
 crossbeam-channel.workspace = true
+crossbeam-queue.workspace = true
 derive_more.workspace = true
 dirs.workspace = true
 enum-as-inner.workspace = true
@@ -53,6 +58,7 @@ enum-map.workspace = true
 flate2.workspace = true
 fs2.workspace = true
 futures.workspace = true
+futures-util.workspace = true
 hashbrown = { workspace = true, features = ["rayon", "serde"] }
 hex.workspace = true
 hostname.workspace = true
@@ -64,6 +70,7 @@ jsonwebtoken.workspace = true
 lazy_static.workspace = true
 log.workspace = true
 memchr.workspace = true
+nohash-hasher.workspace = true
 once_cell.workspace = true
 openssl.workspace = true
 parking_lot.workspace = true
@@ -88,14 +95,15 @@ sled.workspace = true
 smallvec.workspace = true
 sqlparser.workspace = true
 strum.workspace = true
+tabled.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 thin-vec.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
 tokio-stream = "0.1"
+tokio-metrics = { version = "0.4.0", features = ["rt"] }
 toml.workspace = true
-toml_edit.workspace = true
 tracing-appender.workspace = true
 tracing-core.workspace = true
 tracing-flame.workspace = true
@@ -106,25 +114,36 @@ tracing.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
+v8.workspace = true
 wasmtime.workspace = true
-jwks = { package = "spacetimedb-jwks", version = "0.1.3" }
+jwks.workspace = true
 async_cache = "0.3.1"
 faststr = "0.2.23"
+core_affinity = "0.8"
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = {workspace = true}
+tikv-jemalloc-ctl = {workspace = true}
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { workspace = true, features = ["sched"] }
 
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []
-# Optional storage engines.
 default = ["unindexed_iter_by_col_range_warn"]
 # Enable timing for wasm ABI calls
 spacetimedb-wasm-instance-env-times = []
 # Enable test helpers and utils
-test = ["spacetimedb-commitlog/test"]
+test = ["spacetimedb-commitlog/test", "spacetimedb-datastore/test"]
+# Perfmaps for profiling modules
+perfmap = []
 
 [dev-dependencies]
-spacetimedb-lib = { path = "../lib", features = ["proptest"] }
+spacetimedb-lib = { path = "../lib", features = ["proptest", "test"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
-spacetimedb-commitlog = { workspace = true, features = ["test"] }
+spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
+spacetimedb-datastore = { path = "../datastore/", features = ["test"] }
 
 criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
@@ -136,3 +155,7 @@ pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
 reqwest.workspace = true
+fs_extra.workspace = true
+
+[lints]
+workspace = true

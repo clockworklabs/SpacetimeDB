@@ -17,6 +17,7 @@ spacetimedb-data-structures.workspace = true
 spacetimedb-sql-parser.workspace = true
 
 anyhow.workspace = true
+derive_more.workspace = true
 indexmap.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
@@ -29,12 +30,16 @@ smallvec.workspace = true
 hashbrown.workspace = true
 enum-as-inner.workspace = true
 enum-map.workspace = true
+insta.workspace = true
+termcolor.workspace = true
 
 [dev-dependencies]
-spacetimedb-lib = { workspace = true, features = ["test"] }
+spacetimedb-lib = { path = "../lib", features = ["test"] }
 # these are circular dependencies, but only in tests, so it's fine
 spacetimedb-testing = { path = "../testing" }
-spacetimedb-cli.workspace = true
 
 proptest.workspace = true
 serial_test.workspace = true
+
+[lints]
+workspace = true

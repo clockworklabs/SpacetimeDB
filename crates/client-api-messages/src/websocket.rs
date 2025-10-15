@@ -26,22 +26,18 @@ use smallvec::SmallVec;
 use spacetimedb_lib::{ConnectionId, Identity, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{
-    bsatn::{self, ToBsatn},
     de::{Deserialize, Error},
     impl_deserialize, impl_serialize, impl_st,
-    ser::{serde::SerializeWrapper, Serialize},
+    ser::Serialize,
     AlgebraicType, SpacetimeType,
 };
-use std::{
-    io::{self, Read as _, Write as _},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 pub const TEXT_PROTOCOL: &str = "v1.json.spacetimedb";
 pub const BIN_PROTOCOL: &str = "v1.bsatn.spacetimedb";
 
 pub trait RowListLen {
-    /// Returns the length of the list.
+    /// Returns the length, in number of rows, not bytes, of the row list.
     fn len(&self) -> usize;
     /// Returns whether the list is empty or not.
     fn is_empty(&self) -> bool {
@@ -86,16 +82,9 @@ pub trait WebsocketFormat: Sized {
         + Clone
         + Default;
 
-    /// Encodes the `elems` to a list in the format and also returns the length of the list.
-    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> (Self::List, u64);
-
     /// The type used to encode query updates.
     /// This type exists so that some formats, e.g., BSATN, can compress an update.
     type QueryUpdate: SpacetimeType + for<'de> Deserialize<'de> + Serialize + Debug + Clone + Send;
-
-    /// Convert a `QueryUpdate` into `Self::QueryUpdate`.
-    /// This allows some formats to e.g., compress the update.
-    fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate;
 }
 
 /// Messages sent from the client to the server.
@@ -622,13 +611,20 @@ pub struct TableUpdate<F: WebsocketFormat> {
     pub updates: SmallVec<[F::QueryUpdate; 1]>,
 }
 
+/// Computed update for a single query, annotated with the number of matching rows.
+#[derive(Debug)]
+pub struct SingleQueryUpdate<F: WebsocketFormat> {
+    pub update: F::QueryUpdate,
+    pub num_rows: u64,
+}
+
 impl<F: WebsocketFormat> TableUpdate<F> {
-    pub fn new(table_id: TableId, table_name: Box<str>, (update, num_rows): (F::QueryUpdate, u64)) -> Self {
+    pub fn new(table_id: TableId, table_name: Box<str>, update: SingleQueryUpdate<F>) -> Self {
         Self {
             table_id,
             table_name,
-            num_rows,
-            updates: [update].into(),
+            num_rows: update.num_rows,
+            updates: [update.update].into(),
         }
     }
 
@@ -641,9 +637,9 @@ impl<F: WebsocketFormat> TableUpdate<F> {
         }
     }
 
-    pub fn push(&mut self, (update, num_rows): (F::QueryUpdate, u64)) {
-        self.updates.push(update);
-        self.num_rows += num_rows;
+    pub fn push(&mut self, update: SingleQueryUpdate<F>) {
+        self.updates.push(update.update);
+        self.num_rows += update.num_rows;
     }
 
     pub fn num_rows(&self) -> usize {
@@ -657,22 +653,6 @@ pub enum CompressableQueryUpdate<F: WebsocketFormat> {
     Uncompressed(QueryUpdate<F>),
     Brotli(Bytes),
     Gzip(Bytes),
-}
-
-impl CompressableQueryUpdate<BsatnFormat> {
-    pub fn maybe_decompress(self) -> QueryUpdate<BsatnFormat> {
-        match self {
-            Self::Uncompressed(qu) => qu,
-            Self::Brotli(bytes) => {
-                let bytes = brotli_decompress(&bytes).unwrap();
-                bsatn::from_slice(&bytes).unwrap()
-            }
-            Self::Gzip(bytes) => {
-                let bytes = gzip_decompress(&bytes).unwrap();
-                bsatn::from_slice(&bytes).unwrap()
-            }
-        }
-    }
 }
 
 #[derive(SpacetimeType, Debug, Clone)]
@@ -721,7 +701,7 @@ pub struct OneOffTable<F: WebsocketFormat> {
     /// The set of rows which matched the query, encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
     ///
-    /// TODO(centril, 1.0): Evalutate whether we want to conditionally compress these.
+    /// TODO(centril, 1.0): Evaluate whether we want to conditionally compress these.
     pub rows: F::List,
 }
 
@@ -749,23 +729,8 @@ pub struct JsonFormat;
 
 impl WebsocketFormat for JsonFormat {
     type Single = ByteString;
-
     type List = Vec<ByteString>;
-
-    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> (Self::List, u64) {
-        let mut count = 0;
-        let list = elems
-            .map(|elem| serde_json::to_string(&SerializeWrapper::new(elem)).unwrap().into())
-            .inspect(|_| count += 1)
-            .collect();
-        (list, count)
-    }
-
     type QueryUpdate = QueryUpdate<Self>;
-
-    fn into_query_update(qu: QueryUpdate<Self>, _: Compression) -> Self::QueryUpdate {
-        qu
-    }
 }
 
 #[derive(Clone, Copy, Default, Debug, SpacetimeType)]
@@ -774,57 +739,8 @@ pub struct BsatnFormat;
 
 impl WebsocketFormat for BsatnFormat {
     type Single = Box<[u8]>;
-
     type List = BsatnRowList;
-
-    fn encode_list<R: ToBsatn + Serialize>(mut elems: impl Iterator<Item = R>) -> (Self::List, u64) {
-        // For an empty list, the size of a row is unknown, so use `RowOffsets`.
-        let Some(first) = elems.next() else {
-            return (BsatnRowList::row_offsets(), 0);
-        };
-        // We have at least one row. Determine the static size from that, if available.
-        let (mut list, mut scratch) = match first.static_bsatn_size() {
-            Some(size) => (BsatnRowListBuilder::fixed(size), Vec::with_capacity(size as usize)),
-            None => (BsatnRowListBuilder::row_offsets(), Vec::new()),
-        };
-        // Add the first element and then the rest.
-        // We assume that the schema of rows yielded by `elems` stays the same,
-        // so once the size is fixed, it will stay that way.
-        let mut count = 0;
-        let mut push = |elem: R| {
-            elem.to_bsatn_extend(&mut scratch).unwrap();
-            list.push(&scratch);
-            scratch.clear();
-            count += 1;
-        };
-        push(first);
-        for elem in elems {
-            push(elem);
-        }
-        (list.finish(), count)
-    }
-
     type QueryUpdate = CompressableQueryUpdate<Self>;
-
-    fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate {
-        let qu_len_would_have_been = bsatn::to_len(&qu).unwrap();
-
-        match decide_compression(qu_len_would_have_been, compression) {
-            Compression::None => CompressableQueryUpdate::Uncompressed(qu),
-            Compression::Brotli => {
-                let bytes = bsatn::to_vec(&qu).unwrap();
-                let mut out = Vec::new();
-                brotli_compress(&bytes, &mut out);
-                CompressableQueryUpdate::Brotli(out.into())
-            }
-            Compression::Gzip => {
-                let bytes = bsatn::to_vec(&qu).unwrap();
-                let mut out = Vec::new();
-                gzip_compress(&bytes, &mut out);
-                CompressableQueryUpdate::Gzip(out.into())
-            }
-        }
-    }
 }
 
 /// A specification of either a desired or decided compression algorithm.
@@ -839,75 +755,28 @@ pub enum Compression {
     Gzip,
 }
 
-pub fn decide_compression(len: usize, compression: Compression) -> Compression {
-    /// The threshold beyond which we start to compress messages.
-    /// 1KiB was chosen without measurement.
-    /// TODO(perf): measure!
-    const COMPRESS_THRESHOLD: usize = 1024;
-
-    if len > COMPRESS_THRESHOLD {
-        compression
-    } else {
-        Compression::None
-    }
-}
-
-pub fn brotli_compress(bytes: &[u8], out: &mut Vec<u8>) {
-    let reader = &mut &bytes[..];
-
-    // The default Brotli buffer size.
-    const BUFFER_SIZE: usize = 4096;
-    // We are optimizing for compression speed,
-    // so we choose the lowest (fastest) level of compression.
-    // Experiments on internal workloads have shown compression ratios between 7:1 and 10:1
-    // for large `SubscriptionUpdate` messages at this level.
-    const COMPRESSION_LEVEL: u32 = 1;
-    // The default value for an internal compression parameter.
-    // See `BrotliEncoderParams` for more details.
-    const LG_WIN: u32 = 22;
-
-    let mut encoder = brotli::CompressorReader::new(reader, BUFFER_SIZE, COMPRESSION_LEVEL, LG_WIN);
-
-    encoder
-        .read_to_end(out)
-        .expect("Failed to Brotli compress `SubscriptionUpdateMessage`");
-}
-
-pub fn brotli_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
-    let mut decompressed = Vec::new();
-    brotli::BrotliDecompress(&mut &bytes[..], &mut decompressed)?;
-    Ok(decompressed)
-}
-
-pub fn gzip_compress(bytes: &[u8], out: &mut Vec<u8>) {
-    let mut encoder = flate2::write::GzEncoder::new(out, flate2::Compression::fast());
-    encoder.write_all(bytes).unwrap();
-    encoder.finish().expect("Failed to gzip compress `bytes`");
-}
-
-pub fn gzip_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
-    let mut decompressed = Vec::new();
-    let _ = flate2::read::GzDecoder::new(bytes).read(&mut decompressed)?;
-    Ok(decompressed)
-}
-
-type RowSize = u16;
-type RowOffset = u64;
+pub type RowSize = u16;
+pub type RowOffset = u64;
 
 /// A packed list of BSATN-encoded rows.
-#[derive(SpacetimeType, Debug, Clone)]
+#[derive(SpacetimeType, Debug, Clone, Default)]
 #[sats(crate = spacetimedb_lib)]
-pub struct BsatnRowList<B = Bytes, I = Arc<[RowOffset]>> {
+pub struct BsatnRowList {
     /// A size hint about `rows_data`
     /// intended to facilitate parallel decode purposes on large initial updates.
-    size_hint: RowSizeHint<I>,
+    size_hint: RowSizeHint,
     /// The flattened byte array for a list of rows.
-    rows_data: B,
+    rows_data: Bytes,
 }
 
-impl Default for BsatnRowList {
-    fn default() -> Self {
-        Self::row_offsets()
+impl BsatnRowList {
+    /// Returns a new row list where `rows_data` is the flattened byte array
+    /// containing the BSATN of each row, without any markers for where a row begins and end.
+    ///
+    /// The `size_hint` encodes the boundaries of each row in `rows_data`.
+    /// See [`RowSizeHint`] for more details on the encoding.
+    pub fn new(size_hint: RowSizeHint, rows_data: Bytes) -> Self {
+        Self { size_hint, rows_data }
     }
 }
 
@@ -916,17 +785,23 @@ impl Default for BsatnRowList {
 /// The use-case for this is clients who are bandwidth limited and where every byte counts.
 #[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
-pub enum RowSizeHint<I> {
+pub enum RowSizeHint {
     /// Each row in `rows_data` is of the same fixed size as specified here.
     FixedSize(RowSize),
     /// The offsets into `rows_data` defining the boundaries of each row.
     /// Only stores the offset to the start of each row.
     /// The ends of each row is inferred from the start of the next row, or `rows_data.len()`.
     /// The behavior of this is identical to that of `PackedStr`.
-    RowOffsets(I),
+    RowOffsets(Arc<[RowOffset]>),
 }
 
-impl<I: AsRef<[RowOffset]>> RowSizeHint<I> {
+impl Default for RowSizeHint {
+    fn default() -> Self {
+        Self::RowOffsets([].into())
+    }
+}
+
+impl RowSizeHint {
     fn index_to_range(&self, index: usize, data_end: usize) -> Option<Range<usize>> {
         match self {
             Self::FixedSize(size) => {
@@ -951,37 +826,17 @@ impl<I: AsRef<[RowOffset]>> RowSizeHint<I> {
     }
 }
 
-impl<B: Default, I> BsatnRowList<B, I> {
-    pub fn fixed(row_size: RowSize) -> Self {
-        Self {
-            size_hint: RowSizeHint::FixedSize(row_size),
-            rows_data: <_>::default(),
-        }
-    }
-
-    /// Returns a new empty list using indices
-    pub fn row_offsets() -> Self
-    where
-        I: From<[RowOffset; 0]>,
-    {
-        Self {
-            size_hint: RowSizeHint::RowOffsets([].into()),
-            rows_data: <_>::default(),
-        }
-    }
-}
-
-impl<B: AsRef<[u8]>, I: AsRef<[RowOffset]>> RowListLen for BsatnRowList<B, I> {
-    /// Returns the length of the row list.
+impl RowListLen for BsatnRowList {
     fn len(&self) -> usize {
         match &self.size_hint {
+            // `size != 0` is always the case for `FixedSize`.
             RowSizeHint::FixedSize(size) => self.rows_data.as_ref().len() / *size as usize,
             RowSizeHint::RowOffsets(offsets) => offsets.as_ref().len(),
         }
     }
 }
 
-impl<B: AsRef<[u8]>, I> ByteListLen for BsatnRowList<B, I> {
+impl ByteListLen for BsatnRowList {
     /// Returns the uncompressed size of the list in bytes
     fn num_bytes(&self) -> usize {
         self.rows_data.as_ref().len()
@@ -1017,30 +872,5 @@ impl Iterator for BsatnRowListIter<'_> {
         let index = self.index;
         self.index += 1;
         self.list.get(index)
-    }
-}
-
-/// A [`BsatnRowList`] that can be added to.
-pub type BsatnRowListBuilder = BsatnRowList<Vec<u8>, Vec<RowOffset>>;
-
-impl BsatnRowListBuilder {
-    /// Adds `row`, BSATN-encoded to this list.
-    #[inline]
-    pub fn push(&mut self, row: &[u8]) {
-        if let RowSizeHint::RowOffsets(offsets) = &mut self.size_hint {
-            offsets.push(self.rows_data.len() as u64);
-        }
-        self.rows_data.extend_from_slice(row);
-    }
-
-    /// Finish the in flight list, throwing away the capability to mutate.
-    pub fn finish(self) -> BsatnRowList {
-        let Self { size_hint, rows_data } = self;
-        let rows_data = rows_data.into();
-        let size_hint = match size_hint {
-            RowSizeHint::FixedSize(fs) => RowSizeHint::FixedSize(fs),
-            RowSizeHint::RowOffsets(ro) => RowSizeHint::RowOffsets(ro.into()),
-        };
-        BsatnRowList { size_hint, rows_data }
     }
 }

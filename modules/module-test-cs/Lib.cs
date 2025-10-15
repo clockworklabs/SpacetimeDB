@@ -294,12 +294,11 @@ static partial class Module
         var rowCountBeforeDelete = ctx.Db.test_a.Count;
         Log.Info($"Row count before delete: {rowCountBeforeDelete}");
 
-        uint numDeleted = 0;
+        ulong numDeleted = 0;
         // Delete rows using the "foo" index (from 5 up to, but not including, 10).
         for (uint row = 5; row < 10; row++)
         {
-            // FIXME: Apprently in Rust you can delete by index, but in C# you can't.
-            // numDeleted += ctx.Db.test_a.foo.Delete(row);
+            numDeleted += ctx.Db.test_a.foo.Delete(row);
         }
 
         var rowCountAfterDelete = ctx.Db.test_a.Count;

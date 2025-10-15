@@ -6,6 +6,11 @@ rust-version.workspace = true
 license-file = "LICENSE"
 publish = false
 
+[features]
+# NOTE(bfops): This is not a well-thought-through feature. It's really only meant for internal testing/debugging.
+# Specifically, we use it in some CI.
+github-token-auth = []
+
 [dependencies]
 spacetimedb-paths.workspace = true
 
@@ -25,7 +30,10 @@ tempfile.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing = { workspace = true, features = ["release_max_level_off"] }
-zip = "2"
+zip = "2.3"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }
+
+[lints]
+workspace = true

@@ -1,8 +1,8 @@
 ---
 source: crates/bindings/tests/deps.rs
-expression: "cargo tree -p spacetimedb -f {lib} -e no-dev"
+expression: "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown -f {lib}"
 ---
-total crates: 68
+total crates: 60
 spacetimedb
 ├── bytemuck
 ├── derive_more
@@ -19,19 +19,12 @@ spacetimedb
 │   └── rustc_version
 │       └── semver
 ├── getrandom
-│   ├── cfg_if
-│   └── libc
+│   └── cfg_if
 ├── log
 ├── rand
-│   ├── libc
 │   ├── rand_chacha
 │   │   ├── ppv_lite86
 │   │   │   └── zerocopy
-│   │   │       ├── byteorder
-│   │   │       └── zerocopy_derive
-│   │   │           ├── proc_macro2 (*)
-│   │   │           ├── quote (*)
-│   │   │           └── syn (*)
 │   │   └── rand_core
 │   │       └── getrandom (*)
 │   └── rand_core (*)
@@ -49,7 +42,12 @@ spacetimedb
 │   │   └── nohash_hasher
 │   └── syn (*)
 ├── spacetimedb_bindings_sys
-│   └── spacetimedb_primitives (*)
+│   └── spacetimedb_primitives
+│       ├── bitflags
+│       ├── either
+│       ├── itertools
+│       │   └── either
+│       └── nohash_hasher
 ├── spacetimedb_lib
 │   ├── anyhow
 │   ├── bitflags
@@ -73,25 +71,7 @@ spacetimedb
 │   │   └── syn (*)
 │   ├── hex
 │   ├── itertools (*)
-│   ├── rand (*)
 │   ├── spacetimedb_bindings_macro (*)
-│   ├── spacetimedb_data_structures
-│   │   ├── ahash
-│   │   │   ├── cfg_if
-│   │   │   ├── getrandom (*)
-│   │   │   ├── once_cell
-│   │   │   └── zerocopy (*)
-│   │   │   [build-dependencies]
-│   │   │   └── version_check
-│   │   ├── hashbrown
-│   │   │   └── equivalent
-│   │   ├── nohash_hasher
-│   │   ├── smallvec
-│   │   └── thiserror
-│   │       └── thiserror_impl
-│   │           ├── proc_macro2 (*)
-│   │           ├── quote (*)
-│   │           └── syn (*)
 │   ├── spacetimedb_primitives (*)
 │   ├── spacetimedb_sats
 │   │   ├── anyhow
@@ -125,6 +105,10 @@ spacetimedb
 │   │   ├── smallvec
 │   │   ├── spacetimedb_bindings_macro (*)
 │   │   ├── spacetimedb_primitives (*)
-│   │   └── thiserror (*)
+│   │   └── thiserror
+│   │       └── thiserror_impl
+│   │           ├── proc_macro2 (*)
+│   │           ├── quote (*)
+│   │           └── syn (*)
 │   └── thiserror (*)
 └── spacetimedb_primitives (*)

@@ -14,6 +14,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::AlgebraicTypeRef;
+use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_sats::ProductType;
 use spacetimedb_sats::ProductTypeElement;
 use spacetimedb_sats::SpacetimeType;
@@ -361,7 +362,24 @@ pub struct RawRowLevelSecurityDefV9 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[non_exhaustive]
-pub enum RawMiscModuleExportV9 {}
+pub enum RawMiscModuleExportV9 {
+    ColumnDefaultValue(RawColumnDefaultValueV9),
+}
+
+/// Marks a particular table's column as having a particular default.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawColumnDefaultValueV9 {
+    /// Identifies which table that has the default value.
+    /// This corresponds to `name` in `RawTableDefV9`.
+    pub table: RawIdentifier,
+    /// Identifies which column of `table` that has the default value.
+    pub col_id: ColId,
+    /// A BSATN-encoded [`AlgebraicValue`] valid at the table column's type.
+    /// (We cannot use `AlgebraicValue` directly as it isn't `Spacetimetype`.)
+    pub value: Box<[u8]>,
+}
 
 /// A type declaration.
 ///
@@ -470,7 +488,7 @@ impl RawModuleDefV9Builder {
         &mut self,
         name: impl Into<RawIdentifier>,
         product_type_ref: AlgebraicTypeRef,
-    ) -> RawTableDefBuilder {
+    ) -> RawTableDefBuilder<'_> {
         let name = name.into();
         RawTableDefBuilder {
             module_def: &mut self.module,
@@ -493,12 +511,17 @@ impl RawModuleDefV9Builder {
     pub fn build_table_with_new_type(
         &mut self,
         table_name: impl Into<RawIdentifier>,
-        product_type: spacetimedb_sats::ProductType,
+        product_type: impl Into<spacetimedb_sats::ProductType>,
         custom_ordering: bool,
-    ) -> RawTableDefBuilder {
+    ) -> RawTableDefBuilder<'_> {
         let table_name = table_name.into();
 
-        let product_type_ref = self.add_algebraic_type([], table_name.clone(), product_type.into(), custom_ordering);
+        let product_type_ref = self.add_algebraic_type(
+            [],
+            table_name.clone(),
+            AlgebraicType::from(product_type.into()),
+            custom_ordering,
+        );
 
         self.build_table(table_name, product_type_ref)
     }
@@ -510,7 +533,7 @@ impl RawModuleDefV9Builder {
         table_name: impl Into<RawIdentifier>,
         mut product_type: spacetimedb_sats::ProductType,
         custom_ordering: bool,
-    ) -> RawTableDefBuilder {
+    ) -> RawTableDefBuilder<'_> {
         self.add_expand_product_type_for_tests(&mut 0, &mut product_type);
 
         self.build_table_with_new_type(table_name, product_type, custom_ordering)
@@ -786,6 +809,19 @@ impl RawTableDefBuilder<'_> {
             reducer_name,
             scheduled_at_column,
         });
+        self
+    }
+
+    /// Adds a default value for the `column`.
+    pub fn with_default_column_value(self, column: impl Into<ColId>, value: AlgebraicValue) -> Self {
+        // Added to `misc_exports` for backwards-compatibility reasons.
+        self.module_def
+            .misc_exports
+            .push(RawMiscModuleExportV9::ColumnDefaultValue(RawColumnDefaultValueV9 {
+                table: self.table.name.clone(),
+                col_id: column.into(),
+                value: spacetimedb_sats::bsatn::to_vec(&value).unwrap().into(),
+            }));
         self
     }
 

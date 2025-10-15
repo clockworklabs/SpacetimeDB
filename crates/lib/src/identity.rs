@@ -22,6 +22,10 @@ impl AuthCtx {
     pub fn for_current(owner: Identity) -> Self {
         Self { owner, caller: owner }
     }
+    /// Does `owner == caller`
+    pub fn is_owner(&self) -> bool {
+        self.owner == self.caller
+    }
     /// WARNING: Use this only for simple test were the `auth` don't matter
     pub fn for_testing() -> Self {
         AuthCtx {
@@ -56,6 +60,9 @@ pub struct Identity {
 
 impl_st!([] Identity, AlgebraicType::identity());
 
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for Identity {}
+
 #[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
     fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
@@ -64,7 +71,11 @@ impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
 }
 
 impl Identity {
+    /// The 0x0 `Identity`
     pub const ZERO: Self = Self::from_u256(u256::ZERO);
+
+    /// The 0x1 `Identity`
+    pub const ONE: Self = Self::from_u256(u256::ONE);
 
     /// Create an `Identity` from a LITTLE-ENDIAN byte array.
     ///
@@ -106,7 +117,7 @@ impl Identity {
     }
 
     pub fn from_claims(issuer: &str, subject: &str) -> Self {
-        let input = format!("{}|{}", issuer, subject);
+        let input = format!("{issuer}|{subject}");
         let first_hash = blake3::hash(input.as_bytes());
         let id_hash = &first_hash.as_bytes()[..26];
         let mut checksum_input = [0u8; 28];

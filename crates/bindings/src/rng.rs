@@ -1,6 +1,8 @@
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 
+use crate::rand;
+
 use rand::distributions::{Distribution, Standard};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
@@ -59,7 +61,7 @@ impl ReducerContext {
 /// [`rand::Rng`] in order to access many useful random algorithms.
 ///
 /// `StdbRng` uses the same PRNG as `rand`'s [`StdRng`]. Note, however, that
-/// because it is seeded from a publically-known timestamp, it is not
+/// because it is seeded from a publicly-known timestamp, it is not
 /// cryptographically secure.
 ///
 /// You may be looking for a level of reproducibility that's finer-grained
@@ -93,7 +95,7 @@ impl RngCore for StdbRng {
         (&*self).fill_bytes(dest)
     }
 
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand08::Error> {
         (&*self).try_fill_bytes(dest)
     }
 }
@@ -122,7 +124,7 @@ impl RngCore for &StdbRng {
         rng.fill_bytes(dest)
     }
 
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand08::Error> {
         // SAFETY: We must make sure to stop using `rng` before anyone else
         // creates another mutable reference
         let rng = unsafe { &mut *self.rng.get() };

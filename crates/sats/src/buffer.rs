@@ -2,13 +2,15 @@
 //! without relying on types in third party libraries like `bytes::Bytes`, etc.
 //! Meant to be kept slim and trim for use across both native and WASM.
 
+use bytes::{BufMut, BytesMut};
+
 use crate::{i256, u256};
 use core::cell::Cell;
 use core::fmt;
 use core::str::Utf8Error;
 
 /// An error that occurred when decoding.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DecodeError {
     /// Not enough data was provided in the input.
     BufferLength {
@@ -306,6 +308,12 @@ impl BufWriter for &mut [u8] {
         let (buf, rest) = std::mem::take(self).split_at_mut(slice.len());
         buf.copy_from_slice(slice);
         *self = rest;
+    }
+}
+
+impl BufWriter for BytesMut {
+    fn put_slice(&mut self, slice: &[u8]) {
+        BufMut::put_slice(self, slice);
     }
 }
 

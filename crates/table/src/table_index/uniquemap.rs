@@ -1,5 +1,5 @@
-use crate::MemoryUsage;
 use core::{ops::RangeBounds, option::IntoIter};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::collections::btree_map::{BTreeMap, Entry, Range};
 
 /// A "unique map" that relates a `K` to a `V`.
@@ -80,6 +80,21 @@ impl<K: Ord, V: Ord> UniqueMap<K, V> {
     /// This will not deallocate the outer map.
     pub fn clear(&mut self) {
         self.map.clear();
+    }
+
+    /// Returns whether `other` can be merged into `self`
+    /// with an error containing the element in `self` that caused the violation.
+    ///
+    /// The closure `ignore` indicates whether a row in `self` should be ignored.
+    pub(crate) fn can_merge(&self, other: &Self, ignore: impl Fn(&V) -> bool) -> Result<(), &V> {
+        let Some(found) = other
+            .map
+            .keys()
+            .find_map(|key| self.map.get(key).filter(|val| !ignore(val)))
+        else {
+            return Ok(());
+        };
+        Err(found)
     }
 }
 

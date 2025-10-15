@@ -1,9 +1,12 @@
 use std::{iter, marker::PhantomData, sync::Arc};
 
+use thiserror::Error;
+use tokio::sync::watch;
+
 pub use spacetimedb_commitlog::{error, payload::Txdata, Decoder, Transaction};
 
 mod imp;
-pub use imp::{local, Local};
+pub use imp::*;
 
 /// Transaction offset.
 ///
@@ -14,6 +17,71 @@ pub use imp::{local, Local};
 /// gaps, it must guarantee that a higher transaction offset implies durability
 /// of all offsets smaller than it.
 pub type TxOffset = u64;
+
+#[derive(Debug, Error)]
+#[error("the database's durability layer went away")]
+pub struct DurabilityExited;
+
+/// Handle to the durable offset, obtained via [`Durability::durable_tx_offset`].
+///
+/// The handle can be used to read the current durable offset, or wait for a
+/// provided offset to be reached.
+///
+/// The handle is valid for as long as the [`Durability`] instance it was
+/// obtained from is live, i.e. able to persist transactions. When the instance
+/// shuts down or crashes, methods will return errors of type [`DurabilityExited`].
+pub struct DurableOffset {
+    // TODO: `watch::Receiver::wait_for` will hold a shared lock until all
+    // subscribers have seen the current value. Although it may skip entries,
+    // this may cause unacceptable contention. We may consider a custom watch
+    // channel that operates on an `AtomicU64` instead of an `RwLock`.
+    inner: watch::Receiver<Option<TxOffset>>,
+}
+
+impl DurableOffset {
+    /// Get the current durable offset, or `None` if no transaction has been
+    /// made durable yet.
+    ///
+    /// Returns `Err` if the associated durablity is no longer live.
+    pub fn get(&self) -> Result<Option<TxOffset>, DurabilityExited> {
+        self.guard_closed().map(|()| self.inner.borrow().as_ref().copied())
+    }
+
+    /// Get the current durable offset, even if the associated durability is
+    /// no longer live.
+    pub fn last_seen(&self) -> Option<TxOffset> {
+        self.inner.borrow().as_ref().copied()
+    }
+
+    /// Wait for `offset` to become durable, i.e.
+    ///
+    /// ```ignore
+    ///     self.get().unwrap().is_some_and(|durable| durable >= offset)
+    /// ```
+    ///
+    /// Returns the actual durable offset at which above condition evaluated to
+    /// `true`, or an `Err` if the durability is no longer live.
+    ///
+    /// Returns immediately if the condition evaluates to `true` for the current
+    /// durable offset.
+    pub async fn wait_for(&mut self, offset: TxOffset) -> Result<TxOffset, DurabilityExited> {
+        self.inner
+            .wait_for(|durable| durable.is_some_and(|val| val >= offset))
+            .await
+            .map(|r| r.as_ref().copied().unwrap())
+            .map_err(|_| DurabilityExited)
+    }
+
+    fn guard_closed(&self) -> Result<(), DurabilityExited> {
+        self.inner.has_changed().map(drop).map_err(|_| DurabilityExited)
+    }
+}
+
+impl From<watch::Receiver<Option<TxOffset>>> for DurableOffset {
+    fn from(inner: watch::Receiver<Option<TxOffset>>) -> Self {
+        Self { inner }
+    }
+}
 
 /// The durability API.
 ///
@@ -41,7 +109,7 @@ pub trait Durability: Send + Sync {
     /// A `None` return value indicates that the durable offset is not known,
     /// either because nothing has been persisted yet, or because the status
     /// cannot be retrieved.
-    fn durable_tx_offset(&self) -> Option<TxOffset>;
+    fn durable_tx_offset(&self) -> DurableOffset;
 }
 
 /// Access to the durable history.
@@ -82,10 +150,10 @@ pub trait History {
     ///
     /// Callers should thus only rely on it for informational purposes.
     ///
-    /// The default implementation returns `None`, which is correct for any
+    /// The default implementation returns `(0, None)`, which is correct for any
     /// history implementation.
-    fn max_tx_offset(&self) -> Option<TxOffset> {
-        None
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        (0, None)
     }
 }
 
@@ -113,8 +181,8 @@ impl<T: History> History for Arc<T> {
         (**self).transactions_from(offset, decoder)
     }
 
-    fn max_tx_offset(&self) -> Option<TxOffset> {
-        (**self).max_tx_offset()
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        (**self).tx_range_hint()
     }
 }
 
@@ -153,7 +221,7 @@ impl<T> History for EmptyHistory<T> {
         iter::empty()
     }
 
-    fn max_tx_offset(&self) -> Option<TxOffset> {
-        Some(0)
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        (0, Some(0))
     }
 }

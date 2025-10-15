@@ -8,13 +8,13 @@ use crate::{
     blob_store::BlobStore,
     eq::BytesPage,
     indexes::PageOffset,
-    layout::{align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayout, RowTypeLayout},
     page::Page,
     row_hash::{read_from_bytes, run_vlo_bytes},
     var_len::{VarLenGranule, VarLenRef},
 };
 use core::str;
 use spacetimedb_sats::bsatn::{eq::eq_bsatn, Deserializer};
+use spacetimedb_sats::layout::{align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayoutView, RowTypeLayout};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 
 /// Equates row `lhs` in `page` with its fixed part starting at `fixed_offset` to `rhs`.
@@ -75,7 +75,7 @@ struct EqCtx<'page> {
 /// 1. `lhs` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `lhs`,
 ///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `ctx.lhs.page`.
-unsafe fn eq_product(ctx: &mut EqCtx<'_>, ty: &ProductTypeLayout, rhs: &ProductValue) -> bool {
+unsafe fn eq_product(ctx: &mut EqCtx<'_>, ty: ProductTypeLayoutView<'_>, rhs: &ProductValue) -> bool {
     let base_offset = ctx.curr_offset;
     ty.elements.len() == rhs.elements.len()
         && ty.elements.iter().zip(&*rhs.elements).all(|(elem_ty, rhs)| {
@@ -128,7 +128,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_>, ty: &AlgebraicTypeLayout, rhs: &Algebrai
         }
         (AlgebraicTypeLayout::Product(ty), AlgebraicValue::Product(rhs)) => {
             // SAFETY: `lhs` is valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { eq_product(ctx, ty, rhs) }
+            unsafe { eq_product(ctx, ty.view(), rhs) }
         }
 
         // The primitive types:
@@ -226,7 +226,7 @@ unsafe fn eq_at<T: Copy + Eq>(ctx: &mut EqCtx<'_>, rhs: &T) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::blob_store::HashMapBlobStore;
+    use crate::{blob_store::HashMapBlobStore, page_pool::PagePool};
     use proptest::prelude::*;
     use spacetimedb_sats::proptest::generate_typed_row;
 
@@ -237,7 +237,7 @@ mod tests {
             // Turn `val` into a `RowRef`.
             let mut table = crate::table::test::table(ty);
             let blob_store = &mut HashMapBlobStore::default();
-            let (_, row) = table.insert(blob_store, &val).unwrap();
+            let (_, row) = table.insert(&PagePool::new_for_test(), blob_store, &val).unwrap();
 
             // Check eq algo.
             prop_assert_eq!(row, val);

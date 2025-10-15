@@ -2,10 +2,11 @@ use futures::{Future, FutureExt};
 use std::borrow::Cow;
 use std::pin::pin;
 use tokio::sync::oneshot;
+use tracing::Span;
 
 pub mod prometheus_handle;
 
-pub mod lending_pool;
+pub mod jobs;
 pub mod notify_once;
 pub mod slow;
 
@@ -30,6 +31,29 @@ pub fn spawn_rayon<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) ->
         }
     });
     rx.map(|res| res.unwrap().unwrap_or_else(|err| std::panic::resume_unwind(err)))
+}
+
+/// Ergonomic wrapper for `tokio::task::spawn_blocking(f).await`.
+///
+/// If `f` panics, it will be bubbled up to the calling task.
+pub async fn asyncify<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    // Ensure that `f` executes in the current span context.
+    // If there is no current span, or it is disabled, `span` is disabled.
+    let span = Span::current();
+    tokio::task::spawn_blocking(move || {
+        let _enter = span.enter();
+        f()
+    })
+    .await
+    .unwrap_or_else(|e| match e.try_into_panic() {
+        Ok(panic_payload) => std::panic::resume_unwind(panic_payload),
+        // the only other variant is cancelled, which shouldn't happen because we don't cancel it.
+        Err(e) => panic!("Unexpected JoinError: {e}"),
+    })
 }
 
 /// Await `fut`, while also polling `also`.

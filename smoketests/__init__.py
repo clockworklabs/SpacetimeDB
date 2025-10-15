@@ -6,7 +6,6 @@ import random
 import re
 import shutil
 import string
-import string
 import subprocess
 import sys
 import tempfile
@@ -38,6 +37,17 @@ HAVE_DOCKER = False
 # and a dotnet installation is detected
 HAVE_DOTNET = False
 
+# When we pass --spacetime-login, we are running against a server that requires "real" spacetime logins (rather than `--server-issued-login`).
+# This is used to skip tests that don't work with that.
+USE_SPACETIME_LOGIN = False
+
+# If we pass `--remote-server`, the server address will be something other than the default. This is used to skip tests that rely on use
+# having the default localhost server.
+REMOTE_SERVER = False
+
+# default value can be overridden by `--compose-file` flag
+COMPOSE_FILE = "./docker-compose.yml"
+
 # we need to late-bind the output stream to allow unittests to capture stdout/stderr.
 class CapturableHandler(logging.StreamHandler):
 
@@ -59,6 +69,15 @@ def requires_dotnet(item):
         return item
     return unittest.skip("dotnet 8.0 not available")(item)
 
+def requires_anonymous_login(item):
+    if USE_SPACETIME_LOGIN:
+        return unittest.skip("using `spacetime login`")(item)
+    return item
+
+def requires_local_server(item):
+    if REMOTE_SERVER:
+        return unittest.skip("running against a remote server")(item)
+    return item
 
 def build_template_target():
     if not TEMPLATE_TARGET_DIR.exists():
@@ -99,6 +118,17 @@ def extract_fields(cmd_output, field_name):
             out.append(val)
     return out
 
+def parse_sql_result(res: str) -> list[dict]:
+    """Parse tabular output from an SQL query into a list of dicts."""
+    lines = res.splitlines()
+    headers = lines[0].split('|') if '|' in lines[0] else [lines[0]]
+    headers = [header.strip() for header in headers]
+    rows = []
+    for row in lines[2:]:
+        cols = [col.strip() for col in row.split('|')]
+        rows.append(dict(zip(headers, cols)))
+    return rows
+
 def extract_field(cmd_output, field_name):
     field, = extract_fields(cmd_output, field_name)
     return field
@@ -113,7 +143,7 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
 
     needs_close = False
     if not capture_stderr:
-        logging.debug(f"--- stderr ---")
+        logging.debug("--- stderr ---")
         needs_close = True
 
     output = subprocess.run(
@@ -150,7 +180,7 @@ def new_identity(config_path):
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS
     AUTOPUBLISH = True
-    BINDINGS_FEATURES = []
+    BINDINGS_FEATURES = ["unstable"]
     EXTRA_DEPS = ""
 
     @classmethod
@@ -172,6 +202,12 @@ class Smoketest(unittest.TestCase):
         anon = ["--anonymous"] if anon else []
         self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args))
 
+
+    def sql(self, sql):
+        self._check_published()
+        anon = ["--anonymous"]
+        return self.spacetime("sql", *anon, "--", self.database_identity, sql)
+
     def logs(self, n):
         return [log["message"] for log in self.log_records(n)]
 
@@ -180,7 +216,8 @@ class Smoketest(unittest.TestCase):
         logs = self.spacetime("logs", "--format=json", "-n", str(n), "--", self.database_identity)
         return list(map(json.loads, logs.splitlines()))
 
-    def publish_module(self, domain=None, *, clear=True, capture_stderr=True):
+    def publish_module(self, domain=None, *, clear=True, capture_stderr=True, num_replicas=None, break_clients=False):
+        print("publishing module", self.publish_module)
         publish_output = self.spacetime(
             "publish",
             *[domain] if domain is not None else [],
@@ -190,10 +227,12 @@ class Smoketest(unittest.TestCase):
             # because the server address is `node` which doesn't look like `localhost` or `127.0.0.1`
             # and so the publish step prompts for confirmation.
             "--yes",
+            *["--num-replicas", f"{num_replicas}"] if num_replicas is not None else [],
+            *["--break-clients"] if break_clients else [],
             capture_stderr=capture_stderr,
         )
         self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]
-        self.database_identity = domain if domain is not None else self.resolved_identity
+        self.database_identity = self.resolved_identity
 
     @classmethod
     def reset_config(cls):
@@ -206,11 +245,22 @@ class Smoketest(unittest.TestCase):
     def new_identity(self):
         new_identity(self.__class__.config_path)
 
-    def subscribe(self, *queries, n):
+    def subscribe(self, *queries, n, confirmed = False):
         self._check_published()
         assert isinstance(n, int)
 
-        args = [SPACETIME_BIN, "--config-path", str(self.config_path),"subscribe", self.database_identity, "-t", "60", "-n", str(n), "--print-initial-update", "--", *queries]
+        args = [
+            SPACETIME_BIN,
+            "--config-path", str(self.config_path),
+            "subscribe", self.database_identity,
+            "-t", "600",
+            "-n", str(n),
+            "--print-initial-update",
+        ]
+        if confirmed:
+            args.append("--confirmed")
+        args.extend(["--", *queries])
+
         fake_args = ["spacetime", *args[1:]]
         log_cmd(fake_args)
 
@@ -228,7 +278,7 @@ class Smoketest(unittest.TestCase):
                 code = proc.wait()
                 if code:
                     raise subprocess.CalledProcessError(code, fake_args)
-                print("no inital update, but no error code either")
+                print("no initial update, but no error code either")
             except subprocess.TimeoutExpired:
                 print("no initial update, but process is still running")
 
@@ -244,22 +294,49 @@ class Smoketest(unittest.TestCase):
         # and **not raise any exceptions to the caller**.
         return ReturnThread(run).join
 
-    def api_call(self, method, path, body = None, headers = {}):
+    def get_server_address(self):
         with open(self.config_path, "rb") as f:
             config = tomllib.load(f)
-            host = config['default_server']
             token = config['spacetimedb_token']
-            conn = http.client.HTTPConnection(host)
-            auth = {"Authorization": f'Bearer {token}'}
-            headers.update(auth)
-            log_cmd([method, path])
-            conn.request(method, path, body, headers)
-            resp = conn.getresponse()
-            logging.debug(f"{resp.status} {resp.read()}")
-            if resp.status != 200:
-                raise resp
-            resp
+            server_name = config['default_server']
+            server_config = next((c for c in config['server_configs'] if c['nickname'] == server_name), None)
+            if server_config is None:
+                raise Exception(f"Unable to find server in config with nickname {server_name}")
+            address = server_config['host']
+            host = address
+            port = None
+            if ":" in host:
+                host, port = host.split(":", 1)
+            protocol = server_config['protocol']
 
+            return dict(address=address, host=host, port=port, protocol=protocol, token=token)
+
+    # Make an HTTP call with `method` to `path`.
+    #
+    # If the response is 200, return the body.
+    # Otherwise, throw an `Exception` constructed with two arguments, the response object and the body.
+    def api_call(self, method, path, body=None, headers={}):
+        server = self.get_server_address()
+        host = server["address"]
+        protocol = server["protocol"]
+        token = server["token"]
+        conn = None
+        if protocol == "http":
+            conn = http.client.HTTPConnection(host)
+        elif protocol == "https":
+            conn = http.client.HTTPSConnection(host)
+        else:
+            raise Exception(f"Unknown protocol: {protocol}")
+        auth = {"Authorization": f'Bearer {token}'}
+        headers.update(auth)
+        log_cmd([method, path])
+        conn.request(method, path, body, headers)
+        resp = conn.getresponse()
+        body = resp.read()
+        logging.debug(f"{resp.status} {body}")
+        if resp.status != 200:
+            raise Exception(resp, body)
+        return body
 
     @classmethod
     def write_module_code(cls, module_code):
@@ -294,12 +371,12 @@ class Smoketest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        if hasattr(cls, "database_identity"):
-            try:
-                # TODO: save the credentials in publish_module()
-                cls.spacetime("delete", cls.database_identity)
-            except Exception:
-                pass
+       if hasattr(cls, "database_identity"):
+           try:
+               # TODO: save the credentials in publish_module()
+               cls.spacetime("delete", cls.database_identity)
+           except Exception:
+               pass
 
     if sys.version_info < (3, 11):
         # polyfill; python 3.11 defines this classmethod on TestCase

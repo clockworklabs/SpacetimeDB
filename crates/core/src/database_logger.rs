@@ -6,6 +6,8 @@ use tokio::sync::broadcast;
 
 use spacetimedb_paths::server::{ModuleLogPath, ModuleLogsDir};
 
+use crate::util::asyncify;
+
 pub struct DatabaseLogger {
     inner: Mutex<DatabaseLoggerInner>,
     pub tx: broadcast::Sender<bytes::Bytes>,
@@ -47,10 +49,50 @@ impl From<u8> for LogLevel {
 pub struct Record<'a> {
     #[serde_as(as = "serde_with::TimestampMicroSeconds")]
     pub ts: chrono::DateTime<Utc>,
+    /// Target of the log call (usually source namespace or `mod`).
+    ///
+    /// Provided by the WASM guest as an argument to the `console_log` host function.
+    ///
+    /// The special sentinel value [`Record::SENTINEL_INJECTED_TARGET`]` denotes logs injected by the [`SystemLogger`].
     pub target: Option<&'a str>,
+    /// Filename of the source location of the log call.
+    ///
+    /// Provided by the WASM guest as an argument to the `console_log` host function.
+    ///
+    /// The special sentinel value [`Record::SENTINEL_INJECTED_FILENAME`]` denotes logs injected by the [`SystemLogger`].
     pub filename: Option<&'a str>,
     pub line_number: Option<u32>,
+    /// Which exported function (i.e. reducer) was being called when this message was produced.
+    ///
+    /// Unlike `target`, `filename` and `line_number`, this is not provided by the WASM guest.
+    /// Instead, the `WasmInstanceEnv` remembers what function call is in progress and adds it to the record.
+    ///
+    /// The special sentinel value [`Record::SENTINEL_INJECTED_FUNCTION`] denotes logs injected by the [`SystemLogger`].
+    pub function: Option<&'a str>,
     pub message: &'a str,
+}
+
+impl<'a> Record<'a> {
+    pub const SENTINEL_INJECTED_FUNCTION: Option<&'static str> = Some("__spacetimedb__");
+    pub const SENTINEL_INJECTED_TARGET: Option<&'static str> = Some("__spacetimedb__");
+    pub const SENTINEL_INJECTED_FILENAME: Option<&'static str> = Some("__spacetimedb__");
+
+    /// Create a log `Record` for a system message, not attributed to any reducer or user filename.
+    ///
+    /// The resulting `Record` will draw from [`chrono::Utc::now`] for its timestamp,
+    /// have `line_number: None`,
+    /// and will use [`Self::SENTINEL_INJECTED_FILENAME`], [`Self::SENTINEL_INJECTED_FUNCTION`]
+    /// and [`Self::SENTINEL_INJECTED_TARGET`].
+    pub fn injected(message: &'a str) -> Self {
+        Record {
+            ts: chrono::Utc::now(),
+            target: Self::SENTINEL_INJECTED_TARGET,
+            filename: Self::SENTINEL_INJECTED_FILENAME,
+            line_number: None,
+            function: Self::SENTINEL_INJECTED_FUNCTION,
+            message,
+        }
+    }
 }
 
 pub trait BacktraceProvider {
@@ -176,12 +218,11 @@ impl DatabaseLogger {
             }
             // if there's none for today, read the directory and
             let logs_dir = path.popped();
-            return tokio::task::spawn_blocking(move || match logs_dir.most_recent()? {
+            return asyncify(move || match logs_dir.most_recent()? {
                 Some(newest_log_file) => std::fs::read_to_string(newest_log_file),
                 None => Ok(String::new()),
             })
             .await
-            .unwrap()
             .expect("couldn't read log file");
         };
 
@@ -189,9 +230,8 @@ impl DatabaseLogger {
             return String::new();
         }
 
-        tokio::task::spawn_blocking(move || read_latest_lines(logs_dir, num_lines))
+        asyncify(move || read_latest_lines(logs_dir, num_lines))
             .await
-            .unwrap()
             .expect("couldn't read log file")
     }
 
@@ -276,13 +316,7 @@ impl SystemLogger {
         self.inner.write(LogLevel::Error, &Self::record(msg), &())
     }
 
-    fn record(message: &str) -> Record {
-        Record {
-            ts: Utc::now(),
-            target: None,
-            filename: Some("spacetimedb"),
-            line_number: None,
-            message,
-        }
+    fn record(message: &str) -> Record<'_> {
+        Record::injected(message)
     }
 }

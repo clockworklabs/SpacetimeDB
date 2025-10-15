@@ -13,6 +13,7 @@ spacetimedb-core.workspace = true
 spacetimedb-standalone.workspace = true
 spacetimedb-client-api.workspace = true
 spacetimedb-paths.workspace = true
+spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
 env_logger.workspace = true
@@ -29,3 +30,6 @@ serde.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
+
+[lints]
+workspace = true

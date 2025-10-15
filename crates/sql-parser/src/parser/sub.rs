@@ -111,7 +111,7 @@ impl RelParser for SubParser {
 fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlSelect> {
     match expr {
         SetExpr::Select(select) => parse_select(*select).map(SqlSelect::qualify_vars),
-        _ => Err(SqlUnsupported::SetOp(expr).into()),
+        _ => Err(SqlUnsupported::SetOp(Box::new(expr)).into()),
     }
 }
 
@@ -177,6 +177,7 @@ mod tests {
             "select t.* from t join s",
             "select t.* from t join s on t.c = s.d",
             "select a.* from t as a join s as b on a.c = b.d",
+            "select * from t where x = :sender",
         ] {
             assert!(parse_subscription(sql).is_ok());
         }

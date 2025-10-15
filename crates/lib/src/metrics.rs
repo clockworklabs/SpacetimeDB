@@ -1,5 +1,5 @@
-/// Metrics collected during the course of a transaction
-#[derive(Default)]
+/// Metrics collected during the course of a transaction.
+#[derive(Debug, Default, Copy, Clone)]
 pub struct ExecutionMetrics {
     /// How many times is an index probed?
     ///
@@ -22,7 +22,7 @@ pub struct ExecutionMetrics {
     ///
     /// In addition to the same BSATN serialization of the output rows,
     /// queries will dereference a `RowPointer` for column projections.
-    /// Such is the case for fiters as well as index and hash joins.
+    /// Such is the case for filters as well as index and hash joins.
     ///
     /// One place where this metric is not tracked is index scans.
     /// Specifically the key comparisons that occur during the scan.
@@ -40,6 +40,20 @@ pub struct ExecutionMetrics {
     ///
     /// In general, these are BSATN bytes, but JSON is also possible.
     pub bytes_sent_to_clients: usize,
+    /// How many rows were inserted?
+    pub rows_inserted: u64,
+    /// How many rows were deleted?
+    pub rows_deleted: u64,
+    /// How many rows were updated?
+    pub rows_updated: u64,
+    /// How many subscription updates did we execute?
+    pub delta_queries_evaluated: u64,
+    /// How many subscriptions had some updates?
+    pub delta_queries_matched: u64,
+    /// How many times do we evaluate the same row in a subscription update?
+    pub duplicate_rows_evaluated: u64,
+    /// How many duplicate rows do we send in a subscription update?
+    pub duplicate_rows_sent: u64,
 }
 
 impl ExecutionMetrics {
@@ -51,6 +65,13 @@ impl ExecutionMetrics {
             bytes_scanned,
             bytes_written,
             bytes_sent_to_clients,
+            rows_inserted,
+            rows_deleted,
+            rows_updated,
+            delta_queries_evaluated,
+            delta_queries_matched,
+            duplicate_rows_evaluated,
+            duplicate_rows_sent,
         }: ExecutionMetrics,
     ) {
         self.index_seeks += index_seeks;
@@ -58,6 +79,13 @@ impl ExecutionMetrics {
         self.bytes_scanned += bytes_scanned;
         self.bytes_written += bytes_written;
         self.bytes_sent_to_clients += bytes_sent_to_clients;
+        self.rows_inserted += rows_inserted;
+        self.rows_deleted += rows_deleted;
+        self.rows_updated += rows_updated;
+        self.delta_queries_evaluated += delta_queries_evaluated;
+        self.delta_queries_matched += delta_queries_matched;
+        self.duplicate_rows_evaluated += duplicate_rows_evaluated;
+        self.duplicate_rows_sent += duplicate_rows_sent;
     }
 }
 
@@ -75,6 +103,13 @@ mod tests {
             bytes_scanned: 1,
             bytes_written: 1,
             bytes_sent_to_clients: 1,
+            rows_inserted: 1,
+            rows_deleted: 1,
+            rows_updated: 1,
+            delta_queries_evaluated: 2,
+            delta_queries_matched: 3,
+            duplicate_rows_evaluated: 4,
+            duplicate_rows_sent: 2,
         });
 
         assert_eq!(a.index_seeks, 1);
@@ -82,5 +117,11 @@ mod tests {
         assert_eq!(a.bytes_scanned, 1);
         assert_eq!(a.bytes_written, 1);
         assert_eq!(a.bytes_sent_to_clients, 1);
+        assert_eq!(a.rows_inserted, 1);
+        assert_eq!(a.rows_deleted, 1);
+        assert_eq!(a.delta_queries_evaluated, 2);
+        assert_eq!(a.delta_queries_matched, 3);
+        assert_eq!(a.duplicate_rows_evaluated, 4);
+        assert_eq!(a.duplicate_rows_sent, 2);
     }
 }

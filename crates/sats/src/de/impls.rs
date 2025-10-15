@@ -8,7 +8,7 @@ use crate::{
     SumValue, WithTypespace, F32, F64,
 };
 use crate::{i256, u256};
-use core::{marker::PhantomData, ops::Bound};
+use core::{iter, marker::PhantomData, ops::Bound};
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList};
 use std::{borrow::Cow, rc::Rc, sync::Arc};
@@ -52,30 +52,102 @@ impl_prim! {
     (f32, deserialize_f32) (f64, deserialize_f64)
 }
 
-impl_deserialize!([] (), de => de.deserialize_product(UnitVisitor));
+struct TupleVisitor<A>(PhantomData<A>);
+#[derive(Copy, Clone)]
+struct TupleNameVisitorMax(usize);
 
-/// The `UnitVisitor` looks for a unit product.
-/// That is, it consumes nothing from the input.
-struct UnitVisitor;
-impl<'de> ProductVisitor<'de> for UnitVisitor {
-    type Output = ();
+impl FieldNameVisitor<'_> for TupleNameVisitorMax {
+    // The index of the field name.
+    type Output = usize;
 
-    fn product_name(&self) -> Option<&str> {
-        None
+    fn field_names(&self) -> impl '_ + Iterator<Item = Option<&str>> {
+        iter::repeat_n(None, self.0)
     }
 
-    fn product_len(&self) -> usize {
-        0
+    fn kind(&self) -> ProductKind {
+        ProductKind::Normal
     }
 
-    fn visit_seq_product<A: SeqProductAccess<'de>>(self, _prod: A) -> Result<Self::Output, A::Error> {
-        Ok(())
+    fn visit<E: Error>(self, name: &str) -> Result<Self::Output, E> {
+        let err = || Error::unknown_field_name(name, &self);
+        // Convert `name` to an index.
+        let Ok(index) = name.parse() else {
+            return Err(err());
+        };
+        // Confirm that the index exists or error.
+        if index < self.0 {
+            Ok(index)
+        } else {
+            Err(err())
+        }
     }
 
-    fn visit_named_product<A: super::NamedProductAccess<'de>>(self, _prod: A) -> Result<Self::Output, A::Error> {
-        Ok(())
+    fn visit_seq(self, index: usize) -> Self::Output {
+        // Assert that the index exists.
+        assert!(index < self.0);
+        index
     }
 }
+
+macro_rules! impl_deserialize_tuple {
+    ($($ty_name:ident => $const_val:literal),*) => {
+        impl<'de, $($ty_name: Deserialize<'de>),*> ProductVisitor<'de> for TupleVisitor<($($ty_name,)*)> {
+            type Output = ($($ty_name,)*);
+            fn product_name(&self) -> Option<&str> { None }
+            fn product_len(&self) -> usize { crate::count!($($ty_name)*) }
+            fn visit_seq_product<A: SeqProductAccess<'de>>(self, mut _prod: A) -> Result<Self::Output, A::Error> {
+                $(
+                    #[allow(non_snake_case)]
+                    let $ty_name = _prod
+                        .next_element()?
+                        .ok_or_else(|| Error::invalid_product_length($const_val, &self))?;
+                )*
+
+                Ok(($($ty_name,)*))
+            }
+            fn visit_named_product<A: super::NamedProductAccess<'de>>(self, mut prod: A) -> Result<Self::Output, A::Error> {
+                $(
+                    #[allow(non_snake_case)]
+                    let mut $ty_name = None;
+                )*
+
+                let visit = TupleNameVisitorMax(self.product_len());
+                while let Some(index) = prod.get_field_ident(visit)? {
+                    match index {
+                        $($const_val => {
+                            if $ty_name.is_some() {
+                                return Err(A::Error::duplicate_field($const_val, None, &self))
+                            }
+                            $ty_name = Some(prod.get_field_value()?);
+                        })*
+                        index => return Err(Error::invalid_product_length(index, &self)),
+                    }
+                }
+                Ok(($(
+                    $ty_name.ok_or_else(|| A::Error::missing_field($const_val, None, &self))?,
+                )*))
+            }
+        }
+
+        impl_deserialize!([$($ty_name: Deserialize<'de>),*] ($($ty_name,)*), de => {
+            de.deserialize_product(TupleVisitor::<($($ty_name,)*)>(PhantomData))
+        });
+    };
+}
+
+impl_deserialize_tuple!();
+impl_deserialize_tuple!(T0 => 0);
+impl_deserialize_tuple!(T0 => 0, T1 => 1);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6, T7 => 7);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6, T7 => 7, T8 => 8);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6, T7 => 7, T8 => 8, T9 => 9);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6, T7 => 7, T8 => 8, T9 => 9, T10 => 10);
+impl_deserialize_tuple!(T0 => 0, T1 => 1, T2 => 2, T3 => 3, T4 => 4, T5 => 5, T6 => 6, T7 => 7, T8 => 8, T9 => 9, T10 => 10, T11 => 11);
 
 impl<'de> Deserialize<'de> for u8 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -211,11 +283,11 @@ impl<'de, T: Deserialize<'de>> SumVisitor<'de> for OptionVisitor<T> {
     }
 }
 
-impl<'de, T: Deserialize<'de>> VariantVisitor for OptionVisitor<T> {
+impl<'de, T: Deserialize<'de>> VariantVisitor<'de> for OptionVisitor<T> {
     type Output = bool;
 
-    fn variant_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(["some", "none"])
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
+        ["some", "none"].into_iter()
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -268,11 +340,11 @@ impl<'de, T: Deserialize<'de>, E: Deserialize<'de>> SumVisitor<'de> for ResultVi
     }
 }
 
-impl<'de, T: Deserialize<'de>, U: Deserialize<'de>> VariantVisitor for ResultVisitor<T, U> {
+impl<'de, T: Deserialize<'de>, U: Deserialize<'de>> VariantVisitor<'de> for ResultVisitor<T, U> {
     type Output = ResultVariant;
 
-    fn variant_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(["ok", "err"])
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
+        ["ok", "err"].into_iter()
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -335,11 +407,11 @@ impl<'de, S: Copy + DeserializeSeed<'de>> SumVisitor<'de> for BoundVisitor<S> {
     }
 }
 
-impl<'de, T: Copy + DeserializeSeed<'de>> VariantVisitor for BoundVisitor<T> {
+impl<'de, T: Copy + DeserializeSeed<'de>> VariantVisitor<'de> for BoundVisitor<T> {
     type Output = BoundVariant;
 
-    fn variant_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(["included", "excluded", "unbounded"])
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
+        ["included", "excluded", "unbounded"].into_iter()
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -420,12 +492,12 @@ impl<'de> SumVisitor<'de> for WithTypespace<'_, SumType> {
     }
 }
 
-impl VariantVisitor for WithTypespace<'_, SumType> {
+impl VariantVisitor<'_> for WithTypespace<'_, SumType> {
     type Output = u8;
 
-    fn variant_names(&self, names: &mut dyn super::ValidNames) {
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
         // Provide the names known from the `SumType`.
-        names.extend(self.ty().variants.iter().filter_map(|v| v.name()))
+        self.ty().variants.iter().filter_map(|v| v.name())
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -600,7 +672,7 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
     // This is worst case quadratic in complexity
     // as fields can be specified out of order (value side) compared to `elems` (type side).
     for _ in 0..elems.len() {
-        // Deserialize a field name, match against the element types, .
+        // Deserialize a field name, match against the element types.
         let index = tup.get_field_ident(TupleNameVisitor { elems, kind })?.ok_or_else(|| {
             // Couldn't deserialize a field name.
             // Find the first field name we haven't filled an element for.
@@ -643,8 +715,8 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
     // The index of the field name.
     type Output = usize;
 
-    fn field_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(self.elems.iter().filter_map(|f| f.name()))
+    fn field_names(&self) -> impl '_ + Iterator<Item = Option<&str>> {
+        self.elems.iter().map(|f| f.name())
     }
 
     fn kind(&self) -> ProductKind {
@@ -657,6 +729,15 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
             .iter()
             .position(|f| f.has_name(name))
             .ok_or_else(|| Error::unknown_field_name(name, &self))
+    }
+
+    fn visit_seq(self, index: usize) -> Self::Output {
+        // Confirm that the index exists.
+        self.elems
+            .get(index)
+            .expect("`index` should exist when `visit_seq` is called");
+
+        index
     }
 }
 
@@ -696,3 +777,36 @@ impl_deserialize!([] bytes::Bytes, de => <Vec<u8>>::deserialize(de).map(Into::in
 
 #[cfg(feature = "bytestring")]
 impl_deserialize!([] bytestring::ByteString, de => <String>::deserialize(de).map(Into::into));
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        algebraic_value::{de::ValueDeserializer, ser::value_serialize},
+        bsatn,
+        serde::SerdeWrapper,
+        Deserialize, Serialize,
+    };
+    use core::fmt::Debug;
+
+    #[test]
+    fn roundtrip_tuples_in_different_data_formats() {
+        fn test<T: Serialize + for<'de> Deserialize<'de> + Eq + Debug>(x: T) {
+            let bsatn = bsatn::to_vec(&x).unwrap();
+            let y: T = bsatn::from_slice(&bsatn).unwrap();
+            assert_eq!(x, y);
+
+            let val = value_serialize(&x);
+            let y = T::deserialize(ValueDeserializer::new(val)).unwrap();
+            assert_eq!(x, y);
+
+            let json = serde_json::to_string(SerdeWrapper::from_ref(&x)).unwrap();
+            let SerdeWrapper(y) = serde_json::from_str::<SerdeWrapper<T>>(&json).unwrap();
+            assert_eq!(x, y);
+        }
+
+        test(());
+        test((true,));
+        test((1337u64, false));
+        test(((7331u64, false), 42u32, 24u8));
+    }
+}

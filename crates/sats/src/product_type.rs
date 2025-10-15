@@ -1,11 +1,14 @@
-use spacetimedb_primitives::{ColId, ColList};
-
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
 use crate::product_value::InvalidFieldError;
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SpacetimeType, ValueWithType, WithTypespace};
+use crate::{
+    AlgebraicType, AlgebraicValue, ProductTypeElement, ProductValue, SpacetimeType, Typespace, ValueWithType,
+    WithTypespace,
+};
+use core::ops::Deref;
+use spacetimedb_primitives::{ColId, ColList};
 
 /// The tag used inside the special `Identity` product type.
 pub const IDENTITY_TAG: &str = "__identity__";
@@ -49,6 +52,14 @@ pub struct ProductType {
     /// These factors can either be named or unnamed.
     /// When all the factors are unnamed, we can regard this as a plain tuple type.
     pub elements: Box<[ProductTypeElement]>,
+}
+
+impl Deref for ProductType {
+    type Target = [ProductTypeElement];
+
+    fn deref(&self) -> &Self::Target {
+        &self.elements
+    }
 }
 
 impl std::fmt::Debug for ProductType {
@@ -121,6 +132,26 @@ impl ProductType {
         self.is_i64_newtype(TIME_DURATION_TAG)
     }
 
+    /// Returns whether this is the special tag of `Identity`.
+    pub fn is_identity_tag(tag_name: &str) -> bool {
+        tag_name == IDENTITY_TAG
+    }
+
+    /// Returns whether this is the special tag of `ConnectionId`.
+    pub fn is_connection_id_tag(tag_name: &str) -> bool {
+        tag_name == CONNECTION_ID_TAG
+    }
+
+    /// Returns whether this is the special tag of [`crate::timestamp::Timestamp`].
+    pub fn is_timestamp_tag(tag_name: &str) -> bool {
+        tag_name == TIMESTAMP_TAG
+    }
+
+    /// Returns whether this is the special tag of [`crate::time_duration::TimeDuration`].
+    pub fn is_time_duration_tag(tag_name: &str) -> bool {
+        tag_name == TIME_DURATION_TAG
+    }
+
     /// Returns whether this is a special known `tag`,
     /// currently `Address`, `Identity`, `Timestamp` or `TimeDuration`.
     pub fn is_special_tag(tag_name: &str) -> bool {
@@ -169,6 +200,16 @@ impl ProductType {
             }
             Ok(AlgebraicType::product(fields.into_boxed_slice()))
         }
+    }
+
+    /// Returns whether `value` is compatible with this type.
+    pub fn type_check(&self, value: &ProductValue, typespace: &Typespace) -> bool {
+        value.elements.len() == self.elements.len()
+            && self
+                .elements
+                .iter()
+                .zip(&value.elements)
+                .all(|(ty, val)| ty.algebraic_type.type_check(val, typespace))
     }
 }
 

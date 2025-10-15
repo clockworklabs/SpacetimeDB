@@ -1,19 +1,18 @@
+use super::ast::TableSchemaView;
 use super::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use super::type_check::TypeCheck;
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use core::ops::Deref;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{self, ColExpr, DbTable, FieldName, Header};
 use spacetimedb_primitives::ColId;
+use spacetimedb_schema::relation::{self, ColExpr, DbTable, FieldName, Header};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_vm::expr::{CrudExpr, Expr, FieldExpr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
 use std::sync::Arc;
-
-use super::ast::TableSchemaView;
 
 /// DIRTY HACK ALERT: Maximum allowed length, in UTF-8 bytes, of SQL queries.
 /// Any query longer than this will be rejected.
@@ -230,16 +229,12 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::{insert, TestDB};
-    use crate::execution_context::Workload;
+    use crate::db::relational_db::tests_utils::{begin_mut_tx, begin_tx, insert, with_auto_commit, TestDB};
     use crate::sql::execute::tests::run_for_testing;
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::{ConnectionId, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
-    use spacetimedb_sats::{
-        product, satn, AlgebraicType, AlgebraicValue, GroundSpacetimeType as _, ProductType, Typespace, ValueWithType,
-    };
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, GroundSpacetimeType as _};
     use spacetimedb_vm::expr::{ColumnOp, IndexJoin, IndexScan, JoinExpr, Query};
     use std::convert::From;
     use std::ops::Bound;
@@ -286,7 +281,7 @@ mod tests {
         let indexes = &[];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Compile query
         let sql = "select * from test where a = 1";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -308,7 +303,7 @@ mod tests {
             &[1.into(), 0.into()],
         )?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should work with any qualified field.
         let sql = "select * from test where a = 1 and b <> 3";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -329,7 +324,7 @@ mod tests {
         let indexes = &[0.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         //Compile query
         let sql = "select * from test where a = 1";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -359,7 +354,7 @@ mod tests {
             ConnectionId::ZERO,
         ];
 
-        db.with_auto_commit(Workload::ForTests, |tx| {
+        with_auto_commit(&db, |tx| {
             insert(&db, tx, table_id, &row.clone())?;
             Ok::<(), TestError>(())
         })?;
@@ -382,7 +377,7 @@ mod tests {
 
         let rows = run_for_testing(&db, sql)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
@@ -403,59 +398,6 @@ mod tests {
         Ok(())
     }
 
-    // Verify the output of `sql` matches the inputs for `Identity`, 'ConnectionId' & binary data.
-    #[test]
-    fn output_identity_connection_id() -> ResultTest<()> {
-        let row = product![AlgebraicValue::from(Identity::__dummy())];
-        let kind: ProductType = [("i", Identity::get_type())].into();
-        let ty = Typespace::EMPTY.with_type(&kind);
-        let out = ty
-            .with_values(&row)
-            .map(|value| satn::PsqlWrapper { ty: &kind, value }.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        assert_eq!(out, "0");
-
-        // Check tuples
-        let kind = [
-            ("a", AlgebraicType::String),
-            ("b", AlgebraicType::U256),
-            ("o", Identity::get_type()),
-            ("p", ConnectionId::get_type()),
-        ]
-        .into();
-
-        let value = AlgebraicValue::product([
-            AlgebraicValue::String("a".into()),
-            Identity::ZERO.to_u256().into(),
-            Identity::ZERO.to_u256().into(),
-            ConnectionId::ZERO.to_u128().into(),
-        ]);
-
-        assert_eq!(
-            satn::PsqlWrapper { ty: &kind, value }.to_string().as_str(),
-            "(0 = \"a\", 1 = 0, 2 = 0, 3 = 0)"
-        );
-
-        let ty = Typespace::EMPTY.with_type(&kind);
-
-        // Check struct
-        let value = product![
-            "a",
-            Identity::ZERO.to_u256(),
-            AlgebraicValue::product([Identity::ZERO.to_u256().into()]),
-            AlgebraicValue::product([ConnectionId::ZERO.to_u128().into()]),
-        ];
-
-        let value = ValueWithType::new(ty, &value);
-        assert_eq!(
-            satn::PsqlWrapper { ty: ty.ty(), value }.to_string().as_str(),
-            "(a = \"a\", b = 0, o = 0, p = 0)"
-        );
-
-        Ok(())
-    }
-
     #[test]
     fn compile_eq_and_eq() -> ResultTest<()> {
         let db = TestDB::durable()?;
@@ -465,7 +407,7 @@ mod tests {
         let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Note, order does not matter.
         // The sargable predicate occurs last, but we can still generate an index scan.
         let sql = "select * from test where a = 1 and b = 2";
@@ -487,9 +429,9 @@ mod tests {
         let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Note, order does not matter.
-        // The sargable predicate occurs first adn we can generate an index scan.
+        // The sargable predicate occurs first and we can generate an index scan.
         let sql = "select * from test where b = 2 and a = 1";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
@@ -513,7 +455,7 @@ mod tests {
         ];
         db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
 
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let sql = "select * from test where b = 2 and a = 1";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
@@ -532,7 +474,7 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Compile query
         let sql = "select * from test where a = 1 or b = 2";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -553,7 +495,7 @@ mod tests {
         let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Compile query
         let sql = "select * from test where b > 2";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -574,7 +516,7 @@ mod tests {
         let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Compile query
         let sql = "select * from test where b > 2 and b < 5";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -600,7 +542,7 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Note, order matters - the equality condition occurs first which
         // means an index scan will be generated rather than the range condition.
         let sql = "select * from test where a = 3 and b > 2 and b < 5";
@@ -627,7 +569,7 @@ mod tests {
         let indexes = &[];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should push sargable equality condition below join
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
@@ -638,7 +580,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected expression: {:#?}", exp);
+            panic!("unexpected expression: {exp:#?}");
         };
 
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
@@ -679,7 +621,7 @@ mod tests {
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
         let rhs_id = db.create_table_for_test("rhs", schema, &[])?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should push equality condition below join
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
@@ -690,7 +632,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected expression: {:#?}", exp);
+            panic!("unexpected expression: {exp:#?}");
         };
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
         assert_eq!(query.len(), 3);
@@ -736,7 +678,7 @@ mod tests {
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
         let rhs_id = db.create_table_for_test("rhs", schema, &[])?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should push equality condition below join
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c = 3";
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
@@ -747,7 +689,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected expression: {:#?}", exp);
+            panic!("unexpected expression: {exp:#?}");
         };
 
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
@@ -794,7 +736,7 @@ mod tests {
         let indexes = &[1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should push the sargable equality condition into the join's left arg.
         // Should push the sargable range condition into the join's right arg.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3 and rhs.c < 4";
@@ -806,7 +748,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected result from compilation: {:?}", exp);
+            panic!("unexpected result from compilation: {exp:?}");
         };
 
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
@@ -865,7 +807,7 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
@@ -877,7 +819,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected result from compilation: {:?}", exp);
+            panic!("unexpected result from compilation: {exp:?}");
         };
 
         assert_eq!(table_id, lhs_id);
@@ -947,7 +889,7 @@ mod tests {
         let indexes = col_list![0, 1];
         let rhs_id = db.create_table_for_test_multi_column("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c = 2 and rhs.b = 4 and rhs.d = 3";
@@ -959,7 +901,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected result from compilation: {:?}", exp);
+            panic!("unexpected result from compilation: {exp:?}");
         };
 
         assert_eq!(table_id, lhs_id);
@@ -1011,12 +953,7 @@ mod tests {
         let db = TestDB::durable()?;
         db.create_table_for_test("A", &[("x", AlgebraicType::U64)], &[])?;
         db.create_table_for_test("B", &[("y", AlgebraicType::U64)], &[])?;
-        assert!(compile_sql(
-            &db,
-            &db.begin_tx(Workload::ForTests),
-            "select B.* from B join A on B.y = A.x"
-        )
-        .is_ok());
+        assert!(compile_sql(&db, &begin_tx(&db), "select B.* from B join A on B.y = A.x").is_ok());
         Ok(())
     }
 
@@ -1033,27 +970,27 @@ mod tests {
         // TODO: Type check other operations deferred for the new query engine.
 
         assert!(
-            compile_sql(&db, &db.begin_tx(Workload::ForTests), sql).is_err(),
+            compile_sql(&db, &begin_tx(&db), sql).is_err(),
             // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` != `String(\"161853\"): String`, executing: `SELECT * FROM PlayerState WHERE entity_id = '161853'`".into())
         );
 
         // Check we can still compile the query if we remove the type mismatch and have multiple logical operations.
         let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id = 2 AND entity_id = 3 OR entity_id = 4 OR entity_id = 5";
 
-        assert!(compile_sql(&db, &db.begin_tx(Workload::ForTests), sql).is_ok());
+        assert!(compile_sql(&db, &begin_tx(&db), sql).is_ok());
 
         // Now verify when we have a type mismatch in the middle of the logical operations.
         let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id";
 
         assert!(
-            compile_sql(&db, &db.begin_tx(Workload::ForTests), sql).is_err(),
+            compile_sql(&db, &begin_tx(&db), sql).is_err(),
             // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64 == U64(1): U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id`".into())
         );
         // Verify that all operands of `AND` must be `Bool`.
         let sql = "SELECT * FROM PlayerState WHERE entity_id AND entity_id";
 
         assert!(
-            compile_sql(&db, &db.begin_tx(Workload::ForTests), sql).is_err(),
+            compile_sql(&db, &begin_tx(&db), sql).is_err(),
             // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id AND entity_id`".into())
         );
         Ok(())

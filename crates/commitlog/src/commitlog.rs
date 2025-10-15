@@ -1,15 +1,23 @@
-use std::{io, marker::PhantomData, mem, ops::Range, vec};
+use std::{
+    fmt::Debug,
+    io,
+    marker::PhantomData,
+    mem,
+    ops::{Range, RangeBounds},
+    vec,
+};
 
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
 
 use crate::{
     commit::StoredCommit,
-    error,
+    error::{self, source_chain},
+    index::IndexError,
     payload::Decoder,
-    repo::{self, Repo},
+    repo::{self, Repo, TxOffsetIndex},
     segment::{self, FileLike, Transaction, Writer},
-    Commit, Encode, Options,
+    Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
 };
 
 pub use crate::segment::Committed;
@@ -24,7 +32,7 @@ pub struct Generic<R: Repo, T> {
     ///
     /// If we squint, all segments in a log are a non-empty linked list, the
     /// head of which is the segment open for writing.
-    pub(crate) head: Writer<R::Segment>,
+    pub(crate) head: Writer<R::SegmentWriter>,
     /// The tail of the non-empty list of segments.
     ///
     /// We only retain the min transaction offset of each, from which the
@@ -182,6 +190,15 @@ impl<R: Repo, T> Generic<R, T> {
         self.head.next_tx_offset().checked_sub(1)
     }
 
+    /// The first transaction offset written to disk, or `None` if nothing has
+    /// been written yet.
+    pub fn min_committed_offset(&self) -> Option<u64> {
+        self.tail
+            .first()
+            .copied()
+            .or_else(|| (!self.head.is_empty()).then(|| self.head.min_tx_offset()))
+    }
+
     // Helper to obtain a list of the segment offsets which include transaction
     // offset `offset`.
     //
@@ -240,43 +257,7 @@ impl<R: Repo, T> Generic<R, T> {
         self.panicked = true;
         self.tail.reserve(1);
         self.tail.push(self.head.min_tx_offset);
-        for segment in self.tail.iter().rev() {
-            let segment = *segment;
-            if segment > offset {
-                // Segment is outside the offset, so remove it wholesale.
-                debug!("removing segment {segment}");
-                self.repo.remove_segment(segment)?;
-            } else {
-                // Read commit-wise until we find the byte offset.
-                let reader = repo::open_segment_reader(&self.repo, self.opts.log_format_version, segment)?;
-                let commits = reader.commits();
-
-                let mut bytes_read = 0;
-                for commit in commits {
-                    let commit = commit?;
-                    if commit.min_tx_offset > offset {
-                        break;
-                    }
-                    bytes_read += Commit::from(commit).encoded_len() as u64;
-                }
-
-                if bytes_read == 0 {
-                    // Segment is empty, just remove it.
-                    self.repo.remove_segment(segment)?;
-                } else {
-                    let byte_offset = segment::Header::LEN as u64 + bytes_read;
-                    debug!("truncating segment {segment} to {offset} at {byte_offset}");
-                    let mut file = self.repo.open_segment(segment)?;
-                    // Note: The offset index truncates equal or greater,
-                    // inclusive. We'd like to retain `offset` in the index, as
-                    // the commit is also retained in the log.
-                    file.ftruncate(offset + 1, byte_offset)?;
-                    // Some filesystems require fsync after ftruncate.
-                    file.fsync()?;
-                    break;
-                }
-            }
-        }
+        reset_to_internal(&self.repo, &self.tail, offset)?;
         // Prevent finalizer from running by not updating self.panicked.
 
         Self::open(self.repo.clone(), self.opts)
@@ -288,7 +269,7 @@ impl<R: Repo, T> Generic<R, T> {
     /// appropriate. It is not appropriate to sync after a write error, as that
     /// is likely to return an error as well: the `Commit` will be written to
     /// the new segment anyway.
-    fn start_new_segment(&mut self) -> io::Result<&mut Writer<R::Segment>> {
+    fn start_new_segment(&mut self) -> io::Result<&mut Writer<R::SegmentWriter>> {
         debug!(
             "starting new segment offset={} prev-offset={}",
             self.head.next_tx_offset(),
@@ -327,7 +308,22 @@ impl<R: Repo, T: Encode> Generic<R, T> {
         D: Decoder,
         D::Error: From<error::Traversal>,
     {
-        fold_transactions_internal(self.commits_from(offset).with_log_format_version(), decoder, offset)
+        fold_transactions_internal(self.commits_from(offset).with_log_format_version(), decoder, offset..)
+    }
+
+    pub fn fold_transaction_range<D>(&self, range: impl RangeBounds<u64>, decoder: D) -> Result<(), D::Error>
+    where
+        D: Decoder,
+        D::Error: From<error::Traversal>,
+    {
+        use std::ops::Bound::*;
+
+        let start = match range.start_bound() {
+            Included(x) => *x,
+            Excluded(x) => x + 1,
+            Unbounded => 0,
+        };
+        fold_transactions_internal(self.commits_from(start).with_log_format_version(), decoder, range)
     }
 }
 
@@ -339,6 +335,38 @@ impl<R: Repo, T> Drop for Generic<R, T> {
             }
         }
     }
+}
+
+/// Extract the most recently written [`segment::Metadata`] from the commitlog
+/// in `repo`.
+///
+/// Returns `None` if the commitlog is empty.
+///
+/// Note that this function validates the most recent segment, which entails
+/// traversing it from the start.
+///
+/// The function can be used instead of the pattern:
+///
+/// ```ignore
+/// let log = Commitlog::open(..)?;
+/// let max_offset = log.max_committed_offset();
+/// ```
+///
+/// like so:
+///
+/// ```ignore
+/// let max_offset = committed_meta(..)?.map(|meta| meta.tx_range.end);
+/// ```
+///
+/// Unlike `open`, no segment will be created in an empty `repo`.
+pub fn committed_meta(repo: impl Repo) -> Result<Option<segment::Metadata>, error::SegmentMetadata> {
+    let Some(last) = repo.existing_offsets()?.pop() else {
+        return Ok(None);
+    };
+
+    let mut storage = repo.open_segment_reader(last)?;
+    let offset_index = repo.get_offset_index(last).ok();
+    segment::Metadata::extract(last, &mut storage, offset_index.as_ref()).map(Some)
 }
 
 pub fn commits_from<R: Repo>(repo: R, max_log_format_version: u8, offset: u64) -> io::Result<Commits<R>> {
@@ -381,8 +409,29 @@ where
     D: Decoder,
     D::Error: From<error::Traversal> + From<io::Error>,
 {
-    let commits = commits_from(repo, max_log_format_version, offset)?;
-    fold_transactions_internal(commits.with_log_format_version(), de, offset)
+    fold_transaction_range(repo, max_log_format_version, offset.., de)
+}
+
+pub fn fold_transaction_range<R, D>(
+    repo: R,
+    max_log_format_version: u8,
+    range: impl RangeBounds<u64>,
+    de: D,
+) -> Result<(), D::Error>
+where
+    R: Repo,
+    D: Decoder,
+    D::Error: From<error::Traversal> + From<io::Error>,
+{
+    use std::ops::Bound::*;
+
+    let start = match range.start_bound() {
+        Included(x) => *x,
+        Excluded(x) => x + 1,
+        Unbounded => 0,
+    };
+    let commits = commits_from(repo, max_log_format_version, start)?;
+    fold_transactions_internal(commits.with_log_format_version(), de, range)
 }
 
 fn transactions_from_internal<'a, R, D, T>(
@@ -403,12 +452,38 @@ where
         .map(|x| x.and_then(|y| y))
 }
 
-fn fold_transactions_internal<R, D>(mut commits: CommitsWithVersion<R>, de: D, from: u64) -> Result<(), D::Error>
+fn fold_transactions_internal<R, D>(
+    mut commits: CommitsWithVersion<R>,
+    de: D,
+    range: impl RangeBounds<u64>,
+) -> Result<(), D::Error>
 where
     R: Repo,
     D: Decoder,
     D::Error: From<error::Traversal>,
 {
+    use std::ops::Bound::*;
+
+    // Avoid reading the first commit if it wouldn't be in the range anyway.
+    if range_is_empty(&range) {
+        return Ok(());
+    }
+
+    // `true` if `offset` is outside `range`, s.t. it is smaller than the start
+    // bound.
+    let before_start = |offset: &u64| match range.start_bound() {
+        Included(x) => offset < x,
+        Excluded(x) => offset <= x,
+        Unbounded => false,
+    };
+    // `true` if `offset` is outside `range`, s.t. it is greater than the end
+    // bound.
+    let past_end = |offset: &u64| match range.end_bound() {
+        Included(x) => offset > x,
+        Excluded(x) => offset >= x,
+        Unbounded => false,
+    };
+
     while let Some(commit) = commits.next() {
         let (version, commit) = match commit {
             Ok(version_and_commit) => version_and_commit,
@@ -428,17 +503,91 @@ where
         trace!("commit {} n={} version={}", commit.min_tx_offset, commit.n, version);
 
         let max_tx_offset = commit.min_tx_offset + commit.n as u64;
-        if max_tx_offset <= from {
+        // Skip if no transaction in the commit is in range.
+        if before_start(&max_tx_offset) {
             continue;
         }
 
         let records = &mut commit.records.as_slice();
         for n in 0..commit.n {
             let tx_offset = commit.min_tx_offset + n as u64;
-            if tx_offset < from {
+            if before_start(&tx_offset) {
                 de.skip_record(version, tx_offset, records)?;
+            } else if past_end(&tx_offset) {
+                return Ok(());
             } else {
                 de.consume_record(version, tx_offset, records)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Remove all data past the given transaction `offset`.
+///
+/// The function deletes log segments starting from the newest. As multiple
+/// segments cannot be deleted atomically, the log may be left longer than
+/// `offset` if the function does not return successfully.
+///
+/// If the function returns successfully, the most recent [`Commit`] in the
+/// log will contain the transaction at `offset`.
+///
+/// The log must be re-opened if it is to be used after calling this function.
+pub fn reset_to(repo: &impl Repo, offset: u64) -> io::Result<()> {
+    let segments = repo.existing_offsets()?;
+    reset_to_internal(repo, &segments, offset)
+}
+
+fn reset_to_internal(repo: &impl Repo, segments: &[u64], offset: u64) -> io::Result<()> {
+    for segment in segments.iter().copied().rev() {
+        if segment > offset {
+            // Segment is outside the offset, so remove it wholesale.
+            debug!("removing segment {segment}");
+            repo.remove_segment(segment)?;
+        } else {
+            // Read commit-wise until we find the byte offset.
+            let mut reader = repo::open_segment_reader(repo, DEFAULT_LOG_FORMAT_VERSION, segment)?;
+
+            let (index_file, mut byte_offset) = try_seek_using_offset_index(repo, &mut reader, offset)
+                .map(|(index_file, byte_offset)| (Some(index_file), byte_offset))
+                .unwrap_or((None, segment::Header::LEN as u64));
+
+            let commits = reader.commits();
+
+            for commit in commits {
+                let commit = commit?;
+                if commit.min_tx_offset > offset {
+                    break;
+                }
+                byte_offset += Commit::from(commit).encoded_len() as u64;
+            }
+
+            if byte_offset == segment::Header::LEN as u64 {
+                // Segment is empty, just remove it.
+                repo.remove_segment(segment)?;
+            } else {
+                debug!("truncating segment {segment} to {offset} at {byte_offset}");
+                let mut file = repo.open_segment_writer(segment)?;
+
+                if let Some(mut index_file) = index_file {
+                    let index_file = index_file.as_mut();
+                    // Note: The offset index truncates equal or greater,
+                    // inclusive. We'd like to retain `offset` in the index, as
+                    // the commit is also retained in the log.
+                    index_file.ftruncate(offset + 1, byte_offset).map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("Failed to truncate offset index: {e}"),
+                        )
+                    })?;
+                    index_file.async_flush()?;
+                }
+
+                file.ftruncate(offset, byte_offset)?;
+                // Some filesystems require fsync after ftruncate.
+                file.fsync()?;
+                break;
             }
         }
     }
@@ -453,7 +602,7 @@ pub struct Segments<R> {
 }
 
 impl<R: Repo> Iterator for Segments<R> {
-    type Item = io::Result<segment::Reader<R::Segment>>;
+    type Item = io::Result<segment::Reader<R::SegmentReader>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let off = self.offs.next()?;
@@ -528,7 +677,7 @@ impl CommitInfo {
 }
 
 pub struct Commits<R: Repo> {
-    inner: Option<segment::Commits<R::Segment>>,
+    inner: Option<segment::Commits<R::SegmentReader>>,
     segments: Segments<R>,
     last_commit: CommitInfo,
     last_error: Option<error::Traversal>,
@@ -581,7 +730,7 @@ impl<R: Repo> Commits<R> {
                         }
                     // Not the expected offset: report out-of-order.
                     } else if self.last_commit.expected_offset() != &commit.min_tx_offset {
-                        warn!("out-of-order: commit={:?} last-error={:?}", commit, prev_error);
+                        warn!("out-of-order: commit={commit:?} last-error={prev_error:?}");
                         return Some(Err(error::Traversal::OutOfOrder {
                             expected_offset: *self.last_commit.expected_offset(),
                             actual_offset: commit.min_tx_offset,
@@ -637,20 +786,9 @@ impl<R: Repo> Commits<R> {
 
     /// If we're still looking for the initial commit, try to use the offset
     /// index to advance the segment reader.
-    fn try_seek_to_initial_offset(&self, segment: &mut segment::Reader<R::Segment>) {
+    fn try_seek_to_initial_offset(&self, segment: &mut segment::Reader<R::SegmentReader>) {
         if let CommitInfo::Initial { next_offset } = &self.last_commit {
-            let _ = self
-                .segments
-                .repo
-                .get_offset_index(segment.min_tx_offset)
-                .map_err(Into::into)
-                .and_then(|index_file| segment.seek_to_offset(&index_file, *next_offset))
-                .inspect_err(|e| {
-                    warn!(
-                        "commitlog offset index is not used at segment {}: {}",
-                        segment.min_tx_offset, e
-                    );
-                });
+            try_seek_using_offset_index(&self.segments.repo, segment, *next_offset);
         }
     }
 }
@@ -699,6 +837,67 @@ impl<R: Repo> Iterator for CommitsWithVersion<R> {
             Err(e) => Some(Err(e)),
         }
     }
+}
+
+/// Try to advance `reader` to `offset` using the offset index.
+///
+/// If successful, returns the offset index and the byte position of `reader`.
+/// `None` if the position of `reader` is unchanged.
+fn try_seek_using_offset_index<R: Repo>(
+    repo: &R,
+    reader: &mut segment::Reader<R::SegmentReader>,
+    offset: u64,
+) -> Option<(TxOffsetIndex, u64)> {
+    let segment_offset = reader.min_tx_offset;
+    let index = repo
+        .get_offset_index(segment_offset)
+        .inspect_err(|e| {
+            if e.kind() == io::ErrorKind::NotFound {
+                debug!("offset index does not exist segment={segment_offset}");
+            } else {
+                warn!(
+                    "error opening offset index segment={segment_offset}: {e} {}",
+                    source_chain(&e)
+                );
+            }
+        })
+        .ok()?;
+
+    reader
+        .seek_to_offset(&index, offset)
+        .inspect_err(|e| match e {
+            // Can happen if the segment is empty or small, so don't spam the logs.
+            IndexError::KeyNotFound => {
+                debug!("offset not found segment={segment_offset} offset={offset}");
+            }
+            e => {
+                warn!(
+                    "error reading index segment={segment_offset} offset={offset}: {e} {}",
+                    source_chain(&e)
+                );
+            }
+        })
+        .ok()
+        .map(|pos| (index, pos))
+}
+
+// `range_bounds_is_empty` https://github.com/rust-lang/rust/issues/137300
+//
+// This is correct for integers, but unsound for arbitrary `T`, so unlikely to
+// be stabilized.
+fn range_is_empty(range: &impl RangeBounds<u64>) -> bool {
+    use std::ops::Bound::*;
+
+    #[rustfmt::skip]
+    let not_empty = match (range.start_bound(), range.end_bound()) {
+        (Unbounded, _) | (_, Unbounded) => true,
+        (Included(start), Excluded(end))
+        | (Excluded(start), Included(end))
+        | (Excluded(start), Excluded(end)) => start < end,
+        (Included(start), Included(end)) => start <= end,
+    };
+
+    !not_empty
 }
 
 #[cfg(test)]

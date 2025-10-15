@@ -1,10 +1,12 @@
 use std::{
     io,
     num::{NonZeroU16, NonZeroU64},
+    ops::RangeBounds,
     sync::RwLock,
 };
 
 use log::trace;
+use repo::Repo;
 use spacetimedb_paths::server::CommitLogDir;
 
 pub mod commit;
@@ -24,11 +26,19 @@ pub use crate::{
 pub mod error;
 pub mod payload;
 
+#[cfg(feature = "streaming")]
+pub mod stream;
+
 #[cfg(any(test, feature = "test"))]
 pub mod tests;
 
 /// [`Commitlog`] options.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
 pub struct Options {
     /// Set the log format version to write, and the maximum supported version.
     ///
@@ -38,11 +48,13 @@ pub struct Options {
     /// with new or very old versions.
     ///
     /// Default: [`DEFAULT_LOG_FORMAT_VERSION`]
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_log_format_version"))]
     pub log_format_version: u8,
     /// The maximum size in bytes to which log segments should be allowed to
     /// grow.
     ///
     /// Default: 1GiB
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_max_segment_size"))]
     pub max_segment_size: u64,
     /// The maximum number of records in a commit.
     ///
@@ -50,11 +62,13 @@ pub struct Options {
     /// explicitly calling [`Commitlog::flush`].
     ///
     /// Default: 65,535
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_max_records_in_commit"))]
     pub max_records_in_commit: NonZeroU16,
     /// Whenever at least this many bytes have been written to the currently
     /// active segment, an entry is added to its offset index.
     ///
     /// Default: 4096
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_offset_index_interval_bytes"))]
     pub offset_index_interval_bytes: NonZeroU64,
     /// If `true`, require that the segment must be synced to disk before an
     /// index entry is added.
@@ -70,22 +84,53 @@ pub struct Options {
     /// strictly every `offset_index_interval_bytes`.
     ///
     /// Default: false
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "Options::default_offset_index_require_segment_fsync")
+    )]
     pub offset_index_require_segment_fsync: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self {
-            log_format_version: DEFAULT_LOG_FORMAT_VERSION,
-            max_segment_size: 1024 * 1024 * 1024,
-            max_records_in_commit: NonZeroU16::MAX,
-            offset_index_interval_bytes: NonZeroU64::new(4096).unwrap(),
-            offset_index_require_segment_fsync: false,
-        }
+        Self::DEFAULT
     }
 }
 
 impl Options {
+    pub const DEFAULT_MAX_SEGMENT_SIZE: u64 = 1024 * 1024 * 1024;
+    pub const DEFAULT_MAX_RECORDS_IN_COMMIT: NonZeroU16 = NonZeroU16::MAX;
+    pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
+    pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = false;
+
+    pub const DEFAULT: Self = Self {
+        log_format_version: DEFAULT_LOG_FORMAT_VERSION,
+        max_segment_size: Self::default_max_segment_size(),
+        max_records_in_commit: Self::default_max_records_in_commit(),
+        offset_index_interval_bytes: Self::default_offset_index_interval_bytes(),
+        offset_index_require_segment_fsync: Self::default_offset_index_require_segment_fsync(),
+    };
+
+    pub const fn default_log_format_version() -> u8 {
+        DEFAULT_LOG_FORMAT_VERSION
+    }
+
+    pub const fn default_max_segment_size() -> u64 {
+        Self::DEFAULT_MAX_SEGMENT_SIZE
+    }
+
+    pub const fn default_max_records_in_commit() -> NonZeroU16 {
+        Self::DEFAULT_MAX_RECORDS_IN_COMMIT
+    }
+
+    pub const fn default_offset_index_interval_bytes() -> NonZeroU64 {
+        Self::DEFAULT_OFFSET_INDEX_INTERVAL_BYTES
+    }
+
+    pub const fn default_offset_index_require_segment_fsync() -> bool {
+        Self::DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC
+    }
+
     /// Compute the length in bytes of an offset index based on the settings in
     /// `self`.
     pub fn offset_index_len(&self) -> u64 {
@@ -125,6 +170,13 @@ impl<T> Commitlog<T> {
     /// The offset is `None` if the log hasn't been flushed to disk yet.
     pub fn max_committed_offset(&self) -> Option<u64> {
         self.inner.read().unwrap().max_committed_offset()
+    }
+
+    /// Determine the minimum transaction offset in the log.
+    ///
+    /// The offset is `None` if the log hasn't been flushed to disk yet.
+    pub fn min_committed_offset(&self) -> Option<u64> {
+        self.inner.read().unwrap().min_committed_offset()
     }
 
     /// Get the current epoch.
@@ -250,6 +302,24 @@ impl<T> Commitlog<T> {
     /// smaller than `offset`.
     pub fn commits_from(&self, offset: u64) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> {
         self.inner.read().unwrap().commits_from(offset)
+    }
+
+    /// Get a list of segment offsets, sorted in ascending order.
+    pub fn existing_segment_offsets(&self) -> io::Result<Vec<u64>> {
+        self.inner.read().unwrap().repo.existing_offsets()
+    }
+
+    /// Compress the segments at the offsets provided, marking them as immutable.
+    pub fn compress_segments(&self, offsets: &[u64]) -> io::Result<()> {
+        // even though `compress_segment` takes &self, we take an
+        // exclusive lock to avoid any weirdness happening.
+        #[allow(clippy::readonly_write_lock)]
+        let inner = self.inner.write().unwrap();
+        assert!(!offsets.contains(&inner.head.min_tx_offset()));
+        // TODO: parallelize, maybe
+        offsets
+            .iter()
+            .try_for_each(|&offset| inner.repo.compress_segment(offset))
     }
 
     /// Remove all data from the log and reopen it.
@@ -433,6 +503,32 @@ impl<T: Encode> Commitlog<T> {
     }
 }
 
+/// Extract the most recently written [`segment::Metadata`] from the commitlog
+/// in `repo`.
+///
+/// Returns `None` if the commitlog is empty.
+///
+/// Note that this function validates the most recent segment, which entails
+/// traversing it from the start.
+///
+/// The function can be used instead of the pattern:
+///
+/// ```ignore
+/// let log = Commitlog::open(..)?;
+/// let max_offset = log.max_committed_offset();
+/// ```
+///
+/// like so:
+///
+/// ```ignore
+/// let max_offset = committed_meta(..)?.map(|meta| meta.tx_range.end);
+/// ```
+///
+/// Unlike `open`, no segment will be created in an empty `repo`.
+pub fn committed_meta(root: CommitLogDir) -> Result<Option<segment::Metadata>, error::SegmentMetadata> {
+    commitlog::committed_meta(repo::Fs::new(root)?)
+}
+
 /// Obtain an iterator which traverses the commitlog located at the `root`
 /// directory from the start, yielding [`StoredCommit`]s.
 ///
@@ -513,4 +609,12 @@ where
     D::Error: From<error::Traversal> + From<io::Error>,
 {
     commitlog::fold_transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
+}
+
+pub fn fold_transaction_range<D>(root: CommitLogDir, range: impl RangeBounds<u64>, de: D) -> Result<(), D::Error>
+where
+    D: Decoder,
+    D::Error: From<error::Traversal> + From<io::Error>,
+{
+    commitlog::fold_transaction_range(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, range, de)
 }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use spacetimedb_lib::{st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_sql_parser::{
@@ -370,7 +370,7 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
     );
 
     Ok(ProjectList::List(
-        RelExpr::Select(Box::new(relvar), filter),
+        vec![RelExpr::Select(Box::new(relvar), filter)],
         column_list,
     ))
 }
@@ -427,8 +427,8 @@ impl TypeChecker for SqlChecker {
     }
 }
 
-pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
-    match parse_sql(sql)? {
+pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<Statement> {
+    match parse_sql(sql)?.resolve_sender(auth.caller) {
         SqlAst::Select(ast) => Ok(Statement::Select(SqlChecker::type_ast(ast, tx)?)),
         SqlAst::Insert(insert) => Ok(Statement::DML(DML::Insert(type_insert(insert, tx)?))),
         SqlAst::Delete(delete) => Ok(Statement::DML(DML::Delete(type_delete(delete, tx)?))),
@@ -439,8 +439,8 @@ pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<State
 }
 
 /// Parse and type check a *general* query into a [StatementCtx].
-pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
-    let statement = parse_and_type_sql(sql, tx)?;
+pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<StatementCtx<'a>> {
+    let statement = parse_and_type_sql(sql, tx, auth)?;
     Ok(StatementCtx {
         statement,
         sql,
@@ -450,13 +450,16 @@ pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_lib::{AlgebraicType, ProductType};
-    use spacetimedb_schema::def::ModuleDef;
-
-    use crate::{
-        check::test_utils::{build_module_def, SchemaViewer},
-        statement::parse_and_type_sql,
+    use super::Statement;
+    use crate::ast::LogOp;
+    use crate::check::{
+        test_utils::{build_module_def, SchemaViewer},
+        Relvars, SchemaView, TypingResult,
     };
+    use crate::type_expr;
+    use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
+    use spacetimedb_schema::def::ModuleDef;
+    use spacetimedb_sql_parser::ast::{SqlExpr, SqlLiteral};
 
     fn module_def() -> ModuleDef {
         build_module_def(vec![
@@ -479,6 +482,11 @@ mod tests {
                 ]),
             ),
         ])
+    }
+
+    /// A wrapper around [super::parse_and_type_sql] that takes a dummy [AuthCtx]
+    fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
+        super::parse_and_type_sql(sql, tx, &AuthCtx::for_testing())
     }
 
     #[test]
@@ -505,9 +513,34 @@ mod tests {
             "select id, str from s join t",
             // Wrong type for limit
             "select * from t limit '5'",
+            // Unqualified name in join expression
+            "select t.* from t join s on t.u32 = s.u32 where bytes = 0xABCD",
         ] {
             let result = parse_and_type_sql(sql, &tx);
             assert!(result.is_err());
         }
+    }
+
+    /// Manually build the AST for a recursive query,
+    /// because we limit the length of the query to prevent stack overflow on parsing.
+    /// Exercise the limit [`recursion::MAX_RECURSION_TYP_EXPR`]
+    #[test]
+    fn typing_recursion() {
+        let build_query = |total, sep: char| {
+            let mut expr = SqlExpr::Lit(SqlLiteral::Bool(true));
+            for _ in 1..total {
+                let next = SqlExpr::Log(
+                    Box::new(SqlExpr::Lit(SqlLiteral::Bool(true))),
+                    Box::new(SqlExpr::Lit(SqlLiteral::Bool(false))),
+                    LogOp::And,
+                );
+                expr = SqlExpr::Log(Box::new(expr), Box::new(next), LogOp::And);
+            }
+            type_expr(&Relvars::default(), expr, Some(&AlgebraicType::Bool))
+                .map_err(|e| e.to_string().split(sep).next().unwrap_or_default().to_string())
+        };
+        assert_eq!(build_query(2_501, ','), Err("Recursion limit exceeded".to_string()));
+
+        assert!(build_query(2_500, ',').is_ok());
     }
 }

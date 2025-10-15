@@ -1,3 +1,4 @@
+use spacetimedb_datastore::system_tables::ModuleKind;
 use spacetimedb_lib::Identity;
 use spacetimedb_sats::de::Deserialize;
 use spacetimedb_sats::hash::Hash;
@@ -62,6 +63,10 @@ pub struct Node {
     ///
     /// If `None`, the node is not currently live.
     pub advertise_addr: Option<String>,
+    /// The address this node is running its postgres API at.
+    ///
+    /// If `None`, the node is not currently live.
+    pub pg_addr: Option<String>,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeStatus {
@@ -70,8 +75,34 @@ pub struct NodeStatus {
     /// SEE: <https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/node-v1/#NodeStatus>
     pub state: String,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Default,
+    Serialize,
+    Deserialize,
+    serde::Deserialize,
+    strum::AsRefStr,
+    strum::Display,
+)]
 #[repr(i32)]
 pub enum HostType {
+    #[default]
     Wasm = 0,
+    Js = 1,
+}
+
+impl From<crate::messages::control_db::HostType> for ModuleKind {
+    fn from(host_type: crate::messages::control_db::HostType) -> Self {
+        match host_type {
+            crate::messages::control_db::HostType::Wasm => Self::WASM,
+            crate::messages::control_db::HostType::Js => Self::JS,
+        }
+    }
 }

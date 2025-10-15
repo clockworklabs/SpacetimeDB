@@ -1,11 +1,11 @@
 use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD, Engine as _};
 use reqwest::{RequestBuilder, Url};
-use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
+use spacetimedb_auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::GetNamesResponse;
 use spacetimedb_lib::Identity;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
@@ -124,7 +124,7 @@ pub async fn spacetime_dns(
 }
 
 pub async fn spacetime_server_fingerprint(url: &str) -> anyhow::Result<String> {
-    let builder = reqwest::Client::new().get(format!("{}/v1/identity/public-key", url).as_str());
+    let builder = reqwest::Client::new().get(format!("{url}/v1/identity/public-key").as_str());
     let res = builder.send().await?.error_for_status()?;
     let fingerprint = res.text().await?;
     Ok(fingerprint)
@@ -261,7 +261,7 @@ pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
         return Ok(true);
     }
     let mut input = String::new();
-    print!("{} [y/N]", prompt);
+    print!("{prompt} [y/N]");
     std::io::stdout().flush()?;
     std::io::stdin().read_line(&mut input)?;
     let input = input.trim().to_lowercase();
@@ -319,4 +319,14 @@ pub async fn get_login_token_or_log_in(
         let host = Url::parse(&config.get_host_url(target_server)?)?;
         spacetimedb_login_force(config, &host, true).await
     }
+}
+
+pub fn resolve_sibling_binary(bin_name: &str) -> anyhow::Result<PathBuf> {
+    let resolved_exe = std::env::current_exe().context("could not retrieve current exe")?;
+    let bin_path = resolved_exe
+        .parent()
+        .unwrap()
+        .join(bin_name)
+        .with_extension(std::env::consts::EXE_EXTENSION);
+    Ok(bin_path)
 }

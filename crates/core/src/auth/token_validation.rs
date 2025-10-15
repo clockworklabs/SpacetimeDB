@@ -157,7 +157,7 @@ impl TokenValidator for DecodingKey {
 
         let data = decode::<IncomingClaims>(token, self, &validation)?;
         let claims = data.claims;
-        claims.try_into()
+        claims.try_into().map_err(TokenValidationError::Other)
     }
 }
 
@@ -207,13 +207,12 @@ impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
         // TODO: Make this stored in the struct so we don't need to keep creating it.
         let raw_issuer = key.to_string();
         log::info!("Fetching key for issuer {}", raw_issuer.clone());
-        // TODO: Consider checking for trailing slashes or requiring a scheme.
-        let oidc_url = format!("{}/.well-known/openid-configuration", raw_issuer);
+        let oidc_url = format!("{}/.well-known/openid-configuration", raw_issuer.trim_end_matches('/'));
         let key_or_error = Jwks::from_oidc_url(oidc_url).await;
         // TODO: We should probably add debouncing to avoid spamming the logs.
         // Alternatively we could add a backoff before retrying.
         if let Err(e) = &key_or_error {
-            log::warn!("Error fetching public key for issuer {}: {:?}", raw_issuer, e);
+            log::warn!("Error fetching public key for issuer {raw_issuer}: {e:?}");
         }
         let keys = key_or_error?;
         let validator = JwksValidator {
@@ -259,14 +258,13 @@ impl TokenValidator for OidcTokenValidator {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         // TODO: Make this stored in the struct so we don't need to keep creating it.
         let raw_issuer = get_raw_issuer(token)?;
-        // TODO: Consider checking for trailing slashes or requiring a scheme.
-        let oidc_url = format!("{}/.well-known/openid-configuration", raw_issuer);
+        let oidc_url = format!("{}/.well-known/openid-configuration", raw_issuer.trim_end_matches('/'));
         log::debug!("Fetching key for issuer {}", raw_issuer.clone());
         let key_or_error = Jwks::from_oidc_url(oidc_url).await;
         // TODO: We should probably add debouncing to avoid spamming the logs.
         // Alternatively we could add a backoff before retrying.
         if let Err(e) = &key_or_error {
-            log::warn!("Error fetching public key for issuer {}: {:?}", raw_issuer, e);
+            log::warn!("Error fetching public key for issuer {raw_issuer}: {e:?}");
         }
         let keys = key_or_error?;
         let validator = JwksValidator {
@@ -303,7 +301,7 @@ impl TokenValidator for JwksValidator {
         // For now, lets just try all the keys.
         let mut last_error = TokenValidationError::Other(anyhow::anyhow!("No kid found"));
         for (kid, key) in &self.keyset.keys {
-            log::debug!("Trying key {}", kid);
+            log::debug!("Trying key {kid}");
             let validator = BasicTokenValidator {
                 public_key: key.decoding_key.clone(),
                 issuer: Some(self.issuer.clone()),
@@ -312,7 +310,7 @@ impl TokenValidator for JwksValidator {
                 Ok(claims) => return Ok(claims),
                 Err(e) => {
                     last_error = e;
-                    log::debug!("Validating with key {} failed", kid);
+                    log::debug!("Validating with key {kid} failed");
                     continue;
                 }
             }
@@ -425,8 +423,7 @@ mod tests {
 
     async fn assert_validation_fails<T: TokenValidator>(validator: &T, token: &str) -> anyhow::Result<()> {
         let result = validator.validate_token(token).await;
-        if result.is_ok() {
-            let claims = result.unwrap();
+        if let Ok(claims) = result {
             anyhow::bail!("Validation succeeded when it should have failed: {:?}", claims);
         }
         Ok(())
@@ -509,9 +506,9 @@ mod tests {
             let listener = TcpListener::bind("0.0.0.0:0").await.unwrap();
             let addr = listener.local_addr()?;
             let port = addr.port();
-            let base_url = format!("http://localhost:{}", port);
+            let base_url = format!("http://localhost:{port}");
             let config = OIDCConfig {
-                jwks_uri: format!("{}/jwks.json", base_url),
+                jwks_uri: format!("{base_url}/jwks.json"),
             };
             let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
@@ -544,7 +541,7 @@ mod tests {
 
             // Wait for server to be ready
             let client = reqwest::Client::new();
-            let health_check_url = format!("{}/ok", base_url);
+            let health_check_url = format!("{base_url}/ok");
 
             let mut attempts = 0;
             const MAX_ATTEMPTS: u32 = 10;
@@ -573,7 +570,12 @@ mod tests {
         }
     }
 
-    async fn run_oidc_test<T: TokenValidator>(validator: T) -> anyhow::Result<()> {
+    #[derive(Debug, Default, Copy, Clone)]
+    struct TestOptions {
+        pub issuer_trailing_slash: bool,
+    }
+
+    async fn run_oidc_test<T: TokenValidator>(validator: T, opts: &TestOptions) -> anyhow::Result<()> {
         // We will put 2 keys in the keyset.
         let mut kp1 = JwtKeys::generate()?;
         let mut kp2 = JwtKeys::generate()?;
@@ -593,6 +595,11 @@ mod tests {
         let handle = OIDCServerHandle::start_new(jwks).await?;
 
         let issuer = handle.base_url.clone();
+        let issuer = if opts.issuer_trailing_slash {
+            format!("{issuer}/")
+        } else {
+            issuer
+        };
         let subject = "test_subject";
 
         let orig_claims = IncomingClaims {
@@ -623,8 +630,19 @@ mod tests {
     #[tokio::test]
     async fn test_oidc_flow() -> anyhow::Result<()> {
         for _ in 0..10 {
-            run_oidc_test(OidcTokenValidator).await?
+            run_oidc_test(OidcTokenValidator, &Default::default()).await?
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_issuer_slash() -> anyhow::Result<()> {
+        let opts = TestOptions {
+            issuer_trailing_slash: true,
+        };
+
+        run_oidc_test(OidcTokenValidator, &opts).await?;
+        run_oidc_test(CachingOidcTokenValidator::get_default(), &opts).await?;
         Ok(())
     }
 
@@ -632,7 +650,7 @@ mod tests {
     async fn test_caching_oidc_flow() -> anyhow::Result<()> {
         for _ in 0..10 {
             let v = CachingOidcTokenValidator::get_default();
-            run_oidc_test(v).await?;
+            run_oidc_test(v, &Default::default()).await?;
         }
         Ok(())
     }
@@ -645,7 +663,7 @@ mod tests {
             local_issuer: "local_issuer".to_string(),
             oidc_validator: OidcTokenValidator,
         };
-        run_oidc_test(v).await
+        run_oidc_test(v, &Default::default()).await
     }
 
     /// Convert a set of keys to a JWKS JSON string.

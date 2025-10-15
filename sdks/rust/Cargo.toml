@@ -1,0 +1,46 @@
+[package]
+name = "spacetimedb-sdk"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "A Rust SDK for clients to interface with SpacetimeDB"
+rust-version.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+spacetimedb-data-structures.workspace = true
+spacetimedb-sats.workspace = true
+spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"]}
+spacetimedb-client-api-messages.workspace = true
+spacetimedb-metrics.workspace = true
+
+thiserror.workspace = true
+anymap.workspace = true
+base64.workspace = true
+brotli.workspace = true
+bytes.workspace = true
+flate2.workspace = true
+futures.workspace = true
+futures-channel.workspace = true
+home.workspace = true
+http.workspace = true
+log.workspace = true
+once_cell.workspace = true
+prometheus.workspace = true
+rand.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+
+[dev-dependencies]
+# for quickstart-chat and cursive-chat examples
+hex.workspace = true
+# for cursive-chat example
+cursive.workspace = true
+futures-channel.workspace = true
+
+# for tests
+spacetimedb-testing = { path = "../../crates/testing" }
+
+[lints]
+workspace = true

@@ -1,0 +1,657 @@
+#ifndef SPACETIMEDB_BSATN_ALGEBRAIC_TYPE_H
+#define SPACETIMEDB_BSATN_ALGEBRAIC_TYPE_H
+
+#include <cstdint>
+#include <string>
+#include <vector>
+#include <memory>
+#include <variant>
+#include <optional>
+#include <stdexcept>
+
+namespace SpacetimeDb::bsatn {
+
+// Forward declarations
+class AlgebraicType;
+struct SumTypeSchema;
+struct ProductType;
+struct ProductTypeElement;
+struct SumTypeVariant;
+struct ArrayType;
+
+/**
+ * Represents the tag for different algebraic types in SpacetimeDB's type system.
+ * This mirrors the Rust/C# implementation for compatibility.
+ */
+enum class AlgebraicTypeTag : uint8_t {
+    Ref = 0,      // Reference to another type
+    Sum = 1,      // Sum type (tagged union/enum)
+    Product = 2,  // Product type (struct/tuple)
+    Array = 3,    // Array type
+    String = 4,   // UTF-8 string
+    Bool = 5,     // Boolean
+    I8 = 6,       // Signed 8-bit integer
+    U8 = 7,       // Unsigned 8-bit integer
+    I16 = 8,      // Signed 16-bit integer
+    U16 = 9,      // Unsigned 16-bit integer
+    I32 = 10,     // Signed 32-bit integer
+    U32 = 11,     // Unsigned 32-bit integer
+    I64 = 12,     // Signed 64-bit integer
+    U64 = 13,     // Unsigned 64-bit integer
+    I128 = 14,    // Signed 128-bit integer
+    U128 = 15,    // Unsigned 128-bit integer
+    I256 = 16,    // Signed 256-bit integer
+    U256 = 17,    // Unsigned 256-bit integer
+    F32 = 18,     // 32-bit floating point
+    F64 = 19      // 64-bit floating point
+};
+
+/**
+ * Represents an element in a ProductType.
+ * Renamed from AggregateElement to match Rust/C# conventions.
+ * 
+ * Stores a complete AlgebraicType object to eliminate ambiguity between
+ * primitive tags and registry indices.
+ */
+struct ProductTypeElement {
+    std::optional<std::string> name;
+    std::unique_ptr<AlgebraicType> algebraic_type;  // Complete type information
+    
+    // Constructor taking AlgebraicType by value and moving to unique_ptr
+    ProductTypeElement(std::optional<std::string> n, AlgebraicType type);
+    
+    // Copy constructor (deep copy of AlgebraicType)
+    ProductTypeElement(const ProductTypeElement& other);
+    
+    // Move constructor
+    ProductTypeElement(ProductTypeElement&& other) = default;
+    
+    // Assignment operators
+    ProductTypeElement& operator=(const ProductTypeElement& other);
+    ProductTypeElement& operator=(ProductTypeElement&& other) = default;
+};
+
+/**
+ * Represents a variant in a SumType.
+ * Renamed for consistency with Rust/C# naming.
+ * 
+ * Stores a complete AlgebraicType object to eliminate ambiguity.
+ */
+struct SumTypeVariant {
+    std::string name;
+    std::unique_ptr<AlgebraicType> algebraic_type;  // Complete type information
+    
+    // Constructor taking AlgebraicType by value and moving to unique_ptr
+    SumTypeVariant(std::string n, AlgebraicType type);
+    
+    // Copy constructor (deep copy of AlgebraicType)
+    SumTypeVariant(const SumTypeVariant& other);
+    
+    // Move constructor
+    SumTypeVariant(SumTypeVariant&& other) = default;
+    
+    // Assignment operators
+    SumTypeVariant& operator=(const SumTypeVariant& other);
+    SumTypeVariant& operator=(SumTypeVariant&& other) = default;
+};
+
+/**
+ * Represents a sum type (tagged union/enum).
+ * Each variant has a name and can contain data.
+ * Aligned with Rust/C# naming conventions.
+ */
+struct SumTypeSchema {
+    std::vector<SumTypeVariant> variants;
+    
+    explicit SumTypeSchema(std::vector<SumTypeVariant> v) : variants(std::move(v)) {}
+};
+
+/**
+ * Represents a product type (struct/tuple).
+ * Contains ordered elements (fields).
+ * Aligned with Rust/C# naming conventions.
+ */
+struct ProductType {
+    std::vector<ProductTypeElement> elements;
+    
+    explicit ProductType(std::vector<ProductTypeElement> elems) 
+        : elements(std::move(elems)) {}
+    
+    // Helper to create a product type for a C++ struct
+    template<typename T>
+    static ProductType make();
+};
+
+/**
+ * Represents an array type.
+ * Contains the complete type of elements in the array.
+ */
+struct ArrayType {
+    std::unique_ptr<AlgebraicType> element_type;  // Complete element type information
+    
+    // Constructor taking AlgebraicType by value
+    explicit ArrayType(AlgebraicType elem_type);
+    
+    // Copy constructor (deep copy)
+    ArrayType(const ArrayType& other);
+    
+    // Move constructor
+    ArrayType(ArrayType&& other) = default;
+    
+    // Assignment operators
+    ArrayType& operator=(const ArrayType& other);
+    ArrayType& operator=(ArrayType&& other) = default;
+};
+
+/**
+ * @brief The main algebraic type representation for SpacetimeDB's type system.
+ * 
+ * AlgebraicType is a tagged union that represents all possible types in SpacetimeDB.
+ * It supports both primitive types (integers, floats, strings, etc.) and composite
+ * types (products/structs, sums/enums, arrays, and references).
+ * 
+ * This type system is designed to be:
+ * - Compatible with multiple languages (Rust, C#, C++)
+ * - Serializable via BSATN (Binary Sparse Algebraic Type Notation)
+ * - Type-safe with compile-time verification
+ * 
+ * @example Creating primitive types:
+ * @code
+ * auto int_type = AlgebraicType::I32();
+ * auto string_type = AlgebraicType::String();
+ * @endcode
+ * 
+ * @example Creating composite types:
+ * @code
+ * // Create a struct type with name and age fields
+ * auto person_type = AlgebraicType::Product({
+ *     {"name", string_type_id},
+ *     {"age", int_type_id}
+ * });
+ * 
+ * // Create an enum type (Result<T, E>)
+ * auto result_type = AlgebraicType::Sum({
+ *     {"Ok", ok_type_id},
+ *     {"Err", err_type_id}
+ * });
+ * @endcode
+ */
+class AlgebraicType {
+public:
+    /**
+     * @brief Internal data storage for type-specific information.
+     * 
+     * The variant holds different data depending on the AlgebraicTypeTag:
+     * - Ref: uint32_t (type ID in the registry)
+     * - Sum: SumTypeSchema (enum/union definition)
+     * - Product: ProductType (struct definition)
+     * - Array: ArrayType (element type information)
+     * - Primitives: std::monostate (no additional data needed)
+     */
+    using DataType = std::variant<
+        uint32_t,                          // Ref - type reference
+        std::unique_ptr<SumTypeSchema>,    // Sum type
+        std::unique_ptr<ProductType>,      // Product type
+        std::unique_ptr<ArrayType>,        // Array type
+        std::monostate                     // Primitive types (no additional data)
+    >;
+
+private:
+    AlgebraicTypeTag tag_;
+    DataType data_;
+
+public:
+    // Template factory for primitive types (reduces repetition)
+    template<AlgebraicTypeTag Tag>
+    static AlgebraicType make_primitive() {
+        static_assert(
+            static_cast<uint8_t>(Tag) >= static_cast<uint8_t>(AlgebraicTypeTag::String),
+            "make_primitive can only be used for primitive types"
+        );
+        return AlgebraicType(Tag, std::monostate{});
+    }
+    
+    // Constructors for complex types
+    static AlgebraicType make_ref(uint32_t type_id) {
+        return AlgebraicType(AlgebraicTypeTag::Ref, type_id);
+    }
+    
+    static AlgebraicType make_sum(std::unique_ptr<SumTypeSchema> sum) {
+        return AlgebraicType(AlgebraicTypeTag::Sum, std::move(sum));
+    }
+    
+    static AlgebraicType make_product(std::unique_ptr<ProductType> product) {
+        return AlgebraicType(AlgebraicTypeTag::Product, std::move(product));
+    }
+    
+    static AlgebraicType make_array(std::unique_ptr<ArrayType> array) {
+        return AlgebraicType(AlgebraicTypeTag::Array, std::move(array));
+    }
+    
+    
+    // Accessors
+    AlgebraicTypeTag tag() const { return tag_; }
+    const DataType& data() const { return data_; }
+    
+    // -------------------------------------------------------------------------
+    // Type Checking Methods
+    // -------------------------------------------------------------------------
+    /**
+     * @brief Check if this type is a reference to another type.
+     * @return true if this is a Ref type
+     */
+    bool is_ref() const { return tag_ == AlgebraicTypeTag::Ref; }
+    
+    /**
+     * @brief Check if this type is a sum type (enum/tagged union).
+     * @return true if this is a Sum type
+     */
+    bool is_sum() const { return tag_ == AlgebraicTypeTag::Sum; }
+    
+    /**
+     * @brief Check if this type is a product type (struct/tuple).
+     * @return true if this is a Product type
+     */
+    bool is_product() const { return tag_ == AlgebraicTypeTag::Product; }
+    
+    /**
+     * @brief Check if this type is an array type.
+     * @return true if this is an Array type
+     */
+    bool is_array() const { return tag_ == AlgebraicTypeTag::Array; }
+    
+    /**
+     * @brief Check if this type is a primitive type.
+     * Primitive types include all numeric types, booleans, and strings.
+     * @return true if this is a primitive type
+     */
+    bool is_primitive() const { 
+        return static_cast<uint8_t>(tag_) >= static_cast<uint8_t>(AlgebraicTypeTag::String);
+    }
+    
+    // Specific primitive type checks for convenience
+    bool is_bool() const { return tag_ == AlgebraicTypeTag::Bool; }
+    bool is_i8() const { return tag_ == AlgebraicTypeTag::I8; }
+    bool is_u8() const { return tag_ == AlgebraicTypeTag::U8; }
+    bool is_i16() const { return tag_ == AlgebraicTypeTag::I16; }
+    bool is_u16() const { return tag_ == AlgebraicTypeTag::U16; }
+    bool is_i32() const { return tag_ == AlgebraicTypeTag::I32; }
+    bool is_u32() const { return tag_ == AlgebraicTypeTag::U32; }
+    bool is_i64() const { return tag_ == AlgebraicTypeTag::I64; }
+    bool is_u64() const { return tag_ == AlgebraicTypeTag::U64; }
+    bool is_i128() const { return tag_ == AlgebraicTypeTag::I128; }
+    bool is_u128() const { return tag_ == AlgebraicTypeTag::U128; }
+    bool is_i256() const { return tag_ == AlgebraicTypeTag::I256; }
+    bool is_u256() const { return tag_ == AlgebraicTypeTag::U256; }
+    bool is_f32() const { return tag_ == AlgebraicTypeTag::F32; }
+    bool is_f64() const { return tag_ == AlgebraicTypeTag::F64; }
+    bool is_string() const { return tag_ == AlgebraicTypeTag::String; }
+    
+    // -------------------------------------------------------------------------
+    // Data Accessor Methods
+    // -------------------------------------------------------------------------
+    /**
+     * @brief Get the referenced type ID for a Ref type.
+     * @return The type ID this reference points to
+     * @throws std::runtime_error if this is not a Ref type
+     */
+    uint32_t as_ref() const {
+        if (!is_ref()) throw std::runtime_error("Type is not a Ref");
+        return std::get<uint32_t>(data_);
+    }
+    
+    /**
+     * @brief Get the sum type schema for a Sum type.
+     * @return Reference to the SumTypeSchema containing variant definitions
+     * @throws std::runtime_error if this is not a Sum type
+     */
+    const SumTypeSchema& as_sum() const {
+        if (!is_sum()) throw std::runtime_error("Type is not a Sum");
+        return *std::get<std::unique_ptr<SumTypeSchema>>(data_);
+    }
+    
+    /**
+     * @brief Get the product type definition for a Product type.
+     * @return Reference to the ProductType containing field definitions
+     * @throws std::runtime_error if this is not a Product type
+     */
+    const ProductType& as_product() const {
+        if (!is_product()) throw std::runtime_error("Type is not a Product");
+        return *std::get<std::unique_ptr<ProductType>>(data_);
+    }
+    
+    /**
+     * @brief Get the array type definition for an Array type.
+     * @return Reference to the ArrayType containing element type info
+     * @throws std::runtime_error if this is not an Array type
+     */
+    const ArrayType& as_array() const {
+        if (!is_array()) throw std::runtime_error("Type is not an Array");
+        return *std::get<std::unique_ptr<ArrayType>>(data_);
+    }
+    
+    // -------------------------------------------------------------------------
+    // Factory Methods for Primitive Types
+    // -------------------------------------------------------------------------
+    // These methods provide a convenient API for creating primitive types.
+    // They are used extensively in code generation and manual type construction.
+    
+    // Boolean type
+    static AlgebraicType Bool() { return make_primitive<AlgebraicTypeTag::Bool>(); }
+    
+    // Signed integer types
+    static AlgebraicType I8()   { return make_primitive<AlgebraicTypeTag::I8>(); }
+    static AlgebraicType I16()  { return make_primitive<AlgebraicTypeTag::I16>(); }
+    static AlgebraicType I32()  { return make_primitive<AlgebraicTypeTag::I32>(); }
+    static AlgebraicType I64()  { return make_primitive<AlgebraicTypeTag::I64>(); }
+    static AlgebraicType I128() { return make_primitive<AlgebraicTypeTag::I128>(); }
+    static AlgebraicType I256() { return make_primitive<AlgebraicTypeTag::I256>(); }
+    
+    // Unsigned integer types
+    static AlgebraicType U8()   { return make_primitive<AlgebraicTypeTag::U8>(); }
+    static AlgebraicType U16()  { return make_primitive<AlgebraicTypeTag::U16>(); }
+    static AlgebraicType U32()  { return make_primitive<AlgebraicTypeTag::U32>(); }
+    static AlgebraicType U64()  { return make_primitive<AlgebraicTypeTag::U64>(); }
+    static AlgebraicType U128() { return make_primitive<AlgebraicTypeTag::U128>(); }
+    static AlgebraicType U256() { return make_primitive<AlgebraicTypeTag::U256>(); }
+    
+    // Floating point types
+    static AlgebraicType F32() { return make_primitive<AlgebraicTypeTag::F32>(); }
+    static AlgebraicType F64() { return make_primitive<AlgebraicTypeTag::F64>(); }
+    
+    // String type
+    static AlgebraicType String() { return make_primitive<AlgebraicTypeTag::String>(); }
+    
+    /**
+     * Creates a unit type (empty product).
+     * This represents std::monostate or Rust's () unit type.
+     * Used for variants with no data, like None in Option<T>.
+     */
+    static AlgebraicType Unit() {
+        return make_product(std::make_unique<ProductType>(std::vector<ProductTypeElement>{}));
+    }
+    // -------------------------------------------------------------------------
+    // Copy method for deep copying
+    std::unique_ptr<AlgebraicType> copy() const;
+    
+    // Factory Methods for Composite Types
+    // -------------------------------------------------------------------------
+    
+    /**
+     * Creates a reference type pointing to another type.
+     * @param type_id The ID of the referenced type in the type registry
+     */
+    static AlgebraicType Ref(uint32_t type_id) { 
+        return make_ref(type_id); 
+    }
+    
+    /**
+     * Creates an array type with elements of the specified type.
+     * @param elem_type The complete type of array elements
+     */
+    static AlgebraicType Array(AlgebraicType elem_type) {
+        return make_array(std::make_unique<ArrayType>(std::move(elem_type)));
+    }
+    
+    /**
+     * Creates an Option type (similar to Rust's Option or C++'s std::optional).
+     * This is represented as a sum type with two variants: None and Some(T).
+     * 
+     * IMPORTANT: Order must match serialization in traits.h:
+     *   - Tag 0: "none" (no data)
+     *   - Tag 1: "some" (contains inner type)
+     * 
+     * CRITICAL WASM FIX: The root cause of the crash is that during static initialization
+     * (when TABLE macros run), creating std::string objects can cause WASM traps.
+     * 
+     * However, we can't always defer Option creation because some code paths need
+     * the actual AlgebraicType::Sum. So we try to create it normally, and if that
+     * would crash (detected by checking a global flag), we return a deferred marker.
+     * 
+     * @param some_type_ref The type reference (registry index or primitive tag) for the Some variant's value
+     */
+    static AlgebraicType Option(uint32_t some_type_ref) {
+        // CRITICAL: Handle sentinel value for types that should be inlined
+        if (some_type_ref == 0xFFFFFFFF) {
+            // This should never happen - Options themselves should be inlined
+            // Return a safe fallback (Option<Unit>) to avoid crashes
+            std::vector<SumTypeVariant> variants;
+            auto unit_some = make_product(std::make_unique<ProductType>(std::vector<ProductTypeElement>{}));
+            auto unit_none = make_product(std::make_unique<ProductType>(std::vector<ProductTypeElement>{}));
+            variants.emplace_back("some", std::move(unit_some));
+            variants.emplace_back("none", std::move(unit_none));
+            return make_sum(std::make_unique<SumTypeSchema>(std::move(variants)));
+        }
+        
+        // Create the Option structure directly without markers
+        // This is a Sum type with "some" and "none" variants
+        std::vector<SumTypeVariant> variants;
+        
+        // Create the "some" variant with the inner type
+        // CRITICAL FIX: We cannot assume indices 4-19 are primitive types!
+        // They could be references to complex types in the typespace.
+        // Since this is a type_ref, it's ALWAYS a reference to a type.
+        variants.emplace_back("some", make_ref(some_type_ref));
+        
+        // Create the "none" variant as Unit (empty Product)
+        auto unit = make_product(std::make_unique<ProductType>(std::vector<ProductTypeElement>{}));
+        variants.emplace_back("none", std::move(unit));
+        
+        return make_sum(std::make_unique<SumTypeSchema>(std::move(variants)));
+    }
+    
+    
+    /**
+     * Creates a product type (struct) with named fields.
+     * @param fields Vector of field name and type ID pairs
+     * @example Product({{"name", 1}, {"age", 2}}) creates a struct with two fields
+     */
+    static AlgebraicType Product(std::vector<std::pair<std::string, uint32_t>> fields) {
+        std::vector<ProductTypeElement> elements;
+        elements.reserve(fields.size());
+        for (const auto& [name, type_id] : fields) {
+            elements.emplace_back(name, AlgebraicType::Ref(type_id));
+        }
+        return make_product(std::make_unique<ProductType>(std::move(elements)));
+    }
+    
+    /**
+     * Creates a sum type (tagged union) with named variants.
+     * @param variants Vector of variant name and type ID pairs
+     * @example Sum({{"Ok", 1}, {"Err", 2}}) creates a Result-like type
+     */
+    static AlgebraicType Sum(std::vector<std::pair<std::string, uint32_t>> variants) {
+        std::vector<SumTypeVariant> sum_variants;
+        sum_variants.reserve(variants.size());
+        for (const auto& [name, type_id] : variants) {
+            sum_variants.emplace_back(name, AlgebraicType::Ref(type_id));
+        }
+        return make_sum(std::make_unique<SumTypeSchema>(std::move(sum_variants)));
+    }
+
+private:
+    template<typename T>
+    AlgebraicType(AlgebraicTypeTag tag, T&& data) 
+        : tag_(tag), data_(std::forward<T>(data)) {}
+};
+
+// =========================================================================
+// Type Trait for C++ to AlgebraicType Mapping
+// =========================================================================
+
+/**
+ * @brief Type trait to get the AlgebraicType representation for C++ types.
+ * 
+ * This trait provides a mapping from C++ types to their corresponding
+ * AlgebraicType representation. Specialize this trait for custom types.
+ * 
+ * @tparam T The C++ type to map
+ * 
+ * @example Custom type specialization:
+ * @code
+ * template<>
+ * struct algebraic_type_of<MyCustomType> {
+ *     static AlgebraicType get() {
+ *         return AlgebraicType::Product({
+ *             {"field1", type_id_1},
+ *             {"field2", type_id_2}
+ *         });
+ *     }
+ * };
+ * @endcode
+ */
+template<typename T>
+struct algebraic_type_of {
+    static AlgebraicType get();
+};
+
+// Helper macro to reduce repetitive primitive type specializations
+#define SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(cpp_type, factory_method) \
+    template<> struct algebraic_type_of<cpp_type> { \
+        static AlgebraicType get() { return AlgebraicType::factory_method(); } \
+    }
+
+// Primitive type specializations
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(bool, Bool);
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(char, U8);         // char treated as U8
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(int8_t, I8);
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(int16_t, I16);
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(int32_t, I32);
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(int64_t, I64);
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(uint8_t, U8);
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(uint16_t, U16);
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(uint32_t, U32);
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(uint64_t, U64);
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(float, F32);
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(double, F64);
+SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(std::string, String);
+
+#undef SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE
+
+// Container type specializations
+template<typename T> struct algebraic_type_of<std::vector<T>> {
+    static AlgebraicType get() {
+        // TODO: This needs V9TypeRegistration integration to get proper element type ID
+        return AlgebraicType::Array(AlgebraicType::Ref(0)); // Placeholder
+    }
+};
+
+template<typename T> struct algebraic_type_of<std::optional<T>> {
+    static AlgebraicType get() {
+        // For optional types, we need the type reference of the inner type
+        // For primitive types, this will be their tag value (4-19)
+        // For complex types, this needs to be resolved by the V9TypeRegistration system
+        // This is a limitation - we can't create proper Option types for complex T without V9TypeRegistration
+        
+        // Get the inner type
+        AlgebraicType inner_type = algebraic_type_of<T>::get();
+        
+        // If it's a primitive type, use its tag as the type reference
+        if (inner_type.tag() >= AlgebraicTypeTag::String && 
+            inner_type.tag() <= AlgebraicTypeTag::F64) {
+            return AlgebraicType::Option(static_cast<uint32_t>(inner_type.tag()));
+        } else {
+            // For complex types, we can't determine the correct type reference
+            // without V9TypeRegistration. Use 0 as placeholder which will need to be
+            // resolved during type registration.
+            return AlgebraicType::Option(0);
+        }
+    }
+};
+
+// TODO: Add specializations for I128, I256, U128, U256 when those types are properly defined
+
+// =========================================================================
+// Inline implementations (after AlgebraicType is complete)
+// =========================================================================
+
+// ProductTypeElement implementations
+inline ProductTypeElement::ProductTypeElement(std::optional<std::string> n, AlgebraicType type)
+    : name(std::move(n)), algebraic_type(std::make_unique<AlgebraicType>(std::move(type))) {}
+
+inline ProductTypeElement::ProductTypeElement(const ProductTypeElement& other)
+    : name(other.name), 
+      algebraic_type(other.algebraic_type ? other.algebraic_type->copy() : nullptr) {}
+
+inline ProductTypeElement& ProductTypeElement::operator=(const ProductTypeElement& other) {
+    if (this != &other) {
+        name = other.name;
+        algebraic_type = other.algebraic_type ? other.algebraic_type->copy() : nullptr;
+    }
+    return *this;
+}
+
+// SumTypeVariant implementations
+inline SumTypeVariant::SumTypeVariant(std::string n, AlgebraicType type)
+    : name(std::move(n)), algebraic_type(std::make_unique<AlgebraicType>(std::move(type))) {}
+
+inline SumTypeVariant::SumTypeVariant(const SumTypeVariant& other)
+    : name(other.name),
+      algebraic_type(other.algebraic_type ? other.algebraic_type->copy() : nullptr) {}
+
+inline SumTypeVariant& SumTypeVariant::operator=(const SumTypeVariant& other) {
+    if (this != &other) {
+        name = other.name;
+        algebraic_type = other.algebraic_type ? other.algebraic_type->copy() : nullptr;
+    }
+    return *this;
+}
+
+// ArrayType implementations
+inline ArrayType::ArrayType(AlgebraicType elem_type)
+    : element_type(std::make_unique<AlgebraicType>(std::move(elem_type))) {}
+
+inline ArrayType::ArrayType(const ArrayType& other)
+    : element_type(other.element_type ? other.element_type->copy() : nullptr) {}
+
+inline ArrayType& ArrayType::operator=(const ArrayType& other) {
+    if (this != &other) {
+        element_type = other.element_type ? other.element_type->copy() : nullptr;
+    }
+    return *this;
+}
+
+// AlgebraicType copy implementation
+inline std::unique_ptr<AlgebraicType> AlgebraicType::copy() const {
+    switch (tag_) {
+        case AlgebraicTypeTag::Ref:
+            return std::make_unique<AlgebraicType>(make_ref(std::get<uint32_t>(data_)));
+            
+        case AlgebraicTypeTag::Sum: {
+            const auto& sum = *std::get<std::unique_ptr<SumTypeSchema>>(data_);
+            std::vector<SumTypeVariant> new_variants;
+            for (const auto& variant : sum.variants) {
+                new_variants.push_back(variant);  // Uses copy constructor
+            }
+            return std::make_unique<AlgebraicType>(
+                make_sum(std::make_unique<SumTypeSchema>(std::move(new_variants)))
+            );
+        }
+        
+        case AlgebraicTypeTag::Product: {
+            const auto& prod = *std::get<std::unique_ptr<ProductType>>(data_);
+            std::vector<ProductTypeElement> new_elements;
+            for (const auto& elem : prod.elements) {
+                new_elements.push_back(elem);  // Uses copy constructor
+            }
+            return std::make_unique<AlgebraicType>(
+                make_product(std::make_unique<ProductType>(std::move(new_elements)))
+            );
+        }
+        
+        case AlgebraicTypeTag::Array: {
+            const auto& arr = *std::get<std::unique_ptr<ArrayType>>(data_);
+            return std::make_unique<AlgebraicType>(
+                make_array(std::make_unique<ArrayType>(arr))  // Uses copy constructor
+            );
+        }
+        
+        default:
+            // Primitive types - create directly with tag and monostate
+            return std::make_unique<AlgebraicType>(AlgebraicType(tag_, std::monostate{}));
+    }
+}
+
+} // namespace SpacetimeDb::bsatn
+
+#endif // SPACETIMEDB_BSATN_ALGEBRAIC_TYPE_H

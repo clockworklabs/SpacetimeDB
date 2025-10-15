@@ -1,7 +1,7 @@
 ARG CARGO_PROFILE=release
 
 
-FROM rust:1.84.0 AS chef
+FROM rust:1.90.0 AS chef
 RUN rust_target=$(rustc -vV | awk '/^host:/{ print $2 }') && \
   curl https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-$rust_target.tgz -fL | tar xz -C $CARGO_HOME/bin
 RUN cargo binstall -y cargo-chef@0.1.70
@@ -32,6 +32,9 @@ RUN mkdir -p /stdb/data && ln -s /usr/src/app/crates/standalone/config.toml /std
 ENV PATH="/usr/src/app/target/debug:${PATH}"
 
 FROM debian as env-release
+RUN apt-get update && \
+    apt-get install -y ca-certificates libssl-dev && \
+    rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/src/app/target/release/spacetimedb-standalone /usr/local/bin/
 COPY --from=builder /usr/src/app/crates/standalone/config.toml /stdb/data/config.toml
 

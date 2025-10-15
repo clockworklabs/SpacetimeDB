@@ -7,9 +7,8 @@ use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
 use convert_case::{Case, Casing};
 use itertools::Itertools;
-use spacetimedb::Identity;
 use spacetimedb_lib::sats::{self, AlgebraicType, Typespace};
-use spacetimedb_lib::ProductTypeElement;
+use spacetimedb_lib::{Identity, ProductTypeElement};
 use spacetimedb_schema::def::{ModuleDef, ReducerDef};
 use std::fmt::Write;
 
@@ -17,10 +16,7 @@ use super::sql::parse_req;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
-        .about(format!(
-            "Invokes a reducer function in a database. {}",
-            UNSTABLE_WARNING
-        ))
+        .about(format!("Invokes a reducer function in a database. {UNSTABLE_WARNING}"))
         .arg(
             Arg::new("database")
                 .required(true)
@@ -39,7 +35,7 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
-    eprintln!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{UNSTABLE_WARNING}\n");
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
     let arguments = args.get_many::<String>("arguments");
 
@@ -61,7 +57,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
         .zip(&*reducer_def.params.elements)
         .map(|(argument, element)| match &element.algebraic_type {
             AlgebraicType::String if !argument.starts_with('\"') || !argument.ends_with('\"') => {
-                format!("\"{}\"", argument)
+                format!("\"{argument}\"")
             }
             _ => argument.to_string(),
         });
@@ -75,7 +71,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
             bail!(e);
         };
 
-        let error = Err(e).context(format!("Response text: {}", response_text));
+        let error = Err(e).context(format!("Response text: {response_text}"));
 
         let error_msg = if response_text.starts_with("no such reducer") {
             no_such_reducer(&database_identity, database, reducer_name, &module_def)
@@ -107,8 +103,7 @@ fn invalid_arguments(
     if let Some((actual, expected)) = find_actual_expected(text).filter(|(a, e)| a != e) {
         write!(
             error,
-            "\n\n{} parameters were expected, but {} were provided.",
-            expected, actual
+            "\n\n{expected} parameters were expected, but {actual} were provided."
         )
         .unwrap();
     }
@@ -171,10 +166,8 @@ impl std::fmt::Display for ReducerSignature<'_> {
 
 /// Returns an error message for when `reducer` does not exist in `db`.
 fn no_such_reducer(database_identity: &Identity, db: &str, reducer: &str, module_def: &ModuleDef) -> String {
-    let mut error = format!(
-        "No such reducer `{}` for database `{}` resolving to identity `{}`.",
-        reducer, db, database_identity
-    );
+    let mut error =
+        format!("No such reducer `{reducer}` for database `{db}` resolving to identity `{database_identity}`.");
 
     add_reducer_ctx_to_err(&mut error, module_def, reducer);
 
@@ -193,7 +186,7 @@ fn add_reducer_ctx_to_err(error: &mut String, module_def: &ModuleDef, reducer_na
         .collect::<Vec<_>>();
 
     if let Some(best) = find_best_match_for_name(&reducers, reducer_name, None) {
-        write!(error, "\n\nA reducer with a similar name exists: `{}`", best).unwrap();
+        write!(error, "\n\nA reducer with a similar name exists: `{best}`").unwrap();
     } else if reducers.is_empty() {
         write!(error, "\n\nThe database has no reducers.").unwrap();
     } else {
@@ -208,13 +201,13 @@ fn add_reducer_ctx_to_err(error: &mut String, module_def: &ModuleDef, reducer_na
         // List them.
         write!(error, "\n\nHere are some existing reducers:").unwrap();
         for candidate in reducers {
-            write!(error, "\n- {}", candidate).unwrap();
+            write!(error, "\n- {candidate}").unwrap();
         }
 
         // When some where not listed, note that are more.
         if too_many_to_show {
             let plural = if diff == 1 { "" } else { "s" };
-            write!(error, "\n... ({} reducer{} not shown)", diff, plural).unwrap();
+            write!(error, "\n... ({diff} reducer{plural} not shown)").unwrap();
         }
     }
 }

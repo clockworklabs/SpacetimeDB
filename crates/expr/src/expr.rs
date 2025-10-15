@@ -19,13 +19,29 @@ use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 /// ```sql
 /// select t.* from t join s ...
 /// ```
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ProjectName {
     None(RelExpr),
     Some(RelExpr, Box<str>),
 }
 
 impl ProjectName {
+    /// Unwrap the outer projection, returning the inner expression
+    pub fn unwrap(self) -> RelExpr {
+        match self {
+            Self::None(expr) | Self::Some(expr, _) => expr,
+        }
+    }
+
+    /// What is the name of the return table?
+    /// This is either the table name itself or its alias.
+    pub fn return_name(&self) -> Option<&str> {
+        match self {
+            Self::None(input) => input.return_name(),
+            Self::Some(_, name) => Some(name.as_ref()),
+        }
+    }
+
     /// The [TableSchema] of the returned rows.
     /// Note this expression returns rows from a relvar.
     /// Hence it this method should never return [None].
@@ -70,12 +86,59 @@ impl ProjectName {
 /// ```sql
 /// select t.a as x from t join s ...
 /// ```
+///
+/// Note that RLS takes a single expression and produces a list of expressions.
+/// Hence why these variants take lists rather than single expressions.
+///
+/// Why does RLS take an expression and produce a list?
+///
+/// There may be multiple RLS rules associated to a single table.
+/// Semantically these rules represent a UNION over that table,
+/// and this corresponds to a UNION in the original expression.
+///
+/// TODO: We should model the UNION explicitly in the physical plan.
+///
+/// Ex.
+///
+/// Let's say we have the following rules for the `users` table:
+/// ```rust
+/// use spacetimedb::client_visibility_filter;
+/// use spacetimedb::Filter;
+///
+/// #[client_visibility_filter]
+/// const USER_FILTER: Filter = Filter::Sql(
+///     "SELECT users.* FROM users WHERE identity = :sender"
+/// );
+///
+/// #[client_visibility_filter]
+/// const ADMIN_FILTER: Filter = Filter::Sql(
+///     "SELECT users.* FROM users JOIN admins"
+/// );
+/// ```
+///
+/// The user query
+/// ```sql
+/// SELECT * FROM users WHERE level > 5
+/// ```
+///
+/// essentially resolves to
+/// ```sql
+/// SELECT users.*
+/// FROM users
+/// WHERE identity = :sender AND level > 5
+///
+/// UNION ALL
+///
+/// SELECT users.*
+/// FROM users JOIN admins
+/// WHERE users.level > 5
+/// ```
 #[derive(Debug)]
 pub enum ProjectList {
-    Name(ProjectName),
-    List(RelExpr, Vec<(Box<str>, FieldProject)>),
+    Name(Vec<ProjectName>),
+    List(Vec<RelExpr>, Vec<(Box<str>, FieldProject)>),
     Limit(Box<ProjectList>, u64),
-    Agg(RelExpr, AggType, Box<str>, AlgebraicType),
+    Agg(Vec<RelExpr>, AggType, Box<str>, AlgebraicType),
 }
 
 #[derive(Debug)]
@@ -89,7 +152,7 @@ impl ProjectList {
     /// If not, it projects a list of columns, so we return [None].
     pub fn return_table(&self) -> Option<&TableSchema> {
         match self {
-            Self::Name(project) => project.return_table(),
+            Self::Name(project) => project.first().and_then(|expr| expr.return_table()),
             Self::Limit(input, _) => input.return_table(),
             Self::List(..) | Self::Agg(..) => None,
         }
@@ -100,7 +163,7 @@ impl ProjectList {
     /// If not, it projects a list of columns, so we return [None].
     pub fn return_table_id(&self) -> Option<TableId> {
         match self {
-            Self::Name(project) => project.return_table_id(),
+            Self::Name(project) => project.first().and_then(|expr| expr.return_table_id()),
             Self::Limit(input, _) => input.return_table_id(),
             Self::List(..) | Self::Agg(..) => None,
         }
@@ -110,7 +173,7 @@ impl ProjectList {
     pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
         match self {
             Self::Name(input) => {
-                input.for_each_return_field(f);
+                input.first().inspect(|expr| expr.for_each_return_field(f));
             }
             Self::Limit(input, _) => {
                 input.for_each_return_field(f);
@@ -126,7 +189,7 @@ impl ProjectList {
 }
 
 /// A logical relational expression
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelExpr {
     /// A relvar or table reference
     RelVar(Relvar),
@@ -139,15 +202,43 @@ pub enum RelExpr {
 }
 
 /// A table reference
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relvar {
+    /// The table schema of this relvar
     pub schema: Arc<TableSchema>,
+    /// The name of this relvar
     pub alias: Box<str>,
     /// Does this relvar represent a delta table?
     pub delta: Option<Delta>,
 }
 
 impl RelExpr {
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit(&self, f: &mut impl FnMut(&Self)) {
+        f(self);
+        match self {
+            Self::Select(lhs, _)
+            | Self::LeftDeepJoin(LeftDeepJoin { lhs, .. })
+            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
+                lhs.visit(f);
+            }
+            Self::RelVar(..) => {}
+        }
+    }
+
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit_mut(&mut self, f: &mut impl FnMut(&mut Self)) {
+        f(self);
+        match self {
+            Self::Select(lhs, _)
+            | Self::LeftDeepJoin(LeftDeepJoin { lhs, .. })
+            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
+                lhs.visit_mut(f);
+            }
+            Self::RelVar(..) => {}
+        }
+    }
+
     /// The number of fields this expression returns
     pub fn nfields(&self) -> usize {
         match self {
@@ -201,10 +292,20 @@ impl RelExpr {
     pub fn return_table_id(&self) -> Option<TableId> {
         self.return_table().map(|schema| schema.table_id)
     }
+
+    /// Does this expression return a single relvar?
+    /// If so, return its name or equivalently its alias.
+    pub fn return_name(&self) -> Option<&str> {
+        match self {
+            Self::RelVar(Relvar { alias, .. }) => Some(alias.as_ref()),
+            Self::Select(input, _) => input.return_name(),
+            _ => None,
+        }
+    }
 }
 
 /// A left deep binary cross product
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LeftDeepJoin {
     /// The lhs is recursive
     pub lhs: Box<RelExpr>,
@@ -213,7 +314,7 @@ pub struct LeftDeepJoin {
 }
 
 /// A typed scalar expression
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     /// A binary expression
     BinOp(BinOp, Box<Expr>, Box<Expr>),
@@ -226,6 +327,30 @@ pub enum Expr {
 }
 
 impl Expr {
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit(&self, f: &impl Fn(&Self)) {
+        f(self);
+        match self {
+            Self::BinOp(_, a, b) | Self::LogOp(_, a, b) => {
+                a.visit(f);
+                b.visit(f);
+            }
+            Self::Value(..) | Self::Field(..) => {}
+        }
+    }
+
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit_mut(&mut self, f: &mut impl FnMut(&mut Self)) {
+        f(self);
+        match self {
+            Self::BinOp(_, a, b) | Self::LogOp(_, a, b) => {
+                a.visit_mut(f);
+                b.visit_mut(f);
+            }
+            Self::Value(..) | Self::Field(..) => {}
+        }
+    }
+
     /// A literal boolean value
     pub const fn bool(v: bool) -> Self {
         Self::Value(AlgebraicValue::Bool(v), AlgebraicType::Bool)
@@ -246,7 +371,7 @@ impl Expr {
 }
 
 /// A typed qualified field projection
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldProject {
     pub table: Box<str>,
     pub field: usize,

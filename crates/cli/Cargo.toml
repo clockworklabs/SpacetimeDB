@@ -21,8 +21,9 @@ bench = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+spacetimedb-auth.workspace = true
 spacetimedb-client-api-messages.workspace = true
-spacetimedb-core.workspace = true
+spacetimedb-codegen.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-fs-utils.workspace = true
 spacetimedb-lib.workspace = true
@@ -71,14 +72,15 @@ toml_edit.workspace = true
 tracing = { workspace = true, features = ["release_max_level_off"] }
 walkdir.workspace = true
 wasmbin.workspace = true
-wasmtime.workspace = true
 webbrowser.workspace = true
 clap-markdown.workspace = true
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }
 
-[dev-dependencies]
-insta.workspace = true
-fs-err.workspace = true
-spacetimedb-testing = { path = "../testing" }
+[lints]
+workspace = true

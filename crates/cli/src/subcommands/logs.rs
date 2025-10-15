@@ -61,6 +61,12 @@ pub enum LogLevel {
     Panic,
 }
 
+/// Sentinel value used for injected system logs.
+///
+/// Keep this in sync with the constants in `spacetimedb_core::database_logger::Record`.
+const SENTINEL: &str = "__spacetimedb__";
+
+/// Keep this in sync with `spacetimedb_core::database_logger::Record`.
 #[serde_with::serde_as]
 #[derive(serde::Deserialize)]
 struct Record<'a> {
@@ -73,6 +79,8 @@ struct Record<'a> {
     #[serde(borrow)]
     filename: Option<Cow<'a, str>>,
     line_number: Option<u32>,
+    #[serde(borrow)]
+    function: Option<Cow<'a, str>>,
     #[serde(borrow)]
     message: Cow<'a, str>,
     trace: Option<Vec<BacktraceFrame<'a>>>,
@@ -126,13 +134,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         // We typically don't want logs from the very beginning if we're also following.
         num_lines = Some(10);
     }
-    let query_parms = LogsParams { num_lines, follow };
+    let query_params = LogsParams { num_lines, follow };
 
     let host_url = config.get_host_url(server)?;
 
-    let builder = reqwest::Client::new().get(format!("{}/v1/database/{}/logs", host_url, database_identity));
+    let builder = reqwest::Client::new().get(format!("{host_url}/v1/database/{database_identity}/logs"));
     let builder = add_auth_header_opt(builder, &auth_header);
-    let mut res = builder.query(&query_parms).send().await?;
+    let mut res = builder.query(&query_params).send().await?;
     let status = res.status();
 
     if status.is_client_error() || status.is_server_error() {
@@ -156,10 +164,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let out = termcolor::StandardStream::stdout(term_color);
     let mut out = out.lock();
 
-    let mut rdr = res
-        .bytes_stream()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-        .into_async_read();
+    let mut rdr = res.bytes_stream().map_err(io::Error::other).into_async_read();
     let mut line = String::new();
     while rdr.read_line(&mut line).await? != 0 {
         let record = serde_json::from_str::<Record<'_>>(&line)?;
@@ -198,16 +203,36 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         out.set_color(&color)?;
         write!(out, "{level:>5}: ")?;
         out.reset()?;
+        let mut need_space_before_filename = false;
+        let mut need_colon_sep = false;
         let dimmed = ColorSpec::new().set_dimmed(true).clone();
-        if let Some(filename) = record.filename {
-            out.set_color(&dimmed)?;
-            write!(out, "{filename}")?;
-            if let Some(line) = record.line_number {
-                write!(out, ":{line}")?;
+        if let Some(function) = record.function {
+            if function != SENTINEL {
+                out.set_color(&dimmed)?;
+                write!(out, "{function}")?;
+                out.reset()?;
+                need_space_before_filename = true;
+                need_colon_sep = true;
             }
-            out.reset()?;
         }
-        writeln!(out, ": {}", record.message)?;
+        if let Some(filename) = record.filename {
+            if filename != SENTINEL {
+                out.set_color(&dimmed)?;
+                if need_space_before_filename {
+                    write!(out, " ")?;
+                }
+                write!(out, "{filename}")?;
+                if let Some(line) = record.line_number {
+                    write!(out, ":{line}")?;
+                }
+                out.reset()?;
+                need_colon_sep = true;
+            }
+        }
+        if need_colon_sep {
+            write!(out, ": ")?;
+        }
+        writeln!(out, "{}", record.message)?;
         if let Some(trace) = &record.trace {
             for frame in trace {
                 write!(out, "    in ")?;

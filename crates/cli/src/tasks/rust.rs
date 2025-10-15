@@ -1,11 +1,13 @@
+use std::ffi::OsString;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
-use crate::detect::{has_rust_up, has_wasm32_target};
+use crate::detect::{has_rust_fmt, has_rust_up, has_wasm32_target};
 use anyhow::Context;
 use cargo_metadata::Message;
 use duct::cmd;
+use itertools::Itertools;
 
 fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expression {
     duct::cmd(
@@ -122,9 +124,9 @@ fn check_for_issues(artifact: &Path) -> anyhow::Result<()> {
              the `getrandom` crate for random number generation. getrandom is the default\n\
              randomness source for the `rand` crate, and is used when you call\n\
              `rand::random()` or `rand::thread_rng()`. If this is you, you should instead\n\
-             use `spacetimedb::random()` or `spacetimedb::rng()`. If this is a crate in your\n\
+             use `ctx.rng()` on a `ReducerContext`. If this is a crate in your\n\
              tree, you should try to see if the crate provides a way to pass in a custom\n\
-             `Rng` type, and pass it the rng returned from `spacetimedb::rng()`."
+             `Rng` type, and pass it the rng returned from `ctx.rng()`."
         )
     }
     Ok(())
@@ -152,4 +154,25 @@ fn has_getrandom(module: &wasmbin::Module) -> bool {
         .find_std_section::<wasmbin::sections::payload::Import>()
         .and_then(|imports| imports.try_contents().ok())
         .is_some_and(|imports| imports.iter().any(|import| import.path.name == "__getrandom_custom"))
+}
+
+pub(crate) fn rustfmt(files: impl IntoIterator<Item = PathBuf>) -> anyhow::Result<()> {
+    if !has_rust_fmt() {
+        if has_rust_up() {
+            cmd!("rustup", "component", "add", "rustfmt")
+                .run()
+                .context("Failed to install rustfmt with Rustup")?;
+        } else {
+            anyhow::bail!("rustfmt is not installed. Please install it.");
+        }
+    }
+    cmd(
+        "rustfmt",
+        itertools::chain(
+            ["--edition", "2021"].into_iter().map_into::<OsString>(),
+            files.into_iter().map_into(),
+        ),
+    )
+    .run()?;
+    Ok(())
 }

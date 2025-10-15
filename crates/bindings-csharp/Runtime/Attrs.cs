@@ -12,6 +12,7 @@
             Identity = Unique | AutoInc,
             PrimaryKey = Unique | 0b1000,
             PrimaryKeyAuto = PrimaryKey | AutoInc,
+            Default = 0b0001_0000,
         }
 
         [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
@@ -21,6 +22,24 @@
             internal abstract ColumnAttrs Mask { get; }
         }
     }
+
+    /// <summary>
+    /// Generates code for registering a row-level security rule.
+    ///
+    /// This attribute must be applied to a <c>static</c> field of type <c>Filter</c>.
+    /// It will be interpreted as a filter on the table to which it applies, for all client queries.
+    /// If a module contains multiple <c>client_visibility_filter</c>s for the same table,
+    /// they will be unioned together as if by SQL <c>OR</c>,
+    /// so that any row permitted by at least one filter is visible.
+    ///
+    /// The query follows the same syntax as a subscription query.
+    /// See the <see href="https://spacetimedb.com/docs/sql">SQL reference</see> for more information.
+    ///
+    /// This is an experimental feature and subject to change in the future.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class ClientVisibilityFilterAttribute : Attribute { }
 
     /// <summary>
     /// Registers a type as the row structure of a SpacetimeDB table, enabling codegen for it.
@@ -90,6 +109,45 @@
     public sealed class UniqueAttribute : Internal.ColumnAttribute
     {
         internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Unique;
+    }
+
+    /// <summary>
+    /// Specifies a default value for a table column.
+    /// If a column is added to an existing table while republishing of a module,
+    /// the specified default value will be used to populate existing rows.
+    /// </summary>
+    /// <remarks>
+    /// Updates existing instances of the <see cref="DefaultAttribute"/> class with the specified default value during republishing of a module.
+    /// </remarks>
+    /// <param name="value">The default value for the column.</param>
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class DefaultAttribute(object value) : Internal.ColumnAttribute
+    {
+        /// <summary>
+        /// The default value for the column.
+        /// </summary>
+        public string Value
+        {
+            get
+            {
+                if (value is null)
+                {
+                    return "null";
+                }
+                if (value is bool)
+                {
+                    return value.ToString()?.ToLower();
+                }
+                var str = value.ToString();
+                if (value is string)
+                {
+                    str = $"\"{str}\"";
+                }
+                return str;
+            }
+        }
+
+        internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Default;
     }
 
     public enum ReducerKind

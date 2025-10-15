@@ -8,12 +8,30 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using SpacetimeDB.Internal;
 using static Utils;
 
-readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null)
+/// <summary>
+/// Represents column attributes parsed from field attributes in table classes.
+/// Used to track metadata like primary keys, unique constraints, and default values.
+/// </summary>
+/// <param name="Mask">Bitmask representing the column attributes (PrimaryKey, Unique, etc.)</param>
+/// <param name="Table">Optional table name if the attribute is table-specific</param>
+/// <param name="Value">Optional value for attributes like Default that carry additional data</param>
+readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null, string? Value = null)
 {
+    // Maps attribute type names to their corresponding attribute types
     private static readonly ImmutableDictionary<string, System.Type> AttrTypes = ImmutableArray
-        .Create(typeof(AutoIncAttribute), typeof(PrimaryKeyAttribute), typeof(UniqueAttribute))
-        .ToImmutableDictionary(t => t.FullName);
+        .Create(
+            typeof(AutoIncAttribute),
+            typeof(PrimaryKeyAttribute),
+            typeof(UniqueAttribute),
+            typeof(DefaultAttribute)
+        )
+        .ToImmutableDictionary(t => t.FullName!);
 
+    /// <summary>
+    /// Parses a Roslyn AttributeData into a ColumnAttr instance.
+    /// </summary>
+    /// <param name="attrData">The attribute data to parse</param>
+    /// <returns>A ColumnAttr instance representing the parsed attribute, or default if the attribute type is not recognized</returns>
     public static ColumnAttr Parse(AttributeData attrData)
     {
         if (
@@ -23,19 +41,40 @@ readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null)
         {
             return default;
         }
+
+        // Special handling for DefaultAttribute as it contains an additional value
+        if (attrClass.ToString() == typeof(DefaultAttribute).FullName)
+        {
+            var defaultAttr = attrData.ParseAs<DefaultAttribute>(attrType);
+            return new(defaultAttr.Mask, defaultAttr.Table, defaultAttr.Value);
+        }
+
+        // Handle standard column attributes (PrimaryKey, Unique, AutoInc)
         var attr = attrData.ParseAs<ColumnAttribute>(attrType);
         return new(attr.Mask, attr.Table);
     }
 }
 
+/// <summary>
+/// Represents a reference to a column in a table, combining its index and name.
+/// Used to maintain references to columns for indexing and querying purposes.
+/// </summary>
+/// <param name="Index">The zero-based index of the column in the table</param>
+/// <param name="Name">The name of the column as defined in the source code</param>
 record ColumnRef(int Index, string Name);
 
+/// <summary>
+/// Represents the declaration of a column in a table.
+/// Contains metadata and attributes for the column, including its type, constraints, and indexes.
+/// </summary>
 record ColumnDeclaration : MemberDeclaration
 {
     public readonly EquatableArray<ColumnAttr> Attrs;
     public readonly EquatableArray<ViewIndex> Indexes;
     public readonly bool IsEquatable;
     public readonly string FullTableName;
+    public readonly int ColumnIndex;
+    public readonly string? ColumnDefaultValue;
 
     // A helper to combine multiple column attributes into a single mask.
     // Note: it doesn't check the table names, this is left up to the caller.
@@ -46,6 +85,7 @@ record ColumnDeclaration : MemberDeclaration
         : base(field, diag)
     {
         FullTableName = tableName;
+        ColumnIndex = index;
 
         Attrs = new(
             field
@@ -66,6 +106,14 @@ record ColumnDeclaration : MemberDeclaration
                 .Select(a => new ViewIndex(new ColumnRef(index, field.Name), a, diag))
                 .ToImmutableArray()
         );
+
+        ColumnDefaultValue = field
+            .GetAttributes()
+            .Select(ColumnAttr.Parse)
+            .Where(a => a.Mask == ColumnAttrs.Default)
+            .Select(a => a.Value)
+            .ToList()
+            .FirstOrDefault();
 
         var type = field.Type;
 
@@ -96,9 +144,32 @@ record ColumnDeclaration : MemberDeclaration
             diag.Report(ErrorDescriptor.AutoIncNotInteger, field);
         }
 
+        // Check whether this is a sum type without a payload.
+        var isAllUnitEnum = false;
+        if (type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum)
+        {
+            isAllUnitEnum = true;
+        }
+        else if (type.BaseType?.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>")
+        {
+            if (
+                type.BaseType.TypeArguments.FirstOrDefault() is INamedTypeSymbol
+                {
+                    IsTupleType: true,
+                    TupleElements: var taggedEnumVariants
+                }
+            )
+            {
+                isAllUnitEnum = taggedEnumVariants.All(
+                    (field) => field.Type.ToString() == "SpacetimeDB.Unit"
+                );
+            }
+        }
+
         IsEquatable =
             (
                 isInteger
+                || isAllUnitEnum
                 || type.SpecialType switch
                 {
                     SpecialType.System_String or SpecialType.System_Boolean => true,
@@ -114,6 +185,18 @@ record ColumnDeclaration : MemberDeclaration
         {
             diag.Report(ErrorDescriptor.UniqueNotEquatable, field);
         }
+
+        if (
+            attrs.HasFlag(ColumnAttrs.Default)
+            && (
+                attrs.HasFlag(ColumnAttrs.AutoInc)
+                || attrs.HasFlag(ColumnAttrs.PrimaryKey)
+                || attrs.HasFlag(ColumnAttrs.Unique)
+            )
+        )
+        {
+            diag.Report(ErrorDescriptor.IncompatibleDefaultAttributesCombination, field);
+        }
     }
 
     public ColumnAttrs GetAttrs(TableView view) =>
@@ -121,7 +204,7 @@ record ColumnDeclaration : MemberDeclaration
 
     // For the `TableDesc` constructor.
     public string GenerateColumnDef() =>
-        $"new (nameof({Name}), BSATN.{Name}.GetAlgebraicType(registrar))";
+        $"new (nameof({Name}), BSATN.{Name}{TypeUse.BsatnFieldSuffix}.GetAlgebraicType(registrar))";
 }
 
 record Scheduled(string ReducerName, int ScheduledAtColumn);
@@ -146,13 +229,18 @@ record TableView
             try
             {
                 Scheduled = new(reducer, scheduledAtIndex);
-                if (table.GetPrimaryKey(this) is not { } pk || table.Members[pk].Type != "ulong")
+                if (
+                    table.GetPrimaryKey(this) is not { } pk
+                    || table.Members[pk].Type.Name != "ulong"
+                )
                 {
                     throw new InvalidOperationException(
                         $"{Name} is a scheduled table but doesn't have a primary key of type `ulong`."
                     );
                 }
-                if (table.Members[Scheduled.ScheduledAtColumn].Type != "SpacetimeDB.ScheduleAt")
+                if (
+                    table.Members[Scheduled.ScheduledAtColumn].Type.Name != "SpacetimeDB.ScheduleAt"
+                )
                 {
                     throw new InvalidOperationException(
                         $"{Name}.{attr.ScheduledAt} is marked with `ScheduledAt`, but doesn't have the expected type `SpacetimeDB.ScheduleAt`."
@@ -172,6 +260,10 @@ enum ViewIndexType
     BTree,
 }
 
+/// <summary>
+/// Represents an index on a database table view, used to optimize queries.
+/// Supports B-tree indexing (and potentially other types in the future).
+/// </summary>
 record ViewIndex
 {
     public readonly EquatableArray<ColumnRef> Columns;
@@ -183,6 +275,14 @@ record ViewIndex
     // Guaranteed not to contain quotes, so does not need to be escaped when embedded in a string.
     private readonly string StandardNameSuffix;
 
+    /// <summary>
+    /// Primary constructor that initializes all fields.
+    /// Other constructors delegate to this one to avoid code duplication.
+    /// </summary>
+    /// <param name="accessorName">Name to use when accessing this index. If null, will be generated from column names.</param>
+    /// <param name="columns">The columns that make up this index.</param>
+    /// <param name="tableName">The name of the table this index belongs to, if any.</param>
+    /// <param name="type">The type of index (currently only B-tree is supported).</param>
     private ViewIndex(
         string? accessorName,
         ImmutableArray<ColumnRef> columns,
@@ -198,6 +298,10 @@ record ViewIndex
         StandardNameSuffix = $"_{columnNames}_idx_{Type.ToString().ToLower()}";
     }
 
+    /// <summary>
+    /// Creates a B-tree index on a single column with auto-generated name.
+    /// </summary>
+    /// <param name="col">The column to index.</param>
     public ViewIndex(ColumnRef col)
         : this(
             null,
@@ -206,9 +310,17 @@ record ViewIndex
             ViewIndexType.BTree // this might become hash in the future
         ) { }
 
+    /// <summary>
+    /// Creates an index with the given attribute and columns.
+    /// Used internally by other constructors that parse attributes.
+    /// </summary>
     private ViewIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
         : this(attr.Name, columns, attr.Table, ViewIndexType.BTree) { }
 
+    /// <summary>
+    /// Creates an index from a table declaration and attribute data.
+    /// Validates the index configuration and reports any errors through the diag reporter.
+    /// </summary>
     private ViewIndex(
         TableDeclaration table,
         Index.BTreeAttribute attr,
@@ -231,9 +343,16 @@ record ViewIndex
         }
     }
 
+    /// <summary>
+    /// Creates an index by parsing attribute data from a table declaration.
+    /// </summary>
     public ViewIndex(TableDeclaration table, AttributeData data, DiagReporter diag)
         : this(table, data.ParseAs<Index.BTreeAttribute>(), data, diag) { }
 
+    /// <summary>
+    /// Creates an index for a single column with attribute data.
+    /// Validates that no additional columns were specified in the attribute.
+    /// </summary>
     private ViewIndex(
         ColumnRef column,
         Index.BTreeAttribute attr,
@@ -248,6 +367,9 @@ record ViewIndex
         }
     }
 
+    /// <summary>
+    /// Creates an index for a single column by parsing attribute data.
+    /// </summary>
     public ViewIndex(ColumnRef col, AttributeData data, DiagReporter diag)
         : this(col, data.ParseAs<Index.BTreeAttribute>(), data, diag) { }
 
@@ -277,6 +399,10 @@ record ViewIndex
     public string StandardIndexName(TableView view) => view.Name + StandardNameSuffix;
 }
 
+/// <summary>
+/// Represents a table declaration in a module.
+/// Handles table metadata, views, indexes, and column declarations for code generation.
+/// </summary>
 record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 {
     public readonly Accessibility Visibility;
@@ -365,12 +491,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             }
             var standardIndexName = ct.ToIndex().StandardIndexName(view);
             yield return $$"""
-                {{vis}} sealed class {{f.Name}}UniqueIndex : UniqueIndex<{{view.Name}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
+                {{vis}} sealed class {{f.Name}}UniqueIndex : UniqueIndex<{{view.Name}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
                     internal {{f.Name}}UniqueIndex() : base("{{standardIndexName}}") {}
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                    public {{globalName}}? Find({{f.Type}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
+                    public {{globalName}}? Find({{f.Type.Name}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
                     public {{globalName}} Update({{globalName}} row) => DoUpdate(row);
                 }
                 {{vis}} {{f.Name}}UniqueIndex {{f.Name}} => new();
@@ -399,11 +525,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             {
                 var types = string.Join(
                     ", ",
-                    members.Take(n + 1).Select(m => $"{m.Type}, {m.TypeInfo}")
+                    members.Take(n + 1).Select(m => $"{m.Type.Name}, {m.Type.BSATNName}")
                 );
-                var scalars = members.Take(n).Select(m => $"{m.Type} {m.Name}");
-                var lastScalar = $"{members[n].Type} {members[n].Name}";
-                var lastBounds = $"Bound<{members[n].Type}> {members[n].Name}";
+                var scalars = members.Take(n).Select(m => $"{m.Type.Name} {m.Name}");
+                var lastScalar = $"{members[n].Type.Name} {members[n].Name}";
+                var lastBounds = $"Bound<{members[n].Type.Name}> {members[n].Name}";
                 var argsScalar = string.Join(", ", scalars.Append(lastScalar));
                 var argsBounds = string.Join(", ", scalars.Append(lastBounds));
                 string argName;
@@ -438,8 +564,21 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
+    /// <summary>
+    /// Represents a generated view for a table, providing different access patterns
+    /// and visibility levels for the underlying table data.
+    /// </summary>
+    /// <param name="viewName">Name of the generated view type</param>
+    /// <param name="tableName">Fully qualified name of the table type</param>
+    /// <param name="view">C# source code for the view implementation</param>
+    /// <param name="getter">C# property getter for accessing the view</param>
     public record struct View(string viewName, string tableName, string view, string getter);
 
+    /// <summary>
+    /// Generates view implementations for all table views defined in this table declaration.
+    /// Each view represents a different way to access or filter the table's data.
+    /// </summary>
+    /// <returns>Collection of View records containing generated code for each view</returns>
     public IEnumerable<View> GenerateViews()
     {
         // Don't try to generate views if this table is a sum type.
@@ -450,9 +589,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
         foreach (var v in Views)
         {
-            var autoIncFields = Members
-                .Where(f => f.GetAttrs(v).HasFlag(ColumnAttrs.AutoInc))
-                .Select(f => f.Name);
+            var autoIncFields = Members.Where(m => m.GetAttrs(v).HasFlag(ColumnAttrs.AutoInc));
 
             var globalName = $"global::{FullName}";
             var iTable = $"SpacetimeDB.Internal.ITableView<{v.Name}, {globalName}>";
@@ -464,11 +601,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 static {{globalName}} {{iTable}}.ReadGenFields(System.IO.BinaryReader reader, {{globalName}} row) {
                     {{string.Join(
                         "\n",
-                        autoIncFields.Select(name =>
+                        autoIncFields.Select(m =>
                             $$"""
-                            if (row.{{name}} == default)
+                            if (row.{{m.Name}} == default)
                             {
-                                row.{{name}} = {{globalName}}.BSATN.{{name}}.Read(reader);
+                                row.{{m.Name}} = {{globalName}}.BSATN.{{m.Name}}{{TypeUse.BsatnFieldSuffix}}.Read(reader);
                             }
                             """
                         )
@@ -513,6 +650,78 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
+    /// <summary>
+    /// Represents a default value for a table field, used during table creation.
+    /// </summary>
+    /// <param name="tableName">Name of the table containing the field</param>
+    /// <param name="columnId">Index of the column in the table</param>
+    /// <param name="value">String representation of the default value</param>
+    /// <param name="BSATNTypeName">BSATN Type name of the default value</param>
+    public record struct FieldDefaultValue(
+        string tableName,
+        string columnId,
+        string value,
+        string BSATNTypeName
+    );
+
+    /// <summary>
+    /// Generates default values for table fields with the [Default] attribute.
+    /// These values are used when creating new rows without explicit values for the corresponding fields.
+    /// </summary>
+    /// <returns>Collection of default values for fields that specify them</returns>
+    public IEnumerable<FieldDefaultValue> GenerateDefaultValues()
+    {
+        if (Kind is TypeKind.Sum)
+        {
+            yield break;
+        }
+
+        foreach (var view in Views)
+        {
+            var members = string.Join(", ", Members.Select(m => m.Name));
+            var fieldsWithDefaultValues = Members.Where(m =>
+                m.GetAttrs(view).HasFlag(ColumnAttrs.Default)
+            );
+            var defaultValueAttributes = string.Join(
+                ", ",
+                Members
+                    .Where(m => m.GetAttrs(view).HasFlag(ColumnAttrs.Default))
+                    .Select(m => m.Attrs.FirstOrDefault(a => a.Mask == ColumnAttrs.Default))
+            );
+
+            var withDefaultValues =
+                fieldsWithDefaultValues as ColumnDeclaration[] ?? fieldsWithDefaultValues.ToArray();
+            foreach (var fieldsWithDefaultValue in withDefaultValues)
+            {
+                if (
+                    fieldsWithDefaultValue.ColumnDefaultValue != null
+                    && fieldsWithDefaultValue.Type.BSATNName != ""
+                )
+                {
+                    // For enums, we'll need to wrap the default value in the enum type.
+                    if (fieldsWithDefaultValue.Type.BSATNName.StartsWith("SpacetimeDB.BSATN.Enum"))
+                    {
+                        yield return new FieldDefaultValue(
+                            view.Name,
+                            fieldsWithDefaultValue.ColumnIndex.ToString(),
+                            $"({fieldsWithDefaultValue.Type.Name}){fieldsWithDefaultValue.ColumnDefaultValue}",
+                            fieldsWithDefaultValue.Type.BSATNName
+                        );
+                    }
+                    else
+                    {
+                        yield return new FieldDefaultValue(
+                            view.Name,
+                            fieldsWithDefaultValue.ColumnIndex.ToString(),
+                            fieldsWithDefaultValue.ColumnDefaultValue,
+                            fieldsWithDefaultValue.Type.BSATNName
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     public record Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
     {
         public ViewIndex ToIndex() => new(new ColumnRef(Pos, Col.Name));
@@ -554,6 +763,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         GetConstraints(view, ColumnAttrs.PrimaryKey).Select(c => (int?)c.Pos).SingleOrDefault();
 }
 
+/// <summary>
+/// Represents a reducer method declaration in a module.
+/// </summary>
 record ReducerDeclaration
 {
     public readonly string Name;
@@ -610,30 +822,30 @@ record ReducerDeclaration
             ? "throw new System.InvalidOperationException()"
             : $"{FullName}({string.Join(
                 ", ",
-                Args.Select(a => $"{a.Name}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
+                Args.Select(a => $"{a.Name}{TypeUse.BsatnFieldSuffix}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
             )})";
 
         return $$"""
-            class {{Name}}: SpacetimeDB.Internal.IReducer {
-                {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
+             class {{Name}}: SpacetimeDB.Internal.IReducer {
+                 {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
 
-                public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
-                    nameof({{Name}}),
-                    [{{MemberDeclaration.GenerateDefs(Args)}}],
-                    {{Kind switch
+                 public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                     nameof({{Name}}),
+                     [{{MemberDeclaration.GenerateDefs(Args)}}],
+                     {{Kind switch
         {
             ReducerKind.Init => "SpacetimeDB.Internal.Lifecycle.Init",
             ReducerKind.ClientConnected => "SpacetimeDB.Internal.Lifecycle.OnConnect",
             ReducerKind.ClientDisconnected => "SpacetimeDB.Internal.Lifecycle.OnDisconnect",
             _ => "null"
         }}}
-                );
+                 );
 
-                public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
-                    {{invocation}};
-                }
-            }
-            """;
+                 public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
+                     {{invocation}};
+                 }
+             }
+             """;
     }
 
     public Scope.Extensions GenerateSchedule()
@@ -649,13 +861,13 @@ record ReducerDeclaration
             [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
             public static void VolatileNonatomicScheduleImmediate{{Name}}({{string.Join(
                 ", ",
-                Args.Select(a => $"{a.Type} {a.Name}")
+                Args.Select(a => $"{a.Type.Name} {a.Name}")
             )}}) {
                 using var stream = new MemoryStream();
                 using var writer = new BinaryWriter(stream);
                 {{string.Join(
                     "\n",
-                    Args.Select(a => $"new {a.TypeInfo}().Write(writer, {a.Name});")
+                    Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
                 )}}
                 SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
@@ -666,9 +878,50 @@ record ReducerDeclaration
     }
 }
 
+record ClientVisibilityFilterDeclaration
+{
+    public readonly string FullName;
+
+    public string GlobalName => $"global::{FullName}";
+
+    public ClientVisibilityFilterDeclaration(
+        GeneratorAttributeSyntaxContext context,
+        DiagReporter diag
+    )
+    {
+        var fieldSymbol = (IFieldSymbol)context.TargetSymbol;
+
+        if (
+            !fieldSymbol.IsStatic
+            || !fieldSymbol.IsReadOnly
+            || fieldSymbol.DeclaredAccessibility != Accessibility.Public
+        )
+        {
+            diag.Report(ErrorDescriptor.ClientVisibilityNotPublicStaticReadonly, fieldSymbol);
+        }
+
+        if (fieldSymbol.Type.ToString() is not "SpacetimeDB.Filter")
+        {
+            diag.Report(ErrorDescriptor.ClientVisibilityNotFilter, fieldSymbol);
+        }
+
+        FullName = SymbolToName(fieldSymbol);
+    }
+}
+
 [Generator]
 public class Module : IIncrementalGenerator
 {
+    /// <summary>
+    /// Collects distinct items from a source sequence, ensuring no duplicate export names exist.
+    /// </summary>
+    /// <typeparam name="T">The type of items being collected</typeparam>
+    /// <param name="kind">The category/type of items being collected (used for error messages)</param>
+    /// <param name="context">The incremental generator context for reporting diagnostics</param>
+    /// <param name="source">The source sequence of items to process</param>
+    /// <param name="toExportName">Function to get the export name for an item (used for deduplication)</param>
+    /// <param name="toFullName">Function to get the full name of an item (used for error messages)</param>
+    /// <returns>An incremental value provider containing the distinct items</returns>
     private static IncrementalValueProvider<EquatableArray<T>> CollectDistinct<T>(
         string kind,
         IncrementalGeneratorInitializationContext context,
@@ -797,11 +1050,46 @@ public class Module : IIncrementalGenerator
             v => v.tableName
         );
 
+        var rlsFilters = context
+            .SyntaxProvider.ForAttributeWithMetadataName(
+#pragma warning disable STDB_UNSTABLE
+                fullyQualifiedMetadataName: typeof(ClientVisibilityFilterAttribute).FullName,
+#pragma warning restore STDB_UNSTABLE
+                predicate: (node, ct) => true,
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag => new ClientVisibilityFilterDeclaration(
+                        context,
+                        diag
+                    ))
+            )
+            .ReportDiagnostics(context)
+            .WithTrackingName("SpacetimeDB.ClientVisibilityFilter.Parse");
+
+        var rlsFiltersArray = CollectDistinct(
+            "ClientVisibilityFilter",
+            context,
+            rlsFilters,
+            (f) => f.FullName,
+            (f) => f.FullName
+        );
+
+        var columnDefaultValues = CollectDistinct(
+            "ColumnDefaultValues",
+            context,
+            tables
+                .SelectMany((t, ct) => t.GenerateDefaultValues())
+                .WithTrackingName("SpacetimeDB.Table.GenerateDefaultValues"),
+            v => v.tableName + "_" + v.columnId,
+            v => v.tableName + "_" + v.columnId
+        );
+
+        // Register the generated source code with the compilation context as part of module publishing
+        // Once the compilation is complete, the generated code will be used to create tables and reducers in the database
         context.RegisterSourceOutput(
-            tableViews.Combine(addReducers),
+            tableViews.Combine(addReducers).Combine(rlsFiltersArray).Combine(columnDefaultValues),
             (context, tuple) =>
             {
-                var (tableViews, addReducers) = tuple;
+                var (((tableViews, addReducers), rlsFilters), columnDefaultValues) = tuple;
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
                 if (tableViews.Array.IsEmpty && addReducers.Array.IsEmpty)
                 {
@@ -857,6 +1145,8 @@ public class Module : IIncrementalGenerator
                     #endif
                         public static void Main() {
                           SpacetimeDB.Internal.Module.SetReducerContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ReducerContext(identity, connectionId, random, time));
+                          var __memoryStream = new MemoryStream();
+                          var __writer = new BinaryWriter(__memoryStream);
 
                             {{string.Join(
                                 "\n",
@@ -867,6 +1157,22 @@ public class Module : IIncrementalGenerator
                             {{string.Join(
                                 "\n",
                                 tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{t.viewName}>();")
+                            )}}
+                            {{string.Join(
+                                "\n",
+                                rlsFilters.Select(f => $"SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter({f.GlobalName});")
+                            )}}
+                            {{string.Join(
+                                "\n",
+                                columnDefaultValues.Select(d => 
+                                    "{\n"
+                                         +$"var value = new {d.BSATNTypeName}();\n"
+                                         +"__memoryStream.Position = 0;\n"
+                                         +"__memoryStream.SetLength(0);\n"
+                                         +$"value.Write(__writer, {d.value});\n"   
+                                         +"var array = __memoryStream.ToArray();\n" 
+                                         +$"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, array);"
+                                         + "\n}\n")
                             )}}
                         }
 

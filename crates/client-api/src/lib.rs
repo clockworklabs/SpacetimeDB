@@ -1,3 +1,4 @@
+use std::num::NonZeroU8;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -6,14 +7,15 @@ use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use spacetimedb::host::{HostController, MigratePlanResult, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
-use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
+use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
-use spacetimedb_lib::ProductTypeElement;
+use spacetimedb_lib::{ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
+use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use tokio::sync::watch;
 
 pub mod auth;
@@ -66,14 +68,15 @@ impl Host {
         &self,
         auth: AuthCtx,
         database: Database,
+        confirmed_read: bool,
         body: String,
-    ) -> axum::response::Result<Vec<StmtResultJson>> {
+    ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>> {
         let module_host = self
             .module()
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        let json = self
+        let (tx_offset, durable_offset, json) = self
             .host_controller
             .using_database(
                 database,
@@ -88,7 +91,7 @@ impl Host {
                     let sql_span =
                         tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,).entered();
 
-                    let rows = sql::execute::run(
+                    let result = sql::execute::run(
                         // Returns an empty result set for mutations
                         db,
                         &body,
@@ -97,7 +100,7 @@ impl Host {
                         &mut header,
                     )
                     .map_err(|e| {
-                        log::warn!("{}", e);
+                        log::warn!("{e}");
                         if let Some(auth_err) = e.get_auth_error() {
                             (StatusCode::UNAUTHORIZED, auth_err.to_string())
                         } else {
@@ -114,15 +117,27 @@ impl Host {
                         .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
                         .collect();
 
-                    Ok(vec![StmtResultJson {
-                        schema,
-                        rows,
-                        total_duration_micros: total_duration.as_micros() as u64,
-                    }])
+                    Ok((
+                        result.tx_offset,
+                        db.durable_tx_offset(),
+                        vec![SqlStmtResult {
+                            schema,
+                            rows: result.rows,
+                            total_duration_micros: total_duration.as_micros() as u64,
+                            stats: SqlStmtStats::from_metrics(&result.metrics),
+                        }],
+                    ))
                 },
             )
             .await
             .map_err(log_and_500)??;
+
+        if confirmed_read {
+            if let Some(mut durable_offset) = durable_offset {
+                let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
+                durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
+            }
+        }
 
         Ok(json)
     }
@@ -132,9 +147,10 @@ impl Host {
         database: Database,
         host_type: HostType,
         program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.host_controller
-            .update_module_host(database, host_type, self.replica_id, program_bytes)
+            .update_module_host(database, host_type, self.replica_id, program_bytes, policy)
             .await
     }
 }
@@ -148,7 +164,9 @@ pub struct DatabaseDef {
     /// The compiled program of the database module.
     pub program_bytes: Vec<u8>,
     /// The desired number of replicas the database shall have.
-    pub num_replicas: u32,
+    ///
+    /// If `None`, the edition default is used.
+    pub num_replicas: Option<NonZeroU8>,
     /// The host type of the supplied program.
     pub host_type: HostType,
 }
@@ -215,7 +233,10 @@ pub trait ControlStateWriteAccess: Send + Sync {
         &self,
         publisher: &Identity,
         spec: DatabaseDef,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
+
+    async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult>;
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
 
@@ -305,8 +326,13 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         &self,
         identity: &Identity,
         spec: DatabaseDef,
+        policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
-        (**self).publish_database(identity, spec).await
+        (**self).publish_database(identity, spec, policy).await
+    }
+
+    async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult> {
+        (**self).migrate_plan(spec, style).await
     }
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {

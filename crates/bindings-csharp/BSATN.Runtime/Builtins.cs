@@ -339,11 +339,9 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     // Should be consistent with Rust implementation of Display.
     public override readonly string ToString()
     {
-        var sign = MicrosecondsSinceUnixEpoch < 0 ? "-" : "";
-        var pos = Math.Abs(MicrosecondsSinceUnixEpoch);
-        var secs = pos / Util.MicrosecondsPerSecond;
-        var microsRemaining = pos % Util.MicrosecondsPerSecond;
-        return $"{sign}{secs}.{microsRemaining:D6}";
+        var date = ToStd();
+
+        return date.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffffK");
     }
 
     public static readonly Timestamp UNIX_EPOCH = new(0);
@@ -359,10 +357,13 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public readonly TimeSpan ToTimeSpanSinceUnixEpoch() => (TimeSpan)ToTimeDurationSinceUnixEpoch();
 
     public readonly TimeDuration TimeDurationSince(Timestamp earlier) =>
-        new TimeDuration(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch);
+        new TimeDuration(checked(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch));
 
     public static Timestamp operator +(Timestamp point, TimeDuration interval) =>
-        new Timestamp(point.MicrosecondsSinceUnixEpoch + interval.Microseconds);
+        new Timestamp(checked(point.MicrosecondsSinceUnixEpoch + interval.Microseconds));
+
+    public static Timestamp operator -(Timestamp point, TimeDuration interval) =>
+        new Timestamp(checked(point.MicrosecondsSinceUnixEpoch - interval.Microseconds));
 
     public int CompareTo(Timestamp that)
     {
@@ -389,6 +390,11 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public readonly void WriteFields(BinaryWriter writer)
     {
         BSATN.MicrosecondsSinceUnixEpoch.Write(writer, MicrosecondsSinceUnixEpoch);
+    }
+
+    readonly object IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
     }
 
     public readonly partial struct BSATN : IReadWrite<Timestamp>
@@ -426,11 +432,44 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
 {
     public static readonly TimeDuration ZERO = new(0);
 
+    /// <summary>
+    /// Returns a <see cref="TimeDuration"/> that represents a specified number of <paramref name="milliseconds"/>, accurate to the nearest microsecond.
+    /// </summary>
+    public static TimeDuration FromMilliseconds(double milliseconds) =>
+        new((long)(milliseconds * 1000L));
+
+    /// <summary>
+    /// Returns a <see cref="TimeDuration"/> that represents a specified number of <paramref name="seconds"/>, accurate to the nearest microsecond.
+    /// </summary>
+    public static TimeDuration FromSeconds(double seconds) =>
+        new((long)(seconds * Util.MicrosecondsPerSecond));
+
+    /// <summary>
+    /// Returns a <see cref="TimeDuration"/> that represents a specified number of 60-second <paramref name="minutes"/>.
+    /// </summary>
+    public static TimeDuration FromMinutes(double minutes) => FromSeconds(minutes * 60);
+
+    /// <summary>
+    /// Returns a <see cref="TimeDuration"/> that represents a specified number of 60-minute <paramref name="hours"/>.
+    /// </summary>
+    public static TimeDuration FromHours(double hours) => FromMinutes(hours * 60);
+
+    /// <summary>
+    /// Returns a <see cref="TimeDuration"/> that represents a specified number of 24-hour <paramref name="days"/>.
+    /// </summary>
+    public static TimeDuration FromDays(double days) => FromHours(days * 24);
+
     public static implicit operator TimeSpan(TimeDuration d) =>
         new(d.Microseconds * Util.TicksPerMicrosecond);
 
     public static implicit operator TimeDuration(TimeSpan timeSpan) =>
         new(timeSpan.Ticks / Util.TicksPerMicrosecond);
+
+    public static TimeDuration operator +(TimeDuration lhs, TimeDuration rhs) =>
+        new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
+
+    public static TimeDuration operator -(TimeDuration lhs, TimeDuration rhs) =>
+        new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
 
     // For backwards-compatibility.
     public readonly TimeSpan ToStd() => this;
@@ -454,6 +493,11 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
     public readonly void WriteFields(BinaryWriter writer)
     {
         BSATN.__time_duration_micros__.Write(writer, Microseconds);
+    }
+
+    readonly object IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
     }
 
     public readonly partial struct BSATN : IReadWrite<TimeDuration>

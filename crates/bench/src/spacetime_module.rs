@@ -57,6 +57,7 @@ impl<L: ModuleLanguage> BenchDatabase for SpacetimeModule<L> {
         let runtime = start_runtime();
         let config = Config {
             storage: if in_memory { Storage::Memory } else { Storage::Disk },
+            page_pool_max_size: None,
         };
 
         let module = runtime.block_on(async {
@@ -68,11 +69,12 @@ impl<L: ModuleLanguage> BenchDatabase for SpacetimeModule<L> {
             L::get_module().load_module(config, Some(&path)).await
         });
 
-        for table in module.client.module.info.module_def.tables() {
-            log::trace!("SPACETIME_MODULE: LOADED TABLE: {:?}", table);
+        let module_info = module.client.module().info;
+        for table in module_info.module_def.tables() {
+            log::trace!("SPACETIME_MODULE: LOADED TABLE: {table:?}");
         }
-        for reducer in module.client.module.info.module_def.reducers() {
-            log::trace!("SPACETIME_MODULE: LOADED REDUCER: {:?}", reducer);
+        for reducer in module_info.module_def.reducers() {
+            log::trace!("SPACETIME_MODULE: LOADED REDUCER: {reducer:?}");
         }
         Ok(SpacetimeModule {
             runtime,
@@ -101,7 +103,7 @@ impl<L: ModuleLanguage> BenchDatabase for SpacetimeModule<L> {
             module.call_reducer_binary(&name, ProductValue::new(&[])).await?;
             */
             // workaround for now
-            module.client.module.clear_table(&table_id.pascal_case)?;
+            module.client.module().clear_table(&table_id.pascal_case)?;
             Ok(())
         })
     }

@@ -40,8 +40,10 @@ pub enum TestC {
     Bar,
 }
 
+const DEFAULT_TEST_C: TestC = TestC::Foo;
 #[table(name = test_d, public)]
 pub struct TestD {
+    #[default(Some(DEFAULT_TEST_C))]
     test_c: Option<TestC>,
 }
 
@@ -237,7 +239,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
     match arg4 {
         TestF::Foo => log::info!("Foo"),
         TestF::Bar => log::info!("Bar"),
-        TestF::Baz(string) => log::info!("{}", string),
+        TestF::Baz(string) => log::info!("{string}"),
     }
     for i in 0..1000 {
         ctx.db.test_a().insert(TestA {
@@ -249,7 +251,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
 
     let row_count_before_delete = ctx.db.test_a().count();
 
-    log::info!("Row count before delete: {:?}", row_count_before_delete);
+    log::info!("Row count before delete: {row_count_before_delete:?}");
 
     let mut num_deleted = 0;
     for row in 5..10u32 {
@@ -260,10 +262,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
 
     if row_count_before_delete != row_count_after_delete + num_deleted {
         log::error!(
-            "Started with {} rows, deleted {}, and wound up with {} rows... huh?",
-            row_count_before_delete,
-            num_deleted,
-            row_count_after_delete,
+            "Started with {row_count_before_delete} rows, deleted {num_deleted}, and wound up with {row_count_after_delete} rows... huh?",
         );
     }
 
@@ -271,11 +270,11 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
         id: 0,
         name: "Tyler".to_owned(),
     }) {
-        Ok(x) => log::info!("Inserted: {:?}", x),
-        Err(err) => log::info!("Error: {:?}", err),
+        Ok(x) => log::info!("Inserted: {x:?}"),
+        Err(err) => log::info!("Error: {err:?}"),
     }
 
-    log::info!("Row count after delete: {:?}", row_count_after_delete);
+    log::info!("Row count after delete: {row_count_after_delete:?}");
 
     let other_row_count = ctx
         .db
@@ -284,7 +283,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
         // .filter(|row| row.x >= 0 && row.x <= u32::MAX)
         .count();
 
-    log::info!("Row count filtered by condition: {:?}", other_row_count);
+    log::info!("Row count filtered by condition: {other_row_count:?}");
 
     log::info!("MultiColumn");
 
@@ -297,7 +296,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
 
     let multi_row_count = ctx.db.points().iter().filter(|row| row.x >= 0 && row.y <= 200).count();
 
-    log::info!("Row count filtered by multi-column condition: {:?}", multi_row_count);
+    log::info!("Row count filtered by multi-column condition: {multi_row_count:?}");
 
     log::info!("END");
     Ok(())
@@ -305,7 +304,13 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
 
 #[spacetimedb::reducer]
 pub fn add_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    ctx.db.test_e().try_insert(TestE { id: 0, name })?;
+    // This always creates a new one because id is auto-incremented.
+    let inserted = ctx.db.test_e().id().try_insert_or_update(TestE { id: 0, name })?;
+
+    // Since the previous one is always inserted, at this point it's always updated by this function.
+    // This is a no-op, but we can still call it.
+    ctx.db.test_e().id().try_insert_or_update(inserted)?;
+
     Ok(())
 }
 
@@ -314,16 +319,16 @@ pub fn delete_player(ctx: &ReducerContext, id: u64) -> Result<(), String> {
     if ctx.db.test_e().id().delete(id) {
         Ok(())
     } else {
-        Err(format!("No TestE row with id {}", id))
+        Err(format!("No TestE row with id {id}"))
     }
 }
 
 #[spacetimedb::reducer]
 pub fn delete_players_by_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
     match ctx.db.test_e().name().delete(&name) {
-        0 => Err(format!("No TestE row with name {:?}", name)),
+        0 => Err(format!("No TestE row with name {name:?}")),
         num_deleted => {
-            log::info!("Deleted {} player(s) with name {:?}", num_deleted, name);
+            log::info!("Deleted {num_deleted} player(s) with name {name:?}");
             Ok(())
         }
     }

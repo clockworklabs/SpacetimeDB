@@ -1,7 +1,7 @@
-use rand::Rng;
 use std::io::Write;
 use std::path::Path;
 
+pub mod compression;
 pub mod dir_trie;
 pub mod lockfile;
 
@@ -29,9 +29,8 @@ pub fn create_parent_dir(file: &Path) -> Result<(), std::io::Error> {
 pub fn atomic_write(file_path: &Path, data: String) -> anyhow::Result<()> {
     let mut temp_path = file_path.to_path_buf();
     let mut temp_file: std::fs::File;
-    let mut rng = rand::thread_rng();
     loop {
-        temp_path.set_extension(format!(".tmp{}", rng.gen::<u32>()));
+        temp_path.set_extension(format!(".tmp{}", rand::random::<u32>()));
         let opened = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)

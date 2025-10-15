@@ -23,19 +23,22 @@
 
 use super::{
     indexes::{Byte, Bytes},
-    layout::{
-        AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, ProductTypeLayout, RowTypeLayout,
-        SumTypeLayout, SumTypeVariantLayout,
-    },
     util::range_move,
-    MemoryUsage,
 };
 use core::mem::MaybeUninit;
 use core::ptr;
+use smallvec::SmallVec;
+use spacetimedb_data_structures::slim_slice::SlimSmallSliceBox;
+use spacetimedb_sats::layout::{
+    AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, ProductTypeLayoutView, RowTypeLayout,
+    SumTypeLayout, SumTypeVariantLayout,
+};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 
 /// A precomputed layout for a type whose encoded BSATN and BFLATN lengths are both known constants,
 /// enabling fast BFLATN <-> BSATN conversions.
 #[derive(PartialEq, Eq, Debug, Clone)]
+#[repr(align(8))]
 pub struct StaticLayout {
     /// The length of the encoded BSATN representation of a row of this type,
     /// in bytes.
@@ -46,7 +49,7 @@ pub struct StaticLayout {
 
     /// A series of `memcpy` invocations from a BFLATN src/dst <-> a BSATN src/dst
     /// which are sufficient to convert BSATN to BFLATN and vice versa.
-    fields: Box<[MemcpyField]>,
+    fields: SlimSmallSliceBox<MemcpyField, 3>,
 }
 
 impl MemoryUsage for StaticLayout {
@@ -307,9 +310,10 @@ impl LayoutBuilder {
 
     fn build(self) -> StaticLayout {
         let LayoutBuilder { fields } = self;
-        let fields: Vec<_> = fields.into_iter().filter(|field| !field.is_empty()).collect();
+        let fields: SmallVec<[_; 3]> = fields.into_iter().filter(|field| !field.is_empty()).collect();
+        let fields: SlimSmallSliceBox<MemcpyField, 3> = fields.into();
         let bsatn_length = fields.last().map(|last| last.bsatn_offset + last.length).unwrap_or(0);
-        let fields = fields.into_boxed_slice();
+
         StaticLayout { bsatn_length, fields }
     }
 
@@ -331,7 +335,7 @@ impl LayoutBuilder {
         last.bsatn_offset + last.length
     }
 
-    fn visit_product(&mut self, product: &ProductTypeLayout) -> Option<()> {
+    fn visit_product(&mut self, product: ProductTypeLayoutView) -> Option<()> {
         let base_bflatn_offset = self.next_bflatn_offset();
         for elt in product.elements.iter() {
             self.visit_product_element(elt, base_bflatn_offset)?;
@@ -363,7 +367,7 @@ impl LayoutBuilder {
     fn visit_value(&mut self, val: &AlgebraicTypeLayout) -> Option<()> {
         match val {
             AlgebraicTypeLayout::Sum(sum) => self.visit_sum(sum),
-            AlgebraicTypeLayout::Product(prod) => self.visit_product(prod),
+            AlgebraicTypeLayout::Product(prod) => self.visit_product(prod.view()),
             AlgebraicTypeLayout::Primitive(prim) => {
                 self.visit_primitive(prim);
                 Some(())
@@ -438,7 +442,7 @@ impl LayoutBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::blob_store::HashMapBlobStore;
+    use crate::{blob_store::HashMapBlobStore, page_pool::PagePool};
     use proptest::prelude::*;
     use spacetimedb_sats::{bsatn, proptest::generate_typed_row, AlgebraicType, ProductType};
 
@@ -453,7 +457,8 @@ mod test {
                     bsatn_offset,
                     length,
                 })
-                .collect(),
+                .collect::<SmallVec<_>>()
+                .into(),
         };
         let row_type = RowTypeLayout::from(ty.clone());
         let Some(computed_layout) = StaticLayout::for_row_type(&row_type) else {
@@ -654,6 +659,7 @@ mod test {
 
         #[test]
         fn known_bsatn_same_as_bflatn_from((ty, val) in generate_typed_row()) {
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
             let Some(static_layout) = table.static_layout().cloned() else {
@@ -662,7 +668,7 @@ mod test {
                 return Err(TestCaseError::reject("Var-length type"));
             };
 
-            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &val).unwrap();
             let bytes = row_ref.get_row_data();
 
             let slow_path = bsatn::to_vec(&row_ref).unwrap();
@@ -682,6 +688,7 @@ mod test {
 
         #[test]
         fn known_bflatn_same_as_pv_from((ty, val) in generate_typed_row()) {
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
             let Some(static_layout) = table.static_layout().cloned() else {
@@ -691,7 +698,7 @@ mod test {
             };
             let bsatn = bsatn::to_vec(&val).unwrap();
 
-            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &val).unwrap();
             let slow_path = row_ref.get_row_data();
 
             let mut fast_path = vec![0u8; slow_path.len()];

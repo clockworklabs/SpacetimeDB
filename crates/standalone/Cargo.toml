@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "An executable for running a single SpacetimeDB standalone instance"
+rust-version.workspace = true
 
 [[bin]]
 name = "spacetimedb-standalone"   # The name of the target.
@@ -15,12 +16,21 @@ proc-macro = false     # Set to `true` for a proc-macro library.
 harness = true         # Use libtest harness.
 required-features = [] # Features required to build this target (N/A for lib)
 
+[features]
+# Perfmaps for profiling modules
+perfmap = ["spacetimedb-core/perfmap"]
+unstable = ["spacetimedb-client-api/unstable"]
+
 [dependencies]
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-client-api.workspace = true
 spacetimedb-core.workspace = true
+spacetimedb-datastore.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-paths.workspace = true
+spacetimedb-pg.workspace = true
+spacetimedb-table.workspace = true
+spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
@@ -32,8 +42,10 @@ hostname.workspace = true
 http.workspace = true
 log.workspace = true
 openssl.workspace = true
+parse-size.workspace = true
 prometheus.workspace = true
 scopeguard.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sled.workspace = true
 socket2.workspace = true
@@ -43,6 +55,13 @@ tower-http.workspace = true
 toml.workspace = true
 tracing = { workspace = true, features = ["release_max_level_debug"] }
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = {workspace = true}
+tikv-jemalloc-ctl = {workspace = true}
+
 [dev-dependencies]
 once_cell.workspace = true
 tempfile.workspace = true
+
+[lints]
+workspace = true

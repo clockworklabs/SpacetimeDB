@@ -1,7 +1,9 @@
 namespace SpacetimeDB.Internal;
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
 
@@ -35,6 +37,19 @@ partial class RawModuleDefV9
     internal void RegisterReducer(RawReducerDefV9 reducer) => Reducers.Add(reducer);
 
     internal void RegisterTable(RawTableDefV9 table) => Tables.Add(table);
+
+    internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
+        RowLevelSecurity.Add(rls);
+
+    internal void RegisterTableDefaultValue(string table, ushort colId, byte[] value)
+    {
+        var byteList = new List<byte>(value);
+        MiscExports.Add(
+            new RawMiscModuleExportV9.ColumnDefaultValue(
+                new RawColumnDefaultValueV9(table, colId, byteList)
+            )
+        );
+    }
 }
 
 public static class Module
@@ -90,10 +105,23 @@ public static class Module
 
     public static void RegisterTable<T, View>()
         where T : IStructuralReadWrite, new()
-        where View : ITableView<View, T>, new()
-    {
+        where View : ITableView<View, T>, new() =>
         moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
+
+    public static void RegisterClientVisibilityFilter(Filter rlsFilter)
+    {
+        if (rlsFilter is Filter.Sql(var rlsSql))
+        {
+            moduleDef.RegisterRowLevelSecurity(new RawRowLevelSecurityDefV9 { Sql = rlsSql });
+        }
+        else
+        {
+            throw new Exception($"Unimplemented row level security type: {rlsFilter}");
+        }
     }
+
+    public static void RegisterTableDefaultValue(string table, ushort colId, byte[] value) =>
+        moduleDef.RegisterTableDefaultValue(table, colId, value);
 
     private static byte[] Consume(this BytesSource source)
     {
@@ -101,14 +129,33 @@ public static class Module
         {
             return [];
         }
-        var buffer = new byte[0x20_000];
+
+        var len = (uint)0;
+        var ret = FFI.bytes_source_remaining_length(source, ref len);
+        switch (ret)
+        {
+            case Errno.OK:
+                break;
+            case Errno.NO_SUCH_BYTES:
+                throw new NoSuchBytesException();
+            default:
+                throw new UnknownException(ret);
+        }
+
+        var buffer = new byte[len];
         var written = 0U;
+        // Because we've reserved space in our buffer already, this loop should be unnecessary.
+        // We expect the first call to `bytes_source_read` to always return `-1`.
+        // I (pgoldman 2025-09-26) am leaving the loop here because there's no downside to it,
+        // and in the future we may want to support `BytesSource`s which don't have a known length ahead of time
+        // (i.e. put arbitrary streams in `BytesSource` on the host side rather than just `Bytes` buffers),
+        // at which point the loop will become useful again.
         while (true)
         {
             // Write into the spare capacity of the buffer.
             var spare = buffer.AsSpan((int)written);
             var buf_len = (uint)spare.Length;
-            var ret = FFI.bytes_source_read(source, spare, ref buf_len);
+            ret = FFI.bytes_source_read(source, spare, ref buf_len);
             written += buf_len;
             switch (ret)
             {

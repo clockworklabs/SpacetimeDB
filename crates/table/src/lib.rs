@@ -13,8 +13,8 @@ pub mod eq;
 mod eq_to_pv;
 pub mod fixed_bit_set;
 pub mod indexes;
-pub mod layout;
 pub mod page;
+pub mod page_pool;
 pub mod pages;
 pub mod pointer_map;
 pub mod read_column;
@@ -25,9 +25,6 @@ pub mod static_layout;
 pub mod table;
 pub mod table_index;
 pub mod var_len;
-
-mod memory_usage;
-pub use memory_usage::MemoryUsage;
 
 #[doc(hidden)] // Used in tests and benchmarks.
 pub mod util;

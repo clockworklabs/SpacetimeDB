@@ -11,6 +11,8 @@ public partial struct CustomStruct
     public static readonly string IGNORE_ME_TOO = "";
     public int IntField;
     public string StringField;
+    public int? NullableIntField;
+    public string? NullableStringField;
 }
 
 [SpacetimeDB.Type]
@@ -20,6 +22,19 @@ public partial class CustomClass
     public static readonly string IGNORE_ME_TOO = "";
     public int IntField = 0;
     public string StringField = "";
+    public int? NullableIntField;
+    public string? NullableStringField;
+}
+
+[SpacetimeDB.Type]
+public partial class CustomRecord
+{
+    public const int IGNORE_ME = 0;
+    public static readonly string IGNORE_ME_TOO = "";
+    public int IntField = 0;
+    public string StringField = "";
+    public int? NullableIntField;
+    public string? NullableStringField;
 }
 
 [StructLayout(LayoutKind.Auto)]
@@ -27,6 +42,41 @@ public partial class CustomClass
 {
     public int IgnoreExtraFields;
 }
+
+[SpacetimeDB.Type]
+public partial class CustomNestedClass
+{
+    public CustomClass NestedClass = new();
+    public CustomClass? NestedNullableClass = null;
+    public CustomEnum NestedEnum = CustomEnum.EnumVariant1;
+    public CustomEnum? NestedNullableEnum = null;
+    public CustomTaggedEnum NestedTaggedEnum = new CustomTaggedEnum.NullableIntVariant(null);
+    public CustomTaggedEnum? NestedNullableTaggedEnum = null;
+    public CustomRecord NestedCustomRecord = new();
+    public CustomRecord? NestedNullableCustomRecord = null;
+}
+
+[SpacetimeDB.Type]
+public partial class ContainsNestedLists
+{
+    public List<int> IntList = [];
+    public List<string> StringList = [];
+    public int[] IntArray = [];
+    public string[] StringArray = [];
+    public List<int[][]> IntArrayArrayList = [];
+    public List<List<int>>[] IntListListArray = [];
+    public List<string[][]> StringArrayArrayList = [];
+    public List<List<string>>[] StringListListArray = [];
+}
+
+[SpacetimeDB.Type]
+public partial class EmptyClass { }
+
+[SpacetimeDB.Type]
+public partial struct EmptyStruct { }
+
+[SpacetimeDB.Type]
+public partial record EmptyRecord { }
 
 [SpacetimeDB.Type]
 public enum CustomEnum
@@ -37,12 +87,17 @@ public enum CustomEnum
 
 [SpacetimeDB.Type]
 public partial record CustomTaggedEnum
-    : SpacetimeDB.TaggedEnum<(int IntVariant, string StringVariant)>;
+    : SpacetimeDB.TaggedEnum<(
+        int IntVariant,
+        string StringVariant,
+        int? NullableIntVariant,
+        string? NullableStringVariant
+    )>;
 
 [SpacetimeDB.Table]
 public partial class PrivateTable { }
 
-[SpacetimeDB.Table]
+[SpacetimeDB.Table(Public = true)]
 public partial struct PublicTable
 {
     [SpacetimeDB.AutoInc]
@@ -201,4 +256,21 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
 
     [SpacetimeDB.Unique]
     public uint Unique2;
+}
+
+/// <summary>
+/// These used to cause conflicts when generating the BSATN struct for a type.
+/// </summary>
+[SpacetimeDB.Type]
+partial struct FormerlyForbiddenFieldNames
+{
+    public uint Read;
+    public uint Write;
+    public uint GetAlgebraicType;
+}
+
+public class Module
+{
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter ALL_PUBLIC_TABLES = new Filter.Sql("SELECT * FROM PublicTable");
 }

@@ -19,10 +19,12 @@ use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
+use spacetimedb_sql_parser::parser::recursion;
 
 pub mod check;
 pub mod errors;
 pub mod expr;
+pub mod rls;
 pub mod statement;
 
 /// Type check and lower a [SqlExpr]
@@ -50,12 +52,14 @@ pub(crate) fn type_limit(input: ProjectList, limit: &str) -> TypingResult<Projec
 pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> TypingResult<ProjectList> {
     match proj {
         ast::Project::Star(None) if input.nfields() > 1 => Err(InvalidWildcard::Join.into()),
-        ast::Project::Star(None) => Ok(ProjectList::Name(ProjectName::None(input))),
+        ast::Project::Star(None) => Ok(ProjectList::Name(vec![ProjectName::None(input)])),
         ast::Project::Star(Some(SqlIdent(var))) if input.has_field(&var) => {
-            Ok(ProjectList::Name(ProjectName::Some(input, var)))
+            Ok(ProjectList::Name(vec![ProjectName::Some(input, var)]))
         }
         ast::Project::Star(Some(SqlIdent(var))) => Err(Unresolved::var(&var).into()),
-        ast::Project::Count(SqlIdent(alias)) => Ok(ProjectList::Agg(input, AggType::Count, alias, AlgebraicType::U64)),
+        ast::Project::Count(SqlIdent(alias)) => {
+            Ok(ProjectList::Agg(vec![input], AggType::Count, alias, AlgebraicType::U64))
+        }
         ast::Project::Exprs(elems) => {
             let mut projections = vec![];
             let mut names = HashSet::new();
@@ -70,13 +74,19 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
                 }
             }
 
-            Ok(ProjectList::List(input, projections))
+            Ok(ProjectList::List(vec![input], projections))
         }
     }
 }
 
-/// Type check and lower a [SqlExpr] into a logical [Expr].
-pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>) -> TypingResult<Expr> {
+// These types determine the size of each stack frame during type checking.
+// Changing their sizes will require updating the recursion limit to avoid stack overflows.
+const _: () = assert!(size_of::<TypingResult<Expr>>() == 64);
+const _: () = assert!(size_of::<SqlExpr>() == 40);
+
+fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, depth: usize) -> TypingResult<Expr> {
+    recursion::guard(depth, recursion::MAX_RECURSION_TYP_EXPR, "expr::type_expr")?;
+
     match (expr, expected) {
         (SqlExpr::Lit(SqlLiteral::Bool(v)), None | Some(AlgebraicType::Bool)) => Ok(Expr::bool(v)),
         (SqlExpr::Lit(SqlLiteral::Bool(_)), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
@@ -114,23 +124,36 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
             }))
         }
         (SqlExpr::Log(a, b, op), None | Some(AlgebraicType::Bool)) => {
-            let a = type_expr(vars, *a, Some(&AlgebraicType::Bool))?;
-            let b = type_expr(vars, *b, Some(&AlgebraicType::Bool))?;
+            let a = _type_expr(vars, *a, Some(&AlgebraicType::Bool), depth + 1)?;
+            let b = _type_expr(vars, *b, Some(&AlgebraicType::Bool), depth + 1)?;
             Ok(Expr::LogOp(op, Box::new(a), Box::new(b)))
         }
-        (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) => match (*a, *b) {
-            (a, b @ SqlExpr::Lit(_)) | (b @ SqlExpr::Lit(_), a) | (a, b) => {
-                let a = type_expr(vars, a, None)?;
-                let b = type_expr(vars, b, Some(a.ty()))?;
-                if !op_supports_type(op, a.ty()) {
-                    return Err(InvalidOp::new(op, a.ty()).into());
-                }
-                Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
+        (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) if matches!(&*a, SqlExpr::Lit(_)) => {
+            let b = _type_expr(vars, *b, None, depth + 1)?;
+            let a = _type_expr(vars, *a, Some(b.ty()), depth + 1)?;
+            if !op_supports_type(op, a.ty()) {
+                return Err(InvalidOp::new(op, a.ty()).into());
             }
-        },
+            Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
+        }
+        (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) => {
+            let a = _type_expr(vars, *a, None, depth + 1)?;
+            let b = _type_expr(vars, *b, Some(a.ty()), depth + 1)?;
+            if !op_supports_type(op, a.ty()) {
+                return Err(InvalidOp::new(op, a.ty()).into());
+            }
+            Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
+        }
         (SqlExpr::Bin(..) | SqlExpr::Log(..), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
-        (SqlExpr::Var(_), _) => unreachable!(),
+        // Both unqualified names as well as parameters are syntactic constructs.
+        // Unqualified names are qualified and parameters are resolved before type checking.
+        (SqlExpr::Var(_) | SqlExpr::Param(_), _) => unreachable!(),
     }
+}
+
+/// Type check and lower a [SqlExpr] into a logical [Expr].
+pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>) -> TypingResult<Expr> {
+    _type_expr(vars, expr, expected, 0)
 }
 
 /// Is this type compatible with this binary operator?
@@ -191,7 +214,7 @@ where
 /// Parses a source text literal as a particular type
 pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<AlgebraicValue> {
     let to_timestamp = || {
-        Timestamp::parse_from_str(value)?
+        Timestamp::parse_from_rfc3339(value)?
             .serialize(ValueSerializer)
             .with_context(|| "Could not parse timestamp")
     };
