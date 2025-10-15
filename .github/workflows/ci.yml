@@ -81,6 +81,11 @@ jobs:
               <add key="local" value="$(pwd)/../../nupkgs" />
               <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
             </packageSources>
+            <packageSourceMapping>
+              <packageSource key="local">
+                <package pattern="SpacetimeDB.*" />
+              </packageSource>
+            </packageSourceMapping>
           </configuration>
           EOF
       - name: Run smoketests
