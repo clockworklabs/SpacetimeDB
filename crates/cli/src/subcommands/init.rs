@@ -217,12 +217,12 @@ pub async fn exec_init_typescript(args: &ArgMatches) -> anyhow::Result<()> {
     // Check all dependencies
     check_for_git();
 
-    for data_file in export_files {
-        let path = project_path.join(data_file.1);
+    for (contents, file) in export_files {
+        let path = project_path.join(file);
 
         create_directory(path.parent().unwrap())?;
 
-        std::fs::write(path, data_file.0)?;
+        std::fs::write(path, contents)?;
     }
 
     println!(

@@ -19,7 +19,13 @@ pub fn build(
         ModuleLanguage::Csharp => build_csharp(project_path, build_debug),
         ModuleLanguage::Javascript => build_javascript(project_path, build_debug),
     }?;
-    if !build_debug && lang != ModuleLanguage::Javascript {
+
+    if lang == ModuleLanguage::Javascript {
+        Ok((output_path, "Js"))
+    } else if !build_debug {
+        Ok((output_path, "Wasm"))
+    } else {
+        // for release builds, optimize wasm modules with wasm-opt
         let mut wasm_path = output_path;
         eprintln!("Optimising module with wasm-opt...");
         let wasm_path_opt = wasm_path.with_extension("opt.wasm");
@@ -40,12 +46,7 @@ pub fn build(
                 eprintln!("Continuing with unoptimised module.");
             }
         }
-        return Ok((wasm_path, "Wasm"));
-    }
-    if lang == ModuleLanguage::Javascript {
-        Ok((output_path, "Js"))
-    } else {
-        Ok((output_path, "Wasm"))
+        Ok((wasm_path, "Wasm"))
     }
 }
 

@@ -162,9 +162,8 @@ pub async fn exec_ex(
             println!("Skipping build. Instead we are inspecting {}", path.display());
             path.clone()
         } else {
-            build::exec_with_argstring(config.clone(), project_path, build_options)
-                .await?
-                .0
+            let (path, _) = build::exec_with_argstring(config.clone(), project_path, build_options).await?;
+            path
         };
         let spinner = indicatif::ProgressBar::new_spinner();
         spinner.enable_steady_tick(std::time::Duration::from_millis(60));
