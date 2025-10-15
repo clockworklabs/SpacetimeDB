@@ -127,6 +127,9 @@ jobs:
 
       - name: Run regression tests
         run: |
+          cd sdks/csharp
+          dotnet build
+          cd ../..
           bash sdks/csharp/tools~/run-regression-tests.sh
           tools/check-diff.sh sdks/csharp/examples~/regression-tests || {
               echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
