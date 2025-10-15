@@ -94,7 +94,7 @@ impl ModuleHandle {
 pub struct CompiledModule {
     name: String,
     path: PathBuf,
-    host_type: HostType,
+    pub(super) host_type: HostType,
     program_bytes: OnceLock<Vec<u8>>,
 }
 
