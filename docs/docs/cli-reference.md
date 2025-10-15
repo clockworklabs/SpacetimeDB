@@ -334,7 +334,7 @@ Initializes a new spacetime project. WARNING: This command is UNSTABLE and subje
 
 * `-l`, `--lang <LANG>` — The spacetime module language.
 
-  Possible values: `csharp`, `rust`, `javascript`
+  Possible values: `csharp`, `rust`, `typescript`
 
 ## spacetime build
 

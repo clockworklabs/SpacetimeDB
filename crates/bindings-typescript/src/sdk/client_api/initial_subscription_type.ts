@@ -36,6 +36,8 @@ export type InitialSubscription = {
   requestId: number;
   totalHostExecutionDuration: __TimeDuration;
 };
+let _cached_InitialSubscription_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -45,19 +47,23 @@ export const InitialSubscription = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'databaseUpdate',
-          algebraicType: DatabaseUpdate.getTypeScriptAlgebraicType(),
-        },
-        { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
-        {
-          name: 'totalHostExecutionDuration',
-          algebraicType: __AlgebraicTypeValue.createTimeDurationType(),
-        },
-      ],
+    if (_cached_InitialSubscription_type_value)
+      return _cached_InitialSubscription_type_value;
+    _cached_InitialSubscription_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_InitialSubscription_type_value.value.elements.push(
+      {
+        name: 'databaseUpdate',
+        algebraicType: DatabaseUpdate.getTypeScriptAlgebraicType(),
+      },
+      { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
+      {
+        name: 'totalHostExecutionDuration',
+        algebraicType: __AlgebraicTypeValue.createTimeDurationType(),
+      }
+    );
+    return _cached_InitialSubscription_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: InitialSubscription): void {
