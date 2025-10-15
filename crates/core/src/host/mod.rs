@@ -35,15 +35,15 @@ pub use scheduler::Scheduler;
 
 /// Encoded arguments to a database function.
 ///
-/// Despite the name, this may be arguments to either a reducer or a procedure.
+/// A database function is either a reducer or a procedure.
 #[derive(Debug)]
-pub enum ReducerArgs {
+pub enum FunctionArgs {
     Json(ByteString),
     Bsatn(Bytes),
     Nullary,
 }
 
-impl ReducerArgs {
+impl FunctionArgs {
     #[allow(unused)]
     fn into_tuple_for_procedure(
         self,
@@ -62,17 +62,17 @@ impl ReducerArgs {
     }
     fn _into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> anyhow::Result<ArgsTuple> {
         Ok(match self {
-            ReducerArgs::Json(json) => ArgsTuple {
+            FunctionArgs::Json(json) => ArgsTuple {
                 tuple: from_json_seed(&json, SeedWrapper(seed))?,
                 bsatn: OnceCell::new(),
                 json: OnceCell::with_value(json),
             },
-            ReducerArgs::Bsatn(bytes) => ArgsTuple {
+            FunctionArgs::Bsatn(bytes) => ArgsTuple {
                 tuple: seed.deserialize(bsatn::Deserializer::new(&mut &bytes[..]))?,
                 bsatn: OnceCell::with_value(bytes),
                 json: OnceCell::new(),
             },
-            ReducerArgs::Nullary => {
+            FunctionArgs::Nullary => {
                 anyhow::ensure!(seed.params().elements.is_empty(), "failed to typecheck args");
                 ArgsTuple::nullary()
             }

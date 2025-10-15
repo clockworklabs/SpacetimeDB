@@ -1,4 +1,6 @@
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
+use super::{
+    ArgsTuple, FunctionArgs, InvalidReducerArguments, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
+};
 use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
@@ -875,7 +877,7 @@ impl ModuleHost {
                     None,
                     reducer_id,
                     reducer_def,
-                    ReducerArgs::Nullary,
+                    FunctionArgs::Nullary,
                     inst,
                 )?;
 
@@ -1002,7 +1004,7 @@ impl ModuleHost {
                 None,
                 reducer_id,
                 reducer_def,
-                ReducerArgs::Nullary,
+                FunctionArgs::Nullary,
                 inst,
             );
 
@@ -1088,7 +1090,7 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
-        args: ReducerArgs,
+        args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
         let args = args.into_tuple(reducer_seed)?;
@@ -1122,7 +1124,7 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
-        args: ReducerArgs,
+        args: FunctionArgs,
         module_instance: &mut Instance,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
@@ -1152,7 +1154,7 @@ impl ModuleHost {
         request_id: Option<RequestId>,
         timer: Option<Instant>,
         reducer_name: &str,
-        args: ReducerArgs,
+        args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = async {
             let (reducer_id, reducer_def) = self
