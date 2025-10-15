@@ -544,18 +544,6 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-    // Feature gate V8 modules.
-    // The host must've been compiled with the `unstable` feature.
-    // TODO(v8): ungate this when V8 is ready to ship.
-    #[cfg(not(feature = "unstable"))]
-    if host_type == HostType::Js {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "JS host type requires a host with unstable features",
-        )
-            .into());
-    }
-
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
 
@@ -712,18 +700,6 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PrePublishResult>> {
-    // Feature gate V8 modules.
-    // The host must've been compiled with the `unstable` feature.
-    // TODO(v8): ungate this when V8 is ready to ship.
-    #[cfg(not(feature = "unstable"))]
-    if host_type == HostType::Js {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "JS host type requires a host with unstable features",
-        )
-            .into());
-    }
-
     // User should not be able to print migration plans for a database that they do not own
     let database_identity = resolve_and_authenticate(&ctx, &name_or_identity, &auth).await?;
     let style = match style {
