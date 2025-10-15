@@ -16,7 +16,7 @@ pub struct ArgsSeed<'a, Def>(pub sats::WithTypespace<'a, Def>);
 // even though `ArgsSeed<Def: ?Copy>: Copy` in our case.
 impl<Def> Clone for ArgsSeed<'_, Def> {
     fn clone(&self) -> Self {
-        Self(self.0)
+        *self
     }
 }
 impl<Def> Copy for ArgsSeed<'_, Def> {}
