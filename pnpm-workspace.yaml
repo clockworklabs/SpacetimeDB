@@ -4,5 +4,6 @@ packages:
   - 'crates/bindings-typescript/examples/quickstart-chat'
   - 'modules/module-test-ts'
   - 'modules/quickstart-chat-ts'
+  - 'modules/sdk-test-connect-disconnect-ts'
   - 'modules/sdk-test-ts'
   - 'docs'
