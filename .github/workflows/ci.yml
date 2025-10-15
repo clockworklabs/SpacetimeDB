@@ -70,10 +70,10 @@ jobs:
       - name: Install psycopg2
         run: python -m pip install psycopg2-binary
       - name: Build and pack C# SDK
-          run: |
+        run: |
           cd sdks/csharp
-          dotnet pack SpacetimeDB.ClientSDK/SpacetimeDB.ClientSDK.csproj -o ../../nupkgs
-          # Create a local NuGet.config that points to the local nupkgs directory
+          dotnet build -c Release
+          dotnet pack -c Release -o ../../nupkgs
           cat > NuGet.config << EOF
           <?xml version="1.0" encoding="utf-8"?>
           <configuration>
