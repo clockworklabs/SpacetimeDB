@@ -1,8 +1,7 @@
-#![allow(dead_code)]
-
 use super::error::{exception_already_thrown, ExcResult, ExceptionThrown, ExceptionValue, Throwable, TypeError};
 use super::from_value::{cast, FromValue};
-use super::string_const::{TAG, VALUE};
+use super::string::{TAG, VALUE};
+use super::FnRet;
 use core::fmt;
 use core::iter::{repeat_n, RepeatN};
 use core::marker::PhantomData;
@@ -132,6 +131,11 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
     deserialize_primitive!(deserialize_f32, f32);
 
     fn deserialize_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
+        // In `ProductType.serializeValue()` in the TS SDK, null/undefined is accepted for the unit type.
+        if visitor.product_len() == 0 && self.input.is_null_or_undefined() {
+            return visitor.visit_seq_product(de::UnitAccess::new());
+        }
+
         let object = cast!(
             self.common.scope,
             self.input,
@@ -150,6 +154,17 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
 
     fn deserialize_sum<V: SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
         let scope = &*self.common.scope;
+
+        // In `SumType.serializeValue()` in the TS SDK, option is treated specially -
+        // null/undefined marks none, any other value `x` is `some(x)`.
+        if visitor.is_option() {
+            return if self.input.is_null_or_undefined() {
+                visitor.visit_sum(de::NoneAccess::new())
+            } else {
+                visitor.visit_sum(de::SomeAccess::new(self))
+            };
+        }
+
         let sum_name = visitor.sum_name().unwrap_or("<unknown>");
 
         // We expect a canonical representation of a sum value in JS to be
@@ -158,16 +173,12 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
         let object = cast!(scope, self.input, Object, "object for sum type `{}`", sum_name)?;
 
         // Extract the `tag` field. It needs to contain a string.
-        let tag = object
-            .get(scope, tag_field.into())
-            .ok_or_else(exception_already_thrown)?;
+        let tag = property(scope, object, tag_field)?;
         let tag = cast!(scope, tag, v8::String, "string for sum tag of `{}`", sum_name)?;
 
         // Extract the `value` field.
         let value_field = VALUE.string(scope);
-        let value = object
-            .get(scope, value_field.into())
-            .ok_or_else(exception_already_thrown)?;
+        let value = property(scope, object, value_field)?;
 
         // Stitch it all together.
         visitor.visit_sum(SumAccess {
@@ -236,6 +247,15 @@ pub(super) fn intern_field_name<'scope>(
     v8_interned_string(scope, &field).into()
 }
 
+/// Returns the property for `key` on `object`.
+pub(super) fn property<'scope>(
+    scope: &PinScope<'scope, '_>,
+    object: Local<'scope, Object>,
+    key: impl Into<Local<'scope, Value>>,
+) -> FnRet<'scope> {
+    object.get(scope, key.into()).ok_or_else(exception_already_thrown)
+}
+
 impl<'de, 'scope: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 'scope, '_> {
     type Error = Error<'scope>;
 
@@ -262,10 +282,7 @@ impl<'de, 'scope: 'de> de::NamedProductAccess<'de> for ProductAccess<'_, 'scope,
             }
 
             // Extract the next value, to be processed in `get_field_value_seed`.
-            let val = self
-                .object
-                .get(scope, key.into())
-                .ok_or_else(exception_already_thrown)?;
+            let val = property(scope, self.object, key)?;
             self.next_value = Some(val);
 
             drop(field_names);

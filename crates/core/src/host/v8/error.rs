@@ -1,8 +1,9 @@
 //! Utilities for error handling when dealing with V8.
 
-use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace};
-
+use super::de::scratch_buf;
 use super::serialize_to_js;
+use super::string::IntoJsString;
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace};
 use core::fmt;
 use spacetimedb_sats::Serialize;
 use v8::{tc_scope, Exception, HandleScope, Local, PinScope, PinnedRef, StackFrame, StackTrace, TryCatch, Value};
@@ -10,23 +11,11 @@ use v8::{tc_scope, Exception, HandleScope, Local, PinScope, PinnedRef, StackFram
 /// The result of trying to convert a [`Value`] in scope `'scope` to some type `T`.
 pub(super) type ValueResult<'scope, T> = Result<T, ExceptionValue<'scope>>;
 
-/// Types that can convert into a JS string type.
-pub(super) trait IntoJsString {
-    /// Converts `self` into a JS string.
-    fn into_string<'scope>(self, scope: &PinScope<'scope, '_>) -> Local<'scope, v8::String>;
-}
-
-impl IntoJsString for String {
-    fn into_string<'scope>(self, scope: &PinScope<'scope, '_>) -> Local<'scope, v8::String> {
-        v8::String::new(scope, &self).unwrap()
-    }
-}
-
 /// A JS exception value.
 ///
 /// Newtyped for additional type safety and to track JS exceptions in the type system.
 #[derive(Debug)]
-pub(super) struct ExceptionValue<'scope>(Local<'scope, Value>);
+pub(super) struct ExceptionValue<'scope>(pub(super) Local<'scope, Value>);
 
 /// Error types that can convert into JS exception values.
 pub(super) trait IntoException<'scope> {
@@ -46,9 +35,18 @@ pub struct TypeError<M>(pub M);
 
 impl<'scope, M: IntoJsString> IntoException<'scope> for TypeError<M> {
     fn into_exception(self, scope: &PinScope<'scope, '_>) -> ExceptionValue<'scope> {
-        let msg = self.0.into_string(scope);
-        ExceptionValue(Exception::type_error(scope, msg))
+        match self.0.into_string(scope) {
+            Ok(msg) => ExceptionValue(Exception::type_error(scope, msg)),
+            Err(err) => err.into_range_error().into_exception(scope),
+        }
     }
+}
+
+/// Returns a "module not found" exception to be thrown.
+pub fn module_exception(scope: &mut PinScope<'_, '_>, spec: Local<'_, v8::String>) -> TypeError<String> {
+    let mut buf = scratch_buf::<32>();
+    let spec = spec.to_rust_cow_lossy(scope, &mut buf);
+    TypeError(format!("Could not find module {spec:?}"))
 }
 
 /// A type converting into a JS `RangeError` exception.
@@ -57,8 +55,54 @@ pub struct RangeError<M>(pub M);
 
 impl<'scope, M: IntoJsString> IntoException<'scope> for RangeError<M> {
     fn into_exception(self, scope: &PinScope<'scope, '_>) -> ExceptionValue<'scope> {
-        let msg = self.0.into_string(scope);
-        ExceptionValue(Exception::range_error(scope, msg))
+        match self.0.into_string(scope) {
+            Ok(msg) => ExceptionValue(Exception::range_error(scope, msg)),
+            // This is not an infinite recursion.
+            // The `r: RangeError<String>` that `StringTooLongError` produces
+            // will always enter the branch above, as `r.0` is shorter than the maximum allowed.
+            Err(err) => err.into_range_error().into_exception(scope),
+        }
+    }
+}
+
+/// A non-JS string couldn't convert to JS as it was to long.
+#[derive(Debug)]
+pub(super) struct StringTooLongError {
+    /// The length of the string that was too long (`len >` [`v8::String::MAX_LENGTH`]).
+    pub(super) len: usize,
+    /// A prefix of the string for the purpose of rendering an exception that aids the module dev.
+    pub(super) prefix: String,
+}
+
+impl StringTooLongError {
+    /// Returns a new error that keeps a prefix of `string` and records its length.
+    pub(super) fn new(string: &str) -> Self {
+        let len = string.len();
+        let prefix = string[0..16.max(len)].to_owned();
+        Self { len, prefix }
+    }
+
+    /// Converts the error to a [`RangeError<String>`].
+    pub(super) fn into_range_error(self) -> RangeError<String> {
+        let Self { len, prefix } = self;
+        RangeError(format!(
+            r#"The string "`{prefix}..`" of `{len}` bytes is too long for JS"#
+        ))
+    }
+}
+
+/// A non-JS array couldn't convert to JS as it was to long.
+#[derive(Debug)]
+pub(super) struct ArrayTooLongError {
+    /// The length of the array that was too long (`len >` [`i32::MAX`]).
+    pub(super) len: usize,
+}
+
+impl ArrayTooLongError {
+    /// Converts the error to a [`RangeError<String>`].
+    pub(super) fn into_range_error(self) -> RangeError<String> {
+        let Self { len } = self;
+        RangeError(format!("`{len}` elements are too many for a JS array"))
     }
 }
 
@@ -69,7 +113,7 @@ pub(super) struct TerminationError {
 }
 
 impl TerminationError {
-    /// Convert `anyhow::Error` to a termination error.
+    /// Converts [`anyhow::Error`] to a termination error.
     pub(super) fn from_error<'scope>(
         scope: &PinScope<'scope, '_>,
         error: &anyhow::Error,
@@ -123,9 +167,6 @@ pub(crate) struct ExceptionThrown {
 
 /// A result where the error indicates that an exception has already been thrown in V8.
 pub(crate) type ExcResult<T> = Result<T, ExceptionThrown>;
-
-/// The return type of a module -> host syscall.
-pub(super) type FnRet<'scope> = ExcResult<Local<'scope, Value>>;
 
 /// Indicates that the JS side had thrown an exception.
 pub(super) fn exception_already_thrown() -> ExceptionThrown {
@@ -252,6 +293,7 @@ impl ModuleBacktrace for JsStackTrace {
 pub(super) struct JsStackTraceFrame {
     line: usize,
     column: usize,
+    #[allow(dead_code)]
     script_id: usize,
     script_name: Option<String>,
     fn_name: Option<String>,
