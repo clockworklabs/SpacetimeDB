@@ -1,6 +1,7 @@
 // STDB module used for benchmarks based on "realistic" workloads we are focusing in improving.
 
 import { blackBox } from './load';
+import { spacetimedb, type Position, } from './schema';
 import {
     schema,
     table,
@@ -8,25 +9,6 @@ import {
     type InferTypeOfRow,
 } from 'spacetimedb/server';
 
-
-const velocity = t.row("velocity", {
-    entity_id: t.u32().primaryKey(),
-    x: t.f32(),
-    y: t.f32(),
-    z: t.f32(),
-});
-type Velocity = InferTypeOfRow<typeof velocity>;
-
-const position = t.row("position", {
-    entity_id: t.u32().primaryKey(),
-    x: t.f32(),
-    y: t.f32(),
-    z: t.f32(),
-    vx: t.f32(),
-    vy: t.f32(),
-    vz: t.f32(),
-});
-type Position = InferTypeOfRow<typeof position>;
 
 function newPosition(entity_id: number, x: number, y: number, z: number): Position {
     return {
@@ -43,101 +25,6 @@ function newPosition(entity_id: number, x: number, y: number, z: number): Positi
 function momentMilliseconds(): bigint {
     return 1n;
 }
-
-const agentAction = t.enum('AgentAction', {
-    Inactive: t.unit(),
-    Idle: t.unit(),
-    Evading: t.unit(),
-    Investigating: t.unit(),
-    Retreating: t.unit(),
-    Fighting: t.unit(),
-});
-type AgentAction = Infer<typeof agentAction>;
-
-const gameEnemyAiAgentState = t.row({
-    entity_id: t.u64().primaryKey(),
-    last_move_timestamps: t.array(t.u64()),
-    next_action_timestamp: t.u64(),
-    action: agentAction,
-});
-type GameEnemyAiAgentState = Infer<typeof gameEnemyAiAgentState>;
-
-const gameTargetableState = t.row({
-    entity_id: t.u64().primaryKey(),
-    quad: t.i64(),
-});
-type GameTargetableState = Infer<typeof gameTargetableState>;
-
-const gameLiveTargetableState = t.row({
-    entity_id: t.u64().unique(),
-    quad: t.i64().index('btree'),
-});
-type GameLiveTargetableState = Infer<typeof GameLiveTargetableState>;
-
-const gameMobileEntityState = t.row({
-    entity_id: t.u64().primaryKey(),
-    location_x: t.i32().index('btree'),
-    location_y: t.i32(),
-    timestamp: t.u64(),
-});
-type GameMobileEntityState = Infer<typeof gameMobileEntityState>;
-
-const gameEnemyState = t.row({
-    entity_id: t.u64().primaryKey(),
-    herd_id: t.i32(),
-});
-type GameEnemyState = Infer<typeof gameEnemyState>;
-
-const smallHexTile = t.object('SmallHexTile', {
-    x: t.i32(),
-    z: t.i32(),
-    dimension: t.u32(),
-});
-type SmallHexTile = Infer<typeof smallHexTile>;
-
-const gameHerdCache = t.row({
-    id: t.i32().primaryKey(),
-    dimension_id: t.u32(),
-    current_population: t.i32(),
-    location: smallHexTile,
-    max_population: t.i32(),
-    spawn_eagerness: t.f32(),
-    roaming_distance: t.i32(),
-});
-type GameHerdCache = Infer<typeof gameHerdCache>;
-
-export const velocityTable = table({ name: 'velocity' }, velocity);
-export const positionTable = table({ name: 'position' }, position);
-export const gameEnemyAiAgentStateTable = table(
-    {
-        name: 'game_enemy_ai_agent_state',
-    },
-    gameEnemyAiAgentState,
-);
-export const gameTargetableStateTable = table(
-    {
-        name: 'game_targetable_state',
-    },
-    gameTargetableState,
-);
-export const gameLiveTargetableStateTable = table(
-    {
-        name: 'game_live_targetable_state',
-    },
-    gameLiveTargetableState,
-);
-export const gameEnemyStateTable = table(
-    {
-        name: 'game_enemy_state',
-    },
-    gameEnemyState,
-);
-export const gameHerdCacheTable = table(
-    {
-        name: 'game_herd_cache',
-    },
-    gameHerdCache,
-);
 
 function calculateHash(t: number): number {
     // Whatever, here's a hash function I guess.

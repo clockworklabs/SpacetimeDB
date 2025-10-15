@@ -1,29 +1,11 @@
 //! STDB module used for benchmarks based on "realistic" workloads we are focusing in improving.
 
 import { type Load, newLoad, blackBox } from './load';
+import { spacetimedb, type Entity, type Circle, type Food } from './schema';
 import { Timestamp } from 'spacetimedb';
 import {
-  schema,
-  table,
-  t,
-  type Infer,
-  type InferTypeOfRow,
+  t
 } from 'spacetimedb/server';
-
-// ---------- schemas ----------
-
-const vector2 = t.object("Vector2", {
-  x: t.f32(),
-  y: t.f32(),
-});
-type Vector2 = Infer<typeof vector2>;
-
-const entityRow = t.row("Entity", {
-  id: t.u32().primaryKey().autoInc(),
-  position: vector2,
-  mass: t.u32(),
-});
-type Entity = InferTypeOfRow<typeof entityRow>;
 
 function newEntity(id: number, x: number, y: number, mass: number): Entity {
   return {
@@ -32,15 +14,6 @@ function newEntity(id: number, x: number, y: number, mass: number): Entity {
     mass,
   };
 }
-
-const circleRow = t.row("Circle", {
-  entity_id: t.u32().primaryKey(),
-  player_id: t.u32().index("btree"),
-  direction: vector2,
-  magnitude: t.f32(),
-  last_split_time: t.timestamp()
-});
-type Circle = InferTypeOfRow<typeof circleRow>;
 
 function newCircle(entity_id: number, player_id: number, x: number, y: number, magnitude: number, last_split_time: Timestamp): Circle {
   return {
@@ -52,20 +25,11 @@ function newCircle(entity_id: number, player_id: number, x: number, y: number, m
   };
 }
 
-const foodRow = t.row("Food", {
-  entity_id: t.u32().primaryKey(),
-});
-type Food = InferTypeOfRow<typeof foodRow>;
-
 function newFood(entity_id: number): Food {
   return {
     entity_id,
   };
 }
-
-export const entityTable = table({ name: 'entity' }, entityRow);
-export const circleTable = table({ name: 'circle' }, circleRow);
-export const foodTable = table({ name: 'food' }, foodRow);
 
 function massToRadius(mass: number): number {
   return Math.sqrt(mass);
