@@ -10,3 +10,4 @@ bump-versions = "run -p upgrade-version --"
 # I (@bfops) tried a variety of other link options besides switching linkers, but this
 # seems to be the only thing that worked.
 linker = "lld-link"
+rustflags = ["-Ctarget-feature=+crt-static"]
