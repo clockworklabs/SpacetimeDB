@@ -23,6 +23,8 @@ use tracing::instrument;
 
 use crate::{Durability, DurableOffset, History, TxOffset};
 
+pub use spacetimedb_commitlog::repo::OnNewSegmentFn;
+
 /// [`Local`] configuration.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
@@ -81,10 +83,18 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     /// The `root` directory must already exist.
     ///
     /// Background tasks are spawned onto the provided tokio runtime.
-    pub fn open(root: CommitLogDir, rt: tokio::runtime::Handle, opts: Options) -> io::Result<Self> {
+    ///
+    /// We will send a message down the `on_new_segment` channel whenever we begin a new commitlog segment.
+    /// This is used to capture a snapshot each new segment.
+    pub fn open(
+        root: CommitLogDir,
+        rt: tokio::runtime::Handle,
+        opts: Options,
+        on_new_segment: Option<Arc<OnNewSegmentFn>>,
+    ) -> io::Result<Self> {
         info!("open local durability");
 
-        let clog = Arc::new(Commitlog::open(root, opts.commitlog)?);
+        let clog = Arc::new(Commitlog::open(root, opts.commitlog, on_new_segment)?);
         let (queue, rx) = mpsc::unbounded_channel();
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());

@@ -9,22 +9,18 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { ConnectionId } from '../src';
 import { Timestamp } from '../src';
 import { TimeDuration } from '../src';
-import { AlgebraicType } from '../src';
-import { BinaryWriter } from '../src';
 import * as ws from '../src/sdk/client_api';
 import type { ReducerEvent } from '../src/sdk/db_connection_impl';
 import { Identity } from '../src';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
-
-const anIdentity = Identity.fromString(
-  '0000000000000000000000000000000000000000000000000000000000000069'
-);
-const bobIdentity = Identity.fromString(
-  '0000000000000000000000000000000000000000000000000000000000000b0b'
-);
-const sallyIdentity = Identity.fromString(
-  '000000000000000000000000000000000000000000000000000000000006a111'
-);
+import {
+  anIdentity,
+  bobIdentity,
+  encodeCreatePlayerArgs,
+  encodePlayer,
+  encodeUser,
+  sallyIdentity,
+} from './utils';
 
 class Deferred<T> {
   #isResolved: boolean = false;
@@ -68,25 +64,6 @@ class Deferred<T> {
 }
 
 beforeEach(() => {});
-
-function encodePlayer(value: Player): Uint8Array {
-  const writer = new BinaryWriter(1024);
-  Player.serialize(writer, value);
-  return writer.getBuffer();
-}
-
-function encodeUser(value: User): Uint8Array {
-  const writer = new BinaryWriter(1024);
-  User.serialize(writer, value);
-  return writer.getBuffer();
-}
-
-function encodeCreatePlayerArgs(name: string, location: Point): Uint8Array {
-  const writer = new BinaryWriter(1024);
-  AlgebraicType.serializeValue(writer, AlgebraicType.String, name);
-  Point.serialize(writer, location);
-  return writer.getBuffer();
-}
 
 describe('DbConnection', () => {
   test('call onConnectError callback after websocket connection failed to be established', async () => {

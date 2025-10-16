@@ -36,6 +36,8 @@ import {
 export type AddPlayer = {
   name: string,
 };
+let _cached_AddPlayer_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -45,11 +47,12 @@ export const AddPlayer = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_AddPlayer_type_value) return _cached_AddPlayer_type_value;
+    _cached_AddPlayer_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_AddPlayer_type_value.value.elements.push(
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_AddPlayer_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: AddPlayer): void {
@@ -99,6 +102,8 @@ import {
 export type AddPrivate = {
   name: string,
 };
+let _cached_AddPrivate_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -108,11 +113,12 @@ export const AddPrivate = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_AddPrivate_type_value) return _cached_AddPrivate_type_value;
+    _cached_AddPrivate_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_AddPrivate_type_value.value.elements.push(
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_AddPrivate_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: AddPrivate): void {
@@ -163,6 +169,8 @@ export type Add = {
   name: string,
   age: number,
 };
+let _cached_Add_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -172,12 +180,13 @@ export const Add = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-        { name: "age", algebraicType: __AlgebraicTypeValue.U8},
-      ]
-    });
+    if (_cached_Add_type_value) return _cached_Add_type_value;
+    _cached_Add_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Add_type_value.value.elements.push(
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+      { name: "age", algebraicType: __AlgebraicTypeValue.U8 },
+    );
+    return _cached_Add_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Add): void {
@@ -225,6 +234,8 @@ import {
 } from "spacetimedb";
 
 export type AssertCallerIdentityIsModuleIdentity = {};
+let _cached_AssertCallerIdentityIsModuleIdentity_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -234,10 +245,11 @@ export const AssertCallerIdentityIsModuleIdentity = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_AssertCallerIdentityIsModuleIdentity_type_value) return _cached_AssertCallerIdentityIsModuleIdentity_type_value;
+    _cached_AssertCallerIdentityIsModuleIdentity_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_AssertCallerIdentityIsModuleIdentity_type_value.value.elements.push(
+    );
+    return _cached_AssertCallerIdentityIsModuleIdentity_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: AssertCallerIdentityIsModuleIdentity): void {
@@ -287,6 +299,8 @@ import {
 export type Baz = {
   field: string,
 };
+let _cached_Baz_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -296,11 +310,12 @@ export const Baz = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "field", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_Baz_type_value) return _cached_Baz_type_value;
+    _cached_Baz_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Baz_type_value.value.elements.push(
+      { name: "field", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_Baz_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Baz): void {
@@ -349,6 +364,8 @@ import {
 } from "spacetimedb";
 
 export type ClientConnected = {};
+let _cached_ClientConnected_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -358,10 +375,11 @@ export const ClientConnected = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_ClientConnected_type_value) return _cached_ClientConnected_type_value;
+    _cached_ClientConnected_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_ClientConnected_type_value.value.elements.push(
+    );
+    return _cached_ClientConnected_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: ClientConnected): void {
@@ -411,6 +429,8 @@ import {
 export type DeletePlayer = {
   id: bigint,
 };
+let _cached_DeletePlayer_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -420,11 +440,12 @@ export const DeletePlayer = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "id", algebraicType: __AlgebraicTypeValue.U64},
-      ]
-    });
+    if (_cached_DeletePlayer_type_value) return _cached_DeletePlayer_type_value;
+    _cached_DeletePlayer_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_DeletePlayer_type_value.value.elements.push(
+      { name: "id", algebraicType: __AlgebraicTypeValue.U64 },
+    );
+    return _cached_DeletePlayer_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: DeletePlayer): void {
@@ -474,6 +495,8 @@ import {
 export type DeletePlayersByName = {
   name: string,
 };
+let _cached_DeletePlayersByName_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -483,11 +506,12 @@ export const DeletePlayersByName = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_DeletePlayersByName_type_value) return _cached_DeletePlayersByName_type_value;
+    _cached_DeletePlayersByName_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_DeletePlayersByName_type_value.value.elements.push(
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_DeletePlayersByName_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: DeletePlayersByName): void {
@@ -544,6 +568,8 @@ export type Foobar = FoobarVariants.Baz |
   FoobarVariants.Bar |
   FoobarVariants.Har;
 
+let _cached_Foobar_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const Foobar = {
   // Helper functions for constructing each variant of the tagged union.
@@ -552,18 +578,19 @@ export const Foobar = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  Baz: (value: Baz): Foobar => ({ tag: "Baz", value }),
+  Baz: (value: Baz): FoobarVariants.Baz => ({ tag: "Baz", value }),
   Bar: { tag: "Bar" } as const,
-  Har: (value: number): Foobar => ({ tag: "Har", value }),
+  Har: (value: number): FoobarVariants.Har => ({ tag: "Har", value }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        { name: "Baz", algebraicType: Baz.getTypeScriptAlgebraicType() },
-        { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
-        { name: "Har", algebraicType: __AlgebraicTypeValue.U32 },
-      ]
-    });
+    if (_cached_Foobar_type_value) return _cached_Foobar_type_value;
+    _cached_Foobar_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
+    _cached_Foobar_type_value.value.variants.push(
+      { name: "Baz", algebraicType: Baz.getTypeScriptAlgebraicType() },
+      { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+      { name: "Har", algebraicType: __AlgebraicTypeValue.U32 },
+    );
+    return _cached_Foobar_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Foobar): void {
@@ -733,6 +760,8 @@ export type HasSpecialStuff = {
   identity: __Identity,
   connectionId: __ConnectionId,
 };
+let _cached_HasSpecialStuff_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -742,12 +771,13 @@ export const HasSpecialStuff = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "identity", algebraicType: __AlgebraicTypeValue.createIdentityType()},
-        { name: "connectionId", algebraicType: __AlgebraicTypeValue.createConnectionIdType()},
-      ]
-    });
+    if (_cached_HasSpecialStuff_type_value) return _cached_HasSpecialStuff_type_value;
+    _cached_HasSpecialStuff_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_HasSpecialStuff_type_value.value.elements.push(
+      { name: "identity", algebraicType: __AlgebraicTypeValue.createIdentityType() },
+      { name: "connectionId", algebraicType: __AlgebraicTypeValue.createConnectionIdType() },
+    );
+    return _cached_HasSpecialStuff_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: HasSpecialStuff): void {
@@ -1454,6 +1484,8 @@ import {
 export type ListOverAge = {
   age: number,
 };
+let _cached_ListOverAge_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -1463,11 +1495,12 @@ export const ListOverAge = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "age", algebraicType: __AlgebraicTypeValue.U8},
-      ]
-    });
+    if (_cached_ListOverAge_type_value) return _cached_ListOverAge_type_value;
+    _cached_ListOverAge_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_ListOverAge_type_value.value.elements.push(
+      { name: "age", algebraicType: __AlgebraicTypeValue.U8 },
+    );
+    return _cached_ListOverAge_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: ListOverAge): void {
@@ -1515,6 +1548,8 @@ import {
 } from "spacetimedb";
 
 export type LogModuleIdentity = {};
+let _cached_LogModuleIdentity_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -1524,10 +1559,11 @@ export const LogModuleIdentity = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_LogModuleIdentity_type_value) return _cached_LogModuleIdentity_type_value;
+    _cached_LogModuleIdentity_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_LogModuleIdentity_type_value.value.elements.push(
+    );
+    return _cached_LogModuleIdentity_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: LogModuleIdentity): void {
@@ -1731,6 +1767,8 @@ import * as NamespaceTestCVariants from './namespace_test_c_variants'
 export type NamespaceTestC = NamespaceTestCVariants.Foo |
   NamespaceTestCVariants.Bar;
 
+let _cached_NamespaceTestC_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const NamespaceTestC = {
   // Helper functions for constructing each variant of the tagged union.
@@ -1743,12 +1781,13 @@ export const NamespaceTestC = {
   Bar: { tag: "Bar" } as const,
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        { name: "Foo", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
-        { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
-      ]
-    });
+    if (_cached_NamespaceTestC_type_value) return _cached_NamespaceTestC_type_value;
+    _cached_NamespaceTestC_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
+    _cached_NamespaceTestC_type_value.value.variants.push(
+      { name: "Foo", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+      { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+    );
+    return _cached_NamespaceTestC_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: NamespaceTestC): void {
@@ -1837,6 +1876,8 @@ export type NamespaceTestF = NamespaceTestFVariants.Foo |
   NamespaceTestFVariants.Bar |
   NamespaceTestFVariants.Baz;
 
+let _cached_NamespaceTestF_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const NamespaceTestF = {
   // Helper functions for constructing each variant of the tagged union.
@@ -1847,16 +1888,17 @@ export const NamespaceTestF = {
   // ```
   Foo: { tag: "Foo" } as const,
   Bar: { tag: "Bar" } as const,
-  Baz: (value: string): NamespaceTestF => ({ tag: "Baz", value }),
+  Baz: (value: string): NamespaceTestFVariants.Baz => ({ tag: "Baz", value }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        { name: "Foo", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
-        { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
-        { name: "Baz", algebraicType: __AlgebraicTypeValue.String },
-      ]
-    });
+    if (_cached_NamespaceTestF_type_value) return _cached_NamespaceTestF_type_value;
+    _cached_NamespaceTestF_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
+    _cached_NamespaceTestF_type_value.value.variants.push(
+      { name: "Foo", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+      { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+      { name: "Baz", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_NamespaceTestF_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: NamespaceTestF): void {
@@ -2053,6 +2095,8 @@ export type Person = {
   name: string,
   age: number,
 };
+let _cached_Person_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2062,13 +2106,14 @@ export const Person = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "id", algebraicType: __AlgebraicTypeValue.U32},
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-        { name: "age", algebraicType: __AlgebraicTypeValue.U8},
-      ]
-    });
+    if (_cached_Person_type_value) return _cached_Person_type_value;
+    _cached_Person_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Person_type_value.value.elements.push(
+      { name: "id", algebraicType: __AlgebraicTypeValue.U32 },
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+      { name: "age", algebraicType: __AlgebraicTypeValue.U8 },
+    );
+    return _cached_Person_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Person): void {
@@ -2250,6 +2295,8 @@ export type PkMultiIdentity = {
   id: number,
   other: number,
 };
+let _cached_PkMultiIdentity_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2259,12 +2306,13 @@ export const PkMultiIdentity = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "id", algebraicType: __AlgebraicTypeValue.U32},
-        { name: "other", algebraicType: __AlgebraicTypeValue.U32},
-      ]
-    });
+    if (_cached_PkMultiIdentity_type_value) return _cached_PkMultiIdentity_type_value;
+    _cached_PkMultiIdentity_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_PkMultiIdentity_type_value.value.elements.push(
+      { name: "id", algebraicType: __AlgebraicTypeValue.U32 },
+      { name: "other", algebraicType: __AlgebraicTypeValue.U32 },
+    );
+    return _cached_PkMultiIdentity_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: PkMultiIdentity): void {
@@ -2469,6 +2517,8 @@ export type Player = {
   playerId: bigint,
   name: string,
 };
+let _cached_Player_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2478,13 +2528,14 @@ export const Player = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "identity", algebraicType: __AlgebraicTypeValue.createIdentityType()},
-        { name: "playerId", algebraicType: __AlgebraicTypeValue.U64},
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_Player_type_value) return _cached_Player_type_value;
+    _cached_Player_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Player_type_value.value.elements.push(
+      { name: "identity", algebraicType: __AlgebraicTypeValue.createIdentityType() },
+      { name: "playerId", algebraicType: __AlgebraicTypeValue.U64 },
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_Player_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Player): void {
@@ -2536,6 +2587,8 @@ export type Point = {
   x: bigint,
   y: bigint,
 };
+let _cached_Point_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2545,12 +2598,13 @@ export const Point = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "x", algebraicType: __AlgebraicTypeValue.I64},
-        { name: "y", algebraicType: __AlgebraicTypeValue.I64},
-      ]
-    });
+    if (_cached_Point_type_value) return _cached_Point_type_value;
+    _cached_Point_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Point_type_value.value.elements.push(
+      { name: "x", algebraicType: __AlgebraicTypeValue.I64 },
+      { name: "y", algebraicType: __AlgebraicTypeValue.I64 },
+    );
+    return _cached_Point_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Point): void {
@@ -2757,6 +2811,8 @@ import {
 export type PrivateTable = {
   name: string,
 };
+let _cached_PrivateTable_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2766,11 +2822,12 @@ export const PrivateTable = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_PrivateTable_type_value) return _cached_PrivateTable_type_value;
+    _cached_PrivateTable_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_PrivateTable_type_value.value.elements.push(
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_PrivateTable_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: PrivateTable): void {
@@ -2819,6 +2876,8 @@ import {
 } from "spacetimedb";
 
 export type QueryPrivate = {};
+let _cached_QueryPrivate_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2828,10 +2887,11 @@ export const QueryPrivate = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_QueryPrivate_type_value) return _cached_QueryPrivate_type_value;
+    _cached_QueryPrivate_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_QueryPrivate_type_value.value.elements.push(
+    );
+    return _cached_QueryPrivate_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: QueryPrivate): void {
@@ -2991,6 +3051,8 @@ export type RepeatingTestArg = {
   scheduledAt: { tag: "Interval", value: __TimeDuration } | { tag: "Time", value: __Timestamp },
   prevTime: __Timestamp,
 };
+let _cached_RepeatingTestArg_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3000,13 +3062,14 @@ export const RepeatingTestArg = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "scheduledId", algebraicType: __AlgebraicTypeValue.U64},
-        { name: "scheduledAt", algebraicType: __AlgebraicTypeValue.createScheduleAtType()},
-        { name: "prevTime", algebraicType: __AlgebraicTypeValue.createTimestampType()},
-      ]
-    });
+    if (_cached_RepeatingTestArg_type_value) return _cached_RepeatingTestArg_type_value;
+    _cached_RepeatingTestArg_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_RepeatingTestArg_type_value.value.elements.push(
+      { name: "scheduledId", algebraicType: __AlgebraicTypeValue.U64 },
+      { name: "scheduledAt", algebraicType: __AlgebraicTypeValue.createScheduleAtType() },
+      { name: "prevTime", algebraicType: __AlgebraicTypeValue.createTimestampType() },
+    );
+    return _cached_RepeatingTestArg_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RepeatingTestArg): void {
@@ -3061,6 +3124,8 @@ declare type __keep_RepeatingTestArg = RepeatingTestArg;
 export type RepeatingTest = {
   arg: RepeatingTestArg,
 };
+let _cached_RepeatingTest_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3070,11 +3135,12 @@ export const RepeatingTest = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "arg", algebraicType: RepeatingTestArg.getTypeScriptAlgebraicType()},
-      ]
-    });
+    if (_cached_RepeatingTest_type_value) return _cached_RepeatingTest_type_value;
+    _cached_RepeatingTest_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_RepeatingTest_type_value.value.elements.push(
+      { name: "arg", algebraicType: RepeatingTestArg.getTypeScriptAlgebraicType() },
+    );
+    return _cached_RepeatingTest_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RepeatingTest): void {
@@ -3122,6 +3188,8 @@ import {
 } from "spacetimedb";
 
 export type SayHello = {};
+let _cached_SayHello_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3131,10 +3199,11 @@ export const SayHello = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_SayHello_type_value) return _cached_SayHello_type_value;
+    _cached_SayHello_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_SayHello_type_value.value.elements.push(
+    );
+    return _cached_SayHello_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: SayHello): void {
@@ -3264,6 +3333,8 @@ export type TestA = {
   y: number,
   z: string,
 };
+let _cached_TestA_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3273,13 +3344,14 @@ export const TestA = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "x", algebraicType: __AlgebraicTypeValue.U32},
-        { name: "y", algebraicType: __AlgebraicTypeValue.U32},
-        { name: "z", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_TestA_type_value) return _cached_TestA_type_value;
+    _cached_TestA_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestA_type_value.value.elements.push(
+      { name: "x", algebraicType: __AlgebraicTypeValue.U32 },
+      { name: "y", algebraicType: __AlgebraicTypeValue.U32 },
+      { name: "z", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_TestA_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestA): void {
@@ -3330,6 +3402,8 @@ import {
 export type TestB = {
   foo: string,
 };
+let _cached_TestB_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3339,11 +3413,12 @@ export const TestB = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "foo", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_TestB_type_value) return _cached_TestB_type_value;
+    _cached_TestB_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestB_type_value.value.elements.push(
+      { name: "foo", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_TestB_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestB): void {
@@ -3392,6 +3467,8 @@ import {
 } from "spacetimedb";
 
 export type TestBtreeIndexArgs = {};
+let _cached_TestBtreeIndexArgs_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3401,10 +3478,11 @@ export const TestBtreeIndexArgs = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_TestBtreeIndexArgs_type_value) return _cached_TestBtreeIndexArgs_type_value;
+    _cached_TestBtreeIndexArgs_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestBtreeIndexArgs_type_value.value.elements.push(
+    );
+    return _cached_TestBtreeIndexArgs_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestBtreeIndexArgs): void {
@@ -3540,6 +3618,8 @@ declare type __keep_NamespaceTestC = NamespaceTestC;
 export type TestD = {
   testC: NamespaceTestC | undefined,
 };
+let _cached_TestD_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3549,11 +3629,12 @@ export const TestD = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "testC", algebraicType: __AlgebraicTypeValue.createOptionType(NamespaceTestC.getTypeScriptAlgebraicType())},
-      ]
-    });
+    if (_cached_TestD_type_value) return _cached_TestD_type_value;
+    _cached_TestD_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestD_type_value.value.elements.push(
+      { name: "testC", algebraicType: __AlgebraicTypeValue.createOptionType(NamespaceTestC.getTypeScriptAlgebraicType()) },
+    );
+    return _cached_TestD_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestD): void {
@@ -3713,6 +3794,8 @@ export type TestE = {
   id: bigint,
   name: string,
 };
+let _cached_TestE_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3722,12 +3805,13 @@ export const TestE = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "id", algebraicType: __AlgebraicTypeValue.U64},
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_TestE_type_value) return _cached_TestE_type_value;
+    _cached_TestE_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestE_type_value.value.elements.push(
+      { name: "id", algebraicType: __AlgebraicTypeValue.U64 },
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_TestE_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestE): void {
@@ -3864,6 +3948,8 @@ declare type __keep_Foobar = Foobar;
 export type TestFoobar = {
   field: Foobar,
 };
+let _cached_TestFoobar_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3873,11 +3959,12 @@ export const TestFoobar = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "field", algebraicType: Foobar.getTypeScriptAlgebraicType()},
-      ]
-    });
+    if (_cached_TestFoobar_type_value) return _cached_TestFoobar_type_value;
+    _cached_TestFoobar_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestFoobar_type_value.value.elements.push(
+      { name: "field", algebraicType: Foobar.getTypeScriptAlgebraicType() },
+    );
+    return _cached_TestFoobar_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestFoobar): void {
@@ -3944,6 +4031,8 @@ export type Test = {
   arg3: NamespaceTestC,
   arg4: NamespaceTestF,
 };
+let _cached_Test_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3953,14 +4042,15 @@ export const Test = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "arg", algebraicType: TestA.getTypeScriptAlgebraicType()},
-        { name: "arg2", algebraicType: TestB.getTypeScriptAlgebraicType()},
-        { name: "arg3", algebraicType: NamespaceTestC.getTypeScriptAlgebraicType()},
-        { name: "arg4", algebraicType: NamespaceTestF.getTypeScriptAlgebraicType()},
-      ]
-    });
+    if (_cached_Test_type_value) return _cached_Test_type_value;
+    _cached_Test_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Test_type_value.value.elements.push(
+      { name: "arg", algebraicType: TestA.getTypeScriptAlgebraicType() },
+      { name: "arg2", algebraicType: TestB.getTypeScriptAlgebraicType() },
+      { name: "arg3", algebraicType: NamespaceTestC.getTypeScriptAlgebraicType() },
+      { name: "arg4", algebraicType: NamespaceTestF.getTypeScriptAlgebraicType() },
+    );
+    return _cached_Test_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Test): void {

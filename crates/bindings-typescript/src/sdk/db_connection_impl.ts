@@ -302,8 +302,7 @@ export class DbConnectionImpl<
       const rowType = this.#remoteModule.tables[tableName]!.rowType;
       const primaryKeyInfo =
         this.#remoteModule.tables[tableName]!.primaryKeyInfo;
-      while (reader.offset < buffer.length + buffer.byteOffset) {
-        const initialOffset = reader.offset;
+      while (reader.remaining > 0) {
         const row = AlgebraicType.deserializeValue(reader, rowType);
         let rowId: ComparablePrimitive | undefined = undefined;
         if (primaryKeyInfo !== undefined) {
@@ -313,10 +312,7 @@ export class DbConnectionImpl<
           );
         } else {
           // Get a view of the bytes for this row.
-          const rowBytes = buffer.subarray(
-            initialOffset - buffer.byteOffset,
-            reader.offset - buffer.byteOffset
-          );
+          const rowBytes = buffer.subarray(0, reader.offset);
           // Convert it to a base64 string, so we can use it as a map key.
           const asBase64 = fromByteArray(rowBytes);
           rowId = asBase64;
