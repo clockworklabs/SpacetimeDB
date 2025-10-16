@@ -85,6 +85,16 @@ Tables and reducers can use any types built with `t.*` (e.g., `t.string()`, `t.i
 
 Publishing bundles your code into a JavaScript bundle, and creates a database and installs your bundle in that database. The CLI outputs the database’s **name** and **Identity** (a hex string). Save this identity for administration tasks like `spacetime logs <DATABASE_NAME>`.
 
+> IMPORTANT! In order to build and publish your module, you must have a `src/index.ts` file in your project. If you have multiple files that define reducers, you must import them from that file. e.g.
+> 
+> ```ts
+> import "./schema";
+> import "./my_reducers";
+> import "./my_other_reducers";
+> ```
+>
+> This ensures that those files are included in the bundle.
+
 Re-publishing updates your module in place with [automatic migrations](#automatic-migrations) where possible:
 
 ```bash
