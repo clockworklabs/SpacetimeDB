@@ -525,7 +525,7 @@ SpacetimeDB provides a lightweight, high-performance logging system modeled afte
 Logs are visible only to the database owner and can be viewed via the CLI:
 
 ```bash
-spacetime logs <DATABASE_IDENTITY>
+spacetime logs <DATABASE_NAME>
 ```
 
 Client applications cannot access logs, they are private to your database instance.
