@@ -31,6 +31,8 @@ import {
 export type QueryId = {
   id: number;
 };
+let _cached_QueryId_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -40,9 +42,13 @@ export const QueryId = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [{ name: 'id', algebraicType: __AlgebraicTypeValue.U32 }],
+    if (_cached_QueryId_type_value) return _cached_QueryId_type_value;
+    _cached_QueryId_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_QueryId_type_value.value.elements.push({
+      name: 'id',
+      algebraicType: __AlgebraicTypeValue.U32,
     });
+    return _cached_QueryId_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: QueryId): void {

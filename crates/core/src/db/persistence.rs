@@ -132,12 +132,12 @@ impl PersistenceProvider for LocalPersistenceProvider {
         let commitlog_dir = replica_dir.commit_log();
         let snapshot_dir = replica_dir.snapshots();
 
-        let (durability, disk_size) = relational_db::local_durability(commitlog_dir).await?;
         let database_identity = database.database_identity;
         let snapshot_worker =
             asyncify(move || relational_db::open_snapshot_repo(snapshot_dir, database_identity, replica_id))
                 .await
                 .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Enabled))?;
+        let (durability, disk_size) = relational_db::local_durability(commitlog_dir, Some(&snapshot_worker)).await?;
 
         tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
             snapshot_worker.subscribe(),

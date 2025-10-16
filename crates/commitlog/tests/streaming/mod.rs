@@ -193,7 +193,7 @@ fn default_options() -> Options {
 
 async fn fill_log(path: PathBuf) {
     spawn_blocking(move || {
-        let clog = Commitlog::open(CommitLogDir::from_path_unchecked(path), default_options()).unwrap();
+        let clog = Commitlog::open(CommitLogDir::from_path_unchecked(path), default_options(), None).unwrap();
         let payload = random_payload::gen_payload();
         for _ in 0..100 {
             clog.append_maybe_flush(payload).unwrap();
@@ -211,12 +211,12 @@ async fn create_writer(path: PathBuf) -> io::Result<StreamWriter<repo::Fs>> {
 }
 
 fn repo(at: &Path) -> repo::Fs {
-    repo::Fs::new(CommitLogDir::from_path_unchecked(at)).unwrap()
+    repo::Fs::new(CommitLogDir::from_path_unchecked(at), None).unwrap()
 }
 
 fn create_reader(path: &Path, range: impl RangeBounds<u64>) -> impl AsyncBufRead {
     BufReader::new(StreamReader::new(stream::commits(
-        repo::Fs::new(CommitLogDir::from_path_unchecked(path)).unwrap(),
+        repo::Fs::new(CommitLogDir::from_path_unchecked(path), None).unwrap(),
         range,
     )))
 }

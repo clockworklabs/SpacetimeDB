@@ -34,6 +34,8 @@ declare type __keep_TableUpdate = TableUpdate;
 export type DatabaseUpdate = {
   tables: TableUpdate[];
 };
+let _cached_DatabaseUpdate_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -43,16 +45,18 @@ export const DatabaseUpdate = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'tables',
-          algebraicType: __AlgebraicTypeValue.Array(
-            TableUpdate.getTypeScriptAlgebraicType()
-          ),
-        },
-      ],
+    if (_cached_DatabaseUpdate_type_value)
+      return _cached_DatabaseUpdate_type_value;
+    _cached_DatabaseUpdate_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_DatabaseUpdate_type_value.value.elements.push({
+      name: 'tables',
+      algebraicType: __AlgebraicTypeValue.Array(
+        TableUpdate.getTypeScriptAlgebraicType()
+      ),
+    });
+    return _cached_DatabaseUpdate_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: DatabaseUpdate): void {

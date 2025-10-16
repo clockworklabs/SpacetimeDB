@@ -31,7 +31,7 @@ pub fn cli() -> clap::Command {
         )
 }
 
-pub async fn exec(_config: Config, args: &ArgMatches) -> Result<PathBuf, anyhow::Error> {
+pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'static str), anyhow::Error> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let lint_dir = args.get_one::<OsString>("lint_dir").unwrap();
     let lint_dir = if lint_dir.is_empty() {
@@ -56,17 +56,17 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<PathBuf, anyhow:
         ));
     }
 
-    let bin_path = crate::tasks::build(project_path, lint_dir.as_deref(), build_debug)?;
+    let result = crate::tasks::build(project_path, lint_dir.as_deref(), build_debug)?;
     println!("Build finished successfully.");
 
-    Ok(bin_path)
+    Ok(result)
 }
 
 pub async fn exec_with_argstring(
     config: Config,
     project_path: &Path,
     arg_string: &str,
-) -> Result<PathBuf, anyhow::Error> {
+) -> Result<(PathBuf, &'static str), anyhow::Error> {
     // Note: "build" must be the start of the string, because `build::cli()` is the entire build subcommand.
     // If we don't include this, the args will be misinterpreted (e.g. as commands).
     let arg_string = format!("build {} --project-path {}", arg_string, project_path.display());
