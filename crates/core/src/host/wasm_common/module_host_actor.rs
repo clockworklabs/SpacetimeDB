@@ -583,16 +583,16 @@ fn maybe_log_long_running_reducer(reducer_name: &str, total_duration: Duration) 
 }
 
 /// Logs an error `message` for `reducer` at `timestamp` into `replica_ctx`.
-fn log_reducer_error(replica_ctx: &ReplicaContext, timestamp: Timestamp, reducer: &str, message: &str) {
-    use database_logger::Record;
-
-    let record = Record {
-        ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
-        function: Some(reducer),
-        ..Record::injected(message)
-    };
-    replica_ctx.logger.write(database_logger::LogLevel::Error, &record, &());
-}
+//fn log_reducer_error(replica_ctx: &ReplicaContext, timestamp: Timestamp, reducer: &str, message: &str) {
+//    use database_logger::Record;
+//
+//    let record = Record {
+//        ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
+//        function: Some(reducer),
+//        ..Record::injected(message)
+//    };
+//    replica_ctx.logger.write(database_logger::LogLevel::Error, &record, &());
+//}
 
 /*
 /// Detects lifecycle events for connecting/disconnecting a new client
