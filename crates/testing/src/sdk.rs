@@ -294,6 +294,7 @@ fn generate_bindings(
     memoized!(|(client_project, generate_subdir): (String, String)| -> () {
         let mut args: Vec<&str> = vec![
             "generate",
+            "--yes",
             "--lang",
             language,
             match host_type {

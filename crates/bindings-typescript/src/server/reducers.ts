@@ -172,10 +172,11 @@ export function reducer<
  * - `ctx`: The reducer context, providing access to `sender`, `timestamp`, `connection_id`, and `db`.
  */
 export function init<S extends UntypedSchemaDef, Params extends ParamsObj>(
+  name: string,
   params: Params,
   fn: Reducer<S, Params>
 ): void {
-  pushReducer('init', params, fn, Lifecycle.Init);
+  pushReducer(name, params, fn, Lifecycle.Init);
 }
 
 /**
@@ -190,8 +191,8 @@ export function init<S extends UntypedSchemaDef, Params extends ParamsObj>(
 export function clientConnected<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
->(params: Params, fn: Reducer<S, Params>): void {
-  pushReducer('on_connect', params, fn, Lifecycle.OnConnect);
+>(name: string, params: Params, fn: Reducer<S, Params>): void {
+  pushReducer(name, params, fn, Lifecycle.OnConnect);
 }
 
 /**
@@ -216,6 +217,6 @@ export function clientConnected<
 export function clientDisconnected<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
->(params: Params, fn: Reducer<S, Params>): void {
-  pushReducer('on_disconnect', params, fn, Lifecycle.OnDisconnect);
+>(name: string, params: Params, fn: Reducer<S, Params>): void {
+  pushReducer(name, params, fn, Lifecycle.OnDisconnect);
 }

@@ -1182,7 +1182,8 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
   }
 > {
   row: CoerceRow<Row>;
-  constructor(row: Row) {
+  nameProvided: boolean;
+  constructor(row: Row, name?: string) {
     const mappedRow = Object.fromEntries(
       Object.entries(row).map(([name, builder]) => [
         name,
@@ -1197,7 +1198,8 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
       algebraicType: builder.typeBuilder.algebraicType,
     })) as ElementsArrayFromRowObj<Row>;
 
-    super(addType(undefined, AlgebraicType.Product({ elements })));
+    super(addType(name, AlgebraicType.Product({ elements })));
+    this.nameProvided = name != null;
 
     this.row = mappedRow;
   }
@@ -2751,8 +2753,18 @@ export const t = {
    * values must be {@link TypeBuilder}s or {@link ColumnBuilder}s.
    * @returns A new {@link RowBuilder} instance
    */
-  row<Obj extends RowObj>(obj: Obj): RowBuilder<Obj> {
-    return new RowBuilder(obj);
+  row: (<Obj extends RowObj>(
+    nameOrObj: string | Obj,
+    maybeObj?: Obj
+  ): RowBuilder<Obj> => {
+    const [obj, name] =
+      typeof nameOrObj === 'string'
+        ? [maybeObj!, nameOrObj]
+        : [nameOrObj, undefined];
+    return new RowBuilder(obj, name);
+  }) as {
+    <Obj extends RowObj>(obj: Obj): RowBuilder<Obj>;
+    <Obj extends RowObj>(name: string, obj: Obj): RowBuilder<Obj>;
   },
 
   /**

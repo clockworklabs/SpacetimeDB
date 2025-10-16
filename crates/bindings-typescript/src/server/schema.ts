@@ -45,8 +45,8 @@ export function addType<T extends AlgebraicType>(
   ty: T
 ): T | AlgebraicTypeVariants.Ref {
   if (
-    (ty.tag === 'Product' && ty.value.elements.length > 0) ||
-    (ty.tag === 'Sum' && ty.value.variants.length > 0)
+    (ty.tag === 'Product' && (ty.value.elements.length > 0 || name != null)) ||
+    (ty.tag === 'Sum' && (ty.value.variants.length > 0 || name != null))
   ) {
     let r = COMPOUND_TYPES.get(ty);
     if (r == null) {
@@ -214,8 +214,12 @@ class Schema<S extends UntypedSchemaDef> {
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  init(fn: Reducer<S, {}>): void {
-    init({}, fn);
+  init(fn: Reducer<S, {}>): void;
+  init(name: string, fn: Reducer<S, {}>): void;
+  init(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
+    const [name, fn] =
+      typeof nameOrFn === 'string' ? [nameOrFn, maybeFn] : ['init', nameOrFn];
+    init(name, {}, fn);
   }
 
   /**
@@ -235,8 +239,16 @@ class Schema<S extends UntypedSchemaDef> {
    * );
    */
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  clientConnected(fn: Reducer<S, {}>): void {
-    clientConnected({}, fn);
+  clientConnected(fn: Reducer<S, {}>): void;
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  clientConnected(name: string, fn: Reducer<S, {}>): void;
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  clientConnected(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
+    const [name, fn] =
+      typeof nameOrFn === 'string'
+        ? [nameOrFn, maybeFn]
+        : ['on_connect', nameOrFn];
+    clientConnected(name, {}, fn);
   }
 
   /**
@@ -257,8 +269,16 @@ class Schema<S extends UntypedSchemaDef> {
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  clientDisconnected(fn: Reducer<S, {}>): void {
-    clientDisconnected({}, fn);
+  clientDisconnected(fn: Reducer<S, {}>): void;
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  clientDisconnected(name: string, fn: Reducer<S, {}>): void;
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  clientDisconnected(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
+    const [name, fn] =
+      typeof nameOrFn === 'string'
+        ? [nameOrFn, maybeFn]
+        : ['on_disconnect', nameOrFn];
+    clientDisconnected(name, {}, fn);
   }
 
   clientVisibilityFilter = {

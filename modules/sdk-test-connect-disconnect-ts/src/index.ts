@@ -15,10 +15,10 @@ const Disconnected = table(
 
 const spacetimedb = schema(Connected, Disconnected);
 
-spacetimedb.reducer('identity_connected', ctx => {
+spacetimedb.clientConnected('identity_connected', ctx => {
   ctx.db.connected.insert({ identity: ctx.sender });
 });
 
-spacetimedb.reducer('identity_disconnected', ctx => {
+spacetimedb.clientDisconnected('identity_disconnected', ctx => {
   ctx.db.disconnected.insert({ identity: ctx.sender });
 });

@@ -311,11 +311,13 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
   };
 
-  MODULE_DEF.types.push({
-    customOrdering: true,
-    name: splitName(name),
-    ty: row.algebraicType.value as number,
-  });
+  if (!row.nameProvided) {
+    MODULE_DEF.types.push({
+      customOrdering: true,
+      name: splitName(name),
+      ty: row.algebraicType.value as number,
+    });
+  }
 
   const productType = AlgebraicType.Product({
     elements: row.resolveType().value.elements.map(elem => {

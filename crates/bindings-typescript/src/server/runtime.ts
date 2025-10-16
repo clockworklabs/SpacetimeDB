@@ -45,7 +45,8 @@ export const hooks: ModuleHooks = {
     );
     const args = AlgebraicType.deserializeValue(
       new BinaryReader(argsBuf),
-      argsType
+      argsType,
+      MODULE_DEF.typespace
     );
     const ctx: ReducerCtx<any> = freeze({
       sender: new Identity(sender),
@@ -97,7 +98,7 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
     return {
       colName: col.name!,
       read: (reader: BinaryReader) =>
-        AlgebraicType.deserializeValue(reader, colType),
+        AlgebraicType.deserializeValue(reader, colType, typespace),
     };
   });
   const hasAutoIncrement = sequences.length > 0;
@@ -120,7 +121,7 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
     [Symbol.iterator]: () => iter(),
     insert: row => {
       const writer = new BinaryWriter(baseSize);
-      AlgebraicType.serializeValue(writer, rowType, row);
+      AlgebraicType.serializeValue(writer, rowType, row, typespace);
       const ret_buf = sys.datastore_insert_bsatn(table_id, writer.getBuffer());
       const ret = { ...row };
       integrate_generated_columns?.(ret, ret_buf);
@@ -130,7 +131,7 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
     delete: (row: RowType<any>): boolean => {
       const writer = new BinaryWriter(4 + baseSize);
       writer.writeU32(1);
-      AlgebraicType.serializeValue(writer, rowType, row);
+      AlgebraicType.serializeValue(writer, rowType, row, typespace);
       const count = sys.datastore_delete_all_by_eq_bsatn(
         table_id,
         writer.getBuffer()
@@ -163,7 +164,7 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
     const columnSet = new Set(column_ids);
     const isUnique = table.constraints
       .filter(x => x.data.tag === 'Unique')
-      .map(x => columnSet.isSubsetOf(new Set(x.data.value.columns)));
+      .some(x => columnSet.isSubsetOf(new Set(x.data.value.columns)));
 
     const indexType = AlgebraicType.Product({
       elements: column_ids.map(id => rowType.value.elements[id]),
@@ -176,11 +177,11 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
       prefix: any[],
       prefix_elems: number
     ) => {
-      if (prefix.length > numColumns - 1)
+      if (prefix_elems > numColumns - 1)
         throw new TypeError('too many elements in prefix');
       for (let i = 0; i < prefix_elems; i++) {
         const elemType = indexType.value.elements[i].algebraicType;
-        AlgebraicType.serializeValue(writer, elemType, prefix[i]);
+        AlgebraicType.serializeValue(writer, elemType, prefix[i], typespace);
       }
       return writer;
     };
@@ -206,7 +207,8 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
         AlgebraicType.serializeValue(
           writer,
           indexType.value.elements[numColumns - 1].algebraicType,
-          col_val[numColumns - 1]
+          col_val[numColumns - 1],
+          typespace
         );
         const buffer = writer.getBuffer();
         const prefix = buffer.slice(0, rstartOffset);
@@ -240,7 +242,7 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
         },
         update: (row: RowType<any>): RowType<any> => {
           const writer = new BinaryWriter(baseSize);
-          AlgebraicType.serializeValue(writer, rowType, row);
+          AlgebraicType.serializeValue(writer, rowType, row, typespace);
           const ret_buf = sys.datastore_update_bsatn(
             table_id,
             index_id,
@@ -267,7 +269,12 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
             const tags = { included: 0, excluded: 1, unbounded: 2 };
             writer.writeU8(tags[bound.tag]);
             if (bound.tag !== 'unbounded')
-              AlgebraicType.serializeValue(writer, termType, bound.value);
+              AlgebraicType.serializeValue(
+                writer,
+                termType,
+                bound.value,
+                typespace
+              );
           };
           writeBound(term.from);
           const rendOffset = writer.offset;
@@ -276,7 +283,7 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
           rend = writer.getBuffer().slice(rendOffset);
         } else {
           writer.writeU8(0);
-          AlgebraicType.serializeValue(writer, termType, term);
+          AlgebraicType.serializeValue(writer, termType, term, typespace);
           rstart = rend = writer.getBuffer().slice(rstartOffset);
         }
         const buffer = writer.getBuffer();
@@ -303,10 +310,10 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
       } as RangedIndex<any, any>;
     }
 
-    if (Object.hasOwn(tableView, indexDef.name!)) {
-      freeze(Object.assign(tableView[indexDef.name!], index));
+    if (Object.hasOwn(tableView, indexDef.accessorName!)) {
+      freeze(Object.assign(tableView[indexDef.accessorName!], index));
     } else {
-      tableView[indexDef.name!] = freeze(index) as any;
+      tableView[indexDef.accessorName!] = freeze(index) as any;
     }
   }
 
@@ -376,7 +383,11 @@ class TableIterator implements IterableIterator<any, undefined> {
   next(): IteratorResult<any, undefined> {
     while (true) {
       if (this.#reader.remaining > 0) {
-        const value = AlgebraicType.deserializeValue(this.#reader, this.#ty);
+        const value = AlgebraicType.deserializeValue(
+          this.#reader,
+          this.#ty,
+          MODULE_DEF.typespace
+        );
         return { value };
       }
       if (this.#id === -1) {

@@ -769,10 +769,10 @@ const IndexedTable2 = table(
 
 const BTreeU32 = table(
   { name: 'btree_u32', public: true },
-  {
+  t.row('BTreeU32', {
     n: t.u32().index('btree'),
     data: t.i32(),
-  }
+  })
 );
 
 const Users = table(
