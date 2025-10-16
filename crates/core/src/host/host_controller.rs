@@ -768,7 +768,13 @@ impl Host {
                 page_pool.clone(),
             )?,
             db::Storage::Disk => {
-                let (history, _) = relational_db::local_durability(replica_dir.commit_log()).await?;
+                // Open a read-only copy of the local durability to replay from.
+                let (history, _) = relational_db::local_durability(
+                    replica_dir.commit_log(),
+                    // No need to include a snapshot request channel here, 'cause we're only reading from this instance.
+                    None,
+                )
+                .await?;
                 let persistence = persistence.persistence(&database, replica_id).await?;
                 let (db, clients) = RelationalDB::open(
                     &replica_dir,

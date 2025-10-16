@@ -618,7 +618,11 @@ pub mod raw {
         ///
         /// If this function returns an error, `out` is not written.
         pub fn bytes_source_remaining_length(source: BytesSource, out: *mut u32) -> i16;
+    }
 
+    // See comment on previous `extern "C"` block re: ABI version.
+    #[link(wasm_import_module = "spacetime_10.2")]
+    extern "C" {
         /// Finds the JWT payload associated with `connection_id`.
         /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
         /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.

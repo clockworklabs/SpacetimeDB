@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
 #include "ModuleBindings/Optionals/TestClientOptionalInt32.g.h"
-#include "ModuleBindings/Optionals/TestClientOptionalVecInt32.g.h"
+#include "ModuleBindings/Optionals/TestClientOptionalVecOptionalInt32.g.h"
 #include "ModuleBindings/ReducerBase.g.h"
 #include "InsertOptionVecOptionI32.g.generated.h"
 
@@ -16,11 +16,11 @@ struct TESTCLIENT_API FInsertOptionVecOptionI32Args
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    FTestClientOptionalVecInt32 V;
+    FTestClientOptionalVecOptionalInt32 V;
 
     FInsertOptionVecOptionI32Args() = default;
 
-    FInsertOptionVecOptionI32Args(const FTestClientOptionalVecInt32& InV)
+    FInsertOptionVecOptionI32Args(const FTestClientOptionalVecOptionalInt32& InV)
         : V(InV)
     {}
 
@@ -48,7 +48,7 @@ class TESTCLIENT_API UInsertOptionVecOptionI32Reducer : public UReducerBase
 
 public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    FTestClientOptionalVecInt32 V;
+    FTestClientOptionalVecOptionalInt32 V;
 
 };
 
