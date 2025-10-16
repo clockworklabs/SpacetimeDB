@@ -45,7 +45,7 @@ function isOverlapping(entity1: Entity, entity2: Entity): boolean {
   const entity2Radius = massToRadius(entity2.mass);
   const distance = Math.sqrt(
     (entity1.position.x - entity2.position.x) ** 2 +
-      (entity1.position.y - entity2.position.y) ** 2
+    (entity1.position.y - entity2.position.y) ** 2
   );
   return distance < Math.max(entity1Radius, entity2Radius);
 }
@@ -148,7 +148,7 @@ spacetimedb.reducer(
 );
 
 spacetimedb.reducer(
-  'init_game_circles',
+  'run_game_circles',
   { initial_load: t.u32() },
   (ctx, { initial_load }) => {
     const load = newLoad(initial_load);

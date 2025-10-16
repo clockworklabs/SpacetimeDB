@@ -51,7 +51,7 @@ export const unique_0_u32_u64_str_tRow = t.row({
 });
 
 export const no_index_u32_u64_str_tRow = t.row({
-  id: t.u32().unique(),
+  id: t.u32(),
   age: t.u64(),
   name: t.string(),
 });

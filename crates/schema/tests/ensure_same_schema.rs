@@ -69,6 +69,7 @@ macro_rules! declare_tests {
     }
 
 declare_tests! {
+    benchmarks => "benchmarks",
     module_test => "module-test",
     sdk_test_connect_disconnect => "sdk-test-connect-disconnect",
     sdk_test => "sdk-test",
