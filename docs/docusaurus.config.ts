@@ -1,0 +1,149 @@
+import type { Config } from '@docusaurus/types';
+import type * as Preset from '@docusaurus/preset-classic';
+import rehypeShiki, { RehypeShikiOptions } from '@shikijs/rehype';
+import bash from 'shiki/langs/bash.mjs';
+import c from 'shiki/langs/c.mjs';
+import csharp from 'shiki/langs/csharp.mjs';
+import fsharp from 'shiki/langs/fsharp.mjs';
+import json from 'shiki/langs/json.mjs';
+import markdown from 'shiki/langs/markdown.mjs';
+import protobuf from 'shiki/langs/proto.mjs';
+import python from 'shiki/langs/python.mjs';
+import rust from 'shiki/langs/rust.mjs';
+import sql from 'shiki/langs/sql.mjs';
+import toml from 'shiki/langs/toml.mjs';
+import typescript from 'shiki/langs/typescript.mjs';
+import tsx from 'shiki/langs/tsx.mjs';
+import css from 'shiki/langs/css.mjs';
+import nginx from 'shiki/langs/nginx.mjs';
+import systemd from 'shiki/langs/systemd.mjs';
+import ogTheme from 'shiki/themes/dracula.mjs';
+import cpp from 'shiki/langs/cpp.mjs';
+
+// This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
+
+const shikiTheme = {
+  ...ogTheme,
+  name: 'spacetime-dark',
+};
+shikiTheme.colors!['editor.background'] =
+  'var(--clockworklabs-code-background-color)';
+
+const config: Config = {
+  title: 'SpacetimeDB docs',
+  tagline: 'SpacetimeDB',
+  favicon: 'images/favicon.ico',
+
+  url: 'https://docs.spacetimedb.com',
+  baseUrl: '/',
+
+  onBrokenLinks: 'throw',
+  onBrokenAnchors: 'throw',
+  markdown: {
+    hooks: {
+      onBrokenMarkdownImages: 'throw',
+      onBrokenMarkdownLinks: 'throw',
+    },
+  },
+
+  i18n: {
+    defaultLocale: 'en',
+    locales: ['en'],
+  },
+
+  presets: [
+    [
+      'classic',
+      {
+        docs: {
+          routeBasePath: '/',
+          sidebarPath: './sidebars.ts',
+          beforeDefaultRehypePlugins: [
+            [
+              rehypeShiki,
+              {
+                theme: shikiTheme,
+                langs: [
+                  sql,
+                  rust,
+                  csharp,
+                  markdown,
+                  typescript,
+                  bash,
+                  json,
+                  toml,
+                  python,
+                  c,
+                  cpp,
+                  protobuf,
+                  fsharp,
+                  systemd,
+                  tsx,
+                  css,
+                  nginx,
+                ],
+              } satisfies RehypeShikiOptions,
+            ],
+          ],
+        },
+        blog: false,
+        theme: {
+          customCss: './src/css/custom.css',
+        },
+      } satisfies Preset.Options,
+    ],
+  ],
+
+  themeConfig: {
+    navbar: {
+      logo: {
+        alt: 'SpacetimeDB Logo',
+        src: 'https://spacetimedb.com/images/brand.png',
+        href: 'https://spacetimedb.com',
+      },
+      hideOnScroll: false,
+      items: [
+        { type: 'search', position: 'left' },
+        {
+          href: 'https://spacetimedb.com/install',
+          label: 'Install',
+          position: 'right',
+        },
+        {
+          href: 'https://spacetimedb.com/pricing',
+          label: 'Pricing',
+          position: 'right',
+        },
+        {
+          href: 'https://spacetimedb.com/maincloud',
+          label: 'Maincloud',
+          position: 'right',
+        },
+        {
+          href: 'https://spacetimedb.com/blog',
+          label: 'Blog',
+          position: 'right',
+        },
+        {
+          href: 'https://spacetimedb.com/community',
+          label: 'Community',
+          position: 'right',
+        },
+      ],
+    },
+    footer: {},
+    prism: {},
+    colorMode: {
+      disableSwitch: true,
+      defaultMode: 'light',
+    },
+    algolia: {
+      appId: 'QBC7Z9KXS2',
+      apiKey: 'f51e6f1768e1000129f66abc8dd45d55',
+      indexName: 'Docs',
+      contextualSearch: true,
+    },
+  } satisfies Preset.ThemeConfig,
+};
+
+export default config;
