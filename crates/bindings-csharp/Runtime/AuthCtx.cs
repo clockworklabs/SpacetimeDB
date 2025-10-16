@@ -1,5 +1,4 @@
 namespace SpacetimeDB;
-using SpacetimeDB.Internal;
 
 using System;
 
@@ -23,14 +22,13 @@ public sealed class AuthCtx
     }
 
     /// <summary>
-    /// Create an AuthCtx from a raw JWT payload (JSON claims).
+    /// Create an AuthCtx by looking up the credentials for a connection id in system tables.
+    /// TODO: Can we keep this out of the public API?
     /// </summary>
-    private static AuthCtx FromJwtPayload(string jwtPayload, Identity identity)
-    {
-        return new AuthCtx(isInternal: false, jwtFactory: () => new JwtClaims(jwtPayload, identity));
-    }
-
-    private static AuthCtx FromOptionalConnectionId(ConnectionId? connectionId, Identity identity)
+    /// <param name="connectionId"></param>
+    /// <param name="identity"></param>
+    /// <returns></returns>
+    public static AuthCtx FromOptionalConnectionId(ConnectionId? connectionId, Identity identity)
     {
         if (connectionId == null)
         {
@@ -41,7 +39,6 @@ public sealed class AuthCtx
 
     /// <summary>
     /// Create an AuthCtx that reads JWT for a given connection ID.
-    /// Equivalent to Rust's `from_connection_id`.
     /// </summary>
     public static AuthCtx FromConnectionId(ConnectionId connectionId, Identity identity)
     {
@@ -65,7 +62,7 @@ public sealed class AuthCtx
     public bool IsInternal => _isInternal;
 
     /// <summary>
-    /// Check if there is a JWT without loading it.
+    /// Check if there is a JWT present.
     /// If IsInternal is true, this will be false.
     /// </summary>
     public bool HasJwt
