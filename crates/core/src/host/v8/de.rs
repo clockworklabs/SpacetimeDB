@@ -131,6 +131,11 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
     deserialize_primitive!(deserialize_f32, f32);
 
     fn deserialize_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
+        // In `ProductType.serializeValue()` in the TS SDK, null/undefined is accepted for the unit type.
+        if visitor.product_len() == 0 && self.input.is_null_or_undefined() {
+            return visitor.visit_seq_product(de::UnitAccess::new());
+        }
+
         let object = cast!(
             self.common.scope,
             self.input,
@@ -149,6 +154,17 @@ impl<'de, 'this, 'scope: 'de> de::Deserializer<'de> for Deserializer<'this, 'sco
 
     fn deserialize_sum<V: SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
         let scope = &*self.common.scope;
+
+        // In `SumType.serializeValue()` in the TS SDK, option is treated specially -
+        // null/undefined marks none, any other value `x` is `some(x)`.
+        if visitor.is_option() {
+            return if self.input.is_null_or_undefined() {
+                visitor.visit_sum(de::NoneAccess::new())
+            } else {
+                visitor.visit_sum(de::SomeAccess::new(self))
+            };
+        }
+
         let sum_name = visitor.sum_name().unwrap_or("<unknown>");
 
         // We expect a canonical representation of a sum value in JS to be
