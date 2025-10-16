@@ -420,8 +420,7 @@ pub fn create_table_from_view_def(
     module_def: &ModuleDef,
     view_def: &ViewDef,
 ) -> anyhow::Result<()> {
-    let schema = TableSchema::try_from_view_def(module_def, view_def)?;
-    stdb.create_table(tx, schema)
+    stdb.create_view_table(tx, module_def, view_def)
         .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
     Ok(())
 }
