@@ -54,7 +54,6 @@ def _dotnet_add_package(project_path: Path, package_name: str, source_path: Path
             capture_stderr=True)
     run_cmd("dotnet", "add", "package", package_name, cwd=project_path, capture_stderr=True)
 
-
 class BaseQuickstart(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = ""

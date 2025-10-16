@@ -38,6 +38,7 @@ jobs:
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
           cd sdks/csharp
+          dotnet pack SpacetimeDB.ClientSDK.csproj -o ../../nupkgs
           ./tools~/write-nuget-config.sh ../..
 
       - name: Run .NET tests
@@ -126,6 +127,9 @@ jobs:
 
       - name: Run regression tests
         run: |
+          cd sdks/csharp
+          dotnet build
+          cd ../..
           bash sdks/csharp/tools~/run-regression-tests.sh
           tools/check-diff.sh sdks/csharp/examples~/regression-tests || {
               echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
