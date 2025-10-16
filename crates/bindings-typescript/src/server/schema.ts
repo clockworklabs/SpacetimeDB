@@ -215,7 +215,9 @@ class Schema<S extends UntypedSchemaDef> {
    */
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   init(fn: Reducer<S, {}>): void;
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   init(name: string, fn: Reducer<S, {}>): void;
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   init(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
     const [name, fn] =
       typeof nameOrFn === 'string' ? [nameOrFn, maybeFn] : ['init', nameOrFn];
