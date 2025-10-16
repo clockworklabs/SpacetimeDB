@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-#![allow(unused_functions)]
+#![allow(dead_code)]
 
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
