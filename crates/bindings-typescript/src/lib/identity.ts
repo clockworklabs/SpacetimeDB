@@ -1,6 +1,13 @@
 import { AlgebraicType } from './algebraic_type';
 import { hexStringToU256, u256ToHexString, u256ToUint8Array } from './utils';
 
+export type IdentityAlgebraicType = {
+  tag: 'Product';
+  value: {
+    elements: [{ name: '__identity__'; algebraicType: { tag: 'U256' } }];
+  };
+};
+
 /**
  * A unique identifier for a user connected to a database.
  */
@@ -22,7 +29,7 @@ export class Identity {
    * Get the algebraic type representation of the {@link Identity} type.
    * @returns The algebraic type representation of the type.
    */
-  static getAlgebraicType(): AlgebraicType {
+  static getAlgebraicType(): IdentityAlgebraicType {
     return AlgebraicType.Product({
       elements: [{ name: '__identity__', algebraicType: AlgebraicType.U256 }],
     });
@@ -61,5 +68,9 @@ export class Identity {
    */
   static zero(): Identity {
     return new Identity(0n);
+  }
+
+  toString(): string {
+    return this.toHexString();
   }
 }

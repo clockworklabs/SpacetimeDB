@@ -74,6 +74,8 @@ walkdir.workspace = true
 wasmbin.workspace = true
 webbrowser.workspace = true
 clap-markdown.workspace = true
+rolldown.workspace = true
+rolldown_utils.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }

@@ -36,6 +36,8 @@ export type SubscribeSingle = {
   requestId: number;
   queryId: QueryId;
 };
+let _cached_SubscribeSingle_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -45,16 +47,17 @@ export const SubscribeSingle = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'query', algebraicType: __AlgebraicTypeValue.String },
-        { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
-        {
-          name: 'queryId',
-          algebraicType: QueryId.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_SubscribeSingle_type_value)
+      return _cached_SubscribeSingle_type_value;
+    _cached_SubscribeSingle_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_SubscribeSingle_type_value.value.elements.push(
+      { name: 'query', algebraicType: __AlgebraicTypeValue.String },
+      { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
+      { name: 'queryId', algebraicType: QueryId.getTypeScriptAlgebraicType() }
+    );
+    return _cached_SubscribeSingle_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: SubscribeSingle): void {
