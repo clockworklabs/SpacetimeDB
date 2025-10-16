@@ -75,7 +75,6 @@ declare_tests! {
     sdk_test => "sdk-test",
 }
 
-// FIXME: Move `benchmarks => "benchmarks,` back into the macro once `benchmarks-ts` exists
 #[test]
 #[serial]
 fn ensure_same_schema_rust_csharp_benchmarks() {
