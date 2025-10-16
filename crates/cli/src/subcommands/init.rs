@@ -16,6 +16,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("project-path")
                 .value_parser(clap::value_parser!(PathBuf))
+                .default_value(".")
                 .help("The path where we will create the spacetime project"),
         )
         .arg(
@@ -55,11 +56,10 @@ pub fn cli() -> clap::Command {
             Arg::new("local")
                 .long("local")
                 .action(clap::ArgAction::SetTrue)
-                .help("Use local deployment instead of Maincloud (non-interactive mode only)"),
+                .help("Use local deployment instead of Maincloud"),
         )
         .arg(
             Arg::new("non-interactive")
-                .short('y')
                 .long("non-interactive")
                 .action(clap::ArgAction::SetTrue)
                 .help("Run in non-interactive mode with default or provided options"),
