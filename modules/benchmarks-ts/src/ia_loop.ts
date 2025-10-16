@@ -2,10 +2,10 @@
 
 import { blackBox, newLoad } from './load';
 import {
-  GameEnemyAiAgentState,
-  GameTargetableState,
-  S,
-  SmallHexTile,
+  type GameEnemyAiAgentState,
+  type GameTargetableState,
+  type S,
+  type SmallHexTile,
   spacetimedb,
   type Position,
 } from './schema';
@@ -14,8 +14,8 @@ import {
   table,
   t,
   type InferTypeOfRow,
-  ReducerCtx,
-  Reducer,
+  type ReducerCtx,
+  type Reducer,
 } from 'spacetimedb/server';
 
 function newPosition(

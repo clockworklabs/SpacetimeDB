@@ -4,7 +4,7 @@ import {
   t,
   type Infer,
   type InferTypeOfRow,
-  InferSchema,
+  type InferSchema,
 } from 'spacetimedb/server';
 
 // circles:
