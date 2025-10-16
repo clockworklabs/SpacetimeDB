@@ -4,104 +4,104 @@
 #include "ModuleBindings/SpacetimeDBClient.g.h"
 #include "DBCache/WithBsatn.h"
 #include "BSATN/UEBSATNHelpers.h"
-#include "ModuleBindings/Tables/IndexedSimpleEnumTable.g.h"
-#include "ModuleBindings/Tables/OneU128Table.g.h"
-#include "ModuleBindings/Tables/UniqueI8Table.g.h"
-#include "ModuleBindings/Tables/UniqueU16Table.g.h"
-#include "ModuleBindings/Tables/BTreeU32Table.g.h"
-#include "ModuleBindings/Tables/IndexedTableTable.g.h"
-#include "ModuleBindings/Tables/OptionEveryPrimitiveStructTable.g.h"
-#include "ModuleBindings/Tables/UniqueI256Table.g.h"
-#include "ModuleBindings/Tables/OptionVecOptionI32Table.g.h"
 #include "ModuleBindings/Tables/UniqueU128Table.g.h"
-#include "ModuleBindings/Tables/VecI128Table.g.h"
-#include "ModuleBindings/Tables/OneByteStructTable.g.h"
-#include "ModuleBindings/Tables/VecI32Table.g.h"
-#include "ModuleBindings/Tables/PkU32Table.g.h"
-#include "ModuleBindings/Tables/PkStringTable.g.h"
-#include "ModuleBindings/Tables/PkU128Table.g.h"
-#include "ModuleBindings/Tables/VecU64Table.g.h"
-#include "ModuleBindings/Tables/IndexedTable2Table.g.h"
-#include "ModuleBindings/Tables/VecF64Table.g.h"
-#include "ModuleBindings/Tables/OneU256Table.g.h"
-#include "ModuleBindings/Tables/OneEveryPrimitiveStructTable.g.h"
-#include "ModuleBindings/Tables/UniqueI128Table.g.h"
-#include "ModuleBindings/Tables/VecI64Table.g.h"
-#include "ModuleBindings/Tables/PkU8Table.g.h"
-#include "ModuleBindings/Tables/OneF64Table.g.h"
-#include "ModuleBindings/Tables/VecU32Table.g.h"
-#include "ModuleBindings/Tables/PkI16Table.g.h"
-#include "ModuleBindings/Tables/PkI32Table.g.h"
-#include "ModuleBindings/Tables/OneU32Table.g.h"
-#include "ModuleBindings/Tables/UniqueBoolTable.g.h"
-#include "ModuleBindings/Tables/OneSimpleEnumTable.g.h"
-#include "ModuleBindings/Tables/VecI16Table.g.h"
-#include "ModuleBindings/Tables/UniqueIdentityTable.g.h"
-#include "ModuleBindings/Tables/PkU32TwoTable.g.h"
-#include "ModuleBindings/Tables/VecBoolTable.g.h"
-#include "ModuleBindings/Tables/OneEnumWithPayloadTable.g.h"
-#include "ModuleBindings/Tables/UniqueI32Table.g.h"
-#include "ModuleBindings/Tables/OneIdentityTable.g.h"
-#include "ModuleBindings/Tables/OneUnitStructTable.g.h"
-#include "ModuleBindings/Tables/UsersTable.g.h"
-#include "ModuleBindings/Tables/VecConnectionIdTable.g.h"
-#include "ModuleBindings/Tables/PkI128Table.g.h"
-#include "ModuleBindings/Tables/PkSimpleEnumTable.g.h"
-#include "ModuleBindings/Tables/PkI64Table.g.h"
-#include "ModuleBindings/Tables/OneI128Table.g.h"
-#include "ModuleBindings/Tables/PkConnectionIdTable.g.h"
-#include "ModuleBindings/Tables/OneI16Table.g.h"
-#include "ModuleBindings/Tables/LargeTableTable.g.h"
-#include "ModuleBindings/Tables/VecEnumWithPayloadTable.g.h"
-#include "ModuleBindings/Tables/OneI32Table.g.h"
-#include "ModuleBindings/Tables/VecF32Table.g.h"
-#include "ModuleBindings/Tables/UniqueConnectionIdTable.g.h"
-#include "ModuleBindings/Tables/OptionSimpleEnumTable.g.h"
-#include "ModuleBindings/Tables/VecI256Table.g.h"
-#include "ModuleBindings/Tables/VecTimestampTable.g.h"
-#include "ModuleBindings/Tables/PkI8Table.g.h"
-#include "ModuleBindings/Tables/OneI256Table.g.h"
-#include "ModuleBindings/Tables/ScheduledTableTable.g.h"
-#include "ModuleBindings/Tables/UniqueU256Table.g.h"
-#include "ModuleBindings/Tables/OneStringTable.g.h"
-#include "ModuleBindings/Tables/VecU16Table.g.h"
-#include "ModuleBindings/Tables/VecU256Table.g.h"
-#include "ModuleBindings/Tables/OptionStringTable.g.h"
-#include "ModuleBindings/Tables/OneU16Table.g.h"
-#include "ModuleBindings/Tables/PkIdentityTable.g.h"
-#include "ModuleBindings/Tables/PkU64Table.g.h"
-#include "ModuleBindings/Tables/UniqueI16Table.g.h"
-#include "ModuleBindings/Tables/VecEveryPrimitiveStructTable.g.h"
-#include "ModuleBindings/Tables/VecU128Table.g.h"
-#include "ModuleBindings/Tables/OneI8Table.g.h"
-#include "ModuleBindings/Tables/UniqueU8Table.g.h"
-#include "ModuleBindings/Tables/VecByteStructTable.g.h"
 #include "ModuleBindings/Tables/OneU64Table.g.h"
+#include "ModuleBindings/Tables/PkI8Table.g.h"
+#include "ModuleBindings/Tables/VecF64Table.g.h"
+#include "ModuleBindings/Tables/UniqueBoolTable.g.h"
+#include "ModuleBindings/Tables/UniqueI128Table.g.h"
+#include "ModuleBindings/Tables/OptionStringTable.g.h"
+#include "ModuleBindings/Tables/PkI16Table.g.h"
+#include "ModuleBindings/Tables/UniqueU8Table.g.h"
+#include "ModuleBindings/Tables/VecEveryPrimitiveStructTable.g.h"
+#include "ModuleBindings/Tables/OneUnitStructTable.g.h"
+#include "ModuleBindings/Tables/PkStringTable.g.h"
+#include "ModuleBindings/Tables/UniqueI32Table.g.h"
+#include "ModuleBindings/Tables/UniqueU32Table.g.h"
+#include "ModuleBindings/Tables/VecU8Table.g.h"
+#include "ModuleBindings/Tables/OneSimpleEnumTable.g.h"
+#include "ModuleBindings/Tables/PkU64Table.g.h"
+#include "ModuleBindings/Tables/OneEveryVecStructTable.g.h"
+#include "ModuleBindings/Tables/PkConnectionIdTable.g.h"
+#include "ModuleBindings/Tables/ScheduledTableTable.g.h"
+#include "ModuleBindings/Tables/VecI128Table.g.h"
+#include "ModuleBindings/Tables/VecU32Table.g.h"
+#include "ModuleBindings/Tables/VecUnitStructTable.g.h"
 #include "ModuleBindings/Tables/TableHoldsTableTable.g.h"
+#include "ModuleBindings/Tables/VecU64Table.g.h"
+#include "ModuleBindings/Tables/OneIdentityTable.g.h"
+#include "ModuleBindings/Tables/OneI256Table.g.h"
+#include "ModuleBindings/Tables/OneU128Table.g.h"
+#include "ModuleBindings/Tables/OptionI32Table.g.h"
+#include "ModuleBindings/Tables/OneF32Table.g.h"
+#include "ModuleBindings/Tables/VecEnumWithPayloadTable.g.h"
+#include "ModuleBindings/Tables/OneI16Table.g.h"
+#include "ModuleBindings/Tables/VecI256Table.g.h"
+#include "ModuleBindings/Tables/UniqueI256Table.g.h"
+#include "ModuleBindings/Tables/OneEnumWithPayloadTable.g.h"
+#include "ModuleBindings/Tables/PkSimpleEnumTable.g.h"
+#include "ModuleBindings/Tables/IndexedTableTable.g.h"
+#include "ModuleBindings/Tables/OneByteStructTable.g.h"
+#include "ModuleBindings/Tables/OneU256Table.g.h"
+#include "ModuleBindings/Tables/PkIdentityTable.g.h"
+#include "ModuleBindings/Tables/UniqueI8Table.g.h"
+#include "ModuleBindings/Tables/VecI64Table.g.h"
+#include "ModuleBindings/Tables/PkBoolTable.g.h"
+#include "ModuleBindings/Tables/PkU32Table.g.h"
+#include "ModuleBindings/Tables/OneConnectionIdTable.g.h"
+#include "ModuleBindings/Tables/VecStringTable.g.h"
+#include "ModuleBindings/Tables/PkU32TwoTable.g.h"
+#include "ModuleBindings/Tables/OneBoolTable.g.h"
+#include "ModuleBindings/Tables/PkI64Table.g.h"
+#include "ModuleBindings/Tables/OneU16Table.g.h"
 #include "ModuleBindings/Tables/UniqueStringTable.g.h"
 #include "ModuleBindings/Tables/OneTimestampTable.g.h"
-#include "ModuleBindings/Tables/VecSimpleEnumTable.g.h"
-#include "ModuleBindings/Tables/OptionI32Table.g.h"
-#include "ModuleBindings/Tables/PkBoolTable.g.h"
-#include "ModuleBindings/Tables/PkI256Table.g.h"
-#include "ModuleBindings/Tables/OneEveryVecStructTable.g.h"
-#include "ModuleBindings/Tables/UniqueI64Table.g.h"
-#include "ModuleBindings/Tables/UniqueU32Table.g.h"
-#include "ModuleBindings/Tables/PkU16Table.g.h"
-#include "ModuleBindings/Tables/OneConnectionIdTable.g.h"
-#include "ModuleBindings/Tables/OneI64Table.g.h"
-#include "ModuleBindings/Tables/UniqueU64Table.g.h"
-#include "ModuleBindings/Tables/PkU256Table.g.h"
-#include "ModuleBindings/Tables/VecU8Table.g.h"
-#include "ModuleBindings/Tables/VecIdentityTable.g.h"
 #include "ModuleBindings/Tables/OneU8Table.g.h"
-#include "ModuleBindings/Tables/VecEveryVecStructTable.g.h"
-#include "ModuleBindings/Tables/VecUnitStructTable.g.h"
-#include "ModuleBindings/Tables/OneBoolTable.g.h"
-#include "ModuleBindings/Tables/VecStringTable.g.h"
-#include "ModuleBindings/Tables/OneF32Table.g.h"
-#include "ModuleBindings/Tables/OptionIdentityTable.g.h"
+#include "ModuleBindings/Tables/VecU128Table.g.h"
+#include "ModuleBindings/Tables/VecU256Table.g.h"
+#include "ModuleBindings/Tables/VecTimestampTable.g.h"
+#include "ModuleBindings/Tables/OneI8Table.g.h"
+#include "ModuleBindings/Tables/PkI32Table.g.h"
+#include "ModuleBindings/Tables/UniqueI64Table.g.h"
+#include "ModuleBindings/Tables/OptionEveryPrimitiveStructTable.g.h"
+#include "ModuleBindings/Tables/OneU32Table.g.h"
+#include "ModuleBindings/Tables/VecIdentityTable.g.h"
+#include "ModuleBindings/Tables/VecByteStructTable.g.h"
+#include "ModuleBindings/Tables/PkI128Table.g.h"
+#include "ModuleBindings/Tables/VecI32Table.g.h"
+#include "ModuleBindings/Tables/UniqueConnectionIdTable.g.h"
+#include "ModuleBindings/Tables/UniqueI16Table.g.h"
+#include "ModuleBindings/Tables/LargeTableTable.g.h"
+#include "ModuleBindings/Tables/IndexedSimpleEnumTable.g.h"
+#include "ModuleBindings/Tables/OneI128Table.g.h"
+#include "ModuleBindings/Tables/OptionVecOptionI32Table.g.h"
+#include "ModuleBindings/Tables/PkI256Table.g.h"
+#include "ModuleBindings/Tables/PkU16Table.g.h"
+#include "ModuleBindings/Tables/UniqueIdentityTable.g.h"
+#include "ModuleBindings/Tables/UniqueU256Table.g.h"
+#include "ModuleBindings/Tables/UniqueU64Table.g.h"
+#include "ModuleBindings/Tables/OneStringTable.g.h"
 #include "ModuleBindings/Tables/VecI8Table.g.h"
+#include "ModuleBindings/Tables/VecSimpleEnumTable.g.h"
+#include "ModuleBindings/Tables/VecI16Table.g.h"
+#include "ModuleBindings/Tables/OptionIdentityTable.g.h"
+#include "ModuleBindings/Tables/PkU8Table.g.h"
+#include "ModuleBindings/Tables/OneF64Table.g.h"
+#include "ModuleBindings/Tables/OneEveryPrimitiveStructTable.g.h"
+#include "ModuleBindings/Tables/OptionSimpleEnumTable.g.h"
+#include "ModuleBindings/Tables/VecU16Table.g.h"
+#include "ModuleBindings/Tables/PkU128Table.g.h"
+#include "ModuleBindings/Tables/OneI32Table.g.h"
+#include "ModuleBindings/Tables/UsersTable.g.h"
+#include "ModuleBindings/Tables/UniqueU16Table.g.h"
+#include "ModuleBindings/Tables/IndexedTable2Table.g.h"
+#include "ModuleBindings/Tables/VecConnectionIdTable.g.h"
+#include "ModuleBindings/Tables/OneI64Table.g.h"
+#include "ModuleBindings/Tables/BTreeU32Table.g.h"
+#include "ModuleBindings/Tables/PkU256Table.g.h"
+#include "ModuleBindings/Tables/VecBoolTable.g.h"
+#include "ModuleBindings/Tables/VecF32Table.g.h"
+#include "ModuleBindings/Tables/VecEveryVecStructTable.g.h"
 
 static FReducer DecodeReducer(const FReducerEvent& Event)
 {
@@ -1201,104 +1201,104 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	Reducers->SetCallReducerFlags = SetReducerFlags;
 	Reducers->Conn = this;
 
-	RegisterTable<FIndexedSimpleEnumType, UIndexedSimpleEnumTable, FEventContext>(TEXT("indexed_simple_enum"), Db->IndexedSimpleEnum);
-	RegisterTable<FOneU128Type, UOneU128Table, FEventContext>(TEXT("one_u128"), Db->OneU128);
-	RegisterTable<FUniqueI8Type, UUniqueI8Table, FEventContext>(TEXT("unique_i8"), Db->UniqueI8);
-	RegisterTable<FUniqueU16Type, UUniqueU16Table, FEventContext>(TEXT("unique_u16"), Db->UniqueU16);
-	RegisterTable<FBTreeU32Type, UBTreeU32Table, FEventContext>(TEXT("btree_u32"), Db->BtreeU32);
-	RegisterTable<FIndexedTableType, UIndexedTableTable, FEventContext>(TEXT("indexed_table"), Db->IndexedTable);
-	RegisterTable<FOptionEveryPrimitiveStructType, UOptionEveryPrimitiveStructTable, FEventContext>(TEXT("option_every_primitive_struct"), Db->OptionEveryPrimitiveStruct);
-	RegisterTable<FUniqueI256Type, UUniqueI256Table, FEventContext>(TEXT("unique_i256"), Db->UniqueI256);
-	RegisterTable<FOptionVecOptionI32Type, UOptionVecOptionI32Table, FEventContext>(TEXT("option_vec_option_i32"), Db->OptionVecOptionI32);
 	RegisterTable<FUniqueU128Type, UUniqueU128Table, FEventContext>(TEXT("unique_u128"), Db->UniqueU128);
-	RegisterTable<FVecI128Type, UVecI128Table, FEventContext>(TEXT("vec_i128"), Db->VecI128);
-	RegisterTable<FOneByteStructType, UOneByteStructTable, FEventContext>(TEXT("one_byte_struct"), Db->OneByteStruct);
-	RegisterTable<FVecI32Type, UVecI32Table, FEventContext>(TEXT("vec_i32"), Db->VecI32);
-	RegisterTable<FPkU32Type, UPkU32Table, FEventContext>(TEXT("pk_u32"), Db->PkU32);
-	RegisterTable<FPkStringType, UPkStringTable, FEventContext>(TEXT("pk_string"), Db->PkString);
-	RegisterTable<FPkU128Type, UPkU128Table, FEventContext>(TEXT("pk_u128"), Db->PkU128);
-	RegisterTable<FVecU64Type, UVecU64Table, FEventContext>(TEXT("vec_u64"), Db->VecU64);
-	RegisterTable<FIndexedTable2Type, UIndexedTable2Table, FEventContext>(TEXT("indexed_table_2"), Db->IndexedTable2);
-	RegisterTable<FVecF64Type, UVecF64Table, FEventContext>(TEXT("vec_f64"), Db->VecF64);
-	RegisterTable<FOneU256Type, UOneU256Table, FEventContext>(TEXT("one_u256"), Db->OneU256);
-	RegisterTable<FOneEveryPrimitiveStructType, UOneEveryPrimitiveStructTable, FEventContext>(TEXT("one_every_primitive_struct"), Db->OneEveryPrimitiveStruct);
-	RegisterTable<FUniqueI128Type, UUniqueI128Table, FEventContext>(TEXT("unique_i128"), Db->UniqueI128);
-	RegisterTable<FVecI64Type, UVecI64Table, FEventContext>(TEXT("vec_i64"), Db->VecI64);
-	RegisterTable<FPkU8Type, UPkU8Table, FEventContext>(TEXT("pk_u8"), Db->PkU8);
-	RegisterTable<FOneF64Type, UOneF64Table, FEventContext>(TEXT("one_f64"), Db->OneF64);
-	RegisterTable<FVecU32Type, UVecU32Table, FEventContext>(TEXT("vec_u32"), Db->VecU32);
-	RegisterTable<FPkI16Type, UPkI16Table, FEventContext>(TEXT("pk_i16"), Db->PkI16);
-	RegisterTable<FPkI32Type, UPkI32Table, FEventContext>(TEXT("pk_i32"), Db->PkI32);
-	RegisterTable<FOneU32Type, UOneU32Table, FEventContext>(TEXT("one_u32"), Db->OneU32);
-	RegisterTable<FUniqueBoolType, UUniqueBoolTable, FEventContext>(TEXT("unique_bool"), Db->UniqueBool);
-	RegisterTable<FOneSimpleEnumType, UOneSimpleEnumTable, FEventContext>(TEXT("one_simple_enum"), Db->OneSimpleEnum);
-	RegisterTable<FVecI16Type, UVecI16Table, FEventContext>(TEXT("vec_i16"), Db->VecI16);
-	RegisterTable<FUniqueIdentityType, UUniqueIdentityTable, FEventContext>(TEXT("unique_identity"), Db->UniqueIdentity);
-	RegisterTable<FPkU32TwoType, UPkU32TwoTable, FEventContext>(TEXT("pk_u32_two"), Db->PkU32Two);
-	RegisterTable<FVecBoolType, UVecBoolTable, FEventContext>(TEXT("vec_bool"), Db->VecBool);
-	RegisterTable<FOneEnumWithPayloadType, UOneEnumWithPayloadTable, FEventContext>(TEXT("one_enum_with_payload"), Db->OneEnumWithPayload);
-	RegisterTable<FUniqueI32Type, UUniqueI32Table, FEventContext>(TEXT("unique_i32"), Db->UniqueI32);
-	RegisterTable<FOneIdentityType, UOneIdentityTable, FEventContext>(TEXT("one_identity"), Db->OneIdentity);
-	RegisterTable<FOneUnitStructType, UOneUnitStructTable, FEventContext>(TEXT("one_unit_struct"), Db->OneUnitStruct);
-	RegisterTable<FUsersType, UUsersTable, FEventContext>(TEXT("users"), Db->Users);
-	RegisterTable<FVecConnectionIdType, UVecConnectionIdTable, FEventContext>(TEXT("vec_connection_id"), Db->VecConnectionId);
-	RegisterTable<FPkI128Type, UPkI128Table, FEventContext>(TEXT("pk_i128"), Db->PkI128);
-	RegisterTable<FPkSimpleEnumType, UPkSimpleEnumTable, FEventContext>(TEXT("pk_simple_enum"), Db->PkSimpleEnum);
-	RegisterTable<FPkI64Type, UPkI64Table, FEventContext>(TEXT("pk_i64"), Db->PkI64);
-	RegisterTable<FOneI128Type, UOneI128Table, FEventContext>(TEXT("one_i128"), Db->OneI128);
-	RegisterTable<FPkConnectionIdType, UPkConnectionIdTable, FEventContext>(TEXT("pk_connection_id"), Db->PkConnectionId);
-	RegisterTable<FOneI16Type, UOneI16Table, FEventContext>(TEXT("one_i16"), Db->OneI16);
-	RegisterTable<FLargeTableType, ULargeTableTable, FEventContext>(TEXT("large_table"), Db->LargeTable);
-	RegisterTable<FVecEnumWithPayloadType, UVecEnumWithPayloadTable, FEventContext>(TEXT("vec_enum_with_payload"), Db->VecEnumWithPayload);
-	RegisterTable<FOneI32Type, UOneI32Table, FEventContext>(TEXT("one_i32"), Db->OneI32);
-	RegisterTable<FVecF32Type, UVecF32Table, FEventContext>(TEXT("vec_f32"), Db->VecF32);
-	RegisterTable<FUniqueConnectionIdType, UUniqueConnectionIdTable, FEventContext>(TEXT("unique_connection_id"), Db->UniqueConnectionId);
-	RegisterTable<FOptionSimpleEnumType, UOptionSimpleEnumTable, FEventContext>(TEXT("option_simple_enum"), Db->OptionSimpleEnum);
-	RegisterTable<FVecI256Type, UVecI256Table, FEventContext>(TEXT("vec_i256"), Db->VecI256);
-	RegisterTable<FVecTimestampType, UVecTimestampTable, FEventContext>(TEXT("vec_timestamp"), Db->VecTimestamp);
-	RegisterTable<FPkI8Type, UPkI8Table, FEventContext>(TEXT("pk_i8"), Db->PkI8);
-	RegisterTable<FOneI256Type, UOneI256Table, FEventContext>(TEXT("one_i256"), Db->OneI256);
-	RegisterTable<FScheduledTableType, UScheduledTableTable, FEventContext>(TEXT("scheduled_table"), Db->ScheduledTable);
-	RegisterTable<FUniqueU256Type, UUniqueU256Table, FEventContext>(TEXT("unique_u256"), Db->UniqueU256);
-	RegisterTable<FOneStringType, UOneStringTable, FEventContext>(TEXT("one_string"), Db->OneString);
-	RegisterTable<FVecU16Type, UVecU16Table, FEventContext>(TEXT("vec_u16"), Db->VecU16);
-	RegisterTable<FVecU256Type, UVecU256Table, FEventContext>(TEXT("vec_u256"), Db->VecU256);
-	RegisterTable<FOptionStringType, UOptionStringTable, FEventContext>(TEXT("option_string"), Db->OptionString);
-	RegisterTable<FOneU16Type, UOneU16Table, FEventContext>(TEXT("one_u16"), Db->OneU16);
-	RegisterTable<FPkIdentityType, UPkIdentityTable, FEventContext>(TEXT("pk_identity"), Db->PkIdentity);
-	RegisterTable<FPkU64Type, UPkU64Table, FEventContext>(TEXT("pk_u64"), Db->PkU64);
-	RegisterTable<FUniqueI16Type, UUniqueI16Table, FEventContext>(TEXT("unique_i16"), Db->UniqueI16);
-	RegisterTable<FVecEveryPrimitiveStructType, UVecEveryPrimitiveStructTable, FEventContext>(TEXT("vec_every_primitive_struct"), Db->VecEveryPrimitiveStruct);
-	RegisterTable<FVecU128Type, UVecU128Table, FEventContext>(TEXT("vec_u128"), Db->VecU128);
-	RegisterTable<FOneI8Type, UOneI8Table, FEventContext>(TEXT("one_i8"), Db->OneI8);
-	RegisterTable<FUniqueU8Type, UUniqueU8Table, FEventContext>(TEXT("unique_u8"), Db->UniqueU8);
-	RegisterTable<FVecByteStructType, UVecByteStructTable, FEventContext>(TEXT("vec_byte_struct"), Db->VecByteStruct);
 	RegisterTable<FOneU64Type, UOneU64Table, FEventContext>(TEXT("one_u64"), Db->OneU64);
+	RegisterTable<FPkI8Type, UPkI8Table, FEventContext>(TEXT("pk_i8"), Db->PkI8);
+	RegisterTable<FVecF64Type, UVecF64Table, FEventContext>(TEXT("vec_f64"), Db->VecF64);
+	RegisterTable<FUniqueBoolType, UUniqueBoolTable, FEventContext>(TEXT("unique_bool"), Db->UniqueBool);
+	RegisterTable<FUniqueI128Type, UUniqueI128Table, FEventContext>(TEXT("unique_i128"), Db->UniqueI128);
+	RegisterTable<FOptionStringType, UOptionStringTable, FEventContext>(TEXT("option_string"), Db->OptionString);
+	RegisterTable<FPkI16Type, UPkI16Table, FEventContext>(TEXT("pk_i16"), Db->PkI16);
+	RegisterTable<FUniqueU8Type, UUniqueU8Table, FEventContext>(TEXT("unique_u8"), Db->UniqueU8);
+	RegisterTable<FVecEveryPrimitiveStructType, UVecEveryPrimitiveStructTable, FEventContext>(TEXT("vec_every_primitive_struct"), Db->VecEveryPrimitiveStruct);
+	RegisterTable<FOneUnitStructType, UOneUnitStructTable, FEventContext>(TEXT("one_unit_struct"), Db->OneUnitStruct);
+	RegisterTable<FPkStringType, UPkStringTable, FEventContext>(TEXT("pk_string"), Db->PkString);
+	RegisterTable<FUniqueI32Type, UUniqueI32Table, FEventContext>(TEXT("unique_i32"), Db->UniqueI32);
+	RegisterTable<FUniqueU32Type, UUniqueU32Table, FEventContext>(TEXT("unique_u32"), Db->UniqueU32);
+	RegisterTable<FVecU8Type, UVecU8Table, FEventContext>(TEXT("vec_u8"), Db->VecU8);
+	RegisterTable<FOneSimpleEnumType, UOneSimpleEnumTable, FEventContext>(TEXT("one_simple_enum"), Db->OneSimpleEnum);
+	RegisterTable<FPkU64Type, UPkU64Table, FEventContext>(TEXT("pk_u64"), Db->PkU64);
+	RegisterTable<FOneEveryVecStructType, UOneEveryVecStructTable, FEventContext>(TEXT("one_every_vec_struct"), Db->OneEveryVecStruct);
+	RegisterTable<FPkConnectionIdType, UPkConnectionIdTable, FEventContext>(TEXT("pk_connection_id"), Db->PkConnectionId);
+	RegisterTable<FScheduledTableType, UScheduledTableTable, FEventContext>(TEXT("scheduled_table"), Db->ScheduledTable);
+	RegisterTable<FVecI128Type, UVecI128Table, FEventContext>(TEXT("vec_i128"), Db->VecI128);
+	RegisterTable<FVecU32Type, UVecU32Table, FEventContext>(TEXT("vec_u32"), Db->VecU32);
+	RegisterTable<FVecUnitStructType, UVecUnitStructTable, FEventContext>(TEXT("vec_unit_struct"), Db->VecUnitStruct);
 	RegisterTable<FTableHoldsTableType, UTableHoldsTableTable, FEventContext>(TEXT("table_holds_table"), Db->TableHoldsTable);
+	RegisterTable<FVecU64Type, UVecU64Table, FEventContext>(TEXT("vec_u64"), Db->VecU64);
+	RegisterTable<FOneIdentityType, UOneIdentityTable, FEventContext>(TEXT("one_identity"), Db->OneIdentity);
+	RegisterTable<FOneI256Type, UOneI256Table, FEventContext>(TEXT("one_i256"), Db->OneI256);
+	RegisterTable<FOneU128Type, UOneU128Table, FEventContext>(TEXT("one_u128"), Db->OneU128);
+	RegisterTable<FOptionI32Type, UOptionI32Table, FEventContext>(TEXT("option_i32"), Db->OptionI32);
+	RegisterTable<FOneF32Type, UOneF32Table, FEventContext>(TEXT("one_f32"), Db->OneF32);
+	RegisterTable<FVecEnumWithPayloadType, UVecEnumWithPayloadTable, FEventContext>(TEXT("vec_enum_with_payload"), Db->VecEnumWithPayload);
+	RegisterTable<FOneI16Type, UOneI16Table, FEventContext>(TEXT("one_i16"), Db->OneI16);
+	RegisterTable<FVecI256Type, UVecI256Table, FEventContext>(TEXT("vec_i256"), Db->VecI256);
+	RegisterTable<FUniqueI256Type, UUniqueI256Table, FEventContext>(TEXT("unique_i256"), Db->UniqueI256);
+	RegisterTable<FOneEnumWithPayloadType, UOneEnumWithPayloadTable, FEventContext>(TEXT("one_enum_with_payload"), Db->OneEnumWithPayload);
+	RegisterTable<FPkSimpleEnumType, UPkSimpleEnumTable, FEventContext>(TEXT("pk_simple_enum"), Db->PkSimpleEnum);
+	RegisterTable<FIndexedTableType, UIndexedTableTable, FEventContext>(TEXT("indexed_table"), Db->IndexedTable);
+	RegisterTable<FOneByteStructType, UOneByteStructTable, FEventContext>(TEXT("one_byte_struct"), Db->OneByteStruct);
+	RegisterTable<FOneU256Type, UOneU256Table, FEventContext>(TEXT("one_u256"), Db->OneU256);
+	RegisterTable<FPkIdentityType, UPkIdentityTable, FEventContext>(TEXT("pk_identity"), Db->PkIdentity);
+	RegisterTable<FUniqueI8Type, UUniqueI8Table, FEventContext>(TEXT("unique_i8"), Db->UniqueI8);
+	RegisterTable<FVecI64Type, UVecI64Table, FEventContext>(TEXT("vec_i64"), Db->VecI64);
+	RegisterTable<FPkBoolType, UPkBoolTable, FEventContext>(TEXT("pk_bool"), Db->PkBool);
+	RegisterTable<FPkU32Type, UPkU32Table, FEventContext>(TEXT("pk_u32"), Db->PkU32);
+	RegisterTable<FOneConnectionIdType, UOneConnectionIdTable, FEventContext>(TEXT("one_connection_id"), Db->OneConnectionId);
+	RegisterTable<FVecStringType, UVecStringTable, FEventContext>(TEXT("vec_string"), Db->VecString);
+	RegisterTable<FPkU32TwoType, UPkU32TwoTable, FEventContext>(TEXT("pk_u32_two"), Db->PkU32Two);
+	RegisterTable<FOneBoolType, UOneBoolTable, FEventContext>(TEXT("one_bool"), Db->OneBool);
+	RegisterTable<FPkI64Type, UPkI64Table, FEventContext>(TEXT("pk_i64"), Db->PkI64);
+	RegisterTable<FOneU16Type, UOneU16Table, FEventContext>(TEXT("one_u16"), Db->OneU16);
 	RegisterTable<FUniqueStringType, UUniqueStringTable, FEventContext>(TEXT("unique_string"), Db->UniqueString);
 	RegisterTable<FOneTimestampType, UOneTimestampTable, FEventContext>(TEXT("one_timestamp"), Db->OneTimestamp);
-	RegisterTable<FVecSimpleEnumType, UVecSimpleEnumTable, FEventContext>(TEXT("vec_simple_enum"), Db->VecSimpleEnum);
-	RegisterTable<FOptionI32Type, UOptionI32Table, FEventContext>(TEXT("option_i32"), Db->OptionI32);
-	RegisterTable<FPkBoolType, UPkBoolTable, FEventContext>(TEXT("pk_bool"), Db->PkBool);
-	RegisterTable<FPkI256Type, UPkI256Table, FEventContext>(TEXT("pk_i256"), Db->PkI256);
-	RegisterTable<FOneEveryVecStructType, UOneEveryVecStructTable, FEventContext>(TEXT("one_every_vec_struct"), Db->OneEveryVecStruct);
-	RegisterTable<FUniqueI64Type, UUniqueI64Table, FEventContext>(TEXT("unique_i64"), Db->UniqueI64);
-	RegisterTable<FUniqueU32Type, UUniqueU32Table, FEventContext>(TEXT("unique_u32"), Db->UniqueU32);
-	RegisterTable<FPkU16Type, UPkU16Table, FEventContext>(TEXT("pk_u16"), Db->PkU16);
-	RegisterTable<FOneConnectionIdType, UOneConnectionIdTable, FEventContext>(TEXT("one_connection_id"), Db->OneConnectionId);
-	RegisterTable<FOneI64Type, UOneI64Table, FEventContext>(TEXT("one_i64"), Db->OneI64);
-	RegisterTable<FUniqueU64Type, UUniqueU64Table, FEventContext>(TEXT("unique_u64"), Db->UniqueU64);
-	RegisterTable<FPkU256Type, UPkU256Table, FEventContext>(TEXT("pk_u256"), Db->PkU256);
-	RegisterTable<FVecU8Type, UVecU8Table, FEventContext>(TEXT("vec_u8"), Db->VecU8);
-	RegisterTable<FVecIdentityType, UVecIdentityTable, FEventContext>(TEXT("vec_identity"), Db->VecIdentity);
 	RegisterTable<FOneU8Type, UOneU8Table, FEventContext>(TEXT("one_u8"), Db->OneU8);
-	RegisterTable<FVecEveryVecStructType, UVecEveryVecStructTable, FEventContext>(TEXT("vec_every_vec_struct"), Db->VecEveryVecStruct);
-	RegisterTable<FVecUnitStructType, UVecUnitStructTable, FEventContext>(TEXT("vec_unit_struct"), Db->VecUnitStruct);
-	RegisterTable<FOneBoolType, UOneBoolTable, FEventContext>(TEXT("one_bool"), Db->OneBool);
-	RegisterTable<FVecStringType, UVecStringTable, FEventContext>(TEXT("vec_string"), Db->VecString);
-	RegisterTable<FOneF32Type, UOneF32Table, FEventContext>(TEXT("one_f32"), Db->OneF32);
-	RegisterTable<FOptionIdentityType, UOptionIdentityTable, FEventContext>(TEXT("option_identity"), Db->OptionIdentity);
+	RegisterTable<FVecU128Type, UVecU128Table, FEventContext>(TEXT("vec_u128"), Db->VecU128);
+	RegisterTable<FVecU256Type, UVecU256Table, FEventContext>(TEXT("vec_u256"), Db->VecU256);
+	RegisterTable<FVecTimestampType, UVecTimestampTable, FEventContext>(TEXT("vec_timestamp"), Db->VecTimestamp);
+	RegisterTable<FOneI8Type, UOneI8Table, FEventContext>(TEXT("one_i8"), Db->OneI8);
+	RegisterTable<FPkI32Type, UPkI32Table, FEventContext>(TEXT("pk_i32"), Db->PkI32);
+	RegisterTable<FUniqueI64Type, UUniqueI64Table, FEventContext>(TEXT("unique_i64"), Db->UniqueI64);
+	RegisterTable<FOptionEveryPrimitiveStructType, UOptionEveryPrimitiveStructTable, FEventContext>(TEXT("option_every_primitive_struct"), Db->OptionEveryPrimitiveStruct);
+	RegisterTable<FOneU32Type, UOneU32Table, FEventContext>(TEXT("one_u32"), Db->OneU32);
+	RegisterTable<FVecIdentityType, UVecIdentityTable, FEventContext>(TEXT("vec_identity"), Db->VecIdentity);
+	RegisterTable<FVecByteStructType, UVecByteStructTable, FEventContext>(TEXT("vec_byte_struct"), Db->VecByteStruct);
+	RegisterTable<FPkI128Type, UPkI128Table, FEventContext>(TEXT("pk_i128"), Db->PkI128);
+	RegisterTable<FVecI32Type, UVecI32Table, FEventContext>(TEXT("vec_i32"), Db->VecI32);
+	RegisterTable<FUniqueConnectionIdType, UUniqueConnectionIdTable, FEventContext>(TEXT("unique_connection_id"), Db->UniqueConnectionId);
+	RegisterTable<FUniqueI16Type, UUniqueI16Table, FEventContext>(TEXT("unique_i16"), Db->UniqueI16);
+	RegisterTable<FLargeTableType, ULargeTableTable, FEventContext>(TEXT("large_table"), Db->LargeTable);
+	RegisterTable<FIndexedSimpleEnumType, UIndexedSimpleEnumTable, FEventContext>(TEXT("indexed_simple_enum"), Db->IndexedSimpleEnum);
+	RegisterTable<FOneI128Type, UOneI128Table, FEventContext>(TEXT("one_i128"), Db->OneI128);
+	RegisterTable<FOptionVecOptionI32Type, UOptionVecOptionI32Table, FEventContext>(TEXT("option_vec_option_i32"), Db->OptionVecOptionI32);
+	RegisterTable<FPkI256Type, UPkI256Table, FEventContext>(TEXT("pk_i256"), Db->PkI256);
+	RegisterTable<FPkU16Type, UPkU16Table, FEventContext>(TEXT("pk_u16"), Db->PkU16);
+	RegisterTable<FUniqueIdentityType, UUniqueIdentityTable, FEventContext>(TEXT("unique_identity"), Db->UniqueIdentity);
+	RegisterTable<FUniqueU256Type, UUniqueU256Table, FEventContext>(TEXT("unique_u256"), Db->UniqueU256);
+	RegisterTable<FUniqueU64Type, UUniqueU64Table, FEventContext>(TEXT("unique_u64"), Db->UniqueU64);
+	RegisterTable<FOneStringType, UOneStringTable, FEventContext>(TEXT("one_string"), Db->OneString);
 	RegisterTable<FVecI8Type, UVecI8Table, FEventContext>(TEXT("vec_i8"), Db->VecI8);
+	RegisterTable<FVecSimpleEnumType, UVecSimpleEnumTable, FEventContext>(TEXT("vec_simple_enum"), Db->VecSimpleEnum);
+	RegisterTable<FVecI16Type, UVecI16Table, FEventContext>(TEXT("vec_i16"), Db->VecI16);
+	RegisterTable<FOptionIdentityType, UOptionIdentityTable, FEventContext>(TEXT("option_identity"), Db->OptionIdentity);
+	RegisterTable<FPkU8Type, UPkU8Table, FEventContext>(TEXT("pk_u8"), Db->PkU8);
+	RegisterTable<FOneF64Type, UOneF64Table, FEventContext>(TEXT("one_f64"), Db->OneF64);
+	RegisterTable<FOneEveryPrimitiveStructType, UOneEveryPrimitiveStructTable, FEventContext>(TEXT("one_every_primitive_struct"), Db->OneEveryPrimitiveStruct);
+	RegisterTable<FOptionSimpleEnumType, UOptionSimpleEnumTable, FEventContext>(TEXT("option_simple_enum"), Db->OptionSimpleEnum);
+	RegisterTable<FVecU16Type, UVecU16Table, FEventContext>(TEXT("vec_u16"), Db->VecU16);
+	RegisterTable<FPkU128Type, UPkU128Table, FEventContext>(TEXT("pk_u128"), Db->PkU128);
+	RegisterTable<FOneI32Type, UOneI32Table, FEventContext>(TEXT("one_i32"), Db->OneI32);
+	RegisterTable<FUsersType, UUsersTable, FEventContext>(TEXT("users"), Db->Users);
+	RegisterTable<FUniqueU16Type, UUniqueU16Table, FEventContext>(TEXT("unique_u16"), Db->UniqueU16);
+	RegisterTable<FIndexedTable2Type, UIndexedTable2Table, FEventContext>(TEXT("indexed_table_2"), Db->IndexedTable2);
+	RegisterTable<FVecConnectionIdType, UVecConnectionIdTable, FEventContext>(TEXT("vec_connection_id"), Db->VecConnectionId);
+	RegisterTable<FOneI64Type, UOneI64Table, FEventContext>(TEXT("one_i64"), Db->OneI64);
+	RegisterTable<FBTreeU32Type, UBTreeU32Table, FEventContext>(TEXT("btree_u32"), Db->BtreeU32);
+	RegisterTable<FPkU256Type, UPkU256Table, FEventContext>(TEXT("pk_u256"), Db->PkU256);
+	RegisterTable<FVecBoolType, UVecBoolTable, FEventContext>(TEXT("vec_bool"), Db->VecBool);
+	RegisterTable<FVecF32Type, UVecF32Table, FEventContext>(TEXT("vec_f32"), Db->VecF32);
+	RegisterTable<FVecEveryVecStructType, UVecEveryVecStructTable, FEventContext>(TEXT("vec_every_vec_struct"), Db->VecEveryVecStruct);
 }
 
 FContextBase::FContextBase(UDbConnection* InConn)
@@ -1333,205 +1333,205 @@ void URemoteTables::Initialize()
 {
 
 	/** Creating tables */
-	IndexedSimpleEnum = NewObject<UIndexedSimpleEnumTable>(this);
-	OneU128 = NewObject<UOneU128Table>(this);
-	UniqueI8 = NewObject<UUniqueI8Table>(this);
-	UniqueU16 = NewObject<UUniqueU16Table>(this);
-	BtreeU32 = NewObject<UBTreeU32Table>(this);
-	IndexedTable = NewObject<UIndexedTableTable>(this);
-	OptionEveryPrimitiveStruct = NewObject<UOptionEveryPrimitiveStructTable>(this);
-	UniqueI256 = NewObject<UUniqueI256Table>(this);
-	OptionVecOptionI32 = NewObject<UOptionVecOptionI32Table>(this);
 	UniqueU128 = NewObject<UUniqueU128Table>(this);
-	VecI128 = NewObject<UVecI128Table>(this);
-	OneByteStruct = NewObject<UOneByteStructTable>(this);
-	VecI32 = NewObject<UVecI32Table>(this);
-	PkU32 = NewObject<UPkU32Table>(this);
-	PkString = NewObject<UPkStringTable>(this);
-	PkU128 = NewObject<UPkU128Table>(this);
-	VecU64 = NewObject<UVecU64Table>(this);
-	IndexedTable2 = NewObject<UIndexedTable2Table>(this);
-	VecF64 = NewObject<UVecF64Table>(this);
-	OneU256 = NewObject<UOneU256Table>(this);
-	OneEveryPrimitiveStruct = NewObject<UOneEveryPrimitiveStructTable>(this);
-	UniqueI128 = NewObject<UUniqueI128Table>(this);
-	VecI64 = NewObject<UVecI64Table>(this);
-	PkU8 = NewObject<UPkU8Table>(this);
-	OneF64 = NewObject<UOneF64Table>(this);
-	VecU32 = NewObject<UVecU32Table>(this);
-	PkI16 = NewObject<UPkI16Table>(this);
-	PkI32 = NewObject<UPkI32Table>(this);
-	OneU32 = NewObject<UOneU32Table>(this);
-	UniqueBool = NewObject<UUniqueBoolTable>(this);
-	OneSimpleEnum = NewObject<UOneSimpleEnumTable>(this);
-	VecI16 = NewObject<UVecI16Table>(this);
-	UniqueIdentity = NewObject<UUniqueIdentityTable>(this);
-	PkU32Two = NewObject<UPkU32TwoTable>(this);
-	VecBool = NewObject<UVecBoolTable>(this);
-	OneEnumWithPayload = NewObject<UOneEnumWithPayloadTable>(this);
-	UniqueI32 = NewObject<UUniqueI32Table>(this);
-	OneIdentity = NewObject<UOneIdentityTable>(this);
-	OneUnitStruct = NewObject<UOneUnitStructTable>(this);
-	Users = NewObject<UUsersTable>(this);
-	VecConnectionId = NewObject<UVecConnectionIdTable>(this);
-	PkI128 = NewObject<UPkI128Table>(this);
-	PkSimpleEnum = NewObject<UPkSimpleEnumTable>(this);
-	PkI64 = NewObject<UPkI64Table>(this);
-	OneI128 = NewObject<UOneI128Table>(this);
-	PkConnectionId = NewObject<UPkConnectionIdTable>(this);
-	OneI16 = NewObject<UOneI16Table>(this);
-	LargeTable = NewObject<ULargeTableTable>(this);
-	VecEnumWithPayload = NewObject<UVecEnumWithPayloadTable>(this);
-	OneI32 = NewObject<UOneI32Table>(this);
-	VecF32 = NewObject<UVecF32Table>(this);
-	UniqueConnectionId = NewObject<UUniqueConnectionIdTable>(this);
-	OptionSimpleEnum = NewObject<UOptionSimpleEnumTable>(this);
-	VecI256 = NewObject<UVecI256Table>(this);
-	VecTimestamp = NewObject<UVecTimestampTable>(this);
-	PkI8 = NewObject<UPkI8Table>(this);
-	OneI256 = NewObject<UOneI256Table>(this);
-	ScheduledTable = NewObject<UScheduledTableTable>(this);
-	UniqueU256 = NewObject<UUniqueU256Table>(this);
-	OneString = NewObject<UOneStringTable>(this);
-	VecU16 = NewObject<UVecU16Table>(this);
-	VecU256 = NewObject<UVecU256Table>(this);
-	OptionString = NewObject<UOptionStringTable>(this);
-	OneU16 = NewObject<UOneU16Table>(this);
-	PkIdentity = NewObject<UPkIdentityTable>(this);
-	PkU64 = NewObject<UPkU64Table>(this);
-	UniqueI16 = NewObject<UUniqueI16Table>(this);
-	VecEveryPrimitiveStruct = NewObject<UVecEveryPrimitiveStructTable>(this);
-	VecU128 = NewObject<UVecU128Table>(this);
-	OneI8 = NewObject<UOneI8Table>(this);
-	UniqueU8 = NewObject<UUniqueU8Table>(this);
-	VecByteStruct = NewObject<UVecByteStructTable>(this);
 	OneU64 = NewObject<UOneU64Table>(this);
+	PkI8 = NewObject<UPkI8Table>(this);
+	VecF64 = NewObject<UVecF64Table>(this);
+	UniqueBool = NewObject<UUniqueBoolTable>(this);
+	UniqueI128 = NewObject<UUniqueI128Table>(this);
+	OptionString = NewObject<UOptionStringTable>(this);
+	PkI16 = NewObject<UPkI16Table>(this);
+	UniqueU8 = NewObject<UUniqueU8Table>(this);
+	VecEveryPrimitiveStruct = NewObject<UVecEveryPrimitiveStructTable>(this);
+	OneUnitStruct = NewObject<UOneUnitStructTable>(this);
+	PkString = NewObject<UPkStringTable>(this);
+	UniqueI32 = NewObject<UUniqueI32Table>(this);
+	UniqueU32 = NewObject<UUniqueU32Table>(this);
+	VecU8 = NewObject<UVecU8Table>(this);
+	OneSimpleEnum = NewObject<UOneSimpleEnumTable>(this);
+	PkU64 = NewObject<UPkU64Table>(this);
+	OneEveryVecStruct = NewObject<UOneEveryVecStructTable>(this);
+	PkConnectionId = NewObject<UPkConnectionIdTable>(this);
+	ScheduledTable = NewObject<UScheduledTableTable>(this);
+	VecI128 = NewObject<UVecI128Table>(this);
+	VecU32 = NewObject<UVecU32Table>(this);
+	VecUnitStruct = NewObject<UVecUnitStructTable>(this);
 	TableHoldsTable = NewObject<UTableHoldsTableTable>(this);
+	VecU64 = NewObject<UVecU64Table>(this);
+	OneIdentity = NewObject<UOneIdentityTable>(this);
+	OneI256 = NewObject<UOneI256Table>(this);
+	OneU128 = NewObject<UOneU128Table>(this);
+	OptionI32 = NewObject<UOptionI32Table>(this);
+	OneF32 = NewObject<UOneF32Table>(this);
+	VecEnumWithPayload = NewObject<UVecEnumWithPayloadTable>(this);
+	OneI16 = NewObject<UOneI16Table>(this);
+	VecI256 = NewObject<UVecI256Table>(this);
+	UniqueI256 = NewObject<UUniqueI256Table>(this);
+	OneEnumWithPayload = NewObject<UOneEnumWithPayloadTable>(this);
+	PkSimpleEnum = NewObject<UPkSimpleEnumTable>(this);
+	IndexedTable = NewObject<UIndexedTableTable>(this);
+	OneByteStruct = NewObject<UOneByteStructTable>(this);
+	OneU256 = NewObject<UOneU256Table>(this);
+	PkIdentity = NewObject<UPkIdentityTable>(this);
+	UniqueI8 = NewObject<UUniqueI8Table>(this);
+	VecI64 = NewObject<UVecI64Table>(this);
+	PkBool = NewObject<UPkBoolTable>(this);
+	PkU32 = NewObject<UPkU32Table>(this);
+	OneConnectionId = NewObject<UOneConnectionIdTable>(this);
+	VecString = NewObject<UVecStringTable>(this);
+	PkU32Two = NewObject<UPkU32TwoTable>(this);
+	OneBool = NewObject<UOneBoolTable>(this);
+	PkI64 = NewObject<UPkI64Table>(this);
+	OneU16 = NewObject<UOneU16Table>(this);
 	UniqueString = NewObject<UUniqueStringTable>(this);
 	OneTimestamp = NewObject<UOneTimestampTable>(this);
-	VecSimpleEnum = NewObject<UVecSimpleEnumTable>(this);
-	OptionI32 = NewObject<UOptionI32Table>(this);
-	PkBool = NewObject<UPkBoolTable>(this);
-	PkI256 = NewObject<UPkI256Table>(this);
-	OneEveryVecStruct = NewObject<UOneEveryVecStructTable>(this);
-	UniqueI64 = NewObject<UUniqueI64Table>(this);
-	UniqueU32 = NewObject<UUniqueU32Table>(this);
-	PkU16 = NewObject<UPkU16Table>(this);
-	OneConnectionId = NewObject<UOneConnectionIdTable>(this);
-	OneI64 = NewObject<UOneI64Table>(this);
-	UniqueU64 = NewObject<UUniqueU64Table>(this);
-	PkU256 = NewObject<UPkU256Table>(this);
-	VecU8 = NewObject<UVecU8Table>(this);
-	VecIdentity = NewObject<UVecIdentityTable>(this);
 	OneU8 = NewObject<UOneU8Table>(this);
-	VecEveryVecStruct = NewObject<UVecEveryVecStructTable>(this);
-	VecUnitStruct = NewObject<UVecUnitStructTable>(this);
-	OneBool = NewObject<UOneBoolTable>(this);
-	VecString = NewObject<UVecStringTable>(this);
-	OneF32 = NewObject<UOneF32Table>(this);
-	OptionIdentity = NewObject<UOptionIdentityTable>(this);
+	VecU128 = NewObject<UVecU128Table>(this);
+	VecU256 = NewObject<UVecU256Table>(this);
+	VecTimestamp = NewObject<UVecTimestampTable>(this);
+	OneI8 = NewObject<UOneI8Table>(this);
+	PkI32 = NewObject<UPkI32Table>(this);
+	UniqueI64 = NewObject<UUniqueI64Table>(this);
+	OptionEveryPrimitiveStruct = NewObject<UOptionEveryPrimitiveStructTable>(this);
+	OneU32 = NewObject<UOneU32Table>(this);
+	VecIdentity = NewObject<UVecIdentityTable>(this);
+	VecByteStruct = NewObject<UVecByteStructTable>(this);
+	PkI128 = NewObject<UPkI128Table>(this);
+	VecI32 = NewObject<UVecI32Table>(this);
+	UniqueConnectionId = NewObject<UUniqueConnectionIdTable>(this);
+	UniqueI16 = NewObject<UUniqueI16Table>(this);
+	LargeTable = NewObject<ULargeTableTable>(this);
+	IndexedSimpleEnum = NewObject<UIndexedSimpleEnumTable>(this);
+	OneI128 = NewObject<UOneI128Table>(this);
+	OptionVecOptionI32 = NewObject<UOptionVecOptionI32Table>(this);
+	PkI256 = NewObject<UPkI256Table>(this);
+	PkU16 = NewObject<UPkU16Table>(this);
+	UniqueIdentity = NewObject<UUniqueIdentityTable>(this);
+	UniqueU256 = NewObject<UUniqueU256Table>(this);
+	UniqueU64 = NewObject<UUniqueU64Table>(this);
+	OneString = NewObject<UOneStringTable>(this);
 	VecI8 = NewObject<UVecI8Table>(this);
+	VecSimpleEnum = NewObject<UVecSimpleEnumTable>(this);
+	VecI16 = NewObject<UVecI16Table>(this);
+	OptionIdentity = NewObject<UOptionIdentityTable>(this);
+	PkU8 = NewObject<UPkU8Table>(this);
+	OneF64 = NewObject<UOneF64Table>(this);
+	OneEveryPrimitiveStruct = NewObject<UOneEveryPrimitiveStructTable>(this);
+	OptionSimpleEnum = NewObject<UOptionSimpleEnumTable>(this);
+	VecU16 = NewObject<UVecU16Table>(this);
+	PkU128 = NewObject<UPkU128Table>(this);
+	OneI32 = NewObject<UOneI32Table>(this);
+	Users = NewObject<UUsersTable>(this);
+	UniqueU16 = NewObject<UUniqueU16Table>(this);
+	IndexedTable2 = NewObject<UIndexedTable2Table>(this);
+	VecConnectionId = NewObject<UVecConnectionIdTable>(this);
+	OneI64 = NewObject<UOneI64Table>(this);
+	BtreeU32 = NewObject<UBTreeU32Table>(this);
+	PkU256 = NewObject<UPkU256Table>(this);
+	VecBool = NewObject<UVecBoolTable>(this);
+	VecF32 = NewObject<UVecF32Table>(this);
+	VecEveryVecStruct = NewObject<UVecEveryVecStructTable>(this);
 	/**/
 
 	/** Initialization */
-	IndexedSimpleEnum->PostInitialize();
-	OneU128->PostInitialize();
-	UniqueI8->PostInitialize();
-	UniqueU16->PostInitialize();
-	BtreeU32->PostInitialize();
-	IndexedTable->PostInitialize();
-	OptionEveryPrimitiveStruct->PostInitialize();
-	UniqueI256->PostInitialize();
-	OptionVecOptionI32->PostInitialize();
 	UniqueU128->PostInitialize();
-	VecI128->PostInitialize();
-	OneByteStruct->PostInitialize();
-	VecI32->PostInitialize();
-	PkU32->PostInitialize();
-	PkString->PostInitialize();
-	PkU128->PostInitialize();
-	VecU64->PostInitialize();
-	IndexedTable2->PostInitialize();
-	VecF64->PostInitialize();
-	OneU256->PostInitialize();
-	OneEveryPrimitiveStruct->PostInitialize();
-	UniqueI128->PostInitialize();
-	VecI64->PostInitialize();
-	PkU8->PostInitialize();
-	OneF64->PostInitialize();
-	VecU32->PostInitialize();
-	PkI16->PostInitialize();
-	PkI32->PostInitialize();
-	OneU32->PostInitialize();
-	UniqueBool->PostInitialize();
-	OneSimpleEnum->PostInitialize();
-	VecI16->PostInitialize();
-	UniqueIdentity->PostInitialize();
-	PkU32Two->PostInitialize();
-	VecBool->PostInitialize();
-	OneEnumWithPayload->PostInitialize();
-	UniqueI32->PostInitialize();
-	OneIdentity->PostInitialize();
-	OneUnitStruct->PostInitialize();
-	Users->PostInitialize();
-	VecConnectionId->PostInitialize();
-	PkI128->PostInitialize();
-	PkSimpleEnum->PostInitialize();
-	PkI64->PostInitialize();
-	OneI128->PostInitialize();
-	PkConnectionId->PostInitialize();
-	OneI16->PostInitialize();
-	LargeTable->PostInitialize();
-	VecEnumWithPayload->PostInitialize();
-	OneI32->PostInitialize();
-	VecF32->PostInitialize();
-	UniqueConnectionId->PostInitialize();
-	OptionSimpleEnum->PostInitialize();
-	VecI256->PostInitialize();
-	VecTimestamp->PostInitialize();
-	PkI8->PostInitialize();
-	OneI256->PostInitialize();
-	ScheduledTable->PostInitialize();
-	UniqueU256->PostInitialize();
-	OneString->PostInitialize();
-	VecU16->PostInitialize();
-	VecU256->PostInitialize();
-	OptionString->PostInitialize();
-	OneU16->PostInitialize();
-	PkIdentity->PostInitialize();
-	PkU64->PostInitialize();
-	UniqueI16->PostInitialize();
-	VecEveryPrimitiveStruct->PostInitialize();
-	VecU128->PostInitialize();
-	OneI8->PostInitialize();
-	UniqueU8->PostInitialize();
-	VecByteStruct->PostInitialize();
 	OneU64->PostInitialize();
+	PkI8->PostInitialize();
+	VecF64->PostInitialize();
+	UniqueBool->PostInitialize();
+	UniqueI128->PostInitialize();
+	OptionString->PostInitialize();
+	PkI16->PostInitialize();
+	UniqueU8->PostInitialize();
+	VecEveryPrimitiveStruct->PostInitialize();
+	OneUnitStruct->PostInitialize();
+	PkString->PostInitialize();
+	UniqueI32->PostInitialize();
+	UniqueU32->PostInitialize();
+	VecU8->PostInitialize();
+	OneSimpleEnum->PostInitialize();
+	PkU64->PostInitialize();
+	OneEveryVecStruct->PostInitialize();
+	PkConnectionId->PostInitialize();
+	ScheduledTable->PostInitialize();
+	VecI128->PostInitialize();
+	VecU32->PostInitialize();
+	VecUnitStruct->PostInitialize();
 	TableHoldsTable->PostInitialize();
+	VecU64->PostInitialize();
+	OneIdentity->PostInitialize();
+	OneI256->PostInitialize();
+	OneU128->PostInitialize();
+	OptionI32->PostInitialize();
+	OneF32->PostInitialize();
+	VecEnumWithPayload->PostInitialize();
+	OneI16->PostInitialize();
+	VecI256->PostInitialize();
+	UniqueI256->PostInitialize();
+	OneEnumWithPayload->PostInitialize();
+	PkSimpleEnum->PostInitialize();
+	IndexedTable->PostInitialize();
+	OneByteStruct->PostInitialize();
+	OneU256->PostInitialize();
+	PkIdentity->PostInitialize();
+	UniqueI8->PostInitialize();
+	VecI64->PostInitialize();
+	PkBool->PostInitialize();
+	PkU32->PostInitialize();
+	OneConnectionId->PostInitialize();
+	VecString->PostInitialize();
+	PkU32Two->PostInitialize();
+	OneBool->PostInitialize();
+	PkI64->PostInitialize();
+	OneU16->PostInitialize();
 	UniqueString->PostInitialize();
 	OneTimestamp->PostInitialize();
-	VecSimpleEnum->PostInitialize();
-	OptionI32->PostInitialize();
-	PkBool->PostInitialize();
-	PkI256->PostInitialize();
-	OneEveryVecStruct->PostInitialize();
-	UniqueI64->PostInitialize();
-	UniqueU32->PostInitialize();
-	PkU16->PostInitialize();
-	OneConnectionId->PostInitialize();
-	OneI64->PostInitialize();
-	UniqueU64->PostInitialize();
-	PkU256->PostInitialize();
-	VecU8->PostInitialize();
-	VecIdentity->PostInitialize();
 	OneU8->PostInitialize();
-	VecEveryVecStruct->PostInitialize();
-	VecUnitStruct->PostInitialize();
-	OneBool->PostInitialize();
-	VecString->PostInitialize();
-	OneF32->PostInitialize();
-	OptionIdentity->PostInitialize();
+	VecU128->PostInitialize();
+	VecU256->PostInitialize();
+	VecTimestamp->PostInitialize();
+	OneI8->PostInitialize();
+	PkI32->PostInitialize();
+	UniqueI64->PostInitialize();
+	OptionEveryPrimitiveStruct->PostInitialize();
+	OneU32->PostInitialize();
+	VecIdentity->PostInitialize();
+	VecByteStruct->PostInitialize();
+	PkI128->PostInitialize();
+	VecI32->PostInitialize();
+	UniqueConnectionId->PostInitialize();
+	UniqueI16->PostInitialize();
+	LargeTable->PostInitialize();
+	IndexedSimpleEnum->PostInitialize();
+	OneI128->PostInitialize();
+	OptionVecOptionI32->PostInitialize();
+	PkI256->PostInitialize();
+	PkU16->PostInitialize();
+	UniqueIdentity->PostInitialize();
+	UniqueU256->PostInitialize();
+	UniqueU64->PostInitialize();
+	OneString->PostInitialize();
 	VecI8->PostInitialize();
+	VecSimpleEnum->PostInitialize();
+	VecI16->PostInitialize();
+	OptionIdentity->PostInitialize();
+	PkU8->PostInitialize();
+	OneF64->PostInitialize();
+	OneEveryPrimitiveStruct->PostInitialize();
+	OptionSimpleEnum->PostInitialize();
+	VecU16->PostInitialize();
+	PkU128->PostInitialize();
+	OneI32->PostInitialize();
+	Users->PostInitialize();
+	UniqueU16->PostInitialize();
+	IndexedTable2->PostInitialize();
+	VecConnectionId->PostInitialize();
+	OneI64->PostInitialize();
+	BtreeU32->PostInitialize();
+	PkU256->PostInitialize();
+	VecBool->PostInitialize();
+	VecF32->PostInitialize();
+	VecEveryVecStruct->PostInitialize();
 	/**/
 }
 
