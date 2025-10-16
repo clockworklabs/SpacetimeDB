@@ -23,7 +23,7 @@ TypeScript modules are built with the TypeScript Module Library from [`spacetime
 
 > Note: SpacetimeDB also provides a TypeScript **client** SDK at `spacetimedb/sdk`, as well as integrations for frameworks like `spacetimedb/react`. This guide focuses exclusively on the **server-side module** library.
 
-If you’re new to TypeScript, see the [TypeScript Handbook](https://www.typescriptlang.org/docs/handbook/intro.html). For a guided introduction to modules, see the [TypeScript Module Quickstart](/docs/module/typescript/quickstart).
+If you’re new to TypeScript, see the [TypeScript Handbook](https://www.typescriptlang.org/docs/handbook/intro.html). For a guided introduction to modules, see the [TypeScript Module Quickstart](/docs/modules/typescript/quickstart).
 
 # Overview
 
