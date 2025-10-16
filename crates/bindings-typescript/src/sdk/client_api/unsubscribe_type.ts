@@ -35,6 +35,8 @@ export type Unsubscribe = {
   requestId: number;
   queryId: QueryId;
 };
+let _cached_Unsubscribe_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -44,15 +46,15 @@ export const Unsubscribe = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
-        {
-          name: 'queryId',
-          algebraicType: QueryId.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_Unsubscribe_type_value) return _cached_Unsubscribe_type_value;
+    _cached_Unsubscribe_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_Unsubscribe_type_value.value.elements.push(
+      { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
+      { name: 'queryId', algebraicType: QueryId.getTypeScriptAlgebraicType() }
+    );
+    return _cached_Unsubscribe_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Unsubscribe): void {

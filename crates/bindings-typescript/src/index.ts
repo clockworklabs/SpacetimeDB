@@ -8,5 +8,5 @@ export * from './lib/time_duration';
 export * from './lib/timestamp';
 export * from './lib/utils';
 export * from './lib/identity';
+export * from './lib/option';
 export * from './sdk';
-export { default as t } from './server/type_builders';

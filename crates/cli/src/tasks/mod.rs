@@ -3,17 +3,31 @@ use std::path::{Path, PathBuf};
 use crate::util::{self, ModuleLanguage};
 
 use self::csharp::build_csharp;
-use crate::tasks::rust::build_rust;
+use self::javascript::build_javascript;
+use self::rust::build_rust;
 
 use duct::cmd;
 
-pub fn build(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) -> anyhow::Result<PathBuf> {
+// TODO: Replace the returned `&'static str` with a copy of `HostType` from core.
+pub fn build(
+    project_path: &Path,
+    lint_dir: Option<&Path>,
+    build_debug: bool,
+) -> anyhow::Result<(PathBuf, &'static str)> {
     let lang = util::detect_module_language(project_path)?;
-    let mut wasm_path = match lang {
+    let output_path = match lang {
         ModuleLanguage::Rust => build_rust(project_path, lint_dir, build_debug),
         ModuleLanguage::Csharp => build_csharp(project_path, build_debug),
+        ModuleLanguage::Javascript => build_javascript(project_path, build_debug),
     }?;
-    if !build_debug {
+
+    if lang == ModuleLanguage::Javascript {
+        Ok((output_path, "Js"))
+    } else if !build_debug {
+        Ok((output_path, "Wasm"))
+    } else {
+        // for release builds, optimize wasm modules with wasm-opt
+        let mut wasm_path = output_path;
         eprintln!("Optimising module with wasm-opt...");
         let wasm_path_opt = wasm_path.with_extension("opt.wasm");
         match cmd!("wasm-opt", "-all", "-g", "-O2", &wasm_path, "-o", &wasm_path_opt).run() {
@@ -33,9 +47,10 @@ pub fn build(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) ->
                 eprintln!("Continuing with unoptimised module.");
             }
         }
+        Ok((wasm_path, "Wasm"))
     }
-    Ok(wasm_path)
 }
 
 pub mod csharp;
+pub mod javascript;
 pub mod rust;

@@ -20,6 +20,9 @@ import {
 export type RawUniqueConstraintDataV9 = {
   columns: number[];
 };
+let _cached_RawUniqueConstraintDataV9_type_value: __AlgebraicTypeType | null =
+  null;
+
 /**
  * An object for generated helper functions.
  */
@@ -29,14 +32,16 @@ export const RawUniqueConstraintDataV9 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'columns',
-          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U16),
-        },
-      ],
+    if (_cached_RawUniqueConstraintDataV9_type_value)
+      return _cached_RawUniqueConstraintDataV9_type_value;
+    _cached_RawUniqueConstraintDataV9_type_value = __AlgebraicTypeValue.Product(
+      { elements: [] }
+    );
+    _cached_RawUniqueConstraintDataV9_type_value.value.elements.push({
+      name: 'columns',
+      algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U16),
     });
+    return _cached_RawUniqueConstraintDataV9_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawUniqueConstraintDataV9): void {

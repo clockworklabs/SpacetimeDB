@@ -195,15 +195,26 @@ pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];
 pub enum ModuleLanguage {
     Csharp,
     Rust,
+    Javascript,
 }
 impl clap::ValueEnum for ModuleLanguage {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::Rust]
+        &[Self::Csharp, Self::Rust, Self::Javascript]
     }
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
             Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs", "C#", "CSharp"])),
             Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs", "Rust"])),
+            Self::Javascript => Some(clap::builder::PossibleValue::new("typescript").aliases([
+                "JavaScript",
+                "javascript",
+                "js",
+                "TypeScript",
+                "ts",
+                "ECMAScript",
+                "ecmascript",
+                "es",
+            ])),
         }
     }
 }
@@ -219,6 +230,8 @@ pub fn detect_module_language(path_to_project: &Path) -> anyhow::Result<ModuleLa
         .any(|entry| entry.unwrap().path().extension() == Some("csproj".as_ref()))
     {
         Ok(ModuleLanguage::Csharp)
+    } else if path_to_project.join("package.json").exists() {
+        Ok(ModuleLanguage::Javascript)
     } else {
         anyhow::bail!("Could not detect the language of the module. Are you in a SpacetimeDB project directory?")
     }

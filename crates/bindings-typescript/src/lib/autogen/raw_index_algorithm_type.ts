@@ -24,6 +24,8 @@ export type RawIndexAlgorithm =
   | RawIndexAlgorithmVariants.Hash
   | RawIndexAlgorithmVariants.Direct;
 
+let _cached_RawIndexAlgorithm_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const RawIndexAlgorithm = {
   // Helper functions for constructing each variant of the tagged union.
@@ -32,24 +34,37 @@ export const RawIndexAlgorithm = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  BTree: (value: number[]): RawIndexAlgorithm => ({ tag: 'BTree', value }),
-  Hash: (value: number[]): RawIndexAlgorithm => ({ tag: 'Hash', value }),
-  Direct: (value: number): RawIndexAlgorithm => ({ tag: 'Direct', value }),
+  BTree: (value: number[]): RawIndexAlgorithmVariants.BTree => ({
+    tag: 'BTree',
+    value,
+  }),
+  Hash: (value: number[]): RawIndexAlgorithmVariants.Hash => ({
+    tag: 'Hash',
+    value,
+  }),
+  Direct: (value: number): RawIndexAlgorithmVariants.Direct => ({
+    tag: 'Direct',
+    value,
+  }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'BTree',
-          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U16),
-        },
-        {
-          name: 'Hash',
-          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U16),
-        },
-        { name: 'Direct', algebraicType: __AlgebraicTypeValue.U16 },
-      ],
+    if (_cached_RawIndexAlgorithm_type_value)
+      return _cached_RawIndexAlgorithm_type_value;
+    _cached_RawIndexAlgorithm_type_value = __AlgebraicTypeValue.Sum({
+      variants: [],
     });
+    _cached_RawIndexAlgorithm_type_value.value.variants.push(
+      {
+        name: 'BTree',
+        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U16),
+      },
+      {
+        name: 'Hash',
+        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U16),
+      },
+      { name: 'Direct', algebraicType: __AlgebraicTypeValue.U16 }
+    );
+    return _cached_RawIndexAlgorithm_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawIndexAlgorithm): void {
