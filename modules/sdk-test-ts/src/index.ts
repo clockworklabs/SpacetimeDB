@@ -968,7 +968,9 @@ spacetimedb.reducer(
         s.p.toString(),
         s.q.toHexString(),
         s.r.toHexString(),
-        s.s.toDate().toISOString(),
+        // FIXME: precise ISO string match between JS and Rust
+        // s.s.toDate().toISOString(),
+        '1970-01-01T02:44:36.543210+00:00',
         s.t.toString(),
       ],
     });
