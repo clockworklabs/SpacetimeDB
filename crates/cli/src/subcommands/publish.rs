@@ -212,6 +212,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // Set the host type.
     builder = builder.query(&[("host_type", host_type)]);
 
+    // JS/TS is beta quality atm.
+    if host_type == "Js" {
+        println!("JavaScript / TypeScript support is currently in BETA.");
+        println!("There may be bugs. Please file issues if you encounter any.");
+        println!("<https://github.com/clockworklabs/SpacetimeDB/issues/new>");
+    }
+
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
         // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
