@@ -10,15 +10,25 @@ export type Set<T, F extends string, V> = Prettify<
   Omit<T, F> & { [K in F]: V }
 >;
 
-type Equals<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
-    ? true
-    : false;
+/**
+ * Sets a field in an object
+ * @param x The original object
+ * @param t The object containing the field to set
+ * @returns A new object with the field set
+ */
+export function set<T, F extends string, V>(
+  x: T,
+  t: { [k in F]: V }
+): Set<T, F, V> {
+  return { ...x, ...t };
+}
 
-export type DifferenceFromDefault<T, D> = Prettify<{
-  [K in keyof T as K extends keyof D
-    ? Equals<T[K], D[K]> extends true
-      ? never
-      : K
-    : K]: T[K];
-}>;
+/**
+ * Helper to extract the value types from an object type
+ */
+export type Values<T> = T[keyof T];
+
+/**
+ * A helper type to collapse a tuple into a single type if it has only one element.
+ */
+export type CollapseTuple<A extends any[]> = A extends [infer T] ? T : A;

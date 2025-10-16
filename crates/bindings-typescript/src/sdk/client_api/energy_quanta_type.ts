@@ -31,6 +31,8 @@ import {
 export type EnergyQuanta = {
   quanta: bigint;
 };
+let _cached_EnergyQuanta_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -40,9 +42,15 @@ export const EnergyQuanta = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [{ name: 'quanta', algebraicType: __AlgebraicTypeValue.U128 }],
+    if (_cached_EnergyQuanta_type_value) return _cached_EnergyQuanta_type_value;
+    _cached_EnergyQuanta_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_EnergyQuanta_type_value.value.elements.push({
+      name: 'quanta',
+      algebraicType: __AlgebraicTypeValue.U128,
+    });
+    return _cached_EnergyQuanta_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: EnergyQuanta): void {
