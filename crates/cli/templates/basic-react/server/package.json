@@ -6,6 +6,6 @@
     "build": "spacetime build"
   },
   "dependencies": {
-    "spacetimedb": "^1.5.0"
+    "spacetimedb": "^1.6.0"
   }
 }
