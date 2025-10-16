@@ -1121,7 +1121,7 @@ public class Module : IIncrementalGenerator
                                 ConnectionId = connectionId;
                                 Rng = random;
                                 Timestamp = time;
-                                AuthCtx = AuthCtx.FromOptionalConnectionId(connectionId, identity);
+                                AuthCtx = AuthCtx.BuildFromSystemTables(connectionId, identity);
                             }
                         }
 

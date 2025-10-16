@@ -20,7 +20,7 @@ public sealed class JwtClaims
     /// This only takes an Identity because the Blake3 hash package on nuget wraps rust code.
     /// We should not expose this constructor publicly, but it is needed for AuthCtx.
     /// </summary>
-    public JwtClaims(string jwt, Identity identity)
+    internal JwtClaims(string jwt, Identity identity)
     {
         _payload = jwt ?? throw new ArgumentNullException(nameof(jwt));
         _parsed = new Lazy<JsonDocument>(() =>

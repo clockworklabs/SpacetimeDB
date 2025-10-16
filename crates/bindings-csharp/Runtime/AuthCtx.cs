@@ -23,12 +23,11 @@ public sealed class AuthCtx
 
     /// <summary>
     /// Create an AuthCtx by looking up the credentials for a connection id in system tables.
-    /// TODO: Can we keep this out of the public API?
+    /// 
+    /// Ideally this would not be part of the public API.
+    /// This should only be called inside of a reducer.
     /// </summary>
-    /// <param name="connectionId"></param>
-    /// <param name="identity"></param>
-    /// <returns></returns>
-    public static AuthCtx FromOptionalConnectionId(ConnectionId? connectionId, Identity identity)
+    public static AuthCtx BuildFromSystemTables(ConnectionId? connectionId, Identity identity)
     {
         if (connectionId == null)
         {
@@ -40,7 +39,7 @@ public sealed class AuthCtx
     /// <summary>
     /// Create an AuthCtx that reads JWT for a given connection ID.
     /// </summary>
-    public static AuthCtx FromConnectionId(ConnectionId connectionId, Identity identity)
+    private static AuthCtx FromConnectionId(ConnectionId connectionId, Identity identity)
     {
         return new AuthCtx(isInternal: false, jwtFactory: () =>
         {
