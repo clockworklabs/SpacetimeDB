@@ -1,4 +1,4 @@
-import { schema, table, t } from 'spacetimedb';
+import { schema, table, t } from 'spacetimedb/server';
 
 export const spacetimedb = schema(
   table(
