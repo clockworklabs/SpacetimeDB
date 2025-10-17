@@ -23,6 +23,8 @@ declare type __keep_ProductTypeElement = ProductTypeElement;
 export type ProductType = {
   elements: ProductTypeElement[];
 };
+let _cached_ProductType_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -32,16 +34,17 @@ export const ProductType = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'elements',
-          algebraicType: __AlgebraicTypeValue.Array(
-            ProductTypeElement.getTypeScriptAlgebraicType()
-          ),
-        },
-      ],
+    if (_cached_ProductType_type_value) return _cached_ProductType_type_value;
+    _cached_ProductType_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_ProductType_type_value.value.elements.push({
+      name: 'elements',
+      algebraicType: __AlgebraicTypeValue.Array(
+        ProductTypeElement.getTypeScriptAlgebraicType()
+      ),
+    });
+    return _cached_ProductType_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: ProductType): void {

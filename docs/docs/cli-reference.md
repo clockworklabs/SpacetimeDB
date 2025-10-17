@@ -250,6 +250,7 @@ Run `spacetime help publish` for more detailed information.
 ###### <b>Options:</b>
 
 * `-b`, `--bin-path <WASM_FILE>` — The system path (absolute or relative) to the compiled wasm binary we should inspect
+* `-j`, `--js-path <JS_FILE>` — The system path (absolute or relative) to the bundled javascript file we should inspect
 * `-p`, `--project-path <PROJECT_PATH>` — The system path (absolute or relative) to the project you would like to inspect
 
   Default value: `.`

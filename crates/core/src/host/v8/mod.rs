@@ -1,4 +1,4 @@
-use self::de::{deserialize_js, property};
+use self::de::property;
 use self::error::{
     catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CodeError, ExcResult, JsStackTrace,
     TerminationError, Throwable,
@@ -17,7 +17,7 @@ use crate::host::wasm_common::module_host_actor::{
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::wasmtime::{epoch_ticker, ticks_in_duration, EPOCH_TICKS_PER_SECOND};
-use crate::host::{ArgsTuple, Scheduler};
+use crate::host::Scheduler;
 use crate::{module_host_context::ModuleCreationContext, replica_context::ReplicaContext};
 use core::ffi::c_void;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -26,13 +26,13 @@ use core::{ptr, str};
 use spacetimedb_client_api_messages::energy::ReducerBudget;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef, Timestamp};
+use spacetimedb_lib::{RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
-    scope, Context, ContextScope, Function, Isolate, IsolateHandle, Local, MapFnTo, Object, OwnedIsolate, PinScope,
+    scope, Context, ContextScope, Function, Isolate, IsolateHandle, Local, MapFnTo, OwnedIsolate, PinScope,
     ResolveModuleCallback, ScriptOrigin, Value,
 };
 
@@ -343,9 +343,8 @@ impl JsInstance {
                         with_scope(&mut isolate, |scope| {
                             let res = catch_exception(scope, |scope| {
                                 // Prepare the JS module that has `__call_reducer__`.
-                                let (module, _) = eval_user_module(scope, &self.program)?;
-                                let object = module_object(scope, module)?;
-                                Ok(object)
+                                eval_user_module(scope, &self.program)?;
+                                Ok(())
                             })
                             .map_err(anyhow::Error::from);
 
@@ -358,9 +357,9 @@ impl JsInstance {
                             // Call `__call_reducer__` with `tx` provided.
                             // It should not be available before.
                             let (tx, call_result) = match res {
-                                Ok(object) => env.instance_env.tx.clone().set(tx, || {
+                                Ok(()) => env.instance_env.tx.clone().set(tx, || {
                                     catch_exception(scope, |scope| {
-                                        let res = call_call_reducer_from_op(scope, object, op)?;
+                                        let res = call_call_reducer_from_op(scope, op)?;
                                         Ok(res)
                                     })
                                     .map_err(anyhow::Error::from)
@@ -576,16 +575,6 @@ fn duration_to_budget(_duration: Duration) -> ReducerBudget {
     ReducerBudget::ZERO
 }
 
-/// Returns a module's object.
-fn module_object<'scope>(
-    scope: &PinScope<'scope, '_>,
-    module: Local<'scope, v8::Module>,
-) -> ExcResult<Local<'scope, Object>> {
-    let ns = module.get_module_namespace();
-    let object = cast!(scope, ns, Object, "object for module").map_err(|e| e.throw(scope))?;
-    Ok(object)
-}
-
 /// Calls free function `fun` with `args`.
 fn call_free_fun<'scope>(
     scope: &PinScope<'scope, '_>,
@@ -596,53 +585,9 @@ fn call_free_fun<'scope>(
     fun.call(scope, receiver, args).ok_or_else(exception_already_thrown)
 }
 
-/// Calls the `__call_reducer__` function on `object` using `op`.
-fn call_call_reducer_from_op<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    object: Local<'scope, Object>,
-    op: ReducerOp<'_>,
-) -> ExcResult<ReducerResult> {
-    call_call_reducer(
-        scope,
-        object,
-        op.id.into(),
-        op.caller_identity,
-        op.caller_connection_id,
-        op.timestamp.to_micros_since_unix_epoch(),
-        op.args,
-    )
-}
-
-/// Calls the `__call_reducer__` property on `object` as a function.
-fn call_call_reducer<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    object: Local<'scope, Object>,
-    reducer_id: u32,
-    sender: &Identity,
-    conn_id: &ConnectionId,
-    timestamp: i64,
-    reducer_args: &ArgsTuple,
-) -> ExcResult<ReducerResult> {
-    // Serialize the arguments.
-    let reducer_id = serialize_to_js(scope, &reducer_id)?;
-    let sender = serialize_to_js(scope, &sender.to_u256())?;
-    let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
-    let timestamp = serialize_to_js(scope, &timestamp)?;
-    let reducer_args = serialize_to_js(scope, reducer_args.get_bsatn())?;
-    let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
-
-    // Get the function on the global proxy object and convert to a function.
-    let call_reducer_key = str_from_ident!(__call_reducer__).string(scope);
-    let object = property(scope, object, call_reducer_key)?;
-    let fun = cast!(scope, object, Function, "function export for `__call_reducer__`").map_err(|e| e.throw(scope))?;
-
-    // Call the function.
-    let ret = call_free_fun(scope, fun, args)?;
-
-    // Deserialize the user result.
-    let user_res = deserialize_js(scope, ret)?;
-
-    Ok(user_res)
+/// Calls the `__call_reducer__` hook, if it's been registered.
+fn call_call_reducer_from_op<'scope>(scope: &mut PinScope<'scope, '_>, op: ReducerOp<'_>) -> ExcResult<ReducerResult> {
+    syscall::call_call_reducer(scope, op)
 }
 
 /// Extracts the raw module def by running `__describe_module__` in `program`.
@@ -655,17 +600,16 @@ fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
     let handle = isolate.thread_safe_handle();
     with_timeout_and_cb_every(handle, callback_every, callback, budget, || {
         with_scope(&mut isolate, |scope| {
-            let object = catch_exception(scope, |scope| {
-                let (module, _) = eval_user_module(scope, program)?;
-                let object = module_object(scope, module)?;
-                Ok(object)
+            catch_exception(scope, |scope| {
+                eval_user_module(scope, program)?;
+                Ok(())
             })
             .map_err(Into::into)
             .map_err(DescribeError::Setup)?;
 
             run_describer(log_traceback, || {
                 catch_exception(scope, |scope| {
-                    let def = call_describe_module(scope, object)?;
+                    let def = call_describe_module(scope)?;
                     Ok(def)
                 })
                 .map_err(Into::into)
@@ -674,65 +618,38 @@ fn extract_description(program: &str) -> Result<RawModuleDef, DescribeError> {
     })
 }
 
-/// Calls the `__describe_module__` property,
-/// on `object` as a function,
-/// to extract a [`RawModuleDef`].
-fn call_describe_module<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    object: Local<'scope, Object>,
-) -> ExcResult<RawModuleDef> {
-    // Get the function on `object` and convert to a function.
-    let describe_module_key = str_from_ident!(__describe_module__).string(scope);
-    let object = property(scope, object, describe_module_key)?;
-    let fun =
-        cast!(scope, object, Function, "function export for `__describe_module__`").map_err(|e| e.throw(scope))?;
-
-    // Call the function.
-    let raw_mod_js = call_free_fun(scope, fun, &[])?;
-
-    // Deserialize the raw module.
-    let raw_mod = cast!(
-        scope,
-        raw_mod_js,
-        v8::Uint8Array,
-        "bytes return from __describe_module__"
-    )
-    .map_err(|e| e.throw(scope))?;
-
-    let bytes = raw_mod.get_contents(&mut []);
-    bsatn::from_slice::<RawModuleDef>(bytes).map_err(|_e| error::TypeError("invalid bsatn module def").throw(scope))
+/// Calls the `__describe_module__` hook, if it's been registered.
+fn call_describe_module<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<RawModuleDef> {
+    syscall::call_describe_module(scope)
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::host::v8::to_value::test::with_scope;
-    use v8::{Local, Value};
+    use crate::host::ArgsTuple;
+    use spacetimedb_lib::{ConnectionId, Identity};
+    use spacetimedb_primitives::ReducerId;
+    use v8::{Local, Object};
 
-    fn with_script<R>(
+    fn with_module<R>(
         code: &str,
-        logic: impl for<'scope> FnOnce(&mut PinScope<'scope, '_>, Local<'scope, Value>) -> R,
+        logic: impl for<'scope> FnOnce(&mut PinScope<'scope, '_>, Local<'scope, Object>) -> R,
     ) -> R {
         with_scope(|scope| {
-            let code = v8::String::new(scope, code).unwrap();
-            let script_val = v8::Script::compile(scope, code, None).unwrap().run(scope).unwrap();
-            logic(scope, script_val)
+            let (module, _) = eval_user_module(scope, code).unwrap();
+            let ns = module.get_module_namespace().cast::<Object>();
+            logic(scope, ns)
         })
     }
 
-    /// Returns the global object.
-    fn global<'scope>(scope: &PinScope<'scope, '_>) -> Local<'scope, Object> {
-        scope.get_current_context().global(scope)
-    }
-
-    fn with_script_catch<T>(
+    fn with_module_catch<T>(
         code: &str,
         logic: impl for<'scope> FnOnce(&mut PinScope<'scope, '_>, Local<'scope, Object>) -> ExcResult<T>,
     ) -> anyhow::Result<T> {
-        with_script(code, |scope, _| {
+        with_module(code, |scope, ns| {
             catch_exception(scope, |scope| {
-                let object = global(scope);
-                let ret = logic(scope, object)?;
+                let ret = logic(scope, ns)?;
                 Ok(ret)
             })
             .map_err(anyhow::Error::from)
@@ -742,15 +659,17 @@ mod test {
     #[test]
     fn call_call_reducer_works() {
         let call = |code| {
-            with_script_catch(code, |scope, object| {
-                call_call_reducer(
+            with_module_catch(code, |scope, _| {
+                call_call_reducer_from_op(
                     scope,
-                    object,
-                    42,
-                    &Identity::ONE,
-                    &ConnectionId::ZERO,
-                    24,
-                    &ArgsTuple::nullary(),
+                    ReducerOp {
+                        id: ReducerId(42),
+                        name: "foobar",
+                        caller_identity: &Identity::ONE,
+                        caller_connection_id: &ConnectionId::ZERO,
+                        timestamp: Timestamp::from_micros_since_unix_epoch(24),
+                        args: &ArgsTuple::nullary(),
+                    },
                 )
             })
         };
@@ -758,27 +677,29 @@ mod test {
         // Test the trap case.
         let ret = call(
             r#"
-            function __call_reducer__(reducer_id, sender, conn_id, timestamp, args) {
+            import { register_hooks } from "spacetime:sys@1.0";
+            register_hooks({ __call_reducer__(reducer_id, sender, conn_id, timestamp, args) {
                 throw new Error("foobar");
-            }
+            } })
         "#,
         );
         let actual = format!("{}", ret.expect_err("should trap")).replace("\t", "    ");
         let expected = r#"
 js error Uncaught Error: foobar
-    at __call_reducer__ (<unknown location>:3:23)
+    at __call_reducer__ (spacetimedb_module:4:23)
         "#;
         assert_eq!(actual.trim(), expected.trim());
 
         // Test the error case.
         let ret = call(
             r#"
-            function __call_reducer__(reducer_id, sender, conn_id, timestamp, args) {
+            import { register_hooks } from "spacetime:sys@1.0";
+            register_hooks({ __call_reducer__(reducer_id, sender, conn_id, timestamp, args) {
                 return {
                     "tag": "err",
                     "value": "foobar",
                 };
-            }
+            } })
         "#,
         );
         assert_eq!(&*ret.expect("should not trap").expect_err("should error"), "foobar");
@@ -786,12 +707,13 @@ js error Uncaught Error: foobar
         // Test the error case.
         let ret = call(
             r#"
-            function __call_reducer__(reducer_id, sender, conn_id, timestamp, args) {
+            import { register_hooks } from "spacetime:sys@1.0";
+            register_hooks({ __call_reducer__(reducer_id, sender, conn_id, timestamp, args) {
                 return {
                     "tag": "ok",
                     "value": {},
                 };
-            }
+            } })
         "#,
         );
         ret.expect("should not trap").expect("should not error");
@@ -800,11 +722,12 @@ js error Uncaught Error: foobar
     #[test]
     fn call_describe_module_works() {
         let code = r#"
-            function __describe_module__() {
+            import { register_hooks } from "spacetime:sys@1.0";
+            register_hooks({ __describe_module__() {
                 return new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-            }
+            } })
         "#;
-        let raw_mod = with_script_catch(code, call_describe_module).map_err(|e| e.to_string());
+        let raw_mod = with_module_catch(code, |scope, _| call_describe_module(scope)).map_err(|e| e.to_string());
         assert_eq!(raw_mod, Ok(RawModuleDef::V9(<_>::default())));
     }
 }

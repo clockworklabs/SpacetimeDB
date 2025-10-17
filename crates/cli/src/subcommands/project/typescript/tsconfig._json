@@ -1,0 +1,24 @@
+
+/*
+ * This tsconfig is used for TypeScript projects created with `spacetimedb init
+ * --lang typescript`. You can modify it as needed for your project, although
+ * some options are required by SpacetimeDB.
+ */
+{
+  "compilerOptions": {
+    "strict": true,
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+
+    /* The following options are required by SpacetimeDB
+     * and should not be modified
+     */
+    "target": "ESNext",
+    "lib": ["ES2021", "dom"],
+    "module": "ESNext",
+    "isolatedModules": true,
+    "noEmit": true
+  },
+  "include": ["./**/*"]
+}
