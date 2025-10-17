@@ -16,16 +16,14 @@ public sealed class JwtClaims
 
     /// <summary>
     /// Create a JwtClaims from a raw JWT payload (JSON claims) and its associated Identity.
-    /// 
+    ///
     /// This only takes an Identity because the Blake3 hash package on nuget wraps rust code.
     /// We should not expose this constructor publicly, but it is needed for AuthCtx.
     /// </summary>
     internal JwtClaims(string jwt, Identity identity)
     {
         _payload = jwt ?? throw new ArgumentNullException(nameof(jwt));
-        _parsed = new Lazy<JsonDocument>(() =>
-            JsonDocument.Parse(_payload)
-        );
+        _parsed = new Lazy<JsonDocument>(() => JsonDocument.Parse(_payload));
         _audience = new Lazy<List<string>>(ExtractAudience);
         _identity = identity;
     }
@@ -38,7 +36,10 @@ public sealed class JwtClaims
     {
         get
         {
-            if (RootElement.TryGetProperty("sub", out var sub) && sub.ValueKind == JsonValueKind.String)
+            if (
+                RootElement.TryGetProperty("sub", out var sub)
+                && sub.ValueKind == JsonValueKind.String
+            )
             {
                 return sub.GetString()!;
             }
@@ -51,7 +52,10 @@ public sealed class JwtClaims
     {
         get
         {
-            if (RootElement.TryGetProperty("iss", out var iss) && iss.ValueKind == JsonValueKind.String)
+            if (
+                RootElement.TryGetProperty("iss", out var iss)
+                && iss.ValueKind == JsonValueKind.String
+            )
             {
                 return iss.GetString()!;
             }
@@ -71,9 +75,9 @@ public sealed class JwtClaims
         {
             JsonValueKind.String => new List<string> { aud.GetString()! },
             JsonValueKind.Array => aud.EnumerateArray()
-                                .Where(e => e.ValueKind == JsonValueKind.String)
-                                .Select(e => e.GetString()!)
-                                .ToList(),
+                .Where(e => e.ValueKind == JsonValueKind.String)
+                .Select(e => e.GetString()!)
+                .ToList(),
             _ => throw new InvalidOperationException("Unexpected type for 'aud' claim in JWT"),
         };
     }

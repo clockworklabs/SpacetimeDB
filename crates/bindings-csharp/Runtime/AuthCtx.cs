@@ -23,7 +23,7 @@ public sealed class AuthCtx
 
     /// <summary>
     /// Create an AuthCtx by looking up the credentials for a connection id in system tables.
-    /// 
+    ///
     /// Ideally this would not be part of the public API.
     /// This should only be called inside of a reducer.
     /// </summary>
@@ -41,18 +41,21 @@ public sealed class AuthCtx
     /// </summary>
     private static AuthCtx FromConnectionId(ConnectionId connectionId, Identity identity)
     {
-        return new AuthCtx(isInternal: false, jwtFactory: () =>
-        {
-            var result = SpacetimeDB.Internal.FFI.get_jwt(ref connectionId, out var source);
-            SpacetimeDB.Internal.FFI.CheckedStatus.Marshaller.ConvertToManaged(result);
-            var bytes = SpacetimeDB.Internal.Module.Consume(source);
-            if (bytes == null || bytes.Length == 0)
+        return new AuthCtx(
+            isInternal: false,
+            jwtFactory: () =>
             {
-                return null;
+                var result = SpacetimeDB.Internal.FFI.get_jwt(ref connectionId, out var source);
+                SpacetimeDB.Internal.FFI.CheckedStatus.Marshaller.ConvertToManaged(result);
+                var bytes = SpacetimeDB.Internal.Module.Consume(source);
+                if (bytes == null || bytes.Length == 0)
+                {
+                    return null;
+                }
+                var jwt = System.Text.Encoding.UTF8.GetString(bytes);
+                return jwt != null ? new JwtClaims(jwt, identity) : null;
             }
-            var jwt = System.Text.Encoding.UTF8.GetString(bytes);
-            return jwt != null ? new JwtClaims(jwt, identity) : null;
-        });
+        );
     }
 
     /// <summary>
