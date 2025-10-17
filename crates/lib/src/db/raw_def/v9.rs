@@ -462,7 +462,7 @@ pub struct RawViewDefV9 {
     /// Is this view anonymous?
     /// An anonymous view does not know who called it.
     /// Specifically, it is a view that has an `AnonymousViewContext` as its first argument.
-    /// This type does not have access to the [`Identity`] of the caller.
+    /// This type does not have access to the `Identity` of the caller.
     pub is_anonymous: bool,
 
     /// The types and optional names of the parameters, in order.
