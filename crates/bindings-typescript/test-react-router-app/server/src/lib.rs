@@ -51,10 +51,10 @@ fn increment_counter(ctx: &ReducerContext) -> Result<(), String> {
     let mut user = ctx.db.user().identity().find(ctx.sender).ok_or("User not found")?;
     user.has_incremented_count += 1;
     ctx.db.user().identity().update(user);
- 
+
     Ok(())
 }
- 
+
 #[reducer]
 fn clear_counter(ctx: &ReducerContext) {
     for row in ctx.db.counter().iter() {
