@@ -2,7 +2,7 @@
 source: crates/bindings/tests/deps.rs
 expression: "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown -f {lib}"
 ---
-total crates: 67
+total crates: 66
 spacetimedb
 ├── bytemuck
 ├── derive_more
@@ -21,7 +21,6 @@ spacetimedb
 ├── getrandom
 │   └── cfg_if
 ├── log
-├── once_cell
 ├── rand
 │   ├── rand_chacha
 │   │   ├── ppv_lite86
