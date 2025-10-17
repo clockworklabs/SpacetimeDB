@@ -41,7 +41,6 @@ futures.workspace = true
 hostname.workspace = true
 http.workspace = true
 log.workspace = true
-openssl.workspace = true
 parse-size.workspace = true
 prometheus.workspace = true
 scopeguard.workspace = true
@@ -56,8 +55,8 @@ toml.workspace = true
 tracing = { workspace = true, features = ["release_max_level_debug"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = {workspace = true}
-tikv-jemalloc-ctl = {workspace = true}
+tikv-jemallocator = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true }
 
 [dev-dependencies]
 once_cell.workspace = true
