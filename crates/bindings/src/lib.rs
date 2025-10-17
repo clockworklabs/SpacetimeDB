@@ -871,10 +871,6 @@ pub struct AuthCtx {
 
 impl AuthCtx {
     fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
-        // fn new<F>(is_internal: bool, jwt_fn: F) -> Self
-        // where
-        //     F: FnOnce() -> Option<JwtClaims> + 'static,
-        // {
         AuthCtx {
             is_internal,
             jwt: Box::new(LazyCell::new(jwt_fn)),
@@ -904,7 +900,7 @@ impl AuthCtx {
     }
 
     /// Check if there is a JWT without loading it.
-    /// If is_internal is true, this will return false.
+    /// If [`AuthCtx::is_internal`] is true, this will return false.
     pub fn has_jwt(&self) -> bool {
         self.jwt.is_some()
     }
