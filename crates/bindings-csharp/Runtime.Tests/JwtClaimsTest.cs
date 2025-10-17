@@ -1,4 +1,5 @@
 namespace Runtime.Tests;
+
 using SpacetimeDB;
 
 public class JwtClaimsTest
