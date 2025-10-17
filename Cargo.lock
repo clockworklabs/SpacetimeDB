@@ -3741,14 +3741,14 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.0.4"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78bed444cc8a2160f01cbcf811ef18cac863ad68ae8ca62092e8db51d51c761c"
+checksum = "69d83b0086dc8ecf3ce9ae2874b2d1290252e2a30720bea58a5c6639b0092873"
 dependencies = [
  "libc",
  "log",
  "wasi",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3894,7 +3894,7 @@ dependencies = [
  "kqueue",
  "libc",
  "log",
- "mio 1.0.4",
+ "mio 1.1.0",
  "notify-types",
  "walkdir",
  "windows-sys 0.60.2",
@@ -6280,9 +6280,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.32"
+version = "0.23.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd3c25631629d034ce7cd9940adc9d45762d46de2b0f57193c4443b92c6d4d40"
+checksum = "751e04a496ca00bb97a5e043158d23d66b5aabf2e1d5aa2a0aaebb1aafe6f82c"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -6900,24 +6900,6 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5efd17d19bdeff3f0c83588a2112fafab2eec51dd321fc2f0762be5cb6f84291"
-dependencies = [
- "bytemuck",
- "derive_more 0.99.20",
- "getrandom 0.2.16",
- "log",
- "rand 0.8.5",
- "scoped-tls",
- "spacetimedb-bindings-macro 1.5.0",
- "spacetimedb-bindings-sys 1.5.0",
- "spacetimedb-lib 1.5.0",
- "spacetimedb-primitives 1.5.0",
-]
-
-[[package]]
-name = "spacetimedb"
 version = "1.6.0"
 dependencies = [
  "bytemuck",
@@ -6925,7 +6907,6 @@ dependencies = [
  "getrandom 0.2.16",
  "insta",
  "log",
- "once_cell",
  "rand 0.8.5",
  "scoped-tls",
  "serde_json",
@@ -6934,6 +6915,24 @@ dependencies = [
  "spacetimedb-lib 1.6.0",
  "spacetimedb-primitives 1.6.0",
  "trybuild",
+]
+
+[[package]]
+name = "spacetimedb"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8679cf54a7a653e6bc612bef28c219f98b9274308d8aae1e86046ed685db48b1"
+dependencies = [
+ "bytemuck",
+ "derive_more 0.99.20",
+ "getrandom 0.2.16",
+ "log",
+ "rand 0.8.5",
+ "scoped-tls",
+ "spacetimedb-bindings-macro 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb-bindings-sys 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb-lib 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb-primitives 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -6997,37 +6996,28 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0b8b68c082bfe3165f0c0fddf24446a89de9d3ec6bb2a47eb4060c05788b775"
+version = "1.6.0"
 dependencies = [
  "heck 0.4.1",
  "humantime",
  "proc-macro2",
  "quote",
- "spacetimedb-primitives 1.5.0",
+ "spacetimedb-primitives 1.6.0",
  "syn 2.0.106",
 ]
 
 [[package]]
 name = "spacetimedb-bindings-macro"
 version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a930242493f5c875ab96903eb40fb6a90c4d3ae99597fd51da569ff22769a03"
 dependencies = [
  "heck 0.4.1",
  "humantime",
  "proc-macro2",
  "quote",
- "spacetimedb-primitives 1.6.0",
+ "spacetimedb-primitives 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "syn 2.0.106",
-]
-
-[[package]]
-name = "spacetimedb-bindings-sys"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15c318bc9e80e05d45650f3506ebf73f4104a899b65f281ec41438fae3e973df"
-dependencies = [
- "spacetimedb-primitives 1.5.0",
 ]
 
 [[package]]
@@ -7035,6 +7025,15 @@ name = "spacetimedb-bindings-sys"
 version = "1.6.0"
 dependencies = [
  "spacetimedb-primitives 1.6.0",
+]
+
+[[package]]
+name = "spacetimedb-bindings-sys"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e565dfcdd2dc3f58e0178052ec1c8ce710b013482d4fa50b511ba786a2c3bc68"
+dependencies = [
+ "spacetimedb-primitives 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -7489,26 +7488,6 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7916cf88443f49f1bc4ea0c533a2ada72c1871c6537fcb508fd5ca0bf7ddb72b"
-dependencies = [
- "anyhow",
- "bitflags 2.9.4",
- "blake3",
- "chrono",
- "derive_more 0.99.20",
- "enum-as-inner",
- "hex",
- "itertools 0.12.1",
- "spacetimedb-bindings-macro 1.5.0",
- "spacetimedb-primitives 1.5.0",
- "spacetimedb-sats 1.5.0",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "spacetimedb-lib"
 version = "1.6.0"
 dependencies = [
  "anyhow",
@@ -7532,6 +7511,26 @@ dependencies = [
  "spacetimedb-metrics",
  "spacetimedb-primitives 1.6.0",
  "spacetimedb-sats 1.6.0",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-lib"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ba57c8f1983bb144ee7e1ff28aa5882ca437f67c14a14daad4bf61d31f7040d"
+dependencies = [
+ "anyhow",
+ "bitflags 2.9.4",
+ "blake3",
+ "chrono",
+ "derive_more 0.99.20",
+ "enum-as-inner",
+ "hex",
+ "itertools 0.12.1",
+ "spacetimedb-bindings-macro 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb-primitives 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb-sats 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.69",
 ]
 
@@ -7607,18 +7606,6 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "949951659579c71b72bf432ad4729f95e47c6c260d368e418b0790927fa70b21"
-dependencies = [
- "bitflags 2.9.4",
- "either",
- "itertools 0.12.1",
- "nohash-hasher",
-]
-
-[[package]]
-name = "spacetimedb-primitives"
 version = "1.6.0"
 dependencies = [
  "bitflags 2.9.4",
@@ -7627,6 +7614,18 @@ dependencies = [
  "nohash-hasher",
  "proptest",
  "spacetimedb-memory-usage",
+]
+
+[[package]]
+name = "spacetimedb-primitives"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dcd64c6970ca59e7b71e51952cf1a71bae2652b1eb736c19a7e528f3874894a"
+dependencies = [
+ "bitflags 2.9.4",
+ "either",
+ "itertools 0.12.1",
+ "nohash-hasher",
 ]
 
 [[package]]
@@ -7644,32 +7643,6 @@ dependencies = [
  "spacetimedb-primitives 1.6.0",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
-]
-
-[[package]]
-name = "spacetimedb-sats"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0b393d53adce6aa28b1b65f0b85dc3b1c9f796b32fb00514fd49c32605599e1"
-dependencies = [
- "anyhow",
- "arrayvec",
- "bitflags 2.9.4",
- "bytemuck",
- "bytes",
- "chrono",
- "decorum",
- "derive_more 0.99.20",
- "enum-as-inner",
- "ethnum",
- "hex",
- "itertools 0.12.1",
- "second-stack",
- "sha3",
- "smallvec",
- "spacetimedb-bindings-macro 1.5.0",
- "spacetimedb-primitives 1.5.0",
- "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -7703,6 +7676,32 @@ dependencies = [
  "spacetimedb-memory-usage",
  "spacetimedb-metrics",
  "spacetimedb-primitives 1.6.0",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-sats"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eae61d8f88bda21f56c143bc9b4ddc20100ff08ae4fed0b9444509f7c3ca4339"
+dependencies = [
+ "anyhow",
+ "arrayvec",
+ "bitflags 2.9.4",
+ "bytemuck",
+ "bytes",
+ "chrono",
+ "decorum",
+ "derive_more 0.99.20",
+ "enum-as-inner",
+ "ethnum",
+ "hex",
+ "itertools 0.12.1",
+ "second-stack",
+ "sha3",
+ "smallvec",
+ "spacetimedb-bindings-macro 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb-primitives 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.69",
 ]
 
@@ -8523,9 +8522,9 @@ dependencies = [
 
 [[package]]
 name = "tikv-jemalloc-ctl"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f21f216790c8df74ce3ab25b534e0718da5a1916719771d3fec23315c99e468b"
+checksum = "661f1f6a57b3a36dc9174a2c10f19513b4866816e13425d3e418b11cc37bc24c"
 dependencies = [
  "libc",
  "paste",
@@ -8534,9 +8533,9 @@ dependencies = [
 
 [[package]]
 name = "tikv-jemalloc-sys"
-version = "0.6.0+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7"
+version = "0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd3c60906412afa9c2b5b5a48ca6a5abe5736aec9eb48ad05037a677e52e4e2d"
+checksum = "cd8aa5b2ab86a2cefa406d889139c162cbb230092f7d1d7cbc1716405d852a3b"
 dependencies = [
  "cc",
  "libc",
@@ -8544,9 +8543,9 @@ dependencies = [
 
 [[package]]
 name = "tikv-jemallocator"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cec5ff18518d81584f477e9bfdf957f5bb0979b0bac3af4ca30b5b3ae2d2865"
+checksum = "0359b4327f954e0567e69fb191cf1436617748813819c94b8cd4a431422d053a"
 dependencies = [
  "libc",
  "tikv-jemalloc-sys",
@@ -8638,7 +8637,7 @@ checksum = "ff360e02eab121e0bc37a2d3b4d4dc622e6eda3a8e5253d5435ecf5bd4c68408"
 dependencies = [
  "bytes",
  "libc",
- "mio 1.0.4",
+ "mio 1.1.0",
  "parking_lot 0.12.5",
  "pin-project-lite",
  "signal-hook-registry",
@@ -9159,7 +9158,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "log",
- "spacetimedb 1.5.0",
+ "spacetimedb 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

@@ -16,9 +16,9 @@ pub use log;
 #[cfg(feature = "rand")]
 pub use rand08 as rand;
 use spacetimedb_lib::bsatn;
+use std::cell::LazyCell;
 use std::cell::{OnceCell, RefCell};
 use std::ops::Deref;
-use std::sync::LazyLock;
 
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
@@ -788,6 +788,7 @@ impl ReducerContext {
         }
     }
 
+    /// Returns the authorization information for the caller of this reducer.
     pub fn sender_auth(&self) -> &AuthCtx {
         &self.sender_auth
     }
@@ -864,18 +865,19 @@ pub struct JwtClaims {
 /// Authentication information for the caller of a reducer.
 pub struct AuthCtx {
     is_internal: bool,
-    // I can't directly use a LazyLock without making this struct generic.
+    // NOTE(jsdt): cannot directly use a LazyLock without making this struct generic.
     jwt: Box<dyn Deref<Target = Option<JwtClaims>>>,
 }
 
 impl AuthCtx {
-    fn new<F>(is_internal: bool, jwt_fn: F) -> Self
-    where
-        F: FnOnce() -> Option<JwtClaims> + 'static,
-    {
+    fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
+        // fn new<F>(is_internal: bool, jwt_fn: F) -> Self
+        // where
+        //     F: FnOnce() -> Option<JwtClaims> + 'static,
+        // {
         AuthCtx {
             is_internal,
-            jwt: Box::new(LazyLock::new(jwt_fn)),
+            jwt: Box::new(LazyCell::new(jwt_fn)),
         }
     }
 
@@ -896,13 +898,13 @@ impl AuthCtx {
         Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
     }
 
-    /// True if this reducer was spawned from inside the database.
+    /// Returns whether this reducer was spawned from inside the database.
     pub fn is_internal(&self) -> bool {
         self.is_internal
     }
 
     /// Check if there is a JWT without loading it.
-    /// If is_internal is true, this will be false.
+    /// If is_internal is true, this will return false.
     pub fn has_jwt(&self) -> bool {
         self.jwt.is_some()
     }
@@ -927,11 +929,16 @@ impl JwtClaims {
             .get_or_init(|| serde_json::from_str(&self.payload).expect("Failed to parse JWT payload"))
     }
 
+    /// Returns the tokens subject, from the sub claim.
     pub fn subject(&self) -> &str {
-        // TODO: Add more error messages here.
-        self.get_parsed().get("sub").unwrap().as_str().unwrap()
+        self.get_parsed()
+            .get("sub")
+            .expect("Missing 'sub' claim")
+            .as_str()
+            .expect("Token 'sub' claim is not a string")
     }
 
+    /// Returns the issuer for these credentials, from the iss claim.
     pub fn issuer(&self) -> &str {
         self.get_parsed().get("iss").unwrap().as_str().unwrap()
     }
@@ -945,16 +952,18 @@ impl JwtClaims {
         }
     }
 
+    /// Returns the audience for these credentials, from the aud claim.
     pub fn audience(&self) -> &[String] {
         self.audience.get_or_init(|| self.extract_audience())
     }
 
-    // A convenience method, since this may not be in the token.
+    /// Returns the identity for these credentials, which is
+    /// based on the iss and sub claims.
     pub fn identity(&self) -> Identity {
         Identity::from_claims(self.issuer(), self.subject())
     }
 
-    // We can expose the whole payload for users that want to parse custom claims.
+    /// Get the whole JWT payload as a json string.
     pub fn raw_payload(&self) -> &str {
         &self.payload
     }
