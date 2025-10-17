@@ -129,8 +129,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         println!("(JS) Skipping build. Instead we are publishing {}", path.display());
         (path.clone(), "Js")
     } else {
-        let path = build::exec_with_argstring(config.clone(), path_to_project, build_options).await?;
-        (path, "Wasm")
+        build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
     };
     let program_bytes = fs::read(path_to_program)?;
 
@@ -169,6 +168,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 &client,
                 &database_host,
                 &domain.to_string(),
+                host_type,
                 &program_bytes,
                 &auth_header,
                 break_clients_flag,
@@ -211,6 +211,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // Set the host type.
     builder = builder.query(&[("host_type", host_type)]);
+
+    // JS/TS is beta quality atm.
+    if host_type == "Js" {
+        println!("JavaScript / TypeScript support is currently in BETA.");
+        println!("There may be bugs. Please file issues if you encounter any.");
+        println!("<https://github.com/clockworklabs/SpacetimeDB/issues/new>");
+    }
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
@@ -275,16 +282,27 @@ pub fn pretty_print_style_from_env() -> PrettyPrintStyle {
 
 /// Applies pre-publish logic: checking for migration plan, prompting user, and
 /// modifying the request builder accordingly.
+#[allow(clippy::too_many_arguments)]
 async fn apply_pre_publish_if_needed(
     mut builder: reqwest::RequestBuilder,
     client: &reqwest::Client,
     base_url: &str,
     domain: &String,
+    host_type: &str,
     program_bytes: &[u8],
     auth_header: &AuthHeader,
     break_clients_flag: bool,
 ) -> Result<reqwest::RequestBuilder, anyhow::Error> {
-    if let Some(pre) = call_pre_publish(client, base_url, &domain.to_string(), program_bytes, auth_header).await? {
+    if let Some(pre) = call_pre_publish(
+        client,
+        base_url,
+        &domain.to_string(),
+        host_type,
+        program_bytes,
+        auth_header,
+    )
+    .await?
+    {
         println!("{}", pre.migrate_plan);
 
         if pre.break_clients
@@ -310,12 +328,15 @@ async fn call_pre_publish(
     client: &reqwest::Client,
     database_host: &str,
     domain: &String,
+    host_type: &str,
     program_bytes: &[u8],
     auth_header: &AuthHeader,
 ) -> Result<Option<PrePublishResult>, anyhow::Error> {
     let mut builder = client.post(format!("{database_host}/v1/database/{domain}/pre_publish"));
     let style = pretty_print_style_from_env();
-    builder = builder.query(&[("pretty_print_style", style)]);
+    builder = builder
+        .query(&[("pretty_print_style", style)])
+        .query(&[("host_type", host_type)]);
 
     builder = add_auth_header_opt(builder, auth_header);
 

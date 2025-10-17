@@ -90,6 +90,7 @@ pub struct NodeStatus {
     serde::Deserialize,
     strum::AsRefStr,
     strum::Display,
+    strum::EnumString,
 )]
 #[repr(i32)]
 pub enum HostType {

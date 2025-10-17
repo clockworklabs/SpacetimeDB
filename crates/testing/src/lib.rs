@@ -1,4 +1,5 @@
 use clap::Command as ClapCommand;
+use spacetimedb::messages::control_db::HostType;
 use spacetimedb_cli::Config;
 use spacetimedb_paths::SpacetimePaths;
 use spacetimedb_schema::def::ModuleDef;
@@ -69,7 +70,11 @@ fn extract_descriptions(wasm_file: &std::path::Path) -> anyhow::Result<ModuleDef
         let program_bytes = std::fs::read(wasm_file)?;
         tokio::runtime::Handle::current().block_on(spacetimedb::host::extract_schema(
             program_bytes.into(),
-            spacetimedb::messages::control_db::HostType::Wasm,
+            match wasm_file.extension().unwrap().to_str().unwrap() {
+                "wasm" => HostType::Wasm,
+                "js" => HostType::Js,
+                _ => unreachable!(),
+            },
         ))
     })
 }
