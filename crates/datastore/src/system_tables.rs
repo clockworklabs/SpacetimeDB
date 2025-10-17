@@ -731,10 +731,21 @@ impl From<StTableRow> for ProductValue {
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StViewRow {
+    /// An auto-inc id for each view
     pub view_id: ViewId,
+    /// The name of the view function as defined in the module
     pub view_name: Box<str>,
+    /// The [`TableId`] for this view if materialized.
+    /// Currently all views are materialized and therefore are assigned a [`TableId`] by default.
     pub table_id: Option<TableId>,
+    /// Is this a public or a private view?
+    /// Currently all views are public by default.
+    /// Private views may be supported in the future.
     pub is_public: bool,
+    /// Is this view anonymous?
+    /// An anonymous view does not know who called it.
+    /// Specifically, it is a view that has an `AnonymousViewContext` as its first argument.
+    /// This type does not have access to the [`Identity`] of the caller.
     pub is_anonymous: bool,
 }
 
@@ -822,6 +833,7 @@ impl From<ColumnSchema> for StColumnRow {
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StViewColumnRow {
+    /// A foreign key referencing [`ST_VIEW_NAME`].
     pub view_id: ViewId,
     pub col_pos: ColId,
     pub col_name: Box<str>,
@@ -836,6 +848,7 @@ pub struct StViewColumnRow {
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StViewParamRow {
+    /// A foreign key referencing [`ST_VIEW_NAME`].
     pub view_id: ViewId,
     pub param_pos: ColId,
     pub param_name: Box<str>,
