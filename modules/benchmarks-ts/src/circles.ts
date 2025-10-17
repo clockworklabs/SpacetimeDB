@@ -70,7 +70,7 @@ spacetimedb.reducer('insert_bulk_circle', { count: t.u32() }, insertBulkCircle);
 
 const insertBulkFood = (ctx, { count }) => {
   for (let id = 0; id < count; id++) {
-    ctx.db.circle.insert(newFood(id));
+    ctx.db.food.insert(newFood(id));
   }
   console.info(`INSERT FOOD: ${count}`);
 };
