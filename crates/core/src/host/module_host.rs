@@ -51,7 +51,7 @@ use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::deserialize::ArgsSeed;
-use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
+use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
 use std::collections::VecDeque;
@@ -413,6 +413,18 @@ pub fn create_table_from_def(
     Ok(())
 }
 
+/// Creates the table for `view_def` in `stdb`.
+pub fn create_table_from_view_def(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    module_def: &ModuleDef,
+    view_def: &ViewDef,
+) -> anyhow::Result<()> {
+    stdb.create_view_table(tx, module_def, view_def)
+        .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
+    Ok(())
+}
+
 /// If the module instance's replica_ctx is uninitialized, initialize it.
 fn init_database(
     replica_ctx: &ReplicaContext,
@@ -436,6 +448,15 @@ fn init_database(
                 logger.info(&format!("Creating table `{}`", &def.name));
                 create_table_from_def(stdb, tx, module_def, def)?;
             }
+
+            let mut view_defs: Vec<_> = module_def.views().collect();
+            view_defs.sort_by(|a, b| a.name.cmp(&b.name));
+
+            for def in view_defs {
+                logger.info(&format!("Creating table for view `{}`", &def.name));
+                create_table_from_view_def(stdb, tx, module_def, def)?;
+            }
+
             // Insert the late-bound row-level security expressions.
             for rls in module_def.row_level_security() {
                 logger.info(&format!("Creating row level security `{}`", rls.sql));

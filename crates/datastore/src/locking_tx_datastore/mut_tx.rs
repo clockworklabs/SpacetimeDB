@@ -8,11 +8,9 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::execution_context::ExecutionContext;
-use crate::execution_context::Workload;
 use crate::system_tables::{
-    system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow,
-    ST_CONNECTION_CREDENTIALS_ID,
+    system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow, StViewFields,
+    StViewParamRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
 };
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
@@ -25,6 +23,8 @@ use crate::{
         ST_SEQUENCE_ID, ST_TABLE_ID,
     },
 };
+use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
+use crate::{execution_context::Workload, system_tables::StViewRow};
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
@@ -37,7 +37,7 @@ use spacetimedb_lib::{
     ConnectionId, Identity,
 };
 use spacetimedb_primitives::{
-    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId,
+    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
@@ -45,8 +45,9 @@ use spacetimedb_sats::{
     ser::Serialize,
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
-use spacetimedb_schema::schema::{
-    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
+use spacetimedb_schema::{
+    def::{ColumnDef, ModuleDef, ViewDef},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_table::{
     blob_store::BlobStore,
@@ -183,6 +184,37 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Create a backing table for a view.
+    ///
+    /// Requires:
+    /// - Everything [`Self::create_table`] requires.
+    ///
+    /// Ensures:
+    /// - Everything [`Self::create_table`] ensures.
+    /// - The returned [`ViewId`] is unique and not [`ViewId::SENTINEL`].
+    pub fn create_view_with_backing_table(
+        &mut self,
+        module_def: &ModuleDef,
+        view_def: &ViewDef,
+    ) -> Result<(ViewId, TableId)> {
+        let table_schema = TableSchema::from_view_def(module_def, view_def);
+        let table_id = self.create_table(table_schema)?;
+
+        let ViewDef {
+            name,
+            is_anonymous,
+            is_public,
+            params,
+            columns,
+            ..
+        } = view_def;
+
+        let view_id = self.insert_into_st_view(name.clone().into(), table_id, *is_public, *is_anonymous)?;
+        self.insert_into_st_view_param(view_id, params)?;
+        self.insert_into_st_view_column(view_id, columns)?;
+        Ok((view_id, table_id))
+    }
+
     /// Create a table.
     ///
     /// Requires:
@@ -285,6 +317,66 @@ impl MutTxId {
             self.insert_via_serialize_bsatn(ST_COLUMN_ID, &row)?;
             Ok(())
         })
+    }
+
+    /// Insert a row into `st_view`, auto-increments and returns the [`ViewId`].
+    fn insert_into_st_view(
+        &mut self,
+        view_name: Box<str>,
+        table_id: TableId,
+        is_public: bool,
+        is_anonymous: bool,
+    ) -> Result<ViewId> {
+        Ok(self
+            .insert_via_serialize_bsatn(
+                ST_VIEW_ID,
+                &StViewRow {
+                    view_id: ViewId::SENTINEL,
+                    view_name,
+                    table_id: Some(table_id),
+                    is_public,
+                    is_anonymous,
+                },
+            )?
+            .1
+            .collapse()
+            .read_col(StViewFields::ViewId)?)
+    }
+
+    /// For each parameter of a view, insert a row into `st_view_param`.
+    /// This does not include the context parameter.
+    fn insert_into_st_view_param(&mut self, view_id: ViewId, params: &ProductType) -> Result<()> {
+        for (i, field) in params.elements.iter().enumerate() {
+            self.insert_via_serialize_bsatn(
+                ST_VIEW_COLUMN_ID,
+                &StViewParamRow {
+                    view_id,
+                    param_pos: i.into(),
+                    param_name: field
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| format!("param_{i}").into_boxed_str()),
+                    param_type: field.algebraic_type.clone().into(),
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// For each column or field returned in a view, insert a row into `st_view_column`.
+    fn insert_into_st_view_column(&mut self, view_id: ViewId, columns: &[ColumnDef]) -> Result<()> {
+        for def in columns {
+            self.insert_via_serialize_bsatn(
+                ST_VIEW_COLUMN_ID,
+                &StViewColumnRow {
+                    view_id,
+                    col_pos: def.col_id,
+                    col_name: def.name.clone().into(),
+                    col_type: def.ty.clone().into(),
+                },
+            )?;
+        }
+        Ok(())
     }
 
     fn create_table_internal(&mut self, schema: Arc<TableSchema>) {

@@ -202,6 +202,11 @@ impl AlgebraicType {
         matches!(self, Self::Sum(p) if p.is_empty())
     }
 
+    /// Returns whether this type is an option type.
+    pub fn is_option(&self) -> bool {
+        matches!(self, Self::Sum(p) if p.is_option())
+    }
+
     /// If this type is the standard option type, returns the type of the `some` variant.
     /// Otherwise, returns `None`.
     pub fn as_option(&self) -> Option<&AlgebraicType> {

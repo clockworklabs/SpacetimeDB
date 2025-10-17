@@ -42,7 +42,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
-use spacetimedb_schema::def::{ModuleDef, TableDef};
+use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
 };
@@ -1053,6 +1053,15 @@ impl RelationalDB {
 impl RelationalDB {
     pub fn create_table(&self, tx: &mut MutTx, schema: TableSchema) -> Result<TableId, DBError> {
         Ok(self.inner.create_table_mut_tx(tx, schema)?)
+    }
+
+    pub fn create_view_table(
+        &self,
+        tx: &mut MutTx,
+        module_def: &ModuleDef,
+        view_def: &ViewDef,
+    ) -> Result<(ViewId, TableId), DBError> {
+        Ok(tx.create_view_with_backing_table(module_def, view_def)?)
     }
 
     pub fn create_table_for_test_with_the_works(
