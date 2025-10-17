@@ -23,7 +23,7 @@ use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseResult;
-use spacetimedb::host::{MigratePlanResult, ReducerArgs};
+use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::name::{
@@ -61,7 +61,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     }
     let caller_identity = auth.claims.identity;
 
-    let args = ReducerArgs::Json(body);
+    let args = FunctionArgs::Json(body);
 
     let db_identity = name_or_identity.resolve(&worker_ctx).await?;
     let database = worker_ctx_find_database(&worker_ctx, &db_identity)

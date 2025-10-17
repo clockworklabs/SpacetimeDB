@@ -2,7 +2,7 @@ use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtoc
 use super::{ClientConnection, DataMessage, Protocol};
 use crate::energy::EnergyQuanta;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, ReducerId};
+use crate::host::{FunctionArgs, ReducerId};
 use crate::identity::Identity;
 use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
@@ -36,14 +36,14 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             let DeserializeWrapper(message) =
                 serde_json::from_str::<DeserializeWrapper<ClientMessage<Cow<str>>>>(&text)?;
             message.map_args(|s| {
-                ReducerArgs::Json(match s {
+                FunctionArgs::Json(match s {
                     Cow::Borrowed(s) => text.slice_ref(s),
                     Cow::Owned(string) => string.into(),
                 })
             })
         }
         DataMessage::Binary(message_buf) => bsatn::from_slice::<ClientMessage<&[u8]>>(&message_buf)?
-            .map_args(|b| ReducerArgs::Bsatn(message_buf.slice_ref(b))),
+            .map_args(|b| FunctionArgs::Bsatn(message_buf.slice_ref(b))),
     };
 
     let module = client.module();
