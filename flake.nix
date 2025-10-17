@@ -123,7 +123,8 @@
               partitions = 1;
               partitionType = "count";
               # I (pgoldman 2025-10-17) have not figured out a sensible packaging of Unreal or of the .NET WASI SDK.
-              cargoTestExtraArgs = "--workspace -- --skip unreal --skip csharp";
+              # The SDK reauth tests attempt to create files in the home directory, which the nix sandbox disallows.
+              cargoTestExtraArgs = "--workspace -- --skip unreal --skip csharp --skip reauth";
             });
 
             # TODO: Also run smoketests.
@@ -137,7 +138,20 @@
           devShells.default = craneLib.devShell {
             checks = self.checks.${system};
 
-            packages = [rustStable rustNightly];
+            inputsFrom = [ spacetimedb-standalone spacetimedb-cli ];
+
+            # Required to make jemalloc_tikv_sys build in local development, otherwise you get:
+            #   /nix/store/0zv32kh0zb4s1v4ld6mc99vmzydj9nm9-glibc-2.40-66-dev/include/features.h:422:4: warning: #warning _FORTIFY_SOURCE requires compiling with optimization (-O) [-Wcpp]
+            #    422 | #  warning _FORTIFY_SOURCE requires compiling with optimization (-O)
+            #        |    ^~~~~~~
+            #  In file included from /nix/store/0zv32kh0zb4s1v4ld6mc99vmzydj9nm9-glibc-2.40-66-dev/include/bits/libc-header-start.h:33,
+            #                   from /nix/store/0zv32kh0zb4s1v4ld6mc99vmzydj9nm9-glibc-2.40-66-dev/include/math.h:27,
+            #                   from include/jemalloc/internal/jemalloc_internal_decls.h:4,
+            #                   from include/jemalloc/internal/jemalloc_preamble.h:5,
+            #                   from src/pac.c:1:
+            CFLAGS = "-O";
+
+            packages = [rustStable rustNightly cargoArtifacts];
           };
         }
     );
