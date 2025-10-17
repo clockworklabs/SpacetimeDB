@@ -13,15 +13,15 @@ use std::{collections::HashMap, time::Duration};
 // - [ ] Ejecting mass
 // - [ ] Leaderboard
 
-const START_PLAYER_MASS: u32 = 15;
-const START_PLAYER_SPEED: u32 = 10;
-const FOOD_MASS_MIN: u32 = 2;
-const FOOD_MASS_MAX: u32 = 4;
+const START_PLAYER_MASS: i32 = 15;
+const START_PLAYER_SPEED: i32 = 10;
+const FOOD_MASS_MIN: i32 = 2;
+const FOOD_MASS_MAX: i32 = 4;
 const TARGET_FOOD_COUNT: usize = 600;
 const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;
 
-const MIN_MASS_TO_SPLIT: u32 = START_PLAYER_MASS * 2;
-const MAX_CIRCLES_PER_PLAYER: u32 = 16;
+const MIN_MASS_TO_SPLIT: i32 = START_PLAYER_MASS * 2;
+const MAX_CIRCLES_PER_PLAYER: i32 = 16;
 const SPLIT_RECOMBINE_DELAY_SEC: f32 = 5.0;
 const SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC: f32 = 2.0;
 const ALLOWED_SPLIT_CIRCLE_OVERLAP_PCT: f32 = 0.9;
@@ -30,8 +30,8 @@ const SELF_COLLISION_SPEED: f32 = 0.05; //1 == instantly separate circles. less 
 #[spacetimedb::table(name = config, public)]
 pub struct Config {
     #[primary_key]
-    pub id: u32,
-    pub world_size: u64,
+    pub id: i32,
+    pub world_size: i64,
 }
 
 #[spacetimedb::table(name = entity, public)]
@@ -40,9 +40,9 @@ pub struct Config {
 pub struct Entity {
     #[auto_inc]
     #[primary_key]
-    pub entity_id: u32,
+    pub entity_id: i32,
     pub position: DbVector2,
-    pub mass: u32,
+    pub mass: i32,
 }
 
 #[spacetimedb::table(name = circle, public)]
@@ -50,9 +50,9 @@ pub struct Entity {
 #[derive(Debug, Clone)]
 pub struct Circle {
     #[primary_key]
-    pub entity_id: u32,
+    pub entity_id: i32,
     #[index(btree)]
-    pub player_id: u32,
+    pub player_id: i32,
     pub direction: DbVector2,
     pub speed: f32,
     pub last_split_time: Timestamp,
@@ -66,14 +66,14 @@ pub struct Player {
     identity: Identity,
     #[unique]
     #[auto_inc]
-    player_id: u32,
+    player_id: i32,
     name: String,
 }
 
 #[spacetimedb::table(name = food, public)]
 pub struct Food {
     #[primary_key]
-    pub entity_id: u32,
+    pub entity_id: i32,
 }
 
 #[spacetimedb::table(name = move_all_players_timer, scheduled(move_all_players))]
@@ -106,7 +106,7 @@ pub struct CircleRecombineTimer {
     #[auto_inc]
     scheduled_id: u64,
     scheduled_at: spacetimedb::ScheduleAt,
-    player_id: u32,
+    player_id: i32,
 }
 
 #[spacetimedb::table(name = consume_entity_timer, scheduled(consume_entity))]
@@ -115,8 +115,8 @@ pub struct ConsumeEntityTimer {
     #[auto_inc]
     scheduled_id: u64,
     scheduled_at: spacetimedb::ScheduleAt,
-    consumed_entity_id: u32,
-    consumer_entity_id: u32,
+    consumed_entity_id: i32,
+    consumer_entity_id: i32,
 }
 
 #[spacetimedb::reducer(init)]
@@ -196,7 +196,7 @@ pub fn enter_game(ctx: &ReducerContext, name: String) -> Result<(), String> {
     Ok(())
 }
 
-fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<Entity, String> {
+fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: i32) -> Result<Entity, String> {
     let mut rng = ctx.rng();
     let world_size = ctx.db.config().id().find(&0).ok_or("Config not found")?.world_size;
     let player_start_radius = mass_to_radius(START_PLAYER_MASS);
@@ -207,8 +207,8 @@ fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<E
 
 fn spawn_circle_at(
     ctx: &ReducerContext,
-    player_id: u32,
-    mass: u32,
+    player_id: i32,
+    mass: i32,
     position: DbVector2,
     timestamp: Timestamp,
 ) -> Result<Entity, String> {
@@ -285,11 +285,11 @@ fn is_overlapping(a: &Entity, b: &Entity) -> bool {
     distance_sq <= max_radius * max_radius
 }
 
-fn mass_to_radius(mass: u32) -> f32 {
+fn mass_to_radius(mass: i32) -> f32 {
     (mass as f32).sqrt()
 }
 
-fn mass_to_max_move_speed(mass: u32) -> f32 {
+fn mass_to_max_move_speed(mass: i32) -> f32 {
     2.0 * START_PLAYER_SPEED as f32 / (1.0 + (mass as f32 / START_PLAYER_MASS as f32).sqrt())
 }
 
@@ -299,7 +299,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
     // let span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
     let world_size = ctx.db.config().id().find(0).ok_or("Config not found")?.world_size;
 
-    let mut circle_directions: HashMap<u32, DbVector2> = ctx
+    let mut circle_directions: HashMap<i32, DbVector2> = ctx
         .db
         .circle()
         .iter()
@@ -394,7 +394,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
     }
 
     // Check collisions
-    let entities: HashMap<u32, Entity> = ctx.db.entity().iter().map(|e| (e.entity_id, e)).collect();
+    let entities: HashMap<i32, Entity> = ctx.db.entity().iter().map(|e| (e.entity_id, e)).collect();
     for circle in ctx.db.circle().iter() {
         // let span = spacetimedb::time_span::Span::start("collisions");
         let circle_entity = entities.get(&circle.entity_id).unwrap();
@@ -424,7 +424,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
     Ok(())
 }
 
-fn schedule_consume_entity(ctx: &ReducerContext, consumer_id: u32, consumed_id: u32) {
+fn schedule_consume_entity(ctx: &ReducerContext, consumer_id: i32, consumed_id: i32) {
     ctx.db.consume_entity_timer().insert(ConsumeEntityTimer {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Time(ctx.timestamp.clone()),
@@ -453,7 +453,7 @@ pub fn consume_entity(ctx: &ReducerContext, request: ConsumeEntityTimer) -> Resu
     Ok(())
 }
 
-pub fn destroy_entity(ctx: &ReducerContext, entity_id: u32) -> Result<(), String> {
+pub fn destroy_entity(ctx: &ReducerContext, entity_id: i32) -> Result<(), String> {
     ctx.db.food().entity_id().delete(&entity_id);
     ctx.db.circle().entity_id().delete(&entity_id);
     ctx.db.entity().entity_id().delete(&entity_id);
@@ -470,7 +470,7 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
         .find(&ctx.sender)
         .ok_or("Sender has no player")?;
     let circles: Vec<Circle> = ctx.db.circle().player_id().filter(&player.player_id).collect();
-    let mut circle_count = circles.len() as u32;
+    let mut circle_count = circles.len() as i32;
     if circle_count >= MAX_CIRCLES_PER_PLAYER {
         return Ok(());
     }
@@ -558,7 +558,7 @@ pub fn circle_decay(ctx: &ReducerContext, _timer: CircleDecayTimer) -> Result<()
         if circle_entity.mass <= START_PLAYER_MASS {
             continue;
         }
-        circle_entity.mass = (circle_entity.mass as f32 * 0.99) as u32;
+        circle_entity.mass = (circle_entity.mass as f32 * 0.99) as i32;
         ctx.db.entity().entity_id().update(circle_entity);
     }
 
@@ -566,7 +566,7 @@ pub fn circle_decay(ctx: &ReducerContext, _timer: CircleDecayTimer) -> Result<()
 }
 
 pub fn calculate_center_of_mass(entities: &[Entity]) -> DbVector2 {
-    let total_mass: u32 = entities.iter().map(|e| e.mass).sum();
+    let total_mass: i32 = entities.iter().map(|e| e.mass).sum();
     let center_of_mass: DbVector2 = entities.iter().map(|e| e.position * e.mass as f32).sum();
     center_of_mass / total_mass as f32
 }

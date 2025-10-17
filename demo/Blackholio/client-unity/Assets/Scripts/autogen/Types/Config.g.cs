@@ -14,13 +14,13 @@ namespace SpacetimeDB.Types
     public sealed partial class Config
     {
         [DataMember(Name = "id")]
-        public uint Id;
+        public int Id;
         [DataMember(Name = "world_size")]
-        public ulong WorldSize;
+        public long WorldSize;
 
         public Config(
-            uint Id,
-            ulong WorldSize
+            int Id,
+            long WorldSize
         )
         {
             this.Id = Id;

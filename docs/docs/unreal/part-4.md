@@ -224,9 +224,9 @@ pub struct MoveAllPlayersTimer {
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
-const START_PLAYER_SPEED: u32 = 10;
+const START_PLAYER_SPEED: i32 = 10;
 
-fn mass_to_max_move_speed(mass: u32) -> f32 {
+fn mass_to_max_move_speed(mass: i32) -> f32 {
     2.0 * START_PLAYER_SPEED as f32 / (1.0 + (mass as f32 / START_PLAYER_MASS as f32).sqrt())
 }
 
@@ -273,9 +273,9 @@ public partial struct MoveAllPlayersTimer
     public ScheduleAt scheduled_at;
 }
 
-const uint START_PLAYER_SPEED = 10;
+const int START_PLAYER_SPEED = 10;
 
-public static float MassToMaxMoveSpeed(uint mass) => 2f * START_PLAYER_SPEED / (1f + MathF.Sqrt((float)mass / START_PLAYER_MASS));
+public static float MassToMaxMoveSpeed(int mass) => 2f * START_PLAYER_SPEED / (1f + MathF.Sqrt((float)mass / START_PLAYER_MASS));
 
 [Reducer]
 public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
@@ -346,6 +346,8 @@ spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-pa
 ```
 
 ### Moving on the Client
+
+:::server-cpp
 
 The final step is to update `BlackholioPlayerController` on the client to call the `update_player_input` reducer.  
 Open `BlackholioPlayerController.cpp` and replace the stubbed function added earlier with the following:
@@ -427,6 +429,28 @@ void ABlackholioPlayerController::Tick(float DeltaSeconds)
 ```
 
 > **Reminder:** Be sure to rebuild your project after making changes to the code.
+
+:::
+:::server-blueprint
+
+The final step is to update `BP_PlayerController` on the client to call the `update_player_input` reducer.  
+
+Add **Function** named `ComputeDesiredDirection` as follows:
+<!-- ![Update ComputeDesiredDirection](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-4-01-blueprint-playercontroller-1.png) -->
+![Add ComputeDesiredDirection](./part-4-01-blueprint-playercontroller-1.png)
+<!-- ![Update ComputeDesiredDirection](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-4-01-blueprint-playercontroller-2.png) -->
+![Add ComputeDesiredDirection](./part-4-01-blueprint-playercontroller-2.png)
+
+- Add **Output** as `Result` with **Vector 2D** as the type.
+- Add **Local Variable** as `ViewpointCenter` with **Vector 2D** as the type.
+- Add **Local Variable** as `MousePosition` with **Vector 2D** as the type.
+- Check **Pure**
+
+Finally, update the `Event Tick` function to use this logic and trigger the reducer:
+<!-- ![Update ComputeDesiredDirection](https://tmp-unreal-engine-tutorial-images.nyc3.digitaloceanspaces.com/part-4-01-blueprint-playercontroller-3.png) -->
+![Update Event Tick](./part-4-01-blueprint-playercontroller-3.png)
+
+:::
 
 Let's try it out! Press play and roam freely around the arena! Now we're cooking with gas.
 
@@ -518,6 +542,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
     Ok(())
 }
 ```
+
 :::
 :::server-csharp
 Wrong. With SpacetimeDB it's extremely easy. All we have to do is add an `IsOverlapping` helper function which does some basic math based on mass radii, and modify our `MoveAllPlayers` reducer to loop through every entity in the arena for every circle, checking each for overlaps. This may not be the most efficient way to do collision checking (building a quad tree or doing [spatial hashing](https://conkerjo.wordpress.com/2009/06/13/spatial-hashing-implementation-for-fast-2d-collisions/) might be better), but SpacetimeDB is very fast so for this number of entities it'll be a breeze for SpacetimeDB.

@@ -18,15 +18,15 @@ namespace SpacetimeDB.Types
         [DataMember(Name = "scheduled_at")]
         public SpacetimeDB.ScheduleAt ScheduledAt;
         [DataMember(Name = "consumed_entity_id")]
-        public uint ConsumedEntityId;
+        public int ConsumedEntityId;
         [DataMember(Name = "consumer_entity_id")]
-        public uint ConsumerEntityId;
+        public int ConsumerEntityId;
 
         public ConsumeEntityTimer(
             ulong ScheduledId,
             SpacetimeDB.ScheduleAt ScheduledAt,
-            uint ConsumedEntityId,
-            uint ConsumerEntityId
+            int ConsumedEntityId,
+            int ConsumerEntityId
         )
         {
             this.ScheduledId = ScheduledId;

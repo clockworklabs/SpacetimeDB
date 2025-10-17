@@ -89,7 +89,7 @@ public class PlayModeExampleTest
             Debug.Assert(circle != null, nameof(circle) + " != null");
             var ourEntity = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
             var toChosenFood = new UnityEngine.Vector2(1000, 0);
-            uint chosenFoodId = 0;
+            int chosenFoodId = 0;
             foreach (var food in GameManager.Conn.Db.Food.Iter())
             {
                 var thisFoodId = food.EntityId;

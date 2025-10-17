@@ -20,7 +20,7 @@ class CLIENT_UNREAL_API UCircleEntityIdUniqueIndex : public UObject
 private:
     // Declare an instance of your templated helper.
     // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FCircleType, uint32, FTableCache<FCircleType>> EntityIdIndexHelper;
+    FUniqueIndexHelper<FCircleType, int32, FTableCache<FCircleType>> EntityIdIndexHelper;
 
 public:
     UCircleEntityIdUniqueIndex()
@@ -33,8 +33,8 @@ public:
      * @param Key The entityid to search for.
      * @return The found FCircleType, or a default-constructed FCircleType if not found.
      */
-    // NOTE: Not exposed to Blueprint because uint32 types are not Blueprint-compatible
-    FCircleType Find(uint32 Key)
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|CircleIndex")
+    FCircleType Find(int32 Key)
     {
         // Simply delegate the call to the internal helper
         return EntityIdIndexHelper.FindUniqueIndex(Key);
@@ -55,11 +55,11 @@ class UCirclePlayerIdIndex : public UObject
     GENERATED_BODY()
 
 public:
-    TArray<FCircleType> Filter(const uint32& PlayerId) const
+    TArray<FCircleType> Filter(const int32& PlayerId) const
     {
         TArray<FCircleType> OutResults;
 
-        LocalCache->FindByMultiKeyBTreeIndex<TTuple<uint32>>(
+        LocalCache->FindByMultiKeyBTreeIndex<TTuple<int32>>(
             OutResults,
             TEXT("player_id"),
             MakeTuple(PlayerId)
@@ -74,8 +74,8 @@ public:
     }
 
 private:
-    // NOTE: Not exposed to Blueprint because some parameter types are not Blueprint-compatible
-    void FilterPlayerId(TArray<FCircleType>& OutResults, const uint32& PlayerId)
+    UFUNCTION(BlueprintCallable)
+    void FilterPlayerId(TArray<FCircleType>& OutResults, const int32& PlayerId)
     {
         OutResults = Filter(PlayerId);
     }
