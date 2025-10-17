@@ -1149,7 +1149,7 @@ fn check_scheduled_functions_exist(
         .collect_all_errors()
 }
 
-/// Check that all function (reducer and procedure) names are unique,
+/// Check that all function (reducer, procedure, or view) names are unique,
 /// then re-organize the reducers and procedures into [`IndexMap`]s
 /// for storage in the [`ModuleDef`].
 #[allow(clippy::type_complexity)]

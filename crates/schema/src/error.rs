@@ -136,7 +136,7 @@ pub enum ValidationError {
     MultipleColumnDefaultValues { table: RawIdentifier, col_id: ColId },
     #[error("Table {table} not found")]
     TableNotFound { table: RawIdentifier },
-    #[error("Name {name} is used for multiple reducers and/or procedures")]
+    #[error("Duplicate {name} found among reducers/procedures/views")]
     DuplicateFunctionName { name: Identifier },
 }
 
