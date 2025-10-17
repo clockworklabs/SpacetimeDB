@@ -998,14 +998,19 @@ impl MutTxId {
     /// - The sequence metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and not `SequenceId::SENTINEL`.
     pub fn create_sequence(&mut self, seq: SequenceSchema) -> Result<SequenceId> {
-        if seq.sequence_id != SequenceId::SENTINEL {
-            return Err(anyhow::anyhow!("`sequence_id` must be `SequenceId::SENTINEL` in `{seq:#?}`").into());
-        }
         if seq.table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{seq:#?}`").into());
         }
 
         let table_id = seq.table_id;
+        let matching_system_table_schema = system_tables().iter().find(|s| s.table_id == table_id).cloned();
+
+        if seq.sequence_id != SequenceId::SENTINEL && matching_system_table_schema.is_none() {
+            return Err(anyhow::anyhow!("`sequence_id` must be `SequenceId::SENTINEL` in `{:#?}`", seq).into());
+        }
+
+        let sequence_id = seq.sequence_id;
+
         log::trace!(
             "SEQUENCE CREATING: {} for table: {} and col: {}",
             seq.sequence_name,
@@ -1017,7 +1022,7 @@ impl MutTxId {
         // NOTE: Because st_sequences has a unique index on sequence_name, this will
         // fail if the table already exists.
         let mut sequence_row = StSequenceRow {
-            sequence_id: SequenceId::SENTINEL,
+            sequence_id,
             sequence_name: seq.sequence_name,
             table_id,
             col_pos: seq.col_pos,
