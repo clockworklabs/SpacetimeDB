@@ -6,7 +6,8 @@ import type Typespace from '../lib/autogen/typespace_type';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import { Timestamp } from '../lib/timestamp';
-import { BinaryReader, BinaryWriter } from '../sdk';
+import BinaryReader from '../lib/binary_reader';
+import BinaryWriter from '../lib/binary_writer';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
 import {
