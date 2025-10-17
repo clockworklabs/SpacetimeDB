@@ -1179,7 +1179,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
                 if let Some(name) = self.dropped_table_names.remove(&table_id) {
                     name
                 } else {
-                    return Err(anyhow!("Error looking up name for truncated table {:?}", table_id).into());
+                    return Err(anyhow!("Error looking up name for truncated table {table_id:?}").into());
                 }
             }
         };

@@ -312,8 +312,7 @@ impl CommittedState {
 
             if in_memory != in_st_tables {
                 return Err(anyhow!(
-                    "System table schema mismatch for table id {table_id}. Expected: {schema:?}, found: {:?}",
-                    in_memory
+                    "System table schema mismatch for table id {table_id}. Expected: {schema:?}, found: {in_memory:?}"
                 )
                 .into());
             }
