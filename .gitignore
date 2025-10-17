@@ -219,3 +219,6 @@ new.json
 
 # Test data
 !crates/core/testdata/
+
+# Symlinked output from `nix build`
+result

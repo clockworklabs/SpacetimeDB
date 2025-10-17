@@ -351,3 +351,8 @@ result_large_err = "allow"
 # version of temporal_rs, but I'm not holding my breath.
 timezone_provider = { git = "https://github.com/boa-dev/temporal", tag = "v0.0.11" }
 temporal_rs = { git = "https://github.com/boa-dev/temporal", tag = "v0.0.11" }
+
+[workspace.metadata]
+# This silences a warning in our Nix flake, which otherwise would be upset that our call to `crateNameFromCargoToml`
+# is running against a file that doesn't have a name in it.
+crane.name = "spacetimedb"
