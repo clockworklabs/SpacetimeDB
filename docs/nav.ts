@@ -77,6 +77,16 @@ const nav: Nav = {
       'modules/c-sharp/quickstart.md'
     ),
     page('C# Reference', 'modules/c-sharp', 'modules/c-sharp/index.md'),
+    page(
+      'TypeScript Quickstart',
+      'modules/typescript/quickstart',
+      'modules/typescript/quickstart.md'
+    ),
+    page(
+      'TypeScript Reference',
+      'modules/typescript',
+      'modules/typescript/index.md'
+    ),
 
     section('Client SDK Languages'),
     page('Overview', 'sdks', 'sdks/index.md'),
