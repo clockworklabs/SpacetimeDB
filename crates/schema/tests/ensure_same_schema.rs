@@ -69,12 +69,12 @@ macro_rules! declare_tests {
     }
 
 declare_tests! {
+    benchmarks => "benchmarks",
     module_test => "module-test",
     sdk_test_connect_disconnect => "sdk-test-connect-disconnect",
     sdk_test => "sdk-test",
 }
 
-// FIXME: Move `benchmarks => "benchmarks,` back into the macro once `benchmarks-ts` exists
 #[test]
 #[serial]
 fn ensure_same_schema_rust_csharp_benchmarks() {

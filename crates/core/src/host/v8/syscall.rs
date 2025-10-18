@@ -235,7 +235,9 @@ fn with_span<'scope, R>(
 
     // Track the span of this call.
     let span = span_start.end();
-    span::record_span(&mut env_on_isolate(scope).call_times, span);
+    if let Some(env) = scope.get_slot_mut::<JsInstanceEnv>() {
+        span::record_span(&mut env.call_times, span);
+    }
 
     result
 }
@@ -1125,7 +1127,14 @@ fn console_log<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackA
         <_>::default()
     };
 
-    let env = env_on_isolate(scope);
+    let Some(env) = scope.get_slot_mut::<JsInstanceEnv>() else {
+        tracing::warn!(
+            "{}:{} {msg}",
+            filename.as_deref().unwrap_or("unknown"),
+            frame.get_line_number()
+        );
+        return Ok(v8::undefined(scope).into());
+    };
 
     let function = env.log_record_function();
     let record = Record {

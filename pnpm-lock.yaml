@@ -235,6 +235,12 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0
 
+  modules/benchmarks-ts:
+    dependencies:
+      spacetimedb:
+        specifier: workspace:^
+        version: link:../../crates/bindings-typescript
+
   modules/module-test-ts:
     dependencies:
       spacetimedb:
