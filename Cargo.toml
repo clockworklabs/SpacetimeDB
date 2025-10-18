@@ -184,6 +184,7 @@ futures = "0.3"
 futures-channel = "0.3"
 futures-util = "0.3"
 getrandom02 = { package = "getrandom", version = "0.2" }
+git2 = "0.19"
 glob = "0.3.1"
 hashbrown = { version = "0.15", default-features = false, features = ["equivalent", "inline-more"] }
 headers = "0.4"

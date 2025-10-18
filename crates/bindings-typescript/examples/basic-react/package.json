@@ -1,0 +1,25 @@
+{
+  "name": "@clockworklabs/basic-react",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "local": "spacetime publish --project-path spacetimedb --server local && spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb",
+    "deploy": "spacetime publish --project-path spacetimedb && spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb"
+  },
+  "dependencies": {
+    "spacetimedb": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^5.0.2",
+    "typescript": "~5.6.2",
+    "vite": "^7.1.5"
+  }
+}
