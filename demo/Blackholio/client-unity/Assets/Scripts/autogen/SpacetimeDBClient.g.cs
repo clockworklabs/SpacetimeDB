@@ -491,6 +491,7 @@ namespace SpacetimeDB.Types
                 "spawn_food" => BSATNHelpers.Decode<Reducer.SpawnFood>(encodedArgs),
                 "suicide" => BSATNHelpers.Decode<Reducer.Suicide>(encodedArgs),
                 "update_player_input" => BSATNHelpers.Decode<Reducer.UpdatePlayerInput>(encodedArgs),
+                "" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),
                 var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
             };
         }
