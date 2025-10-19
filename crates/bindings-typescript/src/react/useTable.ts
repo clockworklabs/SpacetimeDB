@@ -329,7 +329,6 @@ export function useTable<
 
   useEffect(() => {
     if (client.isActive) {
-      console.log('useTable subscribing to table:', tableName);
       const cancel = client
         .subscriptionBuilder()
         .onApplied(() => {
