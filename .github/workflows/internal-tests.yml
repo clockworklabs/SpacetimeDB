@@ -1,0 +1,12 @@
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+name: Internal Tests
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
