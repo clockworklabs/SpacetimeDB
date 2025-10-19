@@ -196,7 +196,7 @@ impl MutTxId {
     pub fn create_table(&mut self, mut table_schema: TableSchema) -> Result<TableId> {
         let matching_system_table_schema = system_tables().iter().find(|s| **s == table_schema).cloned();
         if table_schema.table_id != TableId::SENTINEL && matching_system_table_schema.is_none() {
-            return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{:#?}`", table_schema).into());
+            return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{table_schema:#?}`").into());
             // checks for children are performed in the relevant `create_...` functions.
         }
 
@@ -521,16 +521,10 @@ impl MutTxId {
             .len()
             .checked_sub(original_table_schema.columns.len())
             .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "new column schemas must be more than existing ones for table_id: {}",
-                    table_id
-                )
+                anyhow::anyhow!("new column schemas must be more than existing ones for table_id: {table_id}")
             })?;
         let older_defaults = default_values.len().checked_sub(new_cols).ok_or_else(|| {
-            anyhow::anyhow!(
-                "not enough default values provided for new columns for table_id: {}",
-                table_id
-            )
+            anyhow::anyhow!("not enough default values provided for new columns for table_id: {table_id}")
         })?;
         default_values.drain(..older_defaults);
 
@@ -638,7 +632,7 @@ impl MutTxId {
     pub fn create_index(&mut self, mut index_schema: IndexSchema, is_unique: bool) -> Result<IndexId> {
         let table_id = index_schema.table_id;
         if table_id == TableId::SENTINEL {
-            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", index_schema).into());
+            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{index_schema:#?}`").into());
         }
 
         log::trace!(
@@ -1005,7 +999,7 @@ impl MutTxId {
     /// - The returned ID is unique and not `SequenceId::SENTINEL`.
     pub fn create_sequence(&mut self, seq: SequenceSchema) -> Result<SequenceId> {
         if seq.table_id == TableId::SENTINEL {
-            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", seq).into());
+            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{seq:#?}`").into());
         }
 
         let table_id = seq.table_id;
@@ -1104,7 +1098,7 @@ impl MutTxId {
     /// - The returned ID is unique and is not `constraintId::SENTINEL`.
     fn create_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<ConstraintId> {
         if constraint.table_id == TableId::SENTINEL {
-            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", constraint).into());
+            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{constraint:#?}`").into());
         }
 
         let table_id = constraint.table_id;
@@ -1198,8 +1192,7 @@ impl MutTxId {
     pub fn create_row_level_security(&mut self, row_level_security_schema: RowLevelSecuritySchema) -> Result<RawSql> {
         if row_level_security_schema.table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!(
-                "`table_id` must not be `TableId::SENTINEL` in `{:#?}`",
-                row_level_security_schema
+                "`table_id` must not be `TableId::SENTINEL` in `{row_level_security_schema:#?}`"
             )
             .into());
         }
