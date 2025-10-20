@@ -6,6 +6,9 @@ on:
 
 name: Internal Tests
 
+permissions:
+  contents: read
+
 jobs:
   run-tests:
     runs-on: ubuntu-latest
