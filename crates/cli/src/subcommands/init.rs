@@ -178,8 +178,6 @@ pub async fn fetch_templates_list() -> anyhow::Result<(Vec<HighlightDefinition>,
             repo, branch, TEMPLATES_FILE_PATH
         );
 
-        println!("Fetching templates list from {}...", url);
-
         let client = reqwest::Client::new();
         let response = client
             .get(&url)
