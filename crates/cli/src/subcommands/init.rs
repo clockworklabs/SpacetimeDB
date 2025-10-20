@@ -16,7 +16,7 @@ use std::sync::OnceLock;
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
 const DEFAULT_TEMPLATES_REPO: &str = "clockworklabs/SpacetimeDB";
-const DEFAULT_TEMPLATES_BRANCH: &str = env!("GIT_HASH");
+const DEFAULT_TEMPLATES_REFERENCE: &str = env!("GIT_HASH");
 const TEMPLATES_FILE_PATH: &str = "crates/cli/.init-templates.json";
 const TYPESCRIPT_BINDINGS_PACKAGE_JSON: &str = include_str!("../../../bindings-typescript/package.json");
 
@@ -166,8 +166,8 @@ pub async fn fetch_templates_list() -> anyhow::Result<(Vec<HighlightDefinition>,
     } else {
         let repo =
             env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REPO").unwrap_or_else(|_| DEFAULT_TEMPLATES_REPO.to_string());
-        let branch =
-            env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_BRANCH").unwrap_or_else(|_| DEFAULT_TEMPLATES_BRANCH.to_string());
+        let branch = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REFERENCE")
+            .unwrap_or_else(|_| DEFAULT_TEMPLATES_REFERENCE.to_string());
 
         let url = format!(
             "https://raw.githubusercontent.com/{}/{}/{}",
@@ -832,8 +832,8 @@ fn update_typescript_client_config(client_dir: &Path, module_name: &str, use_loc
 
 async fn copy_cursorrules(project_path: &Path) -> anyhow::Result<()> {
     let repo = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REPO").unwrap_or_else(|_| DEFAULT_TEMPLATES_REPO.to_string());
-    let branch =
-        env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_BRANCH").unwrap_or_else(|_| DEFAULT_TEMPLATES_BRANCH.to_string());
+    let branch = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REFERENCE")
+        .unwrap_or_else(|_| DEFAULT_TEMPLATES_REFERENCE.to_string());
 
     let url = format!(
         "https://raw.githubusercontent.com/{}/{}/docs/.cursor/rules/spacetimedb.md",
@@ -880,11 +880,11 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
         .ok_or_else(|| anyhow::anyhow!("Template definition missing"))?;
 
     // Use the same branch as the templates list if specified
-    let branch = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_BRANCH").ok().or_else(|| {
+    let branch = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REFERENCE").ok().or_else(|| {
         if env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REPO").is_ok() {
             None
         } else {
-            Some(DEFAULT_TEMPLATES_BRANCH.to_string())
+            Some(DEFAULT_TEMPLATES_REFERENCE.to_string())
         }
     });
 
@@ -987,11 +987,11 @@ fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()
             println!("Setting up TypeScript client...");
             let client_dir = project_path.join("client");
 
-            let branch = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_BRANCH").ok().or_else(|| {
+            let branch = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REFERENCE").ok().or_else(|| {
                 if env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REPO").is_ok() {
                     None
                 } else {
-                    Some(DEFAULT_TEMPLATES_BRANCH.to_string())
+                    Some(DEFAULT_TEMPLATES_REFERENCE.to_string())
                 }
             });
 
