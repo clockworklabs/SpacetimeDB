@@ -49,7 +49,11 @@ pub(super) type InterruptCallback = extern "C" fn(&mut Isolate, *mut c_void);
 /// every [`EPOCH_TICKS_PER_SECOND`] ticks (~every 1 second)
 /// to log that the reducer is still running.
 pub(super) extern "C" fn cb_log_long_running(isolate: &mut Isolate, _: *mut c_void) {
-    let env = env_on_isolate(isolate);
+    let Some(env) = env_on_isolate(isolate) else {
+        // All we can do is log something.
+        tracing::error!("`JsInstanceEnv` not set");
+        return;
+    };
     let database = env.instance_env.replica_ctx.database_identity;
     let reducer = env.reducer_name();
     let dur = env.reducer_start().elapsed();

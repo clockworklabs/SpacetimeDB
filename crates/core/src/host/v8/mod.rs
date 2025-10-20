@@ -134,11 +134,14 @@ impl JsModule {
     }
 }
 
-/// Access the `JsInstanceEnv` bound to an [`Isolate`].
-///
-/// This assumes that the slot has been set in the isolate already.
-fn env_on_isolate(isolate: &mut Isolate) -> &mut JsInstanceEnv {
-    isolate.get_slot_mut().expect("there should be a `JsInstanceEnv`")
+/// Returns the `JsInstanceEnv` bound to an [`Isolate`], fallibly.
+fn env_on_isolate(isolate: &mut Isolate) -> Option<&mut JsInstanceEnv> {
+    isolate.get_slot_mut()
+}
+
+/// Returns the `JsInstanceEnv` bound to an [`Isolate`], or panic if not set.
+fn env_on_isolate_unwrap(isolate: &mut Isolate) -> &mut JsInstanceEnv {
+    env_on_isolate(isolate).expect("there should be a `JsInstanceEnv`")
 }
 
 /// The environment of a [`JsInstance`].
@@ -574,7 +577,7 @@ fn call_reducer<'scope>(
 
     let (res, _) = instance_common.call_reducer_with_tx(replica_ctx, tx, params, log_traceback, |tx, op, budget| {
         // TODO(v8): Start the budget timeout and long-running logger.
-        let env = env_on_isolate(scope);
+        let env = env_on_isolate_unwrap(scope);
         let mut tx_slot = env.instance_env.tx.clone();
 
         // Start the timer.
@@ -607,7 +610,7 @@ fn call_reducer<'scope>(
         });
 
         // Finish timings.
-        let timings = env_on_isolate(scope).finish_reducer();
+        let timings = env_on_isolate_unwrap(scope).finish_reducer();
 
         // Derive energy stats.
         let energy = energy_from_elapsed(budget, timings.total_duration);
