@@ -67,7 +67,7 @@ pub async fn exec_subcommand(
         "login" => login::exec(config, args).await,
         "logout" => logout::exec(config, args).await,
         "version" => return subcommands::version::exec(paths, root_dir, args).await,
-        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
+        unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }
     .map(|()| ExitCode::SUCCESS)
 }

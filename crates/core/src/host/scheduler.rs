@@ -21,7 +21,7 @@ use super::module_host::ModuleEvent;
 use super::module_host::ModuleFunctionCall;
 use super::module_host::{CallReducerParams, WeakModuleHost};
 use super::module_host::{DatabaseUpdate, EventStatus};
-use super::{ModuleHost, ReducerArgs, ReducerCallError};
+use super::{FunctionArgs, ModuleHost, ReducerCallError};
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StFields, StScheduledFields, ST_SCHEDULED_ID};
@@ -60,7 +60,7 @@ enum SchedulerMessage {
     },
     ScheduleImmediate {
         reducer_name: String,
-        args: ReducerArgs,
+        args: FunctionArgs,
     },
 }
 
@@ -242,7 +242,7 @@ impl Scheduler {
         Ok(())
     }
 
-    pub fn volatile_nonatomic_schedule_immediate(&self, reducer_name: String, args: ReducerArgs) {
+    pub fn volatile_nonatomic_schedule_immediate(&self, reducer_name: String, args: FunctionArgs) {
         let _ = self.tx.send(MsgOrExit::Msg(SchedulerMessage::ScheduleImmediate {
             reducer_name,
             args,
@@ -267,7 +267,7 @@ struct SchedulerActor {
 
 enum QueueItem {
     Id { id: ScheduledReducerId, at: Timestamp },
-    VolatileNonatomicImmediate { reducer_name: String, args: ReducerArgs },
+    VolatileNonatomicImmediate { reducer_name: String, args: FunctionArgs },
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -347,9 +347,9 @@ impl SchedulerActor {
                 let (reducer_id, reducer_seed) = module_info
                     .module_def
                     .reducer_arg_deserialize_seed(&reducer[..])
-                    .ok_or_else(|| anyhow!("Reducer not found: {}", reducer))?;
+                    .ok_or_else(|| anyhow!("Reducer not found: {reducer}"))?;
 
-                let reducer_args = ReducerArgs::Bsatn(bsatn_args.into()).into_tuple(reducer_seed)?;
+                let reducer_args = FunctionArgs::Bsatn(bsatn_args.into()).into_tuple(reducer_seed)?;
 
                 // the timestamp we tell the reducer it's running at will be
                 // at least the timestamp it was scheduled to run at.
@@ -370,7 +370,7 @@ impl SchedulerActor {
                 let (reducer_id, reducer_seed) = module_info
                     .module_def
                     .reducer_arg_deserialize_seed(&reducer_name[..])
-                    .ok_or_else(|| anyhow!("Reducer not found: {}", reducer_name))?;
+                    .ok_or_else(|| anyhow!("Reducer not found: {reducer_name}"))?;
                 let reducer_args = args.into_tuple(reducer_seed)?;
 
                 Ok(Some(CallReducerParams {
@@ -505,12 +505,7 @@ fn process_schedule(
     let st_scheduled_row = db
         .iter_by_col_eq_mut(tx, ST_SCHEDULED_ID, table_id_col, &table_id.into())?
         .next()
-        .ok_or_else(|| {
-            anyhow!(
-                "Scheduled table with id {} entry does not exist in `st_scheduled`",
-                table_id
-            )
-        })?;
+        .ok_or_else(|| anyhow!("Scheduled table with id {table_id} entry does not exist in `st_scheduled`"))?;
     let reducer = st_scheduled_row.read_col::<Box<str>>(reducer_name_col)?;
 
     Ok(ScheduledReducer {
