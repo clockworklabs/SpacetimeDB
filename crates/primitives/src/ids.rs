@@ -2,6 +2,8 @@
 
 use core::fmt;
 
+use enum_as_inner::EnumAsInner;
+
 macro_rules! system_id {
     ($(#[$($doc_comment:tt)*])* pub struct $name:ident(pub $backing_ty:ty);) => {
 
@@ -77,6 +79,12 @@ system_id! {
 auto_inc_system_id!(TableId);
 
 system_id! {
+    /// An identifier for a view, unique within a database.
+    pub struct ViewId(pub u32);
+}
+auto_inc_system_id!(ViewId);
+
+system_id! {
     /// An identifier for a sequence, unique within a database.
     pub struct SequenceId(pub u32);
 }
@@ -115,4 +123,19 @@ system_id! {
     /// The index of a reducer as defined in a module's reducers list.
     // This is never stored in a system table, but is useful to have defined here.
     pub struct ReducerId(pub u32);
+}
+
+system_id! {
+    /// The index of a procedure as defined in a module's procedure list.
+    // This is never stored in a system table, but is useful to have defined here.
+    pub struct ProcedureId(pub u32);
+}
+
+/// An id for a function exported from a module, which may be a reducer or a procedure.
+// This is never stored in a system table,
+// but is useful to have defined here to provide a shared language for downstream crates.
+#[derive(Clone, Copy, Debug, EnumAsInner)]
+pub enum FunctionId {
+    Reducer(ReducerId),
+    Procedure(ProcedureId),
 }

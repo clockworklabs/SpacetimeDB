@@ -588,6 +588,7 @@ pub mod raw {
         ///
         /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
         pub fn identity(out_ptr: *mut u8);
+
     }
 
     // See comment on previous `extern "C"` block re: ABI version.
@@ -617,6 +618,31 @@ pub mod raw {
         ///
         /// If this function returns an error, `out` is not written.
         pub fn bytes_source_remaining_length(source: BytesSource, out: *mut u32) -> i16;
+    }
+
+    // See comment on previous `extern "C"` block re: ABI version.
+    #[link(wasm_import_module = "spacetime_10.2")]
+    extern "C" {
+        /// Finds the JWT payload associated with `connection_id`.
+        /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
+        /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
+        ///
+        /// This must be called inside a transaction (because it reads from a system table).
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - `connection_id` does not point to a valid little-endian `ConnectionId`.
+        /// - `target_ptr` is NULL or `target_ptr[..size_of::<u32>()]` is not in bounds of WASM memory.
+        ///  - The `ByteSourceId` to be written to `target_ptr` would overflow [`u32::MAX`].
+        pub fn get_jwt(connection_id_ptr: *const u8, bytes_source_id: *mut BytesSource) -> u16;
     }
 
     /// What strategy does the database index use?
@@ -1116,6 +1142,29 @@ pub fn identity() -> [u8; 32] {
         raw::identity(buf.as_mut_ptr());
     }
     buf
+}
+
+/// Finds the JWT payload associated with `connection_id`.
+/// If nothing is found for the connection, this returns None.
+/// If a payload is found, this will return a valid [`raw::BytesSource`].
+///
+/// This must be called inside a transaction (because it reads from a system table).
+///
+/// # Errors
+///
+/// This panics on any error. You can see details about errors in [`raw::get_jwt`].
+#[inline]
+pub fn get_jwt(connection_id: [u8; 16]) -> Option<raw::BytesSource> {
+    let source = unsafe {
+        call(|out| raw::get_jwt(connection_id.as_ptr(), out))
+            .unwrap_or_else(|errno: Errno| panic!("Error getting jwt: {errno}"))
+    };
+
+    if source == raw::BytesSource::INVALID {
+        None // No JWT found.
+    } else {
+        Some(source)
+    }
 }
 
 pub struct RowIter {

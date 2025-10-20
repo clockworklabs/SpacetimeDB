@@ -52,14 +52,7 @@ import { stdbLogger } from './logger.ts';
 import { type ReducerRuntimeTypeInfo } from './spacetime_module.ts';
 import { fromByteArray } from 'base64-js';
 
-export {
-  BinaryReader,
-  BinaryWriter,
-  DbConnectionBuilder,
-  SubscriptionBuilderImpl,
-  TableCache,
-  type Event,
-};
+export { DbConnectionBuilder, SubscriptionBuilderImpl, TableCache, type Event };
 
 export type {
   DbContext,
