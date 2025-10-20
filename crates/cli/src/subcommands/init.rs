@@ -1,5 +1,6 @@
 use crate::Config;
 use crate::{detect::find_executable, util::UNSTABLE_WARNING};
+use anyhow::anyhow;
 use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
@@ -67,12 +68,12 @@ impl ServerLanguage {
         }
     }
 
-    fn from_str(s: &str) -> Option<Self> {
+    fn from_str(s: &str) -> anyhow::Result<Option<Self>> {
         match s.to_lowercase().as_str() {
-            "rust" => Some(ServerLanguage::Rust),
-            "csharp" | "c#" => Some(ServerLanguage::Csharp),
-            "typescript" => Some(ServerLanguage::TypeScript),
-            _ => None,
+            "rust" => Ok(Some(ServerLanguage::Rust)),
+            "csharp" | "c#" => Ok(Some(ServerLanguage::Csharp)),
+            "typescript" => Ok(Some(ServerLanguage::TypeScript)),
+            _ => Err(anyhow!("Unknown server language: {}", s)),
         }
     }
 }
@@ -93,12 +94,12 @@ impl ClientLanguage {
         }
     }
 
-    fn from_str(s: &str) -> Option<Self> {
+    fn from_str(s: &str) -> anyhow::Result<Option<Self>> {
         match s.to_lowercase().as_str() {
-            "rust" => Some(ClientLanguage::Rust),
-            "csharp" | "c#" => Some(ClientLanguage::Csharp),
-            "typescript" => Some(ClientLanguage::TypeScript),
-            _ => None,
+            "rust" => Ok(Some(ClientLanguage::Rust)),
+            "csharp" | "c#" => Ok(Some(ClientLanguage::Csharp)),
+            "typescript" => Ok(Some(ClientLanguage::TypeScript)),
+            _ => Err(anyhow!("Unknown client language: {}", s)),
         }
     }
 }
@@ -141,9 +142,11 @@ pub fn cli() -> clap::Command {
                 .value_name("TEMPLATE")
                 .help("Template ID or GitHub repository (owner/repo or URL)"),
         )
-        .arg(Arg::new("client-lang").long("client-lang").value_name("LANG").help(
-            "Client language: rust, csharp, typescript, none  (it can only be used when --template is not specified)",
-        ))
+        .arg(
+            Arg::new("client-lang").long("client-lang").value_name("LANG").help(
+                "Client language: rust, csharp, typescript (it can only be used when --template is not specified)",
+            ),
+        )
         .arg(
             Arg::new("local")
                 .long("local")
@@ -290,8 +293,8 @@ pub async fn exec_non_interactive_init(config: &mut Config, args: &ArgMatches) -
                 project_name: project_name.clone(),
                 project_path: actual_project_path.clone(),
                 template_type: TemplateType::Builtin,
-                server_lang: template.server_lang.as_deref().and_then(ServerLanguage::from_str),
-                client_lang: template.client_lang.as_deref().and_then(ClientLanguage::from_str),
+                server_lang: parse_server_lang(&template.server_lang)?,
+                client_lang: parse_client_lang(&template.server_lang)?,
                 github_repo: None,
                 template_def: Some(template.clone()),
                 use_local,
@@ -305,7 +308,7 @@ pub async fn exec_non_interactive_init(config: &mut Config, args: &ArgMatches) -
                 project_name: project_name.clone(),
                 project_path: actual_project_path.clone(),
                 template_type: TemplateType::GitHub,
-                server_lang: Some(ServerLanguage::Rust),
+                server_lang: None,
                 client_lang: None,
                 github_repo: Some(template_str.clone()),
                 template_def: None,
@@ -317,8 +320,8 @@ pub async fn exec_non_interactive_init(config: &mut Config, args: &ArgMatches) -
         }
     } else {
         // No template - require at least one language option
-        let server_lang_str = args.get_one::<String>("server-lang");
-        let client_lang_str = args.get_one::<String>("client-lang");
+        let server_lang_str = args.get_one::<String>("server-lang").cloned();
+        let client_lang_str = args.get_one::<String>("client-lang").cloned();
 
         if server_lang_str.is_none() && client_lang_str.is_none() {
             anyhow::bail!(
@@ -326,18 +329,12 @@ pub async fn exec_non_interactive_init(config: &mut Config, args: &ArgMatches) -
             );
         }
 
-        // Determine server language
-        let server_lang = server_lang_str.and_then(|s| ServerLanguage::from_str(s));
-
-        // Determine client language
-        let client_lang = client_lang_str.and_then(|s| ClientLanguage::from_str(s));
-
         let template_config = TemplateConfig {
             project_name: project_name.clone(),
             project_path: actual_project_path.clone(),
             template_type: TemplateType::Empty,
-            server_lang,
-            client_lang,
+            server_lang: parse_server_lang(&server_lang_str)?,
+            client_lang: parse_client_lang(&client_lang_str)?,
             github_repo: None,
             template_def: None,
             use_local,
@@ -448,8 +445,8 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
                 project_name,
                 project_path: PathBuf::from(project_path),
                 template_type: TemplateType::Builtin,
-                server_lang: template.server_lang.as_deref().and_then(ServerLanguage::from_str),
-                client_lang: template.client_lang.as_deref().and_then(ClientLanguage::from_str),
+                server_lang: parse_server_lang(&template.server_lang)?,
+                client_lang: parse_client_lang(&template.client_lang)?,
                 github_repo: None,
                 template_def: Some(template.clone()),
                 use_local: true,
@@ -460,7 +457,7 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
                 project_name,
                 project_path: PathBuf::from(project_path),
                 template_type: TemplateType::GitHub,
-                server_lang: Some(ServerLanguage::Rust),
+                server_lang: None,
                 client_lang: None,
                 github_repo: Some(template_str.clone()),
                 template_def: None,
@@ -475,15 +472,15 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
 
     if server_lang_arg.is_some() || client_lang_arg.is_some() {
         // Use provided languages
-        let server_lang = server_lang_arg.and_then(|lang_str| {
+        let server_lang = parse_server_lang(&server_lang_arg.cloned())?;
+        if let Some(lang_str) = server_lang_arg {
             println!("{} {}", "Server language:".bold(), lang_str);
-            ServerLanguage::from_str(lang_str)
-        });
+        }
 
-        let client_lang = client_lang_arg.and_then(|lang_str| {
+        let client_lang = parse_client_lang(&client_lang_arg.cloned())?;
+        if let Some(lang_str) = client_lang_arg {
             println!("{} {}", "Client language:".bold(), lang_str);
-            ClientLanguage::from_str(lang_str)
-        });
+        }
 
         return Ok(TemplateConfig {
             project_name,
@@ -533,8 +530,8 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
             project_name,
             project_path: PathBuf::from(project_path),
             template_type: TemplateType::Builtin,
-            server_lang: template.server_lang.as_deref().and_then(ServerLanguage::from_str),
-            client_lang: template.client_lang.as_deref().and_then(ClientLanguage::from_str),
+            server_lang: parse_server_lang(&template.server_lang)?,
+            client_lang: parse_client_lang(&template.client_lang)?,
             github_repo: None,
             template_def: Some(template.clone()),
             use_local: true,
@@ -561,8 +558,8 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
                     project_name: project_name.clone(),
                     project_path: PathBuf::from(&project_path),
                     template_type: TemplateType::Builtin,
-                    server_lang: template.server_lang.as_deref().and_then(ServerLanguage::from_str),
-                    client_lang: template.client_lang.as_deref().and_then(ClientLanguage::from_str),
+                    server_lang: parse_server_lang(&template.server_lang)?,
+                    client_lang: parse_client_lang(&template.client_lang)?,
                     github_repo: None,
                     template_def: Some(template.clone()),
                     use_local: true,
@@ -1200,7 +1197,7 @@ fn check_for_git() -> bool {
     false
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
     println!("{UNSTABLE_WARNING}\n");
 
     let non_interactive = args.get_flag("non-interactive");
@@ -1233,7 +1230,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     exec_interactive_init(&mut config, args).await
 }
 
-pub fn init_rust_project(project_path: &Path) -> Result<(), anyhow::Error> {
+pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
             include_str!("../../templates/basic-rust/server/Cargo.toml"),
@@ -1265,7 +1262,7 @@ pub fn init_rust_project(project_path: &Path) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-pub fn init_csharp_project(project_path: &Path) -> Result<(), anyhow::Error> {
+pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
             include_str!("../../templates/basic-c-sharp/server/StdbModule.csproj"),
@@ -1294,7 +1291,7 @@ pub fn init_csharp_project(project_path: &Path) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-pub fn init_typescript_project(project_path: &Path) -> Result<(), anyhow::Error> {
+pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
             include_str!("../../templates/basic-typescript/server/package.json"),
@@ -1330,7 +1327,7 @@ pub fn init_typescript_project(project_path: &Path) -> Result<(), anyhow::Error>
     Ok(())
 }
 
-pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_init_rust(args: &ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     init_rust_project(project_path)?;
 
@@ -1354,6 +1351,20 @@ pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn create_directory(path: &Path) -> Result<(), anyhow::Error> {
+fn create_directory(path: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(path).context("Failed to create directory")
+}
+
+pub fn parse_server_lang(lang: &Option<String>) -> anyhow::Result<Option<ServerLanguage>> {
+    match lang.as_deref() {
+        Some(s) => Ok(ServerLanguage::from_str(s)?),
+        None => Ok(None),
+    }
+}
+
+pub fn parse_client_lang(lang: &Option<String>) -> anyhow::Result<Option<ClientLanguage>> {
+    match lang.as_deref() {
+        Some(s) => Ok(ClientLanguage::from_str(s)?),
+        None => Ok(None),
+    }
 }
