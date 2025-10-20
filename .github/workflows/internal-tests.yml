@@ -72,7 +72,6 @@ jobs:
 
             // Provide direct link and context prior to waiting
             const runUrl = `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
-            core.info(`Dispatched runId: ${runId}`);
             core.info(`View run: ${runUrl}`);
             core.info('Waiting for workflow result...');
 
