@@ -219,7 +219,7 @@ impl MigrationFormatter for TermColorFormatter {
         if let Some(s) = &table.schedule {
             self.write_colored_line("Schedule:", Some(self.colors.section_header), true)?;
             self.indent();
-            self.write_bullet(&format!("Calls reducer: {}", s.reducer_name))?;
+            self.write_bullet(&format!("Calls {}: {}", s.function_kind, s.function_name))?;
             self.dedent();
         }
 
@@ -276,7 +276,7 @@ impl MigrationFormatter for TermColorFormatter {
         self.buffer.write_all(b" schedule for table ")?;
         self.write_colored(&s.table_name, Some(self.colors.table_name), true)?;
         self.buffer
-            .write_all(format!(" calling reducer {}\n", s.reducer_name).as_bytes())
+            .write_all(format!(" calling {} {}\n", s.function_kind, s.function_name).as_bytes())
     }
 
     fn format_rls(&mut self, r: &RlsInfo, action: Action) -> io::Result<()> {

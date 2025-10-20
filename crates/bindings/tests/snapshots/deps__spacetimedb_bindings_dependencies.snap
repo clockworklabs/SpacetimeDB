@@ -2,7 +2,7 @@
 source: crates/bindings/tests/deps.rs
 expression: "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown -f {lib}"
 ---
-total crates: 60
+total crates: 66
 spacetimedb
 ├── bytemuck
 ├── derive_more
@@ -29,6 +29,11 @@ spacetimedb
 │   │       └── getrandom (*)
 │   └── rand_core (*)
 ├── scoped_tls
+├── serde_json
+│   ├── itoa
+│   ├── memchr
+│   ├── ryu
+│   └── serde_core
 ├── spacetimedb_bindings_macro
 │   ├── heck
 │   ├── humantime
@@ -37,6 +42,11 @@ spacetimedb
 │   ├── spacetimedb_primitives
 │   │   ├── bitflags
 │   │   ├── either
+│   │   ├── enum_as_inner
+│   │   │   ├── heck
+│   │   │   ├── proc_macro2 (*)
+│   │   │   ├── quote (*)
+│   │   │   └── syn (*)
 │   │   ├── itertools
 │   │   │   └── either
 │   │   └── nohash_hasher
@@ -45,6 +55,7 @@ spacetimedb
 │   └── spacetimedb_primitives
 │       ├── bitflags
 │       ├── either
+│       ├── enum_as_inner (*)
 │       ├── itertools
 │       │   └── either
 │       └── nohash_hasher
@@ -58,17 +69,14 @@ spacetimedb
 │   │   └── constant_time_eq
 │   │   [build-dependencies]
 │   │   └── cc
+│   │       ├── find_msvc_tools
 │   │       └── shlex
 │   ├── chrono
 │   │   └── num_traits
 │   │       [build-dependencies]
 │   │       └── autocfg
 │   ├── derive_more (*)
-│   ├── enum_as_inner
-│   │   ├── heck
-│   │   ├── proc_macro2 (*)
-│   │   ├── quote (*)
-│   │   └── syn (*)
+│   ├── enum_as_inner (*)
 │   ├── hex
 │   ├── itertools (*)
 │   ├── spacetimedb_bindings_macro (*)
@@ -88,6 +96,7 @@ spacetimedb
 │   │   ├── enum_as_inner (*)
 │   │   ├── ethnum
 │   │   │   └── serde
+│   │   │       └── serde_core
 │   │   ├── hex
 │   │   ├── itertools (*)
 │   │   ├── second_stack

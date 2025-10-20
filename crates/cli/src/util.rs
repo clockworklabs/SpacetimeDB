@@ -243,12 +243,12 @@ pub fn url_to_host_and_protocol(url: &str) -> anyhow::Result<(&str, &str)> {
         let host = url.split("://").last().unwrap();
 
         if !VALID_PROTOCOLS.contains(&protocol) {
-            Err(anyhow::anyhow!("Invalid protocol: {}", protocol))
+            Err(anyhow::anyhow!("Invalid protocol: {protocol}"))
         } else {
             Ok((host, protocol))
         }
     } else {
-        Err(anyhow::anyhow!("Invalid url: {}", url))
+        Err(anyhow::anyhow!("Invalid url: {url}"))
     }
 }
 
@@ -296,7 +296,7 @@ pub fn decode_identity(token: &String) -> anyhow::Result<String> {
     // But signature verification would require getting the public key from a server, and we don't necessarily want to do that.
     let token_parts: Vec<_> = token.split('.').collect();
     if token_parts.len() != 3 {
-        return Err(anyhow::anyhow!("Token does not look like a JSON web token: {}", token));
+        return Err(anyhow::anyhow!("Token does not look like a JSON web token: {token}"));
     }
     let decoded_bytes = BASE_64_STD_NO_PAD.decode(token_parts[1])?;
     let decoded_string = String::from_utf8(decoded_bytes)?;
