@@ -9168,7 +9168,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "log",
- "spacetimedb 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb 1.6.0",
 ]
 
 [[package]]
