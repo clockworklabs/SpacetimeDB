@@ -513,6 +513,12 @@ impl ModuleValidator<'_> {
         let mut view_in_progress = ViewValidator::new(name.clone(), product_type_ref, product_type, self);
 
         // Views have the same interface as tables and therefore must be registered in the global namespace.
+        //
+        // Note, views also share the "function namespace" with reducers and procedures.
+        // While this isn't strictly necessary because reducers and views have different calling contexts,
+        // we may want to support calling views in the same context as reducers in the future (e.g. `spacetime call`).
+        // Hence we validate uniqueness among reducer, procedure, and view names in a later pass.
+        // See `check_function_names_are_unique`.
         let name = view_in_progress.add_to_global_namespace(name).and_then(identifier);
 
         let columns = (0..product_type.elements.len())
