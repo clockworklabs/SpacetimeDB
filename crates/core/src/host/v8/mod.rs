@@ -4,7 +4,6 @@ use self::error::{
     catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CodeError, ExcResult, JsStackTrace,
     TerminationError, Throwable,
 };
-use self::from_value::cast;
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{call_call_reducer, call_describe_module, resolve_sys_module, FnRet};
