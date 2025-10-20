@@ -25,11 +25,20 @@
 
         inherit (pkgs) lib;
 
-        # We fetch a precompiled v8 binary.
-        # The rusty_v8 build.rs normally tries to download v8 artifacts during compilation,
-        # but the Nix build sandbox doesn't give it network access.
-        # Instead, download the archive in a Nix-friendly way with a recorded sha.
-        librusty_v8 = pkgs.callPackage ./librusty_v8.nix {};
+        librusty_v8 = if pkgs.stdenv.isDarwin then
+          # Building on MacOS, we've seen errors building rusty_v8 with a local RUSTY_V8_ARCHIVE:
+          # https://github.com/clockworklabs/SpacetimeDB/pull/3422#issuecomment-3416972711 .
+          # For now, error on MacOS (darwin) targets.
+          builtins.abort ''
+          This flake doesn't work on MacOS due to some quirk of compiling rusty-v8 against a precompiled V8 archive.
+          If you can get a build working on MacOS under Nix, please submit a PR to https://github.com/clockworklabs/SpacetimeDB/pulls.
+          See https://github.com/clockworklabs/SpacetimeDB/pull/3422 for more details.
+          ''
+            # We fetch a precompiled v8 binary.
+            # The rusty_v8 build.rs normally tries to download v8 artifacts during compilation,
+            # but the Nix build sandbox doesn't give it network access.
+            # Instead, download the archive in a Nix-friendly way with a recorded sha.
+                      else (pkgs.callPackage ./librusty_v8.nix {});
 
         # The Rust toolchain that we actually build with.
         rustStable = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
