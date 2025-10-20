@@ -455,7 +455,7 @@ pub struct RawViewDefV9 {
     pub name: RawIdentifier,
 
     /// Is this a public or a private view?
-    /// Currently all views are public by default.
+    /// Currently only public views are supported.
     /// Private views may be supported in the future.
     pub is_public: bool,
 

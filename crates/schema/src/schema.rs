@@ -632,7 +632,7 @@ impl TableSchema {
 
         let num_args = params.elements.len();
         let num_cols = cols.len();
-        let n = num_args + num_cols + if *is_anonymous { 0 } else { 2 };
+        let n = num_args + num_cols + if *is_anonymous { 0 } else { 1 };
 
         let mut columns = Vec::with_capacity(n);
 

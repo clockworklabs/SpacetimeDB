@@ -192,6 +192,7 @@ impl MutTxId {
     /// Ensures:
     /// - Everything [`Self::create_table`] ensures.
     /// - The returned [`ViewId`] is unique and not [`ViewId::SENTINEL`].
+    /// - All view metadata maintained by the datastore is created atomically
     pub fn create_view_with_backing_table(
         &mut self,
         module_def: &ModuleDef,
