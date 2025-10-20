@@ -29,8 +29,8 @@ use std::time::Instant;
 use tokio::sync::oneshot;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
-    scope, Context, ContextScope, Function, Isolate, Local, MapFnTo, PinScope, ResolveModuleCallback, ScriptOrigin,
-    Value,
+    scope_with_context, Context, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope, ResolveModuleCallback,
+    ScriptOrigin, Value,
 };
 
 mod budget;
@@ -338,6 +338,13 @@ fn startup_instance_worker<'scope>(
     Ok((call_reducer_fun, module_common))
 }
 
+/// Returns a new isolate.
+fn new_isolate() -> OwnedIsolate {
+    let mut isolate = Isolate::new(<_>::default());
+    isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
+    isolate
+}
+
 /// Spawns an instance worker for `program`
 /// and returns on success the corresponding [`JsInstance`]
 /// that talks to the worker.
@@ -367,14 +374,9 @@ fn spawn_instance_worker(
     let (result_tx, result_rx) = oneshot::channel();
 
     std::thread::spawn(move || {
-        // Prepare the isolate with the env.
-        let mut isolate = Isolate::new(<_>::default());
-        isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
-
-        // Set-up a scope.
-        scope!(let scope, &mut isolate);
-        let context = Context::new(scope, Default::default());
-        let scope = &mut ContextScope::new(scope, context);
+        // Create the isolate and scope.
+        let mut isolate = new_isolate();
+        scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
         // Setup the JS module, find call_reducer, and maybe build the module.
         let send_result = |res| {
