@@ -326,21 +326,16 @@ Initializes a new spacetime project. WARNING: This command is UNSTABLE and subje
 
 ###### <b>Arguments:</b>
 
-* `<PROJECT-PATH>` — The path where we will create the spacetime project
-
-  Default value: `.`
+* `<PROJECT-PATH>` — The path where we will create the spacetime project (defaults to hyphenated project name)
 
 ###### <b>Options:</b>
 
-* `-n`, `--name <NAME>` — Project name (defaults to directory name if not provided)
-* `-l`, `--lang <LANG>` — The spacetime module language.
-
-  Possible values: `csharp`, `rust`
-* `--server-lang <LANG>` — Server language: rust, csharp, typescript
+* `-n`, `--name <NAME>` — Project name
+* `--server-lang <LANG>` — Server language: rust, csharp, typescript (it can only be used when --template is not specified)
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
-* `--client-lang <LANG>` — Client language: rust, csharp, typescript, none
+* `--client-lang <LANG>` — Client language: rust, csharp, typescript, none (it can only be used when --template is not specified)
 * `--local` — Use local deployment instead of Maincloud
-* `--non-interactive` — Run in non-interactive mode with default or provided options
+* `--non-interactive` — Run in non-interactive mode
 
 ## spacetime build
 
