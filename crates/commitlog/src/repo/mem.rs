@@ -1,17 +1,50 @@
 use std::{
     collections::{btree_map, BTreeMap},
     io,
-    sync::{Arc, RwLock, RwLockWriteGuard},
+    sync::{
+        atomic::{AtomicI64, Ordering},
+        Arc, RwLock, RwLockWriteGuard,
+    },
 };
 
-use crate::segment::FileLike;
-
 use super::Repo;
+use crate::{repo::SegmentLen, segment::FileLike};
 
 type SharedLock<T> = Arc<RwLock<T>>;
-type SharedBytes = SharedLock<Vec<u8>>;
+type SharedPages = SharedLock<Vec<Page>>;
 
-/// A log segment backed by a `Vec<u8>`.
+const PAGE_SIZE: usize = 4096;
+
+#[derive(Debug)]
+pub struct Page {
+    filled: usize,
+    buf: [u8; PAGE_SIZE],
+}
+
+impl Page {
+    pub fn remaining(&self) -> usize {
+        PAGE_SIZE - self.filled
+    }
+}
+
+impl Default for Page {
+    fn default() -> Self {
+        Self {
+            filled: 0,
+            buf: [0; PAGE_SIZE],
+        }
+    }
+}
+
+/// The total capacity of the imaginary storage device.
+///
+/// [Segment]s are allocated from [Memory], which tracks the total space it
+/// has available. [SpaceOnDevice] is shared by each [Segment]. When a [Segment]
+/// allocates a [Page], it deducts the page's size from the space, returning
+/// an error if [SpaceOnDevice] goes below zero.
+pub type SpaceOnDevice = Arc<AtomicI64>;
+
+/// A log segment backed by a [Vec<Page>].
 ///
 /// Writing to the segment behaves like a file opened with `O_APPEND`:
 /// [`io::Write::write`] always appends to the segment, regardless of the
@@ -21,61 +54,90 @@ type SharedBytes = SharedLock<Vec<u8>>;
 /// Note that this is not a faithful model of a file, as safe Rust requires to
 /// protect the buffer with a lock. This means that pathological situations
 /// arising from concurrent read/write access of a file are impossible to occur.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Segment {
     pos: u64,
-    buf: SharedBytes,
+    pages: SharedPages,
+    device: SpaceOnDevice,
 }
 
 impl Segment {
+    pub fn new(device: SpaceOnDevice) -> Self {
+        Self::with_pages(device, <_>::default())
+    }
+
+    pub fn with_pages(device: SpaceOnDevice, pages: SharedPages) -> Self {
+        Self { pos: 0, pages, device }
+    }
+
     pub fn len(&self) -> usize {
-        self.buf.read().unwrap().len()
+        self.pages
+            .read()
+            .unwrap()
+            .iter()
+            .fold(0, |size, page| size + page.filled)
     }
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Obtain mutable access to the underlying buffer.
-    ///
-    /// This is intended for tests which deliberately corrupt the segment data.
-    pub fn buf_mut(&self) -> RwLockWriteGuard<'_, Vec<u8>> {
-        self.buf.write().unwrap()
+    pub fn modify_byte_at(&mut self, pos: usize, f: impl FnOnce(u8) -> u8) {
+        let mut pages = self.pages.write().unwrap();
+
+        let page_idx = pos / PAGE_SIZE;
+        let page = pages.get_mut(page_idx).expect("pos out of bounds");
+        let page_ofs = pos % PAGE_SIZE;
+        page.buf[page_ofs] = f(page.buf[page_ofs]);
+    }
+
+    fn allocate(&self, pages: &mut RwLockWriteGuard<'_, Vec<Page>>, n: usize) -> io::Result<()> {
+        let mut allocated = 0;
+        pages.resize_with(n, || {
+            allocated += 1;
+            Page::default()
+        });
+        if self.device.fetch_sub((allocated * PAGE_SIZE) as i64, Ordering::Relaxed) <= 0 {
+            return Err(io::Error::new(io::ErrorKind::StorageFull, "no space left on device"));
+        }
+
+        Ok(())
     }
 }
 
-impl From<SharedBytes> for Segment {
-    fn from(buf: SharedBytes) -> Self {
-        Self { pos: 0, buf }
-    }
-}
-
-impl super::SegmentLen for Segment {
+impl SegmentLen for Segment {
     fn segment_len(&mut self) -> io::Result<u64> {
         Ok(self.len() as u64)
     }
 }
 
-impl FileLike for Segment {
-    fn fsync(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-
-    fn ftruncate(&mut self, _tx_offset: u64, size: u64) -> io::Result<()> {
-        let mut inner = self.buf.write().unwrap();
-        inner.resize(size as usize, 0);
-        // NOTE: As per `ftruncate(2)`, the offset is not changed.
-        Ok(())
-    }
-}
-
 impl io::Write for Segment {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut inner = self.buf.write().unwrap();
-        inner.extend(buf);
-        self.pos += buf.len() as u64;
+        let mut written = 0;
+        while written < buf.len() {
+            let mut pages = self.pages.write().unwrap();
+            let page = {
+                let page_idx = self.pos as usize / PAGE_SIZE;
+                if page_idx >= pages.len() {
+                    self.allocate(&mut pages, page_idx + 1)?;
+                }
+                &mut pages[page_idx]
+            };
+            let remaining = buf.len() - written;
+            let to_copy = page.remaining().min(remaining);
 
-        Ok(buf.len())
+            let range_in_page = page.filled..page.filled + to_copy;
+            let range_in_buf = written..written + to_copy;
+
+            page.buf[range_in_page].copy_from_slice(&buf[range_in_buf]);
+            page.filled += to_copy;
+            drop(pages);
+
+            written += to_copy;
+            self.pos += to_copy as u64;
+        }
+
+        Ok(written)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -85,16 +147,26 @@ impl io::Write for Segment {
 
 impl io::Read for Segment {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let inner = self.buf.read().unwrap();
-        let pos = self.pos as usize;
-        if pos > inner.len() {
-            // Bad file descriptor
-            return Err(io::Error::from_raw_os_error(9));
-        }
-        let n = io::Read::read(&mut &inner[pos..], buf)?;
-        self.pos += n as u64;
+        let mut read = 0;
+        while read < buf.len() {
+            let pages = self.pages.read().unwrap();
+            let Some(page) = pages.get(self.pos as usize / PAGE_SIZE) else {
+                break;
+            };
+            let offset_in_page = (self.pos % PAGE_SIZE as u64) as usize;
+            if offset_in_page >= page.filled {
+                break;
+            }
+            let available_in_page = page.filled - offset_in_page;
+            let to_copy = (buf.len() - read).min(available_in_page);
 
-        Ok(n)
+            buf[read..read + to_copy].copy_from_slice(&page.buf[offset_in_page..offset_in_page + to_copy]);
+
+            read += to_copy;
+            self.pos += to_copy as u64;
+        }
+
+        Ok(read)
     }
 }
 
@@ -121,12 +193,61 @@ impl io::Seek for Segment {
     }
 }
 
+impl FileLike for Segment {
+    fn fsync(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn ftruncate(&mut self, _tx_offset: u64, size: u64) -> io::Result<()> {
+        use std::cmp::Ordering::*;
+
+        let mut pages = self.pages.write().unwrap();
+        let old_page_count = pages.len() as u64;
+        let new_page_count = size.next_multiple_of(PAGE_SIZE as u64) / PAGE_SIZE as u64;
+
+        let zero_tail = |maybe_last_page: Option<&mut Page>| {
+            if let Some(last_page) = maybe_last_page {
+                let tail_start = (size as usize) % PAGE_SIZE;
+                last_page.filled = tail_start;
+                last_page.buf[tail_start..].fill(0);
+            }
+        };
+        match new_page_count.cmp(&old_page_count) {
+            Greater => self.allocate(&mut pages, new_page_count as usize)?,
+            ordering => {
+                if matches!(ordering, Less) {
+                    pages.truncate(new_page_count as usize);
+                }
+                zero_tail(pages.last_mut());
+            }
+        };
+
+        if self.pos > size {
+            self.pos = size;
+        }
+
+        Ok(())
+    }
+
+    fn fallocate(&mut self, size: u64) -> io::Result<()> {
+        let mut pages = self.pages.write().unwrap();
+        let old_page_count = pages.len() as u64;
+        let new_page_count = size.next_multiple_of(PAGE_SIZE as u64) / PAGE_SIZE as u64;
+
+        if new_page_count > old_page_count {
+            self.allocate(&mut pages, new_page_count as usize)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(feature = "streaming")]
 mod async_impls {
     use super::*;
 
     use std::{
-        io::{Seek as _, Write as _},
+        io::{Read as _, Seek as _, Write as _},
         pin::Pin,
         task::{Context, Poll},
     };
@@ -153,18 +274,22 @@ mod async_impls {
     }
 
     impl AsyncRead for Segment {
-        fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
-            let this = self.get_mut();
-            let inner = this.buf.read().unwrap();
-            let pos = this.pos as usize;
-            if pos > inner.len() {
-                // Bad file descriptor
-                return Poll::Ready(Err(io::Error::from_raw_os_error(9)));
-            }
-            let filled = buf.filled().len();
-            AsyncRead::poll_read(Pin::new(&mut &inner[pos..]), cx, buf).map_ok(|()| {
-                this.pos += (buf.filled().len() - filled) as u64;
-            })
+        fn poll_read(self: Pin<&mut Self>, _: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(self.get_mut().read(buf.initialize_unfilled()).map(drop))
+        }
+    }
+
+    impl AsyncWrite for Segment {
+        fn poll_write(self: Pin<&mut Self>, _: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+            Poll::Ready(self.get_mut().write(buf))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
         }
     }
 
@@ -173,22 +298,8 @@ mod async_impls {
             self.get_mut().seek(position).map(drop)
         }
 
-        fn poll_complete(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
+        fn poll_complete(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<u64>> {
             Poll::Ready(self.get_mut().stream_position())
-        }
-    }
-
-    impl AsyncWrite for Segment {
-        fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, io::Error>> {
-            Poll::Ready(self.get_mut().write(buf))
-        }
-
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-            Poll::Ready(Ok(()))
         }
     }
 
@@ -204,12 +315,18 @@ mod async_impls {
 }
 
 /// In-memory implementation of [`Repo`].
-#[derive(Clone, Debug, Default)]
-pub struct Memory(SharedLock<BTreeMap<u64, SharedBytes>>);
+#[derive(Clone, Debug)]
+pub struct Memory {
+    space: SpaceOnDevice,
+    segments: SharedLock<BTreeMap<u64, SharedPages>>,
+}
 
 impl Memory {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(total_space: u64) -> Self {
+        Self {
+            space: Arc::new(AtomicI64::new(total_space as _)),
+            segments: <_>::default(),
+        }
     }
 }
 
@@ -218,13 +335,13 @@ impl Repo for Memory {
     type SegmentReader = io::BufReader<Segment>;
 
     fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
-        let mut inner = self.0.write().unwrap();
+        let mut inner = self.segments.write().unwrap();
         match inner.entry(offset) {
             btree_map::Entry::Occupied(entry) => {
                 let entry = entry.get();
                 let read_guard = entry.read().unwrap();
                 if read_guard.is_empty() {
-                    Ok(Segment::from(Arc::clone(entry)))
+                    Ok(Segment::with_pages(self.space.clone(), entry.clone()))
                 } else {
                     Err(io::Error::new(
                         io::ErrorKind::AlreadyExists,
@@ -233,21 +350,21 @@ impl Repo for Memory {
                 }
             }
             btree_map::Entry::Vacant(entry) => {
-                let segment = entry.insert(Default::default());
-                Ok(Segment::from(Arc::clone(segment)))
+                let segment = entry.insert(SharedPages::default());
+                Ok(Segment::with_pages(self.space.clone(), segment.clone()))
             }
         }
     }
 
     fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
-        let inner = self.0.read().unwrap();
+        let inner = self.segments.read().unwrap();
         let Some(buf) = inner.get(&offset) else {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 format!("segment {offset} does not exist"),
             ));
         };
-        Ok(Segment::from(Arc::clone(buf)))
+        Ok(Segment::with_pages(self.space.clone(), buf.clone()))
     }
 
     fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
@@ -255,7 +372,7 @@ impl Repo for Memory {
     }
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
-        let mut inner = self.0.write().unwrap();
+        let mut inner = self.segments.write().unwrap();
         if inner.remove(&offset).is_none() {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -271,38 +388,145 @@ impl Repo for Memory {
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
-        Ok(self.0.read().unwrap().keys().copied().collect())
+        Ok(self.segments.read().unwrap().keys().copied().collect())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_matches;
+    use tempfile::tempfile;
+
     use super::*;
     use std::io::{Read, Seek, Write};
 
-    #[test]
-    fn segment_read_write_seek() {
-        let mut segment = Segment::default();
-        segment.write_all(b"alonso").unwrap();
+    fn read_write_seek(f: &mut (impl Read + Seek + Write)) {
+        f.write_all(b"alonso").unwrap();
 
-        segment.seek(io::SeekFrom::Start(0)).unwrap();
+        f.seek(io::SeekFrom::Start(0)).unwrap();
         let mut buf = [0; 6];
-        segment.read_exact(&mut buf).unwrap();
+        f.read_exact(&mut buf).unwrap();
         assert_eq!(&buf, b"alonso");
 
-        segment.seek(io::SeekFrom::Start(2)).unwrap();
-        let n = segment.read(&mut buf).unwrap();
+        f.seek(io::SeekFrom::Start(2)).unwrap();
+        let n = f.read(&mut buf).unwrap();
         assert_eq!(n, 4);
         assert_eq!(&buf[..4], b"onso");
 
-        segment.seek(io::SeekFrom::Current(-4)).unwrap();
-        let n = segment.read(&mut buf).unwrap();
+        f.seek(io::SeekFrom::Current(-4)).unwrap();
+        let n = f.read(&mut buf).unwrap();
         assert_eq!(n, 4);
         assert_eq!(&buf[..4], b"onso");
 
-        segment.seek(io::SeekFrom::End(-3)).unwrap();
-        let n = segment.read(&mut buf).unwrap();
+        f.seek(io::SeekFrom::End(-3)).unwrap();
+        let n = f.read(&mut buf).unwrap();
         assert_eq!(n, 3);
         assert_eq!(&buf[0..3], b"nso");
+
+        f.seek(io::SeekFrom::End(4096)).unwrap();
+        let n = f.read(&mut buf).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn segment_read_write_seek() {
+        let space_on_device = Arc::new(AtomicI64::new(4096));
+        read_write_seek(&mut Segment::new(space_on_device));
+    }
+
+    #[test]
+    fn std_file_read_write_seek() {
+        read_write_seek(&mut tempfile().unwrap());
+    }
+
+    #[test]
+    fn ftruncate() {
+        let space_on_device = Arc::new(AtomicI64::new(8192));
+        let mut segment = Segment::new(space_on_device);
+
+        let data = [b'z'; 512];
+        let mut buf = Vec::with_capacity(4096);
+
+        segment.write_all(&data).unwrap();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(&buf, &data);
+
+        // Extend adds zeroes.
+        segment.ftruncate(42, 1024).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(&buf[..512], &data);
+        assert_eq!(&buf[512..], &[0; 512]);
+
+        // Extend beyond existing page allocates zeroed page.
+        segment.ftruncate(42, 5120).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(&buf[..512], &data);
+        assert_eq!(&buf[512..], &[0; 512]);
+        assert_eq!(segment.pages.read().unwrap().len(), 2);
+
+        // Extends beyond available space returns `StorageFull`.
+        assert_matches!(
+            segment.ftruncate(42, 9216),
+            Err(e) if e.kind() == io::ErrorKind::StorageFull
+        );
+
+        // Shrink deallocates pages.
+        segment.ftruncate(42, 512).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, data);
+        assert_eq!(segment.pages.read().unwrap().len(), 1);
+
+        segment.ftruncate(42, 256).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, &data[..256]);
+    }
+
+    #[test]
+    fn fallocate() {
+        let space_on_device = Arc::new(AtomicI64::new(8192));
+        let mut segment = Segment::new(space_on_device);
+
+        let data = [b'z'; 512];
+        let mut buf = Vec::with_capacity(4096);
+
+        segment.write_all(&data).unwrap();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, data);
+
+        // Extend within existing page doesn't allocate.
+        segment.fallocate(1024).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, data);
+        assert_eq!(segment.pages.read().unwrap().len(), 1);
+
+        // Extend beyond page allocates new page.
+        segment.fallocate(5120).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, data);
+        assert_eq!(segment.pages.read().unwrap().len(), 2);
+
+        // Extend beyond available space returns `StorageFull`.
+        assert_matches!(
+            segment.fallocate(9216),
+            Err(e) if e.kind() == io::ErrorKind::StorageFull
+        );
+
+        // Shrink does nothing.
+        segment.fallocate(256).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, data);
+        assert_eq!(segment.pages.read().unwrap().len(), 3);
+    }
+
+    fn read_from_start_to_end(f: &mut (impl Read + Seek), buf: &mut Vec<u8>) -> io::Result<usize> {
+        f.rewind()?;
+        f.read_to_end(buf)
     }
 }

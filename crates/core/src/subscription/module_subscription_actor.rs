@@ -1133,7 +1133,7 @@ mod tests {
             let (durable_offset, ..) = watch::channel(None);
             Self {
                 commitlog: Arc::new(RwLock::new(
-                    commitlog::Generic::open(repo::Memory::new(), <_>::default()).unwrap(),
+                    commitlog::Generic::open(repo::Memory::new(4096), <_>::default()).unwrap(),
                 )),
                 durable_offset,
             }
@@ -1155,7 +1155,7 @@ mod tests {
             EmptyHistory::new(),
             Some(Persistence {
                 durability: durability.clone(),
-                disk_size: Arc::new(|| Ok(0)),
+                disk_size: Arc::new(|| Ok(<_>::default())),
                 snapshots: None,
             }),
             None,

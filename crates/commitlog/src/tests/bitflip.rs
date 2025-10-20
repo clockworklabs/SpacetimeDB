@@ -118,17 +118,14 @@ proptest! {
 
         let Inputs {
             log,
-            segment,
+            mut segment,
             byte_pos,
             bit_mask,
 
             segment_offset:_ ,
         } = inputs;
 
-        {
-            let mut data = segment.buf_mut();
-            data[byte_pos] ^= bit_mask;
-        }
+        segment.modify_byte_at(byte_pos, |b| b ^ bit_mask);
 
         let first_err = log
             .transactions_from(0, &payload::ArrayDecoder)

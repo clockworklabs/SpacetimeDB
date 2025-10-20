@@ -1,9 +1,8 @@
 use std::{
     cmp,
     fmt::Debug,
-    io::{self, Seek as _, SeekFrom},
+    io::{self, Seek, SeekFrom},
     iter::repeat,
-    sync::RwLockWriteGuard,
 };
 
 use log::debug;
@@ -100,9 +99,8 @@ fn overwrite_reopen() {
 
     {
         let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
-        let mut data = last_segment.buf_mut();
-        let pos = data.len() - last_commit.encoded_len() + 1;
-        data[pos] = 255;
+        let pos = last_segment.len() - last_commit.encoded_len() + 1;
+        last_segment.modify_byte_at(pos, |_| 255);
     }
 
     let mut log = open_log::<[u8; 32]>(repo.clone());
@@ -162,8 +160,12 @@ struct ShortSegment {
 }
 
 impl ShortSegment {
-    fn buf_mut(&mut self) -> RwLockWriteGuard<'_, Vec<u8>> {
-        self.inner.buf_mut()
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn modify_byte_at(&mut self, pos: usize, f: impl FnOnce(u8) -> u8) {
+        self.inner.modify_byte_at(pos, f);
     }
 }
 
@@ -180,6 +182,10 @@ impl FileLike for ShortSegment {
 
     fn ftruncate(&mut self, tx_offset: u64, size: u64) -> std::io::Result<()> {
         self.inner.ftruncate(tx_offset, size)
+    }
+
+    fn fallocate(&mut self, size: u64) -> io::Result<()> {
+        self.inner.fallocate(size)
     }
 }
 
@@ -223,7 +229,7 @@ struct ShortMem {
 impl ShortMem {
     pub fn new(max_len: u64) -> Self {
         Self {
-            inner: repo::Memory::new(),
+            inner: repo::Memory::new(max_len * 1024),
             max_len,
         }
     }

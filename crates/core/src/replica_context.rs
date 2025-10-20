@@ -1,3 +1,5 @@
+use spacetimedb_commitlog::SizeOnDisk;
+
 use super::database_logger::DatabaseLogger;
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
@@ -23,7 +25,7 @@ impl ReplicaContext {
     /// The number of bytes on disk occupied by the database's durability layer.
     ///
     /// An in-memory database will return `Ok(0)`.
-    pub fn durability_size_on_disk(&self) -> io::Result<u64> {
+    pub fn durability_size_on_disk(&self) -> io::Result<SizeOnDisk> {
         self.relational_db.size_on_disk()
     }
 
@@ -64,7 +66,7 @@ impl Deref for ReplicaContext {
 
 #[derive(Copy, Clone, Default)]
 pub struct TotalDiskUsage {
-    pub durability: Option<u64>,
+    pub durability: Option<SizeOnDisk>,
     pub logs: Option<u64>,
 }
 
@@ -75,9 +77,5 @@ impl TotalDiskUsage {
             durability: self.durability.or(fallback.durability),
             logs: self.logs.or(fallback.logs),
         }
-    }
-
-    pub fn sum(&self) -> u64 {
-        self.durability.unwrap_or(0) + self.logs.unwrap_or(0)
     }
 }

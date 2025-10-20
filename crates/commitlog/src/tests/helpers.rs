@@ -10,7 +10,7 @@ use crate::{
 
 pub fn mem_log<T: Encode>(max_segment_size: u64) -> commitlog::Generic<repo::Memory, T> {
     commitlog::Generic::open(
-        repo::Memory::new(),
+        repo::Memory::new(max_segment_size * 4096),
         Options {
             max_segment_size,
             ..Options::default()

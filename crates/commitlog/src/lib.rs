@@ -20,6 +20,7 @@ mod varint;
 pub use crate::{
     commit::{Commit, StoredCommit},
     payload::{Decoder, Encode},
+    repo::fs::SizeOnDisk,
     segment::{Transaction, DEFAULT_LOG_FORMAT_VERSION},
     varchar::Varchar,
 };
@@ -356,7 +357,7 @@ impl<T> Commitlog<T> {
     }
 
     /// Determine the size on disk of this commitlog.
-    pub fn size_on_disk(&self) -> io::Result<u64> {
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
         let inner = self.inner.read().unwrap();
         inner.repo.size_on_disk()
     }
