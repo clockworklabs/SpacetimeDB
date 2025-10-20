@@ -56,7 +56,6 @@ pub enum ServerLanguage {
     Rust,
     Csharp,
     TypeScript,
-    None,
 }
 
 impl ServerLanguage {
@@ -65,16 +64,15 @@ impl ServerLanguage {
             ServerLanguage::Rust => "rust",
             ServerLanguage::Csharp => "csharp",
             ServerLanguage::TypeScript => "typescript",
-            ServerLanguage::None => "none",
         }
     }
 
-    fn from_str(s: &str) -> Self {
+    fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "rust" => ServerLanguage::Rust,
-            "csharp" | "c#" => ServerLanguage::Csharp,
-            "typescript" => ServerLanguage::TypeScript,
-            _ => ServerLanguage::None,
+            "rust" => Some(ServerLanguage::Rust),
+            "csharp" | "c#" => Some(ServerLanguage::Csharp),
+            "typescript" => Some(ServerLanguage::TypeScript),
+            _ => None,
         }
     }
 }
@@ -84,7 +82,6 @@ pub enum ClientLanguage {
     Rust,
     Csharp,
     TypeScript,
-    None,
 }
 
 impl ClientLanguage {
@@ -93,16 +90,15 @@ impl ClientLanguage {
             ClientLanguage::Rust => "rust",
             ClientLanguage::Csharp => "csharp",
             ClientLanguage::TypeScript => "typescript",
-            ClientLanguage::None => "none",
         }
     }
 
-    fn from_str(s: &str) -> Self {
+    fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "rust" => ClientLanguage::Rust,
-            "csharp" | "c#" => ClientLanguage::Csharp,
-            "typescript" => ClientLanguage::TypeScript,
-            _ => ClientLanguage::None,
+            "rust" => Some(ClientLanguage::Rust),
+            "csharp" | "c#" => Some(ClientLanguage::Csharp),
+            "typescript" => Some(ClientLanguage::TypeScript),
+            _ => None,
         }
     }
 }
@@ -111,8 +107,8 @@ pub struct TemplateConfig {
     pub project_name: String,
     pub project_path: PathBuf,
     pub template_type: TemplateType,
-    pub server_lang: ServerLanguage,
-    pub client_lang: ClientLanguage,
+    pub server_lang: Option<ServerLanguage>,
+    pub client_lang: Option<ClientLanguage>,
     pub github_repo: Option<String>,
     pub template_def: Option<TemplateDefinition>,
     pub use_local: bool,
@@ -164,7 +160,7 @@ pub fn cli() -> clap::Command {
 
 pub async fn fetch_templates_list() -> anyhow::Result<(Vec<HighlightDefinition>, Vec<TemplateDefinition>)> {
     let content = if let Ok(file_path) = env::var("SPACETIMEDB_CLI_TEMPLATES_FILE") {
-        eprintln!("Loading templates list from local file: {}", file_path);
+        println!("Loading templates list from local file: {}", file_path);
         std::fs::read_to_string(&file_path)
             .with_context(|| format!("Failed to read templates file at {}", file_path))?
     } else {
@@ -178,7 +174,7 @@ pub async fn fetch_templates_list() -> anyhow::Result<(Vec<HighlightDefinition>,
             repo, branch, TEMPLATES_FILE_PATH
         );
 
-        eprintln!("Fetching templates list from {}...", url);
+        println!("Fetching templates list from {}...", url);
 
         let client = reqwest::Client::new();
         let response = client
@@ -205,11 +201,11 @@ pub async fn fetch_templates_list() -> anyhow::Result<(Vec<HighlightDefinition>,
 
 pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool> {
     if config.spacetimedb_token().is_some() {
-        eprintln!("{}", "You are logged in to SpacetimeDB.".green());
+        println!("{}", "You are logged in to SpacetimeDB.".green());
         return Ok(true);
     }
 
-    eprintln!("{}", "You are not logged in to SpacetimeDB.".yellow());
+    println!("{}", "You are not logged in to SpacetimeDB.".yellow());
 
     let theme = ColorfulTheme::default();
     let should_login = Confirm::with_theme(&theme)
@@ -220,10 +216,10 @@ pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool>
     if should_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
         spacetimedb_login_force(config, &host, false).await?;
-        eprintln!("{}", "Successfully logged in!".green());
+        println!("{}", "Successfully logged in!".green());
         Ok(true)
     } else {
-        eprintln!("{}", "Continuing with local deployment.".yellow());
+        println!("{}", "Continuing with local deployment.".yellow());
         Ok(false)
     }
 }
@@ -294,8 +290,8 @@ pub async fn exec_non_interactive_init(config: &mut Config, args: &ArgMatches) -
                 project_name: project_name.clone(),
                 project_path: actual_project_path.clone(),
                 template_type: TemplateType::Builtin,
-                server_lang: ServerLanguage::from_str(template.server_lang.as_deref().unwrap_or("none")),
-                client_lang: ClientLanguage::from_str(template.client_lang.as_deref().unwrap_or("none")),
+                server_lang: template.server_lang.as_deref().and_then(ServerLanguage::from_str),
+                client_lang: template.client_lang.as_deref().and_then(ClientLanguage::from_str),
                 github_repo: None,
                 template_def: Some(template.clone()),
                 use_local,
@@ -309,8 +305,8 @@ pub async fn exec_non_interactive_init(config: &mut Config, args: &ArgMatches) -
                 project_name: project_name.clone(),
                 project_path: actual_project_path.clone(),
                 template_type: TemplateType::GitHub,
-                server_lang: ServerLanguage::Rust,
-                client_lang: ClientLanguage::None,
+                server_lang: Some(ServerLanguage::Rust),
+                client_lang: None,
                 github_repo: Some(template_str.clone()),
                 template_def: None,
                 use_local,
@@ -331,18 +327,10 @@ pub async fn exec_non_interactive_init(config: &mut Config, args: &ArgMatches) -
         }
 
         // Determine server language
-        let server_lang = if let Some(lang_str) = server_lang_str {
-            ServerLanguage::from_str(lang_str)
-        } else {
-            ServerLanguage::None
-        };
+        let server_lang = server_lang_str.and_then(|s| ServerLanguage::from_str(s));
 
         // Determine client language
-        let client_lang = if let Some(lang_str) = client_lang_str {
-            ClientLanguage::from_str(lang_str)
-        } else {
-            ClientLanguage::None
-        };
+        let client_lang = client_lang_str.and_then(|s| ClientLanguage::from_str(s));
 
         let template_config = TemplateConfig {
             project_name: project_name.clone(),
@@ -388,7 +376,7 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
 
     // Get or prompt for project name
     let project_name: String = if let Some(name) = args.get_one::<String>("name") {
-        eprintln!("{} {}", "Project name:".bold(), name);
+        println!("{} {}", "Project name:".bold(), name);
         name.clone()
     } else {
         Input::with_theme(&theme)
@@ -408,7 +396,7 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
     // Get or prompt for project path
     let project_path: String = if let Some(path) = args.get_one::<PathBuf>("project-path") {
         let path_str = path.to_string_lossy().to_string();
-        eprintln!("{} {}", "Project path:".bold(), path_str);
+        println!("{} {}", "Project path:".bold(), path_str);
         path_str
     } else {
         Input::with_theme(&theme)
@@ -450,7 +438,7 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
 
     // Check if template is provided
     if let Some(template_str) = args.get_one::<String>("template") {
-        eprintln!("{} {}", "Template:".bold(), template_str);
+        println!("{} {}", "Template:".bold(), template_str);
 
         let (_, templates) = fetch_templates_list().await?;
 
@@ -460,8 +448,8 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
                 project_name,
                 project_path: PathBuf::from(project_path),
                 template_type: TemplateType::Builtin,
-                server_lang: ServerLanguage::from_str(template.server_lang.as_deref().unwrap_or("none")),
-                client_lang: ClientLanguage::from_str(template.client_lang.as_deref().unwrap_or("none")),
+                server_lang: template.server_lang.as_deref().and_then(ServerLanguage::from_str),
+                client_lang: template.client_lang.as_deref().and_then(ClientLanguage::from_str),
                 github_repo: None,
                 template_def: Some(template.clone()),
                 use_local: true,
@@ -472,8 +460,8 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
                 project_name,
                 project_path: PathBuf::from(project_path),
                 template_type: TemplateType::GitHub,
-                server_lang: ServerLanguage::Rust,
-                client_lang: ClientLanguage::None,
+                server_lang: Some(ServerLanguage::Rust),
+                client_lang: None,
                 github_repo: Some(template_str.clone()),
                 template_def: None,
                 use_local: true,
@@ -487,19 +475,15 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
 
     if server_lang_arg.is_some() || client_lang_arg.is_some() {
         // Use provided languages
-        let server_lang = if let Some(lang_str) = server_lang_arg {
-            eprintln!("{} {}", "Server language:".bold(), lang_str);
+        let server_lang = server_lang_arg.and_then(|lang_str| {
+            println!("{} {}", "Server language:".bold(), lang_str);
             ServerLanguage::from_str(lang_str)
-        } else {
-            ServerLanguage::None
-        };
+        });
 
-        let client_lang = if let Some(lang_str) = client_lang_arg {
-            eprintln!("{} {}", "Client language:".bold(), lang_str);
+        let client_lang = client_lang_arg.and_then(|lang_str| {
+            println!("{} {}", "Client language:".bold(), lang_str);
             ClientLanguage::from_str(lang_str)
-        } else {
-            ClientLanguage::None
-        };
+        });
 
         return Ok(TemplateConfig {
             project_name,
@@ -549,8 +533,8 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
             project_name,
             project_path: PathBuf::from(project_path),
             template_type: TemplateType::Builtin,
-            server_lang: ServerLanguage::from_str(template.server_lang.as_deref().unwrap_or("none")),
-            client_lang: ClientLanguage::from_str(template.client_lang.as_deref().unwrap_or("none")),
+            server_lang: template.server_lang.as_deref().and_then(ServerLanguage::from_str),
+            client_lang: template.client_lang.as_deref().and_then(ClientLanguage::from_str),
             github_repo: None,
             template_def: Some(template.clone()),
             use_local: true,
@@ -564,11 +548,11 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
                 .to_string();
 
             if template_id == "l" || template_id == "L" {
-                eprintln!("\n{}", "Available templates:".bold());
+                println!("\n{}", "Available templates:".bold());
                 for template in &templates {
-                    eprintln!("  {} - {}", template.id, template.description);
+                    println!("  {} - {}", template.id, template.description);
                 }
-                eprintln!();
+                println!();
                 continue;
             }
 
@@ -577,8 +561,8 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
                     project_name: project_name.clone(),
                     project_path: PathBuf::from(&project_path),
                     template_type: TemplateType::Builtin,
-                    server_lang: ServerLanguage::from_str(template.server_lang.as_deref().unwrap_or("none")),
-                    client_lang: ClientLanguage::from_str(template.client_lang.as_deref().unwrap_or("none")),
+                    server_lang: template.server_lang.as_deref().and_then(ServerLanguage::from_str),
+                    client_lang: template.client_lang.as_deref().and_then(ClientLanguage::from_str),
                     github_repo: None,
                     template_def: Some(template.clone()),
                     use_local: true,
@@ -588,8 +572,8 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
                     project_name: project_name.clone(),
                     project_path: PathBuf::from(&project_path),
                     template_type: TemplateType::GitHub,
-                    server_lang: ServerLanguage::Rust,
-                    client_lang: ClientLanguage::None,
+                    server_lang: None,
+                    client_lang: None,
                     github_repo: Some(template_id),
                     template_def: None,
                     use_local: true,
@@ -605,10 +589,10 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
             .interact()?;
 
         let server_lang = match server_lang_selection {
-            0 => ServerLanguage::Rust,
-            1 => ServerLanguage::Csharp,
-            2 => ServerLanguage::TypeScript,
-            _ => ServerLanguage::Rust,
+            0 => Some(ServerLanguage::Rust),
+            1 => Some(ServerLanguage::Csharp),
+            2 => Some(ServerLanguage::TypeScript),
+            _ => None,
         };
 
         Ok(TemplateConfig {
@@ -616,7 +600,7 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
             project_path: PathBuf::from(project_path),
             template_type: TemplateType::Empty,
             server_lang,
-            client_lang: ClientLanguage::None,
+            client_lang: None,
             github_repo: None,
             template_def: None,
             use_local: true,
@@ -629,7 +613,7 @@ fn clone_git_subdirectory(repo_url: &str, subdir: &str, target: &Path, branch: O
     let temp_path = temp_dir.path();
 
     let branch_display = branch.map(|b| format!(" (branch: {})", b)).unwrap_or_default();
-    eprintln!("  Cloning repository from {}{}...", repo_url, branch_display);
+    println!("  Cloning repository from {}{}...", repo_url, branch_display);
 
     let mut builder = git2::build::RepoBuilder::new();
 
@@ -681,7 +665,7 @@ fn clone_github_template(repo_input: &str, target: &Path) -> anyhow::Result<()> 
         anyhow::bail!("Invalid repository format. Use 'owner/repo' or full URL");
     };
 
-    eprintln!("  Cloning from {}...", repo_url);
+    println!("  Cloning from {}...", repo_url);
 
     let temp_dir = tempfile::tempdir()?;
 
@@ -735,28 +719,6 @@ fn copy_dir_all(src: &Path, dst: &Path) -> anyhow::Result<()> {
             fs::copy(&src_path, &dst_path)?;
         }
     }
-    Ok(())
-}
-
-fn configure_rust_server(server_dir: &Path, project_name: &str) -> anyhow::Result<()> {
-    let cargo_path = server_dir.join("Cargo.toml");
-    if !cargo_path.exists() {
-        return Ok(());
-    }
-
-    let mut content = fs::read_to_string(&cargo_path)?;
-
-    let safe_name = project_name
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
-        .collect::<String>();
-
-    let name_regex = Regex::new(r#"(?m)^name = .*$"#)?;
-    content = name_regex
-        .replace(&content, format!(r#"name = "{}""#, safe_name))
-        .to_string();
-
-    fs::write(&cargo_path, content)?;
     Ok(())
 }
 
@@ -817,6 +779,28 @@ fn update_client_package_json(client_dir: &Path, project_name: &str) -> anyhow::
     Ok(())
 }
 
+fn update_rust_client_name(client_dir: &Path, project_name: &str) -> anyhow::Result<()> {
+    let cargo_path = client_dir.join("Cargo.toml");
+    if !cargo_path.exists() {
+        return Ok(());
+    }
+
+    let mut content = fs::read_to_string(&cargo_path)?;
+
+    let safe_name = project_name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .collect::<String>();
+
+    let name_regex = Regex::new(r#"(?m)^name = .*$"#)?;
+    content = name_regex
+        .replace(&content, format!(r#"name = "{}-client""#, safe_name))
+        .to_string();
+
+    fs::write(&cargo_path, content)?;
+    Ok(())
+}
+
 fn update_typescript_client_config(client_dir: &Path, module_name: &str, use_local: bool) -> anyhow::Result<()> {
     let main_path = client_dir.join("src/main.tsx");
     if !main_path.exists() {
@@ -872,7 +856,7 @@ async fn copy_cursorrules(project_path: &Path) -> anyhow::Result<()> {
 }
 
 pub async fn init_from_template(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
-    eprintln!("{}", "Initializing project from template...".cyan());
+    println!("{}", "Initializing project from template...".cyan());
 
     match config.template_type {
         TemplateType::Builtin => init_builtin(config, project_path)?,
@@ -883,7 +867,7 @@ pub async fn init_from_template(config: &TemplateConfig, project_path: &Path) ->
     // Copy .cursorrules file from the repository
     copy_cursorrules(project_path).await?;
 
-    eprintln!("{}", "Project initialized successfully!".green());
+    println!("{}", "Project initialized successfully!".green());
     print_next_steps(config, project_path)?;
 
     Ok(())
@@ -904,7 +888,10 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
         }
     });
 
-    eprintln!("Setting up client ({})...", config.client_lang.as_str());
+    println!(
+        "Setting up client ({})...",
+        config.client_lang.map(|l| l.as_str()).unwrap_or("none")
+    );
     let client_source = &template_def.client_source;
     let (repo, subdir) = parse_repo_source(client_source);
     clone_git_subdirectory(
@@ -914,7 +901,10 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
         branch.as_deref(),
     )?;
 
-    eprintln!("Setting up server ({})...", config.server_lang.as_str());
+    println!(
+        "Setting up server ({})...",
+        config.server_lang.map(|l| l.as_str()).unwrap_or("none")
+    );
     let server_dir = project_path.join("spacetimedb");
     let server_source = &template_def.server_source;
     let (repo, subdir) = parse_repo_source(server_source);
@@ -925,18 +915,18 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
         branch.as_deref(),
     )?;
 
-    // TODO: figure out adjustments we may need to do for other client and server langs
-    if config.server_lang == ServerLanguage::Rust {
-        configure_rust_server(&server_dir, &config.project_name)?;
-    }
-
-    if config.client_lang == ClientLanguage::TypeScript {
-        update_client_package_json(project_path, &config.project_name)?;
-        update_typescript_client_config(project_path, &config.project_name, config.use_local)?;
-        eprintln!(
-            "{}",
-            "Note: Run 'npm install' in the project directory to install dependencies".yellow()
-        );
+    match config.client_lang {
+        Some(ClientLanguage::TypeScript) => {
+            update_client_package_json(project_path, &config.project_name)?;
+            update_typescript_client_config(project_path, &config.project_name, config.use_local)?;
+            println!(
+                "{}",
+                "Note: Run 'npm install' in the project directory to install dependencies".yellow()
+            );
+        }
+        Some(ClientLanguage::Rust) => {
+            update_rust_client_name(project_path, &config.project_name)?;
+        }
     }
 
     Ok(())
@@ -965,34 +955,34 @@ fn init_github_template(config: &TemplateConfig, project_path: &Path) -> anyhow:
         fs::write(package_path, updated_content)?;
     }
 
-    eprintln!("{}", "Note: Custom templates require manual configuration.".yellow());
+    println!("{}", "Note: Custom templates require manual configuration.".yellow());
 
     Ok(())
 }
 
 fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
     match config.server_lang {
-        ServerLanguage::Rust => {
-            eprintln!("Setting up Rust server...");
+        Some(ServerLanguage::Rust) => {
+            println!("Setting up Rust server...");
             let server_dir = project_path.join("spacetimedb");
             init_empty_rust_server(&server_dir, &config.project_name)?;
         }
-        ServerLanguage::Csharp => {
-            eprintln!("Setting up C# server...");
+        Some(ServerLanguage::Csharp) => {
+            println!("Setting up C# server...");
             let server_dir = project_path.join("spacetimedb");
             init_empty_csharp_server(&server_dir, &config.project_name)?;
         }
-        ServerLanguage::TypeScript => {
-            eprintln!("Setting up TypeScript server...");
+        Some(ServerLanguage::TypeScript) => {
+            println!("Setting up TypeScript server...");
             let server_dir = project_path.join("spacetimedb");
             init_empty_typescript_server(&server_dir, &config.project_name)?;
         }
-        ServerLanguage::None => {}
+        None => {}
     }
 
     match config.client_lang {
-        ClientLanguage::TypeScript => {
-            eprintln!("Setting up TypeScript client...");
+        Some(ClientLanguage::TypeScript) => {
+            println!("Setting up TypeScript client...");
             let client_dir = project_path.join("client");
 
             let branch = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_BRANCH").ok().or_else(|| {
@@ -1012,26 +1002,20 @@ fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()
 
             update_client_package_json(&client_dir, &config.project_name)?;
 
-            if config.server_lang != ServerLanguage::None {
+            if config.server_lang.is_some() {
                 // Create package.json with boilerplate for working with the server (like
                 // `spacetime publish`
                 create_root_package_json(project_path, &config.project_name, config.use_local)?;
             }
 
-            eprintln!(
+            println!(
                 "{}",
                 "Note: Run 'npm install' in the project directory to install dependencies".yellow()
             );
         }
-        ClientLanguage::Rust => {
-            eprintln!("Setting up Rust client...");
-            eprintln!("{}", "Rust client setup not yet implemented".yellow());
-        }
-        ClientLanguage::Csharp => {
-            eprintln!("Setting up C# client...");
-            eprintln!("{}", "C# client setup not yet implemented".yellow());
-        }
-        ClientLanguage::None => {}
+        Some(ClientLanguage::Rust) => {}
+        Some(ClientLanguage::Csharp) => {}
+        None => {}
     }
 
     Ok(())
@@ -1050,8 +1034,8 @@ fn init_empty_typescript_server(server_dir: &Path, _project_name: &str) -> anyho
 }
 
 fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Result<()> {
-    eprintln!();
-    eprintln!("{}", "Next steps:".bold());
+    println!();
+    println!("{}", "Next steps:".bold());
 
     let rel_path = config
         .project_path
@@ -1059,71 +1043,69 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
         .unwrap_or(&config.project_path);
 
     if rel_path != Path::new(".") && rel_path != Path::new("") {
-        eprintln!("  cd {}", rel_path.display());
+        println!("  cd {}", rel_path.display());
     }
 
     match (config.template_type, config.server_lang, config.client_lang) {
-        (TemplateType::Builtin, ServerLanguage::Rust, ClientLanguage::Rust) => {
-            eprintln!(
+        (TemplateType::Builtin, Some(ServerLanguage::Rust), Some(ClientLanguage::Rust)) => {
+            println!(
                 "  spacetime publish --project-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            eprintln!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
-            eprintln!("  cargo run");
+            println!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  cargo run");
         }
-        (TemplateType::Builtin, ServerLanguage::TypeScript, ClientLanguage::TypeScript) => {
-            eprintln!("  npm install");
-            eprintln!(
+        (TemplateType::Builtin, Some(ServerLanguage::TypeScript), Some(ClientLanguage::TypeScript)) => {
+            println!("  npm install");
+            println!(
                 "  spacetime publish --project-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            eprintln!(
-                "  spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb"
-            );
-            eprintln!("  npm run dev");
+            println!("  spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  npm run dev");
         }
-        (TemplateType::Builtin, ServerLanguage::Csharp, ClientLanguage::Csharp) => {
-            eprintln!(
+        (TemplateType::Builtin, Some(ServerLanguage::Csharp), Some(ClientLanguage::Csharp)) => {
+            println!(
                 "  spacetime publish --project-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            eprintln!("  spacetime generate --lang csharp --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  spacetime generate --lang csharp --out-dir src/module_bindings --project-path spacetimedb");
         }
-        (TemplateType::Empty, _, ClientLanguage::TypeScript) => {
-            eprintln!("  npm install");
-            if config.server_lang != ServerLanguage::None {
-                eprintln!(
+        (TemplateType::Empty, _, Some(ClientLanguage::TypeScript)) => {
+            println!("  npm install");
+            if config.server_lang.is_some() {
+                println!(
                     "  spacetime publish --project-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
                     config.project_name
                 );
-                eprintln!(
+                println!(
                     "  spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb"
                 );
             }
-            eprintln!("  npm run dev");
+            println!("  npm run dev");
         }
-        (TemplateType::Empty, _, ClientLanguage::Rust) => {
-            if config.server_lang != ServerLanguage::None {
-                eprintln!(
+        (TemplateType::Empty, _, Some(ClientLanguage::Rust)) => {
+            if config.server_lang.is_some() {
+                println!(
                     "  spacetime publish --project-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
                     config.project_name
                 );
-                eprintln!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
+                println!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
             }
-            eprintln!("  cargo run");
+            println!("  cargo run");
         }
         (_, _, _) => {
-            eprintln!("  # Follow the template's README for setup instructions");
+            println!("  # Follow the template's README for setup instructions");
         }
     }
 
-    eprintln!();
-    eprintln!("Learn more: {}", "https://spacetimedb.com/docs".cyan());
+    println!();
+    println!("Learn more: {}", "https://spacetimedb.com/docs".cyan());
 
     Ok(())
 }
@@ -1217,7 +1199,7 @@ fn check_for_git() -> bool {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    eprintln!("{UNSTABLE_WARNING}\n");
+    println!("{UNSTABLE_WARNING}\n");
 
     let non_interactive = args.get_flag("non-interactive");
     let template = args.get_one::<String>("template");
@@ -1338,7 +1320,7 @@ pub fn init_typescript_project(project_path: &Path) -> Result<(), anyhow::Error>
         std::fs::write(path, data_file.0)?;
     }
 
-    eprintln!(
+    println!(
         "{}",
         "Note: Run 'npm install' in the server directory to install dependencies".yellow()
     );
