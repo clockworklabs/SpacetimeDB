@@ -927,6 +927,8 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
         Some(ClientLanguage::Rust) => {
             update_rust_client_name(project_path, &config.project_name)?;
         }
+        Some(ClientLanguage::Csharp) => {}
+        None => {}
     }
 
     Ok(())
