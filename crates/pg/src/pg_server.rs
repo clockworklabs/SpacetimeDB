@@ -238,7 +238,7 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                     params
                         .get(param)
                         .map(String::from)
-                        .ok_or_else(|| PgError::MetadataError(anyhow::anyhow!("Missing parameter: {}", param)))
+                        .ok_or_else(|| PgError::MetadataError(anyhow::anyhow!("Missing parameter: {param}")))
                 };
 
                 // We don't support `METADATA_USER` because we don't have a user management system.

@@ -258,6 +258,7 @@ impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => {
 });
 
 impl_serialize!([] spacetimedb_primitives::TableId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::ViewId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::SequenceId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::IndexId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::ConstraintId, (self, ser) => ser.serialize_u32(self.0));

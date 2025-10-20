@@ -10,6 +10,6 @@ namespace SpacetimeDB.Internal
     [SpacetimeDB.Type]
     public partial record RawMiscModuleExportV9 : SpacetimeDB.TaggedEnum<(
         RawColumnDefaultValueV9 ColumnDefaultValue,
-        SpacetimeDB.Unit _Reserved
+        RawProcedureDefV9 Procedure
     )>;
 }

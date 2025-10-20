@@ -57,6 +57,8 @@ fn upgrade_module(def: RawModuleDefV8, extra_errors: &mut Vec<ValidationError>) 
         tables,
         reducers,
         types,
+        // V8 module defs don't have procedures or column default values,
+        // which are all we use the `misc_exports` for at this time (pgoldman 2025-10-09).
         misc_exports: Default::default(),
         row_level_security: vec![], // v8 doesn't have row-level security
     }
@@ -526,7 +528,7 @@ mod tests {
         assert_eq!(delivery_def.columns[2].ty, AlgebraicType::U64);
         assert_eq!(delivery_def.schedule.as_ref().unwrap().at_column, 1.into());
         assert_eq!(
-            &delivery_def.schedule.as_ref().unwrap().reducer_name[..],
+            &delivery_def.schedule.as_ref().unwrap().function_name[..],
             "check_deliveries"
         );
         assert_eq!(delivery_def.primary_key, Some(ColId(2)));

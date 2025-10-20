@@ -2,6 +2,7 @@
 
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::error::NodesError;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation::{span, CallTimes};
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
@@ -9,7 +10,8 @@ use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, Timin
 use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_lib::Timestamp;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
 use std::num::NonZeroU32;
 use std::time::Instant;
@@ -1006,7 +1008,7 @@ impl WasmInstanceEnv {
             let args = mem.deref_slice(args, args_len)?;
             env.instance_env.scheduler.volatile_nonatomic_schedule_immediate(
                 name.to_owned(),
-                crate::host::ReducerArgs::Bsatn(args.to_vec().into()),
+                crate::host::FunctionArgs::Bsatn(args.to_vec().into()),
             );
 
             Ok(())
@@ -1302,6 +1304,54 @@ impl WasmInstanceEnv {
             let function = caller.data().log_record_function();
             caller.data().instance_env.console_timer_end(&span, function);
             Ok(0)
+        })
+    }
+
+    /// Finds the JWT payload associated with `connection_id`.
+    /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
+    /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
+    ///
+    /// This must be called inside a transaction (because it reads from a system table).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `connection_id` does not point to a valid little-endian `ConnectionId`.
+    /// - `target_ptr` is NULL or `target_ptr[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///  - The `ByteSourceId` to be written to `target_ptr` would overflow [`u32::MAX`].
+    pub fn get_jwt(
+        caller: Caller<'_, Self>,
+        connection_id: WasmPtr<ConnectionId>,
+        target_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::GetJwt, target_ptr, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let cid = ConnectionId::read_from(mem, connection_id)?;
+            let jwt = match env
+                .instance_env
+                .tx
+                .get()
+                .map_err(NodesError::from)?
+                .get_jwt_payload(cid)
+                .map_err(anyhow::Error::from)?
+            {
+                None => {
+                    // We should consider logging a warning here, since we don't expect any
+                    // connection ids to not have a JWT after we migrate.
+                    return Ok(0u32);
+                }
+                Some(jwt) => jwt,
+            };
+            let b = bytes::Bytes::from(jwt);
+            let source_id = env.create_bytes_source(b)?;
+            Ok(source_id.0)
         })
     }
 
