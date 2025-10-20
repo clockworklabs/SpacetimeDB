@@ -82,6 +82,14 @@ impl Segment {
         self.len() == 0
     }
 
+    /// Modify the byte at `pos` in the segment.
+    ///
+    /// Convenience to let tests inject corruptions into the segment, without
+    /// [io::Seek] ceremony.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `pos` is not within the segment's bounds.
     pub fn modify_byte_at(&mut self, pos: usize, f: impl FnOnce(u8) -> u8) {
         let mut pages = self.pages.write().unwrap();
 

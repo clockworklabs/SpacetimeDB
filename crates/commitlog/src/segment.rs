@@ -230,7 +230,7 @@ impl FileLike for File {
     }
 
     // `ftruncate` deallocates any extra `fallocate`'d blocks,
-    // so if the `fallocate` feature is enable, we need
+    // so if the `fallocate` feature is enabled, we need
     // restore the allocation after truncation.
     //
     // TODO: Make truncate (shrinking) a [Segment] method, so we can implement

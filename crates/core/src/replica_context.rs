@@ -39,8 +39,28 @@ impl ReplicaContext {
     /// Some sources of size-on-disk may error, in which case the corresponding array element will be None.
     pub fn total_disk_usage(&self) -> TotalDiskUsage {
         TotalDiskUsage {
-            durability: self.durability_size_on_disk().ok(),
-            logs: self.log_file_size().ok(),
+            durability: self
+                .durability_size_on_disk()
+                .inspect_err(|e| {
+                    log::error!(
+                        "database={} replica={}: failed to obtain durability size on disk: {:#}",
+                        self.database.database_identity,
+                        self.replica_id,
+                        e
+                    );
+                })
+                .ok(),
+            logs: self
+                .log_file_size()
+                .inspect_err(|e| {
+                    log::error!(
+                        "database={} replica={}: failed to obtain log file size: {:#}",
+                        self.database.database_identity,
+                        self.replica_id,
+                        e
+                    );
+                })
+                .ok(),
         }
     }
 
