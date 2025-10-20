@@ -100,16 +100,16 @@ void APlayerPawn::Suicide()
 	AGameManager::Instance->Conn->Reducers->Suicide();
 }
 
-uint32 APlayerPawn::TotalMass() const
+int32 APlayerPawn::TotalMass() const
 {
-	uint32 Total = 0;
+	int32 Total = 0;
 	for (int32 Index = 0; Index < OwnedCircles.Num(); ++Index)
 	{
 		const TWeakObjectPtr<ACircle>& Weak = OwnedCircles[Index];
 		if (!Weak.IsValid()) continue;
 
 		const ACircle* Circle = Weak.Get();
-		const uint32 Id = Circle->EntityId;
+		const int32 Id = Circle->EntityId;
 
 		const FEntityType Entity = AGameManager::Instance->Conn->Db->Entity->EntityId->Find(Id);
 		Total += Entity.Mass;
@@ -135,7 +135,7 @@ FVector APlayerPawn::CenterOfMass() const
 		if (!Weak.IsValid()) continue;
 
 		const ACircle* Circle = Weak.Get();
-		const uint32 Id = Circle->EntityId;
+		const int32 Id = Circle->EntityId;
 
 		const FEntityType Entity = AGameManager::Instance->Conn->Db->Entity->EntityId->Find(Id);
 		const double Mass = Entity.Mass;

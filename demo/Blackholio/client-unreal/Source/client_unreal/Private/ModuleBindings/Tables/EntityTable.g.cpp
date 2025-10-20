@@ -13,7 +13,7 @@ void UEntityTable::PostInitialize()
     Data = MakeShared<UClientCache<FEntityType>>();
 
     TSharedPtr<FTableCache<FEntityType>> EntityTable = Data->GetOrAdd(TableName);
-    EntityTable->AddUniqueConstraint<uint32>("entity_id", [](const FEntityType& Row) -> const uint32& {
+    EntityTable->AddUniqueConstraint<int32>("entity_id", [](const FEntityType& Row) -> const int32& {
         return Row.EntityId; });
 
     EntityId = NewObject<UEntityEntityIdUniqueIndex>(this);
@@ -26,7 +26,7 @@ FTableAppliedDiff<FEntityType> UEntityTable::Update(TArray<FWithBsatn<FEntityTyp
 {
     FTableAppliedDiff<FEntityType> Diff = BaseUpdate<FEntityType>(InsertsRef, DeletesRef, Data, TableName);
 
-    Diff.DeriveUpdatesByPrimaryKey<uint32>(
+    Diff.DeriveUpdatesByPrimaryKey<int32>(
         [](const FEntityType& Row) 
         {
             return Row.EntityId; 

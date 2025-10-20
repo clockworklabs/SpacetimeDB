@@ -49,7 +49,7 @@ void AEntity::ConsumeDespawn(float DeltaTime)
 	}
 }
 
-void AEntity::Spawn(uint32 InEntityId)
+void AEntity::Spawn(int32 InEntityId)
 {
 	EntityId = InEntityId;
 
@@ -89,7 +89,7 @@ bool AEntity::ConsumeDelete(const FEventContext& Context)
 		return false;
 
 	const FConsumeEntityArgs Args = Reducer.GetAsConsumeEntity();
-	const uint32 ConsumerId = Args.Request.ConsumerEntityId;
+	const int32 ConsumerId = Args.Request.ConsumerEntityId;
 	ConsumingEntity = AGameManager::Instance->GetEntity(ConsumerId);
 	if (!ConsumingEntity)
 		return false;
