@@ -1002,6 +1002,8 @@ pub struct ViewDef {
     /// The return type of the view.
     /// Either `T`, `Option<T>`, or `Vec<T>` where `T` is a [`ProductType`].
     ///
+    /// Here `Option<T>` refers to [`AlgebraicType::option()`] and `Vec<T>` refers to [`AlgebraicType::array()`].
+    ///
     /// `T` defines the columns of the view.
     /// `T` will be registered in the module's `Typespace`.
     pub return_type: AlgebraicType,
