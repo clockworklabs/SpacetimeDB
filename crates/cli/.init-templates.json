@@ -1,7 +1,6 @@
 {
   "highlights": [
     { "name": "React", "template_id": "basic-react" },
-    { "name": "TypeScript Chat", "template_id": "quickstart-chat-typescript" }
   ],
   "templates": [
     {
