@@ -5,6 +5,7 @@ use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
+use git2::{Cred, FetchOptions};
 use regex::Regex;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -605,51 +606,63 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
     }
 }
 
-fn clone_git_subdirectory(repo_url: &str, subdir: &str, target: &Path, branch: Option<&str>) -> anyhow::Result<()> {
+fn clone_git_subdirectory(repo_url: &str, subdir: &str, target: &Path, reference: Option<&str>) -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let temp_path = temp_dir.path();
 
-    let branch_display = branch.map(|b| format!(" (branch: {})", b)).unwrap_or_default();
-    println!("  Cloning repository from {}{}...", repo_url, branch_display);
+    let reference_display = reference.map(|b| format!(" (reference: {})", b)).unwrap_or_default();
+    println!("  Cloning repository from {}{}...", repo_url, reference_display);
 
-    let mut builder = git2::build::RepoBuilder::new();
-
-    if let Some(branch_name) = branch {
-        builder.branch(branch_name);
-    }
-
-    let mut fetch_options = git2::FetchOptions::new();
+    // Setup callbacks
     let mut callbacks = git2::RemoteCallbacks::new();
-
-    callbacks.credentials(|_url, username_from_url, allowed_types| {
+    callbacks.credentials(|url, username_from_url, allowed_types| {
         if allowed_types.contains(git2::CredentialType::SSH_KEY) {
             if let Some(username) = username_from_url {
-                return git2::Cred::ssh_key_from_agent(username);
+                return Cred::ssh_key_from_agent(username);
             }
         }
         if allowed_types.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
-            return git2::Cred::userpass_plaintext("", "");
+            return Cred::userpass_plaintext("git", "");
         }
         if allowed_types.contains(git2::CredentialType::DEFAULT) {
-            return git2::Cred::default();
+            return Cred::default();
+        }
+        if url.starts_with("https://") {
+            return Cred::userpass_plaintext("git", "");
         }
         Err(git2::Error::from_str("no auth method available"))
     });
 
-    fetch_options.remote_callbacks(callbacks);
-    builder.fetch_options(fetch_options);
+    // Normal full clone
+    let mut fetch_opts = FetchOptions::new();
+    fetch_opts.remote_callbacks(callbacks);
 
-    builder
+    let mut builder = git2::build::RepoBuilder::new();
+    builder.fetch_options(fetch_opts);
+
+    let repo = builder
         .clone(repo_url, temp_path)
         .context("Failed to clone repository")?;
 
+    // Checkout commit if specified
+    if let Some(commit_sha) = reference {
+        let oid = git2::Oid::from_str(commit_sha).context("Invalid commit SHA format")?;
+        let commit = repo
+            .find_commit(oid)
+            .context("Commit not found in repository (may not be reachable from default branch)")?;
+
+        repo.checkout_tree(commit.as_object(), None)
+            .context("Failed to checkout commit tree")?;
+        repo.set_head_detached(oid).context("Failed to detach HEAD")?;
+    }
+
+    //  Copy requested subdir
     let source_path = temp_path.join(subdir);
     if !source_path.exists() {
         anyhow::bail!("Subdirectory '{}' not found in repository", subdir);
     }
 
     copy_dir_all(&source_path, target)?;
-
     Ok(())
 }
 
