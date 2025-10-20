@@ -134,10 +134,9 @@ pub fn cli() -> clap::Command {
                 .help("The path where we will create the spacetime project (defaults to hyphenated project name)"),
         )
         .arg(
-            Arg::new("server-lang")
-                .long("server-lang")
-                .value_name("LANG")
-                .help("Server language: rust, csharp, typescript"),
+            Arg::new("server-lang").long("server-lang").value_name("LANG").help(
+                "Server language: rust, csharp, typescript (it can only be used when --template is not specified)",
+            ),
         )
         .arg(
             Arg::new("template")
@@ -146,12 +145,9 @@ pub fn cli() -> clap::Command {
                 .value_name("TEMPLATE")
                 .help("Template ID or GitHub repository (owner/repo or URL)"),
         )
-        .arg(
-            Arg::new("client-lang")
-                .long("client-lang")
-                .value_name("LANG")
-                .help("Client language: rust, csharp, typescript, none"),
-        )
+        .arg(Arg::new("client-lang").long("client-lang").value_name("LANG").help(
+            "Client language: rust, csharp, typescript, none  (it can only be used when --template is not specified)",
+        ))
         .arg(
             Arg::new("local")
                 .long("local")
@@ -162,7 +158,7 @@ pub fn cli() -> clap::Command {
             Arg::new("non-interactive")
                 .long("non-interactive")
                 .action(clap::ArgAction::SetTrue)
-                .help("Run in non-interactive mode with default or provided options"),
+                .help("Run in non-interactive mode"),
         )
 }
 
@@ -249,6 +245,24 @@ pub async fn exec_interactive_init(config: &mut Config, args: &ArgMatches) -> an
     Ok(())
 }
 
+fn slugify(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else if c.is_whitespace() || c == '_' {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
 pub async fn exec_non_interactive_init(config: &mut Config, args: &ArgMatches) -> anyhow::Result<()> {
     let use_local = if args.get_flag("local") {
         true
@@ -262,11 +276,11 @@ pub async fn exec_non_interactive_init(config: &mut Config, args: &ArgMatches) -
         .expect("name is required in non-interactive mode")
         .clone();
 
-    // Determine project path - use provided path or derive from name
+    // Determine project path - use provided path or slugified name
     let actual_project_path = if let Some(path) = args.get_one::<PathBuf>("project-path") {
         path.clone()
     } else {
-        PathBuf::from(&project_name)
+        PathBuf::from(slugify(&project_name))
     };
 
     // Check if template is provided
@@ -399,7 +413,7 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
     } else {
         Input::with_theme(&theme)
             .with_prompt("Project path")
-            .default(format!("./{}", project_name))
+            .default(format!("./{}", slugify(&project_name)))
             .validate_with(|input: &String| -> Result<(), String> {
                 if input.trim().is_empty() {
                     return Err("Project path cannot be empty".to_string());
@@ -1210,6 +1224,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let server_lang = args.get_one::<String>("server-lang");
     let client_lang = args.get_one::<String>("client-lang");
     let name = args.get_one::<String>("name");
+
+    // Validate that template and language options are not used together
+    if template.is_some() && (server_lang.is_some() || client_lang.is_some()) {
+        anyhow::bail!(
+            "Cannot specify both --template and --server-lang/--client-lang. Language is determined by the template."
+        );
+    }
 
     if non_interactive {
         // In non-interactive mode, validate all required args are present
