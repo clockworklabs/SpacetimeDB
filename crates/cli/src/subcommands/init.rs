@@ -1031,8 +1031,8 @@ fn init_empty_csharp_server(server_dir: &Path, _project_name: &str) -> anyhow::R
     init_csharp_project(server_dir)
 }
 
-fn init_empty_typescript_server(_server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
-    todo!()
+fn init_empty_typescript_server(server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
+    init_typescript_project(server_dir)
 }
 
 fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Result<()> {
@@ -1285,6 +1285,42 @@ pub fn init_csharp_project(project_path: &Path) -> Result<(), anyhow::Error> {
         create_directory(path.parent().unwrap())?;
         std::fs::write(path, data_file.0)?;
     }
+
+    Ok(())
+}
+
+pub fn init_typescript_project(project_path: &Path) -> Result<(), anyhow::Error> {
+    let export_files = vec![
+        (
+            include_str!("../../templates/basic-typescript/server/package.json"),
+            "package.json",
+        ),
+        (
+            include_str!("../../templates/basic-typescript/server/tsconfig.json"),
+            "tsconfig.json",
+        ),
+        (
+            include_str!("../../templates/basic-typescript/server/src/index.ts"),
+            "src/index.ts",
+        ),
+        (
+            include_str!("../../templates/basic-typescript/server/.gitignore"),
+            ".gitignore",
+        ),
+    ];
+
+    check_for_git();
+
+    for data_file in export_files {
+        let path = project_path.join(data_file.1);
+        create_directory(path.parent().unwrap())?;
+        std::fs::write(path, data_file.0)?;
+    }
+
+    eprintln!(
+        "{}",
+        "Note: Run 'npm install' in the server directory to install dependencies".yellow()
+    );
 
     Ok(())
 }

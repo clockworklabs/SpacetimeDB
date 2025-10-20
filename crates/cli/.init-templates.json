@@ -1,6 +1,7 @@
 {
   "highlights": [
     { "name": "React", "template_id": "basic-react" },
+    { "name": "TypeScript Chat", "template_id": "quickstart-chat-typescript" }
   ],
   "templates": [
     {
@@ -42,6 +43,14 @@
       "client_source": "clockworklabs/SpacetimeDB/crates/cli/templates/quickstart-chat-c-sharp/client",
       "server_lang": "csharp",
       "client_lang": "csharp"
+    },
+    {
+      "id": "quickstart-chat-typescript",
+      "description": "TypeScript server/client implementing quickstart chat",
+      "server_source": "clockworklabs/SpacetimeDB/crates/cli/templates/quickstart-chat-typescript/server",
+      "client_source": "clockworklabs/SpacetimeDB/crates/cli/templates/quickstart-chat-typescript/client",
+      "server_lang": "typescript",
+      "client_lang": "typescript"
     }
   ]
 }
