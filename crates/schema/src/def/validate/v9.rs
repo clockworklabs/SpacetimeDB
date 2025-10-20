@@ -497,18 +497,6 @@ impl ModuleValidator<'_> {
                 })
             })?;
 
-        let mut table_in_progress = TableValidator {
-            raw_name: name.clone(),
-            product_type_ref,
-            product_type,
-            module_validator: self,
-            has_sequence: Default::default(),
-        };
-
-        let columns = (0..product_type.elements.len())
-            .map(|id| table_in_progress.validate_column_def(id.into()))
-            .collect_all_errors();
-
         let params_for_generate = self.params_for_generate(&params, |position, arg_name| TypeLocation::ViewArg {
             view_name: Cow::Borrowed(&name),
             position,
@@ -522,10 +510,14 @@ impl ModuleValidator<'_> {
             &return_type,
         );
 
-        // Views don't live in the global namespace.
-        // They share the "function namespace" with reducers and procedures.
-        // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
-        let name = identifier(name);
+        let mut view_in_progress = ViewValidator::new(name.clone(), product_type_ref, product_type, self);
+
+        // Views have the same interface as tables and therefore must be registered in the global namespace.
+        let name = view_in_progress.add_to_global_namespace(name).and_then(identifier);
+
+        let columns = (0..product_type.elements.len())
+            .map(|id| view_in_progress.validate_column_def(id.into()))
+            .collect_all_errors();
 
         let (name, params_for_generate, return_type_for_generate, columns) =
             (name, params_for_generate, return_type_for_generate, columns).combine_errors()?;
@@ -679,6 +671,42 @@ impl ModuleValidator<'_> {
                 error,
             }))
         })
+    }
+}
+
+/// A partially validated view.
+///
+/// This is just a small wrapper around [`TableValidator`] so that we can:
+/// 1. Validate column defs
+/// 2. Insert view names into the global namespace.
+struct ViewValidator<'a, 'b> {
+    inner: TableValidator<'a, 'b>,
+}
+
+impl<'a, 'b> ViewValidator<'a, 'b> {
+    fn new(
+        raw_name: Box<str>,
+        product_type_ref: AlgebraicTypeRef,
+        product_type: &'a ProductType,
+        module_validator: &'a mut ModuleValidator<'b>,
+    ) -> Self {
+        Self {
+            inner: TableValidator {
+                raw_name,
+                product_type_ref,
+                product_type,
+                module_validator,
+                has_sequence: Default::default(),
+            },
+        }
+    }
+
+    fn validate_column_def(&mut self, col_id: ColId) -> Result<ColumnDef> {
+        self.inner.validate_column_def(col_id)
+    }
+
+    fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Box<str>> {
+        self.inner.add_to_global_namespace(name)
     }
 }
 
