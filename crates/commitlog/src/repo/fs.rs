@@ -1,6 +1,5 @@
 use std::fs::{self, File};
 use std::io;
-use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
 
 use log::{debug, warn};
@@ -51,19 +50,18 @@ pub struct SizeOnDisk {
 }
 
 impl SizeOnDisk {
+    #[cfg(unix)]
     fn add(&mut self, stat: std::fs::Metadata) {
-        self.total_bytes += stat.size();
-        #[cfg(unix)]
-        {
-            self.total_blocks += std::os::unix::fs::MetadataExt::blocks(&stat);
-        }
-        #[cfg(not(unix))]
-        {
-            let imaginary_blocks = (self.total_bytes > 0)
-                .then(|| 8 * self.total_bytes.div_ceil(4096))
-                .unwrap_or_default();
-            self.total_blocks = imaginary_blocks;
-        }
+        self.total_bytes += stat.len();
+        self.total_blocks += std::os::unix::fs::MetadataExt::blocks(&stat);
+    }
+
+    #[cfg(not(unix))]
+    fn add(&mut self, stat: std::fs::Metadata) {
+        let imaginary_blocks = (self.total_bytes > 0)
+            .then(|| 8 * self.total_bytes.div_ceil(4096))
+            .unwrap_or_default();
+        self.total_blocks = imaginary_blocks;
     }
 }
 
