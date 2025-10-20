@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use super::de::{deserialize_js, property, scratch_buf};
 use super::error::{module_exception, ExcResult, ExceptionThrown, TypeError};
 use super::from_value::cast;
@@ -282,7 +284,7 @@ fn register_hooks<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallba
     let ctx = scope.get_current_context();
     // Call `set_slot` first, as it creates the annex
     // and `set_embedder_data` is currently buggy.
-    scope.set_slot(AbiVersion::V1);
+    ctx.set_slot(Rc::new(AbiVersion::V1));
     ctx.set_embedder_data(HOOKS_SLOT, hooks.into());
 
     Ok(v8::undefined(scope).into())

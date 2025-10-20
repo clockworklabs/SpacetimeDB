@@ -555,15 +555,18 @@ mod test {
         let ret = call(
             r#"
             import { register_hooks } from "spacetime:sys@1.0";
-            register_hooks({ __call_reducer__(reducer_id, sender, conn_id, timestamp, args) {
-                throw new Error("foobar");
-            } })
+            register_hooks({
+                __describe_module__: function() {},
+                __call_reducer__: function(reducer_id, sender, conn_id, timestamp, args) {
+                    throw new Error("foobar");
+                },
+            })
         "#,
         );
         let actual = format!("{}", ret.expect_err("should trap")).replace("\t", "    ");
         let expected = r#"
 js error Uncaught Error: foobar
-    at __call_reducer__ (spacetimedb_module:4:23)
+    at __call_reducer__ (spacetimedb_module:6:27)
         "#;
         assert_eq!(actual.trim(), expected.trim());
 
@@ -571,12 +574,15 @@ js error Uncaught Error: foobar
         let ret = call(
             r#"
             import { register_hooks } from "spacetime:sys@1.0";
-            register_hooks({ __call_reducer__(reducer_id, sender, conn_id, timestamp, args) {
-                return {
-                    "tag": "err",
-                    "value": "foobar",
-                };
-            } })
+            register_hooks({
+                __describe_module__: function() {},
+                __call_reducer__: function(reducer_id, sender, conn_id, timestamp, args) {
+                    return {
+                        "tag": "err",
+                        "value": "foobar",
+                    };
+                },
+            })
         "#,
         );
         assert_eq!(&*ret.expect("should not trap").expect_err("should error"), "foobar");
@@ -585,12 +591,15 @@ js error Uncaught Error: foobar
         let ret = call(
             r#"
             import { register_hooks } from "spacetime:sys@1.0";
-            register_hooks({ __call_reducer__(reducer_id, sender, conn_id, timestamp, args) {
-                return {
-                    "tag": "ok",
-                    "value": {},
-                };
-            } })
+            register_hooks({
+                __describe_module__: function() {},
+                __call_reducer__: function(reducer_id, sender, conn_id, timestamp, args) {
+                    return {
+                        "tag": "ok",
+                        "value": {},
+                    };
+                },
+            })
         "#,
         );
         ret.expect("should not trap").expect("should not error");
@@ -600,9 +609,12 @@ js error Uncaught Error: foobar
     fn call_describe_module_works() {
         let code = r#"
             import { register_hooks } from "spacetime:sys@1.0";
-            register_hooks({ __describe_module__() {
-                return new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-            } })
+            register_hooks({
+                __call_reducer__: function() {},
+                __describe_module__: function() {
+                    return new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+                },
+            })
         "#;
         let raw_mod = with_module_catch(code, call_describe_module).map_err(|e| e.to_string());
         assert_eq!(raw_mod, Ok(RawModuleDef::V9(<_>::default())));
