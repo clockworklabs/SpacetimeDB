@@ -535,7 +535,7 @@ impl ModuleValidator<'_> {
             params,
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
-                recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
+                recursive: false, // A `ProductTypeDef` not stored in a `Typespace` cannot be recursive.
             },
             return_type,
             return_type_for_generate,
