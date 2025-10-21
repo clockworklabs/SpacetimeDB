@@ -46,6 +46,10 @@ def _parse_quickstart(doc_path: Path, language: str) -> str:
 
 def _dotnet_add_package(project_path: Path, package_name: str, source_path: Path):
     """Add a local NuGet package to a .NET project"""
+    # Clean the NuGet cache and Build the packages
+    run_cmd("dotnet", "nuget", "locals", "all", "--clear", cwd=project_path, capture_stderr=True)
+    run_cmd("dotnet", "pack", "--configuration", "Release", cwd=source_path, capture_stderr=True)
+    
     sources = run_cmd("dotnet", "nuget", "list", "source", cwd=project_path, capture_stderr=True)
     # Is the source already added?
     if package_name in sources:
