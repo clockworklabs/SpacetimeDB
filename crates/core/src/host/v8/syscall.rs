@@ -1,13 +1,13 @@
 use std::rc::Rc;
 
-use super::de::{deserialize_js, scratch_buf};
+use super::de::{deserialize_js, property, scratch_buf};
 use super::error::{module_exception, ExcResult, ExceptionThrown, TypeError};
 use super::from_value::cast;
 use super::ser::serialize_to_js;
 use super::string::{str_from_ident, StringConst};
 use super::{
-    call_free_fun, env_on_isolate, exception_already_thrown, property, BufferTooSmall, CodeError, JsInstanceEnv,
-    JsStackTrace, TerminationError, Throwable,
+    call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace,
+    TerminationError, Throwable,
 };
 use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
@@ -184,6 +184,7 @@ fn with_sys_result<'scope, O: Serialize>(
     }
 }
 
+/// A higher order function conforming to the interface of [`with_sys_result`] and [`with_span`].
 fn with_nothing<'scope>(
     (): (),
     scope: &mut PinScope<'scope, '_>,
@@ -268,13 +269,24 @@ fn with_span<'scope, R>(
 /// # Returns
 ///
 /// Returns nothing.
+///
+/// # Throws
+///
+/// Throws a `TypeError` if:
+/// - `hooks` is not an object that has functions `__describe_module__` and `__call_reducer__`.
 fn register_hooks<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
-    let hooks = super::cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
+    // Convert `hooks` and validate that `__call_reducer__` + `__describe_module__` are functions.
+    let hooks = cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
+    let _ = describe_module_fun(scope, hooks)?;
+    let _ = call_reducer_fun(scope, hooks)?;
+
+    // Set the hook.
     let ctx = scope.get_current_context();
-    // `set_slot`` creates the annex - needs to be called first
-    // because `set_embedder_data` is currently buggy
+    // Call `set_slot` first, as it creates the annex
+    // and `set_embedder_data` is currently buggy.
     ctx.set_slot(Rc::new(AbiVersion::V1));
     ctx.set_embedder_data(HOOKS_SLOT, hooks.into());
+
     Ok(v8::undefined(scope).into())
 }
 
@@ -296,6 +308,17 @@ fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<(AbiVersion,
         .get_embedder_data(scope, HOOKS_SLOT)
         .expect("if AbiVersion is set hooks must be set");
     Ok((abi_version, hooks.cast()))
+}
+
+/// Gets a handle to the `__call_reducer__` property on `object`.
+pub(super) fn call_reducer_fun<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    object: Local<'_, Object>,
+) -> ExcResult<Local<'scope, Function>> {
+    let key = str_from_ident!(__call_reducer__).string(scope);
+    let object = property(scope, object, key)?;
+    let fun = cast!(scope, object, Function, "module function hook `__call_reducer__`").map_err(|e| e.throw(scope))?;
+    Ok(fun)
 }
 
 /// Calls the `__call_reducer__` hook, if it's been registered.
@@ -323,9 +346,7 @@ pub(super) fn call_call_reducer<'scope>(
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     // Get the function on the global proxy object and convert to a function.
-    let call_reducer_key = str_from_ident!(__call_reducer__).string(scope);
-    let object = property(scope, hooks_obj, call_reducer_key)?;
-    let fun = cast!(scope, object, Function, "function export for `__call_reducer__`").map_err(|e| e.throw(scope))?;
+    let fun = call_reducer_fun(scope, hooks_obj)?;
 
     // Call the function.
     let ret = call_free_fun(scope, fun, args)?;
@@ -336,16 +357,25 @@ pub(super) fn call_call_reducer<'scope>(
     Ok(user_res)
 }
 
+/// Gets a handle to the `__describe_module__` property on `object`.
+fn describe_module_fun<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    object: Local<'_, Object>,
+) -> ExcResult<Local<'scope, Function>> {
+    let key = str_from_ident!(__describe_module__).string(scope);
+    let object = property(scope, object, key)?;
+    let fun =
+        cast!(scope, object, Function, "module function hook `__describe_module__`").map_err(|e| e.throw(scope))?;
+    Ok(fun)
+}
+
 /// Calls the `__describe_module__` hook, if it's been registered.
 pub(super) fn call_describe_module<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<RawModuleDef> {
     let (abi_ver, hooks_obj) = get_hooks(scope)?;
     let AbiVersion::V1 = abi_ver;
 
     // Get the function on `object` and convert to a function.
-    let describe_module_key = str_from_ident!(__describe_module__).string(scope);
-    let object = property(scope, hooks_obj, describe_module_key)?;
-    let fun =
-        cast!(scope, object, Function, "function export for `__describe_module__`").map_err(|e| e.throw(scope))?;
+    let fun = describe_module_fun(scope, hooks_obj)?;
 
     // Call the function.
     let raw_mod_js = call_free_fun(scope, fun, &[])?;
@@ -355,7 +385,7 @@ pub(super) fn call_describe_module<'scope>(scope: &mut PinScope<'scope, '_>) -> 
         scope,
         raw_mod_js,
         v8::Uint8Array,
-        "bytes return from __describe_module__"
+        "bytes return from `__describe_module__`"
     )
     .map_err(|e| e.throw(scope))?;
 

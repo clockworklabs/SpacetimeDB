@@ -49,6 +49,7 @@ members = [
   "tools/upgrade-version",
   "tools/license-check",
   "crates/bindings-typescript/test-app/server",
+  "crates/bindings-typescript/test-react-router-app/server",
 ]
 default-members = ["crates/cli", "crates/standalone", "crates/update"]
 # cargo feature graph resolver. v3 is default in edition2024 but workspace
@@ -353,3 +354,8 @@ result_large_err = "allow"
 # version of temporal_rs, but I'm not holding my breath.
 timezone_provider = { git = "https://github.com/boa-dev/temporal", tag = "v0.0.11" }
 temporal_rs = { git = "https://github.com/boa-dev/temporal", tag = "v0.0.11" }
+
+[workspace.metadata]
+# This silences a warning in our Nix flake, which otherwise would be upset that our call to `crateNameFromCargoToml`
+# is running against a file that doesn't have a name in it.
+crane.name = "spacetimedb"

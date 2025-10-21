@@ -61,6 +61,14 @@ internal static partial class FFI
 #endif
     ;
 
+    const string StdbNamespace10_2 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.2"
+#else
+        "bindings"
+#endif
+    ;
+
     [NativeMarshalling(typeof(Marshaller))]
     public struct CheckedStatus
     {
@@ -307,4 +315,7 @@ internal static partial class FFI
 
     [DllImport(StdbNamespace10_1)]
     public static extern Errno bytes_source_remaining_length(BytesSource source, ref uint len);
+
+    [DllImport(StdbNamespace10_2)]
+    public static extern Errno get_jwt(ref ConnectionId connectionId, out BytesSource source);
 }

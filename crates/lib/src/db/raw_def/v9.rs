@@ -372,13 +372,15 @@ pub struct RawRowLevelSecurityDefV9 {
 /// If/when we define `RawModuleDefV10`, these should allbe moved out of `misc_exports` and into their own fields.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
-#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord, derive_more::From))]
 #[non_exhaustive]
 pub enum RawMiscModuleExportV9 {
     /// A default value for a column added during a supervised automigration.
     ColumnDefaultValue(RawColumnDefaultValueV9),
     /// A procedure definition.
     Procedure(RawProcedureDefV9),
+    /// A view definition.
+    View(RawViewDefV9),
 }
 
 /// Marks a particular table's column as having a particular default.
@@ -442,6 +444,41 @@ impl fmt::Debug for RawScopedTypeNameV9 {
         fmt::Debug::fmt(&self.name, f)?;
         Ok(())
     }
+}
+
+/// A view definition.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawViewDefV9 {
+    /// The name of the view function as defined in the module
+    pub name: RawIdentifier,
+
+    /// Is this a public or a private view?
+    /// Currently only public views are supported.
+    /// Private views may be supported in the future.
+    pub is_public: bool,
+
+    /// Is this view anonymous?
+    /// An anonymous view does not know who called it.
+    /// Specifically, it is a view that has an `AnonymousViewContext` as its first argument.
+    /// This type does not have access to the `Identity` of the caller.
+    pub is_anonymous: bool,
+
+    /// The types and optional names of the parameters, in order.
+    /// This `ProductType` need not be registered in the typespace.
+    pub params: ProductType,
+
+    /// The return type of the view.
+    /// Either `T`, `Option<T>`, or `Vec<T>` where `T` is a `SpacetimeType`.
+    ///
+    /// More strictly `T` must be a SATS `ProductType`,
+    /// however this will be validated by the server on publish.
+    ///
+    /// This is the single source of truth for the views's columns.
+    /// All elements of the inner `ProductType` must have names.
+    /// This again will be validated by the server on publish.
+    pub return_type: AlgebraicType,
 }
 
 /// A reducer definition.
@@ -690,6 +727,23 @@ impl RawModuleDefV9Builder {
                 params,
                 return_type,
             }))
+    }
+
+    pub fn add_view(
+        &mut self,
+        name: impl Into<RawIdentifier>,
+        is_public: bool,
+        is_anonymous: bool,
+        params: ProductType,
+        return_type: AlgebraicType,
+    ) {
+        self.module.misc_exports.push(RawMiscModuleExportV9::View(RawViewDefV9 {
+            name: name.into(),
+            is_public,
+            is_anonymous,
+            params,
+            return_type,
+        }));
     }
 
     /// Add a row-level security policy to the module.
