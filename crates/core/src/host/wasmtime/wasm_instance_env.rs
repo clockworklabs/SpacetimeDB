@@ -2,7 +2,6 @@
 
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
-use crate::error::NodesError;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation::{span, CallTimes};
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
@@ -1334,14 +1333,8 @@ impl WasmInstanceEnv {
         Self::cvt_ret(caller, AbiCall::GetJwt, target_ptr, |caller| {
             let (mem, env) = Self::mem_env(caller);
             let cid = ConnectionId::read_from(mem, connection_id)?;
-            let jwt = match env
-                .instance_env
-                .tx
-                .get()
-                .map_err(NodesError::from)?
-                .get_jwt_payload(cid)
-                .map_err(anyhow::Error::from)?
-            {
+            let jwt = env.instance_env.get_jwt_payload(cid)?;
+            let jwt = match jwt {
                 None => {
                     // We should consider logging a warning here, since we don't expect any
                     // connection ids to not have a JWT after we migrate.

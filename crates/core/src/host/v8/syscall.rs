@@ -962,17 +962,6 @@ fn datastore_update_bsatn(scope: &mut PinScope<'_, '_>, args: FunctionCallbackAr
     Ok(row)
 }
 
-fn get_jwt_payload(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<Vec<u8>> {
-    let connection_id: u128 = deserialize_js(scope, args.get(0))?;
-    let connection_id = ConnectionId::from_u128(connection_id);
-    let env: &mut JsInstanceEnv = env_on_isolate(scope);
-    let maybe_payload =env.instance_env.get_jwt_payload(connection_id)?;
-    match maybe_payload {
-        Some(s) => Ok(s.into_bytes()),
-        None => Ok(vec![]),
-    }
-}
-
 /// Module ABI that deletes all rows found in the index identified by `index_id`,
 /// according to `prefix`, `rstart`, and `rend`.
 ///
@@ -1266,6 +1255,43 @@ fn console_timer_end<'scope>(
     env.instance_env.console_timer_end(&span, function);
 
     Ok(v8::undefined(scope).into())
+}
+
+/// Module ABI to read a JWT payload associated with a connection ID from the system tables.
+///
+/// # Signature
+///
+/// ```ignore
+/// get_jwt_payload(connection_id: u128) -> u8[] throws {
+///     __code_error__:
+///         NOT_IN_TRANSACTION
+/// }
+/// ```
+///
+/// # Types
+///
+/// - `u128` is `bigint` in JS restricted to unsigned 128-bit integers.
+///
+/// # Returns
+///
+/// Returns a byte array encoding the JWT payload if one is found. If one is not found, an
+/// empty byte array is returned.
+///
+/// # Throws
+///
+/// Throws `{ __code_error__: u16 }` where `__code_error__` is:
+///
+/// - [`spacetimedb_primitives::errno::NOT_IN_TRANSACTION`]
+///   when called outside of a transaction.
+fn get_jwt_payload(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<Vec<u8>> {
+    let connection_id: u128 = deserialize_js(scope, args.get(0))?;
+    let connection_id = ConnectionId::from_u128(connection_id);
+    let env: &mut JsInstanceEnv = env_on_isolate(scope);
+    let maybe_payload = env.instance_env.get_jwt_payload(connection_id)?;
+    match maybe_payload {
+        Some(s) => Ok(s.into_bytes()),
+        None => Ok(vec![]),
+    }
 }
 
 /// Module ABI that returns the module identity.
