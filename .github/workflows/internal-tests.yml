@@ -41,6 +41,9 @@ jobs:
 
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+            // Wait for workflow to be kicked off
+            await sleep(30000);
+
             // Find the dispatched run by name
             let runId = null;
             for (let attempt = 0; attempt < 20 && !runId; attempt++) { // up to ~10 minutes to locate the run
