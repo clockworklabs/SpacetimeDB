@@ -25,7 +25,7 @@ use pgwire::tokio::process_socket;
 use spacetimedb_client_api::auth::validate_token;
 use spacetimedb_client_api::routes::database;
 use spacetimedb_client_api::routes::database::{SqlParams, SqlQueryParams};
-use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
+use spacetimedb_client_api::{Authorization, ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::DatabaseName;
 use spacetimedb_lib::sats::satn::{PsqlClient, TypedSerializer};
@@ -149,7 +149,10 @@ struct PgSpacetimeDB<T> {
     parameter_provider: DefaultServerParameterProvider,
 }
 
-impl<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone> PgSpacetimeDB<T> {
+impl<T> PgSpacetimeDB<T>
+where
+    T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone,
+{
     async fn exe_sql<'a>(&self, query: String) -> PgWireResult<Vec<Response<'a>>> {
         let params = self.cached.lock().await.clone().unwrap();
         let db = SqlParams {
@@ -298,8 +301,9 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 }
 
 #[async_trait]
-impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone> SimpleQueryHandler
-    for PgSpacetimeDB<T>
+impl<T> SimpleQueryHandler for PgSpacetimeDB<T>
+where
+    T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone,
 {
     async fn do_query<'a, C>(&self, _client: &mut C, query: &str) -> PgWireResult<Vec<Response<'a>>>
     where
@@ -330,8 +334,9 @@ impl<T> PgSpacetimeDBFactory<T> {
     }
 }
 
-impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone> PgWireServerHandlers
-    for PgSpacetimeDBFactory<T>
+impl<T> PgWireServerHandlers for PgSpacetimeDBFactory<T>
+where
+    T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone,
 {
     fn simple_query_handler(&self) -> Arc<impl SimpleQueryHandler> {
         self.handler.clone()
@@ -344,11 +349,10 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
     }
 }
 
-pub async fn start_pg<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone + 'static>(
-    shutdown: Arc<Notify>,
-    ctx: T,
-    tcp: TcpListener,
-) {
+pub async fn start_pg<T>(shutdown: Arc<Notify>, ctx: T, tcp: TcpListener)
+where
+    T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone + 'static,
+{
     let factory = Arc::new(PgSpacetimeDBFactory::new(ctx));
 
     log::debug!(

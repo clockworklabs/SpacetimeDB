@@ -1,34 +1,87 @@
+use crate::db::auth::StAccess;
 use crate::from_hex_pad;
 use blake3;
 use core::mem;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
 use spacetimedb_sats::{impl_st, u256, AlgebraicType, AlgebraicValue};
+use std::sync::Arc;
 use std::{fmt, str::FromStr};
 
 pub type RequestId = u32;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct AuthCtx {
-    pub owner: Identity,
-    pub caller: Identity,
+pub enum SqlPermission {
+    Read(StAccess),
+    Write,
+    ExceedRowLimit,
+    BypassRLS,
+}
+
+pub trait ExternalAuthCtx {
+    fn has_sql_permission(&self, p: SqlPermission) -> bool;
+}
+
+impl<T: Fn(SqlPermission) -> bool> ExternalAuthCtx for T {
+    fn has_sql_permission(&self, p: SqlPermission) -> bool {
+        self(p)
+    }
+}
+
+/// Authorization for SQL operations (queries, DML, subscription queries).
+#[derive(Clone)]
+pub enum AuthCtx {
+    Simple {
+        owner: Identity,
+        caller: Identity,
+    },
+    External {
+        caller: Identity,
+        permissions: Arc<dyn ExternalAuthCtx + Send + Sync + 'static>,
+    },
 }
 
 impl AuthCtx {
     pub fn new(owner: Identity, caller: Identity) -> Self {
-        Self { owner, caller }
+        Self::Simple { owner, caller }
     }
+
     /// For when the owner == caller
     pub fn for_current(owner: Identity) -> Self {
-        Self { owner, caller: owner }
+        Self::Simple { owner, caller: owner }
     }
-    /// Does `owner == caller`
-    pub fn is_owner(&self) -> bool {
-        self.owner == self.caller
+
+    pub fn has_permission(&self, p: SqlPermission) -> bool {
+        match self {
+            Self::Simple { owner, caller } => owner == caller,
+            Self::External { permissions, .. } => permissions.has_sql_permission(p),
+        }
     }
+
+    pub fn has_read_access(&self, table_access: StAccess) -> bool {
+        self.has_permission(SqlPermission::Read(table_access))
+    }
+
+    pub fn has_write_access(&self) -> bool {
+        self.has_permission(SqlPermission::Write)
+    }
+
+    pub fn can_exceed_row_limit(&self) -> bool {
+        self.has_permission(SqlPermission::ExceedRowLimit)
+    }
+
+    pub fn bypass_rls(&self) -> bool {
+        self.has_permission(SqlPermission::BypassRLS)
+    }
+
+    pub fn caller(&self) -> Identity {
+        match self {
+            Self::Simple { caller, .. } | Self::External { caller, .. } => *caller,
+        }
+    }
+
     /// WARNING: Use this only for simple test were the `auth` don't matter
     pub fn for_testing() -> Self {
-        AuthCtx {
+        Self::Simple {
             owner: Identity::__dummy(),
             caller: Identity::__dummy(),
         }

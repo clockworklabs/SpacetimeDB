@@ -122,7 +122,7 @@ pub fn execute_sql(
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql);
         let mut updates = Vec::with_capacity(ast.len());
         let res = execute(
-            &mut DbProgram::new(db, &mut (&mut tx).into(), auth),
+            &mut DbProgram::new(db, &mut (&mut tx).into(), auth.clone()),
             ast,
             sql,
             &mut updates,
@@ -130,7 +130,7 @@ pub fn execute_sql(
         if res.is_ok() && !updates.is_empty() {
             let event = ModuleEvent {
                 timestamp: Timestamp::now(),
-                caller_identity: auth.caller,
+                caller_identity: auth.caller(),
                 caller_connection_id: None,
                 function_call: ModuleFunctionCall {
                     reducer: String::new(),
@@ -249,7 +249,7 @@ pub fn run(
         }
         Statement::DML(stmt) => {
             // An extra layer of auth is required for DML
-            if auth.caller != auth.owner {
+            if !auth.has_write_access() {
                 return Err(anyhow!("Only owners are authorized to run SQL DML statements").into());
             }
 
@@ -287,7 +287,7 @@ pub fn run(
                     None,
                     ModuleEvent {
                         timestamp: Timestamp::now(),
-                        caller_identity: auth.caller,
+                        caller_identity: auth.caller(),
                         caller_connection_id: None,
                         function_call: ModuleFunctionCall {
                             reducer: String::new(),

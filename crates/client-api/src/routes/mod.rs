@@ -2,7 +2,7 @@ use database::DatabaseRoutes;
 use http::header;
 use tower_http::cors;
 
-use crate::{ControlStateDelegate, NodeDelegate};
+use crate::{Authorization, ControlStateDelegate, NodeDelegate};
 
 pub mod database;
 pub mod energy;
@@ -20,7 +20,7 @@ pub async fn ping(_auth: crate::auth::SpacetimeAuthHeader) {}
 #[allow(clippy::let_and_return)]
 pub fn router<S>(ctx: &S, database_routes: DatabaseRoutes<S>, extra: axum::Router<S>) -> axum::Router<S>
 where
-    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
+    S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
 {
     use axum::routing::get;
     let router = axum::Router::new()

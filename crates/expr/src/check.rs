@@ -160,7 +160,7 @@ impl TypeChecker for SubChecker {
 pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<(ProjectName, bool)> {
     let ast = parse_subscription(sql)?;
     let has_param = ast.has_parameter();
-    let ast = ast.resolve_sender(auth.caller);
+    let ast = ast.resolve_sender(auth.caller());
     expect_table_type(SubChecker::type_ast(ast, tx)?).map(|plan| (plan, has_param))
 }
 

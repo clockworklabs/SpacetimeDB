@@ -330,8 +330,8 @@ impl ModuleSubscriptions {
 
         let sql = request.query;
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let hash = QueryHash::from_string(&sql, auth.caller, false);
-        let hash_with_param = QueryHash::from_string(&sql, auth.caller, true);
+        let hash = QueryHash::from_string(&sql, auth.caller(), false);
+        let hash_with_param = QueryHash::from_string(&sql, auth.caller(), true);
 
         let (tx, tx_offset) = self.begin_tx(Workload::Subscribe);
 

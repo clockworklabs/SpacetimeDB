@@ -6,7 +6,6 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::system_tables::{StRowLevelSecurityFields, ST_ROW_LEVEL_SECURITY_ID};
 use spacetimedb_expr::check::SchemaView;
 use spacetimedb_expr::statement::compile_sql_stmt;
-use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
@@ -492,22 +491,20 @@ impl<T> Deref for SchemaViewer<'_, T> {
 
 impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
     fn table_id(&self, name: &str) -> Option<TableId> {
-        let AuthCtx { owner, caller } = self.auth;
         // Get the schema from the in-memory state instead of fetching from the database for speed
         self.tx
             .table_id_from_name(name)
             .ok()
             .flatten()
             .and_then(|table_id| self.schema_for_table(table_id))
-            .filter(|schema| schema.table_access == StAccess::Public || caller == owner)
+            .filter(|schema| self.auth.has_read_access(schema.table_access))
             .map(|schema| schema.table_id)
     }
 
     fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
-        let AuthCtx { owner, caller } = self.auth;
         self.tx
             .get_schema(table_id)
-            .filter(|schema| schema.table_access == StAccess::Public || caller == owner)
+            .filter(|schema| self.auth.has_read_access(schema.table_access))
             .cloned()
     }
 

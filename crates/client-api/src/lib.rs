@@ -1,8 +1,11 @@
+use std::future::Future;
 use std::num::NonZeroU8;
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use axum::response::ErrorResponse;
+use bytes::Bytes;
 use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
@@ -16,6 +19,7 @@ use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, Regi
 use spacetimedb_lib::{ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
+use thiserror::Error;
 use tokio::sync::watch;
 
 pub mod auth;
@@ -162,7 +166,7 @@ pub struct DatabaseDef {
     /// The [`Identity`] the database shall have.
     pub database_identity: Identity,
     /// The compiled program of the database module.
-    pub program_bytes: Vec<u8>,
+    pub program_bytes: Bytes,
     /// The desired number of replicas the database shall have.
     ///
     /// If `None`, the edition default is used.
@@ -170,6 +174,14 @@ pub struct DatabaseDef {
     /// The host type of the supplied program.
     pub host_type: HostType,
     pub parent: Option<Identity>,
+}
+
+/// Parameters for resetting a database via [`ControlStateDelegate::clear_database`].
+pub struct DatabaseResetDef {
+    pub database_identity: Identity,
+    pub program_bytes: Option<Bytes>,
+    pub num_replicas: Option<NonZeroU8>,
+    pub host_type: Option<HostType>,
 }
 
 /// API of the SpacetimeDB control plane.
@@ -240,7 +252,10 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult>;
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
-    async fn clear_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
+
+    /// Remove all data from a database, and reset it according to the
+    /// given [DatabaseResetDef].
+    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -341,8 +356,8 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         (**self).delete_database(caller_identity, database_identity).await
     }
 
-    async fn clear_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
-        (**self).clear_database(caller_identity, database_identity).await
+    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
+        (**self).reset_database(caller_identity, spec).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -398,6 +413,74 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         (**self).module_logs_dir(replica_id)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum Unauthorized {
+    #[error("{subject} is not authorized to perform {action:?}")]
+    Unauthorized {
+        subject: Identity,
+        action: Action,
+        #[source]
+        source: Option<anyhow::Error>,
+    },
+    #[error("authorization failed due to internal error")]
+    InternalError(#[from] anyhow::Error),
+}
+
+impl Unauthorized {
+    pub fn into_response(self) -> ErrorResponse {
+        match self {
+            unauthorized @ Self::Unauthorized { .. } => {
+                (StatusCode::UNAUTHORIZED, format!("{:#}", anyhow!(unauthorized))).into()
+            }
+            Self::InternalError(e) => log_and_500(e),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Action {
+    CreateDatabase { parent: Option<Identity> },
+    UpdateDatabase,
+    ResetDatabase,
+    DeleteDatabase,
+    RenameDatabase,
+    ViewModuleLogs,
+}
+
+pub trait Authorization {
+    fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: Action,
+    ) -> impl Future<Output = Result<(), Unauthorized>> + Send;
+
+    fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> impl Future<Output = Result<AuthCtx, Unauthorized>> + Send;
+}
+
+impl<T: Authorization> Authorization for Arc<T> {
+    fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: Action,
+    ) -> impl Future<Output = Result<(), Unauthorized>> + Send {
+        (**self).authorize_action(subject, database, action)
+    }
+
+    fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> impl Future<Output = Result<AuthCtx, Unauthorized>> + Send {
+        (**self).authorize_sql(subject, database)
     }
 }
 

@@ -466,7 +466,7 @@ pub fn check_row_limit<Query>(
     row_est: impl Fn(&Query, &TxId) -> u64,
     auth: &AuthCtx,
 ) -> Result<(), DBError> {
-    if auth.caller != auth.owner {
+    if !auth.can_exceed_row_limit() {
         if let Some(limit) = db.row_limit(tx)? {
             let mut estimate: u64 = 0;
             for query in queries {
@@ -627,7 +627,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 impl ProgramVm for DbProgram<'_, '_> {
     // Safety: For DbProgram with tx = TxMode::Tx variant, all queries must match to CrudCode::Query and no other branch.
     fn eval_query<const N: usize>(&mut self, query: CrudExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
-        query.check_auth(self.auth.owner, self.auth.caller)?;
+        query.check_auth(&self.auth)?;
 
         match query {
             CrudExpr::Query(query) => self._eval_query(&query, sources),

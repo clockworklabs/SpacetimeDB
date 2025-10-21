@@ -87,7 +87,7 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
 
     let tx = SchemaViewer::new(tx, auth);
     let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
-    let hash = QueryHash::from_string(input, auth.caller, has_param);
+    let hash = QueryHash::from_string(input, auth.caller(), has_param);
     Ok(Plan::new(plans, hash, input.to_owned()))
 }
 
@@ -107,7 +107,7 @@ pub fn compile_query_with_hashes(
     let tx = SchemaViewer::new(tx, auth);
     let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
 
-    if auth.is_owner() || has_param {
+    if auth.bypass_rls() || has_param {
         // Note that when generating hashes for queries from owners,
         // we always treat them as if they were parameterized by :sender.
         // This is because RLS is not applicable to owners.

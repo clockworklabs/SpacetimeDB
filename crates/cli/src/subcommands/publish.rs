@@ -10,7 +10,7 @@ use std::{env, fs};
 
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
-use crate::util::{decode_identity, unauth_error_context, y_or_n};
+use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
 pub fn cli() -> clap::Command {
@@ -187,7 +187,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 break_clients_flag,
             )
             .await?;
-        };
+        }
 
         builder
     } else {
@@ -229,18 +229,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     builder = builder.query(&[("host_type", host_type)]);
 
     let res = builder.body(program_bytes).send().await?;
-    if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
-        // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
-        let token = config.spacetimedb_token().unwrap();
-        let identity = decode_identity(token)?;
-        let err = res.text().await?;
-        return unauth_error_context(
-            Err(anyhow::anyhow!(err)),
-            &identity,
-            config.server_nick_or_host(server)?,
-        );
-    }
-
     let response: PublishResult = res.json_or_error().await?;
     match response {
         PublishResult::Success {
@@ -341,7 +329,7 @@ async fn apply_pre_publish_if_needed(
     auth_header: &AuthHeader,
     break_clients_flag: bool,
 ) -> Result<reqwest::RequestBuilder, anyhow::Error> {
-    if let Some(pre) = call_pre_publish(client, base_url, &domain.to_string(), program_bytes, auth_header).await? {
+    if let Some(pre) = call_pre_publish(client, base_url, domain, program_bytes, auth_header).await? {
         println!("{}", pre.migrate_plan);
 
         if pre.break_clients
