@@ -358,6 +358,71 @@ fn create_template_config_from_template_str(
     }
 }
 
+fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) -> anyhow::Result<()> {
+    println!(
+        "\n{}",
+        "TypeScript server requires dependencies to be installed before publ
+    ishing."
+            .yellow()
+    );
+
+    let package_manager = if is_interactive {
+        let theme = ColorfulTheme::default();
+        let choices = vec!["npm", "pnpm", "yarn", "bun", "other (I'll install manually)"];
+        let selection = Select::with_theme(&theme)
+            .with_prompt("Which package manager would you like to use?")
+            .items(&choices)
+            .default(0)
+            .interact()?;
+
+        match selection {
+            0 => Some("npm"),
+            1 => Some("pnpm"),
+            2 => Some("yarn"),
+            3 => Some("bun"),
+            _ => None,
+        }
+    } else {
+        // In non-interactive mode, just print a message
+        None
+    };
+
+    if let Some(pm) = package_manager {
+        println!("Installing dependencies with {}...", pm);
+        let output = std::process::Command::new(pm)
+            .arg("install")
+            .current_dir(server_dir)
+            .output()?;
+
+        if output.status.success() {
+            println!("{}", "Dependencies installed successfully!".green());
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("{}", format!("Failed to install dependencies: {}", stderr).red());
+            println!(
+                "{}",
+                format!(
+                    "Please run '{} install' in the {} directory manually.",
+                    pm,
+                    server_dir.display()
+                )
+                .yellow()
+            );
+        }
+    } else {
+        println!(
+            "{}",
+            format!(
+                "Please install dependencies by running your package manager's install command in the {} directory.",
+                server_dir.display()
+            )
+            .yellow()
+        );
+    }
+
+    Ok(())
+}
+
 pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: bool) -> anyhow::Result<()> {
     let use_local = if args.get_flag("local") {
         true
@@ -378,6 +443,12 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
 
     ensure_empty_directory(&template_config.project_name, &template_config.project_path)?;
     init_from_template(&template_config, &template_config.project_path).await?;
+
+    // If server is TypeScript, handle dependency installation
+    if template_config.server_lang == Some(ServerLanguage::TypeScript) {
+        let server_dir = template_config.project_path.join("spacetimedb");
+        install_typescript_dependencies(&server_dir, is_interactive)?;
+    }
 
     Ok(())
 }
@@ -1270,11 +1341,6 @@ pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
         create_directory(path.parent().unwrap())?;
         std::fs::write(path, data_file.0)?;
     }
-
-    println!(
-        "{}",
-        "Note: Run 'npm install' in the server directory to install dependencies".yellow()
-    );
 
     Ok(())
 }
