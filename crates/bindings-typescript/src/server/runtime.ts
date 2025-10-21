@@ -60,12 +60,22 @@ export function parseJsonObject(json: string): JsonObject {
 
 class JwtClaimsImpl implements JwtClaims {
   readonly fullPayload: JsonObject;
-  constructor(public readonly rawPayload: string) {
+  private readonly _identity: Identity;
+  /**
+   * Creates a new JwtClaims instance.
+   * @param rawPayload The JWT payload as a raw JSON string.
+   * @param identity The identity for this JWT. We are only taking this because we don't have a blake3 implementation (which we need to compute it).
+   */
+  constructor(
+    public readonly rawPayload: string,
+    identity: Identity
+  ) {
     this.fullPayload = parseJsonObject(rawPayload);
+    this._identity = identity;
   }
   readonly [claim: string]: unknown;
   get identity(): Identity {
-    return Identity.zero();
+    return this._identity;
   }
   get subject() {
     return this.fullPayload['sub'] as string;
@@ -82,16 +92,21 @@ class JwtClaimsImpl implements JwtClaims {
 class AuthCtxImpl implements AuthCtx {
   public readonly isInternal: boolean;
 
+  // Source of the JWT payload string, if there is one.
   private readonly _jwtSource: () => string | null;
-  private _jwtClaims?: JwtClaims | null;
+  // Whether we have initialized the JWT claims.
   private _initializedJWT: boolean = false;
+  private _jwtClaims?: JwtClaims | null;
+  private _senderIdentity: Identity;
 
   private constructor(opts: {
     isInternal: boolean;
     jwtSource: () => string | null;
+    senderIdentity: Identity;
   }) {
     this.isInternal = opts.isInternal;
     this._jwtSource = opts.jwtSource;
+    this._senderIdentity = opts.senderIdentity;
   }
 
   private _initializeJWT() {
@@ -102,8 +117,10 @@ class AuthCtxImpl implements AuthCtx {
     if (!token) {
       this._jwtClaims = null;
     } else {
-      this._jwtClaims = new JwtClaimsImpl(token);
+      this._jwtClaims = new JwtClaimsImpl(token, this._senderIdentity);
     }
+    // At this point we can safely freeze the object.
+    Object.freeze(this);
   }
 
   /** Lazily compute whether a JWT exists and is parseable. */
@@ -120,13 +137,24 @@ class AuthCtxImpl implements AuthCtx {
 
   /** Create a context representing internal (non-user) requests. */
   static internal(): AuthCtx {
-    return new AuthCtxImpl({ isInternal: true, jwtSource: () => null });
+    return new AuthCtxImpl({
+      isInternal: true,
+      jwtSource: () => null,
+      senderIdentity: Identity.zero(),
+    });
   }
 
   /** If there is a connection id, look up the JWT payload from the system tables. */
-  static fromSystemTables(connectionId: ConnectionId | null): AuthCtx {
+  static fromSystemTables(
+    connectionId: ConnectionId | null,
+    sender: Identity
+  ): AuthCtx {
     if (connectionId === null) {
-      return new AuthCtxImpl({ isInternal: false, jwtSource: () => null });
+      return new AuthCtxImpl({
+        isInternal: false,
+        jwtSource: () => null,
+        senderIdentity: sender,
+      });
     }
     return new AuthCtxImpl({
       isInternal: false,
@@ -136,6 +164,7 @@ class AuthCtxImpl implements AuthCtx {
         const payloadStr = new TextDecoder().decode(payloadBuf);
         return payloadStr;
       },
+      senderIdentity: sender,
     });
   }
 }
@@ -155,8 +184,9 @@ export const hooks: ModuleHooks = {
       argsType,
       MODULE_DEF.typespace
     );
+    const senderIdentity = new Identity(sender);
     const ctx: ReducerCtx<any> = freeze({
-      sender: new Identity(sender),
+      sender: senderIdentity,
       get identity() {
         return new Identity(sys.identity().__identity__);
       },
@@ -164,15 +194,9 @@ export const hooks: ModuleHooks = {
       connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
       db: getDbView(),
       authCtx: AuthCtxImpl.fromSystemTables(
-        ConnectionId.nullIfZero(new ConnectionId(connId))
+        ConnectionId.nullIfZero(new ConnectionId(connId)),
+        senderIdentity
       ),
-      // authCtx: freeze({
-      //   isInternal: true,
-      //   get hasJWT() {
-      //     const payload = sys.get_jwt_payload(connId);
-      //     return payload.length > 0;
-      //   }
-      // }),
     });
     try {
       return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
