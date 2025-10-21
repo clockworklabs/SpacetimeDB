@@ -25,6 +25,9 @@ error[E0599]: `&test__ViewHandle` is not an iterator
            which is required by `&mut test__ViewHandle: Iterator`
 note: the trait `Iterator` must be implemented
   --> $RUST/core/src/iter/traits/iterator.rs
+   |
+   | pub trait Iterator {
+   | ^^^^^^^^^^^^^^^^^^
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `count`, perhaps you need to implement one of them:
            candidate #1: `Table`
@@ -54,6 +57,9 @@ error[E0599]: no method named `try_insert` found for reference `&test__ViewHandl
            candidate #1: `Table`
 help: there is a method `try_into` with a similar name, but with different arguments
   --> $RUST/core/src/convert/mod.rs
+   |
+   |     fn try_into(self) -> Result<T, Self::Error>;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error[E0599]: no method named `delete` found for reference `&test__ViewHandle` in the current scope
   --> tests/ui/views.rs:43:25
