@@ -1,7 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use crate::table::IndexAlgo;
-use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table};
+use crate::{sys, IterBuf, ProcedureContext, ProcedureResult, ReducerContext, ReducerResult, SpacetimeType, Table};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
 use spacetimedb_lib::de::{self, Deserialize, Error as _, SeqProductAccess};
@@ -29,6 +29,26 @@ pub fn invoke_reducer<'a, A: Args<'a>>(
 
     reducer.invoke(&ctx, args)
 }
+
+pub fn invoke_procedure<'a, A: Args<'a>, Ret: IntoProcedureResult>(
+    procedure: impl Procedure<'a, A, Ret>,
+    mut ctx: ProcedureContext,
+    args: &'a [u8],
+) -> ProcedureResult {
+    // Deserialize the arguments from a bsatn encoding.
+    let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
+
+    // TODO(procedure-async): get a future out of `procedure.invoke` and call `FutureExt::now_or_never` on it?
+    // Or maybe do that within the `Procedure::invoke` method?
+    let res = procedure.invoke(&mut ctx, args);
+
+    res.into_result()
+}
+
+/// Marker supertrait for [`Reducer`] and [`Procedure`],
+/// used for typechecking by [`scheduled_typecheck`].
+pub trait ExportFunction<'de, A: Args<'de>> {}
+
 /// A trait for types representing the *execution logic* of a reducer.
 #[diagnostic::on_unimplemented(
     message = "invalid reducer signature",
@@ -39,26 +59,47 @@ pub fn invoke_reducer<'a, A: Args<'a>>(
     note = "where each `Ti` type implements `SpacetimeType`.",
     note = ""
 )]
-pub trait Reducer<'de, A: Args<'de>> {
+pub trait Reducer<'de, A: Args<'de>>: ExportFunction<'de, A> {
     fn invoke(&self, ctx: &ReducerContext, args: A) -> ReducerResult;
 }
 
 /// A trait for types that can *describe* a reducer.
-pub trait ReducerInfo {
-    /// The name of the reducer.
-    const NAME: &'static str;
-
+///
+/// The `#[reducer]` macro generates an empty struct which implements this trait,
+/// along with [`ExportFunctionInfo`].
+pub trait ReducerInfo: ExportFunctionInfo {
     /// The lifecycle of the reducer, if there is one.
     const LIFECYCLE: Option<LifecycleReducer> = None;
-
-    /// A description of the parameter names of the reducer.
-    const ARG_NAMES: &'static [Option<&'static str>];
 
     /// The function to call to invoke the reducer.
     const INVOKE: ReducerFn;
 }
 
-/// A trait of types representing the arguments of a reducer.
+pub trait Procedure<'de, A: Args<'de>, Ret: IntoProcedureResult>: ExportFunction<'de, A> {
+    fn invoke(&self, ctx: &mut ProcedureContext, args: A) -> Ret;
+}
+
+/// A trait for types that can *describe* a procedure.
+///
+/// The `#[procedure]` macro generates an empty struct which implements this trait,
+/// along with [`ExportFunctionInfo`].
+pub trait ProcedureInfo: ExportFunctionInfo {
+    /// The function to invoke the procedure.
+    const INVOKE: ProcedureFn;
+}
+
+/// Shared super-trait of [`ProcedureInfo`] and [`ReducerInfo`].
+pub trait ExportFunctionInfo {
+    const NAME: &'static str;
+
+    const ARG_NAMES: &'static [Option<&'static str>];
+}
+
+/// A trait of types representing the arguments of a reducer or procedure.
+///
+/// This does not include the `ReducerContext` or `ProcedureContext` first argument,
+/// only the client-provided args.
+/// As such, the same trait can be used for both procedures and reducers.
 pub trait Args<'de>: Sized {
     /// How many arguments does the reducer accept?
     const LEN: usize;
@@ -70,7 +111,7 @@ pub trait Args<'de>: Sized {
     fn serialize_seq_product<S: SerializeSeqProduct>(&self, prod: &mut S) -> Result<(), S::Error>;
 
     /// Returns the schema for this reducer provided a `typespace`.
-    fn schema<I: ReducerInfo>(typespace: &mut impl TypespaceBuilder) -> ProductType;
+    fn schema<I: ExportFunctionInfo>(typespace: &mut impl TypespaceBuilder) -> ProductType;
 }
 
 /// A trait of types representing the result of executing a reducer.
@@ -97,6 +138,18 @@ impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
 }
 
 #[diagnostic::on_unimplemented(
+    message = "The procdure return type `{Self}` does not implement `SpacetimeType`",
+    note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
+)]
+pub trait IntoProcedureResult: SpacetimeType + Serialize {
+    #[inline]
+    fn into_result(&self) -> ProcedureResult {
+        bsatn::to_vec(&self).expect("Failed to serialize procedure result")
+    }
+}
+impl<T: SpacetimeType + Serialize> IntoProcedureResult for T {}
+
+#[diagnostic::on_unimplemented(
     message = "the first argument of a reducer must be `&ReducerContext`",
     label = "first argument must be `&ReducerContext`"
 )]
@@ -119,8 +172,31 @@ pub trait ReducerArg {
 }
 impl<T: SpacetimeType> ReducerArg for T {}
 
-/// Assert that a reducer type-checks with a given type.
-pub const fn scheduled_reducer_typecheck<'de, Row>(_x: impl ReducerForScheduledTable<'de, Row>)
+#[diagnostic::on_unimplemented(
+    message = "the first argument of a procedure must be `&mut ProcedureContext`",
+    label = "first argument must be `&mut ProcedureContext`"
+)]
+pub trait ProcedureContextArg {
+    // a little hack used in the macro to make error messages nicer. it generates <T as ReducerContextArg>::_ITEM
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+impl ProcedureContextArg for &mut ProcedureContext {}
+
+/// A trait of types that can be an argument of a procedure.
+#[diagnostic::on_unimplemented(
+    message = "the procedure argument `{Self}` does not implement `SpacetimeType`",
+    note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
+)]
+pub trait ProcedureArg {
+    // a little hack used in the macro to make error messages nicer. it generates <T as ReducerArg>::_ITEM
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+impl<T: SpacetimeType> ProcedureArg for T {}
+
+/// Assert that a reducer or procedure type-checks with a given argument type.
+pub const fn scheduled_typecheck<'de, Row>(_x: impl ExportFunctionForScheduledTable<'de, Row>)
 where
     Row: SpacetimeType + Serialize + Deserialize<'de>,
 {
@@ -128,13 +204,15 @@ where
 }
 
 #[diagnostic::on_unimplemented(
-    message = "invalid signature for scheduled table reducer",
-    note = "the scheduled reducer must take `{TableRow}` as its sole argument",
-    note = "e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: {TableRow})`"
+    message = "invalid signature for scheduled table reducer or procedure",
+    note = "the scheduled function must take `{TableRow}` as its sole argument",
+    note = "e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: {TableRow})`",
+    // TODO(procedure-async): amend this to `async fn` once procedures are `async`-ified
+    note = "or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: {TableRow})`"
 )]
-pub trait ReducerForScheduledTable<'de, TableRow> {}
-impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, R: Reducer<'de, (TableRow,)>>
-    ReducerForScheduledTable<'de, TableRow> for R
+pub trait ExportFunctionForScheduledTable<'de, TableRow> {}
+impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, F: ExportFunction<'de, (TableRow,)>>
+    ExportFunctionForScheduledTable<'de, TableRow> for F
 {
 }
 
@@ -206,15 +284,15 @@ impl<'de, A: Args<'de>> de::ProductVisitor<'de> for ArgsVisitor<A> {
     }
 }
 
-macro_rules! impl_reducer {
+macro_rules! impl_reducer_and_procedure {
     ($($T1:ident $(, $T:ident)*)?) => {
-        impl_reducer!(@impl $($T1 $(, $T)*)?);
-        $(impl_reducer!($($T),*);)?
+        impl_reducer_and_procedure!(@impl $($T1 $(, $T)*)?);
+        $(impl_reducer_and_procedure!($($T),*);)?
     };
     (@impl $($T:ident),*) => {
         // Implement `Args` for the tuple type `($($T,)*)`.
         impl<'de, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Args<'de> for ($($T,)*) {
-            const LEN: usize = impl_reducer!(@count $($T)*);
+            const LEN: usize = impl_reducer_and_procedure!(@count $($T)*);
             #[allow(non_snake_case)]
             #[allow(unused)]
             fn visit_seq_product<Acc: SeqProductAccess<'de>>(mut prod: Acc) -> Result<Self, Acc::Error> {
@@ -239,7 +317,7 @@ macro_rules! impl_reducer {
 
             #[inline]
             #[allow(non_snake_case, irrefutable_let_patterns)]
-            fn schema<Info: ReducerInfo>(_typespace: &mut impl TypespaceBuilder) -> ProductType {
+            fn schema<Info: ExportFunctionInfo>(_typespace: &mut impl TypespaceBuilder) -> ProductType {
                 // Extract the names of the arguments.
                 let [.., $($T),*] = Info::ARG_NAMES else { panic!() };
                 ProductType::new(vec![
@@ -250,6 +328,8 @@ macro_rules! impl_reducer {
                 ].into())
             }
         }
+
+        impl<'de, Func, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> ExportFunction<'de, ($($T,)*)> for Func {}
 
         // Implement `Reducer<..., ContextArg>` for the tuple type `($($T,)*)`.
         impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*)> for Func
@@ -264,15 +344,29 @@ macro_rules! impl_reducer {
             }
         }
 
+        impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Procedure<'de, ($($T,)*), Ret> for Func
+        where
+            Func: Fn(&mut ProcedureContext, $($T),*) -> Ret,
+            Ret: IntoProcedureResult,
+        {
+            #[allow(non_snake_case)]
+            fn invoke(&self, ctx: &mut ProcedureContext, args: ($($T,)*)) -> Ret {
+                let ($($T,)*) = args;
+                self(ctx, $($T),*)
+            }
+        }
+
     };
     // Counts the number of elements in the tuple.
     (@count $($T:ident)*) => {
-        0 $(+ impl_reducer!(@drop $T 1))*
+        0 $(+ impl_reducer_and_procedure!(@drop $T 1))*
     };
     (@drop $a:tt $b:tt) => { $b };
 }
 
-impl_reducer!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF);
+impl_reducer_and_procedure!(
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF
+);
 
 /// Provides deserialization and serialization for any type `A: Args`.
 struct SerDeArgs<A>(A);
@@ -339,7 +433,7 @@ pub fn register_table<T: Table>() {
             table = table.with_column_sequence(col);
         }
         if let Some(schedule) = T::SCHEDULE {
-            table = table.with_schedule(schedule.reducer_name, schedule.scheduled_at_column);
+            table = table.with_schedule(schedule.reducer_or_procedure_name, schedule.scheduled_at_column);
         }
 
         for col in T::get_default_col_values().iter_mut() {
@@ -370,6 +464,20 @@ pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>)
     })
 }
 
+pub fn register_procedure<'a, A, Ret, I>(_: impl Procedure<'a, A, Ret>)
+where
+    A: Args<'a>,
+    Ret: SpacetimeType + Serialize,
+    I: ProcedureInfo,
+{
+    register_describer(|module| {
+        let params = A::schema::<I>(&mut module.inner);
+        let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
+        module.inner.add_procedure(I::NAME, params, ret_ty);
+        module.procedures.push(I::INVOKE);
+    })
+}
+
 /// Registers a row-level security policy.
 pub fn register_row_level_security(sql: &'static str) {
     register_describer(|module| {
@@ -384,6 +492,8 @@ struct ModuleBuilder {
     inner: RawModuleDefV9Builder,
     /// The reducers of the module.
     reducers: Vec<ReducerFn>,
+    /// The procedures of the module.
+    procedures: Vec<ProcedureFn>,
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
@@ -393,6 +503,9 @@ static DESCRIBERS: Mutex<Vec<Box<dyn DescriberFn>>> = Mutex::new(Vec::new());
 /// and returns a result with a possible error message.
 pub type ReducerFn = fn(ReducerContext, &[u8]) -> ReducerResult;
 static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
+
+pub type ProcedureFn = fn(ProcedureContext, &[u8]) -> ProcedureResult;
+static PROCEDURES: OnceLock<Vec<ProcedureFn>> = OnceLock::new();
 
 /// Called by the host when the module is initialized
 /// to describe the module into a serialized form that is returned.
@@ -422,8 +535,9 @@ extern "C" fn __describe_module__(description: BytesSink) {
     let module_def = RawModuleDef::V9(module_def);
     let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
 
-    // Write the set of reducers.
+    // Write the set of reducers and the set of procedures.
     REDUCERS.set(module.reducers).ok().unwrap();
+    PROCEDURES.set(module.procedures).ok().unwrap();
 
     // Write the bsatn data into the sink.
     write_to_sink(description, &bytes);
@@ -475,16 +589,11 @@ extern "C" fn __call_reducer__(
     error: BytesSink,
 ) -> i16 {
     // Piece together `sender_i` into an `Identity`.
-    let sender = [sender_0, sender_1, sender_2, sender_3];
-    let sender: [u8; 32] = bytemuck::must_cast(sender);
-    let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
+    let sender = reconstruct_sender_identity(sender_0, sender_1, sender_2, sender_3);
 
     // Piece together `conn_id_i` into a `ConnectionId`.
     // The all-zeros `ConnectionId` (`ConnectionId::ZERO`) is interpreted as `None`.
-    let conn_id = [conn_id_0, conn_id_1];
-    let conn_id: [u8; 16] = bytemuck::must_cast(conn_id);
-    let conn_id = ConnectionId::from_le_byte_array(conn_id); // The LITTLE-ENDIAN constructor.
-    let conn_id = (conn_id != ConnectionId::ZERO).then_some(conn_id);
+    let conn_id = reconstruct_connection_id(conn_id_0, conn_id_1);
 
     // Assemble the `ReducerContext`.
     let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
@@ -495,13 +604,114 @@ extern "C" fn __call_reducer__(
     // Dispatch to it with the arguments read.
     let res = with_read_args(args, |args| reducers[id](ctx, args));
     // Convert any error message to an error code and writes to the `error` sink.
+    convert_err_to_errno(res, error)
+}
+
+/// Reconstruct the `sender_i` args to [`__call_reducer__`] and [`__call_procedure__`] into an [`Identity`].
+fn reconstruct_sender_identity(sender_0: u64, sender_1: u64, sender_2: u64, sender_3: u64) -> Identity {
+    let sender = [sender_0, sender_1, sender_2, sender_3];
+    let sender: [u8; 32] = bytemuck::must_cast(sender);
+    let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
+    sender
+}
+
+/// Reconstruct the `conn_id_i` args to [`__call_reducer__`] and [`__call_procedure__`] into a [`ConnectionId`].
+///
+/// The all-zeros `ConnectionId` (`ConnectionId::ZERO`) is interpreted as `None`.
+fn reconstruct_connection_id(conn_id_0: u64, conn_id_1: u64) -> Option<ConnectionId> {
+    // Piece together `conn_id_i` into a `ConnectionId`.
+    // The all-zeros `ConnectionId` (`ConnectionId::ZERO`) is interpreted as `None`.
+    let conn_id = [conn_id_0, conn_id_1];
+    let conn_id: [u8; 16] = bytemuck::must_cast(conn_id);
+    let conn_id = ConnectionId::from_le_byte_array(conn_id); // The LITTLE-ENDIAN constructor.
+    let conn_id = (conn_id != ConnectionId::ZERO).then_some(conn_id);
+    conn_id
+}
+
+/// If `res` is `Err`, write the message to `out` and return non-zero.
+/// If `res` is `Ok`, return zero.
+///
+/// Called by [`__call_reducer__`] and [`__call_procedure__`]
+/// to convert the user-returned `Result` into a low-level errno return.
+fn convert_err_to_errno(res: Result<(), Box<str>>, out: BytesSink) -> i16 {
     match res {
         Ok(()) => 0,
         Err(msg) => {
-            write_to_sink(error, msg.as_bytes());
+            write_to_sink(out, msg.as_bytes());
             errno::HOST_CALL_FAILURE.get() as i16
         }
     }
+}
+
+/// Called by the host to execute a procedure
+/// when the `sender` calls the reducer identified by `id` at `timestamp` with `args`.
+///
+/// The `sender_{0-3}` are the pieces of a `[u8; 32]` (`u256`) representing the sender's `Identity`.
+/// They are encoded as follows (assuming `identity.to_byte_array(): [u8; 32]`):
+/// - `sender_0` contains bytes `[0 ..8 ]`.
+/// - `sender_1` contains bytes `[8 ..16]`.
+/// - `sender_2` contains bytes `[16..24]`.
+/// - `sender_3` contains bytes `[24..32]`.
+///
+/// Note that `to_byte_array` uses LITTLE-ENDIAN order! This matches most host systems.
+///
+/// The `conn_id_{0-1}` are the pieces of a `[u8; 16]` (`u128`) representing the callers's [`ConnectionId`].
+/// They are encoded as follows (assuming `conn_id.as_le_byte_array(): [u8; 16]`):
+/// - `conn_id_0` contains bytes `[0 ..8 ]`.
+/// - `conn_id_1` contains bytes `[8 ..16]`.
+///
+/// Again, note that `to_byte_array` uses LITTLE-ENDIAN order! This matches most host systems.
+///
+/// The `args` is a `BytesSource`, registered on the host side,
+/// which can be read with `bytes_source_read`.
+/// The contents of the buffer are the BSATN-encoding of the arguments to the reducer.
+/// In the case of empty arguments, `args` will be 0, that is, invalid.
+///
+/// The `result_sink` is a `BytesSink`, registered on the host side,
+/// which can be written to with `bytes_sink_write`.
+/// Procedures are expected to always write to this sink
+/// the BSATN-serialized bytes of a value of the procedure's return type.
+///
+/// Procedures always return the error 0. All other return values are reserved.
+#[no_mangle]
+extern "C" fn __call_procedure__(
+    id: usize,
+    sender_0: u64,
+    sender_1: u64,
+    sender_2: u64,
+    sender_3: u64,
+    conn_id_0: u64,
+    conn_id_1: u64,
+    timestamp: u64,
+    args: BytesSource,
+    result_sink: BytesSink,
+) -> i16 {
+    // Piece together `sender_i` into an `Identity`.
+    let sender = reconstruct_sender_identity(sender_0, sender_1, sender_2, sender_3);
+
+    // Piece together `conn_id_i` into a `ConnectionId`.
+    let conn_id = reconstruct_connection_id(conn_id_0, conn_id_1);
+
+    let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
+
+    // Assemble the `ProcedureContext`.
+    let ctx = ProcedureContext {
+        connection_id: conn_id,
+        sender,
+        timestamp,
+    };
+
+    // Grab the list of procedures, which is populated by the preinit functions.
+    let procedures = PROCEDURES.get().unwrap();
+
+    // Deserialize the args and pass them to the actual procedure.
+    let res = with_read_args(args, |args| procedures[id](ctx, args));
+
+    // Write the result bytes to the `result_sink`.
+    write_to_sink(result_sink, &res);
+
+    // Return 0 for no error. Procedures always either trap or return 0.
+    0
 }
 
 /// Run `logic` with `args` read from the host into a `&[u8]`.
