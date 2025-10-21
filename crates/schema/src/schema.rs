@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::def::{
     ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
-    SequenceDef, TableDef, UniqueConstraintData,
+    SequenceDef, TableDef, UniqueConstraintData, ViewDef,
 };
 use crate::identifier::Identifier;
 
@@ -585,6 +585,108 @@ pub fn column_schemas_from_defs(module_def: &ModuleDef, columns: &[ColumnDef], t
         .enumerate()
         .map(|(col_pos, def)| ColumnSchema::from_module_def(module_def, def, (), (table_id, col_pos.into())))
         .collect()
+}
+
+impl TableSchema {
+    /// Every view is materialized by default. For example:
+    /// ```rust,ignore
+    /// #[table]
+    /// pub struct MyTable {
+    ///     a: u32,
+    ///     b: u32,
+    /// }
+    ///
+    /// #[view(public)]
+    /// fn my_view(ctx: &ViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
+    ///
+    /// #[view(public)]
+    /// fn my_anonymous_view(ctx: &AnonymousViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
+    /// ```
+    ///
+    /// The above views are materialized with the following schemas:
+    ///
+    /// my_view:
+    ///
+    /// | sender   | x   | y   | a   | b   |
+    /// |----------|-----|-----|-----|-----|
+    /// | Identity | u32 | u32 | u32 | u32 |
+    ///
+    /// my_anonymous_view:
+    ///
+    /// | x   | y   | a   | b   |
+    /// |-----|-----|-----|-----|
+    /// | u32 | u32 | u32 | u32 |
+    pub fn from_view_def(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
+        module_def.expect_contains(view_def);
+
+        let ViewDef {
+            name,
+            is_anonymous,
+            is_public,
+            params,
+            params_for_generate: _,
+            return_type: _,
+            return_type_for_generate: _,
+            columns: cols,
+        } = view_def;
+
+        let num_args = params.elements.len();
+        let num_cols = cols.len();
+        let n = num_args + num_cols + if *is_anonymous { 0 } else { 1 };
+
+        let mut columns = Vec::with_capacity(n);
+
+        if !is_anonymous {
+            columns.push(ColumnSchema {
+                table_id: TableId::SENTINEL,
+                col_pos: ColId(0),
+                col_name: "sender".into(),
+                col_type: AlgebraicType::identity(),
+            });
+        }
+
+        let n = columns.len();
+
+        for (i, elem) in params.elements.iter().cloned().enumerate() {
+            columns.push(ColumnSchema {
+                table_id: TableId::SENTINEL,
+                col_pos: (n + i).into(),
+                col_name: elem.name.unwrap_or_else(|| format!("param_{i}").into_boxed_str()),
+                col_type: elem.algebraic_type,
+            });
+        }
+
+        let n = columns.len();
+
+        columns.extend(
+            column_schemas_from_defs(module_def, cols, TableId::SENTINEL)
+                .into_iter()
+                .enumerate()
+                .map(|(i, schema)| ColumnSchema {
+                    col_pos: (n + i).into(),
+                    ..schema
+                }),
+        );
+
+        let table_access = if *is_public {
+            StAccess::Public
+        } else {
+            StAccess::Private
+        };
+
+        TableSchema::new(
+            TableId::SENTINEL,
+            (*name).clone().into(),
+            columns,
+            vec![],
+            vec![],
+            vec![],
+            StTableType::User,
+            table_access,
+            None,
+            None,
+        )
+    }
 }
 
 impl Schema for TableSchema {

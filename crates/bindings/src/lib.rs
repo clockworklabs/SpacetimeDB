@@ -767,6 +767,7 @@ impl ReducerContext {
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
             sender_auth: AuthCtx::internal(),
+            #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
         }
     }

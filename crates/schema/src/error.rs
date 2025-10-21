@@ -82,6 +82,11 @@ pub enum ValidationError {
         start: Option<i128>,
         max_value: Option<i128>,
     },
+    #[error("View {view} has invalid return type {ty}")]
+    InvalidViewReturnType {
+        view: RawIdentifier,
+        ty: PrettyAlgebraicType,
+    },
     #[error("Table {table} has invalid product_type_ref {ref_}")]
     InvalidProductTypeRef {
         table: RawIdentifier,
@@ -131,7 +136,7 @@ pub enum ValidationError {
     MultipleColumnDefaultValues { table: RawIdentifier, col_id: ColId },
     #[error("Table {table} not found")]
     TableNotFound { table: RawIdentifier },
-    #[error("Name {name} is used for multiple reducers and/or procedures")]
+    #[error("Name {name} is used for multiple reducers, procedures and/or views")]
     DuplicateFunctionName { name: Identifier },
 }
 
@@ -182,8 +187,16 @@ pub enum TypeLocation<'a> {
         position: usize,
         arg_name: Option<Cow<'a, str>>,
     },
+    /// A view argument.
+    ViewArg {
+        view_name: Cow<'a, str>,
+        position: usize,
+        arg_name: Option<Cow<'a, str>>,
+    },
     /// A procedure return type.
     ProcedureReturn { procedure_name: Cow<'a, str> },
+    /// A view return type.
+    ViewReturn { view_name: Cow<'a, str> },
     /// A type in the typespace.
     InTypespace {
         /// The reference to the type within the typespace.
@@ -213,8 +226,20 @@ impl TypeLocation<'_> {
                 position,
                 arg_name: arg_name.map(|s| s.to_string().into()),
             },
+            TypeLocation::ViewArg {
+                view_name,
+                position,
+                arg_name,
+            } => TypeLocation::ViewArg {
+                view_name: view_name.to_string().into(),
+                position,
+                arg_name: arg_name.map(|s| s.to_string().into()),
+            },
             Self::ProcedureReturn { procedure_name } => TypeLocation::ProcedureReturn {
                 procedure_name: procedure_name.to_string().into(),
+            },
+            Self::ViewReturn { view_name } => TypeLocation::ViewReturn {
+                view_name: view_name.to_string().into(),
             },
             // needed to convince rustc this is allowed.
             TypeLocation::InTypespace { ref_ } => TypeLocation::InTypespace { ref_ },
@@ -247,8 +272,22 @@ impl fmt::Display for TypeLocation<'_> {
                 }
                 Ok(())
             }
+            TypeLocation::ViewArg {
+                view_name,
+                position,
+                arg_name,
+            } => {
+                write!(f, "view `{view_name}` argument {position}")?;
+                if let Some(arg_name) = arg_name {
+                    write!(f, " (`{arg_name}`)")?;
+                }
+                Ok(())
+            }
             TypeLocation::ProcedureReturn { procedure_name } => {
                 write!(f, "procedure `{procedure_name}` return value")
+            }
+            TypeLocation::ViewReturn { view_name } => {
+                write!(f, "view `{view_name}` return value")
             }
             TypeLocation::InTypespace { ref_ } => {
                 write!(f, "typespace ref `{ref_}`")
