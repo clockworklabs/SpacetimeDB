@@ -26,8 +26,7 @@ jobs:
             const targetOwner = 'clockworklabs';
             const targetRepo = 'SpacetimeDBPrivate';
             const workflowId = 'internal-tests.yml';
-            // TODO: Change this to master before merging
-            const targetRef = 'bfops/internal-tests-update';
+            const targetRef = 'master';
             const publicRef = context.sha;
             const preDispatch = new Date().toISOString();
 
