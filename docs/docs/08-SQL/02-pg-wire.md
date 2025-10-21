@@ -79,20 +79,16 @@ spacetime login show --token
 
 To export the token to `PGPASSWORD`:
 
-```python
-# token.py
-import sys, re
-
-text = sys.stdin.read()
-match = re.search(r"Your auth token \(don't share this!\) is\s+(\S+)", text)
-if not match:
-    sys.exit("No token found")
-
-print(f"export PGPASSWORD={match.group(1)}")
-```
+_For bash_:
 
 ```bash
-eval "$(spacetime login show --token | python3 ~/token.py)"
+export PGPASSWORD="$(spacetime login show --token | sed -n 's/^Your auth token.*is //p')"
+```
+
+_For PowerShell_:
+
+```powershell
+$env:PGPASSWORD = (spacetime login show --token | Select-String 'Your auth token.*is (.*)' | % { $_.Matches[0].Groups[1].Value })
 ```
 
 ## Examples

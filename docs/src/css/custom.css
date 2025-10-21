@@ -31,6 +31,8 @@
   --clockworklabs-navbar-border-color: rgb(244 246 252 / 11%);
   --clockworklabs-strong-color: #ced3e0;
   --clockworklabs-font-source: 'Source Code Pro Variable', monospace;
+  --clockworklabs-color-white: #f4f6fc;
+  --clockworklabs-color-n6: #202126;
 }
 
 :root .alert--info {
@@ -63,7 +65,16 @@
 :root .alert--danger {
   --ifm-alert-background-color: #4b1113;
   --ifm-alert-foreground-color: #b6c0cf;
-  --ifm-alert-border-color: #e13238;
+  --ifm-alert-border-color: #009400;
+  --ifm-alert-background-color-highlight: var(
+    --clockworklabs-code-background-color
+  );
+}
+
+:root .alert--success {
+  --ifm-alert-background-color: #003100;
+  --ifm-alert-foreground-color: #b6c0cf;
+  --ifm-alert-border-color: #009400;
   --ifm-alert-background-color-highlight: var(
     --clockworklabs-code-background-color
   );
@@ -149,6 +160,48 @@ footer {
   --docsearch-footer-shadow: 0 -1px 0 0 var(--ifm-toc-border-color);
 
   width: 15rem;
+}
+
+table {
+  display: table;
+  border-collapse: collapse;
+  border-spacing: 0;
+  width: 100%;
+  color: var(--clockworklabs-color-white);
+  letter-spacing: -0.01em;
+  margin-top: 40px;
+  margin-bottom: 40px;
+  font-size: 16px;
+  line-height: 1.75;
+
+  thead {
+    color: var(--clockworklabs-strong-color);
+    text-align: left;
+
+    tr {
+      border-bottom: none;
+    }
+  }
+
+  tr {
+    border-top: none;
+  }
+
+  td {
+    border: 1px solid var(--clockworklabs-color-n6);
+    padding: 0.5rem 0.75rem;
+
+    code {
+      background-color: var(--clockworklabs-code-background-color);
+      color: var(--clockworklabs-code-color);
+      border: 1px solid var(--clockworklabs-code-border-color);
+    }
+  }
+
+  th {
+    border: 1px solid var(--clockworklabs-color-n6);
+    padding: 0.5rem 0.75rem;
+  }
 }
 
 /* Make the page content left aligned */
