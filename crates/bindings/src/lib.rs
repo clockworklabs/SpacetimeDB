@@ -870,7 +870,7 @@ impl ProcedureContext {
     /// Actual time suspended may not be exactly equal to `duration`.
     /// Callers should read `self.timestamp` after resuming to determine the new time.
     ///
-    /// ```no-run
+    /// ```no_run
     /// # use std::time::Duration;
     /// # #[procedure]
     /// # fn sleep_one_second(ctx: &mut ProcedureContext) {
