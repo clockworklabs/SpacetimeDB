@@ -1227,7 +1227,7 @@ mod tests {
 
     #[test]
     fn set_same_epoch_does_nothing() {
-        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(4096), <_>::default()).unwrap();
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(u64::MAX), <_>::default()).unwrap();
         assert_eq!(log.epoch(), Commit::DEFAULT_EPOCH);
         let committed = log.set_epoch(Commit::DEFAULT_EPOCH).unwrap();
         assert_eq!(committed, None);
@@ -1235,7 +1235,7 @@ mod tests {
 
     #[test]
     fn set_new_epoch_commits() {
-        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(4096), <_>::default()).unwrap();
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(u64::MAX), <_>::default()).unwrap();
         assert_eq!(log.epoch(), Commit::DEFAULT_EPOCH);
         log.append(<_>::default()).unwrap();
         let committed = log
@@ -1248,7 +1248,7 @@ mod tests {
 
     #[test]
     fn set_lower_epoch_returns_error() {
-        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(4096), <_>::default()).unwrap();
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(u64::MAX), <_>::default()).unwrap();
         log.set_epoch(42).unwrap();
         assert_eq!(log.epoch(), 42);
         assert_matches!(log.set_epoch(7), Err(e) if e.kind() == io::ErrorKind::InvalidInput)

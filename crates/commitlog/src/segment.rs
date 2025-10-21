@@ -788,7 +788,7 @@ mod tests {
 
     #[test]
     fn write_read_roundtrip() {
-        let repo = repo::Memory::new(4096);
+        let repo = repo::Memory::new(u64::MAX);
 
         let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
         writer.append([0; 32]).unwrap();
@@ -817,7 +817,7 @@ mod tests {
 
     #[test]
     fn metadata() {
-        let repo = repo::Memory::new(4096);
+        let repo = repo::Memory::new(u64::MAX);
 
         let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
         // Commit 0..2
@@ -850,7 +850,7 @@ mod tests {
 
     #[test]
     fn commits() {
-        let repo = repo::Memory::new(4096);
+        let repo = repo::Memory::new(u64::MAX);
         let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
         let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
@@ -883,7 +883,7 @@ mod tests {
 
     #[test]
     fn transactions() {
-        let repo = repo::Memory::new(4096);
+        let repo = repo::Memory::new(u64::MAX);
         let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
         let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
