@@ -281,6 +281,9 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 finish_authentication(client, &self.parameter_provider).await?;
             }
             // The other messages are for features not supported by SpacetimeDB, that are rejected by the parser.
+            // This includes TLS negotiation - any TLS negotiation done with the client will happen before
+            // this point, and because we pass `tls_acceptor: None` for `process_socket()`, pgwire will reject
+            // TLS for us.
             _ => {
                 unreachable!("Unsupported startup message: {message:?}");
             }
