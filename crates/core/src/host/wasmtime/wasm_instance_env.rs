@@ -9,7 +9,6 @@ use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, Timin
 use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
 use std::num::NonZeroU32;
