@@ -1,4 +1,6 @@
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
+use super::{
+    ArgsTuple, FunctionArgs, InvalidReducerArguments, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
+};
 use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
@@ -7,6 +9,7 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
+use crate::host::InvalidFunctionArguments;
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -47,8 +50,8 @@ use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
-use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
+use spacetimedb_schema::def::deserialize::ArgsSeed;
+use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
 use std::collections::VecDeque;
@@ -410,6 +413,18 @@ pub fn create_table_from_def(
     Ok(())
 }
 
+/// Creates the table for `view_def` in `stdb`.
+pub fn create_table_from_view_def(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    module_def: &ModuleDef,
+    view_def: &ViewDef,
+) -> anyhow::Result<()> {
+    stdb.create_view_table(tx, module_def, view_def)
+        .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
+    Ok(())
+}
+
 /// If the module instance's replica_ctx is uninitialized, initialize it.
 fn init_database(
     replica_ctx: &ReplicaContext,
@@ -433,6 +448,15 @@ fn init_database(
                 logger.info(&format!("Creating table `{}`", &def.name));
                 create_table_from_def(stdb, tx, module_def, def)?;
             }
+
+            let mut view_defs: Vec<_> = module_def.views().collect();
+            view_defs.sort_by(|a, b| a.name.cmp(&b.name));
+
+            for def in view_defs {
+                logger.info(&format!("Creating table for view `{}`", &def.name));
+                create_table_from_view_def(stdb, tx, module_def, def)?;
+            }
+
             // Insert the late-bound row-level security expressions.
             for rls in module_def.row_level_security() {
                 logger.info(&format!("Creating row level security `{}`", rls.sql));
@@ -875,7 +899,7 @@ impl ModuleHost {
                     None,
                     reducer_id,
                     reducer_def,
-                    ReducerArgs::Nullary,
+                    FunctionArgs::Nullary,
                     inst,
                 )?;
 
@@ -970,10 +994,10 @@ impl ModuleHost {
                 log::error!(
                     "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {err}"
                 );
-                InvalidReducerArguments {
+                InvalidReducerArguments(InvalidFunctionArguments {
                     err: err.into(),
-                    reducer: reducer_name.into(),
-                }
+                    function_name: reducer_name.into(),
+                })
                 .into()
             })
         };
@@ -1002,7 +1026,7 @@ impl ModuleHost {
                 None,
                 reducer_id,
                 reducer_def,
-                ReducerArgs::Nullary,
+                FunctionArgs::Nullary,
                 inst,
             );
 
@@ -1088,10 +1112,10 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
-        args: ReducerArgs,
+        args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed)?;
+        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
+        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(self
@@ -1122,11 +1146,11 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
-        args: ReducerArgs,
+        args: FunctionArgs,
         module_instance: &mut Instance,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed)?;
+        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
+        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(module_instance.call_reducer(
@@ -1152,7 +1176,7 @@ impl ModuleHost {
         request_id: Option<RequestId>,
         timer: Option<Instant>,
         reducer_name: &str,
-        args: ReducerArgs,
+        args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = async {
             let (reducer_id, reducer_def) = self
@@ -1231,10 +1255,12 @@ impl ModuleHost {
                     Ok(inst.call_reducer(Some(tx), params))
                 }
                 Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
-                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments {
-                    err,
-                    reducer: REDUCER.into(),
-                })),
+                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments(
+                    InvalidFunctionArguments {
+                        err,
+                        function_name: REDUCER.into(),
+                    },
+                ))),
             }
         })
         .await?

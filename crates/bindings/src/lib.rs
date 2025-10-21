@@ -16,9 +16,16 @@ pub use log;
 #[cfg(feature = "rand")]
 pub use rand08 as rand;
 use spacetimedb_lib::bsatn;
+<<<<<<< HEAD
 use std::cell::{OnceCell, RefCell};
 use std::ops::Deref;
 use std::sync::LazyLock;
+||||||| bb4321324
+=======
+use std::cell::LazyCell;
+use std::cell::{OnceCell, RefCell};
+use std::ops::Deref;
+>>>>>>> master
 
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
@@ -788,6 +795,11 @@ impl ReducerContext {
         }
     }
 
+<<<<<<< HEAD
+||||||| bb4321324
+=======
+    /// Returns the authorization information for the caller of this reducer.
+>>>>>>> master
     pub fn sender_auth(&self) -> &AuthCtx {
         &self.sender_auth
     }
@@ -864,6 +876,7 @@ pub struct JwtClaims {
 /// Authentication information for the caller of a reducer.
 pub struct AuthCtx {
     is_internal: bool,
+<<<<<<< HEAD
     // I can't directly use a LazyLock without making this struct generic.
     jwt: Box<dyn Deref<Target = Option<JwtClaims>>>,
 }
@@ -955,6 +968,104 @@ impl JwtClaims {
     }
 
     // We can expose the whole payload for users that want to parse custom claims.
+||||||| bb4321324
+=======
+    // NOTE(jsdt): cannot directly use a LazyLock without making this struct generic.
+    jwt: Box<dyn Deref<Target = Option<JwtClaims>>>,
+}
+
+impl AuthCtx {
+    fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
+        AuthCtx {
+            is_internal,
+            jwt: Box::new(LazyCell::new(jwt_fn)),
+        }
+    }
+
+    /// Create an [`AuthCtx`] for an internal call, with no JWT.
+    /// This represents a scheduled reducer.
+    pub fn internal() -> AuthCtx {
+        Self::new(true, || None)
+    }
+
+    /// Creates an [`AuthCtx`] using the json claims from a JWT.
+    /// This can be used to write unit tests.
+    pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {
+        Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
+    }
+
+    /// Creates an [`AuthCtx`] that reads the JWT for the given connection id.
+    fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
+        Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
+    }
+
+    /// Returns whether this reducer was spawned from inside the database.
+    pub fn is_internal(&self) -> bool {
+        self.is_internal
+    }
+
+    /// Check if there is a JWT without loading it.
+    /// If [`AuthCtx::is_internal`] is true, this will return false.
+    pub fn has_jwt(&self) -> bool {
+        self.jwt.is_some()
+    }
+
+    /// Load the jwt.
+    pub fn jwt(&self) -> Option<&JwtClaims> {
+        self.jwt.as_ref().deref().as_ref()
+    }
+}
+
+impl JwtClaims {
+    fn new(jwt: String) -> Self {
+        Self {
+            payload: jwt,
+            parsed: OnceCell::new(),
+            audience: OnceCell::new(),
+        }
+    }
+
+    fn get_parsed(&self) -> &serde_json::Value {
+        self.parsed
+            .get_or_init(|| serde_json::from_str(&self.payload).expect("Failed to parse JWT payload"))
+    }
+
+    /// Returns the tokens subject, from the sub claim.
+    pub fn subject(&self) -> &str {
+        self.get_parsed()
+            .get("sub")
+            .expect("Missing 'sub' claim")
+            .as_str()
+            .expect("Token 'sub' claim is not a string")
+    }
+
+    /// Returns the issuer for these credentials, from the iss claim.
+    pub fn issuer(&self) -> &str {
+        self.get_parsed().get("iss").unwrap().as_str().unwrap()
+    }
+
+    fn extract_audience(&self) -> Vec<String> {
+        let aud = self.get_parsed().get("aud").unwrap();
+        match aud {
+            serde_json::Value::String(s) => vec![s.clone()],
+            serde_json::Value::Array(arr) => arr.iter().filter_map(|v| v.as_str().map(String::from)).collect(),
+            _ => panic!("Unexpected type for 'aud' claim in JWT"),
+        }
+    }
+
+    /// Returns the audience for these credentials, from the aud claim.
+    pub fn audience(&self) -> &[String] {
+        self.audience.get_or_init(|| self.extract_audience())
+    }
+
+    /// Returns the identity for these credentials, which is
+    /// based on the iss and sub claims.
+    pub fn identity(&self) -> Identity {
+        Identity::from_claims(self.issuer(), self.subject())
+    }
+
+    /// Get the whole JWT payload as a json string.
+>>>>>>> master
     pub fn raw_payload(&self) -> &str {
         &self.payload
     }

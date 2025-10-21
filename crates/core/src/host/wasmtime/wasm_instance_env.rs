@@ -1008,7 +1008,7 @@ impl WasmInstanceEnv {
             let args = mem.deref_slice(args, args_len)?;
             env.instance_env.scheduler.volatile_nonatomic_schedule_immediate(
                 name.to_owned(),
-                crate::host::ReducerArgs::Bsatn(args.to_vec().into()),
+                crate::host::FunctionArgs::Bsatn(args.to_vec().into()),
             );
 
             Ok(())
