@@ -66,6 +66,41 @@ export type DbView<SchemaDef extends UntypedSchemaDef> = {
 };
 
 /**
+ * Authentication information for the caller of a reducer.
+ */
+export type AuthCtx = Readonly<{
+  isInternal: boolean;
+  hasJWT: boolean;
+  jwt: JwtClaims | null;
+}>;
+
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonArray
+  | JsonObject;
+
+export interface JsonArray extends Array<JsonValue> {}
+
+export interface JsonObject {
+  [key: string]: JsonValue;
+}
+
+/**
+ * Auth Claims extracted from a the payload of a JWT token
+ */
+export interface JwtClaims {
+  readonly rawPayload: string;
+  readonly subject: string;
+  readonly issuer: string;
+  readonly audience: readonly string[];
+  readonly identity: Identity;
+  readonly fullPayload: JsonObject;
+}
+
+/**
  * Reducer context parametrized by the inferred Schema
  */
 export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
@@ -74,6 +109,7 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  authCtx: AuthCtx;
 }>;
 
 /**

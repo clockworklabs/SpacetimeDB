@@ -17,7 +17,14 @@ import {
   type RangedIndex,
 } from './indexes';
 import { type RowType, type Table, type TableMethods } from './table';
-import { type DbView, type ReducerCtx, REDUCERS } from './reducers';
+import {
+  type DbView,
+  type ReducerCtx,
+  REDUCERS,
+  type JwtClaims,
+  type AuthCtx,
+  type JsonObject,
+} from './reducers';
 import { MODULE_DEF } from './schema';
 
 import * as _syscalls from 'spacetime:sys@1.0';
@@ -33,6 +40,105 @@ const sys: typeof _syscalls = freeze(
     ])
   ) as typeof _syscalls
 );
+
+export function parseJsonObject(json: string): JsonObject {
+  let value: unknown;
+
+  try {
+    value = JSON.parse(json);
+  } catch {
+    throw new Error('Invalid JSON: failed to parse string');
+  }
+
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Expected a JSON object at the top level');
+  }
+
+  // The runtime check above guarantees this cast is safe
+  return value as JsonObject;
+}
+
+class JwtClaimsImpl implements JwtClaims {
+  readonly fullPayload: JsonObject;
+  constructor(public readonly rawPayload: string) {
+    this.fullPayload = parseJsonObject(rawPayload);
+  }
+  readonly [claim: string]: unknown;
+  get identity(): Identity {
+    return Identity.zero();
+  }
+  get subject() {
+    return this.fullPayload['sub'] as string;
+  }
+  get issuer() {
+    return this.fullPayload['iss'] as string;
+  }
+  get audience() {
+    const aud = this.fullPayload['aud'];
+    return typeof aud === 'string' ? [aud] : (aud as string[]);
+  }
+}
+
+class AuthCtxImpl implements AuthCtx {
+  public readonly isInternal: boolean;
+
+  private readonly _jwtSource: () => string | null;
+  private _jwtClaims?: JwtClaims | null;
+  private _initializedJWT: boolean = false;
+
+  private constructor(opts: {
+    isInternal: boolean;
+    jwtSource: () => string | null;
+  }) {
+    this.isInternal = opts.isInternal;
+    this._jwtSource = opts.jwtSource;
+  }
+
+  private _initializeJWT() {
+    if (this._initializedJWT) return;
+    this._initializedJWT = true;
+
+    const token = this._jwtSource();
+    if (!token) {
+      this._jwtClaims = null;
+    } else {
+      this._jwtClaims = new JwtClaimsImpl(token);
+    }
+  }
+
+  /** Lazily compute whether a JWT exists and is parseable. */
+  get hasJWT(): boolean {
+    this._initializeJWT();
+    return this._jwtClaims !== null;
+  }
+
+  /** Lazily parse the JwtClaims only when accessed. */
+  get jwt(): JwtClaims | null {
+    this._initializeJWT();
+    return this._jwtClaims!;
+  }
+
+  /** Create a context representing internal (non-user) requests. */
+  static internal(): AuthCtx {
+    return new AuthCtxImpl({ isInternal: true, jwtSource: () => null });
+  }
+
+  /** If there is a connection id, look up the JWT payload from the system tables. */
+  static fromSystemTables(connectionId: ConnectionId | null): AuthCtx {
+    if (connectionId === null) {
+      return new AuthCtxImpl({ isInternal: false, jwtSource: () => null });
+    }
+    return new AuthCtxImpl({
+      isInternal: false,
+      jwtSource: () => {
+        const payloadBuf = sys.get_jwt_payload(connectionId.__connection_id__);
+        if (payloadBuf.length === 0) return null;
+        const payloadStr = new TextDecoder().decode(payloadBuf);
+        return payloadStr;
+      },
+    });
+  }
+}
 
 export const hooks: ModuleHooks = {
   __describe_module__() {
@@ -57,6 +163,16 @@ export const hooks: ModuleHooks = {
       timestamp: new Timestamp(timestamp),
       connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
       db: getDbView(),
+      authCtx: AuthCtxImpl.fromSystemTables(
+        ConnectionId.nullIfZero(new ConnectionId(connId))
+      ),
+      // authCtx: freeze({
+      //   isInternal: true,
+      //   get hasJWT() {
+      //     const payload = sys.get_jwt_payload(connId);
+      //     return payload.length > 0;
+      //   }
+      // }),
     });
     try {
       return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };

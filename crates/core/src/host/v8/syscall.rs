@@ -16,7 +16,7 @@ use crate::host::wasm_common::instrumentation::span;
 use crate::host::wasm_common::module_host_actor::{ReducerOp, ReducerResult};
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, TimingSpanIdx};
 use crate::host::AbiCall;
-use spacetimedb_lib::{bsatn, Identity, RawModuleDef};
+use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::{errno, ColId, IndexId, ReducerId, TableId};
 use spacetimedb_sats::Serialize;
 use v8::{
@@ -68,6 +68,7 @@ fn register_sys_module<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
         (with_nothing, (), register_hooks),
         (with_sys_result, AbiCall::TableIdFromName, table_id_from_name),
         (with_sys_result, AbiCall::IndexIdFromName, index_id_from_name),
+        (with_sys_result, AbiCall::GetJwt, get_jwt_payload),
         (
             with_sys_result,
             AbiCall::DatastoreTableRowCount,
@@ -929,6 +930,17 @@ fn datastore_update_bsatn(scope: &mut PinScope<'_, '_>, args: FunctionCallbackAr
     row.truncate(row_len);
 
     Ok(row)
+}
+
+fn get_jwt_payload(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<Vec<u8>> {
+    let connection_id: u128 = deserialize_js(scope, args.get(0))?;
+    let connection_id = ConnectionId::from_u128(connection_id);
+    let env: &mut JsInstanceEnv = env_on_isolate(scope);
+    let maybe_payload =env.instance_env.get_jwt_payload(connection_id)?;
+    match maybe_payload {
+        Some(s) => Ok(s.into_bytes()),
+        None => Ok(vec![]),
+    }
 }
 
 /// Module ABI that deletes all rows found in the index identified by `index_id`,
