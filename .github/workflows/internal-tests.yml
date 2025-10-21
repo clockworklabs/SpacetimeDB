@@ -29,6 +29,7 @@ jobs:
             // TODO: Change this to master before merging
             const targetRef = 'bfops/internal-tests-update';
             const publicRef = context.sha;
+            const preDispatch = new Date().toISOString();
 
             // Dispatch the workflow in the target repository
             await github.rest.actions.createWorkflowDispatch({
@@ -58,7 +59,7 @@ jobs:
 
               const expectedName = `Internal Tests [${publicRef}]`;
               const candidates = runsResp.data.workflow_runs
-                .filter(r => r.name === expectedName)
+                .filter(r => r.name === expectedName && new Date(r.created_at) >= new Date(preDispatch))
                 .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
               if (candidates.length > 0) {
