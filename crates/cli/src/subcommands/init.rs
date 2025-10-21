@@ -226,23 +226,6 @@ pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool>
     }
 }
 
-pub async fn exec_interactive_init(config: &mut Config, args: &ArgMatches) -> anyhow::Result<()> {
-    let use_local = if args.get_flag("local") {
-        true
-    } else {
-        !check_and_prompt_login(config).await?
-    };
-
-    let mut template_config = interactive_init_with_args(args).await?;
-    template_config.use_local = use_local;
-
-    ensure_empty_directory(&template_config.project_name, &template_config.project_path)?;
-
-    init_from_template(&template_config, &template_config.project_path).await?;
-
-    Ok(())
-}
-
 fn slugify(name: &str) -> String {
     name.chars()
         .map(|c| {
@@ -261,89 +244,174 @@ fn slugify(name: &str) -> String {
         .join("-")
 }
 
-pub async fn exec_non_interactive_init(config: &mut Config, args: &ArgMatches) -> anyhow::Result<()> {
+async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Result<String> {
+    if let Some(name) = args.get_one::<String>("name") {
+        if is_interactive {
+            println!("{} {}", "Project name:".bold(), name);
+        }
+        return Ok(name.clone());
+    }
+
+    if !is_interactive {
+        anyhow::bail!("--name is required in non-interactive mode");
+    }
+
+    let theme = ColorfulTheme::default();
+    let name = Input::with_theme(&theme)
+        .with_prompt("Project name")
+        .default("my-spacetime-app".to_string())
+        .validate_with(|input: &String| -> Result<(), String> {
+            if input.trim().is_empty() {
+                return Err("Project name cannot be empty".to_string());
+            }
+            Ok(())
+        })
+        .interact_text()?
+        .trim()
+        .to_string();
+
+    Ok(name)
+}
+
+async fn get_project_path(args: &ArgMatches, project_name: &str, is_interactive: bool) -> anyhow::Result<PathBuf> {
+    if let Some(path) = args.get_one::<PathBuf>("project-path") {
+        if is_interactive {
+            println!("{} {}", "Project path:".bold(), path.display());
+        }
+        return Ok(path.clone());
+    }
+
+    if !is_interactive {
+        return Ok(PathBuf::from(slugify(project_name)));
+    }
+
+    let theme = ColorfulTheme::default();
+    let path_str = Input::with_theme(&theme)
+        .with_prompt("Project path")
+        .default(format!("./{}", slugify(project_name)))
+        .validate_with(|input: &String| -> Result<(), String> {
+            if input.trim().is_empty() {
+                return Err("Project path cannot be empty".to_string());
+            }
+
+            let path = Path::new(input);
+            if path.exists() {
+                if !path.is_dir() {
+                    return Err(format!("A file exists at '{}'. Please choose a different path.", input));
+                }
+                match std::fs::read_dir(path) {
+                    Ok(entries) => {
+                        if entries.count() > 0 {
+                            return Err(format!(
+                                "Directory '{}' already exists and is not empty. Please choose a different path.",
+                                input
+                            ));
+                        }
+                    }
+                    Err(_) => {
+                        return Err(format!(
+                            "Cannot access directory '{}'. Please choose a different path.",
+                            input
+                        ));
+                    }
+                }
+            }
+            Ok(())
+        })
+        .interact_text()?
+        .trim()
+        .to_string();
+
+    Ok(PathBuf::from(path_str))
+}
+
+fn create_template_config_from_template_str(
+    project_name: String,
+    project_path: PathBuf,
+    template_str: &str,
+    templates: &[TemplateDefinition],
+) -> anyhow::Result<TemplateConfig> {
+    if let Some(template) = templates.iter().find(|t| t.id == template_str) {
+        // Builtin template
+        Ok(TemplateConfig {
+            project_name,
+            project_path,
+            template_type: TemplateType::Builtin,
+            server_lang: parse_server_lang(&template.server_lang)?,
+            client_lang: parse_client_lang(&template.client_lang)?,
+            github_repo: None,
+            template_def: Some(template.clone()),
+            use_local: true,
+        })
+    } else {
+        // GitHub template
+        Ok(TemplateConfig {
+            project_name,
+            project_path,
+            template_type: TemplateType::GitHub,
+            server_lang: None,
+            client_lang: None,
+            github_repo: Some(template_str.to_string()),
+            template_def: None,
+            use_local: true,
+        })
+    }
+}
+
+pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: bool) -> anyhow::Result<()> {
     let use_local = if args.get_flag("local") {
         true
     } else {
         !check_and_prompt_login(config).await?
     };
 
-    // Get project name - required in non-interactive mode
-    let project_name = args
-        .get_one::<String>("name")
-        .expect("name is required in non-interactive mode")
-        .clone();
+    let project_name = get_project_name(args, is_interactive).await?;
+    let project_path = get_project_path(args, &project_name, is_interactive).await?;
 
-    // Determine project path - use provided path or slugified name
-    let actual_project_path = if let Some(path) = args.get_one::<PathBuf>("project-path") {
-        path.clone()
+    let mut template_config = if is_interactive {
+        get_template_config_interactive(args, project_name, project_path).await?
     } else {
-        PathBuf::from(slugify(&project_name))
+        get_template_config_non_interactive(args, project_name, project_path).await?
     };
 
+    template_config.use_local = use_local;
+
+    ensure_empty_directory(&template_config.project_name, &template_config.project_path)?;
+    init_from_template(&template_config, &template_config.project_path).await?;
+
+    Ok(())
+}
+
+async fn get_template_config_non_interactive(
+    args: &ArgMatches,
+    project_name: String,
+    project_path: PathBuf,
+) -> anyhow::Result<TemplateConfig> {
     // Check if template is provided
     if let Some(template_str) = args.get_one::<String>("template") {
         // Check if it's a builtin template
         let (_, templates) = fetch_templates_list().await?;
-
-        if let Some(template) = templates.iter().find(|t| t.id == *template_str) {
-            // Builtin template
-            let template_config = TemplateConfig {
-                project_name: project_name.clone(),
-                project_path: actual_project_path.clone(),
-                template_type: TemplateType::Builtin,
-                server_lang: parse_server_lang(&template.server_lang)?,
-                client_lang: parse_client_lang(&template.server_lang)?,
-                github_repo: None,
-                template_def: Some(template.clone()),
-                use_local,
-            };
-
-            ensure_empty_directory(&project_name, &actual_project_path)?;
-            init_from_template(&template_config, &actual_project_path).await?;
-        } else {
-            // GitHub template
-            let template_config = TemplateConfig {
-                project_name: project_name.clone(),
-                project_path: actual_project_path.clone(),
-                template_type: TemplateType::GitHub,
-                server_lang: None,
-                client_lang: None,
-                github_repo: Some(template_str.clone()),
-                template_def: None,
-                use_local,
-            };
-
-            ensure_empty_directory(&project_name, &actual_project_path)?;
-            init_from_template(&template_config, &actual_project_path).await?;
-        }
-    } else {
-        // No template - require at least one language option
-        let server_lang_str = args.get_one::<String>("server-lang").cloned();
-        let client_lang_str = args.get_one::<String>("client-lang").cloned();
-
-        if server_lang_str.is_none() && client_lang_str.is_none() {
-            anyhow::bail!(
-                "Either --template, --server-lang, or --client-lang must be provided in non-interactive mode"
-            );
-        }
-
-        let template_config = TemplateConfig {
-            project_name: project_name.clone(),
-            project_path: actual_project_path.clone(),
-            template_type: TemplateType::Empty,
-            server_lang: parse_server_lang(&server_lang_str)?,
-            client_lang: parse_client_lang(&client_lang_str)?,
-            github_repo: None,
-            template_def: None,
-            use_local,
-        };
-
-        ensure_empty_directory(&project_name, &actual_project_path)?;
-        init_from_template(&template_config, &actual_project_path).await?;
+        return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
-    Ok(())
+    // No template - require at least one language option
+    let server_lang_str = args.get_one::<String>("server-lang").cloned();
+    let client_lang_str = args.get_one::<String>("client-lang").cloned();
+
+    if server_lang_str.is_none() && client_lang_str.is_none() {
+        anyhow::bail!("Either --template, --server-lang, or --client-lang must be provided in non-interactive mode");
+    }
+
+    Ok(TemplateConfig {
+        project_name,
+        project_path,
+        template_type: TemplateType::Empty,
+        server_lang: parse_server_lang(&server_lang_str)?,
+        client_lang: parse_client_lang(&client_lang_str)?,
+        github_repo: None,
+        template_def: None,
+        use_local: true,
+    })
 }
 
 pub fn ensure_empty_directory(_project_name: &str, project_path: &Path) -> anyhow::Result<()> {
@@ -367,102 +435,19 @@ pub fn ensure_empty_directory(_project_name: &str, project_path: &Path) -> anyho
     Ok(())
 }
 
-pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<TemplateConfig> {
+async fn get_template_config_interactive(
+    args: &ArgMatches,
+    project_name: String,
+    project_path: PathBuf,
+) -> anyhow::Result<TemplateConfig> {
     let theme = ColorfulTheme::default();
-
-    // Get or prompt for project name
-    let project_name: String = if let Some(name) = args.get_one::<String>("name") {
-        println!("{} {}", "Project name:".bold(), name);
-        name.clone()
-    } else {
-        Input::with_theme(&theme)
-            .with_prompt("Project name")
-            .default("my-spacetime-app".to_string())
-            .validate_with(|input: &String| -> Result<(), String> {
-                if input.trim().is_empty() {
-                    return Err("Project name cannot be empty".to_string());
-                }
-                Ok(())
-            })
-            .interact_text()?
-            .trim()
-            .to_string()
-    };
-
-    // Get or prompt for project path
-    let project_path: String = if let Some(path) = args.get_one::<PathBuf>("project-path") {
-        let path_str = path.to_string_lossy().to_string();
-        println!("{} {}", "Project path:".bold(), path_str);
-        path_str
-    } else {
-        Input::with_theme(&theme)
-            .with_prompt("Project path")
-            .default(format!("./{}", slugify(&project_name)))
-            .validate_with(|input: &String| -> Result<(), String> {
-                if input.trim().is_empty() {
-                    return Err("Project path cannot be empty".to_string());
-                }
-
-                let path = Path::new(input);
-                if path.exists() {
-                    if !path.is_dir() {
-                        return Err(format!("A file exists at '{}'. Please choose a different path.", input));
-                    }
-                    match std::fs::read_dir(path) {
-                        Ok(entries) => {
-                            if entries.count() > 0 {
-                                return Err(format!(
-                                    "Directory '{}' already exists and is not empty. Please choose a different path.",
-                                    input
-                                ));
-                            }
-                        }
-                        Err(_) => {
-                            return Err(format!(
-                                "Cannot access directory '{}'. Please choose a different path.",
-                                input
-                            ));
-                        }
-                    }
-                }
-                Ok(())
-            })
-            .interact_text()?
-            .trim()
-            .to_string()
-    };
 
     // Check if template is provided
     if let Some(template_str) = args.get_one::<String>("template") {
         println!("{} {}", "Template:".bold(), template_str);
 
         let (_, templates) = fetch_templates_list().await?;
-
-        if let Some(template) = templates.iter().find(|t| t.id == *template_str) {
-            // Builtin template
-            return Ok(TemplateConfig {
-                project_name,
-                project_path: PathBuf::from(project_path),
-                template_type: TemplateType::Builtin,
-                server_lang: parse_server_lang(&template.server_lang)?,
-                client_lang: parse_client_lang(&template.client_lang)?,
-                github_repo: None,
-                template_def: Some(template.clone()),
-                use_local: true,
-            });
-        } else {
-            // GitHub template
-            return Ok(TemplateConfig {
-                project_name,
-                project_path: PathBuf::from(project_path),
-                template_type: TemplateType::GitHub,
-                server_lang: None,
-                client_lang: None,
-                github_repo: Some(template_str.clone()),
-                template_def: None,
-                use_local: true,
-            });
-        }
+        return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
     // Check if server-lang or client-lang is provided
@@ -483,7 +468,7 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
 
         return Ok(TemplateConfig {
             project_name,
-            project_path: PathBuf::from(project_path),
+            project_path,
             template_type: TemplateType::Empty,
             server_lang,
             client_lang,
@@ -507,7 +492,6 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
         })
         .collect();
     client_choices.push("other".to_string());
-    client_choices.push("none".to_string());
 
     let client_selection = Select::with_theme(&theme)
         .with_prompt("Select client")
@@ -516,7 +500,6 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
         .interact()?;
 
     let other_index = highlights.len();
-    let _none_index = highlights.len() + 1;
 
     if client_selection < highlights.len() {
         let highlight = &highlights[client_selection];
@@ -527,7 +510,7 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
 
         Ok(TemplateConfig {
             project_name,
-            project_path: PathBuf::from(project_path),
+            project_path,
             template_type: TemplateType::Builtin,
             server_lang: parse_server_lang(&template.server_lang)?,
             client_lang: parse_client_lang(&template.client_lang)?,
@@ -552,55 +535,15 @@ pub async fn interactive_init_with_args(args: &ArgMatches) -> anyhow::Result<Tem
                 continue;
             }
 
-            if let Some(template) = templates.iter().find(|t| t.id == template_id) {
-                return Ok(TemplateConfig {
-                    project_name: project_name.clone(),
-                    project_path: PathBuf::from(&project_path),
-                    template_type: TemplateType::Builtin,
-                    server_lang: parse_server_lang(&template.server_lang)?,
-                    client_lang: parse_client_lang(&template.client_lang)?,
-                    github_repo: None,
-                    template_def: Some(template.clone()),
-                    use_local: true,
-                });
-            } else {
-                return Ok(TemplateConfig {
-                    project_name: project_name.clone(),
-                    project_path: PathBuf::from(&project_path),
-                    template_type: TemplateType::GitHub,
-                    server_lang: None,
-                    client_lang: None,
-                    github_repo: Some(template_id),
-                    template_def: None,
-                    use_local: true,
-                });
-            }
+            return create_template_config_from_template_str(
+                project_name.clone(),
+                project_path.clone(),
+                &template_id,
+                &templates,
+            );
         }
     } else {
-        let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
-        let server_lang_selection = Select::with_theme(&theme)
-            .with_prompt("Select server language")
-            .items(&server_lang_choices)
-            .default(0)
-            .interact()?;
-
-        let server_lang = match server_lang_selection {
-            0 => Some(ServerLanguage::Rust),
-            1 => Some(ServerLanguage::Csharp),
-            2 => Some(ServerLanguage::TypeScript),
-            _ => None,
-        };
-
-        Ok(TemplateConfig {
-            project_name,
-            project_path: PathBuf::from(project_path),
-            template_type: TemplateType::Empty,
-            server_lang,
-            client_lang: None,
-            github_repo: None,
-            template_def: None,
-            use_local: true,
-        })
+        unreachable!("Invalid selection index")
     }
 }
 
@@ -1211,7 +1154,7 @@ fn check_for_git() -> bool {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
     println!("{UNSTABLE_WARNING}\n");
 
-    let non_interactive = args.get_flag("non-interactive");
+    let is_interactive = !args.get_flag("non-interactive");
     let template = args.get_one::<String>("template");
     let server_lang = args.get_one::<String>("server-lang");
     let client_lang = args.get_one::<String>("client-lang");
@@ -1224,7 +1167,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
         );
     }
 
-    if non_interactive {
+    if !is_interactive {
         // In non-interactive mode, validate all required args are present
         if name.is_none() {
             anyhow::bail!("--name is required in non-interactive mode");
@@ -1234,11 +1177,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
                 "Either --template, --server-lang, or --client-lang must be provided in non-interactive mode"
             );
         }
-        return exec_non_interactive_init(&mut config, args).await;
     }
 
-    // Interactive or partial interactive mode
-    exec_interactive_init(&mut config, args).await
+    exec_init(&mut config, args, is_interactive).await
 }
 
 pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
