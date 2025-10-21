@@ -1,6 +1,5 @@
 use crate::util::{
-    is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols,
-    print_auto_generated_version_comment,
+    is_reducer_invokable, iter_indexes, iter_reducers, iter_tables, iter_types, print_auto_generated_version_comment,
 };
 use crate::{indent_scope, OutputFile};
 
@@ -13,7 +12,10 @@ use std::ops::Deref;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
-use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
+use spacetimedb_primitives::ColId;
+use spacetimedb_schema::def::{
+    BTreeAlgorithm, IndexAlgorithm, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef,
+};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, ProductTypeDef};
@@ -190,45 +192,76 @@ export class {table_handle}<TableName extends string> implements __TableHandle<T
             writeln!(out, "return this.tableCache.iter();");
         });
         writeln!(out, "}}");
+        writeln!(out);
 
-        for (unique_field_ident, unique_field_type_use) in
-            iter_unique_cols(module.typespace_for_generate(), &schema, product_def)
-        {
-            let unique_field_name = unique_field_ident.deref().to_case(Case::Camel);
-            let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
+        let product_type = module.typespace_for_generate()[table.product_type_ref]
+            .as_product()
+            .unwrap();
 
-            let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
-            let unique_field_type = type_name(module, unique_field_type_use);
+        for index_def in iter_indexes(table) {
+            let Some(accessor_name) = index_def.accessor_name.as_ref() else {
+                continue;
+            };
+
+            let index_field_name = accessor_name.deref().to_case(Case::Camel);
+            let is_unique;
+
+            let index_fields: Vec<(String, &AlgebraicTypeUse)> = match &index_def.algorithm {
+                IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
+                    let get_name_and_type = |col_pos: ColId| {
+                        let (field_name, field_type) = &product_type.elements[col_pos.idx()];
+                        let name_pascal = field_name.deref().to_case(Case::Camel);
+                        (name_pascal, field_type)
+                    };
+                    is_unique = schema.is_unique(columns);
+                    columns.iter().map(get_name_and_type).collect()
+                }
+                IndexAlgorithm::Direct(_) => {
+                    eprintln!("Direct indexes are not implemented");
+                    continue;
+                }
+                _ => todo!(),
+            };
+            let function_name = if is_unique { "find" } else { "filter" };
 
             writeln!(
                 out,
                 "/**
- * Access to the `{unique_field_name}` unique index on the table `{table_name}`,
- * which allows point queries on the field of the same name
- * via the [`{unique_constraint}.find`] method.
- *
- * Users are encouraged not to explicitly reference this type,
- * but to directly chain method calls,
- * like `ctx.db.{accessor_method}.{unique_field_name}().find(...)`.
- *
- * Get a handle on the `{unique_field_name}` unique index on the table `{table_name}`.
+ * Access to the `{index_field_name}` index on the table `{table_name}`,
+ * with `ctx.db.{accessor_method}.{index_field_name}.{function_name}(...)`.
  */"
             );
-            writeln!(out, "{unique_field_name} = {{");
+            writeln!(out, "{index_field_name} = {{");
             out.with_indent(|out| {
                 writeln!(
                     out,
-                    "// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,"
+                    "// Find the subscribed row matching the lookup value if present in the client cache."
                 );
-                writeln!(out, "// if such a row is present in the client cache.");
-                writeln!(
-                    out,
-                    "find: (col_val: {unique_field_type}): {row_type} | undefined => {{"
-                );
+                write!(out, "{function_name}: (col_vals: ");
+
+                // if the index has multiple columns the input to `filter` is a tuple
+                let mut row_values = String::new();
+                if index_fields.len() > 1 {
+                    write!(out, "[");
+                    row_values.push('[');
+                }
+                for (i, (name, column_type)) in index_fields.iter().enumerate() {
+                    write_type(module, out, column_type, None, None).unwrap();
+                    row_values.push_str(format!("row.{name}").as_str());
+                    if i < index_fields.len() - 1 {
+                        write!(out, ",");
+                        row_values.push(',');
+                    }
+                }
+                if index_fields.len() > 1 {
+                    write!(out, "]");
+                    row_values.push(']');
+                }
+                writeln!(out, "): {row_type} | undefined => {{");
                 out.with_indent(|out| {
                     writeln!(out, "for (let row of this.tableCache.iter()) {{");
                     out.with_indent(|out| {
-                        writeln!(out, "if (__deepEqual(row.{unique_field_name}, col_val)) {{");
+                        writeln!(out, "if (__deepEqual({row_values}, col_vals)) {{");
                         out.with_indent(|out| {
                             writeln!(out, "return row;");
                         });
@@ -240,8 +273,6 @@ export class {table_handle}<TableName extends string> implements __TableHandle<T
             });
             writeln!(out, "}};");
         }
-
-        writeln!(out);
 
         // TODO: expose non-unique indices.
 
