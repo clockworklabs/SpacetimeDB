@@ -50,3 +50,4 @@ jobs:
           aws_secret_access_key: ${{ secrets.DOCS_AWS_SECRET_ACCESS_KEY}}
           aws_bucket: spacetimedb-docs
           source_dir: docs/build
+          destination_dir: ''
