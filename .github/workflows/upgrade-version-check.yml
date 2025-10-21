@@ -8,7 +8,7 @@ permissions: read-all
 
 jobs:
   version_upgrade_check:
-    runs-on: spacetimedb-runner
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
