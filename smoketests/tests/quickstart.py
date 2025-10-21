@@ -46,17 +46,40 @@ def _parse_quickstart(doc_path: Path, language: str) -> str:
 
 def _dotnet_add_package(project_path: Path, package_name: str, source_path: Path):
     """Add a local NuGet package to a .NET project"""
-    # Clean the NuGet cache and Build the packages
-    run_cmd("dotnet", "nuget", "locals", "all", "--clear", cwd=project_path, capture_stderr=True)
-    run_cmd("dotnet", "pack", "--configuration", "Release", cwd=source_path, capture_stderr=True)
+    # For ClientSDK, always build from source
+    if package_name == "SpacetimeDB.ClientSDK":
+        sdk_project = source_path / f"{package_name}.csproj"
+        if sdk_project.exists():
+            # Clean and rebuild the specific SDK project
+            run_cmd("dotnet", "clean", str(sdk_project), "--configuration", "Release", 
+                   cwd=source_path, capture_stderr=True)
+            run_cmd("dotnet", "restore", str(sdk_project), 
+                   cwd=source_path, capture_stderr=True)
+            run_cmd("dotnet", "build", str(sdk_project), "--configuration", "Release", 
+                   "-p:PackageOutputPath=\\\"" + str(source_path) + "\\\"",
+                   cwd=source_path, capture_stderr=True)
     
+    # Ensure we have the local package source set up
     sources = run_cmd("dotnet", "nuget", "list", "source", cwd=project_path, capture_stderr=True)
-    # Is the source already added?
     if package_name in sources:
-        run_cmd("dotnet", "nuget", "remove", "source", package_name, cwd=project_path, capture_stderr=True)
-    run_cmd("dotnet", "nuget", "add", "source", source_path, "--name", package_name, cwd=project_path,
-            capture_stderr=True)
-    run_cmd("dotnet", "add", "package", package_name, cwd=project_path, capture_stderr=True)
+        run_cmd("dotnet", "nuget", "remove", "source", package_name, 
+               cwd=project_path, capture_stderr=True)
+    
+    # Add the local package source
+    run_cmd("dotnet", "nuget", "add", "source", str(source_path), "--name", package_name, 
+           cwd=project_path, capture_stderr=True)
+    
+    # Remove the package if it exists to force an update
+    run_cmd("dotnet", "remove", "package", package_name, 
+           cwd=project_path, capture_stderr=True, check=False)
+    
+    # Add the package from the local source with version wildcard to ensure we get the latest
+    run_cmd("dotnet", "add", "package", package_name, "--source", str(source_path), 
+           "--no-restore", "--prerelease", cwd=project_path, capture_stderr=True)
+    
+    # Explicitly restore and build the project to ensure everything is up to date
+    run_cmd("dotnet", "restore", cwd=project_path, capture_stderr=True)
+    run_cmd("dotnet", "build", "--no-restore", cwd=project_path, capture_stderr=True)
 
 class BaseQuickstart(Smoketest):
     AUTOPUBLISH = False
