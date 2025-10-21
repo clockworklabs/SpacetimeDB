@@ -11,8 +11,7 @@ public sealed class JwtClaims
     private readonly Lazy<JsonDocument> _parsed;
     private readonly Lazy<List<string>> _audience;
 
-    private readonly Identity _identity;
-    public Identity Identity => _identity;
+    public Identity Identity { get; }
 
     /// <summary>
     /// Create a JwtClaims from a raw JWT payload (JSON claims) and its associated Identity.
@@ -25,7 +24,7 @@ public sealed class JwtClaims
         _payload = jwt ?? throw new ArgumentNullException(nameof(jwt));
         _parsed = new Lazy<JsonDocument>(() => JsonDocument.Parse(_payload));
         _audience = new Lazy<List<string>>(ExtractAudience);
-        _identity = identity;
+        Identity = identity;
     }
 
     private JsonDocument Parsed => _parsed.Value;
