@@ -265,6 +265,7 @@ use spacetimedb::{log, ReducerContext, Table};
 #[derive(Debug)]
 #[spacetimedb::table(name = person)]
 pub struct Person {
+    #[index(btree)]
     name: String,
     #[default(0)]
     age: u16,
