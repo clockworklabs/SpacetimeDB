@@ -521,7 +521,10 @@ impl HostController {
     }
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
-        Host::try_init(self, database, replica_id).await
+        let database_identity = database.database_identity;
+        Host::try_init(self, database, replica_id)
+            .await
+            .with_context(|| format!("failed to init replica {} for {}", replica_id, database_identity))
     }
 }
 
