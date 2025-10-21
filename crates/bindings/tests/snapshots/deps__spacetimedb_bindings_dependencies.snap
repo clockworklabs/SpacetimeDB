@@ -21,7 +21,6 @@ spacetimedb
 ├── getrandom
 │   └── cfg_if
 ├── log
-├── once_cell
 ├── rand
 │   ├── rand_chacha
 │   │   ├── ppv_lite86
