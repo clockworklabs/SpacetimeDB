@@ -1,3 +1,8 @@
+---
+title: TypeScript Quickstart
+slug: /modules/typescript/quickstart
+---
+
 # TypeScript Module Quickstart
 
 In this tutorial, we'll implement a simple chat server as a SpacetimeDB **TypeScript** module.
@@ -6,15 +11,17 @@ A SpacetimeDB module is code that gets bundled to a single JavaScript artifact a
 
 Each SpacetimeDB module defines a set of **tables** and a set of **reducers**.
 
-* Tables are declared with `table({ ...opts }, { ...columns })`. Each inserted object is a row; each field is a column.
-* Tables are **private** by default (readable only by the owner and your module code). Set `{ public: true }` to make them readable by everyone; writes still happen only via reducers.
-* A **reducer** is a function that reads/writes the database. Each reducer runs in its own transaction; its writes commit only if it completes without throwing. In TypeScript, reducers are registered with `spacetimedb.reducer(name, argTypes, handler)` and throw `new SenderError("...")` for user-visible errors.
+- Tables are declared with `table({ ...opts }, { ...columns })`. Each inserted object is a row; each field is a column.
+- Tables are **private** by default (readable only by the owner and your module code). Set `{ public: true }` to make them readable by everyone; writes still happen only via reducers.
+- A **reducer** is a function that reads/writes the database. Each reducer runs in its own transaction; its writes commit only if it completes without throwing. In TypeScript, reducers are registered with `spacetimedb.reducer(name, argTypes, handler)` and throw `new SenderError("...")` for user-visible errors.
 
-> Note: SpacetimeDB runs your module inside the database host (not Node.js). There’s no direct filesystem or network access from reducers.
+:::note
+SpacetimeDB runs your module inside the database host (not Node.js). There’s no direct filesystem or network access from reducers.
+:::
 
 ## Install SpacetimeDB
 
-If you haven’t already, start by [installing SpacetimeDB](/install). This installs the `spacetime` CLI used to build, publish, and interact with your database.
+If you haven’t already, start by [installing SpacetimeDB](https://spacetimedb.com/install). This installs the `spacetime` CLI used to build, publish, and interact with your database.
 
 ## Project structure
 
@@ -57,10 +64,10 @@ import { schema, t, table, SenderError } from 'spacetimedb/server';
 
 From `spacetimedb/server`, we import:
 
-* `table` to define SpacetimeDB tables.
-* `t` for column/type builders.
-* `schema` to compose our database schema and register reducers.
-* `SenderError` to signal user-visible (transaction-aborting) errors.
+- `table` to define SpacetimeDB tables.
+- `t` for column/type builders.
+- `schema` to compose our database schema and register reducers.
+- `SenderError` to signal user-visible (transaction-aborting) errors.
 
 ## Define tables
 
@@ -144,8 +151,8 @@ spacetimedb.reducer('send_message', { text: t.string() }, (ctx, { text }) => {
 
 Possible extensions:
 
-* Reject messages from users who haven’t set a name.
-* Rate-limit messages per user.
+- Reject messages from users who haven’t set a name.
+- Rate-limit messages per user.
 
 ## Set users’ online status
 
@@ -156,9 +163,9 @@ Add:
 ```ts
 // Called once when the module bundle is installed / updated.
 // We'll keep it empty for this quickstart.
-spacetimedb.init((_ctx) => {});
+spacetimedb.init(_ctx => {});
 
-spacetimedb.clientConnected((ctx) => {
+spacetimedb.clientConnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     // Returning user: set online=true, keep identity/name.
@@ -173,13 +180,15 @@ spacetimedb.clientConnected((ctx) => {
   }
 });
 
-spacetimedb.clientDisconnected((ctx) => {
+spacetimedb.clientDisconnected(ctx => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: false });
   } else {
     // Shouldn't happen (disconnect without prior connect)
-    console.warn(`Disconnect event for unknown user with identity ${ctx.sender}`);
+    console.warn(
+      `Disconnect event for unknown user with identity ${ctx.sender}`
+    );
   }
 });
 ```
@@ -249,9 +258,11 @@ Output will resemble:
 
 You can find a complete version of this module in the SpacetimeDB examples. Next, build a client that interacts with your module using your preferred SDK:
 
-* [TypeScript client quickstart](/docs/sdks/typescript/quickstart)
-* [Rust client quickstart](/docs/sdks/rust/quickstart)
-* [C# client quickstart](/docs/sdks/c-sharp/quickstart)
-* Using Unity? Jump to the [Unity Comprehensive Tutorial](/docs/unity/part-1).
+- [TypeScript client quickstart](/sdks/typescript/quickstart)
+- [Rust client quickstart](/sdks/rust/quickstart)
+- [C# client quickstart](/sdks/c-sharp/quickstart)
+
+- Using Unity? Jump to the [Unity Comprehensive Tutorial](/unity/part-1).
+- Using Unreal Engine? Check out the [Unreal Comprehensive Tutorial](/unreal/part-1).
 
 You’ve just set up your first TypeScript module in SpacetimeDB—nice work!
