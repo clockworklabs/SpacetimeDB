@@ -280,7 +280,7 @@ export class {table_handle}<TableName extends string> implements __TableHandle<T
                     });
                     writeln!(out, "}}");
                     if !is_unique {
-                        writeln!(out, "return result");
+                        writeln!(out, "return result;");
                     }
                 });
                 writeln!(out, "}},");
