@@ -70,8 +70,6 @@ public static partial class Module
     public static void ClientConnected(ReducerContext ctx)
     {
         Log.Info($"Connect {ctx.Sender}");
-        Log.Info($"Connection subject {ctx.AuthCtx.Jwt?.Subject}");
-        Log.Info($"Connection identity {ctx.AuthCtx.Jwt?.Identity}");
 
         if (ctx.Db.user.Identity.Find(ctx.Sender) is User user)
         {
