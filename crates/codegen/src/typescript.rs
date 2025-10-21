@@ -257,17 +257,31 @@ export class {table_handle}<TableName extends string> implements __TableHandle<T
                     write!(out, "]");
                     row_values.push(']');
                 }
-                writeln!(out, "): {row_type} | undefined => {{");
+                if is_unique {
+                    writeln!(out, "): {row_type} | undefined => {{");
+                } else {
+                    writeln!(out, "): {row_type}[] => {{");
+                }
                 out.with_indent(|out| {
+                    if !is_unique {
+                        writeln!(out, "const result: {row_type}[] = [];");
+                    }
                     writeln!(out, "for (let row of this.tableCache.iter()) {{");
                     out.with_indent(|out| {
                         writeln!(out, "if (__deepEqual({row_values}, col_vals)) {{");
                         out.with_indent(|out| {
-                            writeln!(out, "return row;");
+                            if is_unique {
+                                writeln!(out, "return row;");
+                            } else {
+                                writeln!(out, "result.push(row);");
+                            }
                         });
                         writeln!(out, "}}");
                     });
                     writeln!(out, "}}");
+                    if !is_unique {
+                        writeln!(out, "return result");
+                    }
                 });
                 writeln!(out, "}},");
             });
