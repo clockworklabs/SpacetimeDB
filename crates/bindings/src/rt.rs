@@ -42,7 +42,7 @@ pub fn invoke_procedure<'a, A: Args<'a>, Ret: IntoProcedureResult>(
     // Or maybe do that within the `Procedure::invoke` method?
     let res = procedure.invoke(&mut ctx, args);
 
-    res.into_result()
+    res.to_result()
 }
 
 /// Marker supertrait for [`Reducer`] and [`Procedure`],
@@ -143,7 +143,7 @@ impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
 )]
 pub trait IntoProcedureResult: SpacetimeType + Serialize {
     #[inline]
-    fn into_result(&self) -> ProcedureResult {
+    fn to_result(&self) -> ProcedureResult {
         bsatn::to_vec(&self).expect("Failed to serialize procedure result")
     }
 }
@@ -611,8 +611,7 @@ extern "C" fn __call_reducer__(
 fn reconstruct_sender_identity(sender_0: u64, sender_1: u64, sender_2: u64, sender_3: u64) -> Identity {
     let sender = [sender_0, sender_1, sender_2, sender_3];
     let sender: [u8; 32] = bytemuck::must_cast(sender);
-    let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
-    sender
+    Identity::from_byte_array(sender) // The LITTLE-ENDIAN constructor.
 }
 
 /// Reconstruct the `conn_id_i` args to [`__call_reducer__`] and [`__call_procedure__`] into a [`ConnectionId`].
@@ -624,8 +623,7 @@ fn reconstruct_connection_id(conn_id_0: u64, conn_id_1: u64) -> Option<Connectio
     let conn_id = [conn_id_0, conn_id_1];
     let conn_id: [u8; 16] = bytemuck::must_cast(conn_id);
     let conn_id = ConnectionId::from_le_byte_array(conn_id); // The LITTLE-ENDIAN constructor.
-    let conn_id = (conn_id != ConnectionId::ZERO).then_some(conn_id);
-    conn_id
+    (conn_id != ConnectionId::ZERO).then_some(conn_id)
 }
 
 /// If `res` is `Err`, write the message to `out` and return non-zero.
