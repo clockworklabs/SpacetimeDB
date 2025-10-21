@@ -80,7 +80,7 @@ jobs:
 
             // Wait for completion
             let conclusion = null;
-            for (let attempt = 0; attempt < 2; attempt++) { // up to ~2 hours
+            for (let attempt = 0; attempt < 240; attempt++) { // up to ~2 hours
               const runResp = await github.rest.actions.getWorkflowRun({
                 owner: targetOwner,
                 repo: targetRepo,
