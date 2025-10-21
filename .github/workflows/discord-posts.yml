@@ -41,7 +41,7 @@ jobs:
           CHECK_RESULT: ${{ env.CHECK_RESULT }}
           MENTION_ON_FAILURE: ${{ secrets.DEV_OPS_ROLE_ID }}
         run: |
-          message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})"
+          message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](<${PR_URL}>)"
           message+=$'\n'
           message+="${CHECK_NAME} result: ${CHECK_RESULT}"
           # Note that anything besides success is treated as a failure (e.g. if the check did not run at all, or if it is still pending).
