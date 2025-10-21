@@ -123,7 +123,7 @@ public static class Module
     public static void RegisterTableDefaultValue(string table, ushort colId, byte[] value) =>
         moduleDef.RegisterTableDefaultValue(table, colId, value);
 
-    private static byte[] Consume(this BytesSource source)
+    public static byte[] Consume(this BytesSource source)
     {
         if (source == BytesSource.INVALID)
         {
