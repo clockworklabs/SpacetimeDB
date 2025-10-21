@@ -36,11 +36,6 @@ rand08 = { workspace = true, optional = true }
 # because no one defined __getrandom_custom
 getrandom02 = { workspace = true, optional = true, features = ["custom"] }
 serde_json.workspace = true
-<<<<<<< HEAD
-once_cell = "1.21.3"
-||||||| bb4321324
-=======
->>>>>>> master
 
 [dev-dependencies]
 insta.workspace = true
