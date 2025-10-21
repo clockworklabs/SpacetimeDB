@@ -9,8 +9,8 @@ use futures::{stream, Sink};
 use futures::{SinkExt, Stream};
 use http::StatusCode;
 use pgwire::api::auth::{
-    finish_authentication, save_startup_parameters_to_metadata, DefaultServerParameterProvider, LoginInfo,
-    StartupHandler,
+    finish_authentication, protocol_negotiation, save_startup_parameters_to_metadata, DefaultServerParameterProvider,
+    LoginInfo, StartupHandler,
 };
 use pgwire::api::portal::Format;
 use pgwire::api::query::SimpleQueryHandler;
@@ -217,6 +217,7 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
     {
         match message {
             PgWireFrontendMessage::Startup(ref startup) => {
+                protocol_negotiation(client, startup).await?;
                 save_startup_parameters_to_metadata(client, startup);
                 client.set_state(PgWireConnectionState::AuthenticationInProgress);
 
