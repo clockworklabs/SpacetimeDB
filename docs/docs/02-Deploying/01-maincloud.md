@@ -3,7 +3,8 @@ title: Maincloud
 slug: /deploying/maincloud
 ---
 
-# Deploy to Maincloud
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 Maincloud is a managed cloud service that provides developers an easy way to deploy their SpacetimeDB apps to the cloud.
 
@@ -39,22 +40,28 @@ With SpacetimeDB Maincloud, you benefit from automatic scaling, robust security,
 
 To connect to your deployed module in your client code, use the host url of `https://maincloud.spacetimedb.com`:
 
-## Rust
+<Tabs groupId="syntax" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```ts
+DbConnection.builder().withUri('https://maincloud.spacetimedb.com');
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
 
 ```rust
 DbConnection::builder()
     .with_uri("https://maincloud.spacetimedb.com")
 ```
 
-## C\#
+</TabItem>
+<TabItem value="csharp" label="C#">
 
 ```csharp
 DbConnection.Builder()
     .WithUri("https://maincloud.spacetimedb.com")
 ```
+</TabItem>
 
-## TypeScript
-
-```ts
-DbConnection.builder().withUri('https://maincloud.spacetimedb.com');
-```
+</Tabs>

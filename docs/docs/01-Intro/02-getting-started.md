@@ -1,8 +1,7 @@
 ---
+title: Getting Started
 slug: /getting-started
 ---
-
-# Getting Started
 
 To develop SpacetimeDB databases locally, you will need to run the Standalone version of the server.
 

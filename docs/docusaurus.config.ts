@@ -51,6 +51,31 @@ const config: Config = {
     locales: ['en'],
   },
 
+  clientModules: [require.resolve('./src/client-modules/fonts')],
+
+  headTags: [
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preload',
+        as: 'font',
+        type: 'font/woff2',
+        href: "/fonts/inter-latin-wght-normal.woff2",
+        crossorigin: 'anonymous',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preload',
+        as: 'font',
+        type: 'font/woff2',
+        href: "/fonts/source-code-pro-latin-wght-normal.woff2",
+        crossorigin: 'anonymous',
+      },
+    },
+  ],
+
   presets: [
     [
       'classic',
