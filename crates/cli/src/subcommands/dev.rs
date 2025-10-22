@@ -1,16 +1,22 @@
 use crate::common_args;
 use crate::config::Config;
 use crate::subcommands::init;
-use crate::util::{detect_module_language, get_login_token_or_log_in, spacetime_reverse_dns, ResponseExt};
+use crate::util::{
+    add_auth_header_opt, database_identity, detect_module_language, get_auth_header, get_login_token_or_log_in,
+    spacetime_reverse_dns, ResponseExt,
+};
 use crate::{publish, tasks};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect};
 use futures::stream::{self, StreamExt};
+use futures::{AsyncBufReadExt, TryStreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Deserialize;
+use std::borrow::Cow;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::time::Duration;
@@ -18,6 +24,8 @@ use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,
 };
+use termcolor::{Color, ColorSpec, WriteColor};
+use tokio::task::JoinHandle;
 
 pub fn cli() -> Command {
     Command::new("dev")
@@ -151,6 +159,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     build_and_publish(&config, &spacetimedb_dir, &database_name, server, use_local).await?;
 
+    let db_identity = database_identity(&config, &database_name, server).await?;
+    let _log_handle = start_log_stream(config.clone(), db_identity.to_hex().to_string(), server).await?;
+
     let (tx, rx) = channel();
     let mut watcher: RecommendedWatcher = Watcher::new(
         move |res: Result<Event, notify::Error>| {
@@ -166,7 +177,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
     )?;
 
-    watcher.watch(&spacetimedb_dir, RecursiveMode::Recursive)?;
+    let src_dir = spacetimedb_dir.join("src");
+    watcher.watch(&src_dir, RecursiveMode::Recursive)?;
 
     println!("{}", "Watching for file changes...".dimmed());
 
@@ -208,13 +220,12 @@ async fn build_and_publish(
 
     println!("{}", "Publishing...".cyan());
 
-    let mut publish_args = vec!["publish", database_name, "--force"];
+    let project_path_str = project_path.to_str().unwrap();
+    let server_arg = server.map(|s| s.to_string());
 
-    let server_arg;
-    if let Some(s) = server {
-        publish_args.push("--server");
-        server_arg = s.to_string();
-        publish_args.push(&server_arg);
+    let mut publish_args = vec!["publish", database_name, "--project-path", project_path_str, "--yes"];
+    if let Some(ref s) = server_arg {
+        publish_args.extend_from_slice(&["--server", s]);
     }
 
     let publish_cmd = publish::cli();
@@ -337,6 +348,162 @@ fn truncate_identity(identity: &str) -> String {
     } else {
         format!("{}...{}", &identity[..8], &identity[identity.len() - 8..])
     }
+}
+
+async fn start_log_stream(
+    mut config: Config,
+    database_identity: String,
+    server: Option<&str>,
+) -> Result<JoinHandle<()>, anyhow::Error> {
+    let server = server.map(|s| s.to_string());
+    let host_url = config.get_host_url(server.as_deref())?;
+    let auth_header = get_auth_header(&mut config, false, server.as_deref(), false).await?;
+
+    let handle = tokio::spawn(async move {
+        loop {
+            if let Err(e) = stream_logs(&host_url, &database_identity, &auth_header).await {
+                eprintln!("\n{} Log streaming error: {}", "Error:".red().bold(), e);
+                eprintln!("{}", "Reconnecting in 10 seconds...".yellow());
+                tokio::time::sleep(Duration::from_secs(10)).await;
+            }
+        }
+    });
+
+    Ok(handle)
+}
+
+async fn stream_logs(
+    host_url: &str,
+    database_identity: &str,
+    auth_header: &crate::util::AuthHeader,
+) -> Result<(), anyhow::Error> {
+    let client = reqwest::Client::new();
+    let builder = client.get(format!("{host_url}/v1/database/{database_identity}/logs"));
+    let builder = add_auth_header_opt(builder, auth_header);
+    let res = builder.query(&[("num_lines", "10"), ("follow", "true")]).send().await?;
+
+    let status = res.status();
+    if status.is_client_error() || status.is_server_error() {
+        let err = res.text().await?;
+        anyhow::bail!(err)
+    }
+
+    let term_color = if std::io::stdout().is_terminal() {
+        termcolor::ColorChoice::Auto
+    } else {
+        termcolor::ColorChoice::Never
+    };
+
+    let mut rdr = res.bytes_stream().map_err(std::io::Error::other).into_async_read();
+    let mut line = String::new();
+    while rdr.read_line(&mut line).await? != 0 {
+        let record = serde_json::from_str::<LogRecord<'_>>(&line)?;
+        let out = termcolor::StandardStream::stdout(term_color);
+        let mut out = out.lock();
+        format_log_record(&mut out, &record)?;
+        drop(out);
+        line.clear();
+    }
+
+    Ok(())
+}
+
+const SENTINEL: &str = "__spacetimedb__";
+
+#[derive(serde::Deserialize)]
+enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+    Panic,
+}
+
+#[serde_with::serde_as]
+#[derive(serde::Deserialize)]
+struct LogRecord<'a> {
+    #[serde_as(as = "Option<serde_with::TimestampMicroSeconds>")]
+    ts: Option<chrono::DateTime<chrono::Utc>>,
+    level: LogLevel,
+    #[serde(borrow)]
+    #[allow(unused)]
+    target: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    filename: Option<Cow<'a, str>>,
+    line_number: Option<u32>,
+    #[serde(borrow)]
+    function: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    message: Cow<'a, str>,
+}
+
+fn format_log_record<W: WriteColor>(out: &mut W, record: &LogRecord<'_>) -> Result<(), std::io::Error> {
+    if let Some(ts) = record.ts {
+        out.set_color(ColorSpec::new().set_dimmed(true))?;
+        write!(out, "{ts:?} ")?;
+    }
+    let mut color = ColorSpec::new();
+    let level = match record.level {
+        LogLevel::Error => {
+            color.set_fg(Some(Color::Red));
+            "ERROR"
+        }
+        LogLevel::Warn => {
+            color.set_fg(Some(Color::Yellow));
+            "WARN"
+        }
+        LogLevel::Info => {
+            color.set_fg(Some(Color::Blue));
+            "INFO"
+        }
+        LogLevel::Debug => {
+            color.set_dimmed(true).set_bold(true);
+            "DEBUG"
+        }
+        LogLevel::Trace => {
+            color.set_dimmed(true);
+            "TRACE"
+        }
+        LogLevel::Panic => {
+            color.set_fg(Some(Color::Red)).set_bold(true).set_intense(true);
+            "PANIC"
+        }
+    };
+    out.set_color(&color)?;
+    write!(out, "{level:>5}: ")?;
+    out.reset()?;
+    let mut need_space_before_filename = false;
+    let mut need_colon_sep = false;
+    let dimmed = ColorSpec::new().set_dimmed(true).clone();
+    if let Some(function) = &record.function {
+        if function.as_ref() != SENTINEL {
+            out.set_color(&dimmed)?;
+            write!(out, "{function}")?;
+            out.reset()?;
+            need_space_before_filename = true;
+            need_colon_sep = true;
+        }
+    }
+    if let Some(filename) = &record.filename {
+        if filename.as_ref() != SENTINEL {
+            out.set_color(&dimmed)?;
+            if need_space_before_filename {
+                write!(out, " ")?;
+            }
+            write!(out, "{filename}")?;
+            if let Some(line) = record.line_number {
+                write!(out, ":{line}")?;
+            }
+            out.reset()?;
+            need_colon_sep = true;
+        }
+    }
+    if need_colon_sep {
+        write!(out, ": ")?;
+    }
+    writeln!(out, "{}", record.message)?;
+    Ok(())
 }
 
 fn generate_database_name() -> String {
