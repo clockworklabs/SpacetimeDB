@@ -917,7 +917,7 @@ impl ClientConnection {
     ) -> Result<(), anyhow::Error> {
         self.module()
             .one_off_query::<JsonFormat>(
-                self.id.identity,
+                self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
                 message_id.to_owned(),
@@ -935,7 +935,7 @@ impl ClientConnection {
     ) -> Result<(), anyhow::Error> {
         self.module()
             .one_off_query::<BsatnFormat>(
-                self.id.identity,
+                self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
                 message_id.to_owned(),
