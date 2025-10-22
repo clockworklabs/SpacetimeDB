@@ -35,7 +35,7 @@ const config: Config = {
   favicon: 'images/favicon.ico',
 
   url: 'https://spacetimedb.com',
-  baseUrl: '/docs',
+  baseUrl: '/docs/',
 
   onBrokenLinks: 'throw',
   onBrokenAnchors: 'throw',
@@ -60,7 +60,7 @@ const config: Config = {
         rel: 'preload',
         as: 'font',
         type: 'font/woff2',
-        href: '/fonts/inter-latin-wght-normal.woff2',
+        href: '/docs/fonts/inter-latin-wght-normal.woff2',
         crossorigin: 'anonymous',
       },
     },
@@ -70,7 +70,7 @@ const config: Config = {
         rel: 'preload',
         as: 'font',
         type: 'font/woff2',
-        href: '/fonts/source-code-pro-latin-wght-normal.woff2',
+        href: '/docs/fonts/source-code-pro-latin-wght-normal.woff2',
         crossorigin: 'anonymous',
       },
     },
