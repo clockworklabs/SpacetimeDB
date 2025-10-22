@@ -154,6 +154,12 @@ const config: Config = {
           label: 'Community',
           position: 'right',
         },
+        {
+          href: 'https://spacetimedb.com/login',
+          label: 'Login',
+          position: 'right',
+          className: 'navbar__button'
+        }
       ],
     },
     footer: {},
