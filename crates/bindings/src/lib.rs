@@ -682,15 +682,33 @@ pub use spacetimedb_bindings_macro::reducer;
 ///
 /// ```no_run
 /// # mod demo {
-/// use spacetimedb::{view, table, AnonymousViewContext, ViewContext};
+/// use spacetimedb::{view, table, AnonymousViewContext, SpacetimeType, ViewContext};
 /// use spacetimedb_lib::Identity;
 ///
 /// #[table(name = player)]
 /// struct Player {
+///     #[auto_inc]
+///     #[primary_key]
+///     id: u64,
+///
 ///     #[unique]
 ///     identity: Identity,
+///
 ///     #[index(btree)]
 ///     level: u32,
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// struct PlayerId {
+///     id: u64,
+/// }
+///
+/// #[table(name = location, index(name = coordinates, btree(columns = [x, y])))]
+/// struct Location {
+///     #[unique]
+///     player_id: u64,
+///     x: u64,
+///     y: u64,
 /// }
 ///
 /// #[view(public)]
@@ -699,8 +717,24 @@ pub use spacetimedb_bindings_macro::reducer;
 /// }
 ///
 /// #[view(public)]
+/// pub fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
+///     ctx.db.player().identity().find(ctx.sender).map(|Player { id, .. }| PlayerId { id })
+/// }
+///
+/// #[view(public)]
 /// pub fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
 ///     ctx.db.player().level().filter(level).collect()
+/// }
+///
+/// #[view(public)]
+/// pub fn players_at_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<Player> {
+///     ctx
+///         .db
+///         .location()
+///         .coordinates()
+///         .filter((x, y))
+///         .filter_map(|location| ctx.db.player().id().find(location.player_id))
+///         .collect()
 /// }
 /// # }
 /// ```
