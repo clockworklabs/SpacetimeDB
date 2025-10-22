@@ -45,64 +45,7 @@ def _parse_quickstart(doc_path: Path, language: str) -> str:
 
 
 def _dotnet_add_package(project_path: Path, package_name: str, source_path: Path):
-    """Add a local NuGet package to a .NET project"""
-    # For ClientSDK, always build from source
-    if package_name == "SpacetimeDB.ClientSDK":
-        sdk_project = source_path / f"{package_name}.csproj"
-        bsatn_runtime_path = (STDB_DIR / "crates/bindings-csharp/BSATN.Runtime").absolute()
-        
-        if sdk_project.exists() and bsatn_runtime_path.exists():
-            # Clean the specific SDK project
-            run_cmd("dotnet", "clean", str(sdk_project), "--configuration", "Release", 
-                   cwd=source_path, capture_stderr=True)
-            
-            # Add BSATN.Runtime local source
-            run_cmd("dotnet", "nuget", "add", "source", str(bsatn_runtime_path), "--name", "bsatn-runtime",
-                   cwd=source_path, capture_stderr=True)
-            
-            # Build BSATN.Runtime first
-            bsatn_csproj = bsatn_runtime_path / "BSATN.Runtime.csproj"
-            if bsatn_csproj.exists():
-                run_cmd("dotnet", "build", str(bsatn_csproj), "--configuration", "Release",
-                       cwd=bsatn_runtime_path, capture_stderr=True)
-            
-            # Restore and build the specific SDK project
-            run_cmd("dotnet", "restore", str(sdk_project), 
-                   cwd=source_path, capture_stderr=True)
-            run_cmd("dotnet", "build", str(sdk_project), "--configuration", "Release", 
-                   f"-p:PackageOutputPath=\"{source_path}\"",
-                   cwd=source_path, capture_stderr=True)
-    
-    # Ensure we have the local package source set up
-    sources = run_cmd("dotnet", "nuget", "list", "source", cwd=project_path, capture_stderr=True)
-    
-    # Add BSATN.Runtime source if it exists
-    bsatn_runtime_path = (STDB_DIR / "crates/bindings-csharp/BSATN.Runtime").absolute()
-    if bsatn_runtime_path.exists():
-        if "bsatn-runtime" not in sources:
-            run_cmd("dotnet", "nuget", "add", "source", str(bsatn_runtime_path), "--name", "bsatn-runtime",
-                   cwd=project_path, capture_stderr=True)
-    
-    # Handle the main package source
-    if package_name in sources:
-        run_cmd("dotnet", "nuget", "remove", "source", package_name, 
-               cwd=project_path, capture_stderr=True)
-    
-    # Add the local package source
-    run_cmd("dotnet", "nuget", "add", "source", str(source_path), "--name", package_name, 
-           cwd=project_path, capture_stderr=True)
-    
-    # Remove the package if it exists to force an update
-    run_cmd("dotnet", "remove", "package", package_name, 
-           cwd=project_path, capture_stderr=True, check=False)
-    
-    # Add the package from the local source with version wildcard to ensure we get the latest
-    run_cmd("dotnet", "add", "package", package_name, "--source", str(source_path), 
-           "--no-restore", "--prerelease", cwd=project_path, capture_stderr=True)
-    
-    # Explicitly restore and build the project to ensure everything is up to date
-    run_cmd("dotnet", "restore", cwd=project_path, capture_stderr=True)
-    run_cmd("dotnet", "build", "--no-restore", cwd=project_path, capture_stderr=True)
+    """Skipping adding a local NuGet package to a .NET project"""
 
 class BaseQuickstart(Smoketest):
     AUTOPUBLISH = False
