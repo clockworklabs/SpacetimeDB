@@ -327,6 +327,15 @@ footer {
     white-space: nowrap;
     text-overflow: ellipsis;
     border-left: 1px solid var(--clockworklabs-color-n5);
+
+    &:has(.menu__link--active) {
+      border-left: 1px solid var(--clockworklabs-color-white);
+    }
+
+    &:has(.menu__link:hover) {
+      border-left: 1px solid var(--clockworklabs-color-white);
+    }
+    
     flex-direction: column;
     padding-left: 15px;
     padding-right: 15px;
