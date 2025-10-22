@@ -5,21 +5,21 @@ use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
-use git2::{Cred, FetchOptions};
 use regex::Regex;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::env;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
-const DEFAULT_TEMPLATES_REPO: &str = "clockworklabs/SpacetimeDB";
-const DEFAULT_TEMPLATES_REFERENCE: &str = env!("GIT_HASH");
-const TEMPLATES_FILE_PATH: &str = "crates/cli/.init-templates.json";
+mod embedded {
+    include!(concat!(env!("OUT_DIR"), "/embedded_templates.rs"));
+}
+
 const TYPESCRIPT_BINDINGS_PACKAGE_JSON: &str = include_str!("../../../bindings-typescript/package.json");
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -163,40 +163,8 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn fetch_templates_list() -> anyhow::Result<(Vec<HighlightDefinition>, Vec<TemplateDefinition>)> {
-    let content = if let Ok(file_path) = env::var("SPACETIMEDB_CLI_TEMPLATES_FILE") {
-        println!("Loading templates list from local file: {}", file_path);
-        std::fs::read_to_string(&file_path)
-            .with_context(|| format!("Failed to read templates file at {}", file_path))?
-    } else {
-        let repo =
-            env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REPO").unwrap_or_else(|_| DEFAULT_TEMPLATES_REPO.to_string());
-        let branch = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REFERENCE")
-            .unwrap_or_else(|_| DEFAULT_TEMPLATES_REFERENCE.to_string());
-
-        let url = format!(
-            "https://raw.githubusercontent.com/{}/{}/{}",
-            repo, branch, TEMPLATES_FILE_PATH
-        );
-
-        let client = reqwest::Client::new();
-        let response = client
-            .get(&url)
-            .send()
-            .await
-            .context("Failed to fetch templates list from GitHub")?;
-
-        if !response.status().is_success() {
-            anyhow::bail!("Failed to fetch templates list: HTTP {}", response.status());
-        }
-
-        response
-            .text()
-            .await
-            .context("Failed to read templates list response")?
-    };
-
-    let templates_list: TemplatesList =
-        serde_json::from_str(&content).context("Failed to parse templates list JSON")?;
+    let content = embedded::get_templates_json();
+    let templates_list: TemplatesList = serde_json::from_str(content).context("Failed to parse templates list JSON")?;
 
     Ok((templates_list.highlights, templates_list.templates))
 }
@@ -361,14 +329,12 @@ fn create_template_config_from_template_str(
 fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) -> anyhow::Result<()> {
     println!(
         "\n{}",
-        "TypeScript server requires dependencies to be installed before publ
-    ishing."
-            .yellow()
+        "TypeScript server requires dependencies to be installed before publishing.".yellow()
     );
 
     let package_manager = if is_interactive {
         let theme = ColorfulTheme::default();
-        let choices = vec!["npm", "pnpm", "yarn", "bun", "other (I'll install manually)"];
+        let choices = vec!["npm", "pnpm", "yarn", "bun", "other"];
         let selection = Select::with_theme(&theme)
             .with_prompt("Which package manager would you like to use?")
             .items(&choices)
@@ -618,66 +584,6 @@ async fn get_template_config_interactive(
     }
 }
 
-fn clone_git_subdirectory(repo_url: &str, subdir: &str, target: &Path, reference: Option<&str>) -> anyhow::Result<()> {
-    let temp_dir = tempfile::tempdir()?;
-    let temp_path = temp_dir.path();
-
-    let reference_display = reference.map(|b| format!(" (reference: {})", b)).unwrap_or_default();
-    println!("  Cloning repository from {}{}...", repo_url, reference_display);
-
-    // Setup callbacks
-    let mut callbacks = git2::RemoteCallbacks::new();
-    callbacks.credentials(|url, username_from_url, allowed_types| {
-        if allowed_types.contains(git2::CredentialType::SSH_KEY) {
-            if let Some(username) = username_from_url {
-                return Cred::ssh_key_from_agent(username);
-            }
-        }
-        if allowed_types.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
-            return Cred::userpass_plaintext("git", "");
-        }
-        if allowed_types.contains(git2::CredentialType::DEFAULT) {
-            return Cred::default();
-        }
-        if url.starts_with("https://") {
-            return Cred::userpass_plaintext("git", "");
-        }
-        Err(git2::Error::from_str("no auth method available"))
-    });
-
-    // Normal full clone
-    let mut fetch_opts = FetchOptions::new();
-    fetch_opts.remote_callbacks(callbacks);
-
-    let mut builder = git2::build::RepoBuilder::new();
-    builder.fetch_options(fetch_opts);
-
-    let repo = builder
-        .clone(repo_url, temp_path)
-        .context("Failed to clone repository")?;
-
-    // Checkout commit if specified
-    if let Some(commit_sha) = reference {
-        let oid = git2::Oid::from_str(commit_sha).context("Invalid commit SHA format")?;
-        let commit = repo
-            .find_commit(oid)
-            .context("Commit not found in repository (may not be reachable from default branch)")?;
-
-        repo.checkout_tree(commit.as_object(), None)
-            .context("Failed to checkout commit tree")?;
-        repo.set_head_detached(oid).context("Failed to detach HEAD")?;
-    }
-
-    //  Copy requested subdir
-    let source_path = temp_path.join(subdir);
-    if !source_path.exists() {
-        anyhow::bail!("Subdirectory '{}' not found in repository", subdir);
-    }
-
-    copy_dir_all(&source_path, target)?;
-    Ok(())
-}
-
 fn clone_github_template(repo_input: &str, target: &Path) -> anyhow::Result<()> {
     let repo_url = if repo_input.starts_with("http") {
         repo_input.to_string()
@@ -852,31 +758,6 @@ fn update_typescript_client_config(client_dir: &Path, module_name: &str, use_loc
     Ok(())
 }
 
-async fn copy_cursorrules(project_path: &Path) -> anyhow::Result<()> {
-    let repo = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REPO").unwrap_or_else(|_| DEFAULT_TEMPLATES_REPO.to_string());
-    let branch = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REFERENCE")
-        .unwrap_or_else(|_| DEFAULT_TEMPLATES_REFERENCE.to_string());
-
-    let url = format!(
-        "https://raw.githubusercontent.com/{}/{}/docs/.cursor/rules/spacetimedb.md",
-        repo, branch
-    );
-
-    let client = reqwest::Client::new();
-    match client.get(&url).send().await {
-        Ok(response) if response.status().is_success() => {
-            let content = response.text().await?;
-            let cursorrules_path = project_path.join(".cursorrules");
-            fs::write(cursorrules_path, content)?;
-        }
-        _ => {
-            // Silently skip if file doesn't exist or can't be fetched
-        }
-    }
-
-    Ok(())
-}
-
 pub async fn init_from_template(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
     println!("{}", "Initializing project from template...".cyan());
 
@@ -886,8 +767,10 @@ pub async fn init_from_template(config: &TemplateConfig, project_path: &Path) ->
         TemplateType::Empty => init_empty(config, project_path)?,
     }
 
-    // Copy .cursorrules file from the repository
-    copy_cursorrules(project_path).await?;
+    if let Some(cursorrules_content) = embedded::get_cursorrules() {
+        let cursorrules_path = project_path.join(".cursorrules");
+        fs::write(cursorrules_path, cursorrules_content)?;
+    }
 
     println!("{}", "Project initialized successfully!".green());
     print_next_steps(config, project_path)?;
@@ -901,27 +784,18 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Template definition missing"))?;
 
-    // Use the same branch as the templates list if specified
-    let branch = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REFERENCE").ok().or_else(|| {
-        if env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REPO").is_ok() {
-            None
-        } else {
-            Some(DEFAULT_TEMPLATES_REFERENCE.to_string())
-        }
-    });
+    let template_files = embedded::get_template_files();
 
     println!(
         "Setting up client ({})...",
         config.client_lang.map(|l| l.as_str()).unwrap_or("none")
     );
     let client_source = &template_def.client_source;
-    let (repo, subdir) = parse_repo_source(client_source);
-    clone_git_subdirectory(
-        &format!("https://github.com/{}", repo),
-        subdir,
-        project_path,
-        branch.as_deref(),
-    )?;
+    if let Some(files) = template_files.get(client_source.as_str()) {
+        copy_embedded_files(files, project_path)?;
+    } else {
+        anyhow::bail!("Client template not found: {}", client_source);
+    }
 
     println!(
         "Setting up server ({})...",
@@ -929,13 +803,11 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
     );
     let server_dir = project_path.join("spacetimedb");
     let server_source = &template_def.server_source;
-    let (repo, subdir) = parse_repo_source(server_source);
-    clone_git_subdirectory(
-        &format!("https://github.com/{}", repo),
-        subdir,
-        &server_dir,
-        branch.as_deref(),
-    )?;
+    if let Some(files) = template_files.get(server_source.as_str()) {
+        copy_embedded_files(files, &server_dir)?;
+    } else {
+        anyhow::bail!("Server template not found: {}", server_source);
+    }
 
     match config.client_lang {
         Some(ClientLanguage::TypeScript) => {
@@ -956,14 +828,15 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
     Ok(())
 }
 
-fn parse_repo_source(source: &str) -> (String, &str) {
-    let parts: Vec<&str> = source.splitn(3, '/').collect();
-    if parts.len() >= 3 {
-        let repo = format!("{}/{}", parts[0], parts[1]);
-        let subdir = parts[2];
-        return (repo, subdir);
+fn copy_embedded_files(files: &HashMap<&str, &str>, target_dir: &Path) -> anyhow::Result<()> {
+    for (file_path, content) in files {
+        let full_path = target_dir.join(file_path);
+        if let Some(parent) = full_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&full_path, content)?;
     }
-    (source.to_string(), "")
+    Ok(())
 }
 
 fn init_github_template(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
@@ -1008,27 +881,11 @@ fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()
         Some(ClientLanguage::TypeScript) => {
             println!("Setting up TypeScript client...");
             let client_dir = project_path.join("client");
-
-            let branch = env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REFERENCE").ok().or_else(|| {
-                if env::var("SPACETIMEDB_CLI_TEMPLATES_LIST_REPO").is_ok() {
-                    None
-                } else {
-                    Some(DEFAULT_TEMPLATES_REFERENCE.to_string())
-                }
-            });
-
-            clone_git_subdirectory(
-                "https://github.com/clockworklabs/SpacetimeDB",
-                "crates/bindings-typescript/examples/empty",
-                &client_dir,
-                branch.as_deref(),
-            )?;
+            init_empty_typescript_client(&client_dir)?;
 
             update_client_package_json(&client_dir, &config.project_name)?;
 
             if config.server_lang.is_some() {
-                // Create package.json with boilerplate for working with the server (like
-                // `spacetime publish`
                 create_root_package_json(project_path, &config.project_name, config.use_local)?;
             }
 
@@ -1338,6 +1195,43 @@ pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
 
     for data_file in export_files {
         let path = project_path.join(data_file.1);
+        create_directory(path.parent().unwrap())?;
+        std::fs::write(path, data_file.0)?;
+    }
+
+    Ok(())
+}
+
+fn init_empty_typescript_client(client_dir: &Path) -> anyhow::Result<()> {
+    let export_files = vec![
+        (
+            include_str!("../../../bindings-typescript/examples/empty/.gitignore"),
+            ".gitignore",
+        ),
+        (
+            include_str!("../../../bindings-typescript/examples/empty/index.html"),
+            "index.html",
+        ),
+        (
+            include_str!("../../../bindings-typescript/examples/empty/package.json"),
+            "package.json",
+        ),
+        (
+            include_str!("../../../bindings-typescript/examples/empty/src/main.ts"),
+            "src/main.ts",
+        ),
+        (
+            include_str!("../../../bindings-typescript/examples/empty/tsconfig.json"),
+            "tsconfig.json",
+        ),
+        (
+            include_str!("../../../bindings-typescript/examples/empty/vite.config.ts"),
+            "vite.config.ts",
+        ),
+    ];
+
+    for data_file in export_files {
+        let path = client_dir.join(data_file.1);
         create_directory(path.parent().unwrap())?;
         std::fs::write(path, data_file.0)?;
     }
