@@ -154,12 +154,6 @@ impl_serialize!([] ProductValue, (self, ser) => {
     }
     tup.end()
 });
-impl_serialize!([U: Serialize, V: Serialize] (U, V), (self, ser) => {
-    let mut tup = ser.serialize_seq_product(2)?;
-    tup.serialize_element(&self.0)?;
-    tup.serialize_element(&self.1)?;
-    tup.end()
-});
 impl_serialize!([] SumValue, (self, ser) => ser.serialize_variant(self.tag, None, &*self.value));
 impl_serialize!([] ArrayValue, (self, ser) => match self {
     Self::Sum(v) => v.serialize(ser),
