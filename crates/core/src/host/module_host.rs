@@ -321,7 +321,9 @@ impl ReducersMap {
 /// A runtime that can create modules.
 pub trait ModuleRuntime {
     /// Creates a module based on the context `mcc`.
-    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<Module>;
+    ///
+    /// Also returns the initial instance for the module.
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<(Module, Instance)>;
 }
 
 pub enum Module {
@@ -357,10 +359,10 @@ impl Module {
             Module::Js(module) => module.info(),
         }
     }
-    fn create_instance(&self) -> Instance {
+    async fn create_instance(&self) -> Instance {
         match self {
             Module::Wasm(module) => Instance::Wasm(Box::new(module.create_instance())),
-            Module::Js(module) => Instance::Js(Box::new(module.create_instance())),
+            Module::Js(module) => Instance::Js(Box::new(module.create_instance().await)),
         }
     }
     fn host_type(&self) -> HostType {
@@ -554,7 +556,7 @@ impl CreateInstanceTimeMetric {
 }
 
 impl ModuleInstanceManager {
-    fn new(module: Arc<Module>, database_identity: Identity) -> Self {
+    fn new(module: Arc<Module>, init_inst: Instance, database_identity: Identity) -> Self {
         let host_type = module.host_type();
         let create_instance_time_metric = CreateInstanceTimeMetric {
             metric: WORKER_METRICS
@@ -563,19 +565,24 @@ impl ModuleInstanceManager {
             host_type,
             database_identity,
         };
+
+        // Add the first instance.
+        let mut instances = VecDeque::new();
+        instances.push_front(init_inst);
+
         Self {
-            instances: Default::default(),
+            instances,
             module,
             create_instance_time_metric,
         }
     }
-    fn get_instance(&mut self) -> Instance {
+    async fn get_instance(&mut self) -> Instance {
         if let Some(inst) = self.instances.pop_back() {
             inst
         } else {
             let start_time = std::time::Instant::now();
             // TODO: should we be calling `create_instance` on the `SingleCoreExecutor` rather than the calling thread?
-            let res = self.module.create_instance();
+            let res = self.module.create_instance().await;
             let elapsed_time = start_time.elapsed();
             self.create_instance_time_metric.observe(elapsed_time);
             res
@@ -690,6 +697,7 @@ pub enum ClientConnectedError {
 impl ModuleHost {
     pub(super) fn new(
         module: Module,
+        init_inst: Instance,
         on_panic: impl Fn() + Send + Sync + 'static,
         executor: SingleCoreExecutor,
         database_identity: Identity,
@@ -700,7 +708,8 @@ impl ModuleHost {
 
         let module_clone = module.clone();
 
-        let instance_manager = Arc::new(Mutex::new(ModuleInstanceManager::new(module_clone, database_identity)));
+        let instance_manager = ModuleInstanceManager::new(module_clone, init_inst, database_identity);
+        let instance_manager = Arc::new(Mutex::new(instance_manager));
 
         ModuleHost {
             info,
@@ -807,7 +816,7 @@ impl ModuleHost {
             (self.on_panic)();
         });
 
-        let mut instance = self.instance_manager.lock().await.get_instance();
+        let mut instance = self.instance_manager.lock().await.get_instance().await;
 
         let (res, instance) = self
             .executor
