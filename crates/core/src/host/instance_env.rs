@@ -7,8 +7,9 @@ use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_lib::{Identity, Timestamp};
+use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -185,6 +186,11 @@ impl InstanceEnv {
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         self.tx.get()
+    }
+
+    pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
+        let tx = &mut *self.get_tx()?;
+        Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]

@@ -66,6 +66,48 @@ export type DbView<SchemaDef extends UntypedSchemaDef> = {
 };
 
 /**
+ * Authentication information for the caller of a reducer.
+ */
+export type AuthCtx = Readonly<{
+  /** Whether the caller is an internal system process. */
+  isInternal: boolean;
+  /** Whether the caller has authenticated with a JWT token. */
+  hasJWT: boolean;
+  /** The JWT claims associated with the caller, or null if hasJWT == false. */
+  jwt: JwtClaims | null;
+}>;
+
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | Array<JsonValue>
+  | JsonObject;
+
+export interface JsonObject {
+  [key: string]: JsonValue;
+}
+
+/**
+ * Auth Claims extracted from the payload of a JWT token
+ */
+export interface JwtClaims {
+  /** The full payload as a JSON string */
+  readonly rawPayload: string;
+  /** The subject of the JWT token ('sub') */
+  readonly subject: string;
+  /** The issuer of the JWT token ('iss') */
+  readonly issuer: string;
+  /** The audience of the JWT token ('aud') */
+  readonly audience: readonly string[];
+  /** The identity associated with the JWT token, which is based on the sub and iss */
+  readonly identity: Identity;
+  /** The full payload as a JsonObject */
+  readonly fullPayload: JsonObject;
+}
+
+/**
  * Reducer context parametrized by the inferred Schema
  */
 export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
@@ -74,6 +116,7 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  authCtx: AuthCtx;
 }>;
 
 /**
