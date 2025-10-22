@@ -1,4 +1,4 @@
-from .. import Smoketest
+from .. import Smoketest, random_string
 
 
 class Views(Smoketest):
@@ -48,3 +48,30 @@ pub fn player(ctx: &ViewContext, id: u64) -> Option<PlayerState> {
  4096    | 0       | "id"     | 0x0d
  4096    | 1       | "level"  | 0x0d
 """)
+
+class FailPublish(Smoketest):
+    AUTOPUBLISH = False
+
+    MODULE_CODE_BROKEN = """
+use spacetimedb::ViewContext;
+
+#[spacetimedb::table(name = person, public)]
+pub struct Person {
+    name: String,
+}
+
+#[spacetimedb::view(public)]
+pub fn person(ctx: &ViewContext) -> Option<Person> {
+    None
+}
+"""
+
+    def test_fail_publish(self):
+        """This tests server side view validation on publish"""
+
+        name = random_string()
+
+        self.write_module_code(self.MODULE_CODE_BROKEN)
+
+        with self.assertRaises(Exception):
+            self.publish_module(name)
