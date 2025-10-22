@@ -32,7 +32,7 @@ shikiTheme.colors!['editor.background'] =
 const config: Config = {
   title: 'SpacetimeDB docs',
   tagline: 'SpacetimeDB',
-  favicon: 'images/favicon.ico',
+  favicon: 'https://spacetimedb.com/favicon-32x32.png',
 
   url: 'https://spacetimedb.com',
   baseUrl: '/docs/',
