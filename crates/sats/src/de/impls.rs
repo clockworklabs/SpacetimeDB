@@ -178,36 +178,6 @@ impl_deserialize!([T: Deserialize<'de>] Box<[T]>, de => Vec::deserialize(de).map
 impl_deserialize!([T: Deserialize<'de>] Rc<[T]>, de => Vec::deserialize(de).map(|s| s.into()));
 impl_deserialize!([T: Deserialize<'de>] Arc<[T]>, de => Vec::deserialize(de).map(|s| s.into()));
 
-impl_deserialize!([U: Deserialize<'de>, V: Deserialize<'de>] (U, V), de => de.deserialize_product(TupleVisitor::<U, V> {u: PhantomData::<U>, v: PhantomData::<V>}));
-
-struct TupleVisitor<U, V> {
-    u: PhantomData<U>,
-    v: PhantomData<V>,
-}
-
-impl<'de, U: Deserialize<'de>, V: Deserialize<'de>> ProductVisitor<'de> for TupleVisitor<U, V> {
-    type Output = (U, V);
-
-    fn product_name(&self) -> Option<&str> {
-        None
-    }
-
-    fn product_len(&self) -> usize {
-        2
-    }
-
-    fn visit_seq_product<A: SeqProductAccess<'de>>(self, mut tup: A) -> Result<Self::Output, A::Error> {
-        Ok((
-            tup.next_element().transpose().unwrap_or(Err(Error::missing_field(0, None, &self)))?,
-            tup.next_element().transpose().unwrap_or(Err(Error::missing_field(1, None, &self)))?,
-        ))
-    }
-
-    fn visit_named_product<A: super::NamedProductAccess<'de>>(self, _tup: A) -> Result<Self::Output, A::Error> {
-        Err(Error::custom("Unnamed tuple"))
-    }
-}
-
 /// The visitor converts the slice to its owned version.
 struct OwnedSliceVisitor;
 
