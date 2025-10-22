@@ -1334,12 +1334,12 @@ fn console_timer_end<'scope>(
 fn get_jwt_payload(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<Vec<u8>> {
     let connection_id: u128 = deserialize_js(scope, args.get(0))?;
     let connection_id = ConnectionId::from_u128(connection_id);
-    let env: &mut JsInstanceEnv = env_on_isolate(scope);
-    let maybe_payload = env.instance_env.get_jwt_payload(connection_id)?;
-    match maybe_payload {
-        Some(s) => Ok(s.into_bytes()),
-        None => Ok(vec![]),
-    }
+    let payload = get_env(scope)?
+        .instance_env
+        .get_jwt_payload(connection_id)?
+        .map(String::into_bytes)
+        .unwrap_or_default();
+    Ok(payload)
 }
 
 /// Module ABI that returns the module identity.
