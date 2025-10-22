@@ -126,6 +126,7 @@ const config: Config = {
         alt: 'SpacetimeDB Logo',
         src: 'https://spacetimedb.com/images/brand.png',
         href: 'https://spacetimedb.com',
+        target: '_self',
       },
       hideOnScroll: false,
       items: [
