@@ -318,7 +318,7 @@ pub(super) fn call_call_reducer<'scope>(
     let reducer_id = serialize_to_js(scope, &reducer_id)?;
     let sender = serialize_to_js(scope, &sender.to_u256())?;
     let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
-    let timestamp = serialize_to_js(scope, &timestamp)?;
+    let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
     let reducer_args = serialize_to_js(scope, reducer_args.get_bsatn())?;
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
