@@ -142,14 +142,14 @@
   --ifm-background-color: var(--clockworklabs-color-n8);
   --ifm-color-content: var(--clockworklabs-color-n3);
   --ifm-toc-border-color: rgb(var(--clockworklabs-color-white-rgb) / 11%);
-  --ifm-toc-link-color: var(--clockworklabs-color-n3);
+  --ifm-toc-link-color: var(--clockworklabs-color-n4);
   --ifm-code-background: var(--clockworklabs-code-background-color);
   --ifm-code-padding-horizontal: 0.125rem;
   --ifm-code-padding-vertical: 0.25rem;
   --ifm-hr-background-color: rgb(var(--clockworklabs-color-white-rgb) / 11%);
-  --ifm-blockquote-color: var(--clockworklabs-color-n3);
+  --ifm-blockquote-color: var(--clockworklabs-color-n4);
   --ifm-menu-color: var(--clockworklabs-color-n3);
-  --ifm-menu-link-sublist-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 24 24"><path fill="rgb(182, 192, 207, 0.5)" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"></path></svg>');
+  --ifm-menu-link-sublist-icon: none;
   --ifm-breadcrumb-separator: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><path fill="rgb(182, 192, 207)" d="M79.093 0 48.907 30.187 146.72 128l-97.813 97.813L79.093 256l128-128z"/></svg>');
   --ifm-alert-background-color-highlight: var(--clockworklabs-color-red-2);
   --ifm-alert-foreground-color: var(--clockworklabs-color-white);
@@ -347,7 +347,7 @@ footer {
   }
 
   .menu__link--active {
-    color: var(--clockworklabs-color-white);
+    color: var(--clockworklabs-color-n3);
   }
 
   .theme-doc-sidebar-item-link {
@@ -364,9 +364,9 @@ footer {
     }
     
     flex-direction: column;
-    padding-left: 15px;
-    padding-right: 15px;
-    font-size: 15px;
+    padding-left: 4px;
+    padding-right: 16px;
+    font-size: var(--15px);
     font-variant: normal;
     text-decoration: none;
     display: flex;
