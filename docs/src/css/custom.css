@@ -156,6 +156,9 @@
   --ifm-alert-border-color: var(--clockworklabs-color-orange);
   --ifm-background-surface-color: var(--clockworklabs-code-background-color);
 
+  --ifm-navbar-link-color: var(--clockworklabs-color-n4);
+  --ifm-navbar-link-hover-color: var(--clockworklabs-color-white);
+
   --ifm-leading: 16px;
 
   --ifm-tabs-padding-horizontal: 16px;
@@ -295,12 +298,18 @@ footer {
 .navbar {
   background-color: var(--ifm-background-color);
   border-bottom: 1px solid var(--clockworklabs-navbar-border-color);
+  color: var(--clockworklabs-color-n4);
   font-family: var(--clockworklabs-font-source);
   font-size: var(--14px);
   line-height: var(--16px);
   letter-spacing: calc(var(--14px) * 0.08);
   text-transform: uppercase;
+  height: 64px;
   font-weight: 600;
+}
+
+.navbar__logo {
+  height: 48px;
 }
 
 .theme-doc-sidebar-item-category-level-1 {
