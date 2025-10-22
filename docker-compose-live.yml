@@ -4,6 +4,8 @@ services:
   node:
     working_dir: /usr/src/app
     image: registry.digitalocean.com/clockwork/spacetimedb${REGISTRY_SUFFIX}:latest
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - /stdb
       - key_files:/etc/spacetimedb
