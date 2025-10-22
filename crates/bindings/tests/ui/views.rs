@@ -132,4 +132,21 @@ fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<Not
     None
 }
 
+/// Cannot use a view as a scheduled function
+#[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
+struct ScheduledTable {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: spacetimedb::ScheduleAt,
+    x: u8,
+    y: u8,
+}
+
+/// Cannot use a view as a scheduled function
+#[view(public)]
+fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
+    vec![]
+}
+
 fn main() {}
