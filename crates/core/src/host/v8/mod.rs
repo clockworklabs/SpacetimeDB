@@ -17,6 +17,7 @@ use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ReducerCallResult, Scheduler};
 use crate::module_host_context::{ModuleCreationContext, ModuleCreationContextLimited};
 use crate::replica_context::ReplicaContext;
+use crate::util::asyncify;
 use core::str;
 use itertools::Either;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
@@ -127,10 +128,17 @@ impl JsModule {
         self.common.info().clone()
     }
 
-    pub fn create_instance(&self) -> JsInstance {
-        let (_, instance) = spawn_instance_worker(self.program.clone(), Either::Left(self.common.clone()))
-            .expect("`spawn_instance_worker` should succeed when passed `ModuleCommon`");
-        instance
+    pub async fn create_instance(&self) -> JsInstance {
+        let program = self.program.clone();
+        let common = self.common.clone();
+
+        asyncify(move || {
+            // This has to be done in a blocking context because of `blocking_recv`.
+            let (_, instance) = spawn_instance_worker(program, Either::Left(common))
+                .expect("`spawn_instance_worker` should succeed when passed `ModuleCommon`");
+            instance
+        })
+        .await
     }
 }
 

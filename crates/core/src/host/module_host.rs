@@ -359,10 +359,10 @@ impl Module {
             Module::Js(module) => module.info(),
         }
     }
-    fn create_instance(&self) -> Instance {
+    async fn create_instance(&self) -> Instance {
         match self {
             Module::Wasm(module) => Instance::Wasm(Box::new(module.create_instance())),
-            Module::Js(module) => Instance::Js(Box::new(module.create_instance())),
+            Module::Js(module) => Instance::Js(Box::new(module.create_instance().await)),
         }
     }
     fn host_type(&self) -> HostType {
@@ -576,13 +576,13 @@ impl ModuleInstanceManager {
             create_instance_time_metric,
         }
     }
-    fn get_instance(&mut self) -> Instance {
+    async fn get_instance(&mut self) -> Instance {
         if let Some(inst) = self.instances.pop_back() {
             inst
         } else {
             let start_time = std::time::Instant::now();
             // TODO: should we be calling `create_instance` on the `SingleCoreExecutor` rather than the calling thread?
-            let res = self.module.create_instance();
+            let res = self.module.create_instance().await;
             let elapsed_time = start_time.elapsed();
             self.create_instance_time_metric.observe(elapsed_time);
             res
@@ -816,7 +816,7 @@ impl ModuleHost {
             (self.on_panic)();
         });
 
-        let mut instance = self.instance_manager.lock().await.get_instance();
+        let mut instance = self.instance_manager.lock().await.get_instance().await;
 
         let (res, instance) = self
             .executor
