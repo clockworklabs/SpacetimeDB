@@ -762,7 +762,7 @@ pub use spacetimedb_bindings_macro::reducer;
 ///
 /// // An example of a join that combines fields from two different tables
 /// #[view(public)]
-/// fn players_with_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<Player> {
+/// fn players_with_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<PlayerAndLocation> {
 ///     ctx
 ///         .db
 ///         .location()
