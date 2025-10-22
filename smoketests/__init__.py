@@ -14,6 +14,7 @@ import unittest
 import logging
 import http.client
 import tomllib
+import functools
 
 # miscellaneous file paths
 TEST_DIR = Path(__file__).parent
@@ -28,6 +29,7 @@ TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/templates/basic-rust/server/src/li
 TEMPLATE_CARGO_TOML = open(STDB_DIR / "crates/cli/templates/basic-rust/server/Cargo.toml").read()
 bindings_path = (STDB_DIR / "crates/bindings").absolute()
 escaped_bindings_path = str(bindings_path).replace('\\', '\\\\\\\\') # double escape for re.sub + toml
+TYPESCRIPT_BINDINGS_PATH = (STDB_DIR / "crates/bindings-typescript").absolute()
 TEMPLATE_CARGO_TOML = (re.compile(r"^spacetimedb\s*=.*$", re.M) \
     .sub(f'spacetimedb = {{ path = "{escaped_bindings_path}", features = {{features}} }}', TEMPLATE_CARGO_TOML))
 
@@ -169,6 +171,11 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
             output.args[0] = cmd_name
         output.check_returncode()
     return output if full_output else output.stdout
+
+@functools.cache
+def build_typescript_sdk():
+    run_cmd("pnpm", "install", cwd=TYPESCRIPT_BINDINGS_PATH)
+    run_cmd("pnpm", "build", cwd=TYPESCRIPT_BINDINGS_PATH)
 
 def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)
