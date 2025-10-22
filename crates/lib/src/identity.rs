@@ -17,11 +17,11 @@ pub enum SqlPermission {
     BypassRLS,
 }
 
-pub trait ExternalAuthCtx {
+pub trait SqlAuthorization {
     fn has_sql_permission(&self, p: SqlPermission) -> bool;
 }
 
-impl<T: Fn(SqlPermission) -> bool> ExternalAuthCtx for T {
+impl<T: Fn(SqlPermission) -> bool> SqlAuthorization for T {
     fn has_sql_permission(&self, p: SqlPermission) -> bool {
         self(p)
     }
@@ -29,32 +29,29 @@ impl<T: Fn(SqlPermission) -> bool> ExternalAuthCtx for T {
 
 /// Authorization for SQL operations (queries, DML, subscription queries).
 #[derive(Clone)]
-pub enum AuthCtx {
-    Simple {
-        owner: Identity,
-        caller: Identity,
-    },
-    External {
-        caller: Identity,
-        permissions: Arc<dyn ExternalAuthCtx + Send + Sync + 'static>,
-    },
+pub struct AuthCtx {
+    caller: Identity,
+    permissions: Arc<dyn SqlAuthorization + Send + Sync + 'static>,
 }
 
 impl AuthCtx {
     pub fn new(owner: Identity, caller: Identity) -> Self {
-        Self::Simple { owner, caller }
+        let is_owner = owner == caller;
+        let permissions = Arc::new(move |_| is_owner);
+        Self::with_permissions(caller, permissions)
+    }
+
+    pub fn with_permissions(caller: Identity, permissions: Arc<dyn SqlAuthorization + Send + Sync + 'static>) -> Self {
+        Self { caller, permissions }
     }
 
     /// For when the owner == caller
     pub fn for_current(owner: Identity) -> Self {
-        Self::Simple { owner, caller: owner }
+        Self::new(owner, owner)
     }
 
     pub fn has_permission(&self, p: SqlPermission) -> bool {
-        match self {
-            Self::Simple { owner, caller } => owner == caller,
-            Self::External { permissions, .. } => permissions.has_sql_permission(p),
-        }
+        self.permissions.has_sql_permission(p)
     }
 
     pub fn has_read_access(&self, table_access: StAccess) -> bool {
@@ -74,17 +71,12 @@ impl AuthCtx {
     }
 
     pub fn caller(&self) -> Identity {
-        match self {
-            Self::Simple { caller, .. } | Self::External { caller, .. } => *caller,
-        }
+        self.caller
     }
 
     /// WARNING: Use this only for simple test were the `auth` don't matter
     pub fn for_testing() -> Self {
-        Self::Simple {
-            owner: Identity::__dummy(),
-            caller: Identity::__dummy(),
-        }
+        Self::new(Identity::__dummy(), Identity::__dummy())
     }
 }
 

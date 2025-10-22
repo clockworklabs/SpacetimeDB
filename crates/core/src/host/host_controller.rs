@@ -542,12 +542,7 @@ async fn make_replica_ctx(
         send_worker_queue.clone(),
     )));
     let downgraded = Arc::downgrade(&subscriptions);
-    let subscriptions = ModuleSubscriptions::new(
-        relational_db.clone(),
-        subscriptions,
-        send_worker_queue,
-        database.owner_identity,
-    );
+    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, send_worker_queue);
 
     // If an error occurs when evaluating a subscription,
     // we mark each client that was affected,

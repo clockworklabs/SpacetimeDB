@@ -468,10 +468,7 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
             .get_database_by_identity(&database)?
             .with_context(|| format!("database {database} not found"))?;
 
-        Ok(AuthCtx::Simple {
-            owner: database.owner_identity,
-            caller: subject,
-        })
+        Ok(AuthCtx::new(database.owner_identity, subject))
     }
 }
 

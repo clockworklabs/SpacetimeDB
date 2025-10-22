@@ -309,20 +309,27 @@ class PrivateTables(PermissionsTest):
 
         for role_and_token in team.items():
             rows = self.sql_as(role_and_token, parent, "select * from person")
-            self.assertEqual(rows, [
-                { "name": '"horsti"' }
-            ])
+            self.assertEqual(rows, [{ "name": '"horsti"' }])
 
         for role_and_token in team.items():
             sub = self.subscribe_as(role_and_token, "select * from person", n = 2)
             self.sql_as(owner, parent, "insert into person (name) values ('hansmans')")
             self.sql_as(owner, parent, "delete from person where name = 'hansmans'")
+            res = sub()
             self.assertEqual(
-                sub(),
-                [{
-                    'person': {
-                        'deletes': [{'name': 'hansmans'}],
-                        'inserts': [{'name': 'hansmans'}]
+                res,
+                [
+                    {
+                        'person': {
+                            'deletes': [],
+                            'inserts': [{'name': 'hansmans'}]
+                        }
+                    },
+                    {
+                        'person': {
+                            'deletes': [{'name': 'hansmans'}],
+                            'inserts': []
+                        }
                     }
-                }]
+                ],
             )

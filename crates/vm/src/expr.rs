@@ -2111,7 +2111,7 @@ impl From<Code> for CodeResult {
 mod tests {
     use super::*;
 
-    use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
+    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, Identity};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_schema::{def::ModuleDef, relation::Column, schema::Schema};
     use typed_arena::Arena;
