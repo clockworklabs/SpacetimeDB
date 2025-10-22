@@ -698,6 +698,17 @@ pub use spacetimedb_bindings_macro::reducer;
 ///     level: u32,
 /// }
 ///
+/// impl Player {
+///     fn merge(self, location: Location) -> PlayerAndLocation {
+///         PlayerAndLocation {
+///             player_id: self.id,
+///             level: self.level,
+///             x: location.x,
+///             y: location.y,
+///         }
+///     }
+/// }
+///
 /// #[derive(SpacetimeType)]
 /// struct PlayerId {
 ///     id: u64,
@@ -711,29 +722,59 @@ pub use spacetimedb_bindings_macro::reducer;
 ///     y: u64,
 /// }
 ///
+/// #[derive(SpacetimeType)]
+/// struct PlayerAndLocation {
+///     player_id: u64,
+///     level: u32,
+///     x: u64,
+///     y: u64,
+/// }
+///
+/// // A view that selects at most one row from a table
 /// #[view(public)]
-/// pub fn my_player(ctx: &ViewContext) -> Option<Player> {
+/// fn my_player(ctx: &ViewContext) -> Option<Player> {
 ///     ctx.db.player().identity().find(ctx.sender)
 /// }
 ///
+/// // An example of column projection
 /// #[view(public)]
-/// pub fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
+/// fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
 ///     ctx.db.player().identity().find(ctx.sender).map(|Player { id, .. }| PlayerId { id })
 /// }
 ///
+/// // An example of a parameterized view
 /// #[view(public)]
-/// pub fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
+/// fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
 ///     ctx.db.player().level().filter(level).collect()
 /// }
 ///
+/// // An example that is analogous to a semijoin in sql
 /// #[view(public)]
-/// pub fn players_at_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<Player> {
+/// fn players_at_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<Player> {
 ///     ctx
 ///         .db
 ///         .location()
 ///         .coordinates()
 ///         .filter((x, y))
 ///         .filter_map(|location| ctx.db.player().id().find(location.player_id))
+///         .collect()
+/// }
+///
+/// // An example of a join that combines fields from two different tables
+/// #[view(public)]
+/// fn players_with_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<Player> {
+///     ctx
+///         .db
+///         .location()
+///         .coordinates()
+///         .filter((x, y))
+///         .filter_map(|location| ctx
+///             .db
+///             .player()
+///             .id()
+///             .find(location.player_id)
+///             .map(|player| player.merge(location))
+///         )
 ///         .collect()
 /// }
 /// # }
