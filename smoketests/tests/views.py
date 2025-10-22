@@ -52,7 +52,7 @@ pub fn player(ctx: &ViewContext, id: u64) -> Option<PlayerState> {
 class FailPublish(Smoketest):
     AUTOPUBLISH = False
 
-    MODULE_CODE_BROKEN = """
+    MODULE_CODE_BROKEN_NAMESPACE = """
 use spacetimedb::ViewContext;
 
 #[spacetimedb::table(name = person, public)]
@@ -66,12 +66,38 @@ pub fn person(ctx: &ViewContext) -> Option<Person> {
 }
 """
 
-    def test_fail_publish(self):
-        """This tests server side view validation on publish"""
+    MODULE_CODE_BROKEN_RETURN_TYPE = """
+use spacetimedb::{SpacetimeType, ViewContext};
+
+#[derive(SpacetimeType)]
+pub enum ABC {
+    A,
+    B,
+    C,
+}
+
+#[spacetimedb::view(public)]
+pub fn person(ctx: &ViewContext) -> Option<ABC> {
+    None
+}
+"""
+
+    def test_fail_publish_namespace_collision(self):
+        """Publishing a module should fail if a table and view have the same name"""
 
         name = random_string()
 
-        self.write_module_code(self.MODULE_CODE_BROKEN)
+        self.write_module_code(self.MODULE_CODE_BROKEN_NAMESPACE)
+
+        with self.assertRaises(Exception):
+            self.publish_module(name)
+
+    def test_fail_publish_wrong_return_type(self):
+        """Publishing a module should fail if the inner return type is not a product type"""
+
+        name = random_string()
+
+        self.write_module_code(self.MODULE_CODE_BROKEN_RETURN_TYPE)
 
         with self.assertRaises(Exception):
             self.publish_module(name)
