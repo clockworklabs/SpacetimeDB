@@ -3,8 +3,6 @@ title: 1 - Setup
 slug: /unity/part-1
 ---
 
-# Unity Tutorial - Part 1 - Setup
-
 ![Unity Tutorial Hero Image](/images/unity/part-1-hero-image.png)
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
