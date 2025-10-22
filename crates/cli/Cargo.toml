@@ -75,11 +75,13 @@ wasmbin.workspace = true
 webbrowser.workspace = true
 clap-markdown.workspace = true
 git2.workspace = true
-dialoguer.workspace = true
+dialoguer = { workspace = true, features = ["fuzzy-select"] }
 rolldown.workspace = true
 rolldown_utils.workspace = true
 xmltree.workspace = true
 quick-xml.workspace = true
+names = "0.14"
+notify = "7.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }
