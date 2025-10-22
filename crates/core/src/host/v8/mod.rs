@@ -228,6 +228,14 @@ impl JsInstanceEnv {
     }
 }
 
+/// An instance for a [`JsModule`].
+///
+/// The actual work happens in a worker thread,
+/// which the instance communicates with through channels.
+///
+/// When the instance is dropped, the channels will hang up,
+/// which will cause the worker's loop to terminate
+/// and cleanup the isolate and friends.
 pub struct JsInstance {
     request_tx: SyncSender<JsWorkerRequest>,
     update_response_rx: Receiver<anyhow::Result<UpdateDatabaseResult>>,
@@ -281,18 +289,6 @@ impl JsInstance {
     }
 }
 
-impl Drop for JsInstance {
-    fn drop(&mut self) {
-        // Send the request to terminate the worker loop.
-        // We don't need to hear back from the worker
-        // nor terminate v8 execution forcefully,
-        // as any timeouts are handled in `call_reducer`.
-        self.request_tx
-            .send(JsWorkerRequest::End)
-            .expect("worker's `request_rx` should be live as `End` was just sent");
-    }
-}
-
 /// A request for the worker in [`spawn_instance_worker`].
 // We care about optimizing for `CallReducer` as it happens frequently,
 // so we don't want to box anything in it.
@@ -309,8 +305,6 @@ enum JsWorkerRequest {
         tx: Option<MutTxId>,
         params: CallReducerParams,
     },
-    /// See [`JsInstance::drop`].
-    End,
 }
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
@@ -410,6 +404,9 @@ fn spawn_instance_worker(
         scope.set_slot(JsInstanceEnv::new(instance_env));
 
         // Process requests to the worker.
+        //
+        // The loop is terminated when a `JsInstance` is dropped.
+        // This will cause channels, scopes, and the isolate to be cleaned up.
         for request in request_rx.iter() {
             match request {
                 JsWorkerRequest::UpdateDatabase {
@@ -431,8 +428,8 @@ fn spawn_instance_worker(
                     // Call the reducer.
                     // If execution trapped, we don't end the loop here,
                     // but rather let this happen by `return_instance` using `JsInstance::trapped`
-                    // which will cause `<JsInstance as Drop>::drop` to happen,
-                    // which in turn results in `JsWorkerRequest::End` below.
+                    // which will cause `JsInstance` to be dropped,
+                    // which in turn results in the loop being terminated.
                     let res = call_reducer(&mut instance_common, replica_ctx, scope, call_reducer_fun, tx, params);
 
                     // Reply to `JsInstance::call_reducer`.
@@ -442,9 +439,6 @@ fn spawn_instance_worker(
                         unreachable!("should have receiver for `call_reducer` response, {e}");
                     }
                 }
-                // Sent by `<JsInstance as Drop>::drop`.
-                // End the worker loop and cleanup the scope, isolate, and channels.
-                JsWorkerRequest::End => return,
             }
         }
     });
