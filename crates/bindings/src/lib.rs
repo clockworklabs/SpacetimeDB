@@ -958,9 +958,6 @@ impl ReducerContext {
 ///
 /// Includes information about the client calling the procedure and the time of invocation,
 /// and exposes methods for running transactions and performing side-effecting operations.
-///
-/// If the crate was compiled with the `rand` feature,
-/// also includes faculties for random number generation.
 pub struct ProcedureContext {
     /// The `Identity` of the client that invoked the procedure.
     pub sender: Identity,

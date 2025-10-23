@@ -212,7 +212,7 @@ impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
 }
 
 #[diagnostic::on_unimplemented(
-    message = "The procdure return type `{Self}` does not implement `SpacetimeType`",
+    message = "The procedure return type `{Self}` does not implement `SpacetimeType`",
     note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
 )]
 pub trait IntoProcedureResult: SpacetimeType + Serialize {
@@ -399,7 +399,7 @@ pub struct FnKindProcedure<Ret> {
 
 /// Tacit marker argument to [`ExportFunctionForScheduledTable`] for views.
 ///
-/// Because views are never scheduled, we don't need to distringuish between anonymous or sender-identity views,
+/// Because views are never scheduled, we don't need to distinguish between anonymous or sender-identity views,
 /// or to include their return type.
 pub struct FnKindView {
     _never: Infallible,
@@ -502,15 +502,15 @@ impl<'de, A: Args<'de>> de::ProductVisitor<'de> for ArgsVisitor<A> {
     }
 }
 
-macro_rules! impl_reducer_and_procedure {
+macro_rules! impl_reducer_procedure_view {
     ($($T1:ident $(, $T:ident)*)?) => {
-        impl_reducer_and_procedure!(@impl $($T1 $(, $T)*)?);
-        $(impl_reducer_and_procedure!($($T),*);)?
+        impl_reducer_procedure_view!(@impl $($T1 $(, $T)*)?);
+        $(impl_reducer_procedure_view!($($T),*);)?
     };
     (@impl $($T:ident),*) => {
         // Implement `Args` for the tuple type `($($T,)*)`.
         impl<'de, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Args<'de> for ($($T,)*) {
-            const LEN: usize = impl_reducer_and_procedure!(@count $($T)*);
+            const LEN: usize = impl_reducer_procedure_view!(@count $($T)*);
             #[allow(non_snake_case)]
             #[allow(unused)]
             fn visit_seq_product<Acc: SeqProductAccess<'de>>(mut prod: Acc) -> Result<Self, Acc::Error> {
@@ -606,12 +606,12 @@ macro_rules! impl_reducer_and_procedure {
     };
     // Counts the number of elements in the tuple.
     (@count $($T:ident)*) => {
-        0 $(+ impl_reducer_and_procedure!(@drop $T 1))*
+        0 $(+ impl_reducer_procedure_view!(@drop $T 1))*
     };
     (@drop $a:tt $b:tt) => { $b };
 }
 
-impl_reducer_and_procedure!(
+impl_reducer_procedure_view!(
     A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF
 );
 
@@ -933,7 +933,7 @@ fn convert_err_to_errno(res: Result<(), Box<str>>, out: BytesSink) -> i16 {
 }
 
 /// Called by the host to execute a procedure
-/// when the `sender` calls the reducer identified by `id` at `timestamp` with `args`.
+/// when the `sender` calls the procedure identified by `id` at `timestamp` with `args`.
 ///
 /// The `sender_{0-3}` are the pieces of a `[u8; 32]` (`u256`) representing the sender's `Identity`.
 /// They are encoded as follows (assuming `identity.to_byte_array(): [u8; 32]`):

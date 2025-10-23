@@ -8,6 +8,7 @@ use syn::{ItemFn, LitStr};
 
 #[derive(Default)]
 pub(crate) struct ProcedureArgs {
+    /// For consistency with reducers: allow specifying a different export name than the Rust function name.
     name: Option<LitStr>,
 }
 
