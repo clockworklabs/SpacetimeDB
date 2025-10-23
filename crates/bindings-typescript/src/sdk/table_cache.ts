@@ -293,7 +293,7 @@ export class TableCache<
    *
    * @param cb Callback to be called when a new row is inserted
    */
-  onUpdate = <EventContext>(
+  onUpdate? = <EventContext>(
     cb: (ctx: EventContext, oldRow: RowType, row: RowType) => void
   ): void => {
     this.emitter.on('update', cb);
