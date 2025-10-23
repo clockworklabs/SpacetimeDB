@@ -3,6 +3,7 @@ use crate::sym;
 use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
 use core::slice;
 use heck::ToSnakeCase;
+use proc_macro_type_name::ToTypeName;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::borrow::Cow;
@@ -881,6 +882,9 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
+    let pk_type = primary_key_column.clone().map(|x| x.ty);
+    let pk_type_ident = primary_key_column.clone().map(|x| Ident::new(&(original_struct_ident.to_string() + &(&x.ident).to_type_ident(x.ident.span()).to_string()), x.ident.span()));
+
     let (schedule, schedule_typecheck) = args
         .scheduled
         .as_ref()
@@ -987,6 +991,18 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     };
 
     // Output all macro data
+
+    let trait_def_pk = pk_type.map(|pk_type| quote_spanned! {table_ident.span()=>
+        #[allow(dead_code)]
+        #[derive(SpacetimeType)]
+        struct #pk_type_ident(#pk_type);
+        impl std::borrow::Borrow<#pk_type> for #pk_type_ident {
+            fn borrow(&self) -> &#pk_type {
+                &self.0
+            }
+        }
+    });
+
     let trait_def = quote_spanned! {table_ident.span()=>
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #table_ident {
@@ -1117,6 +1133,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #default_type_check
         };
 
+        #trait_def_pk
         #trait_def
         #trait_def_view
 

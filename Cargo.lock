@@ -5432,6 +5432,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro-type-name"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f94190a20388d5e7477532030a7b3d0077b473431d785b20bef0edadca55a5f"
+dependencies = [
+ "proc-macro2",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7336,6 +7345,7 @@ checksum = "9a930242493f5c875ab96903eb40fb6a90c4d3ae99597fd51da569ff22769a03"
 dependencies = [
  "heck 0.4.1",
  "humantime",
+ "proc-macro-type-name",
  "proc-macro2",
  "quote",
  "spacetimedb-primitives 1.6.0",
