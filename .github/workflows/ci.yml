@@ -51,6 +51,8 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
+      - name: Pre-build
+        run: cargo build -p spacetimedb-standalone -p spacetimedb-cli --release --locked
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
         run: docker compose up -d
