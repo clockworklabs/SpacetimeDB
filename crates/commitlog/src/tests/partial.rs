@@ -184,6 +184,7 @@ impl FileLike for ShortSegment {
         self.inner.ftruncate(tx_offset, size)
     }
 
+    #[cfg(feature = "fallocate")]
     fn fallocate(&mut self, size: u64) -> io::Result<()> {
         self.inner.fallocate(size)
     }
@@ -229,7 +230,7 @@ struct ShortMem {
 impl ShortMem {
     pub fn new(max_len: u64) -> Self {
         Self {
-            inner: repo::Memory::new(max_len * 1024),
+            inner: repo::Memory::new(max_len * 4096),
             max_len,
         }
     }

@@ -1,22 +1,54 @@
 use std::{
     io,
-    sync::{atomic::Ordering, Arc, RwLock, RwLockWriteGuard},
+    sync::{Arc, Mutex, RwLock},
 };
-
-use log::{debug, trace};
 
 use crate::{
     repo::{
-        mem::{Page, SpaceOnDevice, PAGE_SIZE},
+        mem::{SpaceOnDevice, PAGE_SIZE},
         SegmentLen,
     },
     segment::FileLike,
 };
 
-type SharedLock<T> = Arc<RwLock<T>>;
-type SharedPages = SharedLock<Vec<Page>>;
+pub type SharedLock<T> = Arc<RwLock<T>>;
 
-/// A log segment backed by a [Vec<Page>].
+/// Backing storage for a [Segment].
+///
+/// Morally, this consists of [PAGE_SIZE] chunks. Actually allocating the
+/// memory is, however, prohibitively expensive (in particular in property
+/// test). Thus, the underlying [Vec<u8>] buffer allocates as necessary, but
+/// [Storage] tracks the logical amount of allocated space (in [PAGE_SIZE]
+/// increments).
+///
+/// The data of a [Storage] is fully managed by its frontend [Segment].
+/// The type is exported to allow sharing the storage between different
+/// segments, each tracking a different read/write position.
+#[derive(Debug)]
+pub(super) struct Storage {
+    alloc: u64,
+    buf: Vec<u8>,
+}
+
+impl Storage {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            alloc: 0,
+            buf: Vec::with_capacity(PAGE_SIZE),
+        }
+    }
+
+    pub const fn len(&self) -> usize {
+        self.buf.len()
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+}
+
+/// A log segment backed by a [Vec<u8>].
 ///
 /// Writing to the segment behaves like a file opened with `O_APPEND`:
 /// [`io::Write::write`] always appends to the segment, regardless of the
@@ -29,93 +61,65 @@ type SharedPages = SharedLock<Vec<Page>>;
 #[derive(Clone, Debug)]
 pub struct Segment {
     pos: u64,
-    pages: SharedPages,
-    device: SpaceOnDevice,
+    storage: SharedLock<Storage>,
+    space: SpaceOnDevice,
 }
 
 impl Segment {
-    pub fn new(device: SpaceOnDevice) -> Self {
-        Self::with_pages(device, <_>::default())
+    pub fn new(space: u64) -> Self {
+        Self::from_shared(Arc::new(Mutex::new(space)), Arc::new(RwLock::new(Storage::new())))
     }
 
-    pub(super) fn with_pages(device: SpaceOnDevice, pages: SharedPages) -> Self {
-        Self { pos: 0, pages, device }
+    pub(super) fn from_shared(space: SpaceOnDevice, storage: SharedLock<Storage>) -> Self {
+        Self { pos: 0, space, storage }
     }
 
     pub fn len(&self) -> usize {
-        self.pages
-            .read()
-            .unwrap()
-            .iter()
-            .fold(0, |size, page| size + page.len())
+        self.storage.read().unwrap().len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn page_count(&self) -> usize {
-        self.pages.read().unwrap().len()
+        self.storage.read().unwrap().is_empty()
     }
 
     pub fn modify_byte_at(&mut self, pos: usize, f: impl FnOnce(u8) -> u8) {
-        let mut pages = self.pages.write().unwrap();
-
-        let page_idx = pos / PAGE_SIZE;
-        let page = pages.get_mut(page_idx).expect("pos out of bounds");
-        let page_ofs = pos % PAGE_SIZE;
-        page.modify_byte_at(page_ofs, f);
+        let mut storage = self.storage.write().unwrap();
+        storage.buf[pos] = f(storage.buf[pos])
     }
 
-    fn allocate(&self, pages: &mut RwLockWriteGuard<'_, Vec<Page>>, n: usize) -> io::Result<()> {
-        assert!(n > pages.len());
-        let page_size = PAGE_SIZE as i64;
-        for _ in pages.len()..n {
-            if self.device.load(Ordering::Relaxed) - page_size < 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::StorageFull,
-                    "not enough space left on device",
-                ));
-            }
-            pages.push(Page::new());
-            if self.device.fetch_sub(page_size, Ordering::Relaxed) < 0 {
-                return Err(io::Error::new(io::ErrorKind::StorageFull, "no space left on device"));
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl SegmentLen for Segment {
-    fn segment_len(&mut self) -> io::Result<u64> {
-        Ok(self.len() as u64)
+    pub fn allocated_space(&self) -> u64 {
+        self.storage.read().unwrap().alloc
     }
 }
 
 impl io::Write for Segment {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut written = 0;
-        while written < buf.len() {
-            let mut pages = self.pages.write().unwrap();
-            let page = {
-                let page_idx = self.pos as usize / PAGE_SIZE;
-                if page_idx >= pages.len() {
-                    self.allocate(&mut pages, page_idx + 1)?;
-                }
-                &mut pages[page_idx]
-            };
-            let remaining = buf.len() - written;
-            let to_copy = page.remaining().min(remaining);
+        let mut storage = self.storage.write().unwrap();
 
-            page.copy_from_slice(&buf[written..written + to_copy]);
-            drop(pages);
+        let mut remaining = (storage.alloc - self.pos) as usize;
+        // If we don't have enough space, allocate some.
+        // If not enough space to write all of `buf` can be allocated,
+        // just write as much as we can. The next `write` call will return
+        // ENOSPC then.
+        if remaining == 0 {
+            let mut avail = self.space.lock().unwrap();
+            if *avail == 0 {
+                return Err(enospc());
+            }
 
-            written += to_copy;
-            self.pos += to_copy as u64;
+            let want = (buf.len() - remaining).next_multiple_of(PAGE_SIZE);
+            let have = want.min(*avail as usize);
+
+            storage.alloc += have as u64;
+            *avail -= have as u64;
+            remaining = (storage.alloc - self.pos) as usize;
         }
 
-        Ok(written)
+        let read = buf.len().min(remaining);
+        storage.buf.extend(&buf[..read]);
+        self.pos += read as u64;
+
+        Ok(read)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -125,31 +129,17 @@ impl io::Write for Segment {
 
 impl io::Read for Segment {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut read = 0;
-        while read < buf.len() {
-            trace!("read {} from {}", buf.len(), self.pos);
-            let pages = self.pages.read().unwrap();
-            let Some(page) = pages.get(self.pos as usize / PAGE_SIZE) else {
-                trace!("no page at pos");
-                break;
-            };
-            let offset_in_page = (self.pos % PAGE_SIZE as u64) as usize;
-            if offset_in_page >= page.len() {
-                trace!("offset after initialized bytes in page");
-                break;
-            }
-            let available_in_page = page.len() - offset_in_page;
-            let to_copy = (buf.len() - read).min(available_in_page);
-            trace!("available_in_page={available_in_page} to_copy={to_copy}");
+        let storage = self.storage.read().unwrap();
 
-            buf[read..read + to_copy].copy_from_slice(page.slice(offset_in_page..offset_in_page + to_copy));
-            trace!("buf={buf:?}");
+        let Some(remaining) = storage.len().checked_sub(self.pos as usize) else {
+            return Ok(0);
+        };
+        let want = remaining.min(buf.len());
+        let pos = self.pos as usize;
+        buf[..want].copy_from_slice(&storage.buf[pos..pos + want]);
+        self.pos += want as u64;
 
-            read += to_copy;
-            self.pos += to_copy as u64;
-        }
-
-        Ok(read)
+        Ok(want)
     }
 }
 
@@ -176,57 +166,84 @@ impl io::Seek for Segment {
     }
 }
 
+impl SegmentLen for Segment {
+    fn segment_len(&mut self) -> io::Result<u64> {
+        Ok(self.len() as _)
+    }
+}
+
 impl FileLike for Segment {
     fn fsync(&mut self) -> io::Result<()> {
         Ok(())
     }
 
     fn ftruncate(&mut self, _tx_offset: u64, size: u64) -> io::Result<()> {
-        use std::cmp::Ordering::*;
+        let mut storage = self.storage.write().unwrap();
+        let mut avail = self.space.lock().unwrap();
 
-        let mut pages = self.pages.write().unwrap();
-        let old_page_count = pages.len() as u64;
-        let new_page_count = size.next_multiple_of(PAGE_SIZE as u64) / PAGE_SIZE as u64;
-
-        let zero_tail = |maybe_last_page: Option<&mut Page>| {
-            if let Some(last_page) = maybe_last_page {
-                let tail_start = (size as usize) % PAGE_SIZE;
-                last_page.zeroize(tail_start);
+        // NOTE: We don't modify `self.pos`, which is how `ftruncate(2)` behaves.
+        // This means the position can be invalid after calling this.
+        if size > storage.alloc {
+            if *avail == 0 {
+                return Err(enospc());
             }
-        };
-        match new_page_count.cmp(&old_page_count) {
-            Greater => self.allocate(&mut pages, new_page_count as usize)?,
-            ordering => {
-                if matches!(ordering, Less) {
-                    pages.truncate(new_page_count as usize);
-                }
-                zero_tail(pages.last_mut());
-            }
-        };
 
-        if self.pos > size {
-            self.pos = size;
+            let want = size.next_multiple_of(PAGE_SIZE as u64) - storage.alloc;
+            let have = want.min(*avail);
+
+            storage.alloc += have;
+            *avail -= have;
+            storage.buf.resize(size as usize, 0);
+
+            // NOTE: `ftruncate(2)` is a bit ambiguous as to what should happen
+            // if the requested size exceeds the available space.
+            //
+            // [std::fs::File::set_len] will succeed, but all subsequent
+            // operations return EBADF.
+            //
+            // That's not super helpful, so instead we zero out as much space as
+            // possible, and return ENOSPC if more than that was requested.
+            if want > have {
+                return Err(enospc());
+            }
+        } else {
+            let alloc = size.next_multiple_of(PAGE_SIZE as u64);
+            *avail += storage.alloc - alloc;
+            storage.alloc = alloc;
+            storage.buf.resize(size as usize, 0);
         }
 
         Ok(())
     }
 
+    #[cfg(feature = "fallocate")]
     fn fallocate(&mut self, size: u64) -> io::Result<()> {
-        let mut pages = self.pages.write().unwrap();
-        let old_page_count = pages.len() as u64;
-        let new_page_count = size.next_multiple_of(PAGE_SIZE as u64) / PAGE_SIZE as u64;
+        let mut storage = self.storage.write().unwrap();
 
-        debug!(
-            "fallocate {}: old_page_count={} new_page_count={}",
-            size, old_page_count, new_page_count
-        );
+        if size <= storage.alloc {
+            return Ok(());
+        }
 
-        if new_page_count > old_page_count {
-            self.allocate(&mut pages, new_page_count as usize)?;
+        let mut avail = self.space.lock().unwrap();
+        if *avail == 0 {
+            return Err(enospc());
+        }
+
+        let want = size.next_multiple_of(PAGE_SIZE as u64) - storage.alloc;
+        let have = want.min(*avail);
+        storage.alloc += have;
+        *avail -= have;
+
+        if want > have {
+            return Err(enospc());
         }
 
         Ok(())
     }
+}
+
+fn enospc() -> io::Error {
+    io::Error::new(io::ErrorKind::StorageFull, "no space left on device")
 }
 
 #[cfg(feature = "streaming")]

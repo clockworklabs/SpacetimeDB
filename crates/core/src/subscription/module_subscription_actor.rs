@@ -1133,7 +1133,7 @@ mod tests {
             let (durable_offset, ..) = watch::channel(None);
             Self {
                 commitlog: Arc::new(RwLock::new(
-                    commitlog::Generic::open(repo::Memory::new(4096), <_>::default()).unwrap(),
+                    commitlog::Generic::open(repo::Memory::unlimited(), <_>::default()).unwrap(),
                 )),
                 durable_offset,
             }

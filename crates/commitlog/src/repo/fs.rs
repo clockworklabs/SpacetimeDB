@@ -139,6 +139,7 @@ impl FileLike for NamedTempFile {
         self.as_file_mut().ftruncate(tx_offset, size)
     }
 
+    #[cfg(feature = "fallocate")]
     fn fallocate(&mut self, size: u64) -> io::Result<()> {
         self.as_file_mut().fallocate(size)
     }

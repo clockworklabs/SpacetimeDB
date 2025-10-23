@@ -1,62 +1,46 @@
 use std::{
     collections::{btree_map, BTreeMap},
     io,
-    sync::{
-        atomic::{AtomicI64, Ordering},
-        Arc, RwLock,
-    },
+    sync::{Arc, Mutex, RwLock},
 };
 
-use log::debug;
-
-use super::Repo;
-
-mod page;
-pub use page::{Page, PAGE_SIZE};
+use crate::repo::{
+    mem::segment::{SharedLock, Storage},
+    Repo,
+};
 
 mod segment;
 pub use segment::Segment;
 
-type SharedLock<T> = Arc<RwLock<T>>;
-type SharedPages = SharedLock<Vec<Page>>;
+pub const PAGE_SIZE: usize = 4096;
 
 /// The total capacity of the imaginary storage device.
 ///
 /// [Segment]s are allocated from [Memory], which tracks the total space it
-/// has available. [SpaceOnDevice] is shared by each [Segment]. When a [Segment]
-/// allocates a [Page], it deducts the page's size from the space, returning
-/// an error if [SpaceOnDevice] goes below zero.
-pub type SpaceOnDevice = Arc<AtomicI64>;
-
-#[cfg(feature = "streaming")]
-mod async_impls {
-    use super::*;
-
-    use crate::stream::AsyncRepo;
-
-    impl AsyncRepo for Memory {
-        type AsyncSegmentWriter = tokio::io::BufWriter<Segment>;
-        type AsyncSegmentReader = tokio::io::BufReader<Segment>;
-
-        async fn open_segment_reader_async(&self, offset: u64) -> io::Result<Self::AsyncSegmentReader> {
-            self.open_segment_writer(offset).map(tokio::io::BufReader::new)
-        }
-    }
-}
+/// has available. [SpaceOnDevice] is shared by each [Segment].
+///
+/// [Segment]s allocate space in [PAGE_SIZE] increments. When space is allocated,
+/// it is deducted from [SpaceOnDevice]. When there is not enough [SpaceOnDevice],
+/// allocating operations will return [io::ErrorKind::StorageFull].
+pub type SpaceOnDevice = Arc<Mutex<u64>>;
 
 /// In-memory implementation of [`Repo`].
 #[derive(Clone, Debug)]
 pub struct Memory {
     space: SpaceOnDevice,
-    segments: SharedLock<BTreeMap<u64, SharedPages>>,
+    segments: SharedLock<BTreeMap<u64, SharedLock<Storage>>>,
 }
 
 impl Memory {
     pub fn new(total_space: u64) -> Self {
         Self {
-            space: Arc::new(AtomicI64::new(total_space.min(i64::MAX as u64) as i64)),
+            space: Arc::new(Mutex::new(total_space)),
             segments: <_>::default(),
         }
+    }
+
+    pub fn unlimited() -> Self {
+        Self::new(u64::MAX)
     }
 }
 
@@ -65,14 +49,13 @@ impl Repo for Memory {
     type SegmentReader = io::BufReader<Segment>;
 
     fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
-        debug!("create_segment: space={}", self.space.load(Ordering::Relaxed));
         let mut inner = self.segments.write().unwrap();
         match inner.entry(offset) {
             btree_map::Entry::Occupied(entry) => {
                 let entry = entry.get();
                 let read_guard = entry.read().unwrap();
                 if read_guard.is_empty() {
-                    Ok(Segment::with_pages(self.space.clone(), entry.clone()))
+                    Ok(Segment::from_shared(self.space.clone(), entry.clone()))
                 } else {
                     Err(io::Error::new(
                         io::ErrorKind::AlreadyExists,
@@ -81,8 +64,8 @@ impl Repo for Memory {
                 }
             }
             btree_map::Entry::Vacant(entry) => {
-                let segment = entry.insert(SharedPages::default());
-                Ok(Segment::with_pages(self.space.clone(), segment.clone()))
+                let segment = entry.insert(Arc::new(RwLock::new(Storage::new())));
+                Ok(Segment::from_shared(self.space.clone(), segment.clone()))
             }
         }
     }
@@ -95,7 +78,7 @@ impl Repo for Memory {
                 format!("segment {offset} does not exist"),
             ));
         };
-        Ok(Segment::with_pages(self.space.clone(), buf.clone()))
+        Ok(Segment::from_shared(self.space.clone(), buf.clone()))
     }
 
     fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
@@ -123,13 +106,116 @@ impl Repo for Memory {
     }
 }
 
+#[cfg(feature = "streaming")]
+mod async_impls {
+    use std::io;
+
+    use crate::{
+        repo::{
+            mem::{Memory, Segment},
+            Repo as _,
+        },
+        stream::AsyncRepo,
+    };
+
+    impl AsyncRepo for Memory {
+        type AsyncSegmentWriter = tokio::io::BufWriter<Segment>;
+        type AsyncSegmentReader = tokio::io::BufReader<Segment>;
+
+        async fn open_segment_reader_async(&self, offset: u64) -> io::Result<Self::AsyncSegmentReader> {
+            self.open_segment_writer(offset).map(tokio::io::BufReader::new)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::io;
+
+        use pretty_assertions::assert_matches;
+        use tempfile::tempfile;
+        use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _, AsyncWrite, AsyncWriteExt as _};
+
+        use crate::{repo::mem::Segment, tests::helpers::enable_logging};
+
+        async fn read_write_seek(f: &mut (impl AsyncRead + AsyncSeek + AsyncWrite + Unpin)) {
+            enable_logging();
+
+            f.write_all(b"alonso").await.unwrap();
+
+            f.seek(io::SeekFrom::Start(0)).await.unwrap();
+            let mut buf = [0; 6];
+            f.read_exact(&mut buf).await.unwrap();
+            assert_eq!(&buf, b"alonso");
+
+            f.seek(io::SeekFrom::Start(2)).await.unwrap();
+            let n = f.read(&mut buf).await.unwrap();
+            assert_eq!(n, 4);
+            assert_eq!(&buf[..4], b"onso");
+
+            f.seek(io::SeekFrom::Current(-4)).await.unwrap();
+            let n = f.read(&mut buf).await.unwrap();
+            assert_eq!(n, 4);
+            assert_eq!(&buf[..4], b"onso");
+
+            f.seek(io::SeekFrom::End(-3)).await.unwrap();
+            let n = f.read(&mut buf).await.unwrap();
+            assert_eq!(n, 3);
+            assert_eq!(&buf[0..3], b"nso");
+
+            f.seek(io::SeekFrom::End(4096)).await.unwrap();
+            let n = f.read(&mut buf).await.unwrap();
+            assert_eq!(n, 0);
+        }
+
+        #[tokio::test]
+        async fn std_file_read_write_seek() {
+            let tmp = tempfile().unwrap();
+            read_write_seek(&mut tokio::fs::File::from_std(tmp)).await
+        }
+
+        #[tokio::test]
+        async fn segment_read_write_seek() {
+            read_write_seek(&mut Segment::new(4096)).await
+        }
+
+        #[tokio::test]
+        async fn write_many_pages() {
+            use tokio::io::{AsyncReadExt as _, AsyncSeekExt as _, AsyncWriteExt as _};
+
+            enable_logging();
+
+            let mut segment = Segment::new(4 * 4096);
+
+            let data = [b'y'; 4096];
+            for _ in 0..4 {
+                segment.write_all(&data[..2048]).await.unwrap();
+                segment.write_all(&data[2048..]).await.unwrap();
+            }
+            assert_matches!(
+                segment.write_all(&data[..2048]).await,
+                Err(e) if e.kind() == io::ErrorKind::StorageFull
+            );
+            segment.rewind().await.unwrap();
+
+            let mut buf = [0; 4096];
+            for _ in 0..4 {
+                segment.read_exact(&mut buf).await.unwrap();
+                assert!(buf.iter().all(|&x| x == b'y'));
+            }
+            assert_matches!(
+                segment.read_exact(&mut buf).await,
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{Read, Seek, Write};
 
     use pretty_assertions::assert_matches;
     use tempfile::tempfile;
-    use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
 
     use super::*;
     use crate::{segment::FileLike as _, tests::helpers::enable_logging};
@@ -164,8 +250,7 @@ mod tests {
 
     #[test]
     fn segment_read_write_seek() {
-        let space_on_device = Arc::new(AtomicI64::new(4096));
-        read_write_seek(&mut Segment::new(space_on_device));
+        read_write_seek(&mut Segment::new(4096));
     }
 
     #[test]
@@ -173,54 +258,11 @@ mod tests {
         read_write_seek(&mut tempfile().unwrap());
     }
 
-    async fn async_read_write_seek(f: &mut (impl AsyncRead + AsyncSeek + AsyncWrite + Unpin)) {
-        use tokio::io::{AsyncReadExt as _, AsyncSeekExt as _, AsyncWriteExt as _};
-
-        enable_logging();
-
-        f.write_all(b"alonso").await.unwrap();
-
-        f.seek(io::SeekFrom::Start(0)).await.unwrap();
-        let mut buf = [0; 6];
-        f.read_exact(&mut buf).await.unwrap();
-        assert_eq!(&buf, b"alonso");
-
-        f.seek(io::SeekFrom::Start(2)).await.unwrap();
-        let n = f.read(&mut buf).await.unwrap();
-        assert_eq!(n, 4);
-        assert_eq!(&buf[..4], b"onso");
-
-        f.seek(io::SeekFrom::Current(-4)).await.unwrap();
-        let n = f.read(&mut buf).await.unwrap();
-        assert_eq!(n, 4);
-        assert_eq!(&buf[..4], b"onso");
-
-        f.seek(io::SeekFrom::End(-3)).await.unwrap();
-        let n = f.read(&mut buf).await.unwrap();
-        assert_eq!(n, 3);
-        assert_eq!(&buf[0..3], b"nso");
-
-        f.seek(io::SeekFrom::End(4096)).await.unwrap();
-        let n = f.read(&mut buf).await.unwrap();
-        assert_eq!(n, 0);
-    }
-
-    #[tokio::test]
-    async fn std_file_async_read_write_seek() {
-        let tmp = tempfile().unwrap();
-        async_read_write_seek(&mut tokio::fs::File::from_std(tmp)).await
-    }
-
-    #[tokio::test]
-    async fn segment_async_read_write_seek() {
-        let space_on_device = Arc::new(AtomicI64::new(4096));
-        async_read_write_seek(&mut Segment::new(space_on_device)).await
-    }
-
     #[test]
     fn ftruncate() {
-        let space_on_device = Arc::new(AtomicI64::new(8192));
-        let mut segment = Segment::new(space_on_device);
+        enable_logging();
+
+        let mut segment = Segment::new(2 * 4096);
 
         let data = [b'z'; 512];
         let mut buf = Vec::with_capacity(4096);
@@ -241,8 +283,10 @@ mod tests {
         buf.clear();
         read_from_start_to_end(&mut segment, &mut buf).unwrap();
         assert_eq!(&buf[..512], &data);
-        assert_eq!(&buf[512..], &[0; 512]);
-        assert_eq!(segment.page_count(), 2);
+        let rest = &buf[512..];
+        assert_eq!(rest.len(), 5120 - 512);
+        assert!(rest.iter().all(|&b| b == 0));
+        assert_eq!(segment.allocated_space(), 8192);
 
         // Extend beyond available space returns `StorageFull`.
         assert_matches!(
@@ -255,7 +299,7 @@ mod tests {
         buf.clear();
         read_from_start_to_end(&mut segment, &mut buf).unwrap();
         assert_eq!(buf, data);
-        assert_eq!(segment.page_count(), 1);
+        assert_eq!(segment.allocated_space(), 4096);
 
         segment.ftruncate(42, 256).unwrap();
         buf.clear();
@@ -263,10 +307,12 @@ mod tests {
         assert_eq!(buf, &data[..256]);
     }
 
+    #[cfg(feature = "fallocate")]
     #[test]
     fn fallocate() {
-        let space_on_device = Arc::new(AtomicI64::new(8192));
-        let mut segment = Segment::new(space_on_device);
+        enable_logging();
+
+        let mut segment = Segment::new(8192);
 
         let data = [b'z'; 512];
         let mut buf = Vec::with_capacity(4096);
@@ -280,14 +326,14 @@ mod tests {
         buf.clear();
         read_from_start_to_end(&mut segment, &mut buf).unwrap();
         assert_eq!(buf, data);
-        assert_eq!(segment.page_count(), 1);
+        assert_eq!(segment.allocated_space(), 4096);
 
         // Extend beyond page allocates new page.
         segment.fallocate(5120).unwrap();
         buf.clear();
         read_from_start_to_end(&mut segment, &mut buf).unwrap();
         assert_eq!(buf, data);
-        assert_eq!(segment.page_count(), 2);
+        assert_eq!(segment.allocated_space(), 2 * 4096);
 
         // Extend beyond available space returns `StorageFull`.
         assert_matches!(
@@ -300,15 +346,14 @@ mod tests {
         buf.clear();
         read_from_start_to_end(&mut segment, &mut buf).unwrap();
         assert_eq!(buf, data);
-        assert_eq!(segment.page_count(), 2);
+        assert_eq!(segment.allocated_space(), 2 * 4096);
     }
 
     #[test]
     fn write_many_pages() {
         enable_logging();
 
-        let space_on_device = Arc::new(AtomicI64::new(4096 * 4));
-        let mut segment = Segment::new(space_on_device);
+        let mut segment = Segment::new(4 * 4096);
 
         let data = [b'y'; 4096];
         for _ in 0..4 {

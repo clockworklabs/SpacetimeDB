@@ -195,6 +195,7 @@ pub fn create_segment_writer<R: Repo>(
     offset: u64,
 ) -> io::Result<Writer<R::SegmentWriter>> {
     let mut storage = repo.create_segment(offset)?;
+    // Ensure we have enough space for this segment.
     fallocate(&mut storage, opts.max_segment_size)?;
     Header {
         log_format_version: opts.log_format_version,
@@ -242,6 +243,10 @@ pub fn resume_segment_writer<R: Repo>(
     offset: u64,
 ) -> io::Result<Result<Writer<R::SegmentWriter>, Metadata>> {
     let mut storage = repo.open_segment_writer(offset)?;
+    // Ensure we have enough space for this segment.
+    // The segment could have been created without the `fallocate` feature
+    // enabled, so we call this here again to ensure writes can't fail due to
+    // ENOSPC.
     fallocate(&mut storage, opts.max_segment_size)?;
     let offset_index = repo.get_offset_index(offset).ok();
     let Metadata {
@@ -306,6 +311,7 @@ pub fn open_segment_reader<R: Repo>(
     Reader::new(max_log_format_version, offset, storage)
 }
 
+/// Allocate space if the `fallocate` feature is enabled. No-op otherwise.
 #[inline]
 fn fallocate(_f: &mut impl FileLike, _size: u64) -> io::Result<()> {
     #[cfg(feature = "fallocate")]
