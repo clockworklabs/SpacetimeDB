@@ -342,6 +342,10 @@ footer {
   }
 }
 
+.menu {
+  font-family: var(--clockworklabs-font-source);
+}
+
 .theme-doc-sidebar-item-category-level-1 {
   font-variant: all-petite-caps;
   margin-bottom: 8px;
