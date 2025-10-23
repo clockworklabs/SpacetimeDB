@@ -17,7 +17,14 @@ import {
   type RangedIndex,
 } from './indexes';
 import { type RowType, type Table, type TableMethods } from './table';
-import { type DbView, type ReducerCtx, REDUCERS } from './reducers';
+import {
+  type DbView,
+  type ReducerCtx,
+  REDUCERS,
+  type JwtClaims,
+  type AuthCtx,
+  type JsonObject,
+} from './reducers';
 import { MODULE_DEF } from './schema';
 
 import * as _syscalls from 'spacetime:sys@1.0';
@@ -34,6 +41,134 @@ const sys: typeof _syscalls = freeze(
   ) as typeof _syscalls
 );
 
+export function parseJsonObject(json: string): JsonObject {
+  let value: unknown;
+
+  try {
+    value = JSON.parse(json);
+  } catch {
+    throw new Error('Invalid JSON: failed to parse string');
+  }
+
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Expected a JSON object at the top level');
+  }
+
+  // The runtime check above guarantees this cast is safe
+  return value as JsonObject;
+}
+
+class JwtClaimsImpl implements JwtClaims {
+  readonly fullPayload: JsonObject;
+  private readonly _identity: Identity;
+  /**
+   * Creates a new JwtClaims instance.
+   * @param rawPayload The JWT payload as a raw JSON string.
+   * @param identity The identity for this JWT. We are only taking this because we don't have a blake3 implementation (which we need to compute it).
+   */
+  constructor(
+    public readonly rawPayload: string,
+    identity: Identity
+  ) {
+    this.fullPayload = parseJsonObject(rawPayload);
+    this._identity = identity;
+  }
+  readonly [claim: string]: unknown;
+  get identity(): Identity {
+    return this._identity;
+  }
+  get subject() {
+    return this.fullPayload['sub'] as string;
+  }
+  get issuer() {
+    return this.fullPayload['iss'] as string;
+  }
+  get audience() {
+    const aud = this.fullPayload['aud'];
+    return typeof aud === 'string' ? [aud] : (aud as string[]);
+  }
+}
+
+class AuthCtxImpl implements AuthCtx {
+  public readonly isInternal: boolean;
+
+  // Source of the JWT payload string, if there is one.
+  private readonly _jwtSource: () => string | null;
+  // Whether we have initialized the JWT claims.
+  private _initializedJWT: boolean = false;
+  private _jwtClaims?: JwtClaims | null;
+  private _senderIdentity: Identity;
+
+  private constructor(opts: {
+    isInternal: boolean;
+    jwtSource: () => string | null;
+    senderIdentity: Identity;
+  }) {
+    this.isInternal = opts.isInternal;
+    this._jwtSource = opts.jwtSource;
+    this._senderIdentity = opts.senderIdentity;
+  }
+
+  private _initializeJWT() {
+    if (this._initializedJWT) return;
+    this._initializedJWT = true;
+
+    const token = this._jwtSource();
+    if (!token) {
+      this._jwtClaims = null;
+    } else {
+      this._jwtClaims = new JwtClaimsImpl(token, this._senderIdentity);
+    }
+    // At this point we can safely freeze the object.
+    Object.freeze(this);
+  }
+
+  /** Lazily compute whether a JWT exists and is parseable. */
+  get hasJWT(): boolean {
+    this._initializeJWT();
+    return this._jwtClaims !== null;
+  }
+
+  /** Lazily parse the JwtClaims only when accessed. */
+  get jwt(): JwtClaims | null {
+    this._initializeJWT();
+    return this._jwtClaims!;
+  }
+
+  /** Create a context representing internal (non-user) requests. */
+  static internal(): AuthCtx {
+    return new AuthCtxImpl({
+      isInternal: true,
+      jwtSource: () => null,
+      senderIdentity: Identity.zero(),
+    });
+  }
+
+  /** If there is a connection id, look up the JWT payload from the system tables. */
+  static fromSystemTables(
+    connectionId: ConnectionId | null,
+    sender: Identity
+  ): AuthCtx {
+    if (connectionId === null) {
+      return new AuthCtxImpl({
+        isInternal: false,
+        jwtSource: () => null,
+        senderIdentity: sender,
+      });
+    }
+    return new AuthCtxImpl({
+      isInternal: false,
+      jwtSource: () => {
+        const payloadBuf = sys.get_jwt_payload(connectionId.__connection_id__);
+        if (payloadBuf.length === 0) return null;
+        const payloadStr = new TextDecoder().decode(payloadBuf);
+        return payloadStr;
+      },
+      senderIdentity: sender,
+    });
+  }
+}
+
 export const hooks: ModuleHooks = {
   __describe_module__() {
     const writer = new BinaryWriter(128);
@@ -49,14 +184,19 @@ export const hooks: ModuleHooks = {
       argsType,
       MODULE_DEF.typespace
     );
+    const senderIdentity = new Identity(sender);
     const ctx: ReducerCtx<any> = freeze({
-      sender: new Identity(sender),
+      sender: senderIdentity,
       get identity() {
         return new Identity(sys.identity().__identity__);
       },
       timestamp: new Timestamp(timestamp),
       connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
       db: getDbView(),
+      authCtx: AuthCtxImpl.fromSystemTables(
+        ConnectionId.nullIfZero(new ConnectionId(connId)),
+        senderIdentity
+      ),
     });
     try {
       return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
