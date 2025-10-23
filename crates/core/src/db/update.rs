@@ -94,6 +94,9 @@ fn auto_migrate_database(
     logger: &dyn UpdateLogger,
 ) -> anyhow::Result<UpdateResult> {
     log::info!("Running database update prechecks: {}", stdb.database_identity());
+    // We used to memoize all table schemas upfront, which cause issue #3441.
+    // Schema should be queries only when needed to ensure that any schema changes made during earlier migration steps are visible
+    // to later steps.
 
     for precheck in plan.prechecks {
         match precheck {
