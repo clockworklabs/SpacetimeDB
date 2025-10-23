@@ -838,7 +838,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             let primary_key_ty = primary_key_column.ty;
             let scheduled_at_ty = scheduled_at_column.ty;
             let typecheck = quote! {
-                spacetimedb::rt::scheduled_typecheck::<#original_struct_ident>(#reducer_or_procedure);
+                spacetimedb::rt::scheduled_typecheck::<
+                    #original_struct_ident,
+                    <#reducer_or_procedure as spacetimedb::rt::FnInfo>::FnKind,
+                >(#reducer_or_procedure);
                 spacetimedb::rt::assert_scheduled_table_primary_key::<#primary_key_ty>();
                 let _ = |x: #scheduled_at_ty| { let _: spacetimedb::ScheduleAt = x; };
             };

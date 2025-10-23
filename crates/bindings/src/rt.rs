@@ -13,6 +13,7 @@ use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
 use spacetimedb_lib::{bsatn, AlgebraicType, ConnectionId, Identity, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_primitives::*;
+use std::convert::Infallible;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Mutex, OnceLock};
@@ -138,6 +139,12 @@ pub trait AnonymousView<'de, A: Args<'de>, T: SpacetimeType + Serialize> {
 pub trait FnInfo {
     /// The type of function to invoke.
     type Invoke;
+
+    /// One of [`FnKindReducer`], [`FnKindProcedure`] or [`FnKindView`].
+    ///
+    /// Used as a type argument to [`ExportFunctionForScheduledTable`] and [`scheduled_typecheck`].
+    /// See <https://willcrichton.net/notes/defeating-coherence-rust/> for details on this technique.
+    type FnKind;
 
     /// The name of the function.
     const NAME: &'static str;
@@ -370,23 +377,60 @@ impl ViewRegistrar<AnonymousViewContext> {
 }
 
 /// Assert that a reducer type-checks with a given type.
-pub const fn scheduled_reducer_typecheck<'de, Row>(_x: impl ReducerForScheduledTable<'de, Row>)
+pub const fn scheduled_typecheck<'de, Row, FnKind>(_x: impl ExportFunctionForScheduledTable<'de, Row, FnKind>)
 where
     Row: SpacetimeType + Serialize + Deserialize<'de>,
 {
     core::mem::forget(_x);
 }
 
+/// Tacit marker argument to [`ExportFunctionForScheduledTable`] for reducers.
+pub struct FnKindReducer {
+    _never: Infallible,
+}
+
+/// Tacit marker argument to [`ExportFunctionForScheduledTable`] for procedures.
+///
+/// Holds the procedure's return type in order to avoid an error due to an unconstrained type argument.
+pub struct FnKindProcedure<Ret> {
+    _never: Infallible,
+    _ret_ty: PhantomData<fn() -> Ret>,
+}
+
+/// Tacit marker argument to [`ExportFunctionForScheduledTable`] for views.
+///
+/// Because views are never scheduled, we don't need to distringuish between anonymous or sender-identity views,
+/// or to include their return type.
+pub struct FnKindView {
+    _never: Infallible,
+}
+
+/// Trait bound for [`scheduled_typecheck`], which the [`crate::table`] macro generates to typecheck scheduled functions.
+///
+/// The `FnKind` parameter here is a coherence-defeating marker, which Will Crichton calls a "tacit parameter."
+/// See <https://willcrichton.net/notes/defeating-coherence-rust/> for details on this technique.
+/// It will be one of [`FnKindReducer`] or [`FnKindProcedure`] in modules that compile successfully.
+/// It may be [`FnKindView`], but that will always fail to typecheck, as views cannot be used as scheduled functions.
 #[diagnostic::on_unimplemented(
     message = "invalid signature for scheduled table reducer or procedure",
+    note = "views cannot be scheduled",
     note = "the scheduled function must take `{TableRow}` as its sole argument",
     note = "e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: {TableRow})`",
     // TODO(procedure-async): amend this to `async fn` once procedures are `async`-ified
-    note = "or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: {TableRow})`"
+    note = "or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: {TableRow})`",
 )]
-pub trait ExportFunctionForScheduledTable<'de, TableRow> {}
-impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, F: ExportFunction<'de, (TableRow,)>>
-    ExportFunctionForScheduledTable<'de, TableRow> for F
+pub trait ExportFunctionForScheduledTable<'de, TableRow, FnKind> {}
+impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, F: Reducer<'de, (TableRow,)>>
+    ExportFunctionForScheduledTable<'de, TableRow, FnKindReducer> for F
+{
+}
+
+impl<
+        'de,
+        TableRow: SpacetimeType + Serialize + Deserialize<'de>,
+        Ret: SpacetimeType + Serialize + Deserialize<'de>,
+        F: Procedure<'de, (TableRow,), Ret>,
+    > ExportFunctionForScheduledTable<'de, TableRow, FnKindProcedure<Ret>> for F
 {
 }
 

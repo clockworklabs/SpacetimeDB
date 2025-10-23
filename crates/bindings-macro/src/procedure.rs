@@ -68,7 +68,7 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
     }
     .into_iter();
 
-    let ret_ty_for_builder = match &original_function.sig.output {
+    let ret_ty_for_info = match &original_function.sig.output {
         syn::ReturnType::Default => quote!(()),
         syn::ReturnType::Type(_, t) => quote!(#t),
     };
@@ -105,12 +105,24 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
         }
         #[automatically_derived]
         impl spacetimedb::rt::FnInfo for #func_name {
+            /// The type of this function.
             type Invoke = spacetimedb::rt::ProcedureFn;
+
+            /// The function kind, which will cause scheduled tables to accept procedures.
+            type FnKind = spacetimedb::rt::FnKindProcedure<#ret_ty_for_info>;
+
+            /// The name of this function
             const NAME: &'static str = #procedure_name;
+
+            /// The parameter names of this function
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];
+
+            /// The pointer for invoking this function
             const INVOKE: spacetimedb::rt::ProcedureFn = #func_name::invoke;
+
+            /// The return type of this function
             fn return_type(ts: &mut impl spacetimedb::sats::typespace::TypespaceBuilder) -> Option<spacetimedb::sats::AlgebraicType> {
-                Some(<#ret_ty_for_builder as spacetimedb::SpacetimeType>::make_type(ts))
+                Some(<#ret_ty_for_info as spacetimedb::SpacetimeType>::make_type(ts))
             }
         }
     })

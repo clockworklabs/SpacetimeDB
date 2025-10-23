@@ -453,28 +453,22 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `SpacetimeType`
 
-error[E0631]: type mismatch in function arguments
+error[E0277]: invalid signature for scheduled table reducer or procedure
    --> tests/ui/views.rs:136:56
     |
 136 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
     | -------------------------------------------------------^^^^^^^^^^^^^^^^^^^^---
     | |                                                      |
-    | |                                                      expected due to this
+    | |                                                      unsatisfied trait bound
     | required by a bound introduced by this call
-...
-148 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
-    | ------------------------------------------------------------------------------ found signature defined here
     |
-    = note: expected function signature `for<'a> fn(&'a ReducerContext, ScheduledTable) -> _`
-               found function signature `fn(&ViewContext, ScheduledTable) -> _`
-    = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}` to implement `Reducer<'_, (ScheduledTable,)>`
-    = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}` to implement `ReducerForScheduledTable<'_, ScheduledTable>`
-note: required by a bound in `scheduled_reducer_typecheck`
+    = help: the trait `ExportFunctionForScheduledTable<'_, ScheduledTable, FnKindView>` is not implemented for fn item `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}`
+    = note: views cannot be scheduled
+    = note: the scheduled function must take `ScheduledTable` as its sole argument
+    = note: e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: ScheduledTable)`
+    = note: or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: ScheduledTable)`
+note: required by a bound in `scheduled_typecheck`
    --> src/rt.rs
     |
-    | pub const fn scheduled_reducer_typecheck<'de, Row>(_x: impl ReducerForScheduledTable<'de, Row>)
-    |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_reducer_typecheck`
-help: consider wrapping the function in a closure
-    |
-136 | #[spacetimedb::table(name = scheduled_table, scheduled(|arg0: &ReducerContext, arg1: ScheduledTable| scheduled_table_view(/* &ViewContext */, arg1)))]
-    |                                                        +++++++++++++++++++++++++++++++++++++++++++++                     ++++++++++++++++++++++++++
+    | pub const fn scheduled_typecheck<'de, Row, FnKind>(_x: impl ExportFunctionForScheduledTable<'de, Row, FnKind>)
+    |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_typecheck`

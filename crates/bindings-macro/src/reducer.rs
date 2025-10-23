@@ -158,6 +158,8 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
         #[automatically_derived]
         impl spacetimedb::rt::FnInfo for #func_name {
             type Invoke = spacetimedb::rt::ReducerFn;
+            /// The function kind, which will cause scheduled tables to accept reducers.
+            type FnKind = spacetimedb::rt::FnKindReducer;
             const NAME: &'static str = #reducer_name;
             #(const LIFECYCLE: Option<spacetimedb::rt::LifecycleReducer> = Some(#lifecycle);)*
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];

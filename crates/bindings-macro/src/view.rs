@@ -158,6 +158,9 @@ pub(crate) fn view_impl(_args: ViewArgs, original_function: &ItemFn) -> syn::Res
             /// The type of this function
             type Invoke = <spacetimedb::rt::ViewKind<#ctx_ty> as spacetimedb::rt::ViewKindTrait>::InvokeFn;
 
+            /// The function kind, which will cause scheduled tables to reject views.
+            type FnKind = spacetimedb::rt::FnKindView;
+
             /// The name of this function
             const NAME: &'static str = #view_name;
 
