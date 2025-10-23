@@ -202,6 +202,16 @@ pub struct AutoMigratePlan<'def> {
     pub steps: Vec<AutoMigrateStep<'def>>,
 }
 
+impl AutoMigratePlan<'_> {
+    fn any_step(&self, f: impl Fn(&AutoMigrateStep) -> bool) -> bool {
+        self.steps.iter().any(f)
+    }
+
+    fn disconnects_all_users(&self) -> bool {
+        self.any_step(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers))
+    }
+}
+
 /// Checks that must be performed before performing an automatic migration.
 /// These checks can access table contents and other database state.
 #[derive(PartialEq, Eq, Debug, PartialOrd, Ord)]
@@ -240,6 +250,8 @@ pub enum AutoMigrateStep<'def> {
     RemoveSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
     /// Remove a schedule annotation from a table.
     RemoveSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a view and corresponding view table
+    RemoveView(<ViewDef as ModuleDefLookup>::Key<'def>),
     /// Remove a row-level security query.
     RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
 
@@ -268,6 +280,8 @@ pub enum AutoMigrateStep<'def> {
     AddSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
     /// Add a schedule annotation to a table.
     AddSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
+    /// Add a view and corresponding view table
+    AddView(<ViewDef as ModuleDefLookup>::Key<'def>),
     /// Add a row-level security query.
     AddRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
 
@@ -428,6 +442,7 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
         prechecks: Vec::new(),
     };
 
+    let views_ok = auto_migrate_views(&mut plan);
     let tables_ok = auto_migrate_tables(&mut plan);
 
     // Our diffing algorithm will detect added constraints / indexes / sequences in new tables, we use this to filter those out.
@@ -446,7 +461,8 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
     // have already been reflected in the database state.
     let rls_ok = auto_migrate_row_level_security(&mut plan);
 
-    let ((), (), (), (), ()) = (tables_ok, indexes_ok, sequences_ok, constraints_ok, rls_ok).combine_errors()?;
+    let ((), (), (), (), (), ()) =
+        (views_ok, tables_ok, indexes_ok, sequences_ok, constraints_ok, rls_ok).combine_errors()?;
 
     plan.steps.sort();
     plan.prechecks.sort();
@@ -487,6 +503,79 @@ fn diff<'def, T: ModuleDefLookup, I: Iterator<Item = &'def T>>(
                 None
             }
         }))
+}
+
+fn auto_migrate_views(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
+    diff(plan.old, plan.new, ModuleDef::views)
+        .map(|table_diff| -> Result<()> {
+            match table_diff {
+                Diff::Add { new } => {
+                    plan.steps.push(AutoMigrateStep::AddView(new.key()));
+                    Ok(())
+                }
+                // From the user's perspective, views do not have persistent state.
+                // Hence removal does not require a manual migration - just disconnecting clients.
+                Diff::Remove { old } if plan.disconnects_all_users() => {
+                    plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
+                    Ok(())
+                }
+                Diff::Remove { old } => {
+                    plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
+                    plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
+                    Ok(())
+                }
+                Diff::MaybeChange { old, new } => auto_migrate_view(plan, old, new),
+            }
+        })
+        .collect_all_errors()
+}
+
+fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef, new: &'def ViewDef) -> Result<()> {
+    let key = old.key();
+
+    if old.is_public != new.is_public {
+        plan.steps.push(AutoMigrateStep::ChangeAccess(key));
+    }
+
+    let Any(disconnect_clients) = diff(plan.old, plan.new, |def| {
+        def.lookup_expect::<ViewDef>(key).columns.iter()
+    })
+    .map(|col_diff| -> Result<_> {
+        match col_diff {
+            Diff::Add { .. } | Diff::Remove { .. } => Ok(Any(true)),
+            Diff::MaybeChange { old, new } => {
+                // Reordering the columns of a view requires a disconnect
+                if old.col_id != new.col_id {
+                    return Ok(Any(true));
+                };
+
+                ensure_old_ty_upgradable_to_new(
+                    false,
+                    old,
+                    &WithTypespace::new(plan.old.typespace(), &old.ty)
+                        .resolve_refs()
+                        .expect("valid ViewDefs must have valid type refs"),
+                    &WithTypespace::new(plan.new.typespace(), &new.ty)
+                        .resolve_refs()
+                        .expect("valid ViewDefs must have valid type refs"),
+                )
+            }
+        }
+    })
+    .collect_all_errors::<Any>()?;
+
+    if disconnect_clients {
+        // Note, order matters when updating a view.
+        // We need to remove the old view before adding the new one.
+        plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
+        plan.steps.push(AutoMigrateStep::AddView(new.key()));
+
+        if !plan.disconnects_all_users() {
+            plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
+        }
+    }
+
+    Ok(())
 }
 
 fn auto_migrate_tables(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
