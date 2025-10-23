@@ -516,11 +516,11 @@ async fn get_template_config_interactive(
             }
         })
         .collect();
-    client_choices.push("other".to_string());
-    client_choices.push("none".to_string());
+    client_choices.push("Use Template - Choose from a list of built-in template projects or clone an existing SpacetimeDB project from GitHub".to_string());
+    client_choices.push("None".to_string());
 
     let client_selection = Select::with_theme(&theme)
-        .with_prompt("Select client")
+        .with_prompt("Select a client type for your project (you can add other clients later)")
         .items(&client_choices)
         .default(0)
         .interact()?;
@@ -546,21 +546,17 @@ async fn get_template_config_interactive(
             use_local: true,
         })
     } else if client_selection == other_index {
+        println!("\n{}", "Available built-in templates:".bold());
+        for template in &templates {
+            println!("  {} - {}", template.id, template.description);
+        }
+        println!();
         loop {
             let template_id: String = Input::<String>::with_theme(&theme)
-                .with_prompt("Template ID or GitHub repository (owner/repo). Press 'l' to list available templates")
+                .with_prompt("Template ID or GitHub repository (owner/repo)")
                 .interact_text()?
                 .trim()
                 .to_string();
-
-            if template_id == "l" || template_id == "L" {
-                println!("\n{}", "Available templates:".bold());
-                for template in &templates {
-                    println!("  {} - {}", template.id, template.description);
-                }
-                println!();
-                continue;
-            }
 
             return create_template_config_from_template_str(
                 project_name.clone(),
