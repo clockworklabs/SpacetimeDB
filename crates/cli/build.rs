@@ -124,7 +124,7 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
     }
 
     code.push_str(&format!("        templates.insert(\"{}\", files);\n", source));
-    code.push_str(&format!("    }}\n\n"));
+    code.push_str("    }\n\n");
 }
 
 // Get a list of files tracked by git from a given directory
