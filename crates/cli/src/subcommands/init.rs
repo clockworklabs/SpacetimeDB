@@ -795,10 +795,9 @@ pub async fn init_from_template(config: &TemplateConfig, project_path: &Path) ->
         TemplateType::Empty => init_empty(config, project_path)?,
     }
 
-    if let Some(cursorrules_content) = embedded::get_cursorrules() {
-        let cursorrules_path = project_path.join(".cursorrules");
-        fs::write(cursorrules_path, cursorrules_content)?;
-    }
+    let cursorrules_content = embedded::get_cursorrules();
+    let cursorrules_path = project_path.join(".cursorrules");
+    fs::write(cursorrules_path, cursorrules_content)?;
 
     println!("{}", "Project initialized successfully!".green());
     print_next_steps(config, project_path)?;

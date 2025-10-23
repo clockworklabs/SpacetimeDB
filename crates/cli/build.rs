@@ -10,24 +10,32 @@ fn main() {
     generate_template_files();
 }
 
+// This method generates functions with data used in `spacetime init`:
+//
+//   * `get_templates_json` - returns contents of the JSON file with the list of templates
+//   * `get_template_files` - returns a HashMap with templates contents based on the
+//                            templates list at crates/cli/templates/templates-list.json
+//   * `get_cursorrules` - returns contents of a cursorrules file
 fn generate_template_files() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let templates_json_path = Path::new(&manifest_dir).join(".init-templates.json");
+    let templates_json_path = Path::new(&manifest_dir).join("templates/templates-list.json");
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("embedded_templates.rs");
 
-    println!("cargo:rerun-if-changed=.init-templates.json");
+    println!("cargo:rerun-if-changed=templates/templates-list.json");
 
-    let templates_json = fs::read_to_string(&templates_json_path).expect("Failed to read .init-templates.json");
+    let templates_json =
+        fs::read_to_string(&templates_json_path).expect("Failed to read templates/templates-list.json");
 
     let templates: serde_json::Value =
-        serde_json::from_str(&templates_json).expect("Failed to parse .init-templates.json");
+        serde_json::from_str(&templates_json).expect("Failed to parse templates/templates-list.json");
 
     let mut generated_code = String::new();
     generated_code.push_str("use std::collections::HashMap;\n\n");
 
     generated_code.push_str("pub fn get_templates_json() -> &'static str {\n");
-    generated_code.push_str("    include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/.init-templates.json\"))\n");
+    generated_code
+        .push_str("    include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/templates/templates-list.json\"))\n");
     generated_code.push_str("}\n\n");
 
     generated_code
@@ -58,18 +66,19 @@ fn generate_template_files() {
     generated_code.push_str("    templates\n");
     generated_code.push_str("}\n\n");
 
-    let cursorrules_path = Path::new(&manifest_dir).join("../../docs/.cursor/rules/spacetimedb.md");
+    let repo_root = get_repo_root();
+    let cursorrules_path = repo_root.join("docs/.cursor/rules/spacetimedb.md");
     if cursorrules_path.exists() {
-        generated_code.push_str("pub fn get_cursorrules() -> Option<&'static str> {\n");
-        generated_code.push_str("    Some(include_str!(\"");
+        generated_code.push_str("pub fn get_cursorrules() -> &'static str {\n");
+        generated_code.push_str("    include_str!(\"");
         generated_code.push_str(&cursorrules_path.to_str().unwrap().replace("\\", "\\\\"));
-        generated_code.push_str("\"))\n");
+        generated_code.push_str("\")\n");
         generated_code.push_str("}\n");
-        println!("cargo:rerun-if-changed=../../docs/.cursor/rules/spacetimedb.md");
+
+        let cursorrules_relative = cursorrules_path.strip_prefix(&repo_root).unwrap();
+        println!("cargo:rerun-if-changed={}", cursorrules_relative.display());
     } else {
-        generated_code.push_str("pub fn get_cursorrules() -> Option<&'static str> {\n");
-        generated_code.push_str("    None\n");
-        generated_code.push_str("}\n");
+        panic!("Could not find \"docs/.cursor/rules/spacetimedb.md\" file.");
     }
 
     fs::write(dest_path, generated_code).expect("Failed to write embedded_templates.rs");
@@ -82,7 +91,7 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
         panic!("Template '{}' has no git-tracked files! Check that the directory exists and contains files tracked by git.", source);
     }
 
-    let repo_root = Path::new(manifest_dir).parent().unwrap().parent().unwrap();
+    let repo_root = get_repo_root();
 
     code.push_str("    {\n");
     code.push_str("        let mut files = HashMap::new();\n");
@@ -118,10 +127,11 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
     code.push_str(&format!("    }}\n\n"));
 }
 
+// Get a list of files tracked by git from a given directory
 fn get_git_tracked_files(path: &Path, manifest_dir: &str) -> (Vec<PathBuf>, PathBuf) {
     let full_path = Path::new(manifest_dir).join(path);
 
-    let repo_root = Path::new(manifest_dir).parent().unwrap().parent().unwrap();
+    let repo_root = get_repo_root();
     let manifest_canonical = Path::new(manifest_dir).canonicalize().unwrap();
     let repo_canonical = repo_root.canonicalize().unwrap();
     let manifest_rel = manifest_canonical.strip_prefix(&repo_canonical).unwrap();
@@ -132,6 +142,8 @@ fn get_git_tracked_files(path: &Path, manifest_dir: &str) -> (Vec<PathBuf>, Path
                 let abs_target = if target.is_absolute() {
                     target
                 } else {
+                    // we need to resolve the symlink path, full_path.parent()
+                    // is a directory containing the symlink
                     full_path.parent().unwrap().join(target)
                 };
                 let canonical = abs_target.canonicalize().unwrap_or(abs_target);
@@ -172,4 +184,13 @@ fn get_git_tracked_files(path: &Path, manifest_dir: &str) -> (Vec<PathBuf>, Path
         .collect();
 
     (files, resolved_path)
+}
+
+fn get_repo_root() -> PathBuf {
+    let output = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .expect("Failed to get git repo root");
+    let path = String::from_utf8(output.stdout).unwrap().trim().to_string();
+    PathBuf::from(path)
 }
