@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 import shutil
 from pathlib import Path
@@ -44,18 +45,17 @@ def _parse_quickstart(doc_path: Path, language: str) -> str:
     # So we could have a different db for each language
     return "\n".join(blocks).replace("quickstart-chat", f"quickstart-chat-{language}") + end
 
-def load_nuget_config(p: Path):
-    if p.exists():
+def load_nuget_config(nuget_path: Path) -> dict:
+    if nuget_path.exists():
         with p.open("rb") as f:
             return xmltodict.parse(f.read(), force_list=["add", "packageSource", "package"])
     return {}
 
-def save_nuget_config(p: Path, doc: dict):
-    # Write back (pretty, UTF-8, no BOM)
+def save_nuget_config(nuget_path: Path, doc: dict) -> None:
     xml = xmltodict.unparse(doc, pretty=True)
-    p.write_text(xml, encoding="utf-8")
+    nuget_path.write_text(xml, encoding="utf-8")
 
-def add_source(doc: dict, *, key: str, path: str) -> None:
+def add_nuget_source(doc: dict, *, key: str, path: str) -> None:
     cfg = doc.setdefault("configuration", {})
     sources = cfg.setdefault("packageSources", {})
     source_entries = sources.setdefault("add", [])
@@ -64,7 +64,7 @@ def add_source(doc: dict, *, key: str, path: str) -> None:
         source = {"@key": key, "@value": path}
         source_entries.append(source)
 
-def add_mapping(doc: dict, *, key: str, pattern: str) -> None:
+def add_nuget_mapping(doc: dict, *, key: str, pattern: str) -> None:
     cfg = doc.setdefault("configuration", {})
 
     psm = cfg.setdefault("packageSourceMapping", {})
@@ -82,22 +82,9 @@ def add_mapping(doc: dict, *, key: str, pattern: str) -> None:
     if pattern not in existing:
         pkgs.append({"@pattern": pattern})
 
-def _dotnet_add_package(project_path: Path, package_name: str, source_path: Path, build_dir: str):
-    """Add a local NuGet package to a .NET project"""
-    sources = run_cmd("dotnet", "nuget", "list", "source", cwd=project_path, capture_stderr=True)
-    run_cmd("dotnet", "pack", cwd=source_path)
-
-    p = Path(project_path) / "nuget.config"
-    doc = load_nuget_config(p)
-    add_source(doc, key=package_name, path=source_path/build_dir)
-    add_mapping(doc, key=package_name, pattern=package_name)
-    add_mapping(doc, key="nuget.org", pattern="*")
-    save_nuget_config(p, doc)
-
-    run_cmd("dotnet", "add", "package", package_name, cwd=project_path, capture_stderr=True)
-
-    run_cmd("dotnet", "nuget", "locals", "--clear", "all", cwd=project_path, capture_stderr=True)
-    run_cmd("dotnet", "restore", cwd=project_path, capture_stderr=True)
+def override_nuget_package(nuget_config: dict, *, package_name: str, source_path: Path):
+    add_nuget_source(nuget_config, key=package_name, path=source_path.absolute())
+    add_nuget_mapping(nuget_config, key=package_name, pattern=package_name)
 
 class BaseQuickstart(Smoketest):
     AUTOPUBLISH = False
@@ -289,14 +276,43 @@ Main();
     def project_init(self, path: Path):
         run_cmd("dotnet", "new", "console", "--name", "QuickstartChatClient", "--output", path, capture_stderr=True)
 
+        nuget_config_path = Path(self.enterClassContext(tempfile.NamedTemporaryFile()))
+        print("NuGet config path:", nuget_config_path)
+
+        nuget_config = load_nuget_config(nuget_config_path)
+        # Other packages should fall back to NuGet
+        add_nuget_mapping(nuget_config, key="nuget.org", pattern="*")
+
+        # Clear any cached nuget dependencies
+        run_cmd("dotnet", "nuget", "locals", "--clear", "all", capture_stderr=True)
+
+        run_cmd("dotnet", "pack", cwd=STDB_DIR/"crates/bindings-csharp")
+        override_nuget_package(
+            nuget_config,
+            package_name="SpacetimeDB.BSATN.Runtime",
+            source_path=(STDB_DIR / "crates/bindings-csharp/BSATN.Runtime/bin/Release"),
+        )
+        override_nuget_package(
+            nuget_config,
+            package_name="SpacetimeDB.Runtime",
+            source_path=(STDB_DIR / "crates/bindings-csharp/Runtime/bin/Release")
+        )
+
+        run_cmd("dotnet", "pack", cwd=STDB_DIR/"sdks/csharp")
+        override_nuget_package(
+            nuget_config,
+            package_name="SpacetimeDB.ClientSDK",
+            source_path=(STDB_DIR / "sdks/csharp/bin~/Release")
+        )
+
+        save_nuget_config(nuget_config_path, nuget_config)
+        os.environ["NUGET_CONFIG_PATH"] = nuget_config_path
+
     def sdk_setup(self, path: Path):
-        _dotnet_add_package(STDB_DIR/"sdks/csharp", "SpacetimeDB.BSATN.Runtime", (STDB_DIR / "crates/bindings-csharp/BSATN.Runtime").absolute(), "bin/Release")
-        _dotnet_add_package(path, "SpacetimeDB.ClientSDK", (STDB_DIR / "sdks/csharp").absolute(), "bin~/Release")
+        run_cmd("dotnet", "add", "package", "SpacetimeDB.ClientSDK", cwd=path, capture_stderr=True)
 
     def server_postprocess(self, server_path: Path):
-        _dotnet_add_package(server_path, "SpacetimeDB.Runtime",
-                            (STDB_DIR / "crates/bindings-csharp/Runtime").absolute(),
-                            "bin/Release")
+        pass
 
     def test_quickstart(self):
         """Run the C# quickstart guides for server and client."""
