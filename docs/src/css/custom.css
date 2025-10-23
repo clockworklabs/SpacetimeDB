@@ -387,7 +387,7 @@ ul.theme-doc-sidebar-menu {
 
     .menu__link--active {
       border-radius: var(--8px);
-      border: 1px solid var(--clockworklabs-color-n6);
+      box-shadow: inset 0 0 0 1px var(--clockworklabs-color-n6);
       background: var(--clockworklabs-color-shade1) !important;
       color: var(--clockworklabs-color-n1) !important;
     }
