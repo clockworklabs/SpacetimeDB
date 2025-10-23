@@ -68,7 +68,7 @@ rpath = false
 
 [profile.release-fast]
 inherits = "release"
-lto = "thin"
+lto = "fat"
 
 [profile.dev]
 opt-level = 0
