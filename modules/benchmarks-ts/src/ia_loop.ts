@@ -8,6 +8,7 @@ import {
   type SmallHexTile,
   spacetimedb,
   type Position,
+  type Velocity,
 } from './schema';
 import {
   schema,
@@ -32,6 +33,15 @@ function newPosition(
     vx: x + 10.0,
     vy: y + 20.0,
     vz: z + 30.0,
+  };
+}
+
+function newVelocity(entity_id: number, x: number, y: number, z: number): Velocity {
+  return {
+    entity_id,
+    x,
+    y,
+    z,
   };
 }
 
