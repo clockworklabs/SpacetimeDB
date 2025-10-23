@@ -544,6 +544,7 @@ pub use spacetimedb_bindings_macro::table;
 /// If an error occurs in the disconnect reducer,
 /// the client is still recorded as disconnected.
 ///
+// TODO(docs): Move these docs to be on `table`, rather than `reducer`. This will reduce duplication with procedure docs.
 /// # Scheduled reducers
 ///
 /// In addition to life cycle annotations, reducers can be made **scheduled**.
@@ -669,7 +670,89 @@ pub use spacetimedb_bindings_macro::table;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::reducer;
 
-// TODO: document
+/// Marks a function as a SpacetimeDB procedure.
+///
+/// A procedure is a function that runs within the database and can be invoked remotely by [clients],
+/// but unlike a [`reducer`], a  procedure is not automatically transactional.
+/// This allows procedures to perform certain side-effecting operations,
+/// but also means that module developers must be more careful not to corrupt the database state
+/// when execution aborts or operations fail.
+///
+/// When in doubt, prefer writing [`reducer`]s unless you need to perform an operation only available to procedures.
+///
+/// The first argument of a reducer is always `&mut ProcedureContext`.
+/// The [`ProcedureContext`] exposes information about the caller and allows side-effecting operations.
+///
+/// After this, a reducer can take any number of arguments.
+/// These arguments must implement the [`SpacetimeType`], [`Serialize`], and [`Deserialize`] traits.
+/// All of these traits can be derived at once by marking a type with `#[derive(SpacetimeType)]`.
+///
+/// A procedure may return any type that implements [`SpacetimeType`], [`Serialize`] and [`Deserialize`].
+/// Unlike [reducer]s, SpacetimeDB does not assign any special semantics to [`Result`] return values.
+///
+/// If a procedure returns successfully (as opposed to panicking), its return value will be sent to the calling client.
+/// If a procedure panics, its panic message will be sent to the calling client instead.
+/// Procedure arguments and return values are not otherwise broadcast to clients.
+///
+/// ```no_run
+/// # use spacetimedb::{procedure, SpacetimeType, ProcedureContext};
+/// #[procedure]
+/// fn return_value(ctx: &mut ProcedureContext, arg: MyArgument) -> MyReturnValue {
+///     MyReturnValue {
+///         a: format!("Hello, {}", ctx.sender),
+///         b: ctx.timestamp,
+///     }
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// struct MyArgument {
+///     val: u32,
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// struct MyReturnValue {
+///     a: String,
+///     b: Timestamp,
+/// }
+/// ```
+///
+/// # Blocking operations
+///
+/// Procedures are allowed to perform certain operations which take time.
+/// During the execution of these operations, the procedure's execution will be suspended,
+/// allowing other database operations to run in parallel.
+/// The simplest (and least useful) of these operators is [`ProcedureContext::sleep_until`].
+///
+/// Procedures must not hold open a transaction while performing a blocking operation.
+///
+/// ```no_run
+/// # use std::time::Duration;
+/// # use spacetimedb::{procedure, ProcedureContext};
+/// #[procedure]
+/// fn sleep_one_second(ctx: &mut ProcedureContext) {
+///     let prev_time = ctx.timestamp;
+///     let target = prev_time + Duration::from_secs(1);
+///     ctx.sleep_until(target);
+///     let new_time = ctx.timestamp;
+///     let actual_delta = new_time.duration_since(prev_time).unwrap();
+///     log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
+/// }
+/// ```
+// TODO(procedure-http): replace this example with an HTTP request.
+// TODO(procedure-transaction): document obtaining and using a transaction within a procedure.
+///
+/// # Scheduled procedures
+// TODO(docs): after moving scheduled reducer docs into table secion, link there.
+///
+/// Like [reducer]s, procedures can be made **scheduled**.
+/// This allows calling procedures at a particular time, or in a loop.
+/// It also allows reducers to enqueue procedure runs.
+///
+/// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
+/// when a database is under heavy load.
+///
+/// [clients]: https://spacetimedb.com/docs/#client
+// TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::procedure;
 
