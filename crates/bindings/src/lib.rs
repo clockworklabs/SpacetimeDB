@@ -1000,6 +1000,7 @@ impl ProcedureContext {
     ///
     /// ```no_run
     /// # use std::time::Duration;
+    /// # use spacetimedb::{procedure, ProcedureContext};
     /// # #[procedure]
     /// # fn sleep_one_second(ctx: &mut ProcedureContext) {
     /// let prev_time = ctx.timestamp;
