@@ -831,7 +831,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             let reducer_or_procedure = &sched.reducer_or_procedure;
             let scheduled_at_id = scheduled_at_column.index;
             let desc = quote!(spacetimedb::table::ScheduleDesc {
-                reducer_or_procedure_name: <#reducer_or_procedure as spacetimedb::rt::ExportFunctionInfo>::NAME,
+                reducer_or_procedure_name: <#reducer_or_procedure as spacetimedb::rt::FnInfo>::NAME,
                 scheduled_at_column: #scheduled_at_id,
             });
 

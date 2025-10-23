@@ -62,11 +62,16 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
     let rest_arg_tys = arg_tys.iter().skip(1);
 
     // Extract the return type.
-    let ret_ty = match &original_function.sig.output {
+    let ret_ty_for_assert = match &original_function.sig.output {
         syn::ReturnType::Default => None,
         syn::ReturnType::Type(_, t) => Some(&**t),
     }
     .into_iter();
+
+    let ret_ty_for_builder = match &original_function.sig.output {
+        syn::ReturnType::Default => quote!(()),
+        syn::ReturnType::Type(_, t) => quote!(#t),
+    };
 
     let register_describer_symbol = format!("__preinit__20_register_describer_{}", procedure_name.value());
 
@@ -90,7 +95,7 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
             fn _assert_args #lifetime_params () #lifetime_where_clause {
                 #(let _ = <#first_arg_ty as spacetimedb::rt::ProcedureContextArg>::_ITEM;)*
                 #(let _ = <#rest_arg_tys as spacetimedb::rt::ProcedureArg>::_ITEM;)*
-                #(let _ = <#ret_ty as spacetimedb::rt::IntoProcedureResult>::into_result;)*
+                #(let _ = <#ret_ty_for_assert as spacetimedb::rt::IntoProcedureResult>::into_result;)*
             }
         };
         impl #func_name {
@@ -99,13 +104,14 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
             }
         }
         #[automatically_derived]
-        impl spacetimedb::rt::ExportFunctionInfo for #func_name {
+        impl spacetimedb::rt::FnInfo for #func_name {
+            type Invoke = spacetimedb::rt::ProcedureFn;
             const NAME: &'static str = #procedure_name;
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];
-        }
-        #[automatically_derived]
-        impl spacetimedb::rt::ProcedureInfo for #func_name {
             const INVOKE: spacetimedb::rt::ProcedureFn = #func_name::invoke;
+            fn return_type(ts: &mut impl spacetimedb::sats::typespace::TypespaceBuilder) -> Option<spacetimedb::sats::AlgebraicType> {
+                Some(<#ret_ty_for_builder as spacetimedb::SpacetimeType>::make_type(ts))
+            }
         }
     })
 }

@@ -673,6 +673,133 @@ pub use spacetimedb_bindings_macro::reducer;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::procedure;
 
+/// Marks a function as a spacetimedb view.
+///
+/// A view is a function with read-only access to the database.
+///
+/// The first argument of a view is always a [`&ViewContext`] or [`&AnonymousViewContext`].
+/// The former can only read from the database whereas latter can also access info about the caller.
+///
+/// After this, a view can take any number of arguments just like reducers.
+/// These arguments must implement the [`SpacetimeType`], [`Serialize`], and [`Deserialize`] traits.
+/// All of these traits can be derived at once by marking a type with `#[derive(SpacetimeType)]`.
+///
+/// Views return `Vec<T>` or `Option<T>` where `T` is a `SpacetimeType`.
+///
+/// ```no_run
+/// # mod demo {
+/// use spacetimedb::{view, table, AnonymousViewContext, SpacetimeType, ViewContext};
+/// use spacetimedb_lib::Identity;
+///
+/// #[table(name = player)]
+/// struct Player {
+///     #[auto_inc]
+///     #[primary_key]
+///     id: u64,
+///
+///     #[unique]
+///     identity: Identity,
+///
+///     #[index(btree)]
+///     level: u32,
+/// }
+///
+/// impl Player {
+///     fn merge(self, location: Location) -> PlayerAndLocation {
+///         PlayerAndLocation {
+///             player_id: self.id,
+///             level: self.level,
+///             x: location.x,
+///             y: location.y,
+///         }
+///     }
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// struct PlayerId {
+///     id: u64,
+/// }
+///
+/// #[table(name = location, index(name = coordinates, btree(columns = [x, y])))]
+/// struct Location {
+///     #[unique]
+///     player_id: u64,
+///     x: u64,
+///     y: u64,
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// struct PlayerAndLocation {
+///     player_id: u64,
+///     level: u32,
+///     x: u64,
+///     y: u64,
+/// }
+///
+/// // A view that selects at most one row from a table
+/// #[view(public)]
+/// fn my_player(ctx: &ViewContext) -> Option<Player> {
+///     ctx.db.player().identity().find(ctx.sender)
+/// }
+///
+/// // An example of column projection
+/// #[view(public)]
+/// fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
+///     ctx.db.player().identity().find(ctx.sender).map(|Player { id, .. }| PlayerId { id })
+/// }
+///
+/// // An example of a parameterized view
+/// #[view(public)]
+/// fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
+///     ctx.db.player().level().filter(level).collect()
+/// }
+///
+/// // An example that is analogous to a semijoin in sql
+/// #[view(public)]
+/// fn players_at_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<Player> {
+///     ctx
+///         .db
+///         .location()
+///         .coordinates()
+///         .filter((x, y))
+///         .filter_map(|location| ctx.db.player().id().find(location.player_id))
+///         .collect()
+/// }
+///
+/// // An example of a join that combines fields from two different tables
+/// #[view(public)]
+/// fn players_with_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<PlayerAndLocation> {
+///     ctx
+///         .db
+///         .location()
+///         .coordinates()
+///         .filter((x, y))
+///         .filter_map(|location| ctx
+///             .db
+///             .player()
+///             .id()
+///             .find(location.player_id)
+///             .map(|player| player.merge(location))
+///         )
+///         .collect()
+/// }
+/// # }
+/// ```
+///
+/// Just like reducers, views are limited in their ability to interact with the outside world.
+/// They have no access to any network or filesystem interfaces.
+/// Calling methods from [`std::io`], [`std::net`], or [`std::fs`] will result in runtime errors.
+///
+/// Views are callable by reducers and other views simply by passing their `ViewContext`..
+/// This is a regular function call.
+/// The callee will run within the caller's transaction.
+///
+///
+/// [`&ViewContext`]: `ViewContext`
+/// [`&AnonymousViewContext`]: `AnonymousViewContext`
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::view;
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
@@ -770,6 +897,7 @@ impl ReducerContext {
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
             sender_auth: AuthCtx::internal(),
+            #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
         }
     }

@@ -10,7 +10,7 @@ use super::{
 };
 use crate::system_tables::{
     system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow, StViewFields,
-    StViewParamRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
+    StViewParamRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
@@ -349,7 +349,7 @@ impl MutTxId {
     fn insert_into_st_view_param(&mut self, view_id: ViewId, params: &ProductType) -> Result<()> {
         for (i, field) in params.elements.iter().enumerate() {
             self.insert_via_serialize_bsatn(
-                ST_VIEW_COLUMN_ID,
+                ST_VIEW_PARAM_ID,
                 &StViewParamRow {
                     view_id,
                     param_pos: i.into(),
