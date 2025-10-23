@@ -160,7 +160,7 @@
             #                   from src/pac.c:1:
             CFLAGS = "-O";
 
-            packages = [rustStable rustNightly cargoArtifacts];
+            packages = [rustStable rustNightly cargoArtifacts pkgs.cargo-insta];
           };
         }
     );
