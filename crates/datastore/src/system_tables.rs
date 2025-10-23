@@ -107,6 +107,7 @@ pub const ST_RESERVED_SEQUENCE_RANGE: u32 = 4096;
 #[derive(Debug, Display)]
 pub enum SystemTable {
     st_table,
+    st_view,
     st_column,
     st_sequence,
     st_index,
@@ -747,6 +748,13 @@ pub struct StViewRow {
     /// Specifically, it is a view that has an `AnonymousViewContext` as its first argument.
     /// This type does not have access to the [`Identity`] of the caller.
     pub is_anonymous: bool,
+}
+
+impl TryFrom<RowRef<'_>> for StViewRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
 }
 
 /// A wrapper around `AlgebraicType` that acts like `AlgegbraicType::bytes()` for serialization purposes.

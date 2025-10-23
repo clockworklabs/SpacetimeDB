@@ -35,7 +35,7 @@ use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::{
     algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, AlgebraicValue, ProductValue,
 };
@@ -510,6 +510,10 @@ impl MutTxDatastore for Locking {
 
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()> {
         tx.rename_table(table_id, new_name)
+    }
+
+    fn view_id_from_name_mut_tx(&self, tx: &Self::MutTx, view_name: &str) -> Result<Option<ViewId>> {
+        tx.view_id_from_name(view_name)
     }
 
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>> {
