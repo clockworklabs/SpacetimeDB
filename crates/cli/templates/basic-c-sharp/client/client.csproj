@@ -15,4 +15,8 @@
     <PackageReference Include="SpacetimeDB.ClientSDK" Version="1.*" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="spacetimedb/**" />
+  </ItemGroup>
+
 </Project>
