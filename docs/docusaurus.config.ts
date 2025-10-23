@@ -160,8 +160,8 @@ const config: Config = {
           href: 'https://spacetimedb.com/login',
           label: 'Login',
           position: 'right',
-          className: 'navbar__button'
-        }
+          className: 'navbar__button',
+        },
       ],
     },
     footer: {},
@@ -175,6 +175,7 @@ const config: Config = {
       apiKey: 'f51e6f1768e1000129f66abc8dd45d55',
       indexName: 'Docs',
       contextualSearch: false,
+      askAi: '9PjBjZBQa8oY',
     },
   } satisfies Preset.ThemeConfig,
 };

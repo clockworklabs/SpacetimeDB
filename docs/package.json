@@ -15,6 +15,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
+    "@docsearch/react": "^4.2.0",
     "@docusaurus/core": "3.9.1",
     "@docusaurus/preset-classic": "3.9.1",
     "@docusaurus/theme-common": "^3.9.1",
