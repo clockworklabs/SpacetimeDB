@@ -80,12 +80,12 @@ def add_mapping(doc: dict, *, key: str, pattern: str) -> None:
     if pattern not in existing:
         pkgs.append({"@pattern": pattern})
 
-def override_nuget_package(project_path: Path, package_name: str, source_dir: Path, build_subdir: str):
+def override_nuget_package(project_dir: Path, package_name: str, source_dir: Path, build_subdir: str):
     """Override nuget config to use a local NuGet package on a .NET project"""
     # Make sure the local package is built
     run_cmd("dotnet", "pack", cwd=source_dir)
 
-    p = Path(project_path) / "nuget.config"
+    p = Path(project_dir) / "nuget.config"
     doc = load_nuget_config(p)
     add_source(doc, key=package_name, path=source_dir/build_subdir)
     add_mapping(doc, key=package_name, pattern=package_name)
