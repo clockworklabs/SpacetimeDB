@@ -310,14 +310,21 @@ footer {
 .navbar {
   background-color: var(--ifm-background-color);
   border-bottom: 1px solid var(--clockworklabs-navbar-border-color);
-  color: var(--clockworklabs-color-n4);
-  font-family: var(--clockworklabs-font-source);
-  font-size: var(--14px);
-  line-height: var(--16px);
-  letter-spacing: calc(var(--14px) * 0.08);
-  text-transform: uppercase;
   height: 64px;
-  font-weight: 600;
+  
+  .navbar__items--right {
+    color: var(--clockworklabs-color-n4);
+    font-family: var(--clockworklabs-font-source);
+    font-size: var(--14px);
+    line-height: var(--16px);
+    letter-spacing: calc(var(--14px) * 0.08);
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  [id^="inkeep-shadowradix"] {
+    font-weight: 400;
+  }
 }
 
 .navbar__logo {
