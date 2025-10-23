@@ -675,8 +675,8 @@ fn get_spacetimedb_typescript_version() -> &'static str {
     })
 }
 
-fn update_client_package_json(client_dir: &Path, project_name: &str) -> anyhow::Result<()> {
-    let package_path = client_dir.join("package.json");
+fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
+    let package_path = dir.join("package.json");
     if !package_path.exists() {
         return Ok(());
     }
@@ -684,7 +684,7 @@ fn update_client_package_json(client_dir: &Path, project_name: &str) -> anyhow::
     let content = fs::read_to_string(&package_path)?;
     let mut package: serde_json::Value = serde_json::from_str(&content)?;
 
-    package["name"] = json!(format!("{}-client", project_name));
+    package["name"] = json!(package_name);
 
     // Update spacetimedb version if it exists in dependencies
     if let Some(deps) = package.get_mut("dependencies") {
@@ -699,22 +699,22 @@ fn update_client_package_json(client_dir: &Path, project_name: &str) -> anyhow::
     Ok(())
 }
 
-fn update_rust_client_name(client_dir: &Path, project_name: &str) -> anyhow::Result<()> {
-    let cargo_path = client_dir.join("Cargo.toml");
+fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> {
+    let cargo_path = dir.join("Cargo.toml");
     if !cargo_path.exists() {
         return Ok(());
     }
 
     let mut content = fs::read_to_string(&cargo_path)?;
 
-    let safe_name = project_name
+    let safe_name = package_name
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
         .collect::<String>();
 
     let name_regex = Regex::new(r#"(?m)^name = .*$"#)?;
     content = name_regex
-        .replace(&content, format!(r#"name = "{}-client""#, safe_name))
+        .replace(&content, format!(r#"name = "{}""#, safe_name))
         .to_string();
 
     fs::write(&cargo_path, content)?;
@@ -800,9 +800,22 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
         anyhow::bail!("Server template not found: {}", server_source);
     }
 
+    // Update server name
+    match config.server_lang {
+        Some(ServerLanguage::TypeScript) => {
+            update_package_json(&server_dir, &config.project_name)?;
+        }
+        Some(ServerLanguage::Rust) => {
+            update_cargo_toml_name(&server_dir, &config.project_name)?;
+        }
+        Some(ServerLanguage::Csharp) => {}
+        None => {}
+    }
+
+    // Update client name
     match config.client_lang {
         Some(ClientLanguage::TypeScript) => {
-            update_client_package_json(project_path, &config.project_name)?;
+            update_package_json(project_path, &config.project_name)?;
             update_typescript_client_config(project_path, &config.project_name, config.use_local)?;
             println!(
                 "{}",
@@ -810,7 +823,7 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
             );
         }
         Some(ClientLanguage::Rust) => {
-            update_rust_client_name(project_path, &config.project_name)?;
+            update_cargo_toml_name(project_path, &config.project_name)?;
         }
         Some(ClientLanguage::Csharp) => {}
         None => {}
@@ -871,16 +884,20 @@ fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()
     Ok(())
 }
 
-fn init_empty_rust_server(server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
-    init_rust_project(server_dir)
+fn init_empty_rust_server(server_dir: &Path, project_name: &str) -> anyhow::Result<()> {
+    init_rust_project(server_dir)?;
+    update_cargo_toml_name(server_dir, project_name)?;
+    Ok(())
 }
 
 fn init_empty_csharp_server(server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
     init_csharp_project(server_dir)
 }
 
-fn init_empty_typescript_server(server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
-    init_typescript_project(server_dir)
+fn init_empty_typescript_server(server_dir: &Path, project_name: &str) -> anyhow::Result<()> {
+    init_typescript_project(server_dir)?;
+    update_package_json(server_dir, project_name)?;
+    Ok(())
 }
 
 fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Result<()> {
