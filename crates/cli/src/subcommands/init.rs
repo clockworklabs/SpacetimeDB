@@ -387,8 +387,11 @@ fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) -> a
 pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: bool) -> anyhow::Result<()> {
     let use_local = if args.get_flag("local") {
         true
-    } else {
+    } else if is_interactive {
         !check_and_prompt_login(config).await?
+    } else {
+        // In non-interactive mode, default to local deployment if not logged in
+        config.spacetimedb_token().is_none()
     };
 
     let project_name = get_project_name(args, is_interactive).await?;
