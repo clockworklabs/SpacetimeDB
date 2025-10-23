@@ -25,7 +25,7 @@ use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::ReducerOutcome;
-use spacetimedb::host::{MigratePlanResult, ReducerArgs};
+use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ReducerCallError, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
@@ -87,7 +87,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     }
     let caller_identity = auth.claims.identity;
 
-    let args = ReducerArgs::Json(body);
+    let args = FunctionArgs::Json(body);
 
     let db_identity = name_or_identity.resolve(&worker_ctx).await?;
     let database = worker_ctx_find_database(&worker_ctx, &db_identity)
@@ -526,8 +526,6 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Option<Bytes>,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-    guard_host_type(host_type)?;
-
     let database_identity = name_or_identity.resolve(&ctx).await?;
     let database = worker_ctx_find_database(&ctx, &database_identity)
         .await?
@@ -618,8 +616,6 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             }
         }
     }
-
-    guard_host_type(host_type)?;
 
     let (database_identity, db_name) = get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
     let maybe_parent_database_identity = match parent.as_ref() {
@@ -792,20 +788,6 @@ fn schema_migration_policy(
     }
 }
 
-fn guard_host_type(host_type: HostType) -> Result<(), ErrorResponse> {
-    // Feature gate V8 modules.
-    // The host must've been compiled with the `unstable` feature.
-    // TODO(v8): ungate this when V8 is ready to ship.
-    #[cfg(not(feature = "unstable"))]
-    if host_type == HostType::Js {
-        return Err(bad_request(
-            "JS host type requires a host with unstable features".into(),
-        ));
-    }
-
-    Ok(())
-}
-
 fn validate_replication_factor(n: usize) -> Result<Option<NonZeroU8>, ErrorResponse> {
     let n = u8::try_from(n).map_err(|_| bad_request(format!("Replication factor {n} out of bounds").into()))?;
     Ok(NonZeroU8::new(n))
@@ -824,12 +806,14 @@ pub struct PrePublishParams {
 pub struct PrePublishQueryParams {
     #[serde(default)]
     style: PrettyPrintStyle,
+    #[serde(default)]
+    host_type: HostType,
 }
 
 pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
     Path(PrePublishParams { name_or_identity }): Path<PrePublishParams>,
-    Query(PrePublishQueryParams { style }): Query<PrePublishQueryParams>,
+    Query(PrePublishQueryParams { style, host_type }): Query<PrePublishQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PrePublishResult>> {
@@ -846,7 +830,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 database_identity,
                 program_bytes,
                 num_replicas: None,
-                host_type: HostType::Wasm,
+                host_type,
                 parent: None,
             },
             style,

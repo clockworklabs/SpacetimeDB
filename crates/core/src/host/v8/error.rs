@@ -15,7 +15,7 @@ pub(super) type ValueResult<'scope, T> = Result<T, ExceptionValue<'scope>>;
 ///
 /// Newtyped for additional type safety and to track JS exceptions in the type system.
 #[derive(Debug)]
-pub(super) struct ExceptionValue<'scope>(Local<'scope, Value>);
+pub(super) struct ExceptionValue<'scope>(pub(super) Local<'scope, Value>);
 
 /// Error types that can convert into JS exception values.
 pub(super) trait IntoException<'scope> {
@@ -402,10 +402,33 @@ pub(super) fn log_traceback(func_type: &str, func: &str, e: &anyhow::Error) {
 pub(super) fn catch_exception<'scope, T>(
     scope: &mut PinScope<'scope, '_>,
     body: impl FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
-) -> Result<T, ErrorOrException<JsError>> {
+) -> Result<T, (ErrorOrException<JsError>, CanContinue)> {
     tc_scope!(scope, scope);
     body(scope).map_err(|e| match e {
-        ErrorOrException::Err(e) => ErrorOrException::Err(e),
-        ErrorOrException::Exception(_) => ErrorOrException::Exception(JsError::from_caught(scope)),
+        ErrorOrException::Err(e) => (ErrorOrException::Err(e), CanContinue::Yes),
+        ErrorOrException::Exception(_) => {
+            let error = ErrorOrException::Exception(JsError::from_caught(scope));
+
+            let can_continue = if scope.can_continue() {
+                // We can continue.
+                CanContinue::Yes
+            } else if scope.has_terminated() {
+                // We can continue if we do `Isolate::cancel_terminate_execution`.
+                CanContinue::YesCancelTermination
+            } else {
+                // We cannot.
+                CanContinue::No
+            };
+
+            (error, can_continue)
+        }
     })
+}
+
+/// Encodes whether it is safe to continue using the [`Isolate`]
+/// for further execution after [`catch_exception`] has happened.
+pub(super) enum CanContinue {
+    Yes,
+    YesCancelTermination,
+    No,
 }

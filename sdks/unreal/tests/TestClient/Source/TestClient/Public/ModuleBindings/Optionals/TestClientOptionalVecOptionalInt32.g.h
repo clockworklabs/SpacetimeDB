@@ -4,11 +4,10 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Optionals/TestClientOptionalInt32.g.h"
-#include "TestClientOptionalVecInt32.g.generated.h"
+#include "TestClientOptionalVecOptionalInt32.g.generated.h"
 
 USTRUCT(BlueprintType)
-struct TESTCLIENT_API FTestClientOptionalVecInt32
+struct TESTCLIENT_API FTestClientOptionalVecOptionalInt32
 {
     GENERATED_BODY()
 
@@ -18,33 +17,33 @@ struct TESTCLIENT_API FTestClientOptionalVecInt32
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bHasValue"))
     TArray<FTestClientOptionalInt32> Value;
 
-    FTestClientOptionalVecInt32() = default;
+    FTestClientOptionalVecOptionalInt32() = default;
 
-    explicit FTestClientOptionalVecInt32(const TArray<FTestClientOptionalInt32>& InValue)
+    explicit FTestClientOptionalVecOptionalInt32(const TArray<FTestClientOptionalInt32>& InValue)
         : bHasValue(true), Value(InValue) {}
 
     bool IsSet() const { return bHasValue; }
     void Reset() { bHasValue = false; }
 
-    FORCEINLINE bool operator==(const FTestClientOptionalVecInt32& Other) const
+    FORCEINLINE bool operator==(const FTestClientOptionalVecOptionalInt32& Other) const
     {
         if (bHasValue != Other.bHasValue) return false;
         return !bHasValue || Value == Other.Value;
     }
 
-    FORCEINLINE bool operator!=(const FTestClientOptionalVecInt32& Other) const
+    FORCEINLINE bool operator!=(const FTestClientOptionalVecOptionalInt32& Other) const
     {
         return !(*this == Other);
     }
 };
 
 /**
- * Custom hash function for FTestClientOptionalVecInt32.
+ * Custom hash function for FTestClientOptionalVecOptionalInt32.
  * Hashes the HasValue flag and the Value if present.
- * @param Optional The FTestClientOptionalVecInt32 instance to hash.
+ * @param Optional The FTestClientOptionalVecOptionalInt32 instance to hash.
  * @return The combined hash value.
  */
-FORCEINLINE uint32 GetTypeHash(const FTestClientOptionalVecInt32& Optional)
+FORCEINLINE uint32 GetTypeHash(const FTestClientOptionalVecOptionalInt32& Optional)
 {
     uint32 Hash = GetTypeHash(Optional.bHasValue);
     if (Optional.bHasValue)
@@ -56,7 +55,7 @@ FORCEINLINE uint32 GetTypeHash(const FTestClientOptionalVecInt32& Optional)
 
 namespace UE::SpacetimeDB
 {
-    UE_SPACETIMEDB_ENABLE_TARRAY(FTestClientOptionalVecInt32);
+    UE_SPACETIMEDB_ENABLE_TARRAY(FTestClientOptionalVecOptionalInt32);
 
-    UE_SPACETIMEDB_OPTIONAL(FTestClientOptionalVecInt32, bHasValue, Value);
+    UE_SPACETIMEDB_OPTIONAL(FTestClientOptionalVecOptionalInt32, bHasValue, Value);
 }

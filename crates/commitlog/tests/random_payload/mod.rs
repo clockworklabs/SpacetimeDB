@@ -19,6 +19,7 @@ fn smoke() {
             max_records_in_commit: NonZeroU16::MIN,
             ..Options::default()
         },
+        None,
     )
     .unwrap();
 
@@ -48,6 +49,7 @@ fn resets() {
             max_records_in_commit: NonZeroU16::MIN,
             ..Options::default()
         },
+        None,
     )
     .unwrap();
 
@@ -85,6 +87,7 @@ fn compression() {
             max_records_in_commit: NonZeroU16::MIN,
             ..Options::default()
         },
+        None,
     )
     .unwrap();
 

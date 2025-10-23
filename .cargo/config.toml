@@ -3,3 +3,13 @@ rustflags = ["--cfg", "tokio_unstable"]
 
 [alias]
 bump-versions = "run -p upgrade-version --"
+
+[target.x86_64-pc-windows-msvc]
+# Use a different linker. Otherwise, the build fails with some obscure linker error that
+# seems to be a result of us producing a massive PDB file.
+# I (@bfops) tried a variety of other link options besides switching linkers, but this
+# seems to be the only thing that worked.
+linker = "lld-link"
+# Without this, the linker complains that libc functions are undefined -
+# it probably signals to rustc and lld-link that libucrt should be included.
+rustflags = ["-Ctarget-feature=+crt-static"]

@@ -510,7 +510,7 @@ pub(crate) mod tests {
         expected: impl IntoIterator<Item = ProductValue>,
     ) {
         assert_eq!(
-            run(db, sql, *auth, None, &mut vec![])
+            run(db, sql, auth.clone(), None, &mut vec![])
                 .unwrap()
                 .rows
                 .into_iter()
@@ -1270,19 +1270,25 @@ pub(crate) mod tests {
         let run = |db, sql, auth, subs| run(db, sql, auth, subs, &mut vec![]);
 
         // No row limit, both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", internal_auth.clone(), None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth.clone(), None).is_ok());
 
         // Set row limit.
-        assert!(run(&db, "SET row_limit = 4", internal_auth, None).is_ok());
+        assert!(run(&db, "SET row_limit = 4", internal_auth.clone(), None).is_ok());
 
         // External query fails.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_err());
+        assert!(run(&db, "SELECT * FROM T", internal_auth.clone(), None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth.clone(), None).is_err());
 
         // Increase row limit.
-        assert!(run(&db, "DELETE FROM st_var WHERE name = 'row_limit'", internal_auth, None).is_ok());
-        assert!(run(&db, "SET row_limit = 5", internal_auth, None).is_ok());
+        assert!(run(
+            &db,
+            "DELETE FROM st_var WHERE name = 'row_limit'",
+            internal_auth.clone(),
+            None
+        )
+        .is_ok());
+        assert!(run(&db, "SET row_limit = 5", internal_auth.clone(), None).is_ok());
 
         // Both queries pass.
         assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
@@ -1333,10 +1339,10 @@ pub(crate) mod tests {
             ..ExecutionMetrics::default()
         };
 
-        check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth, ins)?;
-        check(&db, "UPDATE T SET a = 2", internal_auth, upd)?;
+        check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth.clone(), ins)?;
+        check(&db, "UPDATE T SET a = 2", internal_auth.clone(), upd)?;
         assert_eq!(
-            run(&db, "SELECT * FROM T", internal_auth, None)?.rows,
+            run(&db, "SELECT * FROM T", internal_auth.clone(), None)?.rows,
             vec![product!(2u8)]
         );
         check(&db, "DELETE FROM T", internal_auth, del)?;

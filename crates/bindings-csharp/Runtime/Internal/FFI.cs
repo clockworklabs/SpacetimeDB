@@ -36,6 +36,7 @@ public enum Errno : short
     SCHEDULE_AT_DELAY_TOO_LONG = 13,
     INDEX_NOT_UNIQUE = 14,
     NO_SUCH_ROW = 15,
+    AUTO_INC_OVERFLOW = 16,
 }
 
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
@@ -55,6 +56,14 @@ internal static partial class FFI
     const string StdbNamespace10_1 =
 #if EXPERIMENTAL_WASM_AOT
         "spacetime_10.1"
+#else
+        "bindings"
+#endif
+    ;
+
+    const string StdbNamespace10_2 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.2"
 #else
         "bindings"
 #endif
@@ -96,6 +105,7 @@ internal static partial class FFI
                     Errno.SCHEDULE_AT_DELAY_TOO_LONG => new ScheduleAtDelayTooLongException(),
                     Errno.INDEX_NOT_UNIQUE => new IndexNotUniqueException(),
                     Errno.NO_SUCH_ROW => new NoSuchRowException(),
+                    Errno.AUTO_INC_OVERFLOW => new AutoIncOverflowException(),
                     _ => new UnknownException(status),
                 };
             }
@@ -305,4 +315,7 @@ internal static partial class FFI
 
     [DllImport(StdbNamespace10_1)]
     public static extern Errno bytes_source_remaining_length(BytesSource source, ref uint len);
+
+    [DllImport(StdbNamespace10_2)]
+    public static extern Errno get_jwt(ref ConnectionId connectionId, out BytesSource source);
 }

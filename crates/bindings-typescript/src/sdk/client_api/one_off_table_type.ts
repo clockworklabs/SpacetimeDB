@@ -35,6 +35,8 @@ export type OneOffTable = {
   tableName: string;
   rows: BsatnRowList;
 };
+let _cached_OneOffTable_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -44,15 +46,15 @@ export const OneOffTable = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'tableName', algebraicType: __AlgebraicTypeValue.String },
-        {
-          name: 'rows',
-          algebraicType: BsatnRowList.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_OneOffTable_type_value) return _cached_OneOffTable_type_value;
+    _cached_OneOffTable_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_OneOffTable_type_value.value.elements.push(
+      { name: 'tableName', algebraicType: __AlgebraicTypeValue.String },
+      { name: 'rows', algebraicType: BsatnRowList.getTypeScriptAlgebraicType() }
+    );
+    return _cached_OneOffTable_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: OneOffTable): void {

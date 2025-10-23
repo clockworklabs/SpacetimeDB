@@ -543,7 +543,7 @@ pub async fn exec_subcommand(cmd: &str, args: &ArgMatches, db_cores: JobCores) -
     match cmd {
         "start" => start::exec(args, db_cores).await,
         "extract-schema" => extract_schema::exec(args).await,
-        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
+        unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }
 }
 

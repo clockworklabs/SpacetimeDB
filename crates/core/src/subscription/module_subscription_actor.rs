@@ -1761,7 +1761,9 @@ mod tests {
         let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a, &db);
         let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b, &db);
 
-        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
+        let auth_for_a = AuthCtx::new(db.owner_identity(), client_id_for_a.identity);
+        let auth_for_b = AuthCtx::new(db.owner_identity(), client_id_for_b.identity);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("identity", AlgebraicType::identity())];
@@ -1774,14 +1776,14 @@ mod tests {
         // Each client should receive different rows.
         subscribe_multi(
             &subs,
-            auth.clone(),
+            auth_for_a,
             &["select * from t where identity = :sender"],
             tx_for_a,
             &mut query_ids,
         )?;
         subscribe_multi(
             &subs,
-            auth,
+            auth_for_b,
             &["select * from t where identity = :sender"],
             tx_for_b,
             &mut query_ids,
@@ -1831,7 +1833,9 @@ mod tests {
         let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a, &db);
         let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b, &db);
 
-        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
+        let auth_for_a = AuthCtx::new(db.owner_identity(), client_id_for_a.identity);
+        let auth_for_b = AuthCtx::new(db.owner_identity(), client_id_for_b.identity);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("id", AlgebraicType::identity())];
@@ -1856,8 +1860,8 @@ mod tests {
         // Have each client subscribe to `w`.
         // Because `w` is gated using parameterized RLS rules,
         // each client should receive different rows.
-        subscribe_multi(&subs, auth.clone(), &["select * from w"], tx_for_a, &mut query_ids)?;
-        subscribe_multi(&subs, auth, &["select * from w"], tx_for_b, &mut query_ids)?;
+        subscribe_multi(&subs, auth_for_a, &["select * from w"], tx_for_a, &mut query_ids)?;
+        subscribe_multi(&subs, auth_for_b, &["select * from w"], tx_for_b, &mut query_ids)?;
 
         // Wait for both subscriptions
         assert!(matches!(
@@ -1896,11 +1900,16 @@ mod tests {
     async fn test_rls_for_owner() -> anyhow::Result<()> {
         let db = relational_db()?;
 
-        // Establish a connection for owner and client
-        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(0), &db);
-        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(1), &db);
+        let client_id_for_a = client_id_from_u8(0);
+        let client_id_for_b = client_id_from_u8(1);
 
-        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
+        // Establish a connection for owner and client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a, &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b, &db);
+
+        let auth_for_a = AuthCtx::new(db.owner_identity(), client_id_for_a.identity);
+        let auth_for_b = AuthCtx::new(db.owner_identity(), client_id_for_b.identity);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create table `t`
@@ -1912,8 +1921,8 @@ mod tests {
         let mut query_ids = 0;
 
         // Have owner and client subscribe to `t`
-        subscribe_multi(&subs, auth.clone(), &["select * from t"], tx_for_a, &mut query_ids)?;
-        subscribe_multi(&subs, auth, &["select * from t"], tx_for_b, &mut query_ids)?;
+        subscribe_multi(&subs, auth_for_a, &["select * from t"], tx_for_a, &mut query_ids)?;
+        subscribe_multi(&subs, auth_for_b, &["select * from t"], tx_for_b, &mut query_ids)?;
 
         // Wait for both subscriptions
         assert_matches!(
@@ -1975,8 +1984,10 @@ mod tests {
     async fn test_no_empty_updates() -> anyhow::Result<()> {
         let db = relational_db()?;
 
+        let client_id = client_id_from_u8(1);
+
         // Establish a client connection
-        let (tx, mut rx) = client_connection(client_id_from_u8(1), &db);
+        let (tx, mut rx) = client_connection(client_id, &db);
 
         let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
@@ -2026,8 +2037,9 @@ mod tests {
     async fn test_no_compression_for_subscribe() -> anyhow::Result<()> {
         let db = relational_db()?;
 
+        let client_id = client_id_from_u8(1);
         // Establish a client connection with compression
-        let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), &db, Compression::Brotli);
+        let (tx, mut rx) = client_connection_with_compression(client_id, &db, Compression::Brotli);
 
         let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());

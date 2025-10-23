@@ -34,12 +34,7 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(
             if delete_result.is_some() {
                 let run_checks = || {
                     if row.as_key() != &key_dup || row.as_value() != value {
-                        anyhow::bail!(
-                            "Unexpected row value. Expected ({:?}, {}) but found {:?}",
-                            key_dup,
-                            value,
-                            row
-                        );
+                        anyhow::bail!("Unexpected row value. Expected ({key_dup:?}, {value}) but found {row:?}");
                     }
                     let Event::Reducer(reducer_event) = &ctx.event else {
                         anyhow::bail!("Expected a reducer event");
@@ -63,12 +58,7 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(
         if insert_result.is_some() {
             let run_checks = || {
                 if row.as_key() != &key_dup || row.as_value() != value {
-                    anyhow::bail!(
-                        "Unexpected row value. Expected ({:?}, {}) but found {:?}",
-                        key_dup,
-                        value,
-                        row
-                    );
+                    anyhow::bail!("Unexpected row value. Expected ({key_dup:?}, {value}) but found {row:?}");
                 }
                 let Event::Reducer(reducer_event) = &ctx.event else {
                     anyhow::bail!("Expected a reducer event");

@@ -1,4 +1,6 @@
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
+use super::{
+    ArgsTuple, FunctionArgs, InvalidReducerArguments, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
+};
 use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
@@ -7,6 +9,7 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
+use crate::host::InvalidFunctionArguments;
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -47,8 +50,8 @@ use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
-use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
+use spacetimedb_schema::def::deserialize::ArgsSeed;
+use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
 use std::collections::VecDeque;
@@ -318,7 +321,9 @@ impl ReducersMap {
 /// A runtime that can create modules.
 pub trait ModuleRuntime {
     /// Creates a module based on the context `mcc`.
-    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<Module>;
+    ///
+    /// Also returns the initial instance for the module.
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<(Module, Instance)>;
 }
 
 pub enum Module {
@@ -354,10 +359,10 @@ impl Module {
             Module::Js(module) => module.info(),
         }
     }
-    fn create_instance(&self) -> Instance {
+    async fn create_instance(&self) -> Instance {
         match self {
             Module::Wasm(module) => Instance::Wasm(Box::new(module.create_instance())),
-            Module::Js(module) => Instance::Js(Box::new(module.create_instance())),
+            Module::Js(module) => Instance::Js(Box::new(module.create_instance().await)),
         }
     }
     fn host_type(&self) -> HostType {
@@ -410,6 +415,18 @@ pub fn create_table_from_def(
     Ok(())
 }
 
+/// Creates the table for `view_def` in `stdb`.
+pub fn create_table_from_view_def(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    module_def: &ModuleDef,
+    view_def: &ViewDef,
+) -> anyhow::Result<()> {
+    stdb.create_view_table(tx, module_def, view_def)
+        .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
+    Ok(())
+}
+
 /// If the module instance's replica_ctx is uninitialized, initialize it.
 fn init_database(
     replica_ctx: &ReplicaContext,
@@ -433,6 +450,15 @@ fn init_database(
                 logger.info(&format!("Creating table `{}`", &def.name));
                 create_table_from_def(stdb, tx, module_def, def)?;
             }
+
+            let mut view_defs: Vec<_> = module_def.views().collect();
+            view_defs.sort_by(|a, b| a.name.cmp(&b.name));
+
+            for def in view_defs {
+                logger.info(&format!("Creating table for view `{}`", &def.name));
+                create_table_from_view_def(stdb, tx, module_def, def)?;
+            }
+
             // Insert the late-bound row-level security expressions.
             for rls in module_def.row_level_security() {
                 logger.info(&format!("Creating row level security `{}`", rls.sql));
@@ -530,7 +556,7 @@ impl CreateInstanceTimeMetric {
 }
 
 impl ModuleInstanceManager {
-    fn new(module: Arc<Module>, database_identity: Identity) -> Self {
+    fn new(module: Arc<Module>, init_inst: Instance, database_identity: Identity) -> Self {
         let host_type = module.host_type();
         let create_instance_time_metric = CreateInstanceTimeMetric {
             metric: WORKER_METRICS
@@ -539,19 +565,24 @@ impl ModuleInstanceManager {
             host_type,
             database_identity,
         };
+
+        // Add the first instance.
+        let mut instances = VecDeque::new();
+        instances.push_front(init_inst);
+
         Self {
-            instances: Default::default(),
+            instances,
             module,
             create_instance_time_metric,
         }
     }
-    fn get_instance(&mut self) -> Instance {
+    async fn get_instance(&mut self) -> Instance {
         if let Some(inst) = self.instances.pop_back() {
             inst
         } else {
             let start_time = std::time::Instant::now();
             // TODO: should we be calling `create_instance` on the `SingleCoreExecutor` rather than the calling thread?
-            let res = self.module.create_instance();
+            let res = self.module.create_instance().await;
             let elapsed_time = start_time.elapsed();
             self.create_instance_time_metric.observe(elapsed_time);
             res
@@ -666,6 +697,7 @@ pub enum ClientConnectedError {
 impl ModuleHost {
     pub(super) fn new(
         module: Module,
+        init_inst: Instance,
         on_panic: impl Fn() + Send + Sync + 'static,
         executor: SingleCoreExecutor,
         database_identity: Identity,
@@ -676,7 +708,8 @@ impl ModuleHost {
 
         let module_clone = module.clone();
 
-        let instance_manager = Arc::new(Mutex::new(ModuleInstanceManager::new(module_clone, database_identity)));
+        let instance_manager = ModuleInstanceManager::new(module_clone, init_inst, database_identity);
+        let instance_manager = Arc::new(Mutex::new(instance_manager));
 
         ModuleHost {
             info,
@@ -783,7 +816,7 @@ impl ModuleHost {
             (self.on_panic)();
         });
 
-        let mut instance = self.instance_manager.lock().await.get_instance();
+        let mut instance = self.instance_manager.lock().await.get_instance().await;
 
         let (res, instance) = self
             .executor
@@ -875,7 +908,7 @@ impl ModuleHost {
                     None,
                     reducer_id,
                     reducer_def,
-                    ReducerArgs::Nullary,
+                    FunctionArgs::Nullary,
                     inst,
                 )?;
 
@@ -970,10 +1003,10 @@ impl ModuleHost {
                 log::error!(
                     "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {err}"
                 );
-                InvalidReducerArguments {
+                InvalidReducerArguments(InvalidFunctionArguments {
                     err: err.into(),
-                    reducer: reducer_name.into(),
-                }
+                    function_name: reducer_name.into(),
+                })
                 .into()
             })
         };
@@ -1002,7 +1035,7 @@ impl ModuleHost {
                 None,
                 reducer_id,
                 reducer_def,
-                ReducerArgs::Nullary,
+                FunctionArgs::Nullary,
                 inst,
             );
 
@@ -1088,10 +1121,10 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
-        args: ReducerArgs,
+        args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed)?;
+        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
+        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(self
@@ -1122,11 +1155,11 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
-        args: ReducerArgs,
+        args: FunctionArgs,
         module_instance: &mut Instance,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed)?;
+        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
+        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(module_instance.call_reducer(
@@ -1152,7 +1185,7 @@ impl ModuleHost {
         request_id: Option<RequestId>,
         timer: Option<Instant>,
         reducer_name: &str,
-        args: ReducerArgs,
+        args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = async {
             let (reducer_id, reducer_def) = self
@@ -1231,10 +1264,12 @@ impl ModuleHost {
                     Ok(inst.call_reducer(Some(tx), params))
                 }
                 Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
-                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments {
-                    err,
-                    reducer: REDUCER.into(),
-                })),
+                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments(
+                    InvalidFunctionArguments {
+                        err,
+                        function_name: REDUCER.into(),
+                    },
+                ))),
             }
         })
         .await?

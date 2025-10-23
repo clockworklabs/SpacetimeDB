@@ -12,7 +12,7 @@
     "format": "prettier . --write --ignore-path ../../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../../.prettierignore",
     "preview": "vite preview",
-    "generate": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-cli generate --lang typescript --out-dir src/module_bindings --project-path server && prettier --write src/module_bindings && find src/module_bindings -type f -exec perl -pi -e 's#spacetimedb#../../../src/index#g' {} + && prettier --write src/module_bindings",
+    "generate": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-cli generate --lang typescript --out-dir src/module_bindings --project-path server && prettier --write src/module_bindings && node ./replace-spacetimedb.js && prettier --write src/module_bindings",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path server",
     "spacetime:start": "spacetime start server",
     "spacetime:publish:local": "spacetime publish game --project-path server --server local",
