@@ -66,10 +66,6 @@ incremental = false
 codegen-units = 16
 rpath = false
 
-[profile.release-fast]
-inherits = "release"
-lto = "thin"
-
 [profile.dev]
 opt-level = 0
 debug = true
