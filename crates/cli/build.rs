@@ -79,7 +79,7 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
     let (git_files, resolved_base) = get_git_tracked_files(template_path, manifest_dir);
 
     if git_files.is_empty() {
-        return;
+        panic!("Template '{}' has no git-tracked files! Check that the directory exists and contains files tracked by git.", source);
     }
 
     let repo_root = Path::new(manifest_dir).parent().unwrap().parent().unwrap();
