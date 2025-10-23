@@ -14,7 +14,7 @@ In your `blackholio` directory, run the following command to initialize the Spac
 Run the following command to initialize the SpacetimeDB server module project with Rust as the language:
 
 ```bash
-spacetime init --lang=rust server-rust
+spacetime init --name server-rust --server-lang rust --non-interactive server-rust
 ```
 
 This command creates a new folder named `server-rust` alongside your Unreal project `client_unreal` directory and sets up the SpacetimeDB server project with Rust as the programming language.
@@ -23,7 +23,7 @@ This command creates a new folder named `server-rust` alongside your Unreal proj
 Run the following command to initialize the SpacetimeDB server module project with C# as the language:
 
 ```bash
-spacetime init --lang=csharp server-csharp
+spacetime init --name server-csharp --server-lang csharp --non-interactive server-csharp
 ```
 
 This command creates a new folder named `server-csharp` alongside your Unreal project `client-unreal` directory and sets up the SpacetimeDB server project with C# as the programming language.
