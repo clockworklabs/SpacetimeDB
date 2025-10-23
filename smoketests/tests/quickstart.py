@@ -299,7 +299,7 @@ Main();
             source_dir=(STDB_DIR / "sdks/csharp").absolute(),
             build_subdir="bin~/Release"
         )
-        run_cmd("dotnet", "add", "package", "SpacetimeDB.ClientSDK", cwd=project_path, capture_stderr=True)
+        run_cmd("dotnet", "add", "package", "SpacetimeDB.ClientSDK", cwd=path, capture_stderr=True)
 
     def server_postprocess(self, server_path: Path):
         override_nuget_package(
