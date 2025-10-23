@@ -19,6 +19,7 @@ import nginx from 'shiki/langs/nginx.mjs';
 import systemd from 'shiki/langs/systemd.mjs';
 import ogTheme from 'shiki/themes/dracula.mjs';
 import cpp from 'shiki/langs/cpp.mjs';
+import { InkeepConfig } from '@inkeep/cxkit-docusaurus';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
@@ -28,6 +29,17 @@ const shikiTheme = {
 };
 shikiTheme.colors!['editor.background'] =
   'var(--clockworklabs-code-background-color)';
+
+const inkeepConfig: Partial<InkeepConfig> = {
+  baseSettings: {
+    apiKey: '13504c49fb56b7c09a5ea0bcd68c2b55857661be4d6d311b',
+    organizationDisplayName: 'SpacetimeDB',
+    primaryBrandColor: '#4cf490',
+    colorMode: {
+      forcedColorMode: 'dark',
+    },
+  },
+};
 
 const config: Config = {
   title: 'SpacetimeDB docs',
@@ -170,14 +182,21 @@ const config: Config = {
       disableSwitch: true,
       defaultMode: 'light',
     },
-    algolia: {
-      appId: 'QBC7Z9KXS2',
-      apiKey: 'f51e6f1768e1000129f66abc8dd45d55',
-      indexName: 'Docs',
-      contextualSearch: false,
-      askAi: '9PjBjZBQa8oY',
-    },
   } satisfies Preset.ThemeConfig,
+
+  plugins: [
+    [
+      '@inkeep/cxkit-docusaurus',
+      {
+        SearchBar: {
+          ...inkeepConfig,
+        },
+        ChatButton: {
+          ...inkeepConfig,
+        },
+      },
+    ],
+  ],
 };
 
 export default config;
