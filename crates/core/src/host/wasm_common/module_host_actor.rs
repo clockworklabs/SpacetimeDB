@@ -17,7 +17,7 @@ use crate::host::module_host::{
 use crate::host::{ArgsTuple, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
-use crate::module_host_context::ModuleCreationContext;
+use crate::module_host_context::ModuleCreationContextLimited;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
@@ -87,7 +87,6 @@ pub struct ExecuteResult {
 
 pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
-    initial_instance: Option<Box<WasmModuleInstance<T::Instance>>>,
     common: ModuleCommon,
     func_names: Arc<FuncNames>,
 }
@@ -131,11 +130,14 @@ pub enum DescribeError {
 }
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
-    pub fn new(mcc: ModuleCreationContext, module: T) -> Result<Self, InitializationError> {
+    pub fn new(
+        mcc: ModuleCreationContextLimited,
+        module: T,
+    ) -> Result<(Self, WasmModuleInstance<T::Instance>), InitializationError> {
         log::trace!(
             "Making new WASM module host actor for database {} with module {}",
             mcc.replica_ctx.database_identity,
-            mcc.program.hash,
+            mcc.program_hash,
         );
 
         let func_names = {
@@ -156,22 +158,25 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let common = build_common_module_from_raw(mcc, desc)?;
 
         let func_names = Arc::new(func_names);
-        let mut module = WasmModuleHostActor {
+        let module = WasmModuleHostActor {
             module: uninit_instance,
-            initial_instance: None,
             func_names,
             common,
         };
-        module.initial_instance = Some(Box::new(module.make_from_instance(instance)));
+        let initial_instance = module.make_from_instance(instance);
 
-        Ok(module)
+        Ok((module, initial_instance))
     }
 }
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, instance: T::Instance) -> WasmModuleInstance<T::Instance> {
         let common = InstanceCommon::new(&self.common);
-        WasmModuleInstance { instance, common }
+        WasmModuleInstance {
+            instance,
+            common,
+            trapped: false,
+        }
     }
 }
 
@@ -205,19 +210,18 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 pub struct WasmModuleInstance<T: WasmInstance> {
     instance: T,
     common: InstanceCommon,
+    trapped: bool,
 }
 
 impl<T: WasmInstance> std::fmt::Debug for WasmModuleInstance<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WasmInstanceActor")
-            .field("trapped", &self.common.trapped)
-            .finish()
+        f.debug_struct("WasmInstanceActor").finish()
     }
 }
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
     pub fn trapped(&self) -> bool {
-        self.common.trapped
+        self.trapped
     }
 
     pub fn update_database(
@@ -239,7 +243,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        self.common.call_reducer_with_tx(
+        let (res, trapped) = self.common.call_reducer_with_tx(
             &self.instance.instance_env().replica_ctx.clone(),
             tx,
             params,
@@ -251,7 +255,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     .clone()
                     .set(tx, || self.instance.call_reducer(op, budget))
             },
-        )
+        );
+        self.trapped = trapped;
+        res
     }
 }
 
@@ -260,7 +266,6 @@ pub(crate) struct InstanceCommon {
     energy_monitor: Arc<dyn EnergyMonitor>,
     allocated_memory: usize,
     metric_wasm_memory_bytes: IntGauge,
-    pub(crate) trapped: bool,
 }
 
 impl InstanceCommon {
@@ -273,13 +278,12 @@ impl InstanceCommon {
             metric_wasm_memory_bytes: WORKER_METRICS
                 .wasm_memory_bytes
                 .with_label_values(module.database_identity()),
-            trapped: false,
         }
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn update_database(
-        &mut self,
+        &self,
         replica_ctx: &ReplicaContext,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
@@ -352,6 +356,9 @@ impl InstanceCommon {
     /// The method also performs various measurements and records energy usage,
     /// as well as broadcasting a [`ModuleEvent`] containing information about
     /// the outcome of the call.
+    ///
+    /// The `bool` in the return type signifies whether there was an "outer error".
+    /// For WASM, this should be interpreted as a trap occurring.
     pub(crate) fn call_reducer_with_tx(
         &mut self,
         replica_ctx: &ReplicaContext,
@@ -359,7 +366,7 @@ impl InstanceCommon {
         params: CallReducerParams,
         log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
         vm_call_reducer: impl FnOnce(MutTxId, ReducerOp<'_>, ReducerBudget) -> (MutTxId, ExecuteResult),
-    ) -> ReducerCallResult {
+    ) -> (ReducerCallResult, bool) {
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -438,6 +445,7 @@ impl InstanceCommon {
         maybe_log_long_running_reducer(reducer_name, timings.total_duration);
         reducer_span.exit();
 
+        let mut outer_error = false;
         let status = match call_result {
             Err(err) => {
                 log_traceback("reducer", reducer_name, &err);
@@ -452,13 +460,18 @@ impl InstanceCommon {
                     )
                     .inc();
 
-                // discard this instance
-                self.trapped = true;
+                // An outer error occurred.
+                // This signifies a logic error in the module rather than a properly
+                // handled bad argument from the caller of a reducer.
+                // For WASM, this will be interpreted as a trap
+                // and that the instance must be discarded.
+                // However, that does not necessarily apply to e.g., V8.
+                outer_error = true;
 
                 if energy.remaining.get() == 0 {
                     EventStatus::OutOfEnergy
                 } else {
-                    EventStatus::Failed("The Wasm instance encountered a fatal error.".into())
+                    EventStatus::Failed("The instance encountered a fatal error.".into())
                 }
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
@@ -499,11 +512,13 @@ impl InstanceCommon {
         };
         let event = commit_and_broadcast_event(&self.info, client, event, tx);
 
-        ReducerCallResult {
+        let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
             energy_used: energy_quanta_used,
             execution_duration: timings.total_duration,
-        }
+        };
+
+        (res, outer_error)
     }
 }
 

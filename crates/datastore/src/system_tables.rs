@@ -739,7 +739,7 @@ pub struct StViewRow {
     /// Currently all views are materialized and therefore are assigned a [`TableId`] by default.
     pub table_id: Option<TableId>,
     /// Is this a public or a private view?
-    /// Currently all views are public by default.
+    /// Currently only public views are supported.
     /// Private views may be supported in the future.
     pub is_public: bool,
     /// Is this view anonymous?

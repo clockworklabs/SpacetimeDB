@@ -49,6 +49,7 @@ members = [
   "tools/upgrade-version",
   "tools/license-check",
   "crates/bindings-typescript/test-app/server",
+  "crates/bindings-typescript/test-react-router-app/server",
 ]
 default-members = ["crates/cli", "crates/standalone", "crates/update"]
 # cargo feature graph resolver. v3 is default in edition2024 but workspace
@@ -218,7 +219,7 @@ paste = "1.0"
 percent-encoding = "2.3"
 petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
-pgwire = { version = "0.32", features = ["server-api"] }
+pgwire = { version = "0.34.1", default-features = false, features = ["server-api", "pg-ext-types"] }
 postgres-types = "0.2.5"
 pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
