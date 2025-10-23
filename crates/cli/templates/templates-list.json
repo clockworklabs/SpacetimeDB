@@ -4,52 +4,60 @@
   ],
   "templates": [
     {
-      "id": "basic-rust",
-      "description": "Bare minimum client and server using Rust with only stubs for code",
-      "server_source": "templates/basic-rust/server",
-      "client_source": "templates/basic-rust/client",
-      "server_lang": "rust",
-      "client_lang": "rust"
-    },
-    {
       "id": "basic-typescript",
-      "description": "Bare minimum client and server using TypeScript with only stubs for code",
+      "description": "A basic TypeScript client and server template with only stubs for code",
       "server_source": "templates/basic-typescript/server",
       "client_source": "templates/basic-typescript/client",
       "server_lang": "typescript",
       "client_lang": "typescript"
     },
     {
+      "id": "basic-c-sharp",
+      "description": "A basic C# client and server template with only stubs for code",
+      "server_source": "templates/basic-c-sharp/server",
+      "client_source": "templates/basic-c-sharp/client",
+      "server_lang": "csharp",
+      "client_lang": "csharp"
+    },
+    {
+      "id": "basic-rust",
+      "description": "A basic Rust client and server template with only stubs for code",
+      "server_source": "templates/basic-rust/server",
+      "client_source": "templates/basic-rust/client",
+      "server_lang": "rust",
+      "client_lang": "rust"
+    },
+    {
       "id": "basic-react",
       "description": "React web app with TypeScript server",
-      "server_source": "templates/basic-react/server",
+      "server_source": "../../crates/bindings-typescript/examples/basic-react",
       "client_source": "templates/basic-react/client",
       "server_lang": "typescript",
       "client_lang": "typescript"
     },
     {
-      "id": "quickstart-chat-rust",
-      "description": "Rust server/client implementing quickstart chat",
-      "server_source": "templates/quickstart-chat-rust/server",
-      "client_source": "templates/quickstart-chat-rust/client",
-      "server_lang": "rust",
-      "client_lang": "rust"
+      "id": "quickstart-chat-typescript",
+      "description": "A TypeScript client and server app implementing our quickstart chat tutorial",
+      "server_source": "templates/quickstart-chat-typescript/server",
+      "client_source": "templates/quickstart-chat-typescript/client",
+      "server_lang": "typescript",
+      "client_lang": "typescript"
     },
     {
       "id": "quickstart-chat-c-sharp",
-      "description": "C# server/client implementing quickstart chat",
+      "description": "A C# client and server app implementing our quickstart chat tutorial",
       "server_source": "templates/quickstart-chat-c-sharp/server",
       "client_source": "templates/quickstart-chat-c-sharp/client",
       "server_lang": "csharp",
       "client_lang": "csharp"
     },
     {
-      "id": "quickstart-chat-typescript",
-      "description": "TypeScript server/client implementing quickstart chat",
-      "server_source": "templates/quickstart-chat-typescript/server",
-      "client_source": "templates/quickstart-chat-typescript/client",
-      "server_lang": "typescript",
-      "client_lang": "typescript"
+      "id": "quickstart-chat-rust",
+      "description": "A Rust client and server app implementing our quickstart chat tutorial",
+      "server_source": "templates/quickstart-chat-rust/server",
+      "client_source": "templates/quickstart-chat-rust/client",
+      "server_lang": "rust",
+      "client_lang": "rust"
     }
   ]
 }
