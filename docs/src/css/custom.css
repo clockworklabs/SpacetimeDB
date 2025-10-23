@@ -384,10 +384,10 @@ ul.theme-doc-sidebar-menu {
 
       li {
         margin: 0;
-        padding: 8px;
+        padding: 0;
 
         overflow: hidden;
-        color: var(--clockworklabs-color-n1, #e6e9f0);
+        color: var(--clockworklabs-color-n1);
         text-overflow: ellipsis;
         text-transform: none;
 
@@ -398,8 +398,27 @@ ul.theme-doc-sidebar-menu {
         font-weight: 400;
         line-height: var(--20px);
         letter-spacing: -0.7px;
+
+        a {
+          padding: 8px !important;
+        }
+
+        .menu__link--active {
+          border-radius: var(--8px);
+          border: 1px solid var(--clockworklabs-color-n6);
+          background: var(--clockworklabs-color-shade1) !important;
+          color: var(--clockworklabs-color-n1) !important;
+        }
+      }
+
+      a:hover {
+        color: var(--clockworklabs-color-white) !important;
       }
     }
+  }
+
+  .menu__link--active {
+    color: var(--clockworklabs-color-n3) !important;
   }
 }
 
