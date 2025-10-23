@@ -8,11 +8,9 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::execution_context::ExecutionContext;
-use crate::execution_context::Workload;
 use crate::system_tables::{
-    system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow,
-    ST_CONNECTION_CREDENTIALS_ID,
+    system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow, StViewFields,
+    StViewParamRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
@@ -25,6 +23,8 @@ use crate::{
         ST_SEQUENCE_ID, ST_TABLE_ID,
     },
 };
+use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
+use crate::{execution_context::Workload, system_tables::StViewRow};
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
@@ -37,7 +37,7 @@ use spacetimedb_lib::{
     ConnectionId, Identity,
 };
 use spacetimedb_primitives::{
-    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId,
+    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
@@ -45,8 +45,9 @@ use spacetimedb_sats::{
     ser::Serialize,
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
-use spacetimedb_schema::schema::{
-    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
+use spacetimedb_schema::{
+    def::{ColumnDef, ModuleDef, ViewDef},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_table::{
     blob_store::BlobStore,
@@ -183,6 +184,38 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Create a backing table for a view.
+    ///
+    /// Requires:
+    /// - Everything [`Self::create_table`] requires.
+    ///
+    /// Ensures:
+    /// - Everything [`Self::create_table`] ensures.
+    /// - The returned [`ViewId`] is unique and not [`ViewId::SENTINEL`].
+    /// - All view metadata maintained by the datastore is created atomically
+    pub fn create_view_with_backing_table(
+        &mut self,
+        module_def: &ModuleDef,
+        view_def: &ViewDef,
+    ) -> Result<(ViewId, TableId)> {
+        let table_schema = TableSchema::from_view_def(module_def, view_def);
+        let table_id = self.create_table(table_schema)?;
+
+        let ViewDef {
+            name,
+            is_anonymous,
+            is_public,
+            params,
+            columns,
+            ..
+        } = view_def;
+
+        let view_id = self.insert_into_st_view(name.clone().into(), table_id, *is_public, *is_anonymous)?;
+        self.insert_into_st_view_param(view_id, params)?;
+        self.insert_into_st_view_column(view_id, columns)?;
+        Ok((view_id, table_id))
+    }
+
     /// Create a table.
     ///
     /// Requires:
@@ -196,7 +229,7 @@ impl MutTxId {
     pub fn create_table(&mut self, mut table_schema: TableSchema) -> Result<TableId> {
         let matching_system_table_schema = system_tables().iter().find(|s| **s == table_schema).cloned();
         if table_schema.table_id != TableId::SENTINEL && matching_system_table_schema.is_none() {
-            return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{:#?}`", table_schema).into());
+            return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{table_schema:#?}`").into());
             // checks for children are performed in the relevant `create_...` functions.
         }
 
@@ -244,7 +277,7 @@ impl MutTxId {
                 table_id: schedule.table_id,
                 schedule_id: schedule.schedule_id,
                 schedule_name: schedule.schedule_name,
-                reducer_name: schedule.reducer_name,
+                reducer_name: schedule.function_name,
                 at_column: schedule.at_column,
             };
             let id = self
@@ -285,6 +318,66 @@ impl MutTxId {
             self.insert_via_serialize_bsatn(ST_COLUMN_ID, &row)?;
             Ok(())
         })
+    }
+
+    /// Insert a row into `st_view`, auto-increments and returns the [`ViewId`].
+    fn insert_into_st_view(
+        &mut self,
+        view_name: Box<str>,
+        table_id: TableId,
+        is_public: bool,
+        is_anonymous: bool,
+    ) -> Result<ViewId> {
+        Ok(self
+            .insert_via_serialize_bsatn(
+                ST_VIEW_ID,
+                &StViewRow {
+                    view_id: ViewId::SENTINEL,
+                    view_name,
+                    table_id: Some(table_id),
+                    is_public,
+                    is_anonymous,
+                },
+            )?
+            .1
+            .collapse()
+            .read_col(StViewFields::ViewId)?)
+    }
+
+    /// For each parameter of a view, insert a row into `st_view_param`.
+    /// This does not include the context parameter.
+    fn insert_into_st_view_param(&mut self, view_id: ViewId, params: &ProductType) -> Result<()> {
+        for (i, field) in params.elements.iter().enumerate() {
+            self.insert_via_serialize_bsatn(
+                ST_VIEW_PARAM_ID,
+                &StViewParamRow {
+                    view_id,
+                    param_pos: i.into(),
+                    param_name: field
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| format!("param_{i}").into_boxed_str()),
+                    param_type: field.algebraic_type.clone().into(),
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// For each column or field returned in a view, insert a row into `st_view_column`.
+    fn insert_into_st_view_column(&mut self, view_id: ViewId, columns: &[ColumnDef]) -> Result<()> {
+        for def in columns {
+            self.insert_via_serialize_bsatn(
+                ST_VIEW_COLUMN_ID,
+                &StViewColumnRow {
+                    view_id,
+                    col_pos: def.col_id,
+                    col_name: def.name.clone().into(),
+                    col_type: def.ty.clone().into(),
+                },
+            )?;
+        }
+        Ok(())
     }
 
     fn create_table_internal(&mut self, schema: Arc<TableSchema>) {
@@ -521,16 +614,10 @@ impl MutTxId {
             .len()
             .checked_sub(original_table_schema.columns.len())
             .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "new column schemas must be more than existing ones for table_id: {}",
-                    table_id
-                )
+                anyhow::anyhow!("new column schemas must be more than existing ones for table_id: {table_id}")
             })?;
         let older_defaults = default_values.len().checked_sub(new_cols).ok_or_else(|| {
-            anyhow::anyhow!(
-                "not enough default values provided for new columns for table_id: {}",
-                table_id
-            )
+            anyhow::anyhow!("not enough default values provided for new columns for table_id: {table_id}")
         })?;
         default_values.drain(..older_defaults);
 
@@ -638,7 +725,7 @@ impl MutTxId {
     pub fn create_index(&mut self, mut index_schema: IndexSchema, is_unique: bool) -> Result<IndexId> {
         let table_id = index_schema.table_id;
         if table_id == TableId::SENTINEL {
-            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", index_schema).into());
+            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{index_schema:#?}`").into());
         }
 
         log::trace!(
@@ -1004,14 +1091,19 @@ impl MutTxId {
     /// - The sequence metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and not `SequenceId::SENTINEL`.
     pub fn create_sequence(&mut self, seq: SequenceSchema) -> Result<SequenceId> {
-        if seq.sequence_id != SequenceId::SENTINEL {
-            return Err(anyhow::anyhow!("`sequence_id` must be `SequenceId::SENTINEL` in `{:#?}`", seq).into());
-        }
         if seq.table_id == TableId::SENTINEL {
-            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", seq).into());
+            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{seq:#?}`").into());
         }
 
         let table_id = seq.table_id;
+        let matching_system_table_schema = system_tables().iter().find(|s| s.table_id == table_id).cloned();
+
+        if seq.sequence_id != SequenceId::SENTINEL && matching_system_table_schema.is_none() {
+            return Err(anyhow::anyhow!("`sequence_id` must be `SequenceId::SENTINEL` in `{:#?}`", seq).into());
+        }
+
+        let sequence_id = seq.sequence_id;
+
         log::trace!(
             "SEQUENCE CREATING: {} for table: {} and col: {}",
             seq.sequence_name,
@@ -1023,7 +1115,7 @@ impl MutTxId {
         // NOTE: Because st_sequences has a unique index on sequence_name, this will
         // fail if the table already exists.
         let mut sequence_row = StSequenceRow {
-            sequence_id: SequenceId::SENTINEL,
+            sequence_id,
             sequence_name: seq.sequence_name,
             table_id,
             col_pos: seq.col_pos,
@@ -1099,7 +1191,7 @@ impl MutTxId {
     /// - The returned ID is unique and is not `constraintId::SENTINEL`.
     fn create_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<ConstraintId> {
         if constraint.table_id == TableId::SENTINEL {
-            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", constraint).into());
+            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{constraint:#?}`").into());
         }
 
         let table_id = constraint.table_id;
@@ -1193,8 +1285,7 @@ impl MutTxId {
     pub fn create_row_level_security(&mut self, row_level_security_schema: RowLevelSecuritySchema) -> Result<RawSql> {
         if row_level_security_schema.table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!(
-                "`table_id` must not be `TableId::SENTINEL` in `{:#?}`",
-                row_level_security_schema
+                "`table_id` must not be `TableId::SENTINEL` in `{row_level_security_schema:#?}`"
             )
             .into());
         }

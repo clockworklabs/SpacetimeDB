@@ -40,6 +40,8 @@ export type UnsubscribeApplied = {
   queryId: QueryId;
   rows: SubscribeRows;
 };
+let _cached_UnsubscribeApplied_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -49,23 +51,24 @@ export const UnsubscribeApplied = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
-        {
-          name: 'totalHostExecutionDurationMicros',
-          algebraicType: __AlgebraicTypeValue.U64,
-        },
-        {
-          name: 'queryId',
-          algebraicType: QueryId.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'rows',
-          algebraicType: SubscribeRows.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_UnsubscribeApplied_type_value)
+      return _cached_UnsubscribeApplied_type_value;
+    _cached_UnsubscribeApplied_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_UnsubscribeApplied_type_value.value.elements.push(
+      { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
+      {
+        name: 'totalHostExecutionDurationMicros',
+        algebraicType: __AlgebraicTypeValue.U64,
+      },
+      { name: 'queryId', algebraicType: QueryId.getTypeScriptAlgebraicType() },
+      {
+        name: 'rows',
+        algebraicType: SubscribeRows.getTypeScriptAlgebraicType(),
+      }
+    );
+    return _cached_UnsubscribeApplied_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: UnsubscribeApplied): void {

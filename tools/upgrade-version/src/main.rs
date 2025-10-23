@@ -1,5 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 
+use anyhow::Context;
 use chrono::{Datelike, Local};
 use clap::{Arg, ArgGroup, Command};
 use duct::cmd;
@@ -54,6 +55,35 @@ fn rewrite_json_version_inplace(path: impl AsRef<Path>, new_version: &str) -> an
         );
     }
     fs::write(path, updated.as_ref())?;
+    Ok(())
+}
+
+pub fn rewrite_package_json_dependency_version_inplace(
+    path: impl AsRef<Path>,
+    new_version: &str,
+) -> anyhow::Result<()> {
+    let path = path.as_ref();
+    let contents = fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
+
+    // This regex matches:
+    // "spacetimedb": "1.5.*" → capturing leading whitespace and quotes, then replacing only the version.
+    let re = Regex::new(r#"(?m)^(\s*"spacetimedb"\s*:\s*")([^"]*)(")"#).expect("Invalid regex");
+
+    let mut replaced = false;
+    let updated = re.replacen(&contents, 1, |caps: &regex::Captures| {
+        replaced = true;
+        format!("{}{}{}", &caps[1], new_version, &caps[3])
+    });
+
+    if !replaced {
+        anyhow::bail!(
+            "Could not find \"spacetimedb\" dependency to update in {}",
+            path.display()
+        );
+    }
+
+    fs::write(path, updated.as_ref()).with_context(|| format!("Failed to write updated file to {}", path.display()))?;
+
     Ok(())
 }
 
@@ -155,6 +185,11 @@ fn main() -> anyhow::Result<()> {
 
     if matches.get_flag("typescript") || matches.get_flag("all") {
         rewrite_json_version_inplace("crates/bindings-typescript/package.json", &full_version)?;
+
+        rewrite_package_json_dependency_version_inplace(
+            "crates/cli/src/subcommands/project/typescript/package._json",
+            &wildcard_patch,
+        )?;
     }
 
     if matches.get_flag("csharp") || matches.get_flag("all") {

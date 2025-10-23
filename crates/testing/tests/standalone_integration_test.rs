@@ -101,6 +101,12 @@ fn test_calling_a_reducer_csharp() {
 
 #[test]
 #[serial]
+fn test_calling_a_reducer_typescript() {
+    test_calling_a_reducer_in_module("module-test-ts");
+}
+
+#[test]
+#[serial]
 fn test_calling_a_reducer_with_private_table() {
     init();
 

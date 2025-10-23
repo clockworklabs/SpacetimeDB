@@ -728,6 +728,7 @@ fn print_lint_suppression(output: &mut Indenter) {
 fn write_get_algebraic_type_for_product(
     module: &ModuleDef,
     out: &mut Indenter,
+    type_cache_name: &str,
     elements: &[(Identifier, AlgebraicTypeUse)],
 ) {
     writeln!(
@@ -740,9 +741,18 @@ fn write_get_algebraic_type_for_product(
     writeln!(out, "getTypeScriptAlgebraicType(): __AlgebraicTypeType {{");
     {
         out.indent(1);
-        write!(out, "return ");
-        convert_product_type(module, out, elements, "");
-        writeln!(out, ";");
+        writeln!(out, "if ({type_cache_name}) return {type_cache_name};");
+        // initialization is split in two because of recursive types
+        writeln!(
+            out,
+            "{type_cache_name} = __AlgebraicTypeValue.Product({{ elements: [] }});"
+        );
+        writeln!(out, "{type_cache_name}.value.elements.push(");
+        out.indent(1);
+        convert_product_type_elements(module, out, elements, "");
+        out.dedent(1);
+        writeln!(out, ");");
+        writeln!(out, "return {type_cache_name};");
         out.dedent(1);
     }
     writeln!(out, "}},");
@@ -763,6 +773,10 @@ fn define_body_for_product(
         writeln!(out, "}};");
     }
 
+    let type_cache_name = &*format!("_cached_{name}_type_value");
+    writeln!(out, "let {type_cache_name}: __AlgebraicTypeType | null = null;");
+    out.newline();
+
     writeln!(
         out,
         "/**
@@ -771,7 +785,7 @@ fn define_body_for_product(
     );
     writeln!(out, "export const {name} = {{");
     out.indent(1);
-    write_get_algebraic_type_for_product(module, out, elements);
+    write_get_algebraic_type_for_product(module, out, type_cache_name, elements);
     writeln!(out);
 
     writeln!(out, "serialize(writer: __BinaryWriter, value: {name}): void {{");
@@ -896,21 +910,31 @@ fn write_variant_constructors(
         let variant_name = ident.deref().to_case(Case::Pascal);
         write!(out, "{variant_name}: (value: ");
         write_type(module, out, ty, None, None).unwrap();
-        writeln!(out, "): {name} => ({{ tag: \"{variant_name}\", value }}),");
+        writeln!(
+            out,
+            "): {name}Variants.{variant_name} => ({{ tag: \"{variant_name}\", value }}),"
+        );
     }
 }
 
 fn write_get_algebraic_type_for_sum(
     module: &ModuleDef,
     out: &mut Indenter,
+    type_cache_name: &str,
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
     writeln!(out, "getTypeScriptAlgebraicType(): __AlgebraicTypeType {{");
     {
         indent_scope!(out);
-        write!(out, "return ");
-        convert_sum_type(module, &mut out, variants, "");
-        writeln!(out, ";");
+        writeln!(out, "if ({type_cache_name}) return {type_cache_name};");
+        // initialization is split in two because of recursive types
+        writeln!(out, "{type_cache_name} = __AlgebraicTypeValue.Sum({{ variants: [] }});");
+        writeln!(out, "{type_cache_name}.value.variants.push(");
+        out.indent(1);
+        convert_sum_type_variants(module, &mut out, variants, "");
+        out.dedent(1);
+        writeln!(out, ");");
+        writeln!(out, "return {type_cache_name};");
     }
     writeln!(out, "}},");
 }
@@ -938,6 +962,10 @@ fn define_body_for_sum(
 
     out.newline();
 
+    let type_cache_name = &*format!("_cached_{name}_type_value");
+    writeln!(out, "let {type_cache_name}: __AlgebraicTypeType | null = null;");
+    out.newline();
+
     // Write the runtime value with helper functions
     writeln!(out, "// A value with helper functions to construct the type.");
     writeln!(out, "export const {name} = {{");
@@ -957,7 +985,7 @@ fn define_body_for_sum(
     writeln!(out);
 
     // Write the function that generates the algebraic type.
-    write_get_algebraic_type_for_sum(module, out, variants);
+    write_get_algebraic_type_for_sum(module, out, type_cache_name, variants);
     writeln!(out);
 
     writeln!(
@@ -1156,37 +1184,25 @@ fn convert_algebraic_type<'a>(
     }
 }
 
-fn convert_sum_type<'a>(
+fn convert_sum_type_variants<'a>(
     module: &'a ModuleDef,
     out: &mut Indenter,
     variants: &'a [(Identifier, AlgebraicTypeUse)],
     ref_prefix: &'a str,
 ) {
-    writeln!(out, "__AlgebraicTypeValue.Sum({{");
-    out.indent(1);
-    writeln!(out, "variants: [");
-    out.indent(1);
     for (ident, ty) in variants {
         write!(out, "{{ name: \"{ident}\", algebraicType: ",);
         convert_algebraic_type(module, out, ty, ref_prefix);
         writeln!(out, " }},");
     }
-    out.dedent(1);
-    writeln!(out, "]");
-    out.dedent(1);
-    write!(out, "}})")
 }
 
-fn convert_product_type<'a>(
+fn convert_product_type_elements<'a>(
     module: &'a ModuleDef,
     out: &mut Indenter,
     elements: &'a [(Identifier, AlgebraicTypeUse)],
     ref_prefix: &'a str,
 ) {
-    writeln!(out, "__AlgebraicTypeValue.Product({{");
-    out.indent(1);
-    writeln!(out, "elements: [");
-    out.indent(1);
     for (ident, ty) in elements {
         write!(
             out,
@@ -1194,12 +1210,8 @@ fn convert_product_type<'a>(
             ident.deref().to_case(Case::Camel)
         );
         convert_algebraic_type(module, out, ty, ref_prefix);
-        writeln!(out, "}},");
+        writeln!(out, " }},");
     }
-    out.dedent(1);
-    writeln!(out, "]");
-    out.dedent(1);
-    write!(out, "}})")
 }
 
 /// Print imports for each of the `imports`.

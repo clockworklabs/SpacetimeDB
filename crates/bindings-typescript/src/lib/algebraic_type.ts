@@ -4,6 +4,7 @@ import { ConnectionId } from './connection_id';
 import type BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
 import { Identity } from './identity';
+import { Option } from './option';
 import {
   AlgebraicType as AlgebraicTypeType,
   AlgebraicType as AlgebraicTypeValue,
@@ -17,6 +18,7 @@ import {
   SumType as SumTypeValue,
 } from './autogen/sum_type_type';
 import ScheduleAt from './schedule_at';
+import type Typespace from './autogen/typespace_type';
 
 /**
  * A factor / element of a product type.
@@ -54,14 +56,27 @@ export type AlgebraicType = AlgebraicTypeType;
  * Algebraic Type utilities.
  */
 export const AlgebraicType: {
+  Sum<T extends SumType>(value: T): { tag: 'Sum'; value: T };
+  Product<T extends ProductType>(value: T): { tag: 'Product'; value: T };
+  Array<T extends AlgebraicType>(value: T): { tag: 'Array'; value: T };
+
   createOptionType(innerType: AlgebraicTypeType): AlgebraicTypeType;
   createIdentityType(): AlgebraicTypeType;
   createConnectionIdType(): AlgebraicTypeType;
   createScheduleAtType(): AlgebraicTypeType;
   createTimestampType(): AlgebraicTypeType;
   createTimeDurationType(): AlgebraicTypeType;
-  serializeValue(writer: BinaryWriter, ty: AlgebraicTypeType, value: any): void;
-  deserializeValue(reader: BinaryReader, ty: AlgebraicTypeType): any;
+  serializeValue(
+    writer: BinaryWriter,
+    ty: AlgebraicTypeType,
+    value: any,
+    typespace?: Typespace
+  ): void;
+  deserializeValue(
+    reader: BinaryReader,
+    ty: AlgebraicTypeType,
+    typespace?: Typespace
+  ): any;
   /**
    * Convert a value of the algebraic type into something that can be used as a key in a map.
    * There are no guarantees about being able to order it.
@@ -72,16 +87,20 @@ export const AlgebraicType: {
   intoMapKey(ty: AlgebraicTypeType, value: any): ComparablePrimitive;
 } & typeof AlgebraicTypeValue = {
   ...AlgebraicTypeValue,
+  Sum: <T extends SumType>(value: T): { tag: 'Sum'; value: T } => ({
+    tag: 'Sum',
+    value,
+  }),
+  Product: <T extends ProductType>(value: T): { tag: 'Product'; value: T } => ({
+    tag: 'Product',
+    value,
+  }),
+  Array: <T extends AlgebraicType>(value: T): { tag: 'Array'; value: T } => ({
+    tag: 'Array',
+    value,
+  }),
   createOptionType: function (innerType: AlgebraicTypeType): AlgebraicTypeType {
-    return AlgebraicTypeValue.Sum({
-      variants: [
-        { name: 'some', algebraicType: innerType },
-        {
-          name: 'none',
-          algebraicType: AlgebraicTypeValue.Product({ elements: [] }),
-        },
-      ],
-    });
+    return Option.getAlgebraicType(innerType);
   },
   createIdentityType: function (): AlgebraicTypeType {
     return Identity.getAlgebraicType();
@@ -101,14 +120,20 @@ export const AlgebraicType: {
   serializeValue: function (
     writer: BinaryWriter,
     ty: AlgebraicTypeType,
-    value: any
+    value: any,
+    typespace?: Typespace
   ): void {
+    if (ty.tag === 'Ref') {
+      if (!typespace)
+        throw new Error('cannot serialize refs without a typespace');
+      while (ty.tag === 'Ref') ty = typespace.types[ty.value];
+    }
     switch (ty.tag) {
       case 'Product':
-        ProductType.serializeValue(writer, ty.value, value);
+        ProductType.serializeValue(writer, ty.value, value, typespace);
         break;
       case 'Sum':
-        SumType.serializeValue(writer, ty.value, value);
+        SumType.serializeValue(writer, ty.value, value, typespace);
         break;
       case 'Array':
         if (ty.value.tag === 'U8') {
@@ -117,7 +142,7 @@ export const AlgebraicType: {
           const elemType = ty.value;
           writer.writeU32(value.length);
           for (const elem of value) {
-            AlgebraicType.serializeValue(writer, elemType, elem);
+            AlgebraicType.serializeValue(writer, elemType, elem, typespace);
           }
         }
         break;
@@ -169,19 +194,23 @@ export const AlgebraicType: {
       case 'String':
         writer.writeString(value);
         break;
-      default:
-        throw new Error(`not implemented, ${ty.tag}`);
     }
   },
   deserializeValue: function (
     reader: BinaryReader,
-    ty: AlgebraicTypeType
+    ty: AlgebraicTypeType,
+    typespace?: Typespace
   ): any {
+    if (ty.tag === 'Ref') {
+      if (!typespace)
+        throw new Error('cannot deserialize refs without a typespace');
+      while (ty.tag === 'Ref') ty = typespace.types[ty.value];
+    }
     switch (ty.tag) {
       case 'Product':
-        return ProductType.deserializeValue(reader, ty.value);
+        return ProductType.deserializeValue(reader, ty.value, typespace);
       case 'Sum':
-        return SumType.deserializeValue(reader, ty.value);
+        return SumType.deserializeValue(reader, ty.value, typespace);
       case 'Array':
         if (ty.value.tag === 'U8') {
           return reader.readUInt8Array();
@@ -190,7 +219,9 @@ export const AlgebraicType: {
           const length = reader.readU32();
           const result: any[] = [];
           for (let i = 0; i < length; i++) {
-            result.push(AlgebraicType.deserializeValue(reader, elemType));
+            result.push(
+              AlgebraicType.deserializeValue(reader, elemType, typespace)
+            );
           }
           return result;
         }
@@ -226,8 +257,6 @@ export const AlgebraicType: {
         return reader.readF64();
       case 'String':
         return reader.readString();
-      default:
-        throw new Error(`not implemented, ${ty.tag}`);
     }
   },
   /**
@@ -299,21 +328,40 @@ export const AlgebraicType: {
 export type ProductType = ProductTypeType;
 
 export const ProductType: {
-  serializeValue(writer: BinaryWriter, ty: ProductTypeType, value: any): void;
-  deserializeValue(reader: BinaryReader, ty: ProductTypeType): any;
+  serializeValue(
+    writer: BinaryWriter,
+    ty: ProductTypeType,
+    value: any,
+    typespace?: Typespace
+  ): void;
+  deserializeValue(
+    reader: BinaryReader,
+    ty: ProductTypeType,
+    typespace?: Typespace
+  ): any;
   intoMapKey(ty: ProductTypeType, value: any): ComparablePrimitive;
 } = {
   ...ProductTypeValue,
-  serializeValue(writer: BinaryWriter, ty: ProductTypeType, value: any): void {
+  serializeValue(
+    writer: BinaryWriter,
+    ty: ProductTypeType,
+    value: any,
+    typespace?: Typespace
+  ): void {
     for (const element of ty.elements) {
       AlgebraicType.serializeValue(
         writer,
         element.algebraicType,
-        value[element.name!]
+        value[element.name!],
+        typespace
       );
     }
   },
-  deserializeValue(reader: BinaryReader, ty: ProductTypeType): any {
+  deserializeValue(
+    reader: BinaryReader,
+    ty: ProductTypeType,
+    typespace?: Typespace
+  ): any {
     const result: { [key: string]: any } = {};
     if (ty.elements.length === 1) {
       if (ty.elements[0].name === '__time_duration_micros__') {
@@ -336,7 +384,8 @@ export const ProductType: {
     for (const element of ty.elements) {
       result[element.name!] = AlgebraicType.deserializeValue(
         reader,
-        element.algebraicType
+        element.algebraicType,
+        typespace
       );
     }
     return result;
@@ -366,6 +415,8 @@ export const ProductType: {
   },
 };
 
+export type SumType = SumTypeType;
+
 /**
  * Unlike most languages, sums in SATS are *[structural]* and not nominal.
  * When checking whether two nominal types are the same,
@@ -391,14 +442,24 @@ export const ProductType: {
  * [structural]: https://en.wikipedia.org/wiki/Structural_type_system
  */
 export const SumType: {
-  serializeValue(writer: BinaryWriter, ty: SumTypeType, value: any): void;
-  deserializeValue(reader: BinaryReader, ty: SumTypeType): any;
+  serializeValue(
+    writer: BinaryWriter,
+    ty: SumTypeType,
+    value: any,
+    typespace?: Typespace
+  ): void;
+  deserializeValue(
+    reader: BinaryReader,
+    ty: SumTypeType,
+    typespace?: Typespace
+  ): any;
 } = {
   ...SumTypeValue,
   serializeValue: function (
     writer: BinaryWriter,
     ty: SumTypeType,
-    value: any
+    value: any,
+    typespace?: Typespace
   ): void {
     if (
       ty.variants.length == 2 &&
@@ -410,7 +471,8 @@ export const SumType: {
         AlgebraicType.serializeValue(
           writer,
           ty.variants[0].algebraicType,
-          value
+          value,
+          typespace
         );
       } else {
         writer.writeByte(1);
@@ -425,11 +487,16 @@ export const SumType: {
       AlgebraicType.serializeValue(
         writer,
         ty.variants[index].algebraicType,
-        value['value']
+        value['value'],
+        typespace
       );
     }
   },
-  deserializeValue: function (reader: BinaryReader, ty: SumTypeType): any {
+  deserializeValue: function (
+    reader: BinaryReader,
+    ty: SumTypeType,
+    typespace?: Typespace
+  ): any {
     const tag = reader.readU8();
     // In TypeScript we handle Option values as a special case
     // we don't represent the some and none variants, but instead
@@ -442,7 +509,8 @@ export const SumType: {
       if (tag === 0) {
         return AlgebraicType.deserializeValue(
           reader,
-          ty.variants[0].algebraicType
+          ty.variants[0].algebraicType,
+          typespace
         );
       } else if (tag === 1) {
         return undefined;
@@ -453,7 +521,8 @@ export const SumType: {
       const variant = ty.variants[tag];
       const value = AlgebraicType.deserializeValue(
         reader,
-        variant.algebraicType
+        variant.algebraicType,
+        typespace
       );
       return { tag: variant.name, value };
     }

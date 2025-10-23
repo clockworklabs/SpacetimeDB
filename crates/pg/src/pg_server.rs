@@ -46,8 +46,6 @@ pub(crate) enum PgError {
     DatabaseNameRequired,
     #[error(transparent)]
     Pg(#[from] PgWireError),
-    #[error("SSL is not supported by SpacetimeDB")]
-    SSLNotSupported,
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -150,7 +148,7 @@ struct PgSpacetimeDB<T> {
 }
 
 impl<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone> PgSpacetimeDB<T> {
-    async fn exe_sql<'a>(&self, query: String) -> PgWireResult<Vec<Response<'a>>> {
+    async fn exe_sql(&self, query: String) -> PgWireResult<Vec<Response>> {
         let params = self.cached.lock().await.clone().unwrap();
         let db = SqlParams {
             name_or_identity: database::NameOrIdentity::Name(DatabaseName(params.database.clone())),
@@ -238,7 +236,7 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                     params
                         .get(param)
                         .map(String::from)
-                        .ok_or_else(|| PgError::MetadataError(anyhow::anyhow!("Missing parameter: {}", param)))
+                        .ok_or_else(|| PgError::MetadataError(anyhow::anyhow!("Missing parameter: {param}")))
                 };
 
                 // We don't support `METADATA_USER` because we don't have a user management system.
@@ -282,12 +280,6 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 self.cached.lock().await.clone_from(&Some(metadata));
                 finish_authentication(client, &self.parameter_provider).await?;
             }
-            PgWireFrontendMessage::SslRequest(_) => {
-                let err = PgError::SSLNotSupported;
-                log::error!("{err}");
-                let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), err.to_string());
-                return close_client(client, err).await;
-            }
             // The other messages are for features not supported by SpacetimeDB, that are rejected by the parser.
             _ => {
                 unreachable!("Unsupported startup message: {message:?}");
@@ -301,7 +293,7 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Clone> SimpleQueryHandler
     for PgSpacetimeDB<T>
 {
-    async fn do_query<'a, C>(&self, _client: &mut C, query: &str) -> PgWireResult<Vec<Response<'a>>>
+    async fn do_query<C>(&self, _client: &mut C, query: &str) -> PgWireResult<Vec<Response>>
     where
         C: ClientInfo + Unpin + Send + Sync,
     {
