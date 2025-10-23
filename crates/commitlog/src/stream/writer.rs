@@ -13,7 +13,7 @@ use tokio::{
 use crate::{
     commit, error,
     index::IndexFile,
-    repo::{Repo, SegmentLen as _},
+    repo::{fallocate, Repo, SegmentLen as _},
     segment::{self, FileLike, OffsetIndexWriter, CHECKSUM_LEN, DEFAULT_CHECKSUM_ALGORITHM},
     stream::common::{read_exact, AsyncFsync},
     Options, StoredCommit, DEFAULT_LOG_FORMAT_VERSION,
@@ -108,7 +108,7 @@ where
         };
 
         let mut segment = repo.open_segment_writer(last)?;
-        fallocate(&mut segment, commitlog_options.max_segment_size)?;
+        fallocate(&mut segment, &commitlog_options)?;
 
         let mut offset_index = repo
             .get_offset_index(last)
@@ -462,7 +462,7 @@ fn create_segment<R: Repo>(
 
         Err(e)
     })?;
-    fallocate(&mut segment, commitlog_options.max_segment_size)?;
+    fallocate(&mut segment, &commitlog_options)?;
 
     let index_writer = repo
         .create_offset_index(segment_offset, commitlog_options.offset_index_len())
@@ -471,12 +471,4 @@ fn create_segment<R: Repo>(
         .ok();
 
     Ok((segment, index_writer))
-}
-
-#[inline]
-fn fallocate(_f: &mut impl FileLike, _size: u64) -> io::Result<()> {
-    #[cfg(feature = "fallocate")]
-    _f.fallocate(_size)?;
-
-    Ok(())
 }

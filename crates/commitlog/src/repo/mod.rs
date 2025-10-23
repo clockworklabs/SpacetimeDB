@@ -317,7 +317,7 @@ pub fn open_segment_reader<R: Repo>(
 ///
 /// No-op otherwise.
 #[inline]
-fn fallocate(_f: &mut impl FileLike, _opts: &Options) -> io::Result<()> {
+pub(crate) fn fallocate(_f: &mut impl FileLike, _opts: &Options) -> io::Result<()> {
     #[cfg(feature = "fallocate")]
     if _opts.preallocate_segments {
         _f.fallocate(_opts.max_segment_size)?;
