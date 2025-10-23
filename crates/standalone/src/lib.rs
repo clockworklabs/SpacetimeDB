@@ -447,7 +447,8 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
     ) -> Result<(), spacetimedb_client_api::Unauthorized> {
         let database = self
             .get_database_by_identity(&database)?
-            .with_context(|| format!("database {database} not found"))?;
+            .with_context(|| format!("database {database} not found"))
+            .with_context(|| format!("Unable to authorize {subject} to perform {action:?})"))?;
         if subject == database.owner_identity {
             return Ok(());
         }
@@ -466,7 +467,8 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
     ) -> Result<AuthCtx, spacetimedb_client_api::Unauthorized> {
         let database = self
             .get_database_by_identity(&database)?
-            .with_context(|| format!("database {database} not found"))?;
+            .with_context(|| format!("database {database} not found"))
+            .with_context(|| format!("Unable to authorize {subject} for SQL"))?;
 
         Ok(AuthCtx::new(database.owner_identity, subject))
     }

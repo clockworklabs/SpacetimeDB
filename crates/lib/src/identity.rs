@@ -27,21 +27,31 @@ impl<T: Fn(SqlPermission) -> bool> SqlAuthorization for T {
     }
 }
 
+pub type SqlPermissions = Arc<dyn SqlAuthorization + Send + Sync + 'static>;
+
+/// The legacy permissions (sans "teams") grant everything if the owner is
+/// equal to the caller.
+fn owner_permissions(owner: Identity, caller: Identity) -> SqlPermissions {
+    let is_owner = owner == caller;
+    Arc::new(move |p| match p {
+        SqlPermission::Read(StAccess::Public) => true,
+        _ => is_owner,
+    })
+}
+
 /// Authorization for SQL operations (queries, DML, subscription queries).
 #[derive(Clone)]
 pub struct AuthCtx {
     caller: Identity,
-    permissions: Arc<dyn SqlAuthorization + Send + Sync + 'static>,
+    permissions: SqlPermissions,
 }
 
 impl AuthCtx {
     pub fn new(owner: Identity, caller: Identity) -> Self {
-        let is_owner = owner == caller;
-        let permissions = Arc::new(move |_| is_owner);
-        Self::with_permissions(caller, permissions)
+        Self::with_permissions(caller, owner_permissions(owner, caller))
     }
 
-    pub fn with_permissions(caller: Identity, permissions: Arc<dyn SqlAuthorization + Send + Sync + 'static>) -> Self {
+    pub fn with_permissions(caller: Identity, permissions: SqlPermissions) -> Self {
         Self { caller, permissions }
     }
 
