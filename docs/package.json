@@ -22,6 +22,8 @@
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/source-code-pro": "^5.2.7",
     "@inkeep/cxkit-docusaurus": "^0.5.98",
+    "@inkeep/cxkit-react": "^0.5.101",
+    "@inkeep/widgets": "^0.2.292",
     "@mdx-js/react": "^3.0.0",
     "@shikijs/rehype": "^3.3.0",
     "clsx": "^2.0.0",
