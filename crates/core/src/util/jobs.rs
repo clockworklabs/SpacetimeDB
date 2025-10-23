@@ -160,16 +160,23 @@ impl PinnedCoresExecutorManager {
     /// so databases should read from the [`watch::Receiver`] when spawning each job,
     /// and should not spawn long-lived background tasks such as ones which loop over a channel.
     fn allocate(&mut self) -> (SingleCoreExecutorId, watch::Receiver<runtime::Handle>) {
+        // Determine the next job ID.
         let database_executor_id = self.next_id;
         self.next_id.0 += 1;
 
+        // Put the job ID into the next core.
         let (&core_id, runtime_handle) = {
-            let (core_id, core_info) = self.cores.get_index_mut(self.next_core).unwrap();
+            let (core_id, core_info) = self
+                .cores
+                .get_index_mut(self.next_core)
+                .expect("`self.next_core < self.cores.len()`");
             core_info.jobs.push(database_executor_id);
             (core_id, core_info.tokio_runtime.handle().clone())
         };
+        // Move the next core one ahead, wrapping around the number of cores we have.
         self.next_core = (self.next_core + 1) % self.cores.len();
 
+        // Record channels and details for moving a job to a different core.
         let (move_runtime_tx, move_runtime_rx) = watch::channel(runtime_handle);
         self.database_executor_move
             .insert(database_executor_id, (core_id, move_runtime_tx));
@@ -182,7 +189,13 @@ impl PinnedCoresExecutorManager {
     ///
     /// Called by [`LoadBalanceOnDropGuard`] when a [`SingleCoreExecutor`] is no longer in use.
     fn deallocate(&mut self, id: SingleCoreExecutorId) {
-        let (freed_core_id, _) = self.database_executor_move.remove(&id).unwrap();
+        // Determine the `CoreId` that will now have one less job.
+        // The `id`s came from `self.allocate()`,
+        // so there must be a `database_executor_move` for it.
+        let (freed_core_id, _) = self
+            .database_executor_move
+            .remove(&id)
+            .expect("there should be a `database_executor_move` for `id`");
 
         let core_index = self.cores.get_index_of(&freed_core_id).unwrap();
 
@@ -194,7 +207,7 @@ impl PinnedCoresExecutorManager {
 
         let steal_from_index = self.next_core.checked_sub(1).unwrap_or(self.cores.len() - 1);
 
-        // if this core was already at `next_core - 1`, we don't need to steal from anywhere
+        // If this core was already at `next_core - 1`, we don't need to steal from anywhere.
         let (core_info, steal_from) = match self.cores.get_disjoint_indices_mut([core_index, steal_from_index]) {
             Ok([(_, core), (_, steal_from)]) => (core, Some(steal_from)),
             Err(_) => (&mut self.cores[core_index], None),
