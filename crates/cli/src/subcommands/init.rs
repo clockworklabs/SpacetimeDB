@@ -144,11 +144,6 @@ pub fn cli() -> clap::Command {
                 .help("Template ID or GitHub repository (owner/repo or URL)"),
         )
         .arg(
-            Arg::new("client-lang").long("client-lang").value_name("LANG").help(
-                "Client language: rust, csharp, typescript (it can only be used when --template is not specified)",
-            ),
-        )
-        .arg(
             Arg::new("local")
                 .long("local")
                 .action(clap::ArgAction::SetTrue)
@@ -433,10 +428,9 @@ async fn get_template_config_non_interactive(
 
     // No template - require at least one language option
     let server_lang_str = args.get_one::<String>("server-lang").cloned();
-    let client_lang_str = args.get_one::<String>("client-lang").cloned();
 
-    if server_lang_str.is_none() && client_lang_str.is_none() {
-        anyhow::bail!("Either --template, --server-lang, or --client-lang must be provided in non-interactive mode");
+    if server_lang_str.is_none() {
+        anyhow::bail!("Either --template or --server-lang must be provided in non-interactive mode");
     }
 
     Ok(TemplateConfig {
@@ -444,7 +438,7 @@ async fn get_template_config_non_interactive(
         project_path,
         template_type: TemplateType::Empty,
         server_lang: parse_server_lang(&server_lang_str)?,
-        client_lang: parse_client_lang(&client_lang_str)?,
+        client_lang: None,
         github_repo: None,
         template_def: None,
         use_local: true,
@@ -487,20 +481,11 @@ async fn get_template_config_interactive(
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
-    // Check if server-lang or client-lang is provided
     let server_lang_arg = args.get_one::<String>("server-lang");
-    let client_lang_arg = args.get_one::<String>("client-lang");
-
-    if server_lang_arg.is_some() || client_lang_arg.is_some() {
-        // Use provided languages
+    if server_lang_arg.is_some() {
         let server_lang = parse_server_lang(&server_lang_arg.cloned())?;
         if let Some(lang_str) = server_lang_arg {
             println!("{} {}", "Server language:".bold(), lang_str);
-        }
-
-        let client_lang = parse_client_lang(&client_lang_arg.cloned())?;
-        if let Some(lang_str) = client_lang_arg {
-            println!("{} {}", "Client language:".bold(), lang_str);
         }
 
         return Ok(TemplateConfig {
@@ -508,7 +493,7 @@ async fn get_template_config_interactive(
             project_path,
             template_type: TemplateType::Empty,
             server_lang,
-            client_lang,
+            client_lang: None,
             github_repo: None,
             template_def: None,
             use_local: true,
@@ -904,28 +889,6 @@ fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()
         None => {}
     }
 
-    match config.client_lang {
-        Some(ClientLanguage::TypeScript) => {
-            println!("Setting up TypeScript client...");
-            let client_dir = project_path.join("client");
-            init_empty_typescript_client(&client_dir)?;
-
-            update_client_package_json(&client_dir, &config.project_name)?;
-
-            if config.server_lang.is_some() {
-                create_root_package_json(project_path, &config.project_name, config.use_local)?;
-            }
-
-            println!(
-                "{}",
-                "Note: Run 'npm install' in the project directory to install dependencies".yellow()
-            );
-        }
-        Some(ClientLanguage::Rust) => {}
-        Some(ClientLanguage::Csharp) => {}
-        None => {}
-    }
-
     Ok(())
 }
 
@@ -1112,14 +1075,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
     let is_interactive = !args.get_flag("non-interactive");
     let template = args.get_one::<String>("template");
     let server_lang = args.get_one::<String>("server-lang");
-    let client_lang = args.get_one::<String>("client-lang");
     let name = args.get_one::<String>("name");
 
-    // Validate that template and language options are not used together
-    if template.is_some() && (server_lang.is_some() || client_lang.is_some()) {
-        anyhow::bail!(
-            "Cannot specify both --template and --server-lang/--client-lang. Language is determined by the template."
-        );
+    // Validate that template and server-lang options are not used together
+    if template.is_some() && server_lang.is_some() {
+        anyhow::bail!("Cannot specify both --template and --server-lang. Language is determined by the template.");
     }
 
     if !is_interactive {
@@ -1127,10 +1087,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
         if name.is_none() {
             anyhow::bail!("--name is required in non-interactive mode");
         }
-        if template.is_none() && server_lang.is_none() && client_lang.is_none() {
-            anyhow::bail!(
-                "Either --template, --server-lang, or --client-lang must be provided in non-interactive mode"
-            );
+        if template.is_none() && server_lang.is_none() {
+            anyhow::bail!("Either --template or --server-lang must be provided in non-interactive mode");
         }
     }
 
