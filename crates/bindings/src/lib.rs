@@ -680,10 +680,10 @@ pub use spacetimedb_bindings_macro::reducer;
 ///
 /// When in doubt, prefer writing [`reducer`]s unless you need to perform an operation only available to procedures.
 ///
-/// The first argument of a reducer is always `&mut ProcedureContext`.
+/// The first argument of a procedure is always `&mut ProcedureContext`.
 /// The [`ProcedureContext`] exposes information about the caller and allows side-effecting operations.
 ///
-/// After this, a reducer can take any number of arguments.
+/// After this, a procedure can take any number of arguments.
 /// These arguments must implement the [`SpacetimeType`], [`Serialize`], and [`Deserialize`] traits.
 /// All of these traits can be derived at once by marking a type with `#[derive(SpacetimeType)]`.
 ///
