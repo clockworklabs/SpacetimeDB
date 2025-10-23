@@ -31,7 +31,9 @@ class Domains(Smoketest):
         root_name = random_string()
         self.publish_module(root_name)
 
-        self.publish_module(f"{root_name}/test")
+        # TODO: This is valid in editions with the teams feature, but
+        # smoketests don't know the target's edition.
+        # self.publish_module(f"{root_name}/test")
 
         with self.assertRaises(Exception):
             self.publish_module(f"{root_name}//test")
