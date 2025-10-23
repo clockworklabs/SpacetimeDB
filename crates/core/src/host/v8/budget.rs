@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Provides budget, energy, timeout, and long-running logging facilities.
 //!
 //! These are all driven by [`with_timeout_and_cb_every`] for V8 modules
@@ -47,7 +49,11 @@ pub(super) type InterruptCallback = extern "C" fn(&mut Isolate, *mut c_void);
 /// every [`EPOCH_TICKS_PER_SECOND`] ticks (~every 1 second)
 /// to log that the reducer is still running.
 pub(super) extern "C" fn cb_log_long_running(isolate: &mut Isolate, _: *mut c_void) {
-    let env = env_on_isolate(isolate);
+    let Some(env) = env_on_isolate(isolate) else {
+        // All we can do is log something.
+        tracing::error!("`JsInstanceEnv` not set");
+        return;
+    };
     let database = env.instance_env.replica_ctx.database_identity;
     let reducer = env.reducer_name();
     let dur = env.reducer_start().elapsed();
@@ -61,7 +67,6 @@ pub(super) extern "C" fn cb_noop(_: &mut Isolate, _: *mut c_void) {}
 /// when `budget` has been used up.
 ///
 /// Every `callback_every` ticks, `callback` is called.
-#[allow(dead_code)]
 fn run_timeout_and_cb_every(
     handle: IsolateHandle,
     callback_every: u64,

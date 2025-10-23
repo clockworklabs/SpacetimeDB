@@ -465,26 +465,21 @@ impl ModuleValidator<'_> {
             })
         };
 
-        // The possible return types of a view are `T`, `Option<T>`, or `Vec<T>`,
+        // The possible return types of a view are `Vec<T>` or `Option<T>`,
         // where `T` is a `ProductType` in the `Typespace`.
         // Here we extract the inner product type ref `T`.
         // We exit early for errors since this breaks all the other checks.
-        let product_type_ref = if return_type.is_option() {
-            return_type
-                .as_option()
-                .and_then(AlgebraicType::as_ref)
-                .cloned()
-                .ok_or_else(invalid_return_type)?
-        } else if return_type.is_array() {
-            return_type
-                .as_array()
-                .map(|array_type| array_type.elem_ty.as_ref())
-                .and_then(AlgebraicType::as_ref)
-                .cloned()
-                .ok_or_else(invalid_return_type)?
-        } else {
-            return_type.as_ref().cloned().ok_or_else(invalid_return_type)?
-        };
+        let product_type_ref = return_type
+            .as_option()
+            .and_then(AlgebraicType::as_ref)
+            .or_else(|| {
+                return_type
+                    .as_array()
+                    .map(|array_type| array_type.elem_ty.as_ref())
+                    .and_then(AlgebraicType::as_ref)
+            })
+            .cloned()
+            .ok_or_else(invalid_return_type)?;
 
         let product_type = self
             .typespace
