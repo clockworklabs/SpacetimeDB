@@ -91,12 +91,43 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
         panic!("Template '{}' has no git-tracked files! Check that the directory exists and contains files tracked by git.", source);
     }
 
+    // Example: /Users/user/SpacetimeDB
     let repo_root = get_repo_root();
+    // Example: /Users/user/SpacetimeDB/crates/cli
+    let manifest_canonical = Path::new(manifest_dir).canonicalize().unwrap();
+    // Example: crates/cli
+    let manifest_rel = manifest_canonical.strip_prefix(&repo_root).unwrap();
+
+    // Example for inside crate: /Users/user/SpacetimeDB/crates/cli/templates/basic-rust/server
+    // Example for outside crate: /Users/user/SpacetimeDB/modules/quickstart-chat
+    let resolved_canonical = repo_root.join(&resolved_base).canonicalize().unwrap();
+
+    // If the files are outside of the cli crate we need to copy them to the crate directory,
+    // so they're included properly even when the crate is published
+    let local_copy_dir = if resolved_canonical.strip_prefix(&manifest_canonical).is_err() {
+        // Example source: "../../modules/quickstart-chat"
+        // Sanitized: "parent_parent_modules_quickstart-chat"
+        let sanitized_source = source.replace("/", "_").replace("\\", "_").replace("..", "parent");
+        // Example: /Users/user/SpacetimeDB/crates/cli/.templates/parent_parent_modules_quickstart-chat
+        let copy_dir = Path::new(manifest_dir).join(".templates").join(&sanitized_source);
+
+        if copy_dir.exists() {
+            fs::remove_dir_all(&copy_dir).expect("Failed to remove old template copy");
+        }
+        fs::create_dir_all(&copy_dir).expect("Failed to create .templates directory");
+
+        Some(copy_dir)
+    } else {
+        None
+    };
 
     code.push_str("    {\n");
     code.push_str("        let mut files = HashMap::new();\n");
 
     for file_path in git_files {
+        // Example file_path: modules/quickstart-chat/src/lib.rs (relative to repo root)
+        // Example resolved_base: modules/quickstart-chat
+        // Example relative_path: src/lib.rs
         let relative_path = match file_path.strip_prefix(&resolved_base) {
             Ok(p) => p,
             Err(_) => {
@@ -109,17 +140,52 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
                 continue;
             }
         };
+        // Example: "src/lib.rs"
         let relative_str = relative_path.to_str().unwrap().replace("\\", "/");
 
+        // Example: /Users/user/SpacetimeDB/modules/quickstart-chat/src/lib.rs
         let full_path = repo_root.join(&file_path);
         if full_path.exists() && full_path.is_file() {
-            let file_path_str = file_path.to_str().unwrap().replace("\\", "/");
-            code.push_str(&format!(
-                "        files.insert(\"{}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/../../{}\")));\n",
-                relative_str, file_path_str
-            ));
+            let include_path = if let Some(ref copy_dir) = local_copy_dir {
+                // Outside crate: copy to .templates
+                // Example dest_file: /Users/user/SpacetimeDB/crates/cli/.templates/parent_parent_modules_quickstart-chat/src/lib.rs
+                let dest_file = copy_dir.join(relative_path);
+                fs::create_dir_all(dest_file.parent().unwrap()).expect("Failed to create parent directory");
+                fs::copy(&full_path, &dest_file)
+                    .expect(&format!("Failed to copy file {:?} to {:?}", full_path, dest_file));
 
-            println!("cargo:rerun-if-changed=../../{}", file_path_str);
+                // Example relative_to_manifest: .templates/parent_parent_modules_quickstart-chat/src/lib.rs
+                let relative_to_manifest = dest_file.strip_prefix(manifest_dir).unwrap();
+                let path_str = relative_to_manifest.to_str().unwrap().replace("\\", "/");
+                // Watch the original file for changes
+                // Example: modules/quickstart-chat/src/lib.rs
+                println!(
+                    "cargo:rerun-if-changed={}",
+                    file_path.to_str().unwrap().replace("\\", "/")
+                );
+                path_str
+            } else {
+                // Inside crate: use path relative to CARGO_MANIFEST_DIR
+                // Example file_path: crates/cli/templates/basic-rust/server/src/lib.rs
+                // Example manifest_rel: crates/cli
+                // Result: templates/basic-rust/server/src/lib.rs
+                let relative_to_manifest = file_path.strip_prefix(manifest_rel).unwrap();
+                let path_str = relative_to_manifest.to_str().unwrap().replace("\\", "/");
+                // Example: crates/cli/templates/basic-rust/server/src/lib.rs
+                println!(
+                    "cargo:rerun-if-changed={}",
+                    file_path.to_str().unwrap().replace("\\", "/")
+                );
+                path_str
+            };
+
+            // Example include_path (inside crate): "templates/basic-rust/server/src/lib.rs"
+            // Example include_path (outside crate): ".templates/parent_parent_modules_quickstart-chat/src/lib.rs"
+            // Example relative_str: "src/lib.rs"
+            code.push_str(&format!(
+                "        files.insert(\"{}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{}\")));\n",
+                relative_str, include_path
+            ));
         }
     }
 
@@ -132,39 +198,21 @@ fn get_git_tracked_files(path: &Path, manifest_dir: &str) -> (Vec<PathBuf>, Path
     let full_path = Path::new(manifest_dir).join(path);
 
     let repo_root = get_repo_root();
-    let manifest_canonical = Path::new(manifest_dir).canonicalize().unwrap();
     let repo_canonical = repo_root.canonicalize().unwrap();
-    let manifest_rel = manifest_canonical.strip_prefix(&repo_canonical).unwrap();
 
-    let resolved_path = if full_path.is_symlink() {
-        match fs::read_link(&full_path) {
-            Ok(target) => {
-                let abs_target = if target.is_absolute() {
-                    target
-                } else {
-                    // we need to resolve the symlink path, full_path.parent()
-                    // is a directory containing the symlink
-                    full_path.parent().unwrap().join(target)
-                };
-                let canonical = abs_target.canonicalize().unwrap_or(abs_target);
-                canonical
-                    .strip_prefix(&repo_canonical)
-                    .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|_| {
-                        panic!(
-                            "Symlink target {} is outside repo root {}",
-                            canonical.display(),
-                            repo_canonical.display()
-                        )
-                    })
-            }
-            Err(e) => {
-                panic!("Failed to read symlink {}: {}", full_path.display(), e);
-            }
-        }
-    } else {
-        manifest_rel.join(path)
-    };
+    let canonical = full_path.canonicalize().unwrap_or_else(|e| {
+        panic!("Failed to canonicalize path {}: {}", full_path.display(), e);
+    });
+    let resolved_path = canonical
+        .strip_prefix(&repo_canonical)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|_| {
+            panic!(
+                "Path {} is outside repo root {}",
+                canonical.display(),
+                repo_canonical.display()
+            )
+        });
 
     let output = Command::new("git")
         .args(["ls-files", resolved_path.to_str().unwrap()])

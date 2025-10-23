@@ -220,3 +220,6 @@ new.json
 
 # Test data
 !crates/core/testdata/
+
+# Temporary templates dir for CLI's init command
+/crates/cli/.templates
