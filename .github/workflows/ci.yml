@@ -42,6 +42,8 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: Smoketests
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
