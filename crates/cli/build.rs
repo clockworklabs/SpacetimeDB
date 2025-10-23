@@ -93,10 +93,11 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
 
     // Example: /Users/user/SpacetimeDB
     let repo_root = get_repo_root();
+    let repo_root_canonical = std::fs::canonicalize(&repo_root).unwrap();
     // Example: /Users/user/SpacetimeDB/crates/cli
     let manifest_canonical = Path::new(manifest_dir).canonicalize().unwrap();
     // Example: crates/cli
-    let manifest_rel = manifest_canonical.strip_prefix(&repo_root).unwrap();
+    let manifest_rel = manifest_canonical.strip_prefix(&repo_root_canonical).unwrap();
 
     // Example for inside crate: /Users/user/SpacetimeDB/crates/cli/templates/basic-rust/server
     // Example for outside crate: /Users/user/SpacetimeDB/modules/quickstart-chat
