@@ -663,27 +663,6 @@ fn copy_dir_all(src: &Path, dst: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn create_root_package_json(root: &Path, project_name: &str, _use_local: bool) -> anyhow::Result<()> {
-    let package_json = json!({
-        "name": project_name,
-        "version": "0.1.0",
-        "private": true,
-        "scripts": {
-            "dev": "cd client && npm run dev",
-            "build": "cd spacetimedb && spacetime build && cd ../client && npm run build",
-            "deploy": format!("npm run build && spacetime publish --project-path spacetimedb --server maincloud {} && spacetime generate --project-path spacetimedb --lang typescript --out-dir client/src/module_bindings", project_name),
-            "local": format!("npm run build && spacetime publish --project-path spacetimedb --server local {} --yes && spacetime generate --project-path spacetimedb --lang typescript --out-dir client/src/module_bindings", project_name)
-        },
-        "workspaces": ["client"]
-    });
-
-    let package_path = root.join("package.json");
-    let content = serde_json::to_string_pretty(&package_json)?;
-    fs::write(package_path, content)?;
-
-    Ok(())
-}
-
 fn get_spacetimedb_typescript_version() -> &'static str {
     static VERSION: OnceLock<String> = OnceLock::new();
     VERSION.get_or_init(|| {
@@ -1180,43 +1159,6 @@ pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
 
     for data_file in export_files {
         let path = project_path.join(data_file.1);
-        create_directory(path.parent().unwrap())?;
-        std::fs::write(path, data_file.0)?;
-    }
-
-    Ok(())
-}
-
-fn init_empty_typescript_client(client_dir: &Path) -> anyhow::Result<()> {
-    let export_files = vec![
-        (
-            include_str!("../../../bindings-typescript/examples/empty/.gitignore"),
-            ".gitignore",
-        ),
-        (
-            include_str!("../../../bindings-typescript/examples/empty/index.html"),
-            "index.html",
-        ),
-        (
-            include_str!("../../../bindings-typescript/examples/empty/package.json"),
-            "package.json",
-        ),
-        (
-            include_str!("../../../bindings-typescript/examples/empty/src/main.ts"),
-            "src/main.ts",
-        ),
-        (
-            include_str!("../../../bindings-typescript/examples/empty/tsconfig.json"),
-            "tsconfig.json",
-        ),
-        (
-            include_str!("../../../bindings-typescript/examples/empty/vite.config.ts"),
-            "vite.config.ts",
-        ),
-    ];
-
-    for data_file in export_files {
-        let path = client_dir.join(data_file.1);
         create_directory(path.parent().unwrap())?;
         std::fs::write(path, data_file.0)?;
     }
