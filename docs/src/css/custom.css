@@ -1,5 +1,5 @@
-@import "@fontsource-variable/inter";
-@import "@fontsource-variable/source-code-pro";
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/source-code-pro';
 
 :root {
   /* // rem conversions */
@@ -127,7 +127,9 @@
   --clockworklabs-code-color: var(--clockworklabs-color-yellow);
   --clockworklabs-code-border-color: var(--clockworklabs-color-n6);
   --clockworklabs-code-background-color: var(--clockworklabs-color-shade2);
-  --clockworklabs-navbar-border-color: rgb(var(--clockworklabs-color-white-rgb) / 11%);
+  --clockworklabs-navbar-border-color: rgb(
+    var(--clockworklabs-color-white-rgb) / 11%
+  );
   --clockworklabs-strong-color: var(--clockworklabs-color-n2);
   --clockworklabs-font-source: 'Source Code Pro Variable', monospace;
 
@@ -170,35 +172,45 @@
   --ifm-alert-background-color: var(--clockworklabs-color-shade1);
   --ifm-alert-foreground-color: var(--clockworklabs-color-blue);
   --ifm-alert-border-color: var(--clockworklabs-color-blue);
-  --ifm-alert-background-color-highlight: var(--clockworklabs-code-background-color);
+  --ifm-alert-background-color-highlight: var(
+    --clockworklabs-code-background-color
+  );
 }
 
 :root .alert--warning {
   --ifm-alert-background-color: var(--clockworklabs-color-shade1);
   --ifm-alert-foreground-color: var(--clockworklabs-color-orange);
   --ifm-alert-border-color: var(--clockworklabs-color-orange);
-  --ifm-alert-background-color-highlight: var(--clockworklabs-code-background-color);
+  --ifm-alert-background-color-highlight: var(
+    --clockworklabs-code-background-color
+  );
 }
 
 :root .alert--secondary {
   --ifm-alert-background-color: var(--clockworklabs-color-shade1);
   --ifm-alert-foreground-color: var(--clockworklabs-color-n3);
   --ifm-alert-border-color: var(--clockworklabs-color-n3);
-  --ifm-alert-background-color-highlight: var(--clockworklabs-code-background-color);
+  --ifm-alert-background-color-highlight: var(
+    --clockworklabs-code-background-color
+  );
 }
 
 :root .alert--danger {
   --ifm-alert-background-color: var(--clockworklabs-color-shade1);
   --ifm-alert-foreground-color: var(--clockworklabs-color-red);
   --ifm-alert-border-color: var(--clockworklabs-color-red);
-  --ifm-alert-background-color-highlight: var(--clockworklabs-code-background-color);
+  --ifm-alert-background-color-highlight: var(
+    --clockworklabs-code-background-color
+  );
 }
 
 :root .alert--success {
   --ifm-alert-background-color: var(--clockworklabs-color-shade1);
   --ifm-alert-foreground-color: var(--clockworklabs-color-n3);
   --ifm-alert-border-color: var(--clockworklabs-color-green);
-  --ifm-alert-background-color-highlight: var(--clockworklabs-code-background-color);
+  --ifm-alert-background-color-highlight: var(
+    --clockworklabs-code-background-color
+  );
 }
 
 html {
@@ -322,7 +334,7 @@ footer {
   padding: 10px !important;
   border-radius: 4px;
   font-size: var(--14px);
-  letter-spacing: -.28px;
+  letter-spacing: -0.28px;
   font-weight: 700;
   margin-left: 16px;
   &:hover {
@@ -362,7 +374,7 @@ footer {
     &:has(.menu__link:hover) {
       border-left: 1px solid var(--clockworklabs-color-white);
     }
-    
+
     flex-direction: column;
     padding-left: 4px;
     padding-right: 16px;
@@ -391,7 +403,7 @@ footer {
 }
 
 .DocSearch {
-  --docsearch-text-color: var(--clockworklabs-color-green);
+  --docsearch-text-color: var(--clockworklabs-color-white);
   --docsearch-muted-color: var(--ifm-color-secondary-darkest);
   --docsearch-container-background: rgba(47, 55, 69, 0.7);
   --docsearch-modal-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
@@ -403,16 +415,20 @@ footer {
   /* Hit */
   --docsearch-hit-color: var(--ifm-font-color-base);
   --docsearch-hit-active-color: var(--ifm-color-white);
-  --docsearch-hit-background: var(--ifm-color-emphasis-100);
+  --docsearch-hit-background: var(--clockworklabs-color-n6);
+  --docsearch-hit-shadow: none;
+  --docsearch-highlight-color: var(--clockworklabs-color-n4-hover);
   /* Footer */
   --docsearch-footer-background: var(--ifm-background-surface-color);
-  --docsearch-key-gradient: linear-gradient(-26.5deg,
-      var(--ifm-color-emphasis-200) 0%,
-      var(--ifm-color-emphasis-100) 100%);
+  --docsearch-key-gradient: linear-gradient(
+    -26.5deg,
+    var(--ifm-color-emphasis-200) 0%,
+    var(--ifm-color-emphasis-100) 100%
+  );
 
   --docsearch-footer-shadow: 0 -1px 0 0 var(--ifm-toc-border-color);
-
-  min-width: 240px;
+  --docsearch-searchbox-shadow: inset 0 0 0 2px var(--clockworklabs-color-n4);
+  min-width: 300px;
 }
 
 .DocSearch-Button {
@@ -422,6 +438,19 @@ footer {
 
 .DocSearch-Button-Placeholder {
   font-size: var(--14px) !important;
+}
+
+.DocSearch-Hits mark {
+  color: var(--ifm-color-primary) !important;
+}
+
+.DocSearch-MagnifierLabel,
+.DocSearch-Reset {
+  color: var(--clockworklabs-color-n4) !important;
+}
+
+.DocSearch-Hit-source {
+  color: var(--clockworklabs-color-n4) !important;
 }
 
 table {
@@ -472,7 +501,6 @@ table {
 }
 
 @media screen and (max-width: 996px) {
-
   /* Make the page content full width on smaller screens */
   .container {
     margin: 0;
