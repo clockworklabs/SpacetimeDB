@@ -529,6 +529,7 @@ async fn get_template_config_interactive(
         })
         .collect();
     client_choices.push("other".to_string());
+    client_choices.push("none".to_string());
 
     let client_selection = Select::with_theme(&theme)
         .with_prompt("Select client")
@@ -537,6 +538,7 @@ async fn get_template_config_interactive(
         .interact()?;
 
     let other_index = highlights.len();
+    let none_index = highlights.len() + 1;
 
     if client_selection < highlights.len() {
         let highlight = &highlights[client_selection];
@@ -579,6 +581,32 @@ async fn get_template_config_interactive(
                 &templates,
             );
         }
+    } else if client_selection == none_index {
+        // Ask for server language only
+        let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
+        let server_selection = Select::with_theme(&theme)
+            .with_prompt("Select server language")
+            .items(&server_lang_choices)
+            .default(0)
+            .interact()?;
+
+        let server_lang = match server_selection {
+            0 => Some(ServerLanguage::Rust),
+            1 => Some(ServerLanguage::Csharp),
+            2 => Some(ServerLanguage::TypeScript),
+            _ => unreachable!("Invalid server language selection"),
+        };
+
+        Ok(TemplateConfig {
+            project_name,
+            project_path,
+            template_type: TemplateType::Empty,
+            server_lang,
+            client_lang: None,
+            github_repo: None,
+            template_def: None,
+            use_local: true,
+        })
     } else {
         unreachable!("Invalid selection index")
     }
