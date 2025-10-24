@@ -812,17 +812,17 @@ impl RelationalDB {
 
         if tx_data.tx_offset().is_some() {
             let inserts: Box<_> = tx_data
-                .inserts()
+                .durable_inserts()
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
                 })
                 .collect();
 
-            let truncates: IntSet<TableId> = tx_data.truncates().collect();
+            let truncates: IntSet<TableId> = tx_data.durable_truncates().collect();
 
             let deletes: Box<_> = tx_data
-                .deletes()
+                .durable_deletes()
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),

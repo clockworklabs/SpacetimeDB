@@ -72,6 +72,8 @@ pub struct CommittedState {
     /// We should split `CommittedState` into two types
     /// where one, e.g., `ReplayCommittedState`, has this field.
     table_dropped: IntSet<TableId>,
+    /// Ephemeral tables are not written to the commitlog.
+    ephemeral: IntSet<TableId>,
 }
 
 impl MemoryUsage for CommittedState {
@@ -83,6 +85,7 @@ impl MemoryUsage for CommittedState {
             index_id_map,
             page_pool: _,
             table_dropped,
+            ephemeral,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
@@ -90,6 +93,7 @@ impl MemoryUsage for CommittedState {
             + blob_store.heap_usage()
             + index_id_map.heap_usage()
             + table_dropped.heap_usage()
+            + ephemeral.heap_usage()
     }
 }
 
@@ -152,6 +156,7 @@ impl CommittedState {
             blob_store: <_>::default(),
             index_id_map: <_>::default(),
             table_dropped: <_>::default(),
+            ephemeral: <_>::default(),
             page_pool,
         }
     }
@@ -617,6 +622,7 @@ impl CommittedState {
     pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
+        let mut ephemeral = IntSet::default();
 
         // First, apply deletes. This will free up space in the committed tables.
         self.merge_apply_deletes(
@@ -624,6 +630,7 @@ impl CommittedState {
             tx_state.delete_tables,
             tx_state.pending_schema_changes,
             &mut truncates,
+            &mut ephemeral,
         );
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
@@ -633,10 +640,14 @@ impl CommittedState {
             tx_state.insert_tables,
             tx_state.blob_store,
             &mut truncates,
+            &mut ephemeral,
         );
 
         // Record any truncated tables in the `TxData`.
         tx_data.add_truncates(truncates);
+
+        // Record any ephemeral tables in the `TxData`.
+        tx_data.add_ephemeral(ephemeral);
 
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
@@ -648,12 +659,17 @@ impl CommittedState {
         tx_data
     }
 
+    fn is_ephemeral(&self, table_id: &TableId) -> bool {
+        self.ephemeral.contains(table_id)
+    }
+
     fn merge_apply_deletes(
         &mut self,
         tx_data: &mut TxData,
         delete_tables: BTreeMap<TableId, DeleteTable>,
         pending_schema_changes: ThinVec<PendingSchemaChange>,
         truncates: &mut IntSet<TableId>,
+        ephemeral: &mut IntSet<TableId>,
     ) {
         fn delete_rows(
             tx_data: &mut TxData,
@@ -691,6 +707,9 @@ impl CommittedState {
         }
 
         for (table_id, row_ptrs) in delete_tables {
+            if self.is_ephemeral(&table_id) {
+                ephemeral.insert(table_id);
+            }
             match self.get_table_and_blob_store_mut(table_id) {
                 Ok((table, blob_store, ..)) => delete_rows(
                     tx_data,
@@ -722,6 +741,9 @@ impl CommittedState {
                     row_ptrs.into_iter(),
                     truncates,
                 );
+                if self.is_ephemeral(&table_id) {
+                    ephemeral.insert(table_id);
+                }
             }
         }
     }
@@ -732,6 +754,7 @@ impl CommittedState {
         insert_tables: BTreeMap<TableId, Table>,
         tx_blob_store: impl BlobStore,
         truncates: &mut IntSet<TableId>,
+        ephemeral: &mut IntSet<TableId>,
     ) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
         //             rather than copying individual rows out of them.
@@ -742,6 +765,10 @@ impl CommittedState {
         //             and the fullness of the page.
 
         for (table_id, tx_table) in insert_tables {
+            if self.is_ephemeral(&table_id) {
+                ephemeral.insert(table_id);
+            }
+
             let (commit_table, commit_blob_store, page_pool) =
                 self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
 

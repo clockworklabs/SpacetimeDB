@@ -182,6 +182,8 @@ pub struct TxData {
     /// Note that when a table has an entry in `truncates`,
     /// it will also have an entry in `deletes`.
     truncates: IntSet<TableId>,
+    /// Ephemeral tables are not written to the commitlog.
+    ephemeral: IntSet<TableId>,
     /// Map of all `TableId`s in both `inserts` and `deletes` to their
     /// corresponding table name.
     // TODO: Store table name as ref counted string.
@@ -226,9 +228,18 @@ impl TxData {
         self.truncates.extend(truncated_tables);
     }
 
+    pub fn add_ephemeral(&mut self, ephemeral_tables: impl IntoIterator<Item = TableId>) {
+        self.ephemeral.extend(ephemeral_tables);
+    }
+
     /// Obtain an iterator over the inserted rows per table.
     pub fn inserts(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
         self.inserts.iter()
+    }
+
+    /// Obtain an iterator over the inserted rows per table that will be made durable.
+    pub fn durable_inserts(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
+        self.inserts.iter().filter(|(table_id, _)| !self.is_ephemeral(table_id))
     }
 
     /// Get the `i`th inserted row for `table_id` if it exists
@@ -255,6 +266,11 @@ impl TxData {
         self.deletes.iter()
     }
 
+    /// Obtain an iterator over the deleted rows per table that will be made durable.
+    pub fn durable_deletes(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
+        self.deletes.iter().filter(|(table_id, _)| !self.is_ephemeral(table_id))
+    }
+
     /// Get the `i`th deleted row for `table_id` if it exists
     pub fn get_ith_delete(&self, table_id: TableId, i: usize) -> Option<&ProductValue> {
         self.deletes.get(&table_id).and_then(|rows| rows.get(i))
@@ -278,12 +294,24 @@ impl TxData {
         self.truncates.iter().copied()
     }
 
+    pub fn durable_truncates(&self) -> impl Iterator<Item = TableId> + '_ {
+        self.truncates
+            .iter()
+            .filter(|table_id| !self.is_ephemeral(table_id))
+            .copied()
+    }
+
     /// Check if this [`TxData`] contains any `inserted | deleted` rows or `connect/disconnect` operations.
     ///
     /// This is used to determine if a transaction should be written to disk.
     pub fn has_rows_or_connect_disconnect(&self, reducer_context: Option<&ReducerContext>) -> bool {
-        self.inserts().any(|(_, inserted_rows)| !inserted_rows.is_empty())
-            || self.deletes().any(|(.., deleted_rows)| !deleted_rows.is_empty())
+        self.inserts()
+            .filter(|(table_id, _)| !self.is_ephemeral(table_id))
+            .any(|(_, inserted_rows)| !inserted_rows.is_empty())
+            || self
+                .deletes()
+                .filter(|(table_id, _)| !self.is_ephemeral(table_id))
+                .any(|(.., deleted_rows)| !deleted_rows.is_empty())
             || matches!(
                 reducer_context.map(|rcx| rcx.name.strip_prefix("__identity_")),
                 Some(Some("connected__" | "disconnected__"))
@@ -298,6 +326,11 @@ impl TxData {
     /// Returns the number o tables affected in this transaction.
     pub fn num_tables_affected(&self) -> usize {
         self.tables.len()
+    }
+
+    /// Is this table ephemeral?
+    pub fn is_ephemeral(&self, table_id: &TableId) -> bool {
+        self.ephemeral.contains(table_id)
     }
 }
 
