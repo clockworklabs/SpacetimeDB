@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::response::ErrorResponse;
+use bytes::Bytes;
 use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
@@ -155,13 +156,21 @@ pub struct DatabaseDef {
     /// The [`Identity`] the database shall have.
     pub database_identity: Identity,
     /// The compiled program of the database module.
-    pub program_bytes: Vec<u8>,
+    pub program_bytes: Bytes,
     /// The desired number of replicas the database shall have.
     ///
     /// If `None`, the edition default is used.
     pub num_replicas: Option<NonZeroU8>,
     /// The host type of the supplied program.
     pub host_type: HostType,
+}
+
+/// Parameters for resetting a database via [`ControlStateDelegate::reset_database`].
+pub struct DatabaseResetDef {
+    pub database_identity: Identity,
+    pub program_bytes: Option<Bytes>,
+    pub num_replicas: Option<NonZeroU8>,
+    pub host_type: Option<HostType>,
 }
 
 /// API of the SpacetimeDB control plane.
@@ -232,6 +241,10 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult>;
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
+
+    /// Remove all data from a database, and reset it according to the
+    /// given [DatabaseResetDef].
+    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -330,6 +343,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
         (**self).delete_database(caller_identity, database_identity).await
+    }
+
+    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
+        (**self).reset_database(caller_identity, spec).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {

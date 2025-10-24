@@ -7227,6 +7227,7 @@ dependencies = [
  "spacetimedb-paths",
  "spacetimedb-schema",
  "tempfile",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
@@ -7980,6 +7981,7 @@ name = "spacetimedb-testing"
 version = "1.7.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap 4.5.50",
  "duct",
  "env_logger 0.10.2",
