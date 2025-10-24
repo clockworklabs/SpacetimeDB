@@ -359,7 +359,7 @@ impl CommittedState {
             let dropped_table_id = Self::read_table_id(row);
             self.tables
                 .remove(&dropped_table_id)
-                .expect("table to remove should exist");
+                .unwrap_or_else(|| panic!("table {} to remove should exist", dropped_table_id));
             // Mark the table as dropped so that when
             // processing row deletions for that table later,
             // they are simply ignored in (1).
