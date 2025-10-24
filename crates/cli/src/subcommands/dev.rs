@@ -76,7 +76,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         Some("maincloud")
     };
 
-    let spacetimedb_dir = project_path.join("spacetimedb");
+    let mut spacetimedb_dir = project_path.join("spacetimedb");
     if !spacetimedb_dir.exists() || !spacetimedb_dir.is_dir() {
         println!("{}", "No SpacetimeDB project found in current directory.".yellow());
         let should_init = Confirm::new()
@@ -85,14 +85,17 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             .interact()?;
 
         if should_init {
-            let init_args = clap::Command::new("init")
-                .arg(Arg::new("local").long("local").action(ArgAction::SetTrue))
-                .get_matches_from(if use_local {
-                    vec!["init", "--local"]
-                } else {
-                    vec!["init"]
-                });
-            init::exec(config.clone(), &init_args).await?;
+            let init_args = init::cli().get_matches_from(if use_local {
+                vec!["init", "--local"]
+            } else {
+                vec!["init"]
+            });
+            let created_project_path = init::exec(config.clone(), &init_args).await?;
+
+            let canonical_created_path = created_project_path
+                .canonicalize()
+                .context("Failed to canonicalize created project path")?;
+            spacetimedb_dir = canonical_created_path.join("spacetimedb");
 
             if !spacetimedb_dir.exists() {
                 anyhow::bail!("Project initialization did not create spacetimedb directory");
