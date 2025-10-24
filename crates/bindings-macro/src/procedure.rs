@@ -96,7 +96,7 @@ pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) ->
             fn _assert_args #lifetime_params () #lifetime_where_clause {
                 #(let _ = <#first_arg_ty as spacetimedb::rt::ProcedureContextArg>::_ITEM;)*
                 #(let _ = <#rest_arg_tys as spacetimedb::rt::ProcedureArg>::_ITEM;)*
-                #(let _ = <#ret_ty_for_assert as spacetimedb::rt::IntoProcedureResult>::into_result;)*
+                #(let _ = <#ret_ty_for_assert as spacetimedb::rt::IntoProcedureResult>::to_result;)*
             }
         };
         impl #func_name {

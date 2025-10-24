@@ -695,7 +695,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// Procedure arguments and return values are not otherwise broadcast to clients.
 ///
 /// ```no_run
-/// # use spacetimedb::{procedure, SpacetimeType, ProcedureContext};
+/// # use spacetimedb::{procedure, SpacetimeType, ProcedureContext, Timestamp};
 /// #[procedure]
 /// fn return_value(ctx: &mut ProcedureContext, arg: MyArgument) -> MyReturnValue {
 ///     MyReturnValue {

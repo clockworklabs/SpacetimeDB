@@ -449,3 +449,13 @@ fn sleep_one_second(ctx: &mut ProcedureContext) {
     let actual_delta = new_time.duration_since(prev_time).unwrap();
     log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
 }
+
+#[derive(SpacetimeType)]
+struct MyReturnValue {
+    foo: u64,
+}
+
+#[spacetimedb::procedure]
+fn return_value(ctx: &mut ProcedureContext, foo: u64) -> MyReturnValue {
+    MyReturnValue { foo }
+}
