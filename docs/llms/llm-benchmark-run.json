@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "generated_at": "2025-10-23T17:44:46.010177200+00:00",
+  "modes": [
+    {
+      "mode": "docs",
+      "lang": "csharp",
+      "hash": "e14a4c9b74a1bcb23078c80458a07ab1250d718b8723ed80b471c193028b701f",
+      "models": [
+        {
+          "name": "Meta Llama 3.1 405B",
+          "score": 81.96721
+        }
+      ]
+    },
+    {
+      "mode": "docs",
+      "lang": "rust",
+      "hash": "e14a4c9b74a1bcb23078c80458a07ab1250d718b8723ed80b471c193028b701f",
+      "models": [
+        {
+          "name": "GPT-5",
+          "score": 26.229507
+        }
+      ]
+    },
+    {
+      "mode": "llms.md",
+      "lang": "rust",
+      "hash": "171b01e97d14a2c03356933e7c86331362cc53b87e82cd534cd74273e7bc8ea4",
+      "models": [
+        {
+          "name": "GPT-5",
+          "score": 100.0
+        }
+      ]
+    },
+    {
+      "mode": "rustdoc_json",
+      "lang": "rust",
+      "hash": "1b33765430a12887c93835ba20849291ee15d35a0faba068a051fa1bca5872c7",
+      "models": [
+        {
+          "name": "GPT-5",
+          "score": 70.37037
+        }
+      ]
+    }
+  ]
+}
