@@ -3,18 +3,19 @@ import {
   AlgebraicType,
   ConnectionId,
   Identity,
-  t,
   type IdentityTokenMessage,
 } from '../src/index';
+import type { ColumnBuilder } from '../src/server';
+import { t } from '../src/server/type_builders';
 
 describe('TypeBuilder', () => {
   it('builds the correct algebraic type for a point', () => {
-    const point = t.object({
+    const point = t.object('', {
       x: t.f64(),
       y: t.f64(),
       z: t.f64(),
     });
-    expect(point.algebraicType).toEqual({
+    expect(point.resolveType()).toEqual({
       tag: 'Product',
       value: {
         elements: [
@@ -27,11 +28,11 @@ describe('TypeBuilder', () => {
   });
 
   it('builds the correct algebraic type for a sum type', () => {
-    const sumType = t.enum({
+    const sumType = t.enum('', {
       a: t.string(),
       b: t.number(),
     });
-    expect(sumType.algebraicType).toEqual({
+    expect(sumType.resolveType()).toEqual({
       tag: 'Sum',
       value: {
         variants: [
@@ -43,7 +44,11 @@ describe('TypeBuilder', () => {
   });
 
   it('builds a ColumnBuilder with an index, unique constraint, and primary key', () => {
-    const col = t.i32().index('btree').unique().primaryKey();
+    const col = t.i32().index('btree').unique().primaryKey() as ColumnBuilder<
+      any,
+      any,
+      any
+    >;
     expect(col.typeBuilder.algebraicType).toEqual({
       tag: 'I32',
     });
@@ -55,10 +60,10 @@ describe('TypeBuilder', () => {
   });
 
   it('builds ColumnBuilders with the correct metadata', () => {
-    const indexCol = t.i32().index('btree');
-    const uniqueCol = t.i32().unique();
-    const primaryKeyCol = t.i32().primaryKey();
-    const autoIncCol = t.i32().autoInc();
+    const indexCol = t.i32().index('btree') as ColumnBuilder<any, any, any>;
+    const uniqueCol = t.i32().unique() as ColumnBuilder<any, any, any>;
+    const primaryKeyCol = t.i32().primaryKey() as ColumnBuilder<any, any, any>;
+    const autoIncCol = t.i32().autoInc() as ColumnBuilder<any, any, any>;
 
     expect(indexCol.typeBuilder.algebraicType).toEqual({
       tag: 'I32',

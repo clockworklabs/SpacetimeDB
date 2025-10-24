@@ -23,8 +23,8 @@ jobs:
 
       - name: Fetch Check Run Results
         run: |
-          RESULT="$(gh pr checks "${{github.event.pull_request.html_url}}" --json 'name,state' |
-            jq -r ".[] | select(.name==\"${CHECK_NAME}\").state")"
+          RESULT="$(gh pr checks "${{github.event.pull_request.html_url}}" --json 'workflow,state' |
+            jq -r ".[] | select(.workflow==\"${CHECK_NAME}\").state")"
 
           if [ -z "$RESULT" ]; then
             RESULT="The check did not run!"
@@ -41,7 +41,7 @@ jobs:
           CHECK_RESULT: ${{ env.CHECK_RESULT }}
           MENTION_ON_FAILURE: ${{ secrets.DEV_OPS_ROLE_ID }}
         run: |
-          message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})"
+          message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](<${PR_URL}>)"
           message+=$'\n'
           message+="${CHECK_NAME} result: ${CHECK_RESULT}"
           # Note that anything besides success is treated as a failure (e.g. if the check did not run at all, or if it is still pending).

@@ -5,7 +5,7 @@ use std::io;
 use super::{AutoMigratePlan, IndexAlgorithm, ModuleDefLookup, TableDef};
 use crate::{
     auto_migrate::AutoMigrateStep,
-    def::{ConstraintData, ModuleDef, ScheduleDef},
+    def::{ConstraintData, FunctionKind, ModuleDef, ScheduleDef},
     identifier::Identifier,
 };
 use itertools::Itertools;
@@ -188,7 +188,8 @@ pub struct AccessChangeInfo {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScheduleInfo {
     pub table_name: String,
-    pub reducer_name: Identifier,
+    pub function_name: Identifier,
+    pub function_kind: FunctionKind,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -314,7 +315,8 @@ fn extract_table_info(
 
     let schedule = table_def.schedule.as_ref().map(|schedule| ScheduleInfo {
         table_name: table_def.name.to_string().clone(),
-        reducer_name: schedule.reducer_name.clone(),
+        function_name: schedule.function_name.clone(),
+        function_kind: schedule.function_kind,
     });
 
     Ok(TableInfo {
@@ -438,7 +440,8 @@ fn extract_schedule_info(
 
     Ok(ScheduleInfo {
         table_name: schedule_def.name.to_string().clone(),
-        reducer_name: schedule_def.reducer_name.clone(),
+        function_name: schedule_def.function_name.clone(),
+        function_kind: schedule_def.function_kind,
     })
 }
 

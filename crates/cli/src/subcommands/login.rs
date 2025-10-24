@@ -74,7 +74,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
         "show" => exec_show(config, args).await,
-        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
+        unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }
 }
 

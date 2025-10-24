@@ -21,6 +21,8 @@ import * as TableTypeVariants from './table_type_variants';
 // The tagged union or sum type for the algebraic type `TableType`.
 export type TableType = TableTypeVariants.System | TableTypeVariants.User;
 
+let _cached_TableType_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const TableType = {
   // Helper functions for constructing each variant of the tagged union.
@@ -33,18 +35,19 @@ export const TableType = {
   User: { tag: 'User' } as const,
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'System',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'User',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-      ],
-    });
+    if (_cached_TableType_type_value) return _cached_TableType_type_value;
+    _cached_TableType_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
+    _cached_TableType_type_value.value.variants.push(
+      {
+        name: 'System',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'User',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      }
+    );
+    return _cached_TableType_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TableType): void {
