@@ -52,35 +52,32 @@ function isOverlapping(entity1: Entity, entity2: Entity): boolean {
 
 // ---------- insert bulk ----------
 
-const insertBulkEntity = (ctx, { count }) => {
+const insertBulkEntity = spacetimedb.reducer('insert_bulk_entity', { count: t.u32() }, (ctx, { count }) => {
   for (let id = 0; id < count; id++) {
     ctx.db.entity.insert(newEntity(0, id, id + 5, id * 5));
   }
   console.info(`INSERT ENTITY: ${count}`);
-};
-spacetimedb.reducer('insert_bulk_entity', { count: t.u32() }, insertBulkEntity);
+});
 
-const insertBulkCircle = (ctx, { count }) => {
+const insertBulkCircle = spacetimedb.reducer('insert_bulk_circle', { count: t.u32() }, (ctx, { count }) => {
   for (let id = 0; id < count; id++) {
     ctx.db.circle.insert(newCircle(id, id, id, id + 5, id * 5, ctx.timestamp));
   }
   console.info(`INSERT CIRCLE: ${count}`);
-};
-spacetimedb.reducer('insert_bulk_circle', { count: t.u32() }, insertBulkCircle);
+});
 
-const insertBulkFood = (ctx, { count }) => {
-  for (let id = 0; id < count; id++) {
+const insertBulkFood = spacetimedb.reducer('insert_bulk_food', { count: t.u32() }, (ctx, { count }) => {
+  for (let id = 1; id <= count; id++) {
     ctx.db.food.insert(newFood(id));
   }
   console.info(`INSERT FOOD: ${count}`);
-};
-spacetimedb.reducer('insert_bulk_food', { count: t.u32() }, insertBulkFood);
+});
 
 // Simulate
 // ```
 // SELECT * FROM Circle, Entity, Food
 // ```
-const crossJoinAll = (ctx, { expected }) => {
+const crossJoinAll = spacetimedb.reducer('cross_join_all', { expected: t.u32() }, (ctx, { expected }) => {
   let count: number = 0;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -94,45 +91,42 @@ const crossJoinAll = (ctx, { expected }) => {
     }
   }
 
-  for (let id = 0; id < count; id++) {
-    ctx.db.circle.insert(newFood(id));
-  }
   console.info(`CROSS JOIN ALL: ${expected}, processed: ${count}`);
-};
-spacetimedb.reducer('cross_join_all', { expected: t.u32() }, crossJoinAll);
+});
 
 // Simulate
 // ```
 // SELECT * FROM Circle JOIN ENTITY USING(entity_id), Food JOIN ENTITY USING(entity_id)
 // ```
-const crossJoinCircleFood = (ctx, { expected }) => {
-  let count: number = 0;
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  for (const circle of ctx.db.circle.iter()) {
-    const circleEntity = ctx.db.entity.id?.find(circle.entity_id);
-    if (circleEntity == null) {
-      continue;
-    }
-
-    for (const food of ctx.db.food.iter()) {
-      count += 1;
-
-      const foodEntity = ctx.db.entity.id?.find(food.entity_id);
-      if (foodEntity == null) {
-        throw new Error(`Entity not found: ${food.entity_id}`);
-      }
-
-      blackBox(isOverlapping(circleEntity, foodEntity));
-    }
-  }
-
-  console.info(`CROSS JOIN CIRCLE FOOD: ${expected}, processed: ${count}`);
-};
-spacetimedb.reducer(
+const crossJoinCircleFood = spacetimedb.reducer(
   'cross_join_circle_food',
   { expected: t.u32() },
-  crossJoinCircleFood
+  (ctx, { expected }) => {
+    let count: number = 0;
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for (const circle of ctx.db.circle.iter()) {
+      const entityId = ctx.db.entity.id;
+      const circleEntity = entityId.find(circle.entity_id);
+      if (circleEntity == null) {
+        continue;
+      }
+
+      for (const food of ctx.db.food.iter()) {
+        count += 1;
+
+        const foodEntity = entityId.find(food.entity_id);
+        if (foodEntity == null) {
+          let string = JSON.stringify(circleEntity);
+          throw new Error(`Entity not found: ${food.entity_id}`);
+        }
+
+        blackBox(isOverlapping(circleEntity, foodEntity));
+      }
+    }
+
+    console.info(`CROSS JOIN CIRCLE FOOD: ${expected}, processed: ${count}`);
+  }
 );
 
 spacetimedb.reducer(

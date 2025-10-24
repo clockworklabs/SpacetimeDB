@@ -113,7 +113,7 @@ const updatePositionWithVelocity = (ctx, { expected }) => {
   console.log(`UPDATE POSITION BY VELOCITY: ${expected}, processed: ${count}`);
 };
 spacetimedb.reducer(
-  'update_position_by_velocity',
+  'update_position_with_velocity',
   { expected: t.u32() },
   updatePositionWithVelocity
 );
@@ -121,35 +121,36 @@ spacetimedb.reducer(
 const insertWorld = (ctx, { players }) => {
   for (let i = 0; i < players; i++) {
     const id = i;
+    const id_n = BigInt(id);
     const nextActionTimestamp =
       (i & 2) == 2 ? momentMilliseconds() + 2000n : momentMilliseconds();
 
     ctx.db.game_enemy_ai_agent_state.insert({
-      entity_id: id,
+      entity_id: id_n,
       next_action_timestamp: nextActionTimestamp,
-      last_move_timestamps: [id, 0, id * 2],
+      last_move_timestamps: [id_n, 0n, id_n * 2n],
       action: { tag: 'Idle', value: {} },
     });
 
     ctx.db.game_live_targetable_state.insert({
-      entity_id: id,
-      quad: id,
+      entity_id: id_n,
+      quad: id_n,
     });
 
     ctx.db.game_targetable_state.insert({
-      entity_id: id,
-      quad: id,
+      entity_id: id_n,
+      quad: id_n,
     });
 
     ctx.db.game_mobile_entity_state.insert({
-      entity_id: id,
+      entity_id: id_n,
       location_x: id,
       location_y: id,
       timestamp: nextActionTimestamp,
     });
 
     ctx.db.game_enemy_state.insert({
-      entity_id: id,
+      entity_id: id_n,
       herd_id: id,
     });
 
