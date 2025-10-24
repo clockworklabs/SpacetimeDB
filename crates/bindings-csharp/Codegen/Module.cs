@@ -70,7 +70,7 @@ record ColumnRef(int Index, string Name);
 record ColumnDeclaration : MemberDeclaration
 {
     public readonly EquatableArray<ColumnAttr> Attrs;
-    public readonly EquatableArray<ViewIndex> Indexes;
+    public readonly EquatableArray<TableIndex> Indexes;
     public readonly bool IsEquatable;
     public readonly string FullTableName;
     public readonly int ColumnIndex;
@@ -102,8 +102,8 @@ record ColumnDeclaration : MemberDeclaration
         Indexes = new(
             field
                 .GetAttributes()
-                .Where(ViewIndex.CanParse)
-                .Select(a => new ViewIndex(new ColumnRef(index, field.Name), a, diag))
+                .Where(TableIndex.CanParse)
+                .Select(a => new TableIndex(new ColumnRef(index, field.Name), a, diag))
                 .ToImmutableArray()
         );
 
@@ -199,8 +199,8 @@ record ColumnDeclaration : MemberDeclaration
         }
     }
 
-    public ColumnAttrs GetAttrs(TableView view) =>
-        CombineColumnAttrs(Attrs.Where(x => x.Table == null || x.Table == view.Name));
+    public ColumnAttrs GetAttrs(TableAccessor tableAccessor) =>
+        CombineColumnAttrs(Attrs.Where(x => x.Table == null || x.Table == tableAccessor.Name));
 
     // For the `TableDesc` constructor.
     public string GenerateColumnDef() =>
@@ -209,13 +209,13 @@ record ColumnDeclaration : MemberDeclaration
 
 record Scheduled(string ReducerName, int ScheduledAtColumn);
 
-record TableView
+record TableAccessor
 {
     public readonly string Name;
     public readonly bool IsPublic;
     public readonly Scheduled? Scheduled;
 
-    public TableView(TableDeclaration table, AttributeData data, DiagReporter diag)
+    public TableAccessor(TableDeclaration table, AttributeData data, DiagReporter diag)
     {
         var attr = data.ParseAs<TableAttribute>();
 
@@ -255,21 +255,21 @@ record TableView
     }
 }
 
-enum ViewIndexType
+enum TableIndexType
 {
     BTree,
 }
 
 /// <summary>
-/// Represents an index on a database table view, used to optimize queries.
+/// Represents an index on a database table accessor, used to optimize queries.
 /// Supports B-tree indexing (and potentially other types in the future).
 /// </summary>
-record ViewIndex
+record TableIndex
 {
     public readonly EquatableArray<ColumnRef> Columns;
     public readonly string? Table;
     public readonly string AccessorName;
-    public readonly ViewIndexType Type;
+    public readonly TableIndexType Type;
 
     // See: bindings_sys::index_id_from_name for documentation of this format.
     // Guaranteed not to contain quotes, so does not need to be escaped when embedded in a string.
@@ -283,11 +283,11 @@ record ViewIndex
     /// <param name="columns">The columns that make up this index.</param>
     /// <param name="tableName">The name of the table this index belongs to, if any.</param>
     /// <param name="type">The type of index (currently only B-tree is supported).</param>
-    private ViewIndex(
+    private TableIndex(
         string? accessorName,
         ImmutableArray<ColumnRef> columns,
         string? tableName,
-        ViewIndexType type
+        TableIndexType type
     )
     {
         Columns = new(columns);
@@ -302,26 +302,26 @@ record ViewIndex
     /// Creates a B-tree index on a single column with auto-generated name.
     /// </summary>
     /// <param name="col">The column to index.</param>
-    public ViewIndex(ColumnRef col)
+    public TableIndex(ColumnRef col)
         : this(
             null,
             ImmutableArray.Create(col),
             null,
-            ViewIndexType.BTree // this might become hash in the future
+            TableIndexType.BTree // this might become hash in the future
         ) { }
 
     /// <summary>
     /// Creates an index with the given attribute and columns.
     /// Used internally by other constructors that parse attributes.
     /// </summary>
-    private ViewIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
-        : this(attr.Name, columns, attr.Table, ViewIndexType.BTree) { }
+    private TableIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
+        : this(attr.Name, columns, attr.Table, TableIndexType.BTree) { }
 
     /// <summary>
     /// Creates an index from a table declaration and attribute data.
     /// Validates the index configuration and reports any errors through the diag reporter.
     /// </summary>
-    private ViewIndex(
+    private TableIndex(
         TableDeclaration table,
         Index.BTreeAttribute attr,
         AttributeData data,
@@ -346,14 +346,14 @@ record ViewIndex
     /// <summary>
     /// Creates an index by parsing attribute data from a table declaration.
     /// </summary>
-    public ViewIndex(TableDeclaration table, AttributeData data, DiagReporter diag)
+    public TableIndex(TableDeclaration table, AttributeData data, DiagReporter diag)
         : this(table, data.ParseAs<Index.BTreeAttribute>(), data, diag) { }
 
     /// <summary>
     /// Creates an index for a single column with attribute data.
     /// Validates that no additional columns were specified in the attribute.
     /// </summary>
-    private ViewIndex(
+    private TableIndex(
         ColumnRef column,
         Index.BTreeAttribute attr,
         AttributeData data,
@@ -370,7 +370,7 @@ record ViewIndex
     /// <summary>
     /// Creates an index for a single column by parsing attribute data.
     /// </summary>
-    public ViewIndex(ColumnRef col, AttributeData data, DiagReporter diag)
+    public TableIndex(ColumnRef col, AttributeData data, DiagReporter diag)
         : this(col, data.ParseAs<Index.BTreeAttribute>(), data, diag) { }
 
     // `FullName` and Roslyn have different ways of representing nested types in full names -
@@ -396,18 +396,18 @@ record ViewIndex
             )
             """;
 
-    public string StandardIndexName(TableView view) => view.Name + StandardNameSuffix;
+    public string StandardIndexName(TableAccessor tableAccessor) => tableAccessor.Name + StandardNameSuffix;
 }
 
 /// <summary>
 /// Represents a table declaration in a module.
-/// Handles table metadata, views, indexes, and column declarations for code generation.
+/// Handles table metadata, accessors, indexes, and column declarations for code generation.
 /// </summary>
 record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 {
     public readonly Accessibility Visibility;
-    public readonly EquatableArray<TableView> Views;
-    public readonly EquatableArray<ViewIndex> Indexes;
+    public readonly EquatableArray<TableAccessor> TableAccessors;
+    public readonly EquatableArray<TableIndex> Indexes;
 
     public int? GetColumnIndex(AttributeData attrContext, string name, DiagReporter diag)
     {
@@ -457,14 +457,14 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             container = container.ContainingType;
         }
 
-        Views = new(
-            context.Attributes.Select(a => new TableView(this, a, diag)).ToImmutableArray()
+        TableAccessors = new(
+            context.Attributes.Select(a => new TableAccessor(this, a, diag)).ToImmutableArray()
         );
         Indexes = new(
             context
                 .TargetSymbol.GetAttributes()
-                .Where(ViewIndex.CanParse)
-                .Select(a => new ViewIndex(this, a, diag))
+                .Where(TableIndex.CanParse)
+                .Select(a => new TableIndex(this, a, diag))
                 .ToImmutableArray()
         );
     }
@@ -475,12 +475,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         DiagReporter diag
     ) => new(FullName, index, field, diag);
 
-    public IEnumerable<string> GenerateViewFilters(TableView view)
+    public IEnumerable<string> GenerateTableAccessorFilters(TableAccessor tableAccessor)
     {
         var vis = SyntaxFacts.GetText(Visibility);
         var globalName = $"global::{FullName}";
 
-        foreach (var ct in GetConstraints(view, ColumnAttrs.Unique))
+        foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
         {
             var f = ct.Col;
             if (!f.IsEquatable)
@@ -489,9 +489,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 // only produce a lot of noisy typechecking errors.
                 continue;
             }
-            var standardIndexName = ct.ToIndex().StandardIndexName(view);
+            var standardIndexName = ct.ToIndex().StandardIndexName(tableAccessor);
             yield return $$"""
-                {{vis}} sealed class {{f.Name}}UniqueIndex : UniqueIndex<{{view.Name}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
+                {{vis}} sealed class {{f.Name}}UniqueIndex : UniqueIndex<{{tableAccessor.Name}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
                     internal {{f.Name}}UniqueIndex() : base("{{standardIndexName}}") {}
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -503,7 +503,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 """;
         }
 
-        foreach (var index in GetIndexes(view))
+        foreach (var index in GetIndexes(tableAccessor))
         {
             var name = index.AccessorName;
 
@@ -515,7 +515,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             }
 
             var members = index.Columns.Select(c => Members[c.Index]).ToArray();
-            var standardIndexName = index.StandardIndexName(view);
+            var standardIndexName = index.StandardIndexName(tableAccessor);
 
             yield return $$"""
                     {{vis}} sealed class {{name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("{{standardIndexName}}") {
@@ -565,29 +565,29 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     }
 
     /// <summary>
-    /// Represents a generated view for a table, providing different access patterns
+    /// Represents a generated accessor for a table, providing different access patterns
     /// and visibility levels for the underlying table data.
     /// </summary>
-    /// <param name="viewName">Name of the generated view type</param>
+    /// <param name="tableAccessorName">Name of the generated accessor type</param>
     /// <param name="tableName">Fully qualified name of the table type</param>
-    /// <param name="view">C# source code for the view implementation</param>
-    /// <param name="getter">C# property getter for accessing the view</param>
-    public record struct View(string viewName, string tableName, string view, string getter);
+    /// <param name="tableAccessor">C# source code for the accessor implementation</param>
+    /// <param name="getter">C# property getter for accessing the accessor</param>
+    public record struct GeneratedTableAccessor(string tableAccessorName, string tableName, string tableAccessor, string getter);
 
     /// <summary>
-    /// Generates view implementations for all table views defined in this table declaration.
-    /// Each view represents a different way to access or filter the table's data.
+    /// Generates accessor implementations for all table accessors defined in this table declaration.
+    /// Each accessor represents a different way to access or filter the table's data.
     /// </summary>
-    /// <returns>Collection of View records containing generated code for each view</returns>
-    public IEnumerable<View> GenerateViews()
+    /// <returns>Collection of Accessor records containing generated code for each accessor</returns>
+    public IEnumerable<GeneratedTableAccessor> GenerateTableAccessors()
     {
-        // Don't try to generate views if this table is a sum type.
-        // We already emitted a diagnostic, and attempting to generate views will only result in more noisy errors.
+        // Don't try to generate accessors if this table is a sum type.
+        // We already emitted a diagnostic, and attempting to generate accessors will only result in more noisy errors.
         if (Kind is TypeKind.Sum)
         {
             yield break;
         }
-        foreach (var v in Views)
+        foreach (var v in TableAccessors)
         {
             var autoIncFields = Members.Where(m => m.GetAttrs(v).HasFlag(ColumnAttrs.AutoInc));
 
@@ -642,7 +642,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 public {{globalName}} Insert({{globalName}} row) => {{iTable}}.DoInsert(row);
                 public bool Delete({{globalName}} row) => {{iTable}}.DoDelete(row);
 
-                {{string.Join("\n", GenerateViewFilters(v))}}
+                {{string.Join("\n", GenerateTableAccessorFilters(v))}}
             }
             """,
                 $"{SyntaxFacts.GetText(Visibility)} Internal.TableHandles.{v.Name} {v.Name} => new();"
@@ -676,16 +676,16 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             yield break;
         }
 
-        foreach (var view in Views)
+        foreach (var tableAccessor in TableAccessors)
         {
             var members = string.Join(", ", Members.Select(m => m.Name));
             var fieldsWithDefaultValues = Members.Where(m =>
-                m.GetAttrs(view).HasFlag(ColumnAttrs.Default)
+                m.GetAttrs(tableAccessor).HasFlag(ColumnAttrs.Default)
             );
             var defaultValueAttributes = string.Join(
                 ", ",
                 Members
-                    .Where(m => m.GetAttrs(view).HasFlag(ColumnAttrs.Default))
+                    .Where(m => m.GetAttrs(tableAccessor).HasFlag(ColumnAttrs.Default))
                     .Select(m => m.Attrs.FirstOrDefault(a => a.Mask == ColumnAttrs.Default))
             );
 
@@ -702,7 +702,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     if (fieldsWithDefaultValue.Type.BSATNName.StartsWith("SpacetimeDB.BSATN.Enum"))
                     {
                         yield return new FieldDefaultValue(
-                            view.Name,
+                            tableAccessor.Name,
                             fieldsWithDefaultValue.ColumnIndex.ToString(),
                             $"({fieldsWithDefaultValue.Type.Name}){fieldsWithDefaultValue.ColumnDefaultValue}",
                             fieldsWithDefaultValue.Type.BSATNName
@@ -711,7 +711,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     else
                     {
                         yield return new FieldDefaultValue(
-                            view.Name,
+                            tableAccessor.Name,
                             fieldsWithDefaultValue.ColumnIndex.ToString(),
                             fieldsWithDefaultValue.ColumnDefaultValue,
                             fieldsWithDefaultValue.Type.BSATNName
@@ -724,28 +724,28 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
     public record Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
     {
-        public ViewIndex ToIndex() => new(new ColumnRef(Pos, Col.Name));
+        public TableIndex ToIndex() => new(new ColumnRef(Pos, Col.Name));
     }
 
     public IEnumerable<Constraint> GetConstraints(
-        TableView view,
+        TableAccessor tableAccessor,
         ColumnAttrs filterByAttr = ~ColumnAttrs.UnSet
     ) =>
         Members
             // Important: the position must be stored here, before filtering.
-            .Select((col, pos) => new Constraint(col, pos, col.GetAttrs(view)))
+            .Select((col, pos) => new Constraint(col, pos, col.GetAttrs(tableAccessor)))
             .Where(c => c.Attr.HasFlag(filterByAttr));
 
-    public IEnumerable<ViewIndex> GetIndexes(TableView view) =>
+    public IEnumerable<TableIndex> GetIndexes(TableAccessor tableAccessor) =>
         Indexes
             .Concat(Members.SelectMany(m => m.Indexes))
-            .Where(i => i.Table == null || i.Table == view.Name);
+            .Where(i => i.Table == null || i.Table == tableAccessor.Name);
 
     // Reimplementation of V8 -> V9 constraint conversion in Rust.
     // See https://github.com/clockworklabs/SpacetimeDB/blob/13a800e9f88cbe885b98eab9e45b0fcfd3ab7014/crates/schema/src/def/validate/v8.rs#L74-L78
     // and https://github.com/clockworklabs/SpacetimeDB/blob/13a800e9f88cbe885b98eab9e45b0fcfd3ab7014/crates/lib/src/db/raw_def/v8.rs#L460-L510
     private string GenConstraintList(
-        TableView view,
+        TableAccessor tableAccessor,
         ColumnAttrs filterByAttr,
         string makeConstraintFn
     ) =>
@@ -753,14 +753,14 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         [
             {{string.Join(
                 ",\n",
-                GetConstraints(view, filterByAttr)
+                GetConstraints(tableAccessor, filterByAttr)
                     .Select(pair => $"{makeConstraintFn}({pair.Pos})")
             )}}
         ]
         """;
 
-    internal int? GetPrimaryKey(TableView view) =>
-        GetConstraints(view, ColumnAttrs.PrimaryKey).Select(c => (int?)c.Pos).SingleOrDefault();
+    internal int? GetPrimaryKey(TableAccessor tableAccessor) =>
+        GetConstraints(tableAccessor, ColumnAttrs.PrimaryKey).Select(c => (int?)c.Pos).SingleOrDefault();
 }
 
 /// <summary>
@@ -1040,13 +1040,13 @@ public class Module : IIncrementalGenerator
             r => r.FullName
         );
 
-        var tableViews = CollectDistinct(
+        var tableAccessors = CollectDistinct(
             "Table",
             context,
             tables
-                .SelectMany((t, ct) => t.GenerateViews())
-                .WithTrackingName("SpacetimeDB.Table.GenerateViews"),
-            v => v.viewName,
+                .SelectMany((t, ct) => t.GenerateTableAccessors())
+                .WithTrackingName("SpacetimeDB.Table.GenerateTableAccessors"),
+            v => v.tableAccessorName,
             v => v.tableName
         );
 
@@ -1086,12 +1086,12 @@ public class Module : IIncrementalGenerator
         // Register the generated source code with the compilation context as part of module publishing
         // Once the compilation is complete, the generated code will be used to create tables and reducers in the database
         context.RegisterSourceOutput(
-            tableViews.Combine(addReducers).Combine(rlsFiltersArray).Combine(columnDefaultValues),
+            tableAccessors.Combine(addReducers).Combine(rlsFiltersArray).Combine(columnDefaultValues),
             (context, tuple) =>
             {
-                var (((tableViews, addReducers), rlsFilters), columnDefaultValues) = tuple;
+                var (((tableAccessors, addReducers), rlsFilters), columnDefaultValues) = tuple;
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
-                if (tableViews.Array.IsEmpty && addReducers.Array.IsEmpty)
+                if (tableAccessors.Array.IsEmpty && addReducers.Array.IsEmpty)
                 {
                     return;
                 }
@@ -1126,11 +1126,11 @@ public class Module : IIncrementalGenerator
                         }
 
                         namespace Internal.TableHandles {
-                            {{string.Join("\n", tableViews.Select(v => v.view))}}
+                            {{string.Join("\n", tableAccessors.Select(v => v.tableAccessor))}}
                         }
 
                         public sealed class Local {
-                            {{string.Join("\n", tableViews.Select(v => v.getter))}}
+                            {{string.Join("\n", tableAccessors.Select(v => v.getter))}}
                         }
                     }
 
@@ -1158,7 +1158,7 @@ public class Module : IIncrementalGenerator
                             )}}
                             {{string.Join(
                                 "\n",
-                                tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{t.viewName}>();")
+                                tableAccessors.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{t.tableAccessorName}>();")
                             )}}
                             {{string.Join(
                                 "\n",
