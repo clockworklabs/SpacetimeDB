@@ -1668,7 +1668,7 @@ mod tests {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
             let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
-            let hash = QueryHash::from_string(sql, auth.caller, has_param);
+            let hash = QueryHash::from_string(sql, auth.caller(), has_param);
             Ok(Arc::new(Plan::new(plans, hash, sql.into())))
         })
     }

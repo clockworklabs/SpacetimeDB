@@ -7026,6 +7026,7 @@ dependencies = [
  "itertools 0.12.1",
  "mimalloc",
  "percent-encoding",
+ "pretty_assertions",
  "regex",
  "reqwest 0.12.24",
  "rolldown",
@@ -7050,6 +7051,7 @@ dependencies = [
  "tar",
  "tempfile",
  "termcolor",
+ "termtree",
  "thiserror 1.0.69",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
@@ -7107,6 +7109,7 @@ dependencies = [
  "spacetimedb-paths",
  "spacetimedb-schema",
  "tempfile",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
@@ -7859,6 +7862,7 @@ name = "spacetimedb-testing"
 version = "1.6.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap 4.5.50",
  "duct",
  "env_logger 0.10.2",
@@ -8390,6 +8394,12 @@ dependencies = [
  "rustix 1.1.2",
  "windows-sys 0.60.2",
 ]
+
+[[package]]
+name = "termtree"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "test-client"

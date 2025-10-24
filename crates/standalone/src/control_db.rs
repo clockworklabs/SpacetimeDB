@@ -38,6 +38,8 @@ pub enum Error {
     RecordAlreadyExists(DomainName),
     #[error("database with identity {0} already exists")]
     DatabaseAlreadyExists(Identity),
+    #[error("database with identity {0} does not exist")]
+    DatabaseNotFound(Identity),
     #[error("failed to register {0} domain")]
     DomainRegistrationFailure(DomainName),
     #[error("failed to decode data")]
@@ -377,6 +379,21 @@ impl ControlDb {
         Ok(id)
     }
 
+    pub(crate) fn update_database(&self, database: Database) -> Result<()> {
+        let Some(stored_database) = self.get_database_by_identity(&database.database_identity)? else {
+            return Err(Error::DatabaseNotFound(database.database_identity));
+        };
+
+        let tree = self.db.open_tree("database_by_identity")?;
+        let buf = sled::IVec::from(compat::Database::from(database).to_vec()?);
+        tree.insert(stored_database.database_identity.to_be_byte_array(), buf.clone())?;
+
+        let tree = self.db.open_tree("database")?;
+        tree.insert(stored_database.id.to_be_bytes(), buf)?;
+
+        Ok(())
+    }
+
     pub fn delete_database(&self, id: u64) -> Result<Option<u64>> {
         let tree = self.db.open_tree("database")?;
         let tree_by_identity = self.db.open_tree("database_by_identity")?;
@@ -430,7 +447,7 @@ impl ControlDb {
         // if !tree.contains_key(database_id.to_be_bytes())? {
         //     return Err(anyhow::anyhow!("No such database."));
         // }
-        //
+        //1073741824
         let replicas = self
             .get_replicas()?
             .iter()

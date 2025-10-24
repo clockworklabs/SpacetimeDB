@@ -281,15 +281,6 @@ pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
     Ok(input == "y" || input == "yes")
 }
 
-pub fn unauth_error_context<T>(res: anyhow::Result<T>, identity: &str, server: &str) -> anyhow::Result<T> {
-    res.with_context(|| {
-        format!(
-            "Identity {identity} is not valid for server {server}.
-Please log back in with `spacetime logout` and then `spacetime login`."
-        )
-    })
-}
-
 pub fn decode_identity(token: &String) -> anyhow::Result<String> {
     // Here, we manually extract and decode the claims from the json web token.
     // We do this without using the `jsonwebtoken` crate because it doesn't seem to have a way to skip signature verification.

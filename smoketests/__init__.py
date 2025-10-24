@@ -365,7 +365,7 @@ class Smoketest(unittest.TestCase):
         if "database_identity" in self.__dict__:
             try:
                 # TODO: save the credentials in publish_module()
-                self.spacetime("delete", self.database_identity)
+                self.spacetime("delete", "--yes", self.database_identity)
             except Exception:
                 pass
 
@@ -374,7 +374,7 @@ class Smoketest(unittest.TestCase):
        if hasattr(cls, "database_identity"):
            try:
                # TODO: save the credentials in publish_module()
-               cls.spacetime("delete", cls.database_identity)
+               cls.spacetime("delete", "--yes", cls.database_identity)
            except Exception:
                pass
 
