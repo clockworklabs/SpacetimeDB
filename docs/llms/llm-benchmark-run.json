@@ -1,26 +1,26 @@
 {
   "version": 1,
-  "generated_at": "2025-10-23T17:44:46.010177200+00:00",
+  "generated_at": "2025-10-24T22:33:10.628037900+00:00",
   "modes": [
     {
       "mode": "docs",
       "lang": "csharp",
-      "hash": "e14a4c9b74a1bcb23078c80458a07ab1250d718b8723ed80b471c193028b701f",
+      "hash": "3845d046f84d2d4f7539bea5d13d8cc2c04b76e0cb25ad3504f18d17908116db",
       "models": [
         {
-          "name": "Meta Llama 3.1 405B",
-          "score": 81.96721
+          "name": "GPT-5",
+          "score": 100.0
         }
       ]
     },
     {
       "mode": "docs",
       "lang": "rust",
-      "hash": "e14a4c9b74a1bcb23078c80458a07ab1250d718b8723ed80b471c193028b701f",
+      "hash": "00917b28ec8f75406cd8aac609eeafb254b65945d2bb0c709404ac09a9762fca",
       "models": [
         {
           "name": "GPT-5",
-          "score": 26.229507
+          "score": 100.0
         }
       ]
     },
@@ -38,11 +38,11 @@
     {
       "mode": "rustdoc_json",
       "lang": "rust",
-      "hash": "1b33765430a12887c93835ba20849291ee15d35a0faba068a051fa1bca5872c7",
+      "hash": "dcc243c7909cfb083830aa5cc99b5e3791f51e453179c8f939efa7bfb32e4464",
       "models": [
         {
           "name": "GPT-5",
-          "score": 70.37037
+          "score": 100.0
         }
       ]
     }

@@ -1,0 +1,26 @@
+﻿Write a SpacetimeDB backend module in C# that defines three tables with basic columns.
+
+TABLES
+- users
+  - Struct: Users
+  - Fields:
+    - Id: int (primary key)
+    - Name: string
+    - Age: int
+    - Active: bool
+
+- products
+  - Struct: Products
+  - Fields:
+    - Id: int (primary key)
+    - Title: string
+    - Price: float
+    - InStock: bool
+
+- notes
+  - Struct: Notes
+  - Fields:
+    - Id: int (primary key)
+    - Body: string
+    - Rating: long
+    - Pinned: bool

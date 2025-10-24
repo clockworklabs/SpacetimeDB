@@ -1,0 +1,18 @@
+﻿Write a SpacetimeDB backend module in Rust that defines a product type and uses it in a table.
+
+TYPES
+- Struct: Score
+  - Fields:
+    - left: i32
+    - right: i32
+
+TABLE
+- results
+  - Struct: Result
+  - Fields:
+    - id: i32 (primary key)
+    - value: Score
+
+REDUCERS
+- set_score: given id:i32, left:i32, right:i32, insert exactly this row into results
+  - (id=id, value=Score{left:left, right:right})

@@ -408,3 +408,17 @@ jobs:
             echo "It looks like the CLI docs have changed:"
             exit 1
           fi
+
+  llm_ci_check:
+    name: Verify docs/rustdoc_json hashes
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run hash check (both langs)
+        working-directory: public/crates/xtask-llm-benchmark
+        run: cargo llm ci-check

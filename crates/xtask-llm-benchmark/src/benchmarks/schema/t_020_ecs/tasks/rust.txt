@@ -1,0 +1,34 @@
+﻿Write a SpacetimeDB backend module in Rust that models a minimal ECS and computes next positions.
+
+TABLES
+- entities
+  - Struct: Entity
+  - Fields:
+    - id: i32 (primary key)
+
+- positions
+  - Struct: Position
+  - Fields:
+    - entity_id: i32 (primary key)
+    - x: i32
+    - y: i32
+
+- velocities
+  - Struct: Velocity
+  - Fields:
+    - entity_id: i32 (primary key)
+    - vx: i32
+    - vy: i32
+
+- next_positions
+  - Struct: NextPosition
+  - Fields:
+    - entity_id: i32 (primary key)
+    - x: i32
+    - y: i32
+
+REDUCERS
+- seed: insert the two entities with positions/velocities:
+  - (id=1, pos=(0,0), vel=(1,0))
+  - (id=2, pos=(10,0), vel=(-2,3))
+- step: for each position, find velocity by entity_id; compute (x+vx, y+vy) and upsert into next_positions by entity_id

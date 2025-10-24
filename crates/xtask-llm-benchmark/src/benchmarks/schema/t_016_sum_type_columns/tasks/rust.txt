@@ -1,0 +1,23 @@
+﻿Write a SpacetimeDB backend module in Rust that defines a sum type and uses it in multiple table columns.
+
+TYPES
+- Struct: Rect
+  - Fields:
+    - width: i32
+    - height: i32
+- Enum: Shape
+  - Variants:
+    - Circle(i32)
+    - Rectangle(Rect)
+
+TABLE
+- drawings
+  - Struct: Drawing
+  - Fields:
+    - id: i32 (primary key)
+    - a: Shape
+    - b: Shape
+
+REDUCERS
+- seed: insert exactly one row into drawings
+  - (id=1, a=Shape::Circle(10), b=Shape::Rectangle(Rect { width:4, height:6 }))

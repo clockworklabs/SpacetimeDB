@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LLM Results — Tasks × Models by Category</title>
+<style>
+  :root{
+    --bg:#0b0f14; --card:#111824; --text:#e5edf3; --muted:#a7b3be; --acc:#69b3ff;
+    --ok:#38d39f; --bad:#ff6b6b; --border:#1e2a3a;
+    --details-cols:2; --gap:12px;
+    /* If you add a sticky top toolbar later, set this to that toolbar's height */
+    --sticky-offset: 0px;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;color:var(--text);background:linear-gradient(180deg,#0b0f14,#0d1218)}
+  .wrap{max-width:1300px;margin:28px auto;padding:0 16px}
+  h1{font-size:20px;margin:0 0 12px;font-weight:700}
+  h2{font-size:16px;margin:16px 0 8px;font-weight:700}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+
+  label{font-size:12px;color:var(--muted);display:block;margin:0 0 6px}
+  input[type=file],input[type=text],select,button,textarea{
+    background:#0b121b;color:var(--text);border:1px solid var(--border);
+    border-radius:10px;padding:10px 12px;width:100%
+  }
+  textarea{min-height:120px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  input[type=text]{min-height:40px}
+  select[multiple]{min-height:140px}
+  button{cursor:pointer;width:auto}
+  .primary{background:var(--acc);color:#061220;border:none;font-weight:700}
+  .btn{border:1px solid var(--border);background:#0b121b}
+
+  .controls-outer{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
+  @media (max-width:980px){.controls-outer{grid-template-columns:1fr}}
+  .panel{border:1px solid var(--border);border-radius:12px;padding:12px}
+  .grid{display:grid;gap:var(--gap)}
+  .grid.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .grid.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .grid.cols-5{grid-template-columns:repeat(5,minmax(0,1fr))}
+  @media (max-width:1100px){.grid.cols-4,.grid.cols-5{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:740px){.grid.cols-3{grid-template-columns:1fr}}
+  .fg{display:flex;flex-direction:column}
+  .span-2{grid-column:span 2}
+
+  #dropZone{border:1px dashed var(--border);border-radius:10px;padding:10px 12px;color:var(--muted);text-align:center;min-height:40px;display:flex;align-items:center;justify-content:center}
+  #dropZone.hover{background:#0b121b}
+
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border);color:var(--muted)}
+  .chip{display:inline-block;padding:0 6px;border-radius:999px;font-size:11px;border:1px solid var(--border);margin-left:6px}
+  .hint{font-size:12px;color:var(--muted)}
+  .wrapany{overflow-wrap:anywhere;word-break:break-all;line-break:anywhere}
+
+  /* Table + sticky header */
+  table{width:100%;border-collapse:collapse;margin-top:8px;table-layout:fixed}
+  th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:left;font-size:14px;vertical-align:top;background:var(--card);overflow-wrap:anywhere;word-break:break-all;line-break:anywhere}
+  th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+
+  .twrap{
+    position:relative;              /* for z-index and shadow pseudo-elems */
+    overflow-x:auto;                /* horizontal scroll only */
+    border:1px solid var(--border);
+    border-radius:12px;
+  }
+  /* The header row sticks to top while page scrolls */
+  .twrap thead th{
+    position:sticky; top:var(--sticky-offset);
+    z-index:7;                      /* above sticky first columns */
+    background:var(--card);
+    box-shadow:0 1px 0 0 var(--border);
+    will-change:transform;
+  }
+  /* Make first two header cells also stick horizontally (align with sticky body cells) */
+  .twrap thead th:nth-child(1){left:0;z-index:8}
+  .twrap thead th:nth-child(2){left:36px;z-index:8}
+
+  /* Sticky first two body columns */
+  .sticky{position:sticky;left:0;background:var(--card);z-index:4}
+  .expand-cell{width:36px;text-align:center;left:0}
+  .task-cell{min-width:200px;left:36px}
+
+  /* Horizontal affordance shadows */
+  .twrap.scrolling-left::before,.twrap.scrolling-right::after{
+    content:"";position:absolute;top:0;bottom:0;width:12px;pointer-events:none
+  }
+  .twrap.scrolling-left::before{left:0;box-shadow:inset 8px 0 12px -8px rgba(0,0,0,.6)}
+  .twrap.scrolling-right::after{right:0;box-shadow:inset -8px 0 12px -8px rgba(0,0,0,.6)}
+
+  /* Compact cell styles */
+  .cell-tight{padding:4px 6px!important}
+  .mini{font-size:11px;opacity:.85;white-space:nowrap}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  td.ok .mini, td.bad .mini{color:var(--muted)}
+
+  /* Status colors */
+  .ok{color:var(--ok);font-weight:700}
+  .bad{color:var(--bad);font-weight:700}
+  .missing{color:var(--bad);font-weight:700}
+
+  /* Details */
+  .expand-btn{border:none;background:transparent;color:var(--muted);font-size:16px;line-height:1;padding:2px 6px;border-radius:8px}
+  .expand-btn:hover{background:#0b121b;color:var(--text)}
+  .details-row td{background:#0e1520}
+  .details-box{padding:10px 6px}
+  .details-grid{display:grid;gap:10px;grid-template-columns:repeat(var(--details-cols),minmax(0,1fr))}
+  @media (max-width:820px){.details-grid{grid-template-columns:1fr!important}}
+  .details-card{border:1px solid var(--border);border-radius:10px;padding:10px;background:#0b121b}
+  .details-card h3{margin:0 0 8px;font-size:14px;color:var(--muted);font-weight:700}
+  .kv{font-size:12px;color:var(--muted);margin:4px 0}
+  .kv strong{color:var(--text);font-weight:600;margin-right:6px}
+  .kv .val{color:var(--text)}
+
+  pre{
+    white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;line-break:anywhere;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;margin:8px 0 0;color:#dbe8f5;background:#0b121b;
+    border:1px solid var(--border);border-radius:8px;padding:8px;max-height:320px;overflow:auto
+  }
+
+  .toolbar-right{display:flex;gap:var(--gap);align-items:end;justify-content:flex-end}
+  .footer{margin-top:12px;display:flex;gap:var(--gap);align-items:center;flex-wrap:wrap}
+
+  /* Coverage UI */
+  .banner{margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#1a0e12;color:#ffd7d7}
+  .banner strong{color:#fff}
+  .cov-table th,.cov-table td{font-size:13px}
+  .muted-small{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>LLM Results — Tasks × Models by Category</h1>
+  <div class="card">
+
+    <!-- Top controls -->
+    <div class="controls-outer">
+      <!-- Left: file load / paste -->
+      <div class="panel">
+        <div class="grid cols-3">
+          <div class="fg span-2">
+            <label for="jsonFile">Select results.json</label>
+            <input id="jsonFile" type="file" accept=".json,application/json" />
+          </div>
+          <div class="fg">
+            <label>&nbsp;</label>
+            <div id="dropZone">…or drop results.json here</div>
+          </div>
+          <div class="fg span-2">
+            <label for="jsonPaste">Or paste JSON (optional)</label>
+            <textarea id="jsonPaste" placeholder='{"languages":[...]}'></textarea>
+          </div>
+          <div class="fg">
+            <label>&nbsp;</label>
+            <button id="loadPasteBtn" class="btn">Load pasted JSON</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: language/mode/compute -->
+      <div class="panel">
+        <div class="grid cols-3">
+          <div class="fg">
+            <label for="langSel">Language</label>
+            <select id="langSel" disabled></select>
+          </div>
+          <div class="fg">
+            <label for="modeSel">Mode</label>
+            <select id="modeSel" disabled></select>
+          </div>
+          <div class="fg">
+            <label>&nbsp;</label>
+            <button id="computeBtn" class="primary" disabled style="width:100%;">Compute</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Secondary controls -->
+    <div class="panel" style="margin-top:12px;">
+      <div class="grid cols-5">
+        <div class="fg span-2">
+          <label for="modelFilter">Models (multi-select)</label>
+          <select id="modelFilter" multiple disabled></select>
+        </div>
+        <div class="fg">
+          <label for="searchBox">Search (task id or text)</label>
+          <input id="searchBox" placeholder="e.g. schema/enum or an LLM output snippet…" />
+        </div>
+        <div class="fg">
+          <label for="colsSel">Details per row</label>
+          <select id="colsSel">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label for="sortSel">Sort tasks</label>
+          <select id="sortSel">
+            <option value="fails">Fails first</option>
+            <option value="name">Name (A→Z)</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>&nbsp;</label>
+          <div style="display:flex;gap:16px;align-items:center;">
+            <label><input type="checkbox" id="failedOnly"> Failed only</label>
+            <label><input type="checkbox" id="hidePerfectCats"> Hide 100% categories</label>
+          </div>
+        </div>
+        <div class="toolbar-right span-2">
+          <button id="expandAllBtn" class="btn">Expand all</button>
+          <button id="collapseAllBtn" class="btn">Collapse all</button>
+        </div>
+        <div class="toolbar-right">
+          <button id="downloadCsvBtn" class="btn" disabled>Download CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Coverage -->
+    <div id="coverageBanner"></div>
+    <div id="coveragePanel" class="panel" style="margin-top:12px;display:none;">
+      <div class="grid cols-4" style="align-items:end;">
+        <div><h2 style="margin:0;">Coverage Check</h2></div>
+        <div class="muted-small">Expect: Every model has every task in each category. Any missing entry = bug.</div>
+        <div></div>
+        <div style="text-align:right;">
+          <button id="toggleCoverageBtn" class="btn">Collapse</button>
+        </div>
+      </div>
+      <div id="coverageBody" style="margin-top:8px;"></div>
+    </div>
+
+    <div id="topSummary" style="margin-top:10px;"></div>
+    <div id="matrices" style="margin-top:8px;"></div>
+
+    <div class="footer">
+      <span id="status" class="hint"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let resultsData=null,lastView=null,lastCsv="";
+const byId=(id)=>document.getElementById(id);
+const normNum=(v)=> (typeof v==='number'?v:(typeof v==='boolean'?(v?1:0):(Number.isFinite(+v)?+v:0)));
+function savePref(id,val){try{localStorage.setItem('results_ui_'+id,val)}catch{}}
+function loadPref(id){try{return localStorage.getItem('results_ui_'+id)}catch{return null}}
+function setCols(n){document.documentElement.style.setProperty('--details-cols',String(n))}
+function setStatus(msg,isError=false){const el=byId('status');el.textContent=msg||"";el.style.color=isError?"var(--bad)":"var(--muted)";if(isError)console.error(msg)}
+function safeParse(text){try{const o=JSON.parse(text);if(!o||typeof o!=='object')throw new Error('Root is not an object');return o}catch(e){setStatus(`Failed to parse JSON: ${e.message}`,true);return null}}
+
+async function loadJsonObject(obj,src){if(!obj)return;
+  if(!obj.languages||!Array.isArray(obj.languages)){setStatus(`${src}: JSON missing "languages" array.`,true);console.debug('JSON root:',obj);return}
+  resultsData=obj;try{populateSelectors(resultsData);setStatus(`Loaded from ${src}`)}catch(err){console.error(err);setStatus(`${src}: render setup failed — ${err.message}`,true)}
+}
+
+byId('jsonFile').addEventListener('change',async e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  try{const txt=await f.text(); const obj=safeParse(txt); await loadJsonObject(obj,`file "${f.name}"`)}catch(err){console.error(err);setStatus(`File read error: ${err.message}`,true)}
+});
+const dz=byId('dropZone');
+if(dz){
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('hover')}));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('hover')}));
+  dz.addEventListener('drop',async e=>{
+    const f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(!f) return;
+    try{const txt=await f.text(); const obj=safeParse(txt); await loadJsonObject(obj,`dropped "${f.name}"`)}catch(err){console.error(err);setStatus(`Drop error: ${err.message}`,true)}
+  });
+}
+byId('loadPasteBtn').addEventListener('click',()=>{
+  const txt=byId('jsonPaste').value.trim(); if(!txt){setStatus('Paste box is empty.',true);return}
+  const obj=safeParse(txt); loadJsonObject(obj,'pasted JSON');
+});
+
+function getControls(){
+  const lang=byId('langSel').value, mode=byId('modeSel').value;
+  const colsSel=byId('colsSel').value||'2', failedOnly=byId('failedOnly').checked, hidePerfectCats=byId('hidePerfectCats').checked;
+  const sortSel=byId('sortSel').value||'fails', q=byId('searchBox').value.trim();
+  const ms=byId('modelFilter'); let chosen=[]; if(ms&&!ms.disabled){chosen=Array.from(ms.options).filter(o=>o.selected).map(o=>o.value)}
+  return {lang,mode,cols:Number(colsSel)||2,failedOnly,hidePerfectCats,sortSel,q,chosen};
+}
+
+function populateSelectors(data){
+  const langSel=byId('langSel'), modeSel=byId('modeSel');
+  for(const el of [langSel,modeSel]){el.innerHTML=""; el.disabled=true}
+  byId('computeBtn').disabled=true;
+
+  const langs=(data.languages||[]).map(x=>(x&&typeof x.lang==='string')?x.lang.trim():'').filter(Boolean);
+  if(!langs.length){setStatus('No languages found in JSON.',true);return}
+  langs.forEach(l=>{const o=document.createElement('option');o.value=l;o.textContent=l;langSel.appendChild(o)});
+
+  const modeSet=new Map();
+  for(const le of (data.languages||[])){const arr=Array.isArray(le?.modes)?le.modes:[];for(const me of arr){const raw=typeof me?.mode==='string'?me.mode.trim():'';if(!raw)continue;const k=raw.toLowerCase(); if(!modeSet.has(k)) modeSet.set(k,raw)}}
+  const allModes=Array.from(modeSet.values()).sort((a,b)=>a.localeCompare(b));
+  if(!allModes.length){setStatus('No modes found in any language.',true)}
+  allModes.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;modeSel.appendChild(o)});
+
+  const savedLang=loadPref('langSel'); if(savedLang&&langs.includes(savedLang)) langSel.value=savedLang;
+  const savedMode=loadPref('modeSel'); if(savedMode&&allModes.includes(savedMode)) modeSel.value=savedMode;
+  const savedCols=loadPref('colsSel'); if(savedCols){byId('colsSel').value=savedCols; setCols(savedCols)}
+  const savedFailed=loadPref('failedOnly'); if(savedFailed!==null) byId('failedOnly').checked=(savedFailed==='true');
+  const savedHidePerfect=loadPref('hidePerfectCats'); if(savedHidePerfect!==null) byId('hidePerfectCats').checked=(savedHidePerfect==='true');
+  const savedSearch=loadPref('searchBox'); if(savedSearch!==null) byId('searchBox').value=savedSearch;
+  const savedSort=loadPref('sortSel'); if(savedSort) byId('sortSel').value=savedSort;
+
+  langSel.disabled=false; modeSel.disabled=allModes.length===0;
+  byId('computeBtn').disabled=!langSel.value||!modeSel.value;
+  setStatus('Ready.');
+}
+
+byId('computeBtn').addEventListener('click',()=>{
+  try{
+    const {lang,mode}=getControls();
+    if(!resultsData){setStatus('No data loaded yet.',true);return}
+    if(!lang||!mode){setStatus('Pick language and mode.',true);return}
+    lastView=buildView(resultsData,lang,mode);
+    populateModelFilter(lastView);
+    renderAll();
+  }catch(err){console.error(err);setStatus(`Compute failed: ${err.message}`,true)}
+});
+
+function populateModelFilter(view){
+  const sel=byId('modelFilter'); sel.innerHTML='';
+  (view.modelNames||[]).forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;o.selected=true;sel.appendChild(o)});
+  sel.disabled=!view.modelNames||view.modelNames.length===0;
+  const saved=loadPref('modelFilter'); if(saved){try{const want=JSON.parse(saved); Array.from(sel.options).forEach(o=>{o.selected=want.includes(o.value)})}catch{}}
+}
+
+function buildView(data,lang,mode){
+  const le=(data.languages||[]).find(x=>(x?.lang||'').toString().trim().toLowerCase()===(lang||'').toString().trim().toLowerCase());
+  if(!le) throw new Error(`Language "${lang}" not found`);
+  const me=(le?.modes||[]).find(x=>(x?.mode||'').toString().trim().toLowerCase()===(mode||'').toString().trim().toLowerCase());
+  if(!me) throw new Error(`Mode "${mode}" not found under language "${lang}"`);
+  const models=Array.isArray(me.models)?me.models:[];
+  const goldenAnswers=(le&&typeof le.golden_answers==='object'&&le.golden_answers)?le.golden_answers:{};
+
+  const taskCat=new Map();
+  for(const mdl of models){
+    const tasks=mdl?.tasks&&typeof mdl.tasks==='object'?mdl.tasks:{};
+    for(const [tid,outcome] of Object.entries(tasks)){
+      const cat=outcome?.category?String(outcome.category):"unknown";
+      if(!taskCat.has(tid)) taskCat.set(tid,cat);
+    }
+  }
+
+  const categories={};
+  for(const [tid,cat] of taskCat.entries()) (categories[cat] ||= []).push(tid);
+  Object.keys(categories).forEach(c=>categories[c].sort());
+
+  const modelNames=models.map(m=>m?.name||m?.route_api_model||"<unknown-model>");
+  const modelTaskMap={}, modelOutcomeMap={};
+
+  models.forEach((mdl,i)=>{
+    const mname=modelNames[i];
+    const tasks=mdl?.tasks&&typeof mdl.tasks==='object'?mdl.tasks:{};
+    const tmap={}, omap={};
+    for(const [tid,outcome] of Object.entries(tasks)){
+      const pt=normNum(outcome?.passed_tests), tt=normNum(outcome?.total_tests);
+      const pass=tt>0 && pt===tt;
+      tmap[tid]={pass,pt,tt};
+      omap[tid]={
+        pass,pt,tt,
+        model_name:(outcome?.model_name ?? mdl?.name) || null,
+        route_api_model: outcome?.route_api_model ?? mdl?.route_api_model ?? null,
+        vendor: outcome?.vendor ?? null,
+        started_at: outcome?.started_at ?? null,
+        finished_at: outcome?.finished_at ?? null,
+        golden_db: outcome?.golden_db ?? null,
+        llm_db: outcome?.llm_db ?? null,
+        work_dir_golden: outcome?.work_dir_golden ?? null,
+        work_dir_llm: outcome?.work_dir_llm ?? null,
+        llm_output: outcome?.llm_output ?? null,
+        scorer_details: outcome?.scorer_details ?? null,
+        golden_answer: goldenAnswers?.[tid]?.answer ?? null,
+        golden_syntax: goldenAnswers?.[tid]?.syntax ?? null
+      };
+    }
+    modelTaskMap[mname]=tmap; modelOutcomeMap[mname]=omap;
+  });
+
+  const totalsByCategory={}; for(const [cat,tids] of Object.entries(categories)) totalsByCategory[cat]=tids.length;
+
+  const coverage={};
+  for(const [cat,tids] of Object.entries(categories)){
+    coverage[cat]={};
+    for(const m of modelNames){
+      const have=new Set(Object.keys(modelTaskMap[m]||{}));
+      const missing=tids.filter(tid=>!have.has(tid));
+      if(missing.length) coverage[cat][m]=missing;
+    }
+  }
+
+  return {modelNames,categories,modelTaskMap,modelOutcomeMap,totalsByCategory,overallTotal:taskCat.size,coverage,goldenAnswers};
+}
+
+function renderAll(){
+  if(!lastView){setStatus("Load a file and click Compute.");return}
+  const {lang,mode,cols}=getControls(); setCols(cols);
+  renderCoverageBanner(lastView); renderCoveragePanel(lastView);
+  renderTopSummary(lastView,lang,mode);
+  renderMatrices(lastView);
+  lastCsv=buildCsv(lastView);
+  byId('downloadCsvBtn').disabled=Object.keys(lastView.categories).length===0;
+}
+
+function renderCoverageBanner(view){
+  const banner=byId('coverageBanner'); const issues=countCoverageIssues(view);
+  if(issues.totalMissing>0){
+    banner.innerHTML=`
+      <div class="banner">
+        <strong>${issues.totalMissing}</strong> missing task entries across
+        <strong>${issues.modelsWithIssues}</strong> model(s) and
+        <strong>${issues.catsWithIssues}</strong> categor${issues.catsWithIssues===1?'y':'ies'}.
+        <span class="muted-small">This indicates a data bug — all models should have all tasks.</span>
+        <div style="margin-top:8px;">
+          <button class="btn" onclick="document.getElementById('coveragePanel').style.display='block'; window.scrollTo({top: document.getElementById('coveragePanel').offsetTop-12, behavior:'smooth'});">View Coverage Check</button>
+        </div>
+      </div>`;
+    byId('coveragePanel').style.display='block';
+  }else{banner.innerHTML=''; byId('coveragePanel').style.display='none'}
+}
+function countCoverageIssues(view){
+  let totalMissing=0, models=new Set(), cats=new Set();
+  for(const [cat,perModel] of Object.entries(view.coverage)){
+    const modelsHere=Object.keys(perModel);
+    if(modelsHere.length){cats.add(cat); for(const m of modelsHere){models.add(m); totalMissing+=perModel[m].length}}
+  }
+  return {totalMissing,modelsWithIssues:models.size,catsWithIssues:cats.size};
+}
+byId('toggleCoverageBtn').addEventListener('click',()=>{const p=byId('coveragePanel'); p.style.display=p.style.display==='none'?'block':'none'});
+
+function renderCoveragePanel(view){
+  const body=byId('coverageBody'); const rows=[];
+  for(const cat of Object.keys(view.categories).sort()){
+    const perModel=view.coverage[cat]||{}; const models=Object.keys(perModel); if(!models.length) continue;
+    const summary=view.modelNames.map(m=>{const miss=perModel[m]?.length||0; const cls=miss?'bad':'muted'; return `<td class="${cls}">${miss}</td>`}).join("");
+    const detailsRows=view.modelNames.map(m=>{
+      const miss=perModel[m]||[]; if(!miss.length) return '';
+      const list=miss.map(t=>`<code class="wrapany">${esc(t)}</code>`).join(', ');
+      return `<tr><td class="muted">${esc(m)}</td><td>${list}</td></tr>`;
+    }).filter(Boolean).join("");
+    rows.push(`
+      <div style="margin-bottom:12px;">
+        <div class="grid cols-4" style="align-items:center;">
+          <div><strong>Category: ${esc(cat)}</strong></div>
+          <div class="muted-small">Missing per model</div>
+          <div></div>
+          <div style="text-align:right;"><button class="btn" onclick="toggleCovDetails('${sanitize(cat)}')">Toggle details</button></div>
+        </div>
+        <div class="twrap" style="margin-top:6px;">
+          <table class="cov-table">
+            <thead><tr><th style="width:220px;">Model</th>${view.modelNames.map(m=>`<th>${esc(m)}</th>`).join("")}</tr></thead>
+            <tbody><tr><td class="muted">Missing (count)</td>${summary}</tr></tbody>
+          </table>
+        </div>
+        <div id="cov_${sanitize(cat)}" style="display:none;margin-top:8px;">
+          <div class="twrap">
+            <table class="cov-table">
+              <thead><tr><th style="width:220px;">Model</th><th>Missing task IDs</th></tr></thead>
+              <tbody>${detailsRows || '<tr><td colspan="2" class="muted-small">None</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>`);
+  }
+  body.innerHTML=rows.length?rows.join(""):`<span class="muted-small">All models have full coverage (no missing tasks detected).</span>`;
+}
+function toggleCovDetails(catId){const el=byId('cov_'+catId); el.style.display=el.style.display==='none'?'block':'none'}
+
+function renderTopSummary(view,lang,mode){
+  const area=byId('topSummary');
+  const catBits=Object.entries(view.totalsByCategory).sort(([a],[b])=>a.localeCompare(b)).map(([c,n])=>`<span class="pill">${esc(c)}: <strong>${n}</strong></span>`).join(" ");
+  area.innerHTML=`
+    <div class="grid cols-4">
+      <div><span class="pill">Language: <strong>${esc(lang)}</strong></span></div>
+      <div><span class="pill">Mode: <strong>${esc(mode)}</strong></span></div>
+      <div><span class="pill">Unique tasks: <strong>${view.overallTotal}</strong></span></div>
+      <div style="text-align:right;"><span class="hint">Click a ▸ to view details per task</span></div>
+    </div>
+    <div style="margin-top:6px;">${catBits || '<span class="hint">No categories detected.</span>'}</div>`;
+}
+
+['colsSel','failedOnly','hidePerfectCats','sortSel'].forEach(id=>{
+  const el=byId(id);
+  el.addEventListener('change',()=>{savePref(id, el.type==='checkbox'?String(el.checked):el.value); if(id==='colsSel') setCols(el.value); renderAll();});
+});
+byId('searchBox').addEventListener('input',()=>{savePref('searchBox',byId('searchBox').value);renderAll()});
+byId('langSel').addEventListener('change',()=>{savePref('langSel',byId('langSel').value); byId('computeBtn').disabled=!byId('langSel').value||!byId('modeSel').value});
+byId('modeSel').addEventListener('change',()=>{savePref('modeSel',byId('modeSel').value); byId('computeBtn').disabled=!byId('langSel').value||!byId('modeSel').value});
+byId('modelFilter').addEventListener('change',()=>{const sel=byId('modelFilter'); const vals=Array.from(sel.options).filter(o=>o.selected).map(o=>o.value); savePref('modelFilter',JSON.stringify(vals)); renderAll()});
+byId('expandAllBtn').addEventListener('click',()=>{document.querySelectorAll('.details-row').forEach(r=>r.style.display=''); document.querySelectorAll('.expand-btn').forEach(b=>{b.textContent='▾'; b.setAttribute('aria-expanded','true')})});
+byId('collapseAllBtn').addEventListener('click',()=>{document.querySelectorAll('.details-row').forEach(r=>r.style.display='none'); document.querySelectorAll('.expand-btn').forEach(b=>{b.textContent='▸'; b.setAttribute('aria-expanded','false')})});
+
+function selectedModels(){const sel=byId('modelFilter'); if(!sel||sel.disabled) return null; const arr=Array.from(sel.options).filter(o=>o.selected).map(o=>o.value); return arr.length?arr:null}
+function matchesSearch(tid,view,q,cols){
+  if(!q) return true;
+  const needle=q.toLowerCase();
+  if(tid.toLowerCase().includes(needle)) return true;
+  const ga=view.goldenAnswers?.[tid]?.answer;
+  if(ga && String(ga).toLowerCase().includes(needle)) return true;
+  for(const m of cols){
+    const oc=view.modelOutcomeMap[m]?.[tid];
+    if(oc?.llm_output && String(oc.llm_output).toLowerCase().includes(needle)) return true;
+  }
+  return false;
+}
+function addScrollShadows(container){
+  function onScroll(){const atLeft=container.scrollLeft<=1; const atRight=container.scrollLeft+container.clientWidth>=container.scrollWidth-1;
+    container.classList.toggle('scrolling-left',!atLeft); container.classList.toggle('scrolling-right',!atRight);}
+  container.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+}
+
+function renderMatrices(view){
+  const area=byId('matrices'); const cats=Object.keys(view.categories).sort();
+  const {failedOnly,hidePerfectCats,sortSel,q}=getControls(); const chosen=selectedModels() ?? view.modelNames;
+  if(!cats.length){area.innerHTML=`<span class="hint">No tasks for this Language/Mode.</span>`; return}
+
+  const blocks=[];
+  for(const cat of cats){
+    const tidsAll=view.categories[cat];
+
+    let anyFailUnion=false;
+    for(const tid of tidsAll){
+      if(view.modelNames.some(m=>{const rec=view.modelTaskMap[m]?.[tid]; return rec && !rec.pass;})){anyFailUnion=true;break}
+    }
+    if(hidePerfectCats && !anyFailUnion) continue;
+
+    const tids=[...tidsAll].sort((a,b)=>{
+      if(sortSel==='name') return a.localeCompare(b);
+      const af=chosen.some(m=>{const rec=view.modelTaskMap[m]?.[a]; return rec && !rec.pass;});
+      const bf=chosen.some(m=>{const rec=view.modelTaskMap[m]?.[b]; return rec && !rec.pass;});
+      if(af!==bf) return af?-1:1;
+      return a.localeCompare(b);
+    });
+
+    const rows=[];
+    for(const tid of tids){
+      if(!matchesSearch(tid,view,q,chosen)) continue;
+      const hasFail=chosen.some(m=>{const rec=view.modelTaskMap[m]?.[tid]; return rec && !rec.pass;});
+      const shownInAny=chosen.some(m=>view.modelTaskMap[m]?.[tid]);
+      if(failedOnly && !hasFail) continue;
+      if(!shownInAny) continue;
+
+      const cells=chosen.map(m=>{
+        const rec=view.modelTaskMap[m]?.[tid];
+        if(!rec) return `<td class="missing cell-tight" title="Result missing for this model/task">—</td>`;
+        const sym=rec.pass?'✓':'✗';
+        const counts=rec.tt?`<span class="mini">(${rec.pt}/${rec.tt})</span>`:'';
+        const title=rec.pass?(rec.tt?`PASS (${rec.pt}/${rec.tt})`:'PASS'):(rec.tt?`FAIL (${rec.pt}/${rec.tt})`:'FAIL');
+        return `<td class="${rec.pass?'ok':'bad'} cell-tight" title="${title}">${sym} ${counts}</td>`;
+      }).join("");
+
+      const rid=`details_${sanitize(cat)}_${sanitize(tid)}`;
+      rows.push(`
+        <tr>
+          <td class="expand-cell sticky"><button class="expand-btn" aria-expanded="false" aria-controls="${rid}" onclick="toggleDetails('${rid}', this)">▸</button></td>
+          <td class="task-cell sticky wrapany">${esc(tid)}</td>
+          ${cells}
+        </tr>
+        <tr id="${rid}" class="details-row" style="display:none;">
+          <td colspan="${2 + chosen.length}"><div class="details-box">${buildDetailsForTask(tid,view,chosen)}</div></td>
+        </tr>`);
+    }
+
+    const bodyHtml=rows.length?rows.join(""):`<tr><td class="task-cell sticky" colspan="${2 + chosen.length}"><span class="hint">No tasks match filters in this category.</span></td></tr>`;
+
+    const totals=chosen.map(m=>{
+      const total=view.categories[cat].length;
+      let p=0; for(const tid of view.categories[cat]){const rec=view.modelTaskMap[m]?.[tid]; if(rec?.pass) p++}
+      const rate=total?Math.round(100*p/total):0;
+      const cls=rate===100?'ok':(rate===0?'bad':'muted');
+      return `<td class="cell-tight" title="${p}/${total} (${rate}%)">
+                <div><span class="${cls} mono">${p}/${total}</span></div>
+                <div class="mini">${rate}%</div>
+              </td>`;
+    }).join("");
+
+    const header=`
+      <div class="grid cols-4" style="align-items:center;">
+        <div><h2 style="margin:0;">Category: ${esc(cat)}</h2></div>
+        <div><span class="pill">Tasks: <strong>${view.categories[cat].length}</strong></span></div>
+        <div>${anyFailUnion?`<span class="chip bad">has failures</span>`:`<span class="chip ok">all pass (union)</span>`}</div>
+        <div></div>
+      </div>`;
+
+    const table=`
+      <div class="twrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="expand-cell"> </th>
+              <th class="task-cell">Task</th>
+              ${chosen.map(m=>`<th>${esc(m)}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${bodyHtml}
+            <tr>
+              <td class="expand-cell"></td>
+              <td class="task-cell"><em>Category totals</em></td>
+              ${totals}
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+    blocks.push(header+table);
+  }
+
+  const overall=`
+    <h2>Overall totals (all categories)</h2>
+    <div class="twrap">
+      <table>
+        <thead><tr><th>Model</th><th>Passed / Total</th><th>Rate</th></tr></thead>
+        <tbody>
+          ${(selectedModels() ?? view.modelNames).map(m=>{
+            let p=0,t=0; for(const tids of Object.values(view.categories)){t+=tids.length; for(const tid of tids){const rec=view.modelTaskMap[m]?.[tid]; if(rec?.pass) p++;}}
+            const rate=t?Math.round(100*p/t):0; const cls=rate===100?'ok':(rate===0?'bad':'muted');
+            return `<tr>
+              <td>${esc(m)}</td>
+              <td class="cell-tight"><div><span class="mono ${cls}">${p}/${t}</span></div><div class="mini">${rate}%</div></td>
+              <td class="${cls} cell-tight">${rate}%</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>`;
+
+  area.innerHTML=(blocks.length?blocks.join(""):`<span class="hint">No categories match your filters.</span>`)+overall;
+  area.querySelectorAll('.twrap').forEach(addScrollShadows);
+}
+
+function buildDetailsForTask(tid,view,cols){
+  const cards=[];
+  const ga=view.goldenAnswers?.[tid];
+  if(ga && ga.answer){
+    const tag = ga.syntax ? `<span class="chip">${esc(ga.syntax)}</span>` : '';
+    cards.push(
+      `<div class="details-card wrapany">
+         <h3>Golden Answer ${tag}</h3>
+         <pre class="wrapany">${esc(ga.answer)}</pre>
+       </div>`
+    );
+  }
+
+  for(const m of cols){
+    const oc=view.modelOutcomeMap[m]?.[tid];
+    if(!oc){
+      cards.push(`<div class="details-card wrapany"><h3>${esc(m)}</h3>
+        <div class="kv"><strong>Status:</strong> <span class="missing">MISSING</span></div>
+        <div class="kv"><span class="val muted">No result object for this model/task.</span></div></div>`);
+      continue;
+    }
+    const passCls=oc.pass?'ok':'bad'; const scorer=summarizeScorers(oc.scorer_details);
+    cards.push(`<div class="details-card wrapany">
+      <h3>${esc(m)}</h3>
+      <div class="kv"><strong>Status:</strong> <span class="${passCls}">${oc.pass?'PASS':`FAIL (${oc.pt}/${oc.tt})`}</span></div>
+      ${kv('Model Name',oc.model_name)}${kv('Route API Model',oc.route_api_model)}${kv('Vendor',oc.vendor)}
+      ${kv('Started',oc.started_at)}${kv('Finished',oc.finished_at)}
+      ${kv('golden_db',oc.golden_db)}${kv('llm_db',oc.llm_db)}
+      ${kv('work_dir_golden',oc.work_dir_golden)}${kv('work_dir_llm',oc.work_dir_llm)}
+      ${scorer?`<div class="kv"><strong>Scorers:</strong> <span class="val wrapany">${scorer}</span></div>`:''}
+      ${oc.llm_output?`<div class="kv"><strong>LLM Output:</strong></div><pre class="wrapany">${esc(oc.llm_output)}</pre>`:''}
+    </div>`);
+  }
+
+  if(!cards.length) return `<span class="hint">No model details for this task.</span>`;
+  return `<div class="details-grid">${cards.join('')}</div>`;
+}
+
+function kv(label,value){if(value===null||value===undefined||value==='')return''; return `<div class="kv"><strong>${esc(label)}:</strong> <span class="val wrapany">${esc(value)}</span></div>`}
+function summarizeScorers(sd){
+  if(!sd||typeof sd!=='object') return '';
+  const keys=Object.keys(sd); if(!keys.length) return '';
+  let total=0, failed=[];
+  for(const k of keys){const rec=sd[k]||{}; const pass=!!rec.pass; const partial=(typeof rec.partial==='number')?rec.partial:null; total++; if(!pass) failed.push(partial!==null?`${k} (partial=${partial})`:k)}
+  if(!failed.length) return `all ${total} passed`; return `${total-failed.length}/${total} passed; failed: ${failed.map(esc).join(', ')}`;
+}
+
+function buildCsv(view){
+  const {q,failedOnly,hidePerfectCats,sortSel}=getControls(); const cols=selectedModels() ?? view.modelNames;
+  const lines=[]; const qcsv=(s)=>`"${String(s).replace(/"/g,'""')}"`;
+  lines.push(qcsv(`Language: ${byId('langSel').value}`)); lines.push(qcsv(`Mode: ${byId('modeSel').value}`)); lines.push("");
+  const cats=Object.keys(view.categories).sort();
+  for(const cat of cats){
+    let anyFailUnion=false; for(const tid of view.categories[cat]){ if(cols.some(m=>{const rec=view.modelTaskMap[m]?.[tid]; return rec && !rec.pass;})){anyFailUnion=true;break} }
+    if(hidePerfectCats && !anyFailUnion) continue;
+    const tids=[...view.categories[cat]].sort((a,b)=>{if(sortSel==='name') return a.localeCompare(b);
+      const af=cols.some(m=>{const rec=view.modelTaskMap[m]?.[a]; return rec && !rec.pass;});
+      const bf=cols.some(m=>{const rec=view.modelTaskMap[m]?.[b]; return rec && !rec.pass;});
+      if(af!==bf) return af?-1:1; return a.localeCompare(b)});
+    lines.push(qcsv(`Category: ${cat}`)); lines.push(["Task",...cols].map(qcsv).join(","));
+    for(const tid of tids){
+      if(!matchesSearch(tid,view,q,cols)) continue;
+      const hasFail=cols.some(m=>{const rec=view.modelTaskMap[m]?.[tid]; return rec && !rec.pass;});
+      const shownInAny=cols.some(m=>view.modelTaskMap[m]?.[tid]);
+      if(failedOnly && !hasFail) continue; if(!shownInAny) continue;
+      const row=[tid]; for(const m of cols){const rec=view.modelTaskMap[m]?.[tid]; row.push(rec?(rec.pass?"PASS":`FAIL (${rec.pt}/${rec.tt})`):"MISSING")}
+      lines.push(row.map(qcsv).join(","));
+    }
+    const totals=["Category totals"]; for(const m of cols){const total=view.categories[cat].length; let p=0; for(const tid of view.categories[cat]){const rec=view.modelTaskMap[m]?.[tid]; if(rec?.pass) p++} totals.push(`${p}/${total}`)}
+    lines.push(totals.map(qcsv).join(",")); lines.push("");
+  }
+  lines.push("Overall totals"); lines.push(["Model","Passed/Total","Rate"].map(qcsv).join(","));
+  for(const m of cols){let p=0,t=0; for(const tids of Object.values(view.categories)){t+=tids.length; for(const tid of tids){const rec=view.modelTaskMap[m]?.[tid]; if(rec?.pass) p++}}
+    const rate=t?Math.round(100*p/t):0; lines.push([m,`${p}/${t}`,`${rate}%`].map(qcsv).join(","))}
+  return lines.join("\n")+"\n";
+}
+
+function toggleDetails(rowId,btn){const row=document.getElementById(rowId); const isOpen=row.style.display!=='none'; row.style.display=isOpen?'none':''; btn.setAttribute('aria-expanded',String(!isOpen)); btn.textContent=isOpen?'▸':'▾'}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function sanitize(s){return String(s).replace(/[^\w.-]+/g,'_')}
+
+/* Persist some controls proactively */
+['colsSel','failedOnly','hidePerfectCats','sortSel','searchBox','langSel','modeSel'].forEach(id=>{
+  const el=byId(id); if(!el) return; const v=loadPref(id);
+  if(v!==null){ if(el.type==='checkbox') el.checked=(v==='true'); else el.value=v; if(id==='colsSel') setCols(el.value); }
+});
+</script>
+</body>
+</html>

@@ -1,81 +1,11 @@
 {
   "version": 1,
-  "generated_at": "2025-10-23T17:44:46.150Z",
+  "generated_at": "2025-10-24T22:33:11.687Z",
   "by_language": {
     "csharp": {
       "modes": {
-        "llms.md": {
-          "models": {
-            "GPT-4.1": {
-              "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 10,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                },
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 12,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 22,
-                "passed_tests": 0,
-                "pass_pct": 0.0
-              }
-            },
-            "GPT-4o": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 12,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 10,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 22,
-                "passed_tests": 0,
-                "pass_pct": 0.0
-              }
-            }
-          }
-        },
         "docs": {
           "models": {
-            "GPT-4o": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 19,
-                  "pass_pct": 70.37037
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 26,
-                  "pass_pct": 76.47059
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 45,
-                "pass_pct": 73.77049
-              }
-            },
             "GPT-4.1": {
               "categories": {
                 "basics": {
@@ -120,19 +50,41 @@
                 "pass_pct": 100.0
               }
             },
-            "o4-mini": {
+            "Meta Llama 3.1 405B": {
               "categories": {
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 18,
-                  "pass_pct": 52.941177
+                  "passed_tests": 26,
+                  "pass_pct": 76.47059
                 },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 24,
+                  "pass_pct": 88.888885
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 50,
+                "pass_pct": 81.96722
+              }
+            },
+            "o4-mini": {
+              "categories": {
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
                   "passed_tests": 17,
                   "pass_pct": 62.962963
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 18,
+                  "pass_pct": 52.941177
                 }
               },
               "totals": {
@@ -162,138 +114,6 @@
                 "total_tests": 61,
                 "passed_tests": 61,
                 "pass_pct": 100.0
-              }
-            },
-            "DeepSeek R1": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 24,
-                  "pass_pct": 88.888885
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 16,
-                  "pass_pct": 47.058823
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 40,
-                "pass_pct": 65.57377
-              }
-            },
-            "DeepSeek V3": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 24,
-                  "pass_pct": 88.888885
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 27,
-                  "pass_pct": 79.411766
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 51,
-                "pass_pct": 83.60656
-              }
-            },
-            "Meta Llama 3.1 405B": {
-              "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 26,
-                  "pass_pct": 76.47059
-                },
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 24,
-                  "pass_pct": 88.888885
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 50,
-                "pass_pct": 81.96722
-              }
-            },
-            "Gemini 2.5 Flash": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 24,
-                  "passed_tests": 18,
-                  "pass_pct": 75.0
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 19,
-                  "pass_pct": 55.882355
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 58,
-                "passed_tests": 37,
-                "pass_pct": 63.793102
-              }
-            },
-            "Claude 4.5 Haiku": {
-              "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 21,
-                  "pass_pct": 61.764706
-                },
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 27,
-                  "pass_pct": 100.0
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 48,
-                "pass_pct": 78.68852
-              }
-            },
-            "Claude 4.5 Sonnet": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 27,
-                  "pass_pct": 100.0
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 26,
-                  "pass_pct": 76.47059
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 53,
-                "pass_pct": 86.88525
               }
             },
             "Grok 4": {
@@ -340,78 +160,26 @@
                 "pass_pct": 80.327866
               }
             },
-            "Grok 3 Mini (Beta)": {
+            "Claude 4.5 Sonnet": {
               "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 17,
-                  "pass_pct": 50.0
-                },
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 9,
-                  "pass_pct": 33.333332
+                  "passed_tests": 27,
+                  "pass_pct": 100.0
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 26,
+                  "pass_pct": 76.47059
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 26,
-                "pass_pct": 42.62295
-              }
-            }
-          }
-        }
-      }
-    },
-    "rust": {
-      "modes": {
-        "rustdoc_json": {
-          "models": {
-            "Meta Llama 3.1 405B": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 4,
-                  "pass_pct": 14.814815
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 4,
-                "pass_pct": 6.557377
-              }
-            },
-            "Grok 4": {
-              "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 31,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                },
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 13,
-                  "pass_pct": 48.148148
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 58,
-                "passed_tests": 13,
-                "pass_pct": 22.413794
+                "passed_tests": 53,
+                "pass_pct": 86.88525
               }
             },
             "DeepSeek R1": {
@@ -419,52 +187,30 @@
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 7,
-                  "pass_pct": 20.588236
+                  "passed_tests": 16,
+                  "pass_pct": 47.058823
                 },
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 14,
-                  "pass_pct": 51.851852
+                  "passed_tests": 24,
+                  "pass_pct": 88.888885
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 21,
-                "pass_pct": 34.42623
+                "passed_tests": 40,
+                "pass_pct": 65.57377
               }
             },
-            "GPT-4o": {
+            "Gemini 2.5 Flash": {
               "categories": {
                 "basics": {
                   "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 19,
-                  "pass_pct": 70.37037
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 15,
-                  "pass_pct": 44.117645
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 34,
-                "pass_pct": 55.737705
-              }
-            },
-            "Claude 4.5 Haiku": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 19,
-                  "pass_pct": 70.37037
+                  "total_tests": 24,
+                  "passed_tests": 18,
+                  "pass_pct": 75.0
                 },
                 "schema": {
                   "tasks": 10,
@@ -475,40 +221,62 @@
               },
               "totals": {
                 "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 38,
-                "pass_pct": 62.295082
+                "total_tests": 58,
+                "passed_tests": 37,
+                "pass_pct": 63.793102
               }
             },
-            "Gemini 2.5 Pro": {
+            "GPT-4o": {
               "categories": {
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 13,
-                  "pass_pct": 38.235294
+                  "passed_tests": 26,
+                  "pass_pct": 76.47059
                 },
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 15,
-                  "pass_pct": 55.555557
+                  "passed_tests": 19,
+                  "pass_pct": 70.37037
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 28,
-                "pass_pct": 45.901638
+                "passed_tests": 45,
+                "pass_pct": 73.77049
               }
             },
-            "o4-mini": {
+            "Grok 3 Mini (Beta)": {
               "categories": {
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 16,
-                  "pass_pct": 59.25926
+                  "passed_tests": 9,
+                  "pass_pct": 33.333332
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 17,
+                  "pass_pct": 50.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 26,
+                "pass_pct": 42.62295
+              }
+            },
+            "Claude 4.5 Haiku": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 27,
+                  "pass_pct": 100.0
                 },
                 "schema": {
                   "tasks": 10,
@@ -520,23 +288,123 @@
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 37,
-                "pass_pct": 60.65574
+                "passed_tests": 48,
+                "pass_pct": 78.68852
+              }
+            },
+            "DeepSeek V3": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 24,
+                  "pass_pct": 88.888885
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 27,
+                  "pass_pct": 79.411766
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 51,
+                "pass_pct": 83.60656
+              }
+            }
+          }
+        },
+        "llms.md": {
+          "models": {
+            "GPT-4.1": {
+              "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 10,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 12,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 22,
+                "passed_tests": 0,
+                "pass_pct": 0.0
+              }
+            },
+            "GPT-4o": {
+              "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 10,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 12,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 22,
+                "passed_tests": 0,
+                "pass_pct": 0.0
+              }
+            }
+          }
+        }
+      }
+    },
+    "rust": {
+      "modes": {
+        "rustdoc_json": {
+          "models": {
+            "Claude 4 Sonnet": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 20,
+                  "pass_pct": 74.07407
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 18,
+                  "pass_pct": 52.941177
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 38,
+                "pass_pct": 62.295082
               }
             },
             "Claude 4.5 Sonnet": {
               "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 23,
-                  "pass_pct": 67.64706
-                },
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
                   "passed_tests": 18,
                   "pass_pct": 66.666664
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 23,
+                  "pass_pct": 67.64706
                 }
               },
               "totals": {
@@ -544,28 +412,6 @@
                 "total_tests": 61,
                 "passed_tests": 41,
                 "pass_pct": 67.21311
-              }
-            },
-            "Gemini 2.5 Flash": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 14,
-                  "pass_pct": 51.851852
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 30,
-                  "passed_tests": 7,
-                  "pass_pct": 23.333334
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 57,
-                "passed_tests": 21,
-                "pass_pct": 36.842106
               }
             },
             "GPT-4.1": {
@@ -590,19 +436,129 @@
                 "pass_pct": 36.065575
               }
             },
-            "Claude 4 Sonnet": {
+            "GPT-4o": {
+              "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 15,
+                  "pass_pct": 44.117645
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 19,
+                  "pass_pct": 70.37037
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 34,
+                "pass_pct": 55.737705
+              }
+            },
+            "Grok 4": {
+              "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 31,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 13,
+                  "pass_pct": 48.148148
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 58,
+                "passed_tests": 13,
+                "pass_pct": 22.413794
+              }
+            },
+            "Gemini 2.5 Pro": {
+              "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 13,
+                  "pass_pct": 38.235294
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 15,
+                  "pass_pct": 55.555557
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 28,
+                "pass_pct": 45.901638
+              }
+            },
+            "DeepSeek R1": {
+              "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 7,
+                  "pass_pct": 20.588236
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 14,
+                  "pass_pct": 51.851852
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 21,
+                "pass_pct": 34.42623
+              }
+            },
+            "Meta Llama 3.1 405B": {
+              "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 4,
+                  "pass_pct": 14.814815
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 4,
+                "pass_pct": 6.557377
+              }
+            },
+            "Claude 4.5 Haiku": {
               "categories": {
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 20,
-                  "pass_pct": 74.07407
+                  "passed_tests": 19,
+                  "pass_pct": 70.37037
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 18,
-                  "pass_pct": 52.941177
+                  "passed_tests": 19,
+                  "pass_pct": 55.882355
                 }
               },
               "totals": {
@@ -610,6 +566,50 @@
                 "total_tests": 61,
                 "passed_tests": 38,
                 "pass_pct": 62.295082
+              }
+            },
+            "GPT-5": {
+              "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 26,
+                  "pass_pct": 76.47059
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 19,
+                  "pass_pct": 70.37037
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 45,
+                "pass_pct": 73.77049
+              }
+            },
+            "Gemini 2.5 Flash": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 14,
+                  "pass_pct": 51.851852
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 30,
+                  "passed_tests": 7,
+                  "pass_pct": 23.333334
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 57,
+                "passed_tests": 21,
+                "pass_pct": 36.842106
               }
             },
             "Grok 3 Mini (Beta)": {
@@ -656,54 +656,240 @@
                 "pass_pct": 44.262295
               }
             },
-            "GPT-5": {
+            "o4-mini": {
               "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 26,
-                  "pass_pct": 76.47059
-                },
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 19,
-                  "pass_pct": 70.37037
+                  "passed_tests": 16,
+                  "pass_pct": 59.25926
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 21,
+                  "pass_pct": 61.764706
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 45,
-                "pass_pct": 73.77049
+                "passed_tests": 37,
+                "pass_pct": 60.65574
+              }
+            }
+          }
+        },
+        "llms.md": {
+          "models": {
+            "Grok 4": {
+              "categories": {
+                "schema": {
+                  "tasks": 1,
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 1,
+                "total_tests": 1,
+                "passed_tests": 0,
+                "pass_pct": 0.0
+              }
+            },
+            "DeepSeek V3": {
+              "categories": {
+                "schema": {
+                  "tasks": 1,
+                  "total_tests": 4,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 1,
+                "total_tests": 4,
+                "passed_tests": 0,
+                "pass_pct": 0.0
+              }
+            },
+            "Grok 3 Mini (Beta)": {
+              "categories": {
+                "schema": {
+                  "tasks": 1,
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 1,
+                "total_tests": 1,
+                "passed_tests": 0,
+                "pass_pct": 0.0
+              }
+            },
+            "Claude 3.5 Haiku": {
+              "categories": {
+                "schema": {
+                  "tasks": 1,
+                  "total_tests": 4,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 1,
+                "total_tests": 4,
+                "passed_tests": 0,
+                "pass_pct": 0.0
+              }
+            },
+            "Gemini 2.5 Flash": {
+              "categories": {
+                "schema": {
+                  "tasks": 1,
+                  "total_tests": 4,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 1,
+                "total_tests": 4,
+                "passed_tests": 0,
+                "pass_pct": 0.0
+              }
+            },
+            "Claude 3.7 Sonnet": {
+              "categories": {
+                "schema": {
+                  "tasks": 1,
+                  "total_tests": 4,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 1,
+                "total_tests": 4,
+                "passed_tests": 0,
+                "pass_pct": 0.0
+              }
+            },
+            "Claude 3.5 Sonnet": {
+              "categories": {
+                "schema": {
+                  "tasks": 1,
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 1,
+                "total_tests": 1,
+                "passed_tests": 0,
+                "pass_pct": 0.0
+              }
+            },
+            "Claude 4.5 Sonnet": {
+              "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 15,
+                  "passed_tests": 3,
+                  "pass_pct": 20.0
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 12,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 27,
+                "passed_tests": 3,
+                "pass_pct": 11.111111
+              }
+            },
+            "GPT-5": {
+              "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 34,
+                  "pass_pct": 100.0
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 27,
+                  "pass_pct": 100.0
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 61,
+                "pass_pct": 100.0
+              }
+            },
+            "Gemini 2.5 Pro": {
+              "categories": {
+                "schema": {
+                  "tasks": 1,
+                  "total_tests": 4,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 1,
+                "total_tests": 4,
+                "passed_tests": 0,
+                "pass_pct": 0.0
+              }
+            },
+            "Claude 4 Sonnet": {
+              "categories": {
+                "schema": {
+                  "tasks": 1,
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 1,
+                "total_tests": 1,
+                "passed_tests": 0,
+                "pass_pct": 0.0
+              }
+            },
+            "Meta Llama 3.1 405B": {
+              "categories": {
+                "schema": {
+                  "tasks": 1,
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                }
+              },
+              "totals": {
+                "tasks": 1,
+                "total_tests": 1,
+                "passed_tests": 0,
+                "pass_pct": 0.0
               }
             }
           }
         },
         "docs": {
           "models": {
-            "Gemini 2.5 Flash": {
-              "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 10,
-                  "pass_pct": 29.411764
-                },
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 13,
-                  "pass_pct": 48.148148
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 23,
-                "pass_pct": 37.704918
-              }
-            },
             "Claude 4.5 Sonnet": {
               "categories": {
                 "basics": {
@@ -748,145 +934,19 @@
                 "pass_pct": 0.0
               }
             },
-            "Grok 3 Mini (Beta)": {
-              "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 17,
-                  "pass_pct": 50.0
-                },
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 17,
-                  "pass_pct": 62.962963
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 34,
-                "pass_pct": 55.737705
-              }
-            },
-            "o4-mini": {
-              "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                },
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 0,
-                "pass_pct": 0.0
-              }
-            },
-            "Grok 4": {
-              "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 14,
-                  "pass_pct": 41.17647
-                },
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 25,
-                  "pass_pct": 92.59259
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 39,
-                "pass_pct": 63.934425
-              }
-            },
-            "Gemini 2.5 Pro": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 17,
-                  "pass_pct": 62.962963
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 17,
-                "pass_pct": 27.868853
-              }
-            },
-            "GPT-5": {
-              "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 3,
-                  "pass_pct": 8.823529
-                },
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 13,
-                  "pass_pct": 48.148148
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 16,
-                "pass_pct": 26.229507
-              }
-            },
-            "Claude 3.5 Haiku": {
-              "categories": {
-                "basics": {
-                  "tasks": 11,
-                  "total_tests": 18,
-                  "passed_tests": 1,
-                  "pass_pct": 5.5555553
-                }
-              },
-              "totals": {
-                "tasks": 11,
-                "total_tests": 18,
-                "passed_tests": 1,
-                "pass_pct": 5.5555553
-              }
-            },
             "DeepSeek R1": {
               "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                },
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
                   "passed_tests": 14,
                   "pass_pct": 51.851852
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
                 }
               },
               "totals": {
@@ -894,72 +954,6 @@
                 "total_tests": 61,
                 "passed_tests": 14,
                 "pass_pct": 22.950819
-              }
-            },
-            "GPT-4.1": {
-              "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                },
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 4,
-                  "pass_pct": 14.814815
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 4,
-                "pass_pct": 6.557377
-              }
-            },
-            "Claude 4 Sonnet": {
-              "categories": {
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 23,
-                  "pass_pct": 67.64706
-                },
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 22,
-                  "pass_pct": 81.48148
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 45,
-                "pass_pct": 73.77049
-              }
-            },
-            "Claude 3.7 Sonnet": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 16,
-                  "passed_tests": 6,
-                  "pass_pct": 37.5
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 10,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 26,
-                "passed_tests": 6,
-                "pass_pct": 23.076923
               }
             },
             "DeepSeek V3": {
@@ -984,13 +978,13 @@
                 "pass_pct": 50.81967
               }
             },
-            "Claude 3.5 Sonnet": {
+            "Claude 3.7 Sonnet": {
               "categories": {
                 "basics": {
                   "tasks": 12,
-                  "total_tests": 12,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
+                  "total_tests": 16,
+                  "passed_tests": 6,
+                  "pass_pct": 37.5
                 },
                 "schema": {
                   "tasks": 10,
@@ -1001,99 +995,9 @@
               },
               "totals": {
                 "tasks": 22,
-                "total_tests": 22,
-                "passed_tests": 0,
-                "pass_pct": 0.0
-              }
-            }
-          }
-        },
-        "llms.md": {
-          "models": {
-            "Claude 3.5 Haiku": {
-              "categories": {
-                "schema": {
-                  "tasks": 1,
-                  "total_tests": 4,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                }
-              },
-              "totals": {
-                "tasks": 1,
-                "total_tests": 4,
-                "passed_tests": 0,
-                "pass_pct": 0.0
-              }
-            },
-            "Claude 4 Sonnet": {
-              "categories": {
-                "schema": {
-                  "tasks": 1,
-                  "total_tests": 1,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                }
-              },
-              "totals": {
-                "tasks": 1,
-                "total_tests": 1,
-                "passed_tests": 0,
-                "pass_pct": 0.0
-              }
-            },
-            "Claude 3.5 Sonnet": {
-              "categories": {
-                "schema": {
-                  "tasks": 1,
-                  "total_tests": 1,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                }
-              },
-              "totals": {
-                "tasks": 1,
-                "total_tests": 1,
-                "passed_tests": 0,
-                "pass_pct": 0.0
-              }
-            },
-            "Claude 4.5 Sonnet": {
-              "categories": {
-                "basics": {
-                  "tasks": 12,
-                  "total_tests": 12,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                },
-                "schema": {
-                  "tasks": 10,
-                  "total_tests": 15,
-                  "passed_tests": 3,
-                  "pass_pct": 20.0
-                }
-              },
-              "totals": {
-                "tasks": 22,
-                "total_tests": 27,
-                "passed_tests": 3,
-                "pass_pct": 11.111111
-              }
-            },
-            "Gemini 2.5 Flash": {
-              "categories": {
-                "schema": {
-                  "tasks": 1,
-                  "total_tests": 4,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
-                }
-              },
-              "totals": {
-                "tasks": 1,
-                "total_tests": 4,
-                "passed_tests": 0,
-                "pass_pct": 0.0
+                "total_tests": 26,
+                "passed_tests": 6,
+                "pass_pct": 23.076923
               }
             },
             "GPT-5": {
@@ -1101,51 +1005,63 @@
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 34,
-                  "pass_pct": 100.0
+                  "passed_tests": 3,
+                  "pass_pct": 8.823529
                 },
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 27,
-                  "pass_pct": 100.0
+                  "passed_tests": 13,
+                  "pass_pct": 48.148148
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 61,
-                "pass_pct": 100.0
+                "passed_tests": 16,
+                "pass_pct": 26.229507
               }
             },
-            "Grok 4": {
+            "o4-mini": {
               "categories": {
                 "schema": {
-                  "tasks": 1,
-                  "total_tests": 1,
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
                   "passed_tests": 0,
                   "pass_pct": 0.0
                 }
               },
               "totals": {
-                "tasks": 1,
-                "total_tests": 1,
+                "tasks": 22,
+                "total_tests": 61,
                 "passed_tests": 0,
                 "pass_pct": 0.0
               }
             },
-            "Grok 3 Mini (Beta)": {
+            "Claude 3.5 Sonnet": {
               "categories": {
                 "schema": {
-                  "tasks": 1,
-                  "total_tests": 1,
+                  "tasks": 10,
+                  "total_tests": 10,
+                  "passed_tests": 0,
+                  "pass_pct": 0.0
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 12,
                   "passed_tests": 0,
                   "pass_pct": 0.0
                 }
               },
               "totals": {
-                "tasks": 1,
-                "total_tests": 1,
+                "tasks": 22,
+                "total_tests": 22,
                 "passed_tests": 0,
                 "pass_pct": 0.0
               }
@@ -1153,65 +1069,149 @@
             "Gemini 2.5 Pro": {
               "categories": {
                 "schema": {
-                  "tasks": 1,
-                  "total_tests": 4,
+                  "tasks": 10,
+                  "total_tests": 34,
                   "passed_tests": 0,
                   "pass_pct": 0.0
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 17,
+                  "pass_pct": 62.962963
                 }
               },
               "totals": {
-                "tasks": 1,
-                "total_tests": 4,
-                "passed_tests": 0,
-                "pass_pct": 0.0
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 17,
+                "pass_pct": 27.868853
               }
             },
-            "Meta Llama 3.1 405B": {
+            "GPT-4.1": {
               "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 4,
+                  "pass_pct": 14.814815
+                },
                 "schema": {
-                  "tasks": 1,
-                  "total_tests": 1,
+                  "tasks": 10,
+                  "total_tests": 34,
                   "passed_tests": 0,
                   "pass_pct": 0.0
                 }
               },
               "totals": {
-                "tasks": 1,
-                "total_tests": 1,
-                "passed_tests": 0,
-                "pass_pct": 0.0
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 4,
+                "pass_pct": 6.557377
               }
             },
-            "DeepSeek V3": {
+            "Gemini 2.5 Flash": {
               "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 13,
+                  "pass_pct": 48.148148
+                },
                 "schema": {
-                  "tasks": 1,
-                  "total_tests": 4,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 10,
+                  "pass_pct": 29.411764
                 }
               },
               "totals": {
-                "tasks": 1,
-                "total_tests": 4,
-                "passed_tests": 0,
-                "pass_pct": 0.0
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 23,
+                "pass_pct": 37.704918
               }
             },
-            "Claude 3.7 Sonnet": {
+            "Claude 4 Sonnet": {
               "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 22,
+                  "pass_pct": 81.48148
+                },
                 "schema": {
-                  "tasks": 1,
-                  "total_tests": 4,
-                  "passed_tests": 0,
-                  "pass_pct": 0.0
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 23,
+                  "pass_pct": 67.64706
                 }
               },
               "totals": {
-                "tasks": 1,
-                "total_tests": 4,
-                "passed_tests": 0,
-                "pass_pct": 0.0
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 45,
+                "pass_pct": 73.77049
+              }
+            },
+            "Grok 4": {
+              "categories": {
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 25,
+                  "pass_pct": 92.59259
+                },
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 14,
+                  "pass_pct": 41.17647
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 39,
+                "pass_pct": 63.934425
+              }
+            },
+            "Grok 3 Mini (Beta)": {
+              "categories": {
+                "schema": {
+                  "tasks": 10,
+                  "total_tests": 34,
+                  "passed_tests": 17,
+                  "pass_pct": 50.0
+                },
+                "basics": {
+                  "tasks": 12,
+                  "total_tests": 27,
+                  "passed_tests": 17,
+                  "pass_pct": 62.962963
+                }
+              },
+              "totals": {
+                "tasks": 22,
+                "total_tests": 61,
+                "passed_tests": 34,
+                "pass_pct": 55.737705
+              }
+            },
+            "Claude 3.5 Haiku": {
+              "categories": {
+                "basics": {
+                  "tasks": 11,
+                  "total_tests": 18,
+                  "passed_tests": 1,
+                  "pass_pct": 5.5555553
+                }
+              },
+              "totals": {
+                "tasks": 11,
+                "total_tests": 18,
+                "passed_tests": 1,
+                "pass_pct": 5.5555553
               }
             }
           }
