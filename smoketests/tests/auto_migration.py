@@ -265,6 +265,9 @@ use spacetimedb::{log, ReducerContext, Table};
 #[derive(Debug)]
 #[spacetimedb::table(name = person)]
 pub struct Person {
+    // Add indexes to verify they are handled correctly during migration,
+    // issue #3441
+    #[index(btree)]
     name: String,
     #[default(0)]
     age: u16,

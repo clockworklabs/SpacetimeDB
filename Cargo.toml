@@ -49,6 +49,7 @@ members = [
   "tools/upgrade-version",
   "tools/license-check",
   "crates/bindings-typescript/test-app/server",
+  "crates/bindings-typescript/test-react-router-app/server",
 ]
 default-members = ["crates/cli", "crates/standalone", "crates/update"]
 # cargo feature graph resolver. v3 is default in edition2024 but workspace
@@ -64,10 +65,6 @@ panic = 'unwind'
 incremental = false
 codegen-units = 16
 rpath = false
-
-[profile.release-fast]
-inherits = "release"
-lto = "thin"
 
 [profile.dev]
 opt-level = 0
@@ -219,7 +216,7 @@ paste = "1.0"
 percent-encoding = "2.3"
 petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
-pgwire = { version = "0.32", features = ["server-api"] }
+pgwire = { version = "0.34.2", default-features = false, features = ["server-api", "pg-ext-types"] }
 postgres-types = "0.2.5"
 pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
@@ -354,3 +351,8 @@ result_large_err = "allow"
 # version of temporal_rs, but I'm not holding my breath.
 timezone_provider = { git = "https://github.com/boa-dev/temporal", tag = "v0.0.11" }
 temporal_rs = { git = "https://github.com/boa-dev/temporal", tag = "v0.0.11" }
+
+[workspace.metadata]
+# This silences a warning in our Nix flake, which otherwise would be upset that our call to `crateNameFromCargoToml`
+# is running against a file that doesn't have a name in it.
+crane.name = "spacetimedb"
