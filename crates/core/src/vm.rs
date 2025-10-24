@@ -466,7 +466,7 @@ pub fn check_row_limit<Query>(
     row_est: impl Fn(&Query, &TxId) -> u64,
     auth: &AuthCtx,
 ) -> Result<(), DBError> {
-    if !auth.can_exceed_row_limit() {
+    if !auth.exceed_row_limit() {
         if let Some(limit) = db.row_limit(tx)? {
             let mut estimate: u64 = 0;
             for query in queries {
