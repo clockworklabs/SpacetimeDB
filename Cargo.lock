@@ -10469,6 +10469,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a67300977d3dc3f8034dae89778f502b6ba20b269527b3223ba59c0cf393bb8a"
 
 [[package]]
+name = "xtask-llm-benchmark"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "blake3",
+ "chrono",
+ "fs2",
+ "futures",
+ "heck 0.5.0",
+ "reqwest 0.12.24",
+ "serde",
+ "serde_json",
+ "spacetimedb 1.6.0",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "urlencoding",
+]
+
+[[package]]
 name = "xxhash-rust"
 version = "0.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -22,8 +22,6 @@ use xtask_llm_benchmark::results::io::{update_golden_answers_on_disk, write_run,
 use xtask_llm_benchmark::results::{cmd_llm_benchmark_diff, load_run, BenchmarkRun, ModeRun, ModelRun};
 
 fn main() -> Result<()> {
-    let _ = dotenvy::dotenv();
-
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() {
         eprintln!(

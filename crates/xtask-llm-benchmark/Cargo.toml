@@ -18,7 +18,6 @@ async-trait = "0.1.89"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 urlencoding = "2.1.3"
 reqwest = { version = "0.12", features = ["json"] }
-dotenvy = "0.15.7"
 futures = "0.3.31"
 tempfile = "3.23.0"
 fs2 = "0.4.3"
