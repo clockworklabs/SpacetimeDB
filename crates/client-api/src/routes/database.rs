@@ -23,7 +23,7 @@ use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseResult;
-use spacetimedb::host::{MigratePlanResult, ReducerArgs};
+use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::name::{
@@ -61,7 +61,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     }
     let caller_identity = auth.claims.identity;
 
-    let args = ReducerArgs::Json(body);
+    let args = FunctionArgs::Json(body);
 
     let db_identity = name_or_identity.resolve(&worker_ctx).await?;
     let database = worker_ctx_find_database(&worker_ctx, &db_identity)
@@ -544,18 +544,6 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-    // Feature gate V8 modules.
-    // The host must've been compiled with the `unstable` feature.
-    // TODO(v8): ungate this when V8 is ready to ship.
-    #[cfg(not(feature = "unstable"))]
-    if host_type == HostType::Js {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "JS host type requires a host with unstable features",
-        )
-            .into());
-    }
-
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
 
@@ -712,18 +700,6 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PrePublishResult>> {
-    // Feature gate V8 modules.
-    // The host must've been compiled with the `unstable` feature.
-    // TODO(v8): ungate this when V8 is ready to ship.
-    #[cfg(not(feature = "unstable"))]
-    if host_type == HostType::Js {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "JS host type requires a host with unstable features",
-        )
-            .into());
-    }
-
     // User should not be able to print migration plans for a database that they do not own
     let database_identity = resolve_and_authenticate(&ctx, &name_or_identity, &auth).await?;
     let style = match style {

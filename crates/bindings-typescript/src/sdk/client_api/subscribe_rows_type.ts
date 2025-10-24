@@ -36,6 +36,8 @@ export type SubscribeRows = {
   tableName: string;
   tableRows: TableUpdate;
 };
+let _cached_SubscribeRows_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -45,16 +47,20 @@ export const SubscribeRows = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'tableId', algebraicType: __AlgebraicTypeValue.U32 },
-        { name: 'tableName', algebraicType: __AlgebraicTypeValue.String },
-        {
-          name: 'tableRows',
-          algebraicType: TableUpdate.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_SubscribeRows_type_value)
+      return _cached_SubscribeRows_type_value;
+    _cached_SubscribeRows_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_SubscribeRows_type_value.value.elements.push(
+      { name: 'tableId', algebraicType: __AlgebraicTypeValue.U32 },
+      { name: 'tableName', algebraicType: __AlgebraicTypeValue.String },
+      {
+        name: 'tableRows',
+        algebraicType: TableUpdate.getTypeScriptAlgebraicType(),
+      }
+    );
+    return _cached_SubscribeRows_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: SubscribeRows): void {

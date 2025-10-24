@@ -521,7 +521,10 @@ impl HostController {
     }
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
-        Host::try_init(self, database, replica_id).await
+        let database_identity = database.database_identity;
+        Host::try_init(self, database, replica_id)
+            .await
+            .with_context(|| format!("failed to init replica {} for {}", replica_id, database_identity))
     }
 }
 
@@ -603,14 +606,14 @@ async fn make_module_host(
         let start = Instant::now();
         let module_host = match host_type {
             HostType::Wasm => {
-                let actor = runtimes.wasmtime.make_actor(mcc)?;
+                let (actor, init_inst) = runtimes.wasmtime.make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister, executor, database_identity)
+                ModuleHost::new(actor, init_inst, unregister, executor, database_identity)
             }
             HostType::Js => {
-                let actor = runtimes.v8.make_actor(mcc)?;
+                let (actor, init_inst) = runtimes.v8.make_actor(mcc)?;
                 trace!("v8::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister, executor, database_identity)
+                ModuleHost::new(actor, init_inst, unregister, executor, database_identity)
             }
         };
         Ok((program, module_host))
@@ -695,7 +698,7 @@ async fn update_module(
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.database_identity();
     match stored_program_hash(db)? {
-        None => Err(anyhow!("database `{}` not yet initialized", addr)),
+        None => Err(anyhow!("database `{addr}` not yet initialized")),
         Some(stored) => {
             let res = if stored == program.hash {
                 info!("database `{}` up to date with program `{}`", addr, program.hash);
@@ -768,7 +771,13 @@ impl Host {
                 page_pool.clone(),
             )?,
             db::Storage::Disk => {
-                let (history, _) = relational_db::local_durability(replica_dir.commit_log()).await?;
+                // Open a read-only copy of the local durability to replay from.
+                let (history, _) = relational_db::local_durability(
+                    replica_dir.commit_log(),
+                    // No need to include a snapshot request channel here, 'cause we're only reading from this instance.
+                    None,
+                )
+                .await?;
                 let persistence = persistence.persistence(&database, replica_id).await?;
                 let (db, clients) = RelationalDB::open(
                     &replica_dir,

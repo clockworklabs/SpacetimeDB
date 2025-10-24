@@ -1,0 +1,13 @@
+{
+  "name": "sdk-test-module",
+  "license": "ISC",
+  "type": "module",
+  "scripts": {
+    "build": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-cli -- build",
+    "generate-ts": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-cli -- generate --lang typescript --out-dir ts-codegen",
+    "publish": "cargo run -p spacetimedb-cli -- publish"
+  },
+  "dependencies": {
+    "spacetimedb": "workspace:^"
+  }
+}

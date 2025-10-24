@@ -35,6 +35,7 @@ rand08 = { workspace = true, optional = true }
 # if someone tries to use rand's ThreadRng, it will fail to link
 # because no one defined __getrandom_custom
 getrandom02 = { workspace = true, optional = true, features = ["custom"] }
+serde_json.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
