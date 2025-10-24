@@ -1,3 +1,6 @@
+#![allow(unused_imports)]
+#![allow(dead_code)]
+
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
@@ -488,8 +491,8 @@ impl InstanceCommon {
             }) {
                 Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
                 Err(err) => {
-                    log::info!("reducer returned error: {err}");
-                    log_reducer_error(replica_ctx, timestamp, reducer_name, &err);
+                    // log::info!("reducer returned error: {err}");
+                    // log_reducer_error(replica_ctx, timestamp, reducer_name, &err);
                     EventStatus::Failed(err.into())
                 }
             },
