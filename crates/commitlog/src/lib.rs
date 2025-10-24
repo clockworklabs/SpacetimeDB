@@ -171,6 +171,13 @@ impl<T> Commitlog<T> {
     /// free-standing functions in this module for how to traverse a read-only
     /// commitlog.
     pub fn open(root: CommitLogDir, opts: Options, on_new_segment: Option<Arc<OnNewSegmentFn>>) -> io::Result<Self> {
+        #[cfg(not(feature = "fallocate"))]
+        if opts.preallocate_segments {
+            log::warn!(
+                "`preallocate_segments` enabled but not supported by this build. commitlog-dir={}",
+                root.display()
+            );
+        }
         let inner = commitlog::Generic::open(repo::Fs::new(root, on_new_segment)?, opts)?;
 
         Ok(Self {
