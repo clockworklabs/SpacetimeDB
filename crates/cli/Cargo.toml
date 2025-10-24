@@ -74,6 +74,8 @@ walkdir.workspace = true
 wasmbin.workspace = true
 webbrowser.workspace = true
 clap-markdown.workspace = true
+git2.workspace = true
+dialoguer.workspace = true
 rolldown.workspace = true
 rolldown_utils.workspace = true
 
@@ -83,6 +85,9 @@ tikv-jemalloc-ctl = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }
+
+[build-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

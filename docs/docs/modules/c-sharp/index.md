@@ -66,7 +66,7 @@ Tables and reducers in C# modules can use any type annotated with [`[SpacetimeDB
 To create a C# module, install the [`spacetime` CLI tool](https://spacetimedb.com/install) in your preferred shell. Navigate to your work directory and run the following command:
 
 ```bash
-spacetime init --lang csharp my-project-directory
+spacetime init --non-interactive --name my-spacetimedb-project --server-lang csharp my-project-directory
 ```
 
 This creates a `dotnet` project in `my-project-directory` with the following `StdbModule.csproj`:

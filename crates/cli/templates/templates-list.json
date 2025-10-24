@@ -1,0 +1,63 @@
+{
+  "highlights": [
+    { "name": "React", "template_id": "basic-react" }
+  ],
+  "templates": [
+    {
+      "id": "basic-typescript",
+      "description": "A basic TypeScript client and server template with only stubs for code",
+      "server_source": "templates/basic-typescript/server",
+      "client_source": "../../crates/bindings-typescript/examples/empty",
+      "server_lang": "typescript",
+      "client_lang": "typescript"
+    },
+    {
+      "id": "basic-c-sharp",
+      "description": "A basic C# client and server template with only stubs for code",
+      "server_source": "templates/basic-c-sharp/server",
+      "client_source": "templates/basic-c-sharp/client",
+      "server_lang": "csharp",
+      "client_lang": "csharp"
+    },
+    {
+      "id": "basic-rust",
+      "description": "A basic Rust client and server template with only stubs for code",
+      "server_source": "templates/basic-rust/server",
+      "client_source": "templates/basic-rust/client",
+      "server_lang": "rust",
+      "client_lang": "rust"
+    },
+    {
+      "id": "basic-react",
+      "description": "React web app with TypeScript server",
+      "server_source": "templates/basic-typescript/server",
+      "client_source": "../../crates/bindings-typescript/examples/basic-react",
+      "server_lang": "typescript",
+      "client_lang": "typescript"
+    },
+    {
+      "id": "quickstart-chat-rust",
+      "description": "Rust server/client implementing quickstart chat",
+      "server_source": "../../modules/quickstart-chat",
+      "client_source": "../../sdks/rust/examples/quickstart-chat",
+      "server_lang": "rust",
+      "client_lang": "rust"
+    },
+    {
+      "id": "quickstart-chat-c-sharp",
+      "description": "C# server/client implementing quickstart chat",
+      "server_source": "../../sdks/csharp/examples~/quickstart-chat/server",
+      "client_source": "../../sdks/csharp/examples~/quickstart-chat/client",
+      "server_lang": "csharp",
+      "client_lang": "csharp"
+    },
+    {
+      "id": "quickstart-chat-typescript",
+      "description": "TypeScript server/client implementing quickstart chat",
+      "server_source": "../../modules/quickstart-chat-ts",
+      "client_source": "../../crates/bindings-typescript/examples/quickstart-chat",
+      "server_lang": "typescript",
+      "client_lang": "typescript"
+    }
+  ]
+}

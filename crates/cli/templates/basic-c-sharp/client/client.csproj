@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../../SpacetimeDB.ClientSDK.csproj" />
+    <PackageReference Include="SpacetimeDB.ClientSDK" Version="1.*" />
   </ItemGroup>
 
   <ItemGroup>

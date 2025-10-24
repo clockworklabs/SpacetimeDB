@@ -1,28 +1,979 @@
-use crate::util::ModuleLanguage;
 use crate::Config;
 use crate::{detect::find_executable, util::UNSTABLE_WARNING};
+use anyhow::anyhow;
 use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
+use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
+use regex::Regex;
+use reqwest::Url;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
+
+mod embedded {
+    include!(concat!(env!("OUT_DIR"), "/embedded_templates.rs"));
+}
+
+const TYPESCRIPT_BINDINGS_PACKAGE_JSON: &str = include_str!("../../../bindings-typescript/package.json");
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TemplateDefinition {
+    pub id: String,
+    pub description: String,
+    pub server_source: String,
+    pub client_source: String,
+    #[serde(default)]
+    pub server_lang: Option<String>,
+    #[serde(default)]
+    pub client_lang: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HighlightDefinition {
+    pub name: String,
+    pub template_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct TemplatesList {
+    highlights: Vec<HighlightDefinition>,
+    templates: Vec<TemplateDefinition>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplateType {
+    Builtin,
+    GitHub,
+    Empty,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerLanguage {
+    Rust,
+    Csharp,
+    TypeScript,
+}
+
+impl ServerLanguage {
+    fn as_str(&self) -> &'static str {
+        match self {
+            ServerLanguage::Rust => "rust",
+            ServerLanguage::Csharp => "csharp",
+            ServerLanguage::TypeScript => "typescript",
+        }
+    }
+
+    fn from_str(s: &str) -> anyhow::Result<Option<Self>> {
+        match s.to_lowercase().as_str() {
+            "rust" => Ok(Some(ServerLanguage::Rust)),
+            "csharp" | "c#" => Ok(Some(ServerLanguage::Csharp)),
+            "typescript" => Ok(Some(ServerLanguage::TypeScript)),
+            _ => Err(anyhow!("Unknown server language: {}", s)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientLanguage {
+    Rust,
+    Csharp,
+    TypeScript,
+}
+
+impl ClientLanguage {
+    fn as_str(&self) -> &'static str {
+        match self {
+            ClientLanguage::Rust => "rust",
+            ClientLanguage::Csharp => "csharp",
+            ClientLanguage::TypeScript => "typescript",
+        }
+    }
+
+    fn from_str(s: &str) -> anyhow::Result<Option<Self>> {
+        match s.to_lowercase().as_str() {
+            "rust" => Ok(Some(ClientLanguage::Rust)),
+            "csharp" | "c#" => Ok(Some(ClientLanguage::Csharp)),
+            "typescript" => Ok(Some(ClientLanguage::TypeScript)),
+            _ => Err(anyhow!("Unknown client language: {}", s)),
+        }
+    }
+}
+
+pub struct TemplateConfig {
+    pub project_name: String,
+    pub project_path: PathBuf,
+    pub template_type: TemplateType,
+    pub server_lang: Option<ServerLanguage>,
+    pub client_lang: Option<ClientLanguage>,
+    pub github_repo: Option<String>,
+    pub template_def: Option<TemplateDefinition>,
+    pub use_local: bool,
+}
 
 pub fn cli() -> clap::Command {
     clap::Command::new("init")
         .about(format!("Initializes a new spacetime project. {UNSTABLE_WARNING}"))
         .arg(
-            Arg::new("project-path")
-                .value_parser(clap::value_parser!(PathBuf))
-                .default_value(".")
-                .help("The path where we will create the spacetime project"),
+            Arg::new("name")
+                .short('n')
+                .long("name")
+                .value_name("NAME")
+                .help("Project name"),
         )
         .arg(
-            Arg::new("lang")
-                .required(true)
-                .short('l')
-                .long("lang")
-                .help("The spacetime module language.")
-                .value_parser(clap::value_parser!(ModuleLanguage)),
+            Arg::new("project-path")
+                .value_parser(clap::value_parser!(PathBuf))
+                .help("The path where we will create the spacetime project (defaults to hyphenated project name)"),
         )
+        .arg(
+            Arg::new("server-lang").long("server-lang").value_name("LANG").help(
+                "Server language: rust, csharp, typescript (it can only be used when --template is not specified)",
+            ),
+        )
+        .arg(
+            Arg::new("template")
+                .short('t')
+                .long("template")
+                .value_name("TEMPLATE")
+                .help("Template ID or GitHub repository (owner/repo or URL)"),
+        )
+        .arg(
+            Arg::new("local")
+                .long("local")
+                .action(clap::ArgAction::SetTrue)
+                .help("Use local deployment instead of Maincloud"),
+        )
+        .arg(
+            Arg::new("non-interactive")
+                .long("non-interactive")
+                .action(clap::ArgAction::SetTrue)
+                .help("Run in non-interactive mode"),
+        )
+}
+
+pub async fn fetch_templates_list() -> anyhow::Result<(Vec<HighlightDefinition>, Vec<TemplateDefinition>)> {
+    let content = embedded::get_templates_json();
+    let templates_list: TemplatesList = serde_json::from_str(content).context("Failed to parse templates list JSON")?;
+
+    Ok((templates_list.highlights, templates_list.templates))
+}
+
+pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool> {
+    if config.spacetimedb_token().is_some() {
+        println!("{}", "You are logged in to SpacetimeDB.".green());
+        return Ok(true);
+    }
+
+    println!("{}", "You are not logged in to SpacetimeDB.".yellow());
+
+    let theme = ColorfulTheme::default();
+    let should_login = Confirm::with_theme(&theme)
+        .with_prompt("Would you like to log in? (required for Maincloud deployment)")
+        .default(true)
+        .interact()?;
+
+    if should_login {
+        let host = Url::parse(DEFAULT_AUTH_HOST)?;
+        spacetimedb_login_force(config, &host, false).await?;
+        println!("{}", "Successfully logged in!".green());
+        Ok(true)
+    } else {
+        println!("{}", "Continuing with local deployment.".yellow());
+        Ok(false)
+    }
+}
+
+fn slugify(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else if c.is_whitespace() || c == '_' {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Result<String> {
+    if let Some(name) = args.get_one::<String>("name") {
+        if is_interactive {
+            println!("{} {}", "Project name:".bold(), name);
+        }
+        return Ok(name.clone());
+    }
+
+    if !is_interactive {
+        anyhow::bail!("--name is required in non-interactive mode");
+    }
+
+    let theme = ColorfulTheme::default();
+    let name = Input::with_theme(&theme)
+        .with_prompt("Project name")
+        .default("my-spacetime-app".to_string())
+        .validate_with(|input: &String| -> Result<(), String> {
+            if input.trim().is_empty() {
+                return Err("Project name cannot be empty".to_string());
+            }
+            Ok(())
+        })
+        .interact_text()?
+        .trim()
+        .to_string();
+
+    Ok(name)
+}
+
+async fn get_project_path(args: &ArgMatches, project_name: &str, is_interactive: bool) -> anyhow::Result<PathBuf> {
+    if let Some(path) = args.get_one::<PathBuf>("project-path") {
+        if is_interactive {
+            println!("{} {}", "Project path:".bold(), path.display());
+        }
+        return Ok(path.clone());
+    }
+
+    if !is_interactive {
+        return Ok(PathBuf::from(slugify(project_name)));
+    }
+
+    let theme = ColorfulTheme::default();
+    let path_str = Input::with_theme(&theme)
+        .with_prompt("Project path")
+        .default(format!("./{}", slugify(project_name)))
+        .validate_with(|input: &String| -> Result<(), String> {
+            if input.trim().is_empty() {
+                return Err("Project path cannot be empty".to_string());
+            }
+
+            let path = Path::new(input);
+            if path.exists() {
+                if !path.is_dir() {
+                    return Err(format!("A file exists at '{}'. Please choose a different path.", input));
+                }
+                match std::fs::read_dir(path) {
+                    Ok(entries) => {
+                        if entries.count() > 0 {
+                            return Err(format!(
+                                "Directory '{}' already exists and is not empty. Please choose a different path.",
+                                input
+                            ));
+                        }
+                    }
+                    Err(_) => {
+                        return Err(format!(
+                            "Cannot access directory '{}'. Please choose a different path.",
+                            input
+                        ));
+                    }
+                }
+            }
+            Ok(())
+        })
+        .interact_text()?
+        .trim()
+        .to_string();
+
+    Ok(PathBuf::from(path_str))
+}
+
+fn create_template_config_from_template_str(
+    project_name: String,
+    project_path: PathBuf,
+    template_str: &str,
+    templates: &[TemplateDefinition],
+) -> anyhow::Result<TemplateConfig> {
+    if let Some(template) = templates.iter().find(|t| t.id == template_str) {
+        // Builtin template
+        Ok(TemplateConfig {
+            project_name,
+            project_path,
+            template_type: TemplateType::Builtin,
+            server_lang: parse_server_lang(&template.server_lang)?,
+            client_lang: parse_client_lang(&template.client_lang)?,
+            github_repo: None,
+            template_def: Some(template.clone()),
+            use_local: true,
+        })
+    } else {
+        // GitHub template
+        Ok(TemplateConfig {
+            project_name,
+            project_path,
+            template_type: TemplateType::GitHub,
+            server_lang: None,
+            client_lang: None,
+            github_repo: Some(template_str.to_string()),
+            template_def: None,
+            use_local: true,
+        })
+    }
+}
+
+fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) -> anyhow::Result<()> {
+    println!(
+        "\n{}",
+        "TypeScript server requires dependencies to be installed before publishing.".yellow()
+    );
+
+    let package_manager = if is_interactive {
+        let theme = ColorfulTheme::default();
+        let choices = vec!["npm", "pnpm", "yarn", "bun", "other"];
+        let selection = Select::with_theme(&theme)
+            .with_prompt("Which package manager would you like to use?")
+            .items(&choices)
+            .default(0)
+            .interact()?;
+
+        match selection {
+            0 => Some("npm"),
+            1 => Some("pnpm"),
+            2 => Some("yarn"),
+            3 => Some("bun"),
+            _ => None,
+        }
+    } else {
+        // In non-interactive mode, just print a message
+        None
+    };
+
+    if let Some(pm) = package_manager {
+        println!("Installing dependencies with {}...", pm);
+        let output = std::process::Command::new(pm)
+            .arg("install")
+            .current_dir(server_dir)
+            .output()?;
+
+        if output.status.success() {
+            println!("{}", "Dependencies installed successfully!".green());
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("{}", format!("Failed to install dependencies: {}", stderr).red());
+            println!(
+                "{}",
+                format!(
+                    "Please run '{} install' in the {} directory manually.",
+                    pm,
+                    server_dir.display()
+                )
+                .yellow()
+            );
+        }
+    } else {
+        println!(
+            "{}",
+            format!(
+                "Please install dependencies by running your package manager's install command in the {} directory.",
+                server_dir.display()
+            )
+            .yellow()
+        );
+    }
+
+    Ok(())
+}
+
+pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: bool) -> anyhow::Result<()> {
+    let use_local = if args.get_flag("local") {
+        true
+    } else if is_interactive {
+        !check_and_prompt_login(config).await?
+    } else {
+        // In non-interactive mode, default to local deployment if not logged in
+        config.spacetimedb_token().is_none()
+    };
+
+    let project_name = get_project_name(args, is_interactive).await?;
+    let project_path = get_project_path(args, &project_name, is_interactive).await?;
+
+    let mut template_config = if is_interactive {
+        get_template_config_interactive(args, project_name, project_path).await?
+    } else {
+        get_template_config_non_interactive(args, project_name, project_path).await?
+    };
+
+    template_config.use_local = use_local;
+
+    ensure_empty_directory(&template_config.project_name, &template_config.project_path)?;
+    init_from_template(&template_config, &template_config.project_path).await?;
+
+    // If server is TypeScript, handle dependency installation
+    if template_config.server_lang == Some(ServerLanguage::TypeScript) {
+        let server_dir = template_config.project_path.join("spacetimedb");
+        install_typescript_dependencies(&server_dir, is_interactive)?;
+    }
+
+    Ok(())
+}
+
+async fn get_template_config_non_interactive(
+    args: &ArgMatches,
+    project_name: String,
+    project_path: PathBuf,
+) -> anyhow::Result<TemplateConfig> {
+    // Check if template is provided
+    if let Some(template_str) = args.get_one::<String>("template") {
+        // Check if it's a builtin template
+        let (_, templates) = fetch_templates_list().await?;
+        return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
+    }
+
+    // No template - require at least one language option
+    let server_lang_str = args.get_one::<String>("server-lang").cloned();
+
+    if server_lang_str.is_none() {
+        anyhow::bail!("Either --template or --server-lang must be provided in non-interactive mode");
+    }
+
+    Ok(TemplateConfig {
+        project_name,
+        project_path,
+        template_type: TemplateType::Empty,
+        server_lang: parse_server_lang(&server_lang_str)?,
+        client_lang: None,
+        github_repo: None,
+        template_def: None,
+        use_local: true,
+    })
+}
+
+pub fn ensure_empty_directory(_project_name: &str, project_path: &Path) -> anyhow::Result<()> {
+    if project_path.exists() {
+        if !project_path.is_dir() {
+            anyhow::bail!(
+                "Path {} exists but is not a directory. A new SpacetimeDB project must be initialized in an empty directory.",
+                project_path.display()
+            );
+        }
+
+        if std::fs::read_dir(project_path).unwrap().count() > 0 {
+            anyhow::bail!(
+                "Cannot create new SpacetimeDB project in non-empty directory: {}",
+                project_path.display()
+            );
+        }
+    } else {
+        fs::create_dir_all(project_path).context("Failed to create directory")?;
+    }
+    Ok(())
+}
+
+async fn get_template_config_interactive(
+    args: &ArgMatches,
+    project_name: String,
+    project_path: PathBuf,
+) -> anyhow::Result<TemplateConfig> {
+    let theme = ColorfulTheme::default();
+
+    // Check if template is provided
+    if let Some(template_str) = args.get_one::<String>("template") {
+        println!("{} {}", "Template:".bold(), template_str);
+
+        let (_, templates) = fetch_templates_list().await?;
+        return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
+    }
+
+    let server_lang_arg = args.get_one::<String>("server-lang");
+    if server_lang_arg.is_some() {
+        let server_lang = parse_server_lang(&server_lang_arg.cloned())?;
+        if let Some(lang_str) = server_lang_arg {
+            println!("{} {}", "Server language:".bold(), lang_str);
+        }
+
+        return Ok(TemplateConfig {
+            project_name,
+            project_path,
+            template_type: TemplateType::Empty,
+            server_lang,
+            client_lang: None,
+            github_repo: None,
+            template_def: None,
+            use_local: true,
+        });
+    }
+
+    // Fully interactive mode - prompt for template/language selection
+    let (highlights, templates) = fetch_templates_list().await?;
+
+    let mut client_choices: Vec<String> = highlights
+        .iter()
+        .map(|h| {
+            let template = templates.iter().find(|t| t.id == h.template_id);
+            match template {
+                Some(t) => format!("{} - {}", h.name, t.description),
+                None => h.name.clone(),
+            }
+        })
+        .collect();
+    client_choices.push("Use Template - Choose from a list of built-in template projects or clone an existing SpacetimeDB project from GitHub".to_string());
+    client_choices.push("None".to_string());
+
+    let client_selection = Select::with_theme(&theme)
+        .with_prompt("Select a client type for your project (you can add other clients later)")
+        .items(&client_choices)
+        .default(0)
+        .interact()?;
+
+    let other_index = highlights.len();
+    let none_index = highlights.len() + 1;
+
+    if client_selection < highlights.len() {
+        let highlight = &highlights[client_selection];
+        let template = templates
+            .iter()
+            .find(|t| t.id == highlight.template_id)
+            .ok_or_else(|| anyhow::anyhow!("Template {} not found", highlight.template_id))?;
+
+        Ok(TemplateConfig {
+            project_name,
+            project_path,
+            template_type: TemplateType::Builtin,
+            server_lang: parse_server_lang(&template.server_lang)?,
+            client_lang: parse_client_lang(&template.client_lang)?,
+            github_repo: None,
+            template_def: Some(template.clone()),
+            use_local: true,
+        })
+    } else if client_selection == other_index {
+        println!("\n{}", "Available built-in templates:".bold());
+        for template in &templates {
+            println!("  {} - {}", template.id, template.description);
+        }
+        println!();
+        loop {
+            let template_id: String = Input::<String>::with_theme(&theme)
+                .with_prompt("Template ID or GitHub repository (owner/repo)")
+                .interact_text()?
+                .trim()
+                .to_string();
+
+            return create_template_config_from_template_str(
+                project_name.clone(),
+                project_path.clone(),
+                &template_id,
+                &templates,
+            );
+        }
+    } else if client_selection == none_index {
+        // Ask for server language only
+        let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
+        let server_selection = Select::with_theme(&theme)
+            .with_prompt("Select server language")
+            .items(&server_lang_choices)
+            .default(0)
+            .interact()?;
+
+        let server_lang = match server_selection {
+            0 => Some(ServerLanguage::Rust),
+            1 => Some(ServerLanguage::Csharp),
+            2 => Some(ServerLanguage::TypeScript),
+            _ => unreachable!("Invalid server language selection"),
+        };
+
+        Ok(TemplateConfig {
+            project_name,
+            project_path,
+            template_type: TemplateType::Empty,
+            server_lang,
+            client_lang: None,
+            github_repo: None,
+            template_def: None,
+            use_local: true,
+        })
+    } else {
+        unreachable!("Invalid selection index")
+    }
+}
+
+fn clone_github_template(repo_input: &str, target: &Path) -> anyhow::Result<()> {
+    let repo_url = if repo_input.starts_with("http") {
+        repo_input.to_string()
+    } else if repo_input.contains('/') {
+        format!("https://github.com/{}", repo_input)
+    } else {
+        anyhow::bail!("Invalid repository format. Use 'owner/repo' or full URL");
+    };
+
+    println!("  Cloning from {}...", repo_url);
+
+    let temp_dir = tempfile::tempdir()?;
+
+    let mut builder = git2::build::RepoBuilder::new();
+
+    let mut fetch_options = git2::FetchOptions::new();
+    let mut callbacks = git2::RemoteCallbacks::new();
+
+    callbacks.credentials(|_url, username_from_url, allowed_types| {
+        if allowed_types.contains(git2::CredentialType::SSH_KEY) {
+            if let Some(username) = username_from_url {
+                return git2::Cred::ssh_key_from_agent(username);
+            }
+        }
+        if allowed_types.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
+            return git2::Cred::userpass_plaintext("", "");
+        }
+        if allowed_types.contains(git2::CredentialType::DEFAULT) {
+            return git2::Cred::default();
+        }
+        Err(git2::Error::from_str("no auth method available"))
+    });
+
+    fetch_options.remote_callbacks(callbacks);
+    builder.fetch_options(fetch_options);
+
+    builder
+        .clone(&repo_url, temp_dir.path())
+        .context("Failed to clone repository")?;
+
+    copy_dir_all(temp_dir.path(), target)?;
+
+    Ok(())
+}
+
+fn copy_dir_all(src: &Path, dst: &Path) -> anyhow::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if entry.file_name() == ".git" {
+            continue;
+        }
+
+        if ty.is_dir() {
+            copy_dir_all(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn get_spacetimedb_typescript_version() -> &'static str {
+    static VERSION: OnceLock<String> = OnceLock::new();
+    VERSION.get_or_init(|| {
+        let package: serde_json::Value = serde_json::from_str(TYPESCRIPT_BINDINGS_PACKAGE_JSON)
+            .expect("Failed to parse TypeScript bindings package.json");
+        package["version"]
+            .as_str()
+            .expect("Version not found in package.json")
+            .to_string()
+    })
+}
+
+fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
+    let package_path = dir.join("package.json");
+    if !package_path.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(&package_path)?;
+    let mut package: serde_json::Value = serde_json::from_str(&content)?;
+
+    package["name"] = json!(package_name);
+
+    // Update spacetimedb version if it exists in dependencies
+    if let Some(deps) = package.get_mut("dependencies") {
+        if deps.get("spacetimedb").is_some() {
+            deps["spacetimedb"] = json!(format!("^{}", get_spacetimedb_typescript_version()));
+        }
+    }
+
+    let updated_content = serde_json::to_string_pretty(&package)?;
+    fs::write(package_path, updated_content)?;
+
+    Ok(())
+}
+
+fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> {
+    let cargo_path = dir.join("Cargo.toml");
+    if !cargo_path.exists() {
+        return Ok(());
+    }
+
+    let mut content = fs::read_to_string(&cargo_path)?;
+
+    let safe_name = package_name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .collect::<String>();
+
+    let name_regex = Regex::new(r#"(?m)^name = .*$"#)?;
+    content = name_regex
+        .replace(&content, format!(r#"name = "{}""#, safe_name))
+        .to_string();
+
+    fs::write(&cargo_path, content)?;
+    Ok(())
+}
+
+fn update_typescript_client_config(client_dir: &Path, module_name: &str, use_local: bool) -> anyhow::Result<()> {
+    let main_path = client_dir.join("src/main.tsx");
+    if !main_path.exists() {
+        return Ok(());
+    }
+
+    let mut content = fs::read_to_string(&main_path)?;
+
+    let target_uri = if use_local {
+        "ws://localhost:3000"
+    } else {
+        "wss://maincloud.spacetimedb.com"
+    };
+
+    let module_regex = Regex::new(r#"\.withModuleName\(['"][^'"]*['"]\)"#)?;
+    content = module_regex
+        .replace_all(&content, format!(r#".withModuleName('{}')"#, module_name))
+        .to_string();
+
+    let uri_regex = Regex::new(r#"\.withUri\(['"]ws://localhost:3000['"]\)"#)?;
+    content = uri_regex
+        .replace_all(&content, format!(r#".withUri('{}')"#, target_uri))
+        .to_string();
+
+    fs::write(main_path, content)?;
+
+    Ok(())
+}
+
+pub async fn init_from_template(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
+    println!("{}", "Initializing project from template...".cyan());
+
+    match config.template_type {
+        TemplateType::Builtin => init_builtin(config, project_path)?,
+        TemplateType::GitHub => init_github_template(config, project_path)?,
+        TemplateType::Empty => init_empty(config, project_path)?,
+    }
+
+    let cursorrules_content = embedded::get_cursorrules();
+    let cursorrules_path = project_path.join(".cursorrules");
+    fs::write(cursorrules_path, cursorrules_content)?;
+
+    println!("{}", "Project initialized successfully!".green());
+    print_next_steps(config, project_path)?;
+
+    Ok(())
+}
+
+fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
+    let template_def = config
+        .template_def
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Template definition missing"))?;
+
+    let template_files = embedded::get_template_files();
+
+    println!(
+        "Setting up client ({})...",
+        config.client_lang.map(|l| l.as_str()).unwrap_or("none")
+    );
+    let client_source = &template_def.client_source;
+    if let Some(files) = template_files.get(client_source.as_str()) {
+        copy_embedded_files(files, project_path)?;
+    } else {
+        anyhow::bail!("Client template not found: {}", client_source);
+    }
+
+    println!(
+        "Setting up server ({})...",
+        config.server_lang.map(|l| l.as_str()).unwrap_or("none")
+    );
+    let server_dir = project_path.join("spacetimedb");
+    let server_source = &template_def.server_source;
+    if let Some(files) = template_files.get(server_source.as_str()) {
+        copy_embedded_files(files, &server_dir)?;
+    } else {
+        anyhow::bail!("Server template not found: {}", server_source);
+    }
+
+    // Update server name
+    match config.server_lang {
+        Some(ServerLanguage::TypeScript) => {
+            update_package_json(&server_dir, &config.project_name)?;
+        }
+        Some(ServerLanguage::Rust) => {
+            update_cargo_toml_name(&server_dir, &config.project_name)?;
+        }
+        Some(ServerLanguage::Csharp) => {}
+        None => {}
+    }
+
+    // Update client name
+    match config.client_lang {
+        Some(ClientLanguage::TypeScript) => {
+            update_package_json(project_path, &config.project_name)?;
+            update_typescript_client_config(project_path, &config.project_name, config.use_local)?;
+            println!(
+                "{}",
+                "Note: Run 'npm install' in the project directory to install dependencies".yellow()
+            );
+        }
+        Some(ClientLanguage::Rust) => {
+            update_cargo_toml_name(project_path, &config.project_name)?;
+        }
+        Some(ClientLanguage::Csharp) => {}
+        None => {}
+    }
+
+    Ok(())
+}
+
+fn copy_embedded_files(files: &HashMap<&str, &str>, target_dir: &Path) -> anyhow::Result<()> {
+    for (file_path, content) in files {
+        let full_path = target_dir.join(file_path);
+        if let Some(parent) = full_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&full_path, content)?;
+    }
+    Ok(())
+}
+
+fn init_github_template(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
+    let repo = config.github_repo.as_ref().unwrap();
+    clone_github_template(repo, project_path)?;
+
+    let package_path = project_path.join("package.json");
+    if package_path.exists() {
+        let content = fs::read_to_string(&package_path)?;
+        let mut package: serde_json::Value = serde_json::from_str(&content)?;
+        package["name"] = json!(config.project_name.clone());
+        let updated_content = serde_json::to_string_pretty(&package)?;
+        fs::write(package_path, updated_content)?;
+    }
+
+    println!("{}", "Note: Custom templates require manual configuration.".yellow());
+
+    Ok(())
+}
+
+fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
+    match config.server_lang {
+        Some(ServerLanguage::Rust) => {
+            println!("Setting up Rust server...");
+            let server_dir = project_path.join("spacetimedb");
+            init_empty_rust_server(&server_dir, &config.project_name)?;
+        }
+        Some(ServerLanguage::Csharp) => {
+            println!("Setting up C# server...");
+            let server_dir = project_path.join("spacetimedb");
+            init_empty_csharp_server(&server_dir, &config.project_name)?;
+        }
+        Some(ServerLanguage::TypeScript) => {
+            println!("Setting up TypeScript server...");
+            let server_dir = project_path.join("spacetimedb");
+            init_empty_typescript_server(&server_dir, &config.project_name)?;
+        }
+        None => {}
+    }
+
+    Ok(())
+}
+
+fn init_empty_rust_server(server_dir: &Path, project_name: &str) -> anyhow::Result<()> {
+    init_rust_project(server_dir)?;
+    update_cargo_toml_name(server_dir, project_name)?;
+    Ok(())
+}
+
+fn init_empty_csharp_server(server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
+    init_csharp_project(server_dir)
+}
+
+fn init_empty_typescript_server(server_dir: &Path, project_name: &str) -> anyhow::Result<()> {
+    init_typescript_project(server_dir)?;
+    update_package_json(server_dir, project_name)?;
+    Ok(())
+}
+
+fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Result<()> {
+    println!();
+    println!("{}", "Next steps:".bold());
+
+    let rel_path = config
+        .project_path
+        .strip_prefix(std::env::current_dir()?)
+        .unwrap_or(&config.project_path);
+
+    if rel_path != Path::new(".") && rel_path != Path::new("") {
+        println!("  cd {}", rel_path.display());
+    }
+
+    match (config.template_type, config.server_lang, config.client_lang) {
+        (TemplateType::Builtin, Some(ServerLanguage::Rust), Some(ClientLanguage::Rust)) => {
+            println!(
+                "  spacetime publish --project-path spacetimedb {}{}",
+                if config.use_local { "--server local " } else { "" },
+                config.project_name
+            );
+            println!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  cargo run");
+        }
+        (TemplateType::Builtin, Some(ServerLanguage::TypeScript), Some(ClientLanguage::TypeScript)) => {
+            println!("  npm install");
+            println!(
+                "  spacetime publish --project-path spacetimedb {}{}",
+                if config.use_local { "--server local " } else { "" },
+                config.project_name
+            );
+            println!("  spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  npm run dev");
+        }
+        (TemplateType::Builtin, Some(ServerLanguage::Csharp), Some(ClientLanguage::Csharp)) => {
+            println!(
+                "  spacetime publish --project-path spacetimedb {}{}",
+                if config.use_local { "--server local " } else { "" },
+                config.project_name
+            );
+            println!("  spacetime generate --lang csharp --out-dir src/module_bindings --project-path spacetimedb");
+        }
+        (TemplateType::Empty, _, Some(ClientLanguage::TypeScript)) => {
+            println!("  npm install");
+            if config.server_lang.is_some() {
+                println!(
+                    "  spacetime publish --project-path spacetimedb {}{}",
+                    if config.use_local { "--server local " } else { "" },
+                    config.project_name
+                );
+                println!(
+                    "  spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb"
+                );
+            }
+            println!("  npm run dev");
+        }
+        (TemplateType::Empty, _, Some(ClientLanguage::Rust)) => {
+            if config.server_lang.is_some() {
+                println!(
+                    "  spacetime publish --project-path spacetimedb {}{}",
+                    if config.use_local { "--server local " } else { "" },
+                    config.project_name
+                );
+                println!("  spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb");
+            }
+            println!("  cargo run");
+        }
+        (_, _, _) => {
+            println!("  # Follow the template's README for setup instructions");
+        }
+    }
+
+    println!();
+    println!("Learn more: {}", "https://spacetimedb.com/docs".cyan());
+
+    Ok(())
 }
 
 fn check_for_cargo() -> bool {
@@ -113,59 +1064,127 @@ fn check_for_git() -> bool {
     false
 }
 
-pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    eprintln!("{UNSTABLE_WARNING}\n");
+pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
+    println!("{UNSTABLE_WARNING}\n");
 
-    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-    let project_lang = *args.get_one::<ModuleLanguage>("lang").unwrap();
+    let is_interactive = !args.get_flag("non-interactive");
+    let template = args.get_one::<String>("template");
+    let server_lang = args.get_one::<String>("server-lang");
+    let name = args.get_one::<String>("name");
 
-    // Create the project path, or make sure the target project path is empty.
-    if project_path.exists() {
-        if !project_path.is_dir() {
-            return Err(anyhow::anyhow!(
-                "Path {} exists but is not a directory. A new SpacetimeDB project must be initialized in an empty directory.",
-                project_path.display()
-            ));
-        }
-
-        if std::fs::read_dir(project_path).unwrap().count() > 0 {
-            return Err(anyhow::anyhow!(
-                "Cannot create new SpacetimeDB project in non-empty directory: {}",
-                project_path.display()
-            ));
-        }
-    } else {
-        create_directory(project_path)?;
+    // Validate that template and server-lang options are not used together
+    if template.is_some() && server_lang.is_some() {
+        anyhow::bail!("Cannot specify both --template and --server-lang. Language is determined by the template.");
     }
 
-    match project_lang {
-        ModuleLanguage::Rust => exec_init_rust(args).await,
-        ModuleLanguage::Csharp => exec_init_csharp(args).await,
-        ModuleLanguage::Javascript => exec_init_typescript(args).await,
+    if !is_interactive {
+        // In non-interactive mode, validate all required args are present
+        if name.is_none() {
+            anyhow::bail!("--name is required in non-interactive mode");
+        }
+        if template.is_none() && server_lang.is_none() {
+            anyhow::bail!("Either --template or --server-lang must be provided in non-interactive mode");
+        }
     }
+
+    exec_init(&mut config, args, is_interactive).await
 }
 
-pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-
+pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
-        (include_str!("project/rust/Cargo._toml"), "Cargo.toml"),
-        (include_str!("project/rust/lib._rs"), "src/lib.rs"),
-        (include_str!("project/rust/_gitignore"), ".gitignore"),
-        (include_str!("project/rust/config._toml"), ".cargo/config.toml"),
+        (
+            include_str!("../../templates/basic-rust/server/Cargo.toml"),
+            "Cargo.toml",
+        ),
+        (
+            include_str!("../../templates/basic-rust/server/src/lib.rs"),
+            "src/lib.rs",
+        ),
+        (
+            include_str!("../../templates/basic-rust/server/.gitignore"),
+            ".gitignore",
+        ),
+        (
+            include_str!("../../templates/basic-rust/server/.cargo/config.toml"),
+            ".cargo/config.toml",
+        ),
     ];
 
     for data_file in export_files {
         let path = project_path.join(data_file.1);
-
         create_directory(path.parent().unwrap())?;
-
         std::fs::write(path, data_file.0)?;
     }
 
-    // Check all dependencies
     check_for_cargo();
     check_for_git();
+
+    Ok(())
+}
+
+pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
+    let export_files = vec![
+        (
+            include_str!("../../templates/basic-c-sharp/server/StdbModule.csproj"),
+            "StdbModule.csproj",
+        ),
+        (include_str!("../../templates/basic-c-sharp/server/Lib.cs"), "Lib.cs"),
+        (
+            include_str!("../../templates/basic-c-sharp/server/.gitignore"),
+            ".gitignore",
+        ),
+        (
+            include_str!("../../templates/basic-c-sharp/server/global.json"),
+            "global.json",
+        ),
+    ];
+
+    check_for_dotnet();
+    check_for_git();
+
+    for data_file in export_files {
+        let path = project_path.join(data_file.1);
+        create_directory(path.parent().unwrap())?;
+        std::fs::write(path, data_file.0)?;
+    }
+
+    Ok(())
+}
+
+pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
+    let export_files = vec![
+        (
+            include_str!("../../templates/basic-typescript/server/package.json"),
+            "package.json",
+        ),
+        (
+            include_str!("../../templates/basic-typescript/server/tsconfig.json"),
+            "tsconfig.json",
+        ),
+        (
+            include_str!("../../templates/basic-typescript/server/src/index.ts"),
+            "src/index.ts",
+        ),
+        (
+            include_str!("../../templates/basic-typescript/server/.gitignore"),
+            ".gitignore",
+        ),
+    ];
+
+    check_for_git();
+
+    for data_file in export_files {
+        let path = project_path.join(data_file.1);
+        create_directory(path.parent().unwrap())?;
+        std::fs::write(path, data_file.0)?;
+    }
+
+    Ok(())
+}
+
+pub async fn exec_init_rust(args: &ArgMatches) -> anyhow::Result<()> {
+    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
+    init_rust_project(project_path)?;
 
     println!(
         "{}",
@@ -177,25 +1196,7 @@ pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
 
 pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-
-    let export_files = vec![
-        (include_str!("project/csharp/StdbModule._csproj"), "StdbModule.csproj"),
-        (include_str!("project/csharp/Lib._cs"), "Lib.cs"),
-        (include_str!("project/csharp/_gitignore"), ".gitignore"),
-        (include_str!("project/csharp/global._json"), "global.json"),
-    ];
-
-    // Check all dependencies
-    check_for_dotnet();
-    check_for_git();
-
-    for data_file in export_files {
-        let path = project_path.join(data_file.1);
-
-        create_directory(path.parent().unwrap())?;
-
-        std::fs::write(path, data_file.0)?;
-    }
+    init_csharp_project(project_path)?;
 
     println!(
         "{}",
@@ -205,35 +1206,20 @@ pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn exec_init_typescript(args: &ArgMatches) -> anyhow::Result<()> {
-    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-
-    let export_files = vec![
-        (include_str!("project/typescript/package._json"), "package.json"),
-        (include_str!("project/typescript/tsconfig._json"), "tsconfig.json"),
-        (include_str!("project/typescript/index._ts"), "src/index.ts"),
-        (include_str!("project/typescript/_gitignore"), ".gitignore"),
-    ];
-
-    // Check all dependencies
-    check_for_git();
-
-    for (contents, file) in export_files {
-        let path = project_path.join(file);
-
-        create_directory(path.parent().unwrap())?;
-
-        std::fs::write(path, contents)?;
-    }
-
-    println!(
-        "{}",
-        format!("Project successfully created at path: {}", project_path.display()).green()
-    );
-
-    Ok(())
-}
-
-fn create_directory(path: &Path) -> Result<(), anyhow::Error> {
+fn create_directory(path: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(path).context("Failed to create directory")
+}
+
+pub fn parse_server_lang(lang: &Option<String>) -> anyhow::Result<Option<ServerLanguage>> {
+    match lang.as_deref() {
+        Some(s) => Ok(ServerLanguage::from_str(s)?),
+        None => Ok(None),
+    }
+}
+
+pub fn parse_client_lang(lang: &Option<String>) -> anyhow::Result<Option<ClientLanguage>> {
+    match lang.as_deref() {
+        Some(s) => Ok(ClientLanguage::from_str(s)?),
+        None => Ok(None),
+    }
 }
