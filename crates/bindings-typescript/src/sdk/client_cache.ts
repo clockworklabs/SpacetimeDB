@@ -1,3 +1,4 @@
+import type { DbContext } from './db_context.ts';
 import type { TableRuntimeTypeInfo } from './spacetime_module.ts';
 import { TableCache } from './table_cache.ts';
 
@@ -6,9 +7,11 @@ export class ClientCache {
    * The tables in the database.
    */
   tables: Map<string, TableCache<any>>;
+  private ctx: DbContext;
 
-  constructor() {
+  constructor(ctx: DbContext) {
     this.tables = new Map();
+    this.ctx = ctx;
   }
 
   /**
@@ -37,7 +40,7 @@ export class ClientCache {
   ): TableCache<RowType> {
     let table: TableCache<RowType>;
     if (!this.tables.has(tableTypeInfo.tableName)) {
-      table = new TableCache<RowType>(tableTypeInfo);
+      table = new TableCache<RowType>(this.ctx, tableTypeInfo);
       this.tables.set(tableTypeInfo.tableName, table);
     } else {
       table = this.tables.get(tableTypeInfo.tableName)!;
