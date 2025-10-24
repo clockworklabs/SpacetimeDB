@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::{env, fs};
 
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
-use crate::util::{decode_identity, unauth_error_context, y_or_n};
+use crate::util::{add_auth_header_opt, get_auth_header, unauth_error_context, AuthHeader, ResponseExt};
+use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
 pub fn cli() -> clap::Command {
