@@ -39,7 +39,7 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
     let cwd = fs::canonicalize(project_path)?;
     let mut bundler = Bundler::new(BundlerOptions {
         input: Some(vec!["./src/index.ts".to_string().into()]),
-        cwd: Some(cwd),
+        cwd: Some(cwd.clone()),
         sourcemap: Some(SourceMapType::Inline),
         external: Some(rolldown::IsExternal::StringOrRegex(vec![
             // Mark the bindings as external so we don't get a warning.
@@ -162,7 +162,7 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         top_level_var: Some(false),      // This is the safer choice since we'll keep vars scoped to modules
         minify_internal_exports: Some(true), // Sure
         context: None,                   // We don't want a top level `this` in modules
-        tsconfig: Some(project_path.join("tsconfig.json").to_string_lossy().into_owned()),
+        tsconfig: Some(cwd.join("tsconfig.json").to_string_lossy().into_owned()),
     })?;
 
     let bundle_output = run_blocking(async move { bundler.write().await })?;
