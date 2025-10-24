@@ -456,6 +456,6 @@ struct MyReturnValue {
 }
 
 #[spacetimedb::procedure]
-fn return_value(ctx: &mut ProcedureContext, foo: u64) -> MyReturnValue {
+fn return_value(_ctx: &mut ProcedureContext, foo: u64) -> MyReturnValue {
     MyReturnValue { foo }
 }
