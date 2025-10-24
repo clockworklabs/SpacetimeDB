@@ -11,6 +11,7 @@ pub async fn health<S: ControlStateDelegate + NodeDelegate>(
 ) -> axum::response::Result<impl IntoResponse> {
     let nodes: Vec<u64> = ctx
         .get_nodes()
+        .await
         .map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -23,8 +24,10 @@ pub async fn health<S: ControlStateDelegate + NodeDelegate>(
     let schedulable = !ctx
         .get_node_by_id(
             ctx.get_node_id()
+                .await
                 .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Can't get node id"))?,
         )
+        .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Couldn't get node info"))?
         .map(|n| n.unschedulable)
         .unwrap_or(false);
