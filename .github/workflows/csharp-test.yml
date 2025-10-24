@@ -8,6 +8,7 @@ on:
 
 jobs:
   unity-testsuite:
+    # This can't go on ubuntu-latest (at least as-is) because it relies on pre-installed Unity.
     runs-on: spacetimedb-runner
     # Cancel any previous testsuites running on the same PR and/or ref.
     concurrency:
