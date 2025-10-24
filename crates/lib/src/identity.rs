@@ -116,6 +116,9 @@ impl Identity {
         Self::ZERO
     }
 
+    /// Derives an identity from a [JWT] `issuer` and a `subject`.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn from_claims(issuer: &str, subject: &str) -> Self {
         let input = format!("{issuer}|{subject}");
         let first_hash = blake3::hash(input.as_bytes());
