@@ -450,12 +450,9 @@ fn sleep_one_second(ctx: &mut ProcedureContext) {
     log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
 }
 
-#[derive(SpacetimeType)]
-struct MyReturnValue {
-    foo: u64,
-}
-
 #[spacetimedb::procedure]
-fn return_value(_ctx: &mut ProcedureContext, foo: u64) -> MyReturnValue {
-    MyReturnValue { foo }
+fn return_value(_ctx: &mut ProcedureContext, foo: u64) -> Baz {
+    Baz {
+        field: format!("{foo}"),
+    }
 }
