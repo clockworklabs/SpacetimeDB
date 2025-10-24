@@ -806,7 +806,6 @@ pub struct AnonymousViewContext {
 /// Use this type if the view depends on the caller's identity.
 pub struct ViewContext {
     pub sender: Identity,
-    pub connection_id: Option<ConnectionId>,
     pub db: LocalReadOnly,
 }
 
@@ -943,7 +942,6 @@ impl ReducerContext {
     pub fn as_read_only(&self) -> ViewContext {
         ViewContext {
             sender: self.sender,
-            connection_id: self.connection_id,
             db: LocalReadOnly {},
         }
     }

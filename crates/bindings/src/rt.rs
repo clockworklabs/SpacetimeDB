@@ -807,8 +807,6 @@ extern "C" fn __call_view__(
     sender_1: u64,
     sender_2: u64,
     sender_3: u64,
-    conn_id_0: u64,
-    conn_id_1: u64,
     args: BytesSource,
     sink: BytesSink,
 ) -> i16 {
@@ -817,29 +815,12 @@ extern "C" fn __call_view__(
     let sender: [u8; 32] = bytemuck::must_cast(sender);
     let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
 
-    // Piece together `conn_id_i` into a `ConnectionId`.
-    // The all-zeros `ConnectionId` (`ConnectionId::ZERO`) is interpreted as `None`.
-    let conn_id = [conn_id_0, conn_id_1];
-    let conn_id: [u8; 16] = bytemuck::must_cast(conn_id);
-    let conn_id = ConnectionId::from_le_byte_array(conn_id); // The LITTLE-ENDIAN constructor.
-    let conn_id = (conn_id != ConnectionId::ZERO).then_some(conn_id);
-
     let views = VIEWS.get().unwrap();
     let db = LocalReadOnly {};
-    let connection_id = conn_id;
 
     write_to_sink(
         sink,
-        &with_read_args(args, |args| {
-            views[id](
-                ViewContext {
-                    sender,
-                    connection_id,
-                    db,
-                },
-                args,
-            )
-        }),
+        &with_read_args(args, |args| views[id](ViewContext { sender, db }, args)),
     );
     0
 }
