@@ -13,8 +13,8 @@ use tokio::{
 use crate::{
     commit, error,
     index::IndexFile,
-    repo::{Repo, SegmentLen as _},
-    segment::{self, FileLike as _, OffsetIndexWriter, CHECKSUM_LEN, DEFAULT_CHECKSUM_ALGORITHM},
+    repo::{fallocate, Repo, SegmentLen as _},
+    segment::{self, FileLike, OffsetIndexWriter, CHECKSUM_LEN, DEFAULT_CHECKSUM_ALGORITHM},
     stream::common::{read_exact, AsyncFsync},
     Options, StoredCommit, DEFAULT_LOG_FORMAT_VERSION,
 };
@@ -108,6 +108,8 @@ where
         };
 
         let mut segment = repo.open_segment_writer(last)?;
+        fallocate(&mut segment, &commitlog_options)?;
+
         let mut offset_index = repo
             .get_offset_index(last)
             .inspect_err(|e| {
@@ -445,7 +447,7 @@ fn create_segment<R: Repo>(
         .as_ref()
         .map(|range| range.end)
         .unwrap_or_default();
-    let segment = repo.create_segment(segment_offset).or_else(|e| {
+    let mut segment = repo.create_segment(segment_offset).or_else(|e| {
         if e.kind() == io::ErrorKind::AlreadyExists {
             trace!("segment already exists");
             let mut s = repo.open_segment_writer(segment_offset)?;
@@ -460,6 +462,8 @@ fn create_segment<R: Repo>(
 
         Err(e)
     })?;
+    fallocate(&mut segment, &commitlog_options)?;
+
     let index_writer = repo
         .create_offset_index(segment_offset, commitlog_options.offset_index_len())
         .inspect_err(|e| warn!("unable to create offset index segment={segment_offset} err={e:?}"))
