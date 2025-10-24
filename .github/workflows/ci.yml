@@ -121,7 +121,7 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Run cargo fmt
+      - name: Run ci lint
         run: cargo ci lint
 
   wasm_bindings:
@@ -209,20 +209,20 @@ jobs:
       # without this (reassigning env vars and stuff), but was unable to get it to work and it felt like an uphill battle.
       options: --user 0:0
     steps:
-# Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
-# commits though.
-#      - name: Find Git ref
-#        env:
-#          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#        shell: bash
-#        run: |
-#          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-#          if test -n "${PR_NUMBER}"; then
-#            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-#          else
-#            GIT_REF="${{ github.ref }}"
-#          fi
-#          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+      # Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
+      # commits though.
+      #      - name: Find Git ref
+      #        env:
+      #          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #        shell: bash
+      #        run: |
+      #          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+      #          if test -n "${PR_NUMBER}"; then
+      #            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+      #          else
+      #            GIT_REF="${{ github.ref }}"
+      #          fi
+      #          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
@@ -283,6 +283,33 @@ jobs:
               cargo --version
               cargo test
             '
+
+  ci_command_docs:
+    name: Check CI command docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Check for docs change
+        run: cargo ci self-docs --check
 
   cli_docs:
     name: Check CLI docs

@@ -1,41 +1,97 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use std::collections::HashMap;
-use std::env;
+use std::{env, fs};
+use std::path::Path;
 
+const README_PATH: &str = "tools/ci/README.md";
+
+mod ci_docs;
+
+/// SpacetimeDB CI tasks
+///
+/// This tool provides several subcommands for automating CI workflows in SpacetimeDB.
+///
+/// It may be invoked via `cargo ci <subcommand>`, or simply `cargo ci` to run all subcommands in
+/// sequence. It is mostly designed to be run in CI environments via the github workflows, but can
+/// also be run locally
 #[derive(Parser)]
-#[command(
-    name = "spacetimedb-ci",
-    about = "SpacetimeDB CI tasks",
-    subcommand_required = false,
-    arg_required_else_help = false
-)]
+#[command(name = "cargo ci", subcommand_required = false, arg_required_else_help = false)]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<CiCmd>,
 
+    /// Skip specified subcommands when running all
+    ///
+    /// When no subcommand is specified, all subcommands are run in sequence. This option allows
+    /// specifying subcommands to skip when running all. For example, to skip the `unreal-tests`
+    /// subcommand, use `--skip unreal-tests`.
     #[arg(long)]
     skip: Vec<String>,
 }
 
 #[derive(Subcommand)]
 enum CiCmd {
+    /// Runs tests
+    ///
+    /// Runs rust tests, codegens csharp sdk and runs csharp tests.
+    /// This does not include Unreal tests.
+    /// This expects to run in a clean git state.
     Test,
-    Lints,
+    /// Lints the codebase
+    ///
+    /// Runs rustfmt, clippy, csharpier and generates rust docs to ensure there are no warnings.
+    Lint,
+    /// Tests Wasm bindings
+    ///
+    /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
     WasmBindings,
+    /// Runs smoketests
+    ///
+    /// Executes the smoketests suite with some default exclusions.
     Smoketests {
-        #[arg(trailing_var_arg = true)]
+        #[arg(
+            trailing_var_arg = true,
+            long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
+        )]
         args: Vec<String>,
     },
+    /// Tests the update flow
+    ///
+    /// Tests the self-update flow by building the spacetimedb-update binary for the specified
+    /// target, by default the current target, and performing a self-install into a temporary
+    /// directory.
     UpdateFlow {
-        #[arg(long)]
+        #[arg(
+            long,
+            long_help = "Target triple to build for, by default the current target. Used by github workflows to check the update flow on multiple platforms."
+        )]
         target: Option<String>,
-        #[arg(long, default_value = "true")]
+        #[arg(
+            long,
+            default_value = "true",
+            long_help = "Whether to enable github token authentication feature when building the update binary. By default this is enabled."
+        )]
         github_token_auth: bool,
     },
+    /// Run Unreal Engine related tests
+    ///
+    /// This assumes the UE4 environment is already set up
+    ///
+    /// This is designed to run in the github actions environment, but should work locally if the
+    /// Unreal environment is set up correctly.
     UnrealTests,
+    /// Generates CLI documentation and checks for changes
     CliDocs,
+    SelfDocs {
+        #[arg(
+            long,
+            default_value_t = false,
+            long_help = "Only check for changes, do not generate the docs"
+        )]
+        check: bool,
+    },
 }
 
 macro_rules! run {
@@ -90,11 +146,14 @@ fn main() -> Result<()> {
             run!("(cd crates/bindings-csharp && dotnet test -warnaserror)")?;
         }
 
-        Some(CiCmd::Lints) => {
+        Some(CiCmd::Lint) => {
             run!("cargo fmt --all -- --check")?;
             run!("cargo clippy --all --tests --benches -- -D warnings")?;
             run!("(cd crates/bindings-csharp && dotnet tool restore && dotnet csharpier --check .)")?;
-            run!("cd crates/bindings && cargo doc", &[("RUSTDOCFLAGS", "hey")])?;
+            run!(
+                "cd crates/bindings && cargo doc",
+                &[("RUSTDOCFLAGS", "--deny warnings")]
+            )?;
         }
 
         Some(CiCmd::WasmBindings) => {
@@ -105,7 +164,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Smoketests { args }) => {
             // Note: clear_database and replication only work in private
-            run!(&format!("python -m smoketests {} -x clear_database replication", args.join(" ")))?;
+            run!(&format!(
+                "python -m smoketests {} -x clear_database replication",
+                args.join(" ")
+            ))?;
         }
 
         Some(CiCmd::UpdateFlow {
@@ -123,12 +185,12 @@ fn main() -> Result<()> {
             run!(&format!(
                 "cargo build {github_token_auth_flag}--target {target} -p spacetimedb-update"
             ))?;
+            // NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
+            // My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
+            // happens very frequently on the `macos-runner`, but we haven't seen it on any others).
             run!(&format!(
                 r#"
 ROOT_DIR="$(mktemp -d)"
-# NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
-# My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
-# happens very frequently on the `macos-runner`, but we haven't seen it on any others).
 cargo run {github_token_auth_flag}--target {target} -p spacetimedb-update -- self-install --root-dir="${{ROOT_DIR}}" --yes
 "${{ROOT_DIR}}"/spacetime --root-dir="${{ROOT_DIR}}" help
         "#
@@ -163,6 +225,23 @@ else
 fi
                 "#
             )?;
+        }
+
+        Some(CiCmd::SelfDocs { check }) => {
+            let readme_content = ci_docs::generate_cli_docs();
+            let path = Path::new(README_PATH);
+
+            if check {
+                let existing = fs::read_to_string(path).unwrap_or_default();
+                if existing != readme_content {
+                    bail!("README.md is out of date. Please run `cargo ci self-docs` to update it.");
+                } else {
+                    log::info!("README.md is up to date.");
+                }
+            } else {
+                fs::write(path, readme_content)?;
+                log::info!("Wrote CLI docs to {}", path.display());
+            }
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,
