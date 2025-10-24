@@ -23,6 +23,8 @@ declare type __keep_AlgebraicType = AlgebraicType;
 export type Typespace = {
   types: AlgebraicType[];
 };
+let _cached_Typespace_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -32,16 +34,17 @@ export const Typespace = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'types',
-          algebraicType: __AlgebraicTypeValue.Array(
-            AlgebraicType.getTypeScriptAlgebraicType()
-          ),
-        },
-      ],
+    if (_cached_Typespace_type_value) return _cached_Typespace_type_value;
+    _cached_Typespace_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_Typespace_type_value.value.elements.push({
+      name: 'types',
+      algebraicType: __AlgebraicTypeValue.Array(
+        AlgebraicType.getTypeScriptAlgebraicType()
+      ),
+    });
+    return _cached_Typespace_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Typespace): void {

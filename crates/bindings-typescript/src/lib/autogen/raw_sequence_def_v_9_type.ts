@@ -25,6 +25,8 @@ export type RawSequenceDefV9 = {
   maxValue: bigint | undefined;
   increment: bigint;
 };
+let _cached_RawSequenceDefV9_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -34,36 +36,40 @@ export const RawSequenceDefV9 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'name',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.String
-          ),
-        },
-        { name: 'column', algebraicType: __AlgebraicTypeValue.U16 },
-        {
-          name: 'start',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.I128
-          ),
-        },
-        {
-          name: 'minValue',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.I128
-          ),
-        },
-        {
-          name: 'maxValue',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.I128
-          ),
-        },
-        { name: 'increment', algebraicType: __AlgebraicTypeValue.I128 },
-      ],
+    if (_cached_RawSequenceDefV9_type_value)
+      return _cached_RawSequenceDefV9_type_value;
+    _cached_RawSequenceDefV9_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_RawSequenceDefV9_type_value.value.elements.push(
+      {
+        name: 'name',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.String
+        ),
+      },
+      { name: 'column', algebraicType: __AlgebraicTypeValue.U16 },
+      {
+        name: 'start',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.I128
+        ),
+      },
+      {
+        name: 'minValue',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.I128
+        ),
+      },
+      {
+        name: 'maxValue',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.I128
+        ),
+      },
+      { name: 'increment', algebraicType: __AlgebraicTypeValue.I128 }
+    );
+    return _cached_RawSequenceDefV9_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawSequenceDefV9): void {

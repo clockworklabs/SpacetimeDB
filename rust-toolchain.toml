@@ -5,3 +5,4 @@
 channel = "1.90.0"
 profile = "default"
 targets = ["wasm32-unknown-unknown"]
+components = ["rust-src"]

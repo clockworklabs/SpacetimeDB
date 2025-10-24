@@ -15,6 +15,7 @@ pub(crate) mod fs;
 pub mod mem;
 
 pub use fs::Fs;
+pub use fs::OnNewSegmentFn;
 #[cfg(any(test, feature = "test"))]
 pub use mem::Memory;
 

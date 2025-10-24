@@ -195,15 +195,26 @@ pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];
 pub enum ModuleLanguage {
     Csharp,
     Rust,
+    Javascript,
 }
 impl clap::ValueEnum for ModuleLanguage {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::Rust]
+        &[Self::Csharp, Self::Rust, Self::Javascript]
     }
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
             Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs", "C#", "CSharp"])),
             Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs", "Rust"])),
+            Self::Javascript => Some(clap::builder::PossibleValue::new("typescript").aliases([
+                "JavaScript",
+                "javascript",
+                "js",
+                "TypeScript",
+                "ts",
+                "ECMAScript",
+                "ecmascript",
+                "es",
+            ])),
         }
     }
 }
@@ -219,6 +230,8 @@ pub fn detect_module_language(path_to_project: &Path) -> anyhow::Result<ModuleLa
         .any(|entry| entry.unwrap().path().extension() == Some("csproj".as_ref()))
     {
         Ok(ModuleLanguage::Csharp)
+    } else if path_to_project.join("package.json").exists() {
+        Ok(ModuleLanguage::Javascript)
     } else {
         anyhow::bail!("Could not detect the language of the module. Are you in a SpacetimeDB project directory?")
     }
@@ -230,12 +243,12 @@ pub fn url_to_host_and_protocol(url: &str) -> anyhow::Result<(&str, &str)> {
         let host = url.split("://").last().unwrap();
 
         if !VALID_PROTOCOLS.contains(&protocol) {
-            Err(anyhow::anyhow!("Invalid protocol: {}", protocol))
+            Err(anyhow::anyhow!("Invalid protocol: {protocol}"))
         } else {
             Ok((host, protocol))
         }
     } else {
-        Err(anyhow::anyhow!("Invalid url: {}", url))
+        Err(anyhow::anyhow!("Invalid url: {url}"))
     }
 }
 
@@ -283,7 +296,7 @@ pub fn decode_identity(token: &String) -> anyhow::Result<String> {
     // But signature verification would require getting the public key from a server, and we don't necessarily want to do that.
     let token_parts: Vec<_> = token.split('.').collect();
     if token_parts.len() != 3 {
-        return Err(anyhow::anyhow!("Token does not look like a JSON web token: {}", token));
+        return Err(anyhow::anyhow!("Token does not look like a JSON web token: {token}"));
     }
     let decoded_bytes = BASE_64_STD_NO_PAD.decode(token_parts[1])?;
     let decoded_string = String::from_utf8(decoded_bytes)?;

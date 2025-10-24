@@ -788,20 +788,20 @@ impl SubscriptionManager {
             .get_mut(&client_id)
             .filter(|ci| !ci.dropped.load(Ordering::Acquire))
         else {
-            return Err(anyhow::anyhow!("Client not found: {:?}", client_id).into());
+            return Err(anyhow::anyhow!("Client not found: {client_id:?}").into());
         };
 
         #[cfg(test)]
         ci.assert_ref_count_consistency();
 
         let Some(query_hashes) = ci.subscriptions.remove(&subscription_id) else {
-            return Err(anyhow::anyhow!("Subscription not found: {:?}", subscription_id).into());
+            return Err(anyhow::anyhow!("Subscription not found: {subscription_id:?}").into());
         };
         let mut queries_to_return = Vec::new();
         for hash in query_hashes {
             let remaining_refs = {
                 let Some(count) = ci.subscription_ref_count.get_mut(&hash) else {
-                    return Err(anyhow::anyhow!("Query count not found for query hash: {:?}", hash).into());
+                    return Err(anyhow::anyhow!("Query count not found for query hash: {hash:?}").into());
                 };
                 *count -= 1;
                 *count
@@ -813,7 +813,7 @@ impl SubscriptionManager {
             // The client is no longer subscribed to this query.
             ci.subscription_ref_count.remove(&hash);
             let Some(query_state) = self.queries.get_mut(&hash) else {
-                return Err(anyhow::anyhow!("Query state not found for query hash: {:?}", hash).into());
+                return Err(anyhow::anyhow!("Query state not found for query hash: {hash:?}").into());
             };
             queries_to_return.push(query_state.query.clone());
             query_state.subscriptions.remove(&client_id);
@@ -870,9 +870,7 @@ impl SubscriptionManager {
         let hash_set = match ci.subscriptions.try_insert(subscription_id, HashSet::new()) {
             Err(OccupiedError { .. }) => {
                 return Err(anyhow::anyhow!(
-                    "Subscription with id {:?} already exists for client: {:?}",
-                    query_id,
-                    client_id
+                    "Subscription with id {query_id:?} already exists for client: {client_id:?}"
                 )
                 .into());
             }
