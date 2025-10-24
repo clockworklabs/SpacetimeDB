@@ -820,25 +820,25 @@ pub use spacetimedb_bindings_macro::procedure;
 /// }
 ///
 /// // A view that selects at most one row from a table
-/// #[view(public)]
+/// #[view(name = my_player, public)]
 /// fn my_player(ctx: &ViewContext) -> Option<Player> {
 ///     ctx.db.player().identity().find(ctx.sender)
 /// }
 ///
 /// // An example of column projection
-/// #[view(public)]
+/// #[view(name = my_player_id, public)]
 /// fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
 ///     ctx.db.player().identity().find(ctx.sender).map(|Player { id, .. }| PlayerId { id })
 /// }
 ///
 /// // An example of a parameterized view
-/// #[view(public)]
+/// #[view(name = players_at_level, public)]
 /// fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
 ///     ctx.db.player().level().filter(level).collect()
 /// }
 ///
 /// // An example that is analogous to a semijoin in sql
-/// #[view(public)]
+/// #[view(name = players_at_coordinates, public)]
 /// fn players_at_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<Player> {
 ///     ctx
 ///         .db
@@ -850,7 +850,7 @@ pub use spacetimedb_bindings_macro::procedure;
 /// }
 ///
 /// // An example of a join that combines fields from two different tables
-/// #[view(public)]
+/// #[view(name = players_with_coordinates, public)]
 /// fn players_with_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<PlayerAndLocation> {
 ///     ctx
 ///         .db
