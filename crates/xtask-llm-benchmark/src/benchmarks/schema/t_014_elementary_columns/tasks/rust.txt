@@ -1,0 +1,17 @@
+﻿Write a SpacetimeDB backend module in Rust that defines one table and seeds one row.
+
+TABLE
+- primitives
+  - Struct: Primitive
+  - Fields:
+    - id: i32 (primary key)
+    - count: i32
+    - total: i64
+    - price: f32
+    - ratio: f64
+    - active: bool
+    - name: String
+
+REDUCERS
+- seed: insert exactly this row into primitives
+  - (id=1, count=2, total=3000000000, price=1.5, ratio=2.25, active=true, name="Alice")
