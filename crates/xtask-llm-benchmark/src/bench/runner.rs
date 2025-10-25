@@ -19,9 +19,10 @@ use crate::bench::utils::{
     bench_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output, sanitize_db_name, task_slug,
     work_server_dir_scoped,
 };
-use crate::bench::{registry, Publisher};
+use crate::bench::Publisher;
 use crate::context::constants::results_path_details;
 use crate::eval::{Lang, ScoreDetails};
+use crate::generated::resolve_by_path;
 use crate::llm::model_routes::ModelRoute;
 use crate::llm::provider::LlmProvider;
 
@@ -170,7 +171,7 @@ impl TaskRunner {
         let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", category, task_id, route_tag));
 
         // resolve spec + prompt
-        let ctor = registry::resolve_by_path(&task.root)?;
+        let ctor = resolve_by_path(&task.root)?;
         let spec = ctor();
 
         // fetch scorers up front

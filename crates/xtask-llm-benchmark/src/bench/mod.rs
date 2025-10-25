@@ -1,5 +1,4 @@
 pub mod publishers;
-pub mod registry;
 pub(crate) mod results_merge;
 pub mod runner;
 pub mod spacetime_guard;
