@@ -69,6 +69,7 @@ Notes:
             Ok(())
         }
         "ci-check" => cmd_ci_check(&args),
+        "summary" => cmd_summary(&args),
         other => bail!("unknown subcommand {other}"),
     }
 }
@@ -764,4 +765,22 @@ fn apply_category_filter(
             }
         }
     }
+}
+
+fn cmd_summary(args: &[String]) -> Result<()> {
+    // Accept 0–2 positional args:
+    //   llm summary
+    //   llm summary <details.json>
+    //   llm summary <details.json> <summary.json>
+    let (in_path, out_path) = match args.len() {
+        0 => (results_path_details(), results_path_summary()),
+        1 => (PathBuf::from(&args[0]), results_path_summary()),
+        _ => (PathBuf::from(&args[0]), PathBuf::from(&args[1])),
+    };
+
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create dir {}", parent.display()))?;
+    }
+
+    write_summary_from_details_file(in_path, out_path)
 }

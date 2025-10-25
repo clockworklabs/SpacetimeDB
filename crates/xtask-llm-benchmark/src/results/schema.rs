@@ -79,27 +79,39 @@ pub struct GoldenAnswer {
 }
 
 // -- SUMMARY --
-
 #[derive(Debug, Serialize)]
 pub struct Summary {
     pub version: u32,
     pub generated_at: String,
-    pub by_language: HashMap<String, LangSummary>,
+    pub by_language: std::collections::HashMap<String, LangSummary>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct LangSummary {
-    pub modes: HashMap<String, ModeSummary>,
+    pub modes: std::collections::HashMap<String, ModeSummary>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct ModeSummary {
-    pub models: HashMap<String, ModelSummary>,
+    pub models: std::collections::HashMap<String, ModelSummary>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default, Clone)]
+pub struct Totals {
+    pub tasks: u32,
+    pub total_tests: u32,
+    pub passed_tests: u32,
+    pub pass_pct: f32,
+
+    // sum of (passed_tests / total_tests) across tasks
+    pub task_pass_equiv: f32,
+    // task_pass_equiv / tasks * 100
+    pub task_pass_pct: f32,
+}
+
+#[derive(Debug, Serialize, Default, Clone)]
 pub struct ModelSummary {
-    pub categories: HashMap<String, CategorySummary>,
+    pub categories: std::collections::HashMap<String, CategorySummary>,
     pub totals: Totals,
 }
 
@@ -109,12 +121,9 @@ pub struct CategorySummary {
     pub total_tests: u32,
     pub passed_tests: u32,
     pub pass_pct: f32,
-}
 
-#[derive(Debug, Serialize, Default, Clone)]
-pub struct Totals {
-    pub tasks: u32,
-    pub total_tests: u32,
-    pub passed_tests: u32,
-    pub pass_pct: f32,
+    // sum of (passed_tests / total_tests) for tasks in this category
+    pub task_pass_equiv: f32,
+    // task_pass_equiv / tasks * 100
+    pub task_pass_pct: f32,
 }

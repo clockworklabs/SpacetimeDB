@@ -50,14 +50,12 @@ fn pct(passed: u32, total: u32) -> f32 {
 pub fn summary_from_results(results: &Results) -> Summary {
     let mut by_language: HashMap<String, LangSummary> = HashMap::new();
 
-    // Results.languages: Vec<LangEntry>
     for lang_ent in &results.languages {
         let lang_key = lang_ent.lang.clone();
         let lang_sum = by_language
             .entry(lang_key)
             .or_insert_with(|| LangSummary { modes: HashMap::new() });
 
-        // LangEntry.modes: Vec<ModeEntry>
         for mode_ent in &lang_ent.modes {
             let mode_key = mode_ent.mode.clone();
             let mode_sum = lang_sum
@@ -65,7 +63,6 @@ pub fn summary_from_results(results: &Results) -> Summary {
                 .entry(mode_key)
                 .or_insert_with(|| ModeSummary { models: HashMap::new() });
 
-            // ModeEntry.models: Vec<ModelEntry>
             for model_ent in &mode_ent.models {
                 let model_key = model_ent.name.clone();
                 let model_sum = mode_sum.models.entry(model_key).or_insert_with(|| ModelSummary {
@@ -73,13 +70,14 @@ pub fn summary_from_results(results: &Results) -> Summary {
                     totals: Totals::default(),
                 });
 
-                // ModelEntry.tasks: HashMap<String, TaskEntry>
                 for (_task_id, t) in &model_ent.tasks {
+                    let cat_key = t.category.clone().expect("Missing category");
                     let cat_sum = model_sum
                         .categories
-                        .entry(t.category.clone().expect("Missing category"))
+                        .entry(cat_key)
                         .or_insert_with(CategorySummary::default);
 
+                    // counts
                     cat_sum.tasks += 1;
                     cat_sum.total_tests += t.total_tests;
                     cat_sum.passed_tests += t.passed_tests;
@@ -87,12 +85,28 @@ pub fn summary_from_results(results: &Results) -> Summary {
                     model_sum.totals.tasks += 1;
                     model_sum.totals.total_tests += t.total_tests;
                     model_sum.totals.passed_tests += t.passed_tests;
+
+                    // per-task partials
+                    let f = frac(t.passed_tests, t.total_tests);
+                    cat_sum.task_pass_equiv += f;
+                    model_sum.totals.task_pass_equiv += f;
                 }
 
+                // finalize percentages
                 for v in model_sum.categories.values_mut() {
                     v.pass_pct = pct(v.passed_tests, v.total_tests);
+                    v.task_pass_pct = if v.tasks == 0 {
+                        0.0
+                    } else {
+                        (v.task_pass_equiv / v.tasks as f32) * 100.0
+                    };
                 }
                 model_sum.totals.pass_pct = pct(model_sum.totals.passed_tests, model_sum.totals.total_tests);
+                model_sum.totals.task_pass_pct = if model_sum.totals.tasks == 0 {
+                    0.0
+                } else {
+                    (model_sum.totals.task_pass_equiv / model_sum.totals.tasks as f32) * 100.0
+                };
             }
         }
     }
@@ -101,6 +115,14 @@ pub fn summary_from_results(results: &Results) -> Summary {
         version: 1,
         generated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         by_language,
+    }
+}
+
+fn frac(pt: u32, tt: u32) -> f32 {
+    if tt == 0 {
+        0.0
+    } else {
+        (pt as f32) / (tt as f32)
     }
 }
 
