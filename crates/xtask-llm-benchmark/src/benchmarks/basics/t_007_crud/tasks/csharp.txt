@@ -1,0 +1,17 @@
+﻿Write a SpacetimeDB backend module in C# that defines one table and a reducer that performs insert, update, and delete in one call.
+
+TABLE
+- users
+  - Struct: User
+  - Fields:
+    - Id: int (primary key)
+    - Name: string
+    - Age: int
+    - Active: bool
+
+REDUCERS
+- Crud: perform these steps in order
+  - insert (Id=1, Name="Alice", Age=30, Active=true)
+  - insert (Id=2, Name="Bob",   Age=22, Active=false)
+  - update (Id=1, Name="Alice2", Age=31, Active=false)
+  - delete Id=2

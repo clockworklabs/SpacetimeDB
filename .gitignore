@@ -223,3 +223,4 @@ new.json
 
 # Symlinked output from `nix build`
 result
+crates/xtask-llm-benchmark/src/bench/generated/registry.rs

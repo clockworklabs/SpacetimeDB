@@ -1,0 +1,14 @@
+﻿Write a SpacetimeDB backend module in C# that defines one table and a reducer that inserts a row.
+
+TABLE
+- users
+  - Struct: User
+  - Fields:
+    - Id: int (primary key)
+    - Name: string
+    - Age: int
+    - Active: bool
+
+REDUCERS
+- InsertUser: given id:int, name:string, age:int, active:bool, insert exactly one row into users
+  - (Id=id, Name=name, Age=age, Active=active)

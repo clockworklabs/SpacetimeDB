@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "generated_at": "2025-10-25T00:22:09.730714200+00:00",
+  "modes": [
+    {
+      "mode": "docs",
+      "lang": "csharp",
+      "hash": "3845d046f84d2d4f7539bea5d13d8cc2c04b76e0cb25ad3504f18d17908116db",
+      "models": [
+        {
+          "name": "GPT-5",
+          "score": 100.0
+        }
+      ]
+    },
+    {
+      "mode": "docs",
+      "lang": "rust",
+      "hash": "00917b28ec8f75406cd8aac609eeafb254b65945d2bb0c709404ac09a9762fca",
+      "models": [
+        {
+          "name": "GPT-5",
+          "score": 100.0
+        }
+      ]
+    },
+    {
+      "mode": "llms.md",
+      "lang": "rust",
+      "hash": "171b01e97d14a2c03356933e7c86331362cc53b87e82cd534cd74273e7bc8ea4",
+      "models": [
+        {
+          "name": "GPT-5",
+          "score": 100.0
+        }
+      ]
+    },
+    {
+      "mode": "rustdoc_json",
+      "lang": "rust",
+      "hash": "dcc243c7909cfb083830aa5cc99b5e3791f51e453179c8f939efa7bfb32e4464",
+      "models": [
+        {
+          "name": "GPT-5",
+          "score": 100.0
+        }
+      ]
+    }
+  ]
+}

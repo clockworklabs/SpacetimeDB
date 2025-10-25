@@ -1,0 +1,34 @@
+﻿Write a SpacetimeDB backend module in C# that models a minimal ECS and computes next positions.
+
+TABLES
+- entities
+  - Struct: Entity
+  - Fields:
+    - Id: int (primary key)
+
+- positions
+  - Struct: Position
+  - Fields:
+    - EntityId: int (primary key)
+    - X: int
+    - Y: int
+
+- velocities
+  - Struct: Velocity
+  - Fields:
+    - EntityId: int (primary key)
+    - VX: int
+    - VY: int
+
+- next_positions
+  - Struct: NextPosition
+  - Fields:
+    - EntityId: int (primary key)
+    - X: int
+    - Y: int
+
+REDUCERS
+- Seed: insert two entities with positions and velocities:
+  - (Id=1, Pos=(0,0), Vel=(1,0))
+  - (Id=2, Pos=(10,0), Vel=(-2,3))
+- Step: for each Position, find Velocity by EntityId; compute (X+VX, Y+VY) and upsert into next_positions by EntityId
