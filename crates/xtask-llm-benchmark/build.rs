@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use std::{
     env, fs, io,
     path::{Component, Path, PathBuf},
@@ -5,11 +7,6 @@ use std::{
 };
 
 fn main() {
-    // Tell Cargo when to rerun this script.
-    // We depend on the benchmark tree structure.
-    println!("cargo:rerun-if-changed=src/benchmarks");
-    println!("cargo:rerun-if-changed=build.rs");
-
     // === Paths ===
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let benches_root = manifest_dir.join("src/benchmarks");

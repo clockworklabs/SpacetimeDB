@@ -1,77 +1,14 @@
 ﻿# DEVELOP.md
 
-A concise, opinionated guide for contributors. This doc tells you **how to set up the project, run it locally, and contribute effectively**.
+This document explains how to configure the environment, run the benchmark tool, and work with the benchmark suite.
 
 ---
 
 ## Table of Contents
 
-1. [Quick Start](#quick-start)
-2. [Prerequisites](#prerequisites)
-3. [Project Layout](#project-layout)
-4. [Environment Variables](#environment-variables)
-5. [Provider Setup (LLMs)](#provider-setup-llms)
-6. [Build & Run](#build--run)
-7. [Benchmark Suite](#benchmark-suite)
-8. [Rustdoc JSON (Docs Context)](#rustdoc-json-docs-context)
-9. [Quality Gates](#quality-gates)
-10. [Troubleshooting](#troubleshooting)
-11. [Contributing](#contributing)
-
----
-
-## Quick Start
-
-```bash
-# 1) Clone
-git clone <REPO_URL>
-cd <REPO_ROOT>
-
-# 2) Set minimal env for local dev (PowerShell example)
-$env:SPACETIME_SERVER="local"
-$env:LLM_DEBUG="true"
-$env:LLM_DEBUG_VERBOSE="false"
-$env:LLM_BENCH_CONCURRENCY="20"
-$env:LLM_BENCH_ROUTE_CONCURRENCY="4"
-
-# 3) Build core Rust workspace (release optional)
-cargo build
-# or
-cargo build --release
-
-# 4) Smoke test the benchmark runner
-cargo llm --help
-```
-
----
-
-## Prerequisites
-
-- **Rust**: Stable toolchain (install via [rustup](https://rustup.rs)).
-    - On Windows, ensure **MSVC Build Tools** and **CMake** are on `PATH` if any native deps compile.
-- **.NET 8+**: If working on the C# modules or runners.
-- **Node.js 18+**: If building the website / UI for results (optional).
-- **Git LFS**: If this repo stores large fixtures (optional).
-
-> Tip (Windows): `cmake --version` and `cl.exe` should succeed. If not, open **x64 Native Tools Command Prompt for VS** or install Build Tools for VS 2022.
-
----
-
-## Project Layout
-
-```
-<repo-root>/
-  crates/                 # Rust workspace crates
-  modules/                # SpacetimeDB modules (Rust/C#)
-  benchmarks/             # LLM tasks, goldens, and configs
-  tools/                  # Scripts, generators, helpers
-  docs/                   # Additional docs (designs, specs)
-  DEVELOP.md              # This file
-```
-
-Conventions:
-- **Workspace** defined in the top-level `Cargo.toml`.
-- Benchmarks are grouped by **category** (e.g., `basic/`, `schema/`) and **language** (e.g., `rust/`, `csharp/`).
+1. [Environment Variables](#environment-variables)
+2. [Benchmark Suite](#benchmark-suite)
+3. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -140,18 +77,6 @@ $env:LLM_BENCH_ROUTE_CONCURRENCY="4"
 
 ### LLM Providers — Keys & Base URLs
 
-Set only the providers you use. You can also point to OpenAI‑compatible gateways by overriding the base URL.
-
-| Provider | API Key Env | Base URL Env (optional) | Default Base URL |
-|---|---|---|---|
-| OpenAI | `OPENAI_API_KEY` | `OPENAI_BASE_URL` | `https://api.openai.com` |
-| Anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` |
-| Google Gemini | `GOOGLE_API_KEY` | `GOOGLE_BASE_URL` | `https://generativelanguage.googleapis.com` |
-| xAI Grok | `XAI_API_KEY` | `XAI_BASE_URL` | `https://api.x.ai` |
-| DeepSeek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` |
-| Meta (Llama) | `META_API_KEY` | `META_BASE_URL` | *(provider-specific)* |
-| OpenRouter (gateway) | `OPENROUTER_API_KEY` | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` |
-
 > Notes
 > - These match the providers wired in this repo (`OpenAiClient`, `AnthropicClient`, `GoogleGeminiClient`, `XaiGrokClient`, `DeepSeekClient`, `MetaLlamaClient`).
 
@@ -163,34 +88,6 @@ Set only the providers you use. You can also point to OpenAI‑compatible gatewa
 | xAI Grok      | `XAI_API_KEY`       | `XAI_BASE_URL`          | `https://api.x.ai` |
 | DeepSeek      | `DEEPSEEK_API_KEY`  | `DEEPSEEK_BASE_URL`     | `https://api.deepseek.com` |
 | META          | `META_API_KEY`      | `META_BASE_URL`         | `https://openrouter.ai/api/v1` |
-
----
-
-## Build & Run
-
-### Build
-
-```bash
-# Full workspace
-cargo build
-
-# Release
-cargo build --release
-```
-
-### Run Local Services (if applicable)
-
-- **SpacetimeDB**: Ensure a local server is running if modules need it. With `SPACETIME_SERVER="local"`, the tooling points to local endpoints by default.
-
-### Run a Single Tool/Binary
-
-```bash
-# List binaries
-cargo run --bin help
-
-# Example: run the benchmark CLI help
-cargo llm --help
-```
 
 ---
 
@@ -268,7 +165,7 @@ benchmarks/
 7. **Categorize**
 - Ensure the folder sits under the right category path and/or set in `spec.rs`.  
   Run a subset:  
-  `cargo llm run --categories basic`
+  `cargo llm run --categories basics`
 
 
 ### Typical Commands
