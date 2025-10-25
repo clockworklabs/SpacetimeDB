@@ -40,7 +40,7 @@ cargo build
 cargo build --release
 
 # 4) Smoke test the benchmark runner
-cargo run -p llm_benchmark -- --help
+cargo llm --help
 ```
 
 ---
@@ -48,7 +48,7 @@ cargo run -p llm_benchmark -- --help
 ## Prerequisites
 
 - **Rust**: Stable toolchain (install via [rustup](https://rustup.rs)).
-  - On Windows, ensure **MSVC Build Tools** and **CMake** are on `PATH` if any native deps compile.
+    - On Windows, ensure **MSVC Build Tools** and **CMake** are on `PATH` if any native deps compile.
 - **.NET 8+**: If working on the C# modules or runners.
 - **Node.js 18+**: If building the website / UI for results (optional).
 - **Git LFS**: If this repo stores large fixtures (optional).
@@ -187,7 +187,7 @@ Set only the providers you use. You can also point to OpenAI‑compatible gatewa
 Sanity check keys:
 
 ```bash
-cargo run -p llm_benchmark -- routes list
+cargo llm run -- routes list
 ```
 
 ---
@@ -215,7 +215,7 @@ cargo build --release
 cargo run --bin help
 
 # Example: run the benchmark CLI help
-cargo run -p llm_benchmark -- --help
+cargo llm --help
 ```
 
 ---
@@ -267,70 +267,70 @@ benchmarks/
 ### Creating a new benchmark
 
 1. **Copy a template**
-  - Duplicate any existing benchmark folder.
-  - Bump the numeric prefix to a new, unused ID: `t_123_my_task`.
+- Duplicate any existing benchmark folder.
+- Bump the numeric prefix to a new, unused ID: `t_123_my_task`.
 
 2. **Rename for the new task**
-  - Rename the folder to your ID + short slug (snake-case): `t_123_my_task`.
+- Rename the folder to your ID + short slug (snake-case): `t_123_my_task`.
 
 3. **Write the task prompt**
-  - Create/update `tasks/rust.txt` and/or `tasks/csharp.txt`.
-  - Be explicit (tables, reducers, helpers, constraints). Avoid ambiguity.
+- Create/update `tasks/rust.txt` and/or `tasks/csharp.txt`.
+- Be explicit (tables, reducers, helpers, constraints). Avoid ambiguity.
 
 4. **Add golden answers**
-  - Implement the canonical solution in `answers/rust.rs` and/or `answers/csharp.cs`.
-  - Keep them minimal and correct; compile locally if applicable.
+- Implement the canonical solution in `answers/rust.rs` and/or `answers/csharp.cs`.
+- Keep them minimal and correct; compile locally if applicable.
 
 5. **Define scoring**
-  - Edit `spec.rs` to add scorers (e.g., schema/table/field checks, reducer/func exists).
-  - Use existing scorer names where possible; keep checks specific.
+- Edit `spec.rs` to add scorers (e.g., schema/table/field checks, reducer/func exists).
+- Use existing scorer names where possible; keep checks specific.
 
 6. **Quick validation**
-  - No provider calls (context only):  
-    `cargo run -p llm_benchmark -- run --hash-only --tasks t_123_my_task`
-  - Build goldens only:  
-    `cargo run -p llm_benchmark -- run --goldens-only --tasks t_123_my_task`
+- No provider calls (context only):  
+  `cargo llm run --hash-only --tasks t_123_my_task`
+- Build goldens only:  
+  `cargo llm run --goldens-only --tasks t_123_my_task`
 
 7. **Categorize**
-  - Ensure the folder sits under the right category path and/or set in `spec.rs`.  
-    Run a subset:  
-    `cargo run -p llm_benchmark -- run --categories basic`
+- Ensure the folder sits under the right category path and/or set in `spec.rs`.  
+  Run a subset:  
+  `cargo llm run --categories basic`
 
 
 ### Typical Commands
 
 ```bash
 # Run everything with current env (providers/models from your .env)
-cargo run -p llm_benchmark -- run
+cargo llm run
 
 # Only Rust (or C#)
-cargo run -p llm_benchmark -- run --lang rust
-cargo run -p llm_benchmark -- run --lang csharp
+cargo llm run --lang rust
+cargo llm run --lang csharp
 
 # Only certain categories (use your actual category names)
-cargo run -p llm_benchmark -- run --categories basics,schema
+cargo llm run --categories basics,schema
 
 # Only certain tasks by number (globally numbered)
-cargo run -p llm_benchmark -- run --tasks 0,7,12
+cargo llm run --tasks 0,7,12
 
 # Limit providers/models explicitly
-cargo run -p llm_benchmark -- run \
+cargo llm run \
   --providers openai,anthropic \
   --models "openai:gpt-5 anthropic:claude-sonnet-4-5"
 
 # Dry runs
-cargo run -p llm_benchmark -- run --hash-only         # build context only (no provider calls)
-cargo run -p llm_benchmark -- run --goldens-only      # build/check goldens only
+cargo llm run --hash-only         # build context only (no provider calls)
+cargo llm run --goldens-only      # build/check goldens only
 
 # Be aggressive (skip some safety checks)
-cargo run -p llm_benchmark -- run --force
+cargo llm run --force
 
 # Compare results files
-cargo run -p llm_benchmark -- diff results/base.json results/head.json
+cargo llm diff results/base.json results/head.json
 
 # CI sanity check per language
-cargo run -p llm_benchmark -- ci-check --lang rust
-cargo run -p llm_benchmark -- ci-check --lang csharp
+cargo llm ci-check --lang rust
+cargo llm ci-check --lang csharp
 
 ```
 

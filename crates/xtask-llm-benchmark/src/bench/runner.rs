@@ -338,7 +338,7 @@ pub async fn run_all_for_model_async_for_lang(
     for (task, r) in results {
         match r {
             Ok(v) => outcomes.push(v),
-            // you caught an error that *includes* the generated code
+            // error that *includes* the generated code
             Err(RunOneError::WithOutput { msg, llm_output }) => {
                 errs += 1;
                 eprintln!("⚠️ task failed but continuing: {msg}");
