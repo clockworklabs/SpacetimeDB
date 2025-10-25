@@ -154,41 +154,15 @@ Set only the providers you use. You can also point to OpenAI‑compatible gatewa
 
 > Notes
 > - These match the providers wired in this repo (`OpenAiClient`, `AnthropicClient`, `GoogleGeminiClient`, `XaiGrokClient`, `DeepSeekClient`, `MetaLlamaClient`).
-> - If you route through an OpenAI‑compatible proxy (incl. OpenRouter), set the corresponding `*_BASE_URL`.
 
-Set only the providers you use. You can also point to OpenAI‑compatible gateways by overriding the base URL.
-
-| Provider | API Key Env | Base URL Env (optional) | Default Base URL |
-|---|---|---|---|
-| OpenAI | `OPENAI_API_KEY` | `OPENAI_BASE_URL` | `https://api.openai.com` |
-| Anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` |
-| Google Gemini | `GOOGLE_API_KEY` | `GOOGLE_BASE_URL` | `https://generativelanguage.googleapis.com` |
-| xAI Grok | `XAI_API_KEY` | `XAI_BASE_URL` | `https://api.x.ai` |
-| DeepSeek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` |
-| OpenRouter | `OPENROUTER_API_KEY` | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` |
-| Together | `TOGETHER_API_KEY` | `TOGETHER_BASE_URL` | `https://api.together.xyz/v1` |
-| Mistral | `MISTRAL_API_KEY` | `MISTRAL_BASE_URL` | `https://api.mistral.ai/v1` |
-| Cohere | `COHERE_API_KEY` | `COHERE_BASE_URL` | `https://api.cohere.ai/v1` |
-| Groq | `GROQ_API_KEY` | `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` |
-| Fireworks | `FIREWORKS_API_KEY` | `FIREWORKS_BASE_URL` | `https://api.fireworks.ai/inference/v1` |
-| Perplexity | `PERPLEXITY_API_KEY` | `PERPLEXITY_BASE_URL` | `https://api.perplexity.ai` |
-
-> Notes
-> - If you route Meta Llama / other OSS models through an OpenAI‑compatible proxy, set `OPENAI_BASE_URL` accordingly (or a provider‑specific `*_BASE_URL`).
-> - Model identifiers are matched against route `api_model` or `display_name` (case‑insensitive).
-
----
-
-## Provider Setup (LLMs)
-
-- You can run **any subset** of providers depending on which API keys you set.
-- Many routes are OpenAI-compatible; for local/open-source gateways, set `OPENAI_BASE_URL` accordingly.
-
-Sanity check keys:
-
-```bash
-cargo llm run -- routes list
-```
+| Provider      | API Key Env         | Base URL Env (optional) | Default Base URL |
+|---------------|---------------------|-------------------------|---|
+| OpenAI        | `OPENAI_API_KEY`    | `OPENAI_BASE_URL`       | `https://api.openai.com` |
+| Anthropic     | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL`    | `https://api.anthropic.com` |
+| Google Gemini | `GOOGLE_API_KEY`    | `GOOGLE_BASE_URL`       | `https://generativelanguage.googleapis.com` |
+| xAI Grok      | `XAI_API_KEY`       | `XAI_BASE_URL`          | `https://api.x.ai` |
+| DeepSeek      | `DEEPSEEK_API_KEY`  | `DEEPSEEK_BASE_URL`     | `https://api.deepseek.com` |
+| META          | `META_API_KEY`      | `META_BASE_URL`         | `https://openrouter.ai/api/v1` |
 
 ---
 
