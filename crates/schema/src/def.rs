@@ -240,6 +240,12 @@ impl ModuleDef {
         self.tables.get(name)
     }
 
+    /// Convenience method to look up a view, possibly by a string.
+    pub fn view<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ViewDef> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.views.get(name)
+    }
+
     /// Convenience method to look up a reducer, possibly by a string.
     pub fn reducer<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ReducerDef> {
         // If the string IS a valid identifier, we can just look it up.
