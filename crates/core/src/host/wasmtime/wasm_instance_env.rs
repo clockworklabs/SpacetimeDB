@@ -102,8 +102,8 @@ pub(super) struct WasmInstanceEnv {
     /// Track time spent in module-defined spans.
     timing_spans: TimingSpanSet,
 
-    /// The point in time the last reducer call started at.
-    reducer_start: Instant,
+    /// The point in time the last function call started at.
+    function_start: Instant,
 
     /// Track time spent in all wasm instance env calls (aka syscall time).
     ///
@@ -111,8 +111,8 @@ pub(super) struct WasmInstanceEnv {
     /// to this tracker.
     call_times: CallTimes,
 
-    /// The last, including current, reducer to be executed by this environment.
-    reducer_name: String,
+    /// The last, including current, function to be executed by this environment.
+    function_name: String,
 
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
@@ -138,9 +138,9 @@ impl WasmInstanceEnv {
             standard_bytes_sink: None,
             iters: Default::default(),
             timing_spans: Default::default(),
-            reducer_start,
+            function_start: reducer_start,
             call_times: CallTimes::new(),
-            reducer_name: String::from("<initializing>"),
+            function_name: String::from("<initializing>"),
             chunk_pool: <_>::default(),
         }
     }
@@ -219,48 +219,51 @@ impl WasmInstanceEnv {
         self.standard_bytes_sink.take().unwrap_or_default()
     }
 
-    /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
+    /// Signal to this `WasmInstanceEnv` that a function call is beginning.
     ///
-    /// Returns the handle used by reducers to read from `args`
+    /// Returns the handle used by functions to read from `args`
     /// as well as the handle used to write the error message, if any.
-    pub fn start_reducer(&mut self, name: &str, args: bytes::Bytes, ts: Timestamp) -> (BytesSourceId, u32) {
+    pub fn start_function(&mut self, name: &str, args: bytes::Bytes, ts: Option<Timestamp>) -> (BytesSourceId, u32) {
         let errors = self.setup_standard_bytes_sink();
 
         let args = self.create_bytes_source(args).unwrap();
 
-        self.reducer_start = Instant::now();
-        name.clone_into(&mut self.reducer_name);
-        self.instance_env.start_reducer(ts);
+        self.function_start = Instant::now();
+        name.clone_into(&mut self.function_name);
+
+        if let Some(ts) = ts {
+            self.instance_env.start_function(ts);
+        }
 
         (args, errors)
     }
 
     /// Returns the name of the most recent reducer to be run in this environment.
-    pub fn reducer_name(&self) -> &str {
-        &self.reducer_name
+    pub fn function_name(&self) -> &str {
+        &self.function_name
     }
 
     /// Returns the name of the most recent reducer to be run in this environment,
     /// or `None` if no reducer is actively being invoked.
     fn log_record_function(&self) -> Option<&str> {
-        let function = self.reducer_name();
+        let function = self.function_name();
         (!function.is_empty()).then_some(function)
     }
 
-    /// Returns the name of the most recent reducer to be run in this environment.
-    pub fn reducer_start(&self) -> Instant {
-        self.reducer_start
+    /// The point in time the last function call started at.
+    pub fn function_start(&self) -> Instant {
+        self.function_start
     }
 
-    /// Signal to this `WasmInstanceEnv` that a reducer call is over.
-    /// This resets all of the state associated to a single reducer call,
+    /// Signal to this `WasmInstanceEnv` that a function call is over.
+    /// This resets all of the state associated to a single function call,
     /// and returns instrumentation records.
-    pub fn finish_reducer(&mut self) -> (ExecutionTimings, Vec<u8>) {
+    pub fn finish_function(&mut self) -> (ExecutionTimings, Vec<u8>) {
         // For the moment,
         // we only explicitly clear the source/sink buffers and the "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
 
-        let total_duration = self.reducer_start.elapsed();
+        let total_duration = self.function_start.elapsed();
 
         // Taking the call times record also resets timings to 0s for the next call.
         let wasm_instance_env_call_times = self.call_times.take();

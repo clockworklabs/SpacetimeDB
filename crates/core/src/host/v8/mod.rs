@@ -200,7 +200,7 @@ impl JsInstanceEnv {
     fn start_reducer(&mut self, name: &str, ts: Timestamp) {
         self.reducer_start = Instant::now();
         name.clone_into(&mut self.reducer_name);
-        self.instance_env.start_reducer(ts);
+        self.instance_env.start_function(ts);
     }
 
     /// Returns the name of the most recent reducer to be run in this environment.

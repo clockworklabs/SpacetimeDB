@@ -2,10 +2,10 @@ use self::module_host_actor::ReducerOp;
 
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::{Mem, WasmtimeFuel, EPOCH_TICKS_PER_SECOND};
-use crate::energy::ReducerBudget;
+use crate::energy::FunctionBudget;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_common::run_describer;
-use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
+use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, DescribeError, InitializationError, ViewOp};
 use crate::host::wasm_common::*;
 use crate::util::string_from_utf8_lossy_owned;
 use futures_util::FutureExt;
@@ -126,14 +126,14 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         store.epoch_deadline_callback(|store| {
             let env = store.data();
             let database = env.instance_env().replica_ctx.database_identity;
-            let reducer = env.reducer_name();
-            let dur = env.reducer_start().elapsed();
+            let reducer = env.function_name();
+            let dur = env.function_start().elapsed();
             tracing::warn!(reducer, ?database, "Wasm has been running for {dur:?}");
             Ok(wasmtime::UpdateDeadline::Continue(EPOCH_TICKS_PER_SECOND))
         });
 
         // Note: this budget is just for initializers
-        set_store_fuel(&mut store, ReducerBudget::DEFAULT_BUDGET.into());
+        set_store_fuel(&mut store, FunctionBudget::DEFAULT_BUDGET.into());
         store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
 
         for preinit in &func_names.preinits {
@@ -162,20 +162,91 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
             .get_typed_func(&mut store, CALL_REDUCER_DUNDER)
             .expect("no call_reducer");
 
+        let call_view = instance
+            .get_typed_func(&mut store, CALL_VIEW_DUNDER)
+            .expect("no call_view");
+
+        let call_view_anon = instance
+            .get_typed_func(&mut store, CALL_VIEW_ANON_DUNDER)
+            .expect("no call_view_anon");
+
         Ok(WasmtimeInstance {
             store,
             instance,
             call_reducer,
+            call_view,
+            call_view_anon,
         })
     }
 }
 
-type CallReducerType = TypedFunc<(u32, u64, u64, u64, u64, u64, u64, u64, u32, u32), i32>;
+/// The function signature of `__call_reducer__`
+type CallReducerType = TypedFunc<
+    (
+        // ReducerId
+        u32,
+        // sender_0
+        u64,
+        // sender_1
+        u64,
+        // sender_2
+        u64,
+        // sender_3
+        u64,
+        // connection_id_0
+        u64,
+        // connection_id_1
+        u64,
+        // timestamp
+        u64,
+        // byte source id for args
+        u32,
+        // byte sink id for return
+        u32,
+    ),
+    i32,
+>;
+
+/// The function signature of `__call_view__`
+type CallViewType = TypedFunc<
+    (
+        // ViewId
+        u32,
+        // sender_0
+        u64,
+        // sender_1
+        u64,
+        // sender_2
+        u64,
+        // sender_3
+        u64,
+        // byte source id for args
+        u32,
+        // byte sink id for return
+        u32,
+    ),
+    i32,
+>;
+
+/// The function signature of `__call_view_anon__`
+type CallViewAnonType = TypedFunc<
+    (
+        // ViewId
+        u32,
+        // byte source id for args
+        u32,
+        // byte sink id for return
+        u32,
+    ),
+    i32,
+>;
 
 pub struct WasmtimeInstance {
     store: Store<WasmInstanceEnv>,
     instance: Instance,
     call_reducer: CallReducerType,
+    call_view: CallViewType,
+    call_view_anon: CallViewAnonType,
 }
 
 impl module_host_actor::WasmInstance for WasmtimeInstance {
@@ -204,7 +275,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> module_host_actor::ExecuteResult {
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> module_host_actor::ExecuteResult {
         let store = &mut self.store;
         // Set the fuel budget in WASM.
         set_store_fuel(store, budget.into());
@@ -217,7 +288,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
-        let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, args_bytes, op.timestamp);
+        let (args_source, errors_sink) = store.data_mut().start_function(op.name, args_bytes, Some(op.timestamp));
 
         let call_result = call_sync_typed_func(
             &self.call_reducer,
@@ -239,13 +310,97 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Signal that this reducer call is finished. This gets us the timings
         // associated to our reducer call, and clears all of the instance state
         // associated to the call.
-        let (timings, error) = store.data_mut().finish_reducer();
+        let (timings, error) = store.data_mut().finish_function();
 
         let call_result = call_result.map(|code| handle_error_sink_code(code, error));
 
         // Compute fuel and heap usage.
         let remaining_fuel = get_store_fuel(store);
-        let remaining: ReducerBudget = remaining_fuel.into();
+        let remaining: FunctionBudget = remaining_fuel.into();
+        let energy = module_host_actor::EnergyStats { budget, remaining };
+        let memory_allocation = store.data().get_mem().memory.data_size(&store);
+
+        module_host_actor::ExecuteResult {
+            energy,
+            timings,
+            memory_allocation,
+            call_result,
+        }
+    }
+
+    fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> module_host_actor::ExecuteResult {
+        let store = &mut self.store;
+        // Set the fuel budget in WASM.
+        set_store_fuel(store, budget.into());
+        store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
+
+        // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
+        let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(op.caller_identity.to_byte_array());
+
+        // Prepare arguments to the reducer + the error sink & start timings.
+        let args_bytes = op.args.get_bsatn().clone();
+
+        let (args_source, errors_sink) = store.data_mut().start_function(op.name, args_bytes, None);
+
+        let call_result = call_sync_typed_func(
+            &self.call_view,
+            &mut *store,
+            (
+                op.id.0,
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                args_source.0,
+                errors_sink,
+            ),
+        );
+
+        // Signal that this reducer call is finished. This gets us the timings
+        // associated to our reducer call, and clears all of the instance state
+        // associated to the call.
+        let (timings, error) = store.data_mut().finish_function();
+
+        let call_result = call_result.map(|code| handle_error_sink_code(code, error));
+
+        // Compute fuel and heap usage.
+        let remaining_fuel = get_store_fuel(store);
+        let remaining: FunctionBudget = remaining_fuel.into();
+        let energy = module_host_actor::EnergyStats { budget, remaining };
+        let memory_allocation = store.data().get_mem().memory.data_size(&store);
+
+        module_host_actor::ExecuteResult {
+            energy,
+            timings,
+            memory_allocation,
+            call_result,
+        }
+    }
+
+    fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> module_host_actor::ExecuteResult {
+        let store = &mut self.store;
+        // Set the fuel budget in WASM.
+        set_store_fuel(store, budget.into());
+        store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
+
+        // Prepare arguments to the reducer + the error sink & start timings.
+        let args_bytes = op.args.get_bsatn().clone();
+
+        let (args_source, errors_sink) = store.data_mut().start_function(op.name, args_bytes, None);
+
+        let call_result =
+            call_sync_typed_func(&self.call_view_anon, &mut *store, (op.id.0, args_source.0, errors_sink));
+
+        // Signal that this reducer call is finished. This gets us the timings
+        // associated to our reducer call, and clears all of the instance state
+        // associated to the call.
+        let (timings, error) = store.data_mut().finish_function();
+
+        let call_result = call_result.map(|code| handle_error_sink_code(code, error));
+
+        // Compute fuel and heap usage.
+        let remaining_fuel = get_store_fuel(store);
+        let remaining: FunctionBudget = remaining_fuel.into();
         let energy = module_host_actor::EnergyStats { budget, remaining };
         let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
@@ -281,7 +436,7 @@ mod tests {
             &wasmtime::Engine::new(wasmtime::Config::new().consume_fuel(true)).unwrap(),
             (),
         );
-        let budget = ReducerBudget::DEFAULT_BUDGET;
+        let budget = FunctionBudget::DEFAULT_BUDGET;
         set_store_fuel(&mut store, budget.into());
         store.set_fuel(store.get_fuel().unwrap() - 10).unwrap();
         let remaining: EnergyQuanta = get_store_fuel(&store).into();

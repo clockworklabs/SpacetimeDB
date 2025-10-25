@@ -13,7 +13,7 @@ pub struct ReducerFingerprint<'a> {
 }
 
 pub trait EnergyMonitor: Send + Sync + 'static {
-    fn reducer_budget(&self, fingerprint: &ReducerFingerprint<'_>) -> ReducerBudget;
+    fn reducer_budget(&self, fingerprint: &ReducerFingerprint<'_>) -> FunctionBudget;
     fn record_reducer(
         &self,
         fingerprint: &ReducerFingerprint<'_>,
@@ -29,8 +29,8 @@ pub trait EnergyMonitor: Send + Sync + 'static {
 pub struct NullEnergyMonitor;
 
 impl EnergyMonitor for NullEnergyMonitor {
-    fn reducer_budget(&self, _fingerprint: &ReducerFingerprint<'_>) -> ReducerBudget {
-        ReducerBudget::DEFAULT_BUDGET
+    fn reducer_budget(&self, _fingerprint: &ReducerFingerprint<'_>) -> FunctionBudget {
+        FunctionBudget::DEFAULT_BUDGET
     }
 
     fn record_reducer(

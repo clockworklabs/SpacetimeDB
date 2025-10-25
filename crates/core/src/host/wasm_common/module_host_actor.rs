@@ -1,5 +1,6 @@
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
+use spacetimedb_primitives::ViewId;
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,7 +9,7 @@ use tracing::span::EnteredSpan;
 use super::instrumentation::CallTimes;
 use crate::client::ClientConnectionSender;
 use crate::database_logger;
-use crate::energy::{EnergyMonitor, ReducerBudget, ReducerFingerprint};
+use crate::energy::{EnergyMonitor, FunctionBudget, ReducerFingerprint};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
@@ -53,19 +54,23 @@ pub trait WasmInstance: Send + Sync + 'static {
 
     fn instance_env(&self) -> &InstanceEnv;
 
-    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> ExecuteResult;
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ExecuteResult;
+
+    fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ExecuteResult;
+
+    fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ExecuteResult;
 
     fn log_traceback(func_type: &str, func: &str, trap: &anyhow::Error);
 }
 
 pub struct EnergyStats {
-    pub budget: ReducerBudget,
-    pub remaining: ReducerBudget,
+    pub budget: FunctionBudget,
+    pub remaining: FunctionBudget,
 }
 
 impl EnergyStats {
     /// Returns the used energy amount.
-    fn used(&self) -> ReducerBudget {
+    fn used(&self) -> FunctionBudget {
         (self.budget.get() - self.remaining.get()).into()
     }
 }
@@ -365,7 +370,7 @@ impl InstanceCommon {
         tx: Option<MutTxId>,
         params: CallReducerParams,
         log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
-        vm_call_reducer: impl FnOnce(MutTxId, ReducerOp<'_>, ReducerBudget) -> (MutTxId, ExecuteResult),
+        vm_call_reducer: impl FnOnce(MutTxId, ReducerOp<'_>, FunctionBudget) -> (MutTxId, ExecuteResult),
     ) -> (ReducerCallResult, bool) {
         let CallReducerParams {
             timestamp,
@@ -586,7 +591,7 @@ fn start_call_reducer_span(
 }
 
 /// Starts the `run_reducer` span.
-fn start_run_reducer_span(budget: ReducerBudget) -> EnteredSpan {
+fn start_run_reducer_span(budget: FunctionBudget) -> EnteredSpan {
     tracing::trace_span!(
         "run_reducer",
         timings.total_duration = tracing::field::Empty,
@@ -655,6 +660,23 @@ fn commit_and_broadcast_event(
         Ok(res) => res.event,
         Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
     }
+}
+
+/// Describes a view call in a cheaply shareable way.
+#[derive(Clone, Debug)]
+pub struct ViewOp<'a> {
+    pub id: ViewId,
+    pub name: &'a str,
+    pub args: &'a ArgsTuple,
+    pub caller_identity: &'a Identity,
+}
+
+/// Describes an anonymous view call in a cheaply shareable way.
+#[derive(Clone, Debug)]
+pub struct AnonymousViewOp<'a> {
+    pub id: ViewId,
+    pub name: &'a str,
+    pub args: &'a ArgsTuple,
 }
 
 /// Describes a reducer call in a cheaply shareable way.

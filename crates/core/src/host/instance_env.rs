@@ -179,8 +179,8 @@ impl InstanceEnv {
         &self.replica_ctx.database.database_identity
     }
 
-    /// Signal to this `InstanceEnv` that a reducer call is beginning.
-    pub fn start_reducer(&mut self, ts: Timestamp) {
+    /// Signal to this `InstanceEnv` that a function call is beginning.
+    pub fn start_function(&mut self, ts: Timestamp) {
         self.start_time = ts;
     }
 
