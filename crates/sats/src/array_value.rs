@@ -141,7 +141,7 @@ impl ArrayValue {
 impl Default for ArrayValue {
     /// The default `ArrayValue` is an empty array of sum values.
     fn default() -> Self {
-        Self::from(<[crate::SumValue; 0]>::default())
+        Self::from([] as [crate::SumValue; 0])
     }
 }
 
