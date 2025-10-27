@@ -1,7 +1,9 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use toml::Value;
 
 fn main() {
     let output = Command::new("git").args(["rev-parse", "HEAD"]).output().unwrap();
@@ -19,7 +21,8 @@ fn main() {
 //   * `get_cursorrules` - returns contents of a cursorrules file
 fn generate_template_files() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let templates_json_path = Path::new(&manifest_dir).join("templates/templates-list.json");
+    let manifest_path = Path::new(&manifest_dir);
+    let templates_json_path = manifest_path.join("templates/templates-list.json");
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("embedded_templates.rs");
 
@@ -68,6 +71,16 @@ fn generate_template_files() {
     generated_code.push_str("}\n\n");
 
     let repo_root = get_repo_root();
+    let workspace_cargo = repo_root.join("Cargo.toml");
+    if let Ok(relative_workspace) = workspace_cargo.strip_prefix(manifest_path) {
+        println!("cargo:rerun-if-changed={}", relative_workspace.display());
+    } else {
+        println!("cargo:rerun-if-changed={}", workspace_cargo.display());
+    }
+
+    let (workspace_edition, workspace_versions) =
+        extract_workspace_metadata(&workspace_cargo).expect("Failed to extract workspace metadata");
+
     let cursorrules_path = repo_root.join("docs/.cursor/rules/spacetimedb.md");
     if cursorrules_path.exists() {
         generated_code.push_str("pub fn get_cursorrules() -> &'static str {\n");
@@ -80,6 +93,24 @@ fn generate_template_files() {
     } else {
         panic!("Could not find \"docs/.cursor/rules/spacetimedb.md\" file.");
     }
+
+    // Expose workspace metadata so `spacetime init` can rewrite template manifests without hardcoding versions.
+    generated_code.push_str("pub fn get_workspace_edition() -> &'static str {\n");
+    generated_code.push_str(&format!("    \"{}\"\n", workspace_edition.escape_default().to_string()));
+    generated_code.push_str("}\n\n");
+
+    generated_code.push_str("pub fn get_workspace_dependency_version(name: &str) -> Option<&'static str> {\n");
+    generated_code.push_str("    match name {\n");
+    for (name, version) in &workspace_versions {
+        generated_code.push_str(&format!(
+            "        \"{}\" => Some(\"{}\"),\n",
+            name.escape_default(),
+            version.escape_default()
+        ));
+    }
+    generated_code.push_str("        _ => None,\n");
+    generated_code.push_str("    }\n");
+    generated_code.push_str("}\n");
 
     write_if_changed(&dest_path, generated_code.as_bytes()).expect("Failed to write embedded_templates.rs");
 }
@@ -232,6 +263,51 @@ fn get_repo_root() -> PathBuf {
         .expect("Failed to get git repo root");
     let path = String::from_utf8(output.stdout).unwrap().trim().to_string();
     PathBuf::from(path)
+}
+
+fn extract_workspace_metadata(path: &Path) -> io::Result<(String, BTreeMap<String, String>)> {
+    let content = fs::read_to_string(path)?;
+    let parsed: Value = content
+        .parse()
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+
+    let table = parsed
+        .as_table()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "workspace manifest is not a table"))?;
+
+    let workspace = table
+        .get("workspace")
+        .and_then(Value::as_table)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "workspace section missing"))?;
+
+    let edition = workspace
+        .get("package")
+        .and_then(Value::as_table)
+        .and_then(|pkg| pkg.get("edition"))
+        .and_then(Value::as_str)
+        .unwrap_or("2021")
+        .to_string();
+
+    let mut versions = BTreeMap::new();
+    if let Some(deps) = workspace.get("dependencies").and_then(Value::as_table) {
+        for (name, value) in deps {
+            let version_opt = match value {
+                Value::String(s) => Some(normalize_version(&s)),
+                Value::Table(table) => table.get("version").and_then(Value::as_str).map(normalize_version),
+                _ => None,
+            };
+
+            if let Some(version) = version_opt {
+                versions.insert(name.clone(), version);
+            }
+        }
+    }
+
+    Ok((edition, versions))
+}
+
+fn normalize_version(version: &str) -> String {
+    version.trim().trim_start_matches('=').to_string()
 }
 
 fn write_if_changed(path: &Path, contents: &[u8]) -> io::Result<()> {

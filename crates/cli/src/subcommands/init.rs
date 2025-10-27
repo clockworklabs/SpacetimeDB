@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use toml_edit::{value, DocumentMut, Item};
 
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
@@ -704,19 +705,55 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
         return Ok(());
     }
 
-    let mut content = fs::read_to_string(&cargo_path)?;
+    let original = fs::read_to_string(&cargo_path)?;
+    let mut doc: DocumentMut = original.parse()?;
 
     let safe_name = package_name
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
         .collect::<String>();
 
-    let name_regex = Regex::new(r#"(?m)^name = .*$"#)?;
-    content = name_regex
-        .replace(&content, format!(r#"name = "{}""#, safe_name))
-        .to_string();
+    if let Some(package_item) = doc.get_mut("package") {
+        if let Some(package_table) = package_item.as_table_mut() {
+            package_table["name"] = value(safe_name);
+            if let Some(edition_item) = package_table.get_mut("edition") {
+                if edition_uses_workspace(edition_item) {
+                    *edition_item = value(embedded::get_workspace_edition());
+                }
+            }
+        }
+    }
 
-    fs::write(&cargo_path, content)?;
+    if let Some(deps_item) = doc.get_mut("dependencies") {
+        if let Some(deps_table) = deps_item.as_table_mut() {
+            let keys: Vec<String> = deps_table.iter().map(|(k, _)| k.to_string()).collect();
+            for key in keys {
+                if let Some(dep_item) = deps_table.get_mut(&key) {
+                    if dependency_uses_workspace(dep_item) {
+                        if has_path(dep_item) {
+                            if key == "spacetimedb" {
+                                if let Some(version) = embedded::get_workspace_dependency_version(&key) {
+                                    set_dependency_version(dep_item, version, true);
+                                }
+                            }
+                            continue;
+                        }
+
+                        if uses_workspace(dep_item) {
+                            if let Some(version) = embedded::get_workspace_dependency_version(&key) {
+                                set_dependency_version(dep_item, version, key == "spacetimedb");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let updated = doc.to_string();
+    if updated != original {
+        fs::write(cargo_path, updated)?;
+    }
     Ok(())
 }
 
@@ -1222,4 +1259,65 @@ pub fn parse_client_lang(lang: &Option<String>) -> anyhow::Result<Option<ClientL
         Some(s) => Ok(ClientLanguage::from_str(s)?),
         None => Ok(None),
     }
+}
+
+fn edition_uses_workspace(item: &Item) -> bool {
+    match item {
+        Item::Value(val) => val
+            .as_inline_table()
+            .map(|table| table.get("workspace").is_some())
+            .unwrap_or(false),
+        Item::Table(table) => table.get("workspace").is_some(),
+        _ => false,
+    }
+}
+
+fn dependency_uses_workspace(item: &Item) -> bool {
+    uses_workspace(item) || has_path(item)
+}
+
+fn uses_workspace(item: &Item) -> bool {
+    match item {
+        Item::Value(val) => val
+            .as_inline_table()
+            .map(|table| table.get("workspace").is_some())
+            .unwrap_or(false),
+        Item::Table(table) => table.get("workspace").is_some(),
+        _ => false,
+    }
+}
+
+fn has_path(item: &Item) -> bool {
+    match item {
+        Item::Value(val) => val
+            .as_inline_table()
+            .map(|table| table.get("path").is_some())
+            .unwrap_or(false),
+        Item::Table(table) => table.get("path").is_some(),
+        _ => false,
+    }
+}
+
+fn set_dependency_version(item: &mut Item, version: &str, remove_path: bool) {
+    if let Item::Value(val) = item {
+        if let Some(inline) = val.as_inline_table_mut() {
+            inline.remove("workspace");
+            if remove_path {
+                inline.remove("path");
+            }
+            inline.insert("version", toml_edit::Value::from(version.to_string()));
+            return;
+        }
+    }
+
+    if let Item::Table(table) = item {
+        table.remove("workspace");
+        if remove_path {
+            table.remove("path");
+        }
+        table["version"] = value(version.to_string());
+        return;
+    }
+
+    *item = value(version.to_string());
 }
