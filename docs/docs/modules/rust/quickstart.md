@@ -41,7 +41,7 @@ cd quickstart-chat
 Now create `server`, our module, which runs in the database:
 
 ```bash
-spacetime init --name server --lang rust server
+spacetime init --lang rust server
 ```
 
 ## How to Compile

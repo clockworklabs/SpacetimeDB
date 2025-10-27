@@ -44,7 +44,7 @@ cd quickstart-chat
 Now create `server`, our module, which runs in the database:
 
 ```bash
-spacetime init --name server --lang csharp server
+spacetime init --lang csharp server
 ```
 
 ## Declare imports

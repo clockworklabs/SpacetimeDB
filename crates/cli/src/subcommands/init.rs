@@ -121,17 +121,13 @@ pub fn cli() -> clap::Command {
     clap::Command::new("init")
         .about(format!("Initializes a new spacetime project. {UNSTABLE_WARNING}"))
         .arg(
-            Arg::new("name")
-                .short('n')
-                .long("name")
-                .value_name("NAME")
-                .help("Project name"),
-        )
-        .arg(
             Arg::new("project-path")
+                .long("project-path")
+                .value_name("PATH")
                 .value_parser(clap::value_parser!(PathBuf))
-                .help("The path where we will create the spacetime project (defaults to hyphenated project name)"),
+                .help("Directory where the project will be created (defaults to ./<PROJECT_NAME>)"),
         )
+        .arg(Arg::new("project-name").value_name("PROJECT_NAME").help("Project name"))
         .arg(
             Arg::new("lang").long("lang").value_name("LANG").help(
                 "Server language: rust, csharp, typescript (it can only be used when --template is not specified)",
@@ -209,7 +205,7 @@ fn slugify(name: &str) -> String {
 }
 
 async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Result<String> {
-    if let Some(name) = args.get_one::<String>("name") {
+    if let Some(name) = args.get_one::<String>("project-name") {
         if is_interactive {
             println!("{} {}", "Project name:".bold(), name);
         }
@@ -217,7 +213,7 @@ async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Re
     }
 
     if !is_interactive {
-        anyhow::bail!("--name is required in non-interactive mode");
+        anyhow::bail!("PROJECT_NAME is required in non-interactive mode");
     }
 
     let theme = ColorfulTheme::default();
@@ -1107,7 +1103,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
     let is_interactive = !args.get_flag("non-interactive");
     let template = args.get_one::<String>("template");
     let server_lang = args.get_one::<String>("lang");
-    let name = args.get_one::<String>("name");
+    let project_name_arg = args.get_one::<String>("project-name");
 
     // Validate that template and lang options are not used together
     if template.is_some() && server_lang.is_some() {
@@ -1116,8 +1112,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
 
     if !is_interactive {
         // In non-interactive mode, validate all required args are present
-        if name.is_none() {
-            anyhow::bail!("--name is required in non-interactive mode");
+        if project_name_arg.is_none() {
+            anyhow::bail!("PROJECT_NAME is required in non-interactive mode");
         }
         if template.is_none() && server_lang.is_none() {
             anyhow::bail!("Either --template or --lang must be provided in non-interactive mode");
