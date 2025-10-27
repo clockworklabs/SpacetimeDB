@@ -1,6 +1,13 @@
 import { AlgebraicType } from './algebraic_type';
 import { hexStringToU128, u128ToHexString, u128ToUint8Array } from './utils';
 
+export type ConnectionIdAlgebraicType = {
+  tag: 'Product';
+  value: {
+    elements: [{ name: '__connection_id__'; algebraicType: { tag: 'U128' } }];
+  };
+};
+
 /**
  * A unique identifier for a client connected to a database.
  */
@@ -18,7 +25,7 @@ export class ConnectionId {
    * Get the algebraic type representation of the {@link ConnectionId} type.
    * @returns The algebraic type representation of the type.
    */
-  static getAlgebraicType(): AlgebraicType {
+  static getAlgebraicType(): ConnectionIdAlgebraicType {
     return AlgebraicType.Product({
       elements: [
         { name: '__connection_id__', algebraicType: AlgebraicType.U128 },

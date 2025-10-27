@@ -129,8 +129,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         println!("(JS) Skipping build. Instead we are publishing {}", path.display());
         (path.clone(), "Js")
     } else {
-        let path = build::exec_with_argstring(config.clone(), path_to_project, build_options).await?;
-        (path, "Wasm")
+        build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
     };
     let program_bytes = fs::read(path_to_program)?;
 
@@ -212,6 +211,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // Set the host type.
     builder = builder.query(&[("host_type", host_type)]);
+
+    // JS/TS is beta quality atm.
+    if host_type == "Js" {
+        println!("JavaScript / TypeScript support is currently in BETA.");
+        println!("There may be bugs. Please file issues if you encounter any.");
+        println!("<https://github.com/clockworklabs/SpacetimeDB/issues/new>");
+    }
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {

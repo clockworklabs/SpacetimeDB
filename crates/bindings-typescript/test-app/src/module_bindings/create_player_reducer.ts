@@ -36,6 +36,8 @@ export type CreatePlayer = {
   name: string;
   location: Point;
 };
+let _cached_CreatePlayer_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -45,12 +47,15 @@ export const CreatePlayer = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'name', algebraicType: __AlgebraicTypeValue.String },
-        { name: 'location', algebraicType: Point.getTypeScriptAlgebraicType() },
-      ],
+    if (_cached_CreatePlayer_type_value) return _cached_CreatePlayer_type_value;
+    _cached_CreatePlayer_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_CreatePlayer_type_value.value.elements.push(
+      { name: 'name', algebraicType: __AlgebraicTypeValue.String },
+      { name: 'location', algebraicType: Point.getTypeScriptAlgebraicType() }
+    );
+    return _cached_CreatePlayer_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: CreatePlayer): void {

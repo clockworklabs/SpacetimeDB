@@ -38,13 +38,13 @@ concrete situation.
 
 For example:
 
-> To find rows in a table *table* with a given value in a `#[unique]` or `#[primary_key]` column, do:
+> To find rows in a table _table_ with a given value in a `#[unique]` or `#[primary_key]` column, do:
 >
 > ```rust
 > ctx.db.{table}().{column}().find({value})
 > ```
 >
-> where *column* is the name of the unique column and *value* is the value you're looking for in that column.
+> where _column_ is the name of the unique column and _value_ is the value you're looking for in that column.
 > For example:
 >
 > ```rust
@@ -69,7 +69,7 @@ Call missing features "current limitations" and bugs "known issues."
 
 Be up-front about what isn't implemented right now. It's better for our users to be told up front that something is broken or not done yet than for them to expect it to work and to be surprised when it doesn't.
 
-Don't make promises, even weak ones, about what we plan to do in the future, within tutorials or reference documents. Statements about the future belong in a separate "roadmap" or "future plans" document. Our idea of "soon" is often very different from our users', and our priorities shift rapidly and frequently enough that statements about our future plans rarely end up being accurate. 
+Don't make promises, even weak ones, about what we plan to do in the future, within tutorials or reference documents. Statements about the future belong in a separate "roadmap" or "future plans" document. Our idea of "soon" is often very different from our users', and our priorities shift rapidly and frequently enough that statements about our future plans rarely end up being accurate.
 
 If your document needs to describe a feature that isn't implemented yet, either rewrite to not depend on that feature, or just say that it's a "current limitation" without elaborating further. Include a workaround if there is one.
 
@@ -77,7 +77,7 @@ If your document needs to describe a feature that isn't implemented yet, either 
 
 When describing GUI elements and menu items, like the **Unity Registry** tab, use bolded text to draw attention to any phrases that will appear in the actual UI. Readers will see this bolded text in the documentation and look for it on their screen. Where applicable, include a short description of the type or category of element, like "tab" above, or the **File** menu. This category should not be bolded, since it is not a word the reader can expect to find on their screen.
 
-When describing a chain of accesses through menus and submenus, use the **->** thin arrow (that's `->`, a hyphen followed by a greater-than sign) as a separator, like **File -> Quit** or **Window -> Package Manager**. List the top-level menu first, and proceed left-to-right until you reach the option you want the user to interact with. Include all nested submenus, like **Foo -> Bar -> Baz -> Quux**. Bold the whole sequence, including the arrows. 
+When describing a chain of accesses through menus and submenus, use the **->** thin arrow (that's `->`, a hyphen followed by a greater-than sign) as a separator, like **File -> Quit** or **Window -> Package Manager**. List the top-level menu first, and proceed left-to-right until you reach the option you want the user to interact with. Include all nested submenus, like **Foo -> Bar -> Baz -> Quux**. Bold the whole sequence, including the arrows.
 
 It's generally not necessary or desirable to tell users where to look for the top-level menu. You may be tempted to write something like, "Open the **File** menu in the upper left, and navigate **File -> Export as -> Export as PDF**." Do not include "in the upper left" unless you are absolutely confident that the menu will be located there on any combination of OS, version, desktop environment, window manager, theming configuration &c. Even within a single system, UI designers are known to move graphical elements around during updates, making statements like "upper left" obsolete and stale. We can generally trust our readers to be familiar with their own systems and the software they use, and none of our documents involve introducing readers to new GUI software. (E.g. the Unity tutorial is targeted at introducing SpacetimeDB to people who already know Unity.) "Open the **File** menu and navigate **File -> Export as -> Export as PDF**" is sufficient.
 
@@ -103,28 +103,29 @@ A client does NOT "connect to the module". A client **connects to the database**
 This distinction is subtle but important. People know what databases are, and we should reinforce that SpacetimeDB is a database. "Module" is a quirky bit of vocabulary we use to refer to collections of stored procedures. A RUNNING APPLICATION IS NOT CALLED A MODULE.
 
 Other key vocabulary:
+
 - (SpacetimeDB) **Host**: the application that hosts **databases**. It is multi-tenant and can host many **databases** at once.
 - **Client**: any application that connects to a **database**.
 - **End user**: anybody using a **client**.
 - **Database developer**: the person who maintains a **database**.
-    - DO NOT refer to database developers as "users" in documentation.
-      Sometimes we colloquially refer to them as "our users" internally,
-      but it is clearer to use the term "database developers" in public.
+  - DO NOT refer to database developers as "users" in documentation.
+    Sometimes we colloquially refer to them as "our users" internally,
+    but it is clearer to use the term "database developers" in public.
 - **Table**: A set of typed, labeled **rows**. Each row stores data for a number of **columns**. Used to store data in a **database**.
 - **Column**: you know what this is.
 - **Row**: you know what this is.
-    - DO NOT refer to rows as "tuples", because the term overlaps confusingly with "tuple types" in module languages.
-      We reserve the word "tuple" to refer to elements of these types.
+  - DO NOT refer to rows as "tuples", because the term overlaps confusingly with "tuple types" in module languages.
+    We reserve the word "tuple" to refer to elements of these types.
 - **Reducer**: A stored procedure that can be called remotely in order to update a **database**.
-    - Confusingly, reducers do not actually "reduce" data in the sense of querying and compressing it to return a result.
-      But it is too late to change it. C'est la vie.
+  - Confusingly, reducers do not actually "reduce" data in the sense of querying and compressing it to return a result.
+    But it is too late to change it. C'est la vie.
 - **Connection**: a connection between a **client** and a **database**. Receives an **Address**. A single connection may open multiple **subscriptions**.
 - **Subscription**: an active query that mirrors data from the database to a **client**.
 - **Address**: identifier for an active connection.
 - **Identity**: A combination of an issuing OpenID Connect provider and an Identity Token issued by that provider. Globally unique and public.
-    - Technically, "Identity" should be called "Identifier", but it is too late to change it.
-    - A particular **end user** may have multiple Identities issued by different providers.
-    - Each **database** also has an **Identity**.
+  - Technically, "Identity" should be called "Identifier", but it is too late to change it.
+  - A particular **end user** may have multiple Identities issued by different providers.
+  - Each **database** also has an **Identity**.
 
 ## Reference pages
 
@@ -144,19 +145,19 @@ Use the declarative voice when describing how code works or what it does. [For e
 >
 > An `ArrayList` can support multiple readers concurrently, as long as the collection is not modified. To guarantee the thread safety of the `ArrayList`, all operations must be done through the wrapper returned by the `Synchronized(IList)` method.
 
-#### *Usually* don't refer to the reader
+#### _Usually_ don't refer to the reader
 
 Use second-person pronouns (i.e. "you") sparingly to draw attention to actions the reader should take to work around bugs or avoid footguns. Often these advisories should be pulled out into note, warning or quote-blocks. [For example](https://learn.microsoft.com/en-us/dotnet/api/system.collections.arraylist?view=net-8.0):
 
 > Enumerating through a collection is intrinsically not a thread-safe procedure. Even when a collection is synchronized, other threads can still modify the collection, which causes the enumerator to throw an exception. To guarantee thread safety during enumeration, you can either lock the collection during the entire enumeration or catch the exceptions resulting from changes made by other threads.
 
-#### *Usually* don't refer to "we" or "us"
+#### _Usually_ don't refer to "we" or "us"
 
 Use first-person pronouns sparingly to draw attention to non-technical information like design advice. Always use the first-person plural (i.e. "we" or "us") and never the singular (i.e. "I" or "me"). Often these should be accompanied by marker words like "recommend," "advise," "encourage" or "discourage." [For example](https://learn.microsoft.com/en-us/dotnet/api/system.collections.arraylist?view=net-8.0):
 
 > We don't recommend that you use the `ArrayList` class for new development. Instead, we recommend that you use the generic `List<T>` class.
 
-#### *Usually* Avoid Passive Voice
+#### _Usually_ Avoid Passive Voice
 
 Use active voice rather than passive voice to avoid ambiguity regarding who is doing the action. Active voice directly attributes actions to the subject, making sentences easier to understand. For example:
 
@@ -168,14 +169,15 @@ The second example is more straightforward and clarifies who is performing the a
 However, passive voice may be appropriate in certain contexts where the actor is either unknown or irrelevant. In these cases, the emphasis is placed on the action or result rather than the subject performing it. For example:
 
 - "The `Dispose` method is called automatically when the object is garbage collected."
+
 ### Tables and links
 
 Each reference page should have one or more two-column tables, where the left column are namespace-qualified names or signatures, and the right column are one-sentence descriptions. Headers are optional. If the table contains multiple different kinds of items (e.g. types and functions), the left column should include the kind as a suffix. [For example](https://learn.microsoft.com/en-us/dotnet/api/?view=net-8.0):
 
-> | Name | Description |
-> |-|-|
+> | Name                                       | Description                                                                                          |
+> | ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
 > | `Microsoft.CSharp.RuntimeBinder` Namespace | Provides classes and interfaces that support interoperation between Dynamic Language Runtime and C#. |
-> | `Microsoft.VisualBasic` Namespace | Contains types that support the Visual Basic Runtime in Visual Basic. |
+> | `Microsoft.VisualBasic` Namespace          | Contains types that support the Visual Basic Runtime in Visual Basic.                                |
 
 The names should be code-formatted, and should be links to a page or section for that definition. The short descriptions should be the same as are used at the start of the linked page or section (see below).
 
@@ -207,7 +209,7 @@ When writing a section for an individual definition, start with any metadata tha
 > [...]
 > Implements the IList interface using an array whose size is dynamically increased as required.
 
-Next, add a triple-backtick code block that contains just the declaration or signature of the variable, function or method you're describing. 
+Next, add a triple-backtick code block that contains just the declaration or signature of the variable, function or method you're describing.
 
 What, specifically, counts as the declaration or signature is somewhat context-dependent. A good general rule is that it's everything in the source code to the left of the equals sign `=` or curly braces `{}`. You can edit this to remove implementation details (e.g. superclasses that users aren't supposed to see), or to add information that would be helpful but isn't in the source (e.g. trait bounds on generic parameters of types which aren't required to instantiate the type, but which most methods require, like `Eq + Hash` for `HashMap`). [For example](https://learn.microsoft.com/en-us/dotnet/api/system.collections.arraylist?view=net-8.0):
 
@@ -219,7 +221,7 @@ If necessary, this should be followed by one or more paragraphs of more in-depth
 
 #### Examples
 
-Next, within a subheader named "Examples," include a code block with examples. 
+Next, within a subheader named "Examples," include a code block with examples.
 
 To the extent possible, this code block should be freestanding. If it depends on external definitions that aren't included in the standard library or are not otherwise automatically accessible, add a note so that users know what they need to supply themselves (e.g. that the `mod module_bindings;` refers to the `quickstart-chat` module). Do not be afraid to paste the same "header" or "prelude" code (e.g. a table declaration) into a whole bunch of code blocks, but try to avoid making easy-to-miss minor edits to such "header" code.
 
@@ -261,7 +263,7 @@ Add comments to this code block which describe what it does. In particular, if t
 >     Count:    3
 >     Capacity: 4
 >     Values:   Hello   World   !
-> 
+>
 > */
 > ```
 
@@ -333,7 +335,7 @@ You don't have to teach the reader non-SpacetimeDB-specific things. If you're wr
 
 Each tutorial should start with a statement of its scope (what new concepts are introduced), goal (what you build or do during the tutorial) and prerequisites (what other tutorials you should have finished first).
 
-> In this tutorial, we'll implement a simple chat server as a SpacetimeDB module. We'll learn how to declare tables and to write reducers, functions which run in the database to modify those tables in response to client requests. Before starting, make sure you've [installed SpacetimeDB](/install) and [logged in with a developer `Identity`](/auth/for-devs).
+> In this tutorial, we'll implement a simple chat server as a SpacetimeDB module. We'll learn how to declare tables and to write reducers, functions which run in the database to modify those tables in response to client requests. Before starting, make sure you've [installed SpacetimeDB](https://spacetimedb.com/install) and [logged in with a developer `Identity`](/auth/for-devs).
 
 ### Introducing and linking to definitions
 
@@ -353,7 +355,7 @@ Include even uninteresting code, like imports! You can rush through these withou
 > use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
 > ```
 
-For code that *is* interesting, after the code block, add a description of what the code does. Usually this will be pretty succinct, as the code should hopefully be pretty clear on its own.
+For code that _is_ interesting, after the code block, add a description of what the code does. Usually this will be pretty succinct, as the code should hopefully be pretty clear on its own.
 
 ### Words for telling the user to write code
 
@@ -379,11 +381,11 @@ Start the conclusion with a sentence or paragraph that reminds the reader what t
 
 If this tutorial is part of a series, link to the next entry:
 
-> You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart). If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1).
+> You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/sdks/rust/quickstart), [C#](/sdks/c-sharp/quickstart), or [TypeScript](/sdks/typescript/quickstart). If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/unity/part-1).
 
 If this tutorial is about a specific component, link to its reference page:
 
-> Check out the [Rust SDK Reference](/docs/sdks/rust) for a more comprehensive view of the SpacetimeDB Rust SDK.
+> Check out the [Rust SDK Reference](/sdks/rust) for a more comprehensive view of the SpacetimeDB Rust SDK.
 
 If this tutorial is the end of a series, or ends with a reasonably complete app, throw in some ideas about how the reader could extend it:
 
