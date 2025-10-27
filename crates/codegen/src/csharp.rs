@@ -791,6 +791,10 @@ impl Lang for Csharp<'_> {
                     }
                     writeln!(
                         output,
+                        r#""" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),"#
+                    );
+                    writeln!(
+                        output,
                         r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
                     );
                 }

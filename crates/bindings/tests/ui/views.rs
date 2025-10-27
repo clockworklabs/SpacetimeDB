@@ -72,54 +72,60 @@ struct Player {
 
 struct NotSpacetimeType {}
 
-/// Private views not allowed; must be `#[view(public)]`
-#[view]
+/// Private views not allowed; must be `#[view(public, ...)]`
+#[view(name = view_def_no_public)]
 fn view_def_no_public(_: &ViewContext) -> Vec<Player> {
     vec![]
 }
 
 /// Duplicate `public`
-#[view(public, public)]
-fn view_def_duplicate_attribute_arg() -> Vec<Player> {
+#[view(name = view_def_dup_public, public, public)]
+fn view_def_dup_public() -> Vec<Player> {
+    vec![]
+}
+
+/// Duplicate `name`
+#[view(name = view_def_dup_name, name = view_def_dup_name, public)]
+fn view_def_dup_name() -> Vec<Player> {
     vec![]
 }
 
 /// Unsupported attribute arg
-#[view(public, anonymous)]
-fn view_def_unsupported_attribute_arg() -> Vec<Player> {
+#[view(name = view_def_unsupported_arg, public, anonymous)]
+fn view_def_unsupported_arg() -> Vec<Player> {
     vec![]
 }
 
 /// A `ViewContext` is required
-#[view(public)]
+#[view(name = view_def_no_context, public)]
 fn view_def_no_context() -> Vec<Player> {
     vec![]
 }
 
 /// A `ViewContext` is required
-#[view(public)]
+#[view(name = view_def_wrong_context, public)]
 fn view_def_wrong_context(_: &ReducerContext) -> Vec<Player> {
     vec![]
 }
 
 /// Must pass the `ViewContext` by ref
-#[view(public)]
+#[view(name = view_def_pass_context_by_value, public)]
 fn view_def_pass_context_by_value(_: ViewContext) -> Vec<Player> {
     vec![]
 }
 
 /// The view context must be the first parameter
-#[view(public)]
+#[view(name = view_def_wrong_context_position, public)]
 fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
     vec![]
 }
 
 /// Must return `Vec<T>` or `Option<T>` where `T` is a SpacetimeType
-#[view(public)]
+#[view(name = view_def_no_return, public)]
 fn view_def_no_return(_: &ViewContext) {}
 
 /// Must return `Vec<T>` or `Option<T>` where `T` is a SpacetimeType
-#[view(public)]
+#[view(name = view_def_wrong_return, public)]
 fn view_def_wrong_return(_: &ViewContext) -> Player {
     Player {
         identity: Identity::ZERO,
@@ -127,7 +133,7 @@ fn view_def_wrong_return(_: &ViewContext) -> Player {
 }
 
 /// Must return `Vec<T>` or `Option<T>` where `T` is a SpacetimeType
-#[view(public)]
+#[view(name = view_def_returns_not_a_spacetime_type, public)]
 fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<NotSpacetimeType> {
     None
 }
@@ -144,7 +150,7 @@ struct ScheduledTable {
 }
 
 /// Cannot use a view as a scheduled function
-#[view(public)]
+#[view(name = scheduled_table_view, public)]
 fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
     vec![]
 }
