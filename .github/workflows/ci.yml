@@ -13,6 +13,13 @@ on:
 
 name: CI
 
+concurrency:
+  # Use the PR number when available; otherwise a unique run_id so non-PR
+  # events never share a group.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  # Only cancel when the event is a pull_request
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   docker_smoketests:
     name: Smoketests
