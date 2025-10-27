@@ -99,8 +99,8 @@ Let's start by defining the `Config` table. This is a simple table which will st
 #[spacetimedb::table(name = config, public)]
 pub struct Config {
     #[primary_key]
-    pub id: u32,
-    pub world_size: u64,
+    pub id: i32,
+    pub world_size: i64,
 }
 ```
 
@@ -123,8 +123,8 @@ Let's start by defining the `Config` table. This is a simple table which will st
 public partial struct Config
 {
     [PrimaryKey]
-    public uint id;
-    public ulong world_size;
+    public int id;
+    public long world_size;
 }
 ```
 
@@ -178,17 +178,17 @@ pub struct Entity {
     // this value should be determined by SpacetimeDB on insert.
     #[auto_inc]
     #[primary_key]
-    pub entity_id: u32,
+    pub entity_id: i32,
     pub position: DbVector2,
-    pub mass: u32,
+    pub mass: i32,
 }
 
 #[spacetimedb::table(name = circle, public)]
 pub struct Circle {
     #[primary_key]
-    pub entity_id: u32,
+    pub entity_id: i32,
     #[index(btree)]
-    pub player_id: u32,
+    pub player_id: i32,
     pub direction: DbVector2,
     pub speed: f32,
     pub last_split_time: Timestamp,
@@ -197,7 +197,7 @@ pub struct Circle {
 #[spacetimedb::table(name = food, public)]
 pub struct Food {
     #[primary_key]
-    pub entity_id: u32,
+    pub entity_id: i32,
 }
 ```
 
@@ -230,18 +230,18 @@ Let's create a few tables to represent entities in our game by adding the follow
 public partial struct Entity
 {
     [PrimaryKey, AutoInc]
-    public uint entity_id;
+    public int entity_id;
     public DbVector2 position;
-    public uint mass;
+    public int mass;
 }
 
 [Table(Name = "circle", Public = true)]
 public partial struct Circle
 {
     [PrimaryKey]
-    public uint entity_id;
+    public int entity_id;
     [SpacetimeDB.Index.BTree]
-    public uint player_id;
+    public int player_id;
     public DbVector2 direction;
     public float speed;
     public SpacetimeDB.Timestamp last_split_time;
@@ -251,7 +251,7 @@ public partial struct Circle
 public partial struct Food
 {
     [PrimaryKey]
-    public uint entity_id;
+    public int entity_id;
 }
 ```
 
@@ -281,7 +281,7 @@ pub struct Player {
     identity: Identity,
     #[unique]
     #[auto_inc]
-    player_id: u32,
+    player_id: i32,
     name: String,
 }
 ```
@@ -298,7 +298,7 @@ public partial struct Player
     [PrimaryKey]
     public Identity identity;
     [Unique, AutoInc]
-    public uint player_id;
+    public int player_id;
     public string name;
 }
 ```
