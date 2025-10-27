@@ -28,7 +28,6 @@ function Install {
         $Installer = Join-Path ([System.IO.Path]::GetTempPath()) "vc_redist.x64.exe"
         Invoke-WebRequest $DownloadUrl -OutFile $Installer -UseBasicParsing
         Start-Process -Wait -FilePath $Installer -ArgumentList "/quiet", "/install"
-        return
     }
 
     $DownloadUrl = "https://github.com/clockworklabs/SpacetimeDB/releases/latest/download/spacetimedb-update-x86_64-pc-windows-msvc.exe"
