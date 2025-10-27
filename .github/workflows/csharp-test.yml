@@ -6,6 +6,12 @@ on:
       - master
   pull_request:
 
+concurrency:
+  # When a PR number isn't available, the event won't be a `pull_request` event so it won't matter.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  # Only cancel when the event is a pull_request
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   unity-testsuite:
     runs-on: spacetimedb-runner
