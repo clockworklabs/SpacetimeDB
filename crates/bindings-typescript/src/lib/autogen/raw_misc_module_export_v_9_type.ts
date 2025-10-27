@@ -19,12 +19,20 @@ import {
 import { RawColumnDefaultValueV9 } from './raw_column_default_value_v_9_type';
 // Mark import as potentially unused
 declare type __keep_RawColumnDefaultValueV9 = RawColumnDefaultValueV9;
+import { RawProcedureDefV9 } from './raw_procedure_def_v_9_type';
+// Mark import as potentially unused
+declare type __keep_RawProcedureDefV9 = RawProcedureDefV9;
+import { RawViewDefV9 } from './raw_view_def_v_9_type';
+// Mark import as potentially unused
+declare type __keep_RawViewDefV9 = RawViewDefV9;
 
 import * as RawMiscModuleExportV9Variants from './raw_misc_module_export_v_9_variants';
 
 // The tagged union or sum type for the algebraic type `RawMiscModuleExportV9`.
 export type RawMiscModuleExportV9 =
-  RawMiscModuleExportV9Variants.ColumnDefaultValue;
+  | RawMiscModuleExportV9Variants.ColumnDefaultValue
+  | RawMiscModuleExportV9Variants.Procedure
+  | RawMiscModuleExportV9Variants.View;
 
 let _cached_RawMiscModuleExportV9_type_value: __AlgebraicTypeType | null = null;
 
@@ -42,6 +50,13 @@ export const RawMiscModuleExportV9 = {
     tag: 'ColumnDefaultValue',
     value,
   }),
+  Procedure: (
+    value: RawProcedureDefV9
+  ): RawMiscModuleExportV9Variants.Procedure => ({ tag: 'Procedure', value }),
+  View: (value: RawViewDefV9): RawMiscModuleExportV9Variants.View => ({
+    tag: 'View',
+    value,
+  }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
     if (_cached_RawMiscModuleExportV9_type_value)
@@ -49,10 +64,17 @@ export const RawMiscModuleExportV9 = {
     _cached_RawMiscModuleExportV9_type_value = __AlgebraicTypeValue.Sum({
       variants: [],
     });
-    _cached_RawMiscModuleExportV9_type_value.value.variants.push({
-      name: 'ColumnDefaultValue',
-      algebraicType: RawColumnDefaultValueV9.getTypeScriptAlgebraicType(),
-    });
+    _cached_RawMiscModuleExportV9_type_value.value.variants.push(
+      {
+        name: 'ColumnDefaultValue',
+        algebraicType: RawColumnDefaultValueV9.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'Procedure',
+        algebraicType: RawProcedureDefV9.getTypeScriptAlgebraicType(),
+      },
+      { name: 'View', algebraicType: RawViewDefV9.getTypeScriptAlgebraicType() }
+    );
     return _cached_RawMiscModuleExportV9_type_value;
   },
 
