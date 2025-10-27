@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -75,13 +76,12 @@ fn generate_template_files() {
         generated_code.push_str("\")\n");
         generated_code.push_str("}\n");
 
-        let cursorrules_relative = cursorrules_path.strip_prefix(&repo_root).unwrap();
-        println!("cargo:rerun-if-changed={}", cursorrules_relative.display());
+        println!("cargo:rerun-if-changed={}", cursorrules_path.display());
     } else {
         panic!("Could not find \"docs/.cursor/rules/spacetimedb.md\" file.");
     }
 
-    fs::write(dest_path, generated_code).expect("Failed to write embedded_templates.rs");
+    write_if_changed(&dest_path, generated_code.as_bytes()).expect("Failed to write embedded_templates.rs");
 }
 
 fn generate_template_entry(code: &mut String, template_path: &Path, source: &str, manifest_dir: &str) {
@@ -111,10 +111,6 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
         let sanitized_source = source.replace("/", "_").replace("\\", "_").replace("..", "parent");
         // Example: /Users/user/SpacetimeDB/crates/cli/.templates/parent_parent_modules_quickstart-chat
         let copy_dir = Path::new(manifest_dir).join(".templates").join(&sanitized_source);
-
-        if copy_dir.exists() {
-            fs::remove_dir_all(&copy_dir).expect("Failed to remove old template copy");
-        }
         fs::create_dir_all(&copy_dir).expect("Failed to create .templates directory");
 
         Some(copy_dir)
@@ -152,18 +148,15 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
                 // Example dest_file: /Users/user/SpacetimeDB/crates/cli/.templates/parent_parent_modules_quickstart-chat/src/lib.rs
                 let dest_file = copy_dir.join(relative_path);
                 fs::create_dir_all(dest_file.parent().unwrap()).expect("Failed to create parent directory");
-                fs::copy(&full_path, &dest_file)
-                    .expect(&format!("Failed to copy file {:?} to {:?}", full_path, dest_file));
+                copy_if_changed(&full_path, &dest_file)
+                    .unwrap_or_else(|_| panic!("Failed to copy file {:?} to {:?}", full_path, dest_file));
 
                 // Example relative_to_manifest: .templates/parent_parent_modules_quickstart-chat/src/lib.rs
                 let relative_to_manifest = dest_file.strip_prefix(manifest_dir).unwrap();
                 let path_str = relative_to_manifest.to_str().unwrap().replace("\\", "/");
                 // Watch the original file for changes
                 // Example: modules/quickstart-chat/src/lib.rs
-                println!(
-                    "cargo:rerun-if-changed={}",
-                    file_path.to_str().unwrap().replace("\\", "/")
-                );
+                println!("cargo:rerun-if-changed={}", full_path.display());
                 path_str
             } else {
                 // Inside crate: use path relative to CARGO_MANIFEST_DIR
@@ -173,10 +166,7 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
                 let relative_to_manifest = file_path.strip_prefix(manifest_rel).unwrap();
                 let path_str = relative_to_manifest.to_str().unwrap().replace("\\", "/");
                 // Example: crates/cli/templates/basic-rust/server/src/lib.rs
-                println!(
-                    "cargo:rerun-if-changed={}",
-                    file_path.to_str().unwrap().replace("\\", "/")
-                );
+                println!("cargo:rerun-if-changed={}", full_path.display());
                 path_str
             };
 
@@ -242,4 +232,33 @@ fn get_repo_root() -> PathBuf {
         .expect("Failed to get git repo root");
     let path = String::from_utf8(output.stdout).unwrap().trim().to_string();
     PathBuf::from(path)
+}
+
+fn write_if_changed(path: &Path, contents: &[u8]) -> io::Result<()> {
+    match fs::read(path) {
+        Ok(existing) if existing == contents => Ok(()),
+        _ => {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut file = fs::File::create(path)?;
+            file.write_all(contents)
+        }
+    }
+}
+
+fn copy_if_changed(src: &Path, dst: &Path) -> io::Result<()> {
+    let src_bytes = fs::read(src)?;
+    if let Ok(existing) = fs::read(dst) {
+        if existing == src_bytes {
+            return Ok(());
+        }
+    }
+
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut file = fs::File::create(dst)?;
+    file.write_all(&src_bytes)
 }
