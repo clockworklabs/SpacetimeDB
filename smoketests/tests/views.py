@@ -14,7 +14,7 @@ pub struct PlayerState {
     level: u64,
 }
 
-#[spacetimedb::view(public)]
+#[spacetimedb::view(name = player, public)]
 pub fn player(ctx: &ViewContext, id: u64) -> Option<PlayerState> {
     ctx.db.player_state().id().find(id)
 }
@@ -60,7 +60,7 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb::view(public)]
+#[spacetimedb::view(name = person, public)]
 pub fn person(ctx: &ViewContext) -> Option<Person> {
     None
 }
@@ -76,7 +76,7 @@ pub enum ABC {
     C,
 }
 
-#[spacetimedb::view(public)]
+#[spacetimedb::view(name = person, public)]
 pub fn person(ctx: &ViewContext) -> Option<ABC> {
     None
 }

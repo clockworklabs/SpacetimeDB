@@ -1,0 +1,56 @@
+name: Docs / Publish
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - docs/release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+      
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
+      - name: Get pnpm store directory
+        working-directory: sdks/typescript
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v4
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        working-directory: docs
+        run: pnpm install
+
+      - name: Docusaurus build
+        working-directory: docs
+        run: pnpm build
+
+      - name: Publish docs to S3
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.DOCS_AWS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.DOCS_AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: spacetimedb-docs
+          source_dir: docs/build
+          destination_dir: 'docs'

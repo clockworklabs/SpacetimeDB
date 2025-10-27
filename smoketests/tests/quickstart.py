@@ -178,8 +178,8 @@ class BaseQuickstart(Smoketest):
 
 class Rust(BaseQuickstart):
     lang = "rust"
-    server_doc = STDB_DIR / "docs/docs/modules/rust/quickstart.md"
-    client_doc = STDB_DIR / "docs/docs/sdks/rust/quickstart.md"
+    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/02-rust-quickstart.md"
+    client_doc = STDB_DIR / "docs/docs/07-Client SDK Languages/04-rust-quickstart.md"
     server_file = "src/lib.rs"
     client_file = "src/main.rs"
     module_bindings = "src/module_bindings"
@@ -227,8 +227,8 @@ fn user_input_direct(ctx: &DbConnection) {
 
 class CSharp(BaseQuickstart):
     lang = "csharp"
-    server_doc = STDB_DIR / "docs/docs/modules/c-sharp/quickstart.md"
-    client_doc = STDB_DIR / "docs/docs/sdks/c-sharp/quickstart.md"
+    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/04-csharp-quickstart.md"
+    client_doc = STDB_DIR / "docs/docs/07-Client SDK Languages/02-csharp-quickstart.md"
     server_file = "Lib.cs"
     client_file = "Program.cs"
     module_bindings = "module_bindings"

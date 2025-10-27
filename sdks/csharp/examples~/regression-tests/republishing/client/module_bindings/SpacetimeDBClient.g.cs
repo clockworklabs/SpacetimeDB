@@ -468,6 +468,7 @@ namespace SpacetimeDB.Types
             return update.ReducerCall.ReducerName switch
             {
                 "Insert" => BSATNHelpers.Decode<Reducer.Insert>(encodedArgs),
+                "" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),
                 var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
             };
         }

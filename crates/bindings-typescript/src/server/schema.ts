@@ -175,24 +175,26 @@ class Schema<S extends UntypedSchemaDef> {
     name: string,
     params: Params,
     fn: Reducer<S, Params>
-  ): void;
+  ): Reducer<S, Params>;
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  reducer(name: string, fn: Reducer<S, {}>): void;
+  reducer(name: string, fn: Reducer<S, {}>): Reducer<S, {}>;
   reducer<Params extends ParamsObj | RowObj>(
     name: string,
     paramsOrFn: Params | Reducer<S, any>,
     fn?: Reducer<S, Params>
-  ): void {
+  ): Reducer<S, Params> {
     if (typeof paramsOrFn === 'function') {
       // This is the case where params are omitted.
       // The second argument is the reducer function.
       // We pass an empty object for the params.
       reducer(name, {}, paramsOrFn);
+      return paramsOrFn;
     } else {
       // This is the case where params are provided.
       // The second argument is the params object, and the third is the function.
       // The `fn` parameter is guaranteed to be defined here.
       reducer(name, paramsOrFn, fn!);
+      return fn!;
     }
   }
 

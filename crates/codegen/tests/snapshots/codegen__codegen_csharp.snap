@@ -1,5 +1,6 @@
 ---
 source: crates/codegen/tests/codegen.rs
+assertion_line: 37
 expression: outfiles
 ---
 "Reducers/Add.g.cs" = '''
@@ -1463,6 +1464,7 @@ namespace SpacetimeDB
                 "say_hello" => BSATNHelpers.Decode<Reducer.SayHello>(encodedArgs),
                 "test" => BSATNHelpers.Decode<Reducer.Test>(encodedArgs),
                 "test_btree_index_args" => BSATNHelpers.Decode<Reducer.TestBtreeIndexArgs>(encodedArgs),
+                "" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),
                 var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
             };
         }

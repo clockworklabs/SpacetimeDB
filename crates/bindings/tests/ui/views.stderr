@@ -1,48 +1,52 @@
-error: views must be declared as `#[view(public)]`; `public` is required
+error: views must be `public`, e.g. `#[view(public)]`
   --> tests/ui/views.rs:76:1
    |
-76 | #[view]
-   | ^^^^^^^
+76 | #[view(name = view_def_no_public)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: duplicate attribute argument: `public`
-  --> tests/ui/views.rs:82:1
+error: `public` already specified
+  --> tests/ui/views.rs:82:44
    |
-82 | #[view(public, public)]
-   | ^^^^^^^^^^^^^^^^^^^^^^^
-   |
-   = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
+82 | #[view(name = view_def_dup_public, public, public)]
+   |                                            ^^^^^^
 
-error: expected `public`
-  --> tests/ui/views.rs:88:16
+error: `name` already specified
+  --> tests/ui/views.rs:88:34
    |
-88 | #[view(public, anonymous)]
-   |                ^^^^^^^^^
+88 | #[view(name = view_def_dup_name, name = view_def_dup_name, public)]
+   |                                  ^^^^
+
+error: expected `name` or `public`
+  --> tests/ui/views.rs:94:49
+   |
+94 | #[view(name = view_def_unsupported_arg, public, anonymous)]
+   |                                                 ^^^^^^^^^
 
 error: Views must always have a context parameter: `&ViewContext` or `&AnonymousViewContext`
-  --> tests/ui/views.rs:95:1
-   |
-95 | fn view_def_no_context() -> Vec<Player> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   --> tests/ui/views.rs:101:1
+    |
+101 | fn view_def_no_context() -> Vec<Player> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: The first parameter of a view must be a context parameter: `&ViewContext` or `&AnonymousViewContext`; passed by reference
-   --> tests/ui/views.rs:107:38
+   --> tests/ui/views.rs:113:38
     |
-107 | fn view_def_pass_context_by_value(_: ViewContext) -> Vec<Player> {
+113 | fn view_def_pass_context_by_value(_: ViewContext) -> Vec<Player> {
     |                                      ^^^^^^^^^^^
 
 error: views must return `Vec<T>` or `Option<T>` where `T` is a `SpacetimeType`
-   --> tests/ui/views.rs:119:1
+   --> tests/ui/views.rs:125:1
     |
-119 | fn view_def_no_return(_: &ViewContext) {}
+125 | fn view_def_no_return(_: &ViewContext) {}
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
-   --> tests/ui/views.rs:100:1
+   --> tests/ui/views.rs:106:1
     |
-100 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `ViewKind<ReducerContext>`
+106 | #[view(name = view_def_wrong_context, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `ViewKind<ReducerContext>`
     |
     = help: the following other types implement trait `ViewKindTrait`:
               ViewKind<AnonymousViewContext>
@@ -50,18 +54,18 @@ error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not s
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0276]: impl has stricter requirements than trait
-   --> tests/ui/views.rs:100:1
+   --> tests/ui/views.rs:106:1
     |
-100 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ impl has extra requirement `ViewKind<ReducerContext>: ViewKindTrait`
+106 | #[view(name = view_def_wrong_context, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `ViewKind<ReducerContext>: ViewKindTrait`
     |
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `ViewKind<u32>: ViewKindTrait` is not satisfied
-   --> tests/ui/views.rs:112:1
+   --> tests/ui/views.rs:118:1
     |
-112 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `ViewKind<u32>`
+118 | #[view(name = view_def_wrong_context_position, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `ViewKind<u32>`
     |
     = help: the following other types implement trait `ViewKindTrait`:
               ViewKind<AnonymousViewContext>
@@ -69,10 +73,10 @@ error[E0277]: the trait bound `ViewKind<u32>: ViewKindTrait` is not satisfied
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0276]: impl has stricter requirements than trait
-   --> tests/ui/views.rs:112:1
+   --> tests/ui/views.rs:118:1
     |
-112 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ impl has extra requirement `ViewKind<u32>: ViewKindTrait`
+118 | #[view(name = view_def_wrong_context_position, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `ViewKind<u32>: ViewKindTrait`
     |
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -168,10 +172,10 @@ error[E0599]: no method named `delete` found for struct `RangedIndexReadOnly` in
    |                             ^^^^^^ method not found in `RangedIndexReadOnly<test__TableHandle, (u32,), x>`
 
 error[E0599]: no function or associated item named `register` found for struct `ViewRegistrar<ReducerContext>` in the current scope
-   --> tests/ui/views.rs:100:1
+   --> tests/ui/views.rs:106:1
     |
-100 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ function or associated item not found in `ViewRegistrar<ReducerContext>`
+106 | #[view(name = view_def_wrong_context, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewRegistrar<ReducerContext>`
     |
     = note: the function or associated item was found for
             - `ViewRegistrar<AnonymousViewContext>`
@@ -179,9 +183,9 @@ error[E0599]: no function or associated item named `register` found for struct `
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: The first parameter of a `#[view]` must be `&ViewContext` or `&AnonymousViewContext`
-   --> tests/ui/views.rs:101:31
+   --> tests/ui/views.rs:107:31
     |
-101 | fn view_def_wrong_context(_: &ReducerContext) -> Vec<Player> {
+107 | fn view_def_wrong_context(_: &ReducerContext) -> Vec<Player> {
     |                               ^^^^^^^^^^^^^^ the trait `ViewContextArg` is not implemented for `ReducerContext`
     |
     = help: the following other types implement trait `ViewContextArg`:
@@ -189,10 +193,10 @@ error[E0277]: The first parameter of a `#[view]` must be `&ViewContext` or `&Ano
               ViewContext
 
 error[E0599]: no function or associated item named `invoke` found for struct `ViewDispatcher<ReducerContext>` in the current scope
-   --> tests/ui/views.rs:100:1
+   --> tests/ui/views.rs:106:1
     |
-100 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ function or associated item not found in `ViewDispatcher<ReducerContext>`
+106 | #[view(name = view_def_wrong_context, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewDispatcher<ReducerContext>`
     |
     = note: the function or associated item was found for
             - `ViewDispatcher<AnonymousViewContext>`
@@ -200,10 +204,10 @@ error[E0599]: no function or associated item named `invoke` found for struct `Vi
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0599]: no function or associated item named `register` found for struct `ViewRegistrar<u32>` in the current scope
-   --> tests/ui/views.rs:112:1
+   --> tests/ui/views.rs:118:1
     |
-112 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ function or associated item not found in `ViewRegistrar<u32>`
+118 | #[view(name = view_def_wrong_context_position, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewRegistrar<u32>`
     |
     = note: the function or associated item was found for
             - `ViewRegistrar<AnonymousViewContext>`
@@ -211,9 +215,9 @@ error[E0599]: no function or associated item named `register` found for struct `
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: The first parameter of a `#[view]` must be `&ViewContext` or `&AnonymousViewContext`
-   --> tests/ui/views.rs:113:40
+   --> tests/ui/views.rs:119:40
     |
-113 | fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
+119 | fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
     |                                        ^^^ the trait `ViewContextArg` is not implemented for `u32`
     |
     = help: the following other types implement trait `ViewContextArg`:
@@ -221,9 +225,9 @@ error[E0277]: The first parameter of a `#[view]` must be `&ViewContext` or `&Ano
               ViewContext
 
 error[E0277]: the view argument `&ViewContext` does not implement `SpacetimeType`
-   --> tests/ui/views.rs:113:48
+   --> tests/ui/views.rs:119:48
     |
-113 | fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
+119 | fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
     |                                                ^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `ViewContext`
     |
     = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
@@ -241,10 +245,10 @@ error[E0277]: the view argument `&ViewContext` does not implement `SpacetimeType
     = note: required for `&ViewContext` to implement `ViewArg`
 
 error[E0599]: no function or associated item named `invoke` found for struct `ViewDispatcher<u32>` in the current scope
-   --> tests/ui/views.rs:112:1
+   --> tests/ui/views.rs:118:1
     |
-112 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ function or associated item not found in `ViewDispatcher<u32>`
+118 | #[view(name = view_def_wrong_context_position, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewDispatcher<u32>`
     |
     = note: the function or associated item was found for
             - `ViewDispatcher<AnonymousViewContext>`
@@ -252,10 +256,10 @@ error[E0599]: no function or associated item named `invoke` found for struct `Vi
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: invalid view signature
-   --> tests/ui/views.rs:122:1
+   --> tests/ui/views.rs:128:1
     |
-122 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ this view signature is not valid
+128 | #[view(name = view_def_wrong_return, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
     = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> Player {view_def_wrong_return}`
     = note:
@@ -274,9 +278,9 @@ note: required by a bound in `ViewRegistrar::<ViewContext>::register`
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: Views must return `Vec<T>` or `Option<T>` where `T` is a `SpacetimeType`
-   --> tests/ui/views.rs:123:46
+   --> tests/ui/views.rs:129:46
     |
-123 | fn view_def_wrong_return(_: &ViewContext) -> Player {
+129 | fn view_def_wrong_return(_: &ViewContext) -> Player {
     |                                              ^^^^^^ the trait `ViewReturn` is not implemented for `Player`
     |
     = help: the following other types implement trait `ViewReturn`:
@@ -284,10 +288,10 @@ error[E0277]: Views must return `Vec<T>` or `Option<T>` where `T` is a `Spacetim
               Vec<T>
 
 error[E0277]: invalid view signature
-   --> tests/ui/views.rs:122:1
+   --> tests/ui/views.rs:128:1
     |
-122 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ this view signature is not valid
+128 | #[view(name = view_def_wrong_return, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
     = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> Player {view_def_wrong_return}`
     = note:
@@ -306,10 +310,10 @@ note: required by a bound in `ViewDispatcher::<ViewContext>::invoke`
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
-   --> tests/ui/views.rs:130:1
+   --> tests/ui/views.rs:136:1
     |
-130 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
+136 | #[view(name = view_def_returns_not_a_spacetime_type, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
     |
     = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
     = help: the following other types implement trait `SpacetimeType`:
@@ -334,10 +338,10 @@ note: required by a bound in `ViewRegistrar::<AnonymousViewContext>::register`
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `NotSpacetimeType: Serialize` is not satisfied
-   --> tests/ui/views.rs:130:1
+   --> tests/ui/views.rs:136:1
     |
-130 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ the trait `Serialize` is not implemented for `NotSpacetimeType`
+136 | #[view(name = view_def_returns_not_a_spacetime_type, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Serialize` is not implemented for `NotSpacetimeType`
     |
     = help: the following other types implement trait `Serialize`:
               &T
@@ -361,9 +365,9 @@ note: required by a bound in `ViewRegistrar::<AnonymousViewContext>::register`
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
-   --> tests/ui/views.rs:131:71
+   --> tests/ui/views.rs:137:71
     |
-131 | fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<NotSpacetimeType> {
+137 | fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<NotSpacetimeType> {
     |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
     |
     = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
@@ -380,10 +384,10 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
     = note: required for `Option<NotSpacetimeType>` to implement `ViewReturn`
 
 error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
-   --> tests/ui/views.rs:130:1
+   --> tests/ui/views.rs:136:1
     |
-130 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
+136 | #[view(name = view_def_returns_not_a_spacetime_type, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
     |
     = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
     = help: the following other types implement trait `SpacetimeType`:
@@ -408,10 +412,10 @@ note: required by a bound in `ViewDispatcher::<AnonymousViewContext>::invoke`
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `NotSpacetimeType: Serialize` is not satisfied
-   --> tests/ui/views.rs:130:1
+   --> tests/ui/views.rs:136:1
     |
-130 | #[view(public)]
-    | ^^^^^^^^^^^^^^^ the trait `Serialize` is not implemented for `NotSpacetimeType`
+136 | #[view(name = view_def_returns_not_a_spacetime_type, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Serialize` is not implemented for `NotSpacetimeType`
     |
     = help: the following other types implement trait `Serialize`:
               &T
@@ -435,9 +439,9 @@ note: required by a bound in `ViewDispatcher::<AnonymousViewContext>::invoke`
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
-   --> tests/ui/views.rs:131:71
+   --> tests/ui/views.rs:137:71
     |
-131 | fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<NotSpacetimeType> {
+137 | fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<NotSpacetimeType> {
     |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
     |
     = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
@@ -453,28 +457,22 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `SpacetimeType`
 
-error[E0631]: type mismatch in function arguments
-   --> tests/ui/views.rs:136:56
+error[E0277]: invalid signature for scheduled table reducer or procedure
+   --> tests/ui/views.rs:142:56
     |
-136 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
+142 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
     | -------------------------------------------------------^^^^^^^^^^^^^^^^^^^^---
     | |                                                      |
-    | |                                                      expected due to this
+    | |                                                      unsatisfied trait bound
     | required by a bound introduced by this call
-...
-148 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
-    | ------------------------------------------------------------------------------ found signature defined here
     |
-    = note: expected function signature `for<'a> fn(&'a ReducerContext, ScheduledTable) -> _`
-               found function signature `fn(&ViewContext, ScheduledTable) -> _`
-    = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}` to implement `Reducer<'_, (ScheduledTable,)>`
-    = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}` to implement `ReducerForScheduledTable<'_, ScheduledTable>`
-note: required by a bound in `scheduled_reducer_typecheck`
+    = help: the trait `ExportFunctionForScheduledTable<'_, ScheduledTable, FnKindView>` is not implemented for fn item `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}`
+    = note: views cannot be scheduled
+    = note: the scheduled function must take `ScheduledTable` as its sole argument
+    = note: e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: ScheduledTable)`
+    = note: or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: ScheduledTable)`
+note: required by a bound in `scheduled_typecheck`
    --> src/rt.rs
     |
-    | pub const fn scheduled_reducer_typecheck<'de, Row>(_x: impl ReducerForScheduledTable<'de, Row>)
-    |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_reducer_typecheck`
-help: consider wrapping the function in a closure
-    |
-136 | #[spacetimedb::table(name = scheduled_table, scheduled(|arg0: &ReducerContext, arg1: ScheduledTable| scheduled_table_view(/* &ViewContext */, arg1)))]
-    |                                                        +++++++++++++++++++++++++++++++++++++++++++++                     ++++++++++++++++++++++++++
+    | pub const fn scheduled_typecheck<'de, Row, FnKind>(_x: impl ExportFunctionForScheduledTable<'de, Row, FnKind>)
+    |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_typecheck`

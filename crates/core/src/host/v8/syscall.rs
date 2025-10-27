@@ -1205,7 +1205,13 @@ fn console_log<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackA
         <_>::default()
     };
 
-    let env = get_env(scope)?;
+    let env = get_env(scope).inspect_err(|_| {
+        tracing::warn!(
+            "{}:{} {msg}",
+            filename.as_deref().unwrap_or("unknown"),
+            frame.get_line_number()
+        );
+    })?;
 
     let function = env.log_record_function();
     let record = Record {

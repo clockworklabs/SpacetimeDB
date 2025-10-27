@@ -1,13 +1,16 @@
-## Migration note
-We are in the process of moving from the `spacetimedb-docs` repo to the `docs` subdirectory of [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB). **Any new changes should be made there**. The `spacetimedb-docs` repo will only be updated on release. Apologies in advance for any sharp edges while the migration is in progress.
+# SpacetimeDB Documentation
 
-## SpacetimeDB Documentation
+This repository contains the markdown files which are used to display
+documentation on our [website](https://spacetimedb.com/docs).
+This documentation is built using [Docusaurus](https://docusaurus.io/).
 
-This repository contains the markdown files which are used to display documentation on our [website](https://spacetimedb.com/docs).
+## Making Edits
 
-### Making Edits
+To make changes to our docs, you can open a pull request in this repository.
+You can typically edit the files directly using the GitHub web interface, but
+you can also clone our repository and make your edits locally.
 
-To make changes to our docs, you can open a pull request in this repository. You can typically edit the files directly using the GitHub web interface, but you can also clone our repository and make your edits locally. To do this you can follow these instructions:
+### Instructions
 
 1. Fork our repository
 2. Clone your fork:
@@ -17,7 +20,7 @@ git clone ssh://git@github.com/<username>/SpacetimeDB
 cd SpacetimeDB/docs
 ```
 
-3. Make your edits to the docs that you want to make + test them locally
+3. Make your edits to the docs that you want to make + test them locally (See [Testing Locally](#testing-locally))
 4. Commit your changes:
 
 ```bash
@@ -32,18 +35,26 @@ git checkout -b a-branch-name-that-describes-my-change
 git push -u origin a-branch-name-that-describes-my-change
 ```
 
-6. Go to our GitHub and open a PR that references your branch in your fork on your GitHub
+6. Go to our GitHub and open a PR that references your branch in your fork on
+   your GitHub
 
-> NOTE! If you make a change to `nav.ts` you will have to run `npm run build` to generate a new `docs/nav.js` file.
+### Docusaurus Documentation
 
-#### CLI Reference Section
-1. Run `cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md`
-2. Run `pnpm format`
+For more information on how to use Docusaurus, see the
+[Docusaurus documentation](https://docusaurus.io/docs).
 
-### Checking Links
+### Testing Locally
 
-We have a CI job which validates internal links. You can run it locally with `npm run check-links`. This will print any internal links (i.e. links to other docs pages) whose targets do not exist, including fragment links (i.e. `#`-ey links to anchors).
+#### Installation
+
+1. Make sure you have [Node.js](https://nodejs.org/) installed
+   (version 22 or higher is recommended).
+2. Clone the repository and navigate to the `docs` directory.
+3. Install the dependencies: `pnpm install`
+4. Run the development server: `pnpm dev`, which will start a local server and open a browser window.
+   All changes you make to the markdown files will be reflected live in the browser.
 
 ## License
 
-This documentation repository is licensed under Apache 2.0. See LICENSE.txt for more details.
+This documentation repository is licensed under Apache 2.0.
+See LICENSE.txt for more details

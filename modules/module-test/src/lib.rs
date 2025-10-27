@@ -1,10 +1,12 @@
 #![allow(clippy::disallowed_names)]
-use spacetimedb::log;
+use std::time::Duration;
+
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
     duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
 };
+use spacetimedb::{log, ProcedureContext};
 
 pub type TestAlias = TestA;
 
@@ -435,5 +437,22 @@ fn assert_caller_identity_is_module_identity(ctx: &ReducerContext) {
         panic!("Caller {caller} is not the owner {owner}");
     } else {
         log::info!("Called by the owner {owner}");
+    }
+}
+
+#[spacetimedb::procedure]
+fn sleep_one_second(ctx: &mut ProcedureContext) {
+    let prev_time = ctx.timestamp;
+    let target = prev_time + Duration::from_secs(1);
+    ctx.sleep_until(target);
+    let new_time = ctx.timestamp;
+    let actual_delta = new_time.duration_since(prev_time).unwrap();
+    log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
+}
+
+#[spacetimedb::procedure]
+fn return_value(_ctx: &mut ProcedureContext, foo: u64) -> Baz {
+    Baz {
+        field: format!("{foo}"),
     }
 }

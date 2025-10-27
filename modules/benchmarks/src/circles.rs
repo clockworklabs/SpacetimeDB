@@ -148,7 +148,7 @@ pub fn cross_join_circle_food(ctx: &ReducerContext, expected: u32) {
                 .entity()
                 .id()
                 .find(food.entity_id)
-                .unwrap_or_else(|| panic!("Entity not found: {})", food.entity_id));
+                .unwrap_or_else(|| panic!("Entity not found: {}", food.entity_id));
             black_box(is_overlapping(&circle_entity, &food_entity));
         }
     }
