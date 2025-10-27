@@ -217,7 +217,7 @@ export class {table_handle}<TableName extends string> implements __TableHandle<T
                     columns.iter().map(get_name_and_type).collect()
                 }
                 IndexAlgorithm::Direct(_) => {
-                    eprintln!("Direct indexes are not implemented");
+                    // Direct indexes are not implemented yet.
                     continue;
                 }
                 _ => todo!(),
