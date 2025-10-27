@@ -5,7 +5,6 @@ use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
-use regex::Regex;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -365,7 +364,10 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
         let mut args_map: HashMap<&str, Vec<&str>> = HashMap::new();
         args_map.insert("npm", vec!["install", "--no-fund", "--no-audit", "--loglevel=error"]);
         args_map.insert("yarn", vec!["install", "--no-fund"]);
-        args_map.insert("pnpm", vec!["install", "--ignore-workspace", "--config.ignore-scripts=false"]);
+        args_map.insert(
+            "pnpm",
+            vec!["install", "--ignore-workspace", "--config.ignore-scripts=false"],
+        );
         args_map.insert("bun", vec!["install"]);
 
         let args: &[&str] = args_map.get(pm).map(|v| v.as_slice()).unwrap_or(&[]);
@@ -581,12 +583,7 @@ async fn get_template_config_interactive(
             .trim()
             .to_string();
 
-        create_template_config_from_template_str(
-            project_name.clone(),
-            project_path.clone(),
-            &template_id,
-            &templates,
-        )
+        create_template_config_from_template_str(project_name.clone(), project_path.clone(), &template_id, &templates)
     } else if client_selection == none_index {
         // Ask for server language only
         let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
@@ -778,32 +775,50 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
     Ok(())
 }
 
-fn update_typescript_client_config(client_dir: &Path, module_name: &str, use_local: bool) -> anyhow::Result<()> {
-    let main_path = client_dir.join("src/main.tsx");
-    if !main_path.exists() {
-        return Ok(());
-    }
+/// Writes a `.env.development` file that includes all common
+/// frontend environment variable variants for SpacetimeDB.
+fn write_typescript_client_env_file(client_dir: &Path, module_name: &str, use_local: bool) -> anyhow::Result<()> {
+    let env_path = client_dir.join(".env.development");
 
-    let mut content = fs::read_to_string(&main_path)?;
-
-    let target_uri = if use_local {
+    let db_name = module_name;
+    let host = if use_local {
         "ws://localhost:3000"
     } else {
         "wss://maincloud.spacetimedb.com"
     };
 
-    let module_regex = Regex::new(r#"\.withModuleName\(['"][^'"]*['"]\)"#)?;
-    content = module_regex
-        .replace_all(&content, format!(r#".withModuleName('{}')"#, module_name))
-        .to_string();
+    // Framework-agnostic variants
+    let env_content = format!(
+        "\
+# Generic / backend
+SPACETIMEDB_DB_NAME={db_name}
+SPACETIMEDB_HOST={host}
 
-    let uri_regex = Regex::new(r#"\.withUri\(['"]ws://localhost:3000['"]\)"#)?;
-    content = uri_regex
-        .replace_all(&content, format!(r#".withUri('{}')"#, target_uri))
-        .to_string();
+# Vite
+VITE_SPACETIMEDB_DB_NAME={db_name}
+VITE_SPACETIMEDB_HOST={host}
 
-    fs::write(main_path, content)?;
+# Next.js
+NEXT_PUBLIC_SPACETIMEDB_DB_NAME={db_name}
+NEXT_PUBLIC_SPACETIMEDB_HOST={host}
 
+# Create React App
+REACT_APP_SPACETIMEDB_DB_NAME={db_name}
+REACT_APP_SPACETIMEDB_HOST={host}
+
+# Expo
+EXPO_PUBLIC_SPACETIMEDB_DB_NAME={db_name}
+EXPO_PUBLIC_SPACETIMEDB_HOST={host}
+
+# SvelteKit
+PUBLIC_SPACETIMEDB_DB_NAME={db_name}
+PUBLIC_SPACETIMEDB_HOST={host}
+"
+    );
+
+    fs::write(&env_path, env_content)?;
+
+    println!("✅ Wrote environment configuration to {}", env_path.display());
     Ok(())
 }
 
@@ -873,7 +888,7 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
     match config.client_lang {
         Some(ClientLanguage::TypeScript) => {
             update_package_json(project_path, &config.project_name)?;
-            update_typescript_client_config(project_path, &config.project_name, config.use_local)?;
+            write_typescript_client_env_file(project_path, &config.project_name, config.use_local)?;
             println!(
                 "{}",
                 "Note: Run 'npm install' in the project directory to install dependencies".yellow()

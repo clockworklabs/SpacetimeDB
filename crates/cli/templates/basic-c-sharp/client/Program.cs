@@ -3,11 +3,11 @@ using System.Threading;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
-// The URI of the SpacetimeDB instance hosting our module.
-const string HOST = "http://localhost:3000";
+/// The URI of the SpacetimeDB instance hosting our chat module.
+const string HOST = Environment.GetEnvironmentVariable("SPACETIMEDB_HOST") ?? "http://localhost:3000";
 
-// The module name we chose when we published our module.
-const string DB_NAME = "my-db";
+/// The module name we chose when we published our module.
+const string DB_NAME = Environment.GetEnvironmentVariable("SPACETIMEDB_DB_NAME") ?? "my-db";
 
 void Main()
 {

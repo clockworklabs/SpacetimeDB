@@ -1,16 +1,20 @@
 mod module_bindings;
 use module_bindings::*;
+use std::env;
 
 use spacetimedb_sdk::{DbConnection, Table};
 
-const HOST: &str = "http://localhost:3000";
-const DB_NAME: &str = "my-db";
-
 fn main() {
+    // The URI of the SpacetimeDB instance hosting our chat module.
+    let host: String = env::var("SPACETIMEDB_HOST").unwrap_or("http://localhost:3000".to_string());
+
+    // The module name we chose when we published our module.
+    let db_name: String = env::var("SPACETIMEDB_DB_NAME").unwrap_or("my-db".to_string());
+
     // Connect to the database
     let conn = DbConnection::builder()
-        .with_module_name(DB_NAME)
-        .with_host(HOST)
+        .with_module_name(db_name)
+        .with_host(host)
         .on_connect(|_, _, _| {
             println!("Connected to SpacetimeDB");
         })
