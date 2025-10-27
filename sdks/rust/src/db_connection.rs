@@ -1184,7 +1184,8 @@ async fn parse_loop<M: SpacetimeModule>(
                 error: e.error.to_string(),
             },
             ws::ServerMessage::SubscribeApplied(_) => unreachable!("Rust client SDK never sends `SubscribeSingle`, but received a `SubscribeApplied` from the host... huh?"),
-            ws::ServerMessage::UnsubscribeApplied(_) => unreachable!("Rust client SDK never sends `UnsubscribeSingle`, but received a `UnsubscribeApplied` from the host... huh?")
+            ws::ServerMessage::UnsubscribeApplied(_) => unreachable!("Rust client SDK never sends `UnsubscribeSingle`, but received a `UnsubscribeApplied` from the host... huh?"),
+            ws::ServerMessage::ProcedureResult(_) => todo!("Rust client SDK procedure support"),
         })
         .expect("Failed to send ParsedMessage to main thread");
     }

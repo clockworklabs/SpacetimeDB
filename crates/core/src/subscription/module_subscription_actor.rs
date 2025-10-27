@@ -7,8 +7,8 @@ use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
 use super::{collect_table_update, TableUpdateType};
 use crate::client::messages::{
-    SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult,
-    SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
+    ProcedureResultMessage, SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage,
+    SubscriptionResult, SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
@@ -645,6 +645,22 @@ impl ModuleSubscriptions {
     ) -> Result<(), BroadcastError> {
         self.broadcast_queue
             .send_client_message(recipient, Some(tx_offset), message)
+    }
+
+    /// Like [`Self::send_client_message`],
+    /// but doesn't require a `TxId` because procedures don't hold a transaction open.
+    pub fn send_procedure_message(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        message: ProcedureResultMessage,
+    ) -> Result<(), BroadcastError> {
+        self.broadcast_queue.send_client_message(
+            recipient,
+            // TODO(procedure-tx): We'll need some mechanism for procedures to report their last-referenced TxOffset,
+            // and to pass it here.
+            // This is currently moot, as procedures have no way to open a transaction yet.
+            None, message,
+        )
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
