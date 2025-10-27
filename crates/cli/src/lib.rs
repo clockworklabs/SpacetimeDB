@@ -59,7 +59,7 @@ pub async fn exec_subcommand(
         "rename" => dns::exec(config, args).await,
         "generate" => generate::exec(config, args).await,
         "list" => list::exec(config, args).await,
-        "init" => init::exec(config, args).await,
+        "init" => init::exec(config, args).await.map(|_| ()),
         "build" => build::exec(config, args).await.map(drop),
         "server" => server::exec(config, paths, args).await,
         "subscribe" => subscribe::exec(config, args).await,

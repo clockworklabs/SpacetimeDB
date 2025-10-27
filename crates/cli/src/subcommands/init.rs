@@ -318,12 +318,13 @@ fn create_template_config_from_template_str(
     }
 }
 
-fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) -> anyhow::Result<()> {
+pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) -> anyhow::Result<()> {
     println!(
         "\n{}",
         "TypeScript server requires dependencies to be installed before publishing.".yellow()
     );
 
+    // Prompt for package manager
     let package_manager = if is_interactive {
         let theme = ColorfulTheme::default();
         let choices = vec!["npm", "pnpm", "yarn", "bun", "other"];
@@ -341,47 +342,70 @@ fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) -> a
             _ => None,
         }
     } else {
-        // In non-interactive mode, just print a message
         None
     };
 
     if let Some(pm) = package_manager {
         println!("Installing dependencies with {}...", pm);
-        let output = std::process::Command::new(pm)
-            .arg("install")
-            .current_dir(server_dir)
-            .output()?;
 
-        if output.status.success() {
-            println!("{}", "Dependencies installed successfully!".green());
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("{}", format!("Failed to install dependencies: {}", stderr).red());
-            println!(
-                "{}",
-                format!(
-                    "Please run '{} install' in the {} directory manually.",
-                    pm,
-                    server_dir.display()
-                )
-                .yellow()
-            );
+        let mut pm_cmd = pm;
+
+        // On Windows, npm/yarn/pnpm are CMD shims, bun is a real exe
+        #[cfg(windows)]
+        {
+            if ["npm", "yarn", "pnpm"].contains(&pm) {
+                pm_cmd = Box::leak(format!("{pm}.cmd").into_boxed_str());
+            }
+        }
+
+        // Command arguments
+        let mut args_map: HashMap<&str, Vec<&str>> = HashMap::new();
+        args_map.insert("npm", vec!["install", "--no-fund", "--no-audit", "--loglevel=error"]);
+        args_map.insert("yarn", vec!["install", "--no-fund"]);
+        args_map.insert("pnpm", vec!["install", "--config.ignore-scripts=false"]);
+        args_map.insert("bun", vec!["install"]);
+
+        let args: &[&str] = args_map.get(pm).map(|v| v.as_slice()).unwrap_or(&[]);
+
+        // Run and stream output
+        let status = std::process::Command::new(pm_cmd)
+            .args(args)
+            .current_dir(server_dir)
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                println!("{}", "Dependencies installed successfully!".green());
+            }
+            Ok(s) => {
+                eprintln!(
+                    "{}",
+                    format!("Installation failed (exit code {}).", s.code().unwrap_or(-1)).red()
+                );
+                println!(
+                    "{}",
+                    format!("Please run '{} install' manually in {}.", pm, server_dir.display()).yellow()
+                );
+            }
+            Err(e) => {
+                eprintln!("{}", format!("Failed to execute {}: {}", pm, e).red());
+                println!(
+                    "{}",
+                    format!("Please run '{} install' manually in {}.", pm, server_dir.display()).yellow()
+                );
+            }
         }
     } else {
         println!(
             "{}",
-            format!(
-                "Please install dependencies by running your package manager's install command in the {} directory.",
-                server_dir.display()
-            )
-            .yellow()
+            format!("Please install dependencies manually in {}.", server_dir.display()).yellow()
         );
     }
 
     Ok(())
 }
 
-pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: bool) -> anyhow::Result<()> {
+pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: bool) -> anyhow::Result<PathBuf> {
     let use_local = if args.get_flag("local") {
         true
     } else if is_interactive {
@@ -395,9 +419,9 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
     let project_path = get_project_path(args, &project_name, is_interactive).await?;
 
     let mut template_config = if is_interactive {
-        get_template_config_interactive(args, project_name, project_path).await?
+        get_template_config_interactive(args, project_name, project_path.clone()).await?
     } else {
-        get_template_config_non_interactive(args, project_name, project_path).await?
+        get_template_config_non_interactive(args, project_name, project_path.clone()).await?
     };
 
     template_config.use_local = use_local;
@@ -411,7 +435,7 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         install_typescript_dependencies(&server_dir, is_interactive)?;
     }
 
-    Ok(())
+    Ok(project_path)
 }
 
 async fn get_template_config_non_interactive(
@@ -1097,7 +1121,7 @@ fn check_for_git() -> bool {
     false
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathBuf> {
     println!("{UNSTABLE_WARNING}\n");
 
     let is_interactive = !args.get_flag("non-interactive");
