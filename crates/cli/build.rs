@@ -81,7 +81,7 @@ fn generate_template_files() {
     let (workspace_edition, workspace_versions) =
         extract_workspace_metadata(&workspace_cargo).expect("Failed to extract workspace metadata");
 
-    let cursorrules_path = repo_root.join("docs/.cursor/rules/spacetimedb.md");
+    let cursorrules_path = repo_root.join("docs/.cursor/rules/spacetimedb.mdc");
     if cursorrules_path.exists() {
         generated_code.push_str("pub fn get_cursorrules() -> &'static str {\n");
         generated_code.push_str("    include_str!(\"");
@@ -91,12 +91,12 @@ fn generate_template_files() {
 
         println!("cargo:rerun-if-changed={}", cursorrules_path.display());
     } else {
-        panic!("Could not find \"docs/.cursor/rules/spacetimedb.md\" file.");
+        panic!("Could not find \"docs/.cursor/rules/spacetimedb.mdc\" file.");
     }
 
     // Expose workspace metadata so `spacetime init` can rewrite template manifests without hardcoding versions.
     generated_code.push_str("pub fn get_workspace_edition() -> &'static str {\n");
-    generated_code.push_str(&format!("    \"{}\"\n", workspace_edition.escape_default().to_string()));
+    generated_code.push_str(&format!("    \"{}\"\n", workspace_edition.escape_default()));
     generated_code.push_str("}\n\n");
 
     generated_code.push_str("pub fn get_workspace_dependency_version(name: &str) -> Option<&'static str> {\n");
@@ -292,7 +292,7 @@ fn extract_workspace_metadata(path: &Path) -> io::Result<(String, BTreeMap<Strin
     if let Some(deps) = workspace.get("dependencies").and_then(Value::as_table) {
         for (name, value) in deps {
             let version_opt = match value {
-                Value::String(s) => Some(normalize_version(&s)),
+                Value::String(s) => Some(normalize_version(s)),
                 Value::Table(table) => table.get("version").and_then(Value::as_str).map(normalize_version),
                 _ => None,
             };

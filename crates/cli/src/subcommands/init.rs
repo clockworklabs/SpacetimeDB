@@ -348,7 +348,10 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
     if let Some(pm) = package_manager {
         println!("Installing dependencies with {}...", pm);
 
+        #[cfg(windows)]
         let mut pm_cmd = pm;
+        #[cfg(not(windows))]
+        let pm_cmd = pm;
 
         // On Windows, npm/yarn/pnpm are CMD shims, bun is a real exe
         #[cfg(windows)]
@@ -362,7 +365,7 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
         let mut args_map: HashMap<&str, Vec<&str>> = HashMap::new();
         args_map.insert("npm", vec!["install", "--no-fund", "--no-audit", "--loglevel=error"]);
         args_map.insert("yarn", vec!["install", "--no-fund"]);
-        args_map.insert("pnpm", vec!["install", "--config.ignore-scripts=false"]);
+        args_map.insert("pnpm", vec!["install", "--ignore-workspace", "--config.ignore-scripts=false"]);
         args_map.insert("bun", vec!["install"]);
 
         let args: &[&str] = args_map.get(pm).map(|v| v.as_slice()).unwrap_or(&[]);
@@ -572,20 +575,18 @@ async fn get_template_config_interactive(
             println!("  {} - {}", template.id, template.description);
         }
         println!();
-        loop {
-            let template_id: String = Input::<String>::with_theme(&theme)
-                .with_prompt("Template ID or GitHub repository (owner/repo)")
-                .interact_text()?
-                .trim()
-                .to_string();
+        let template_id: String = Input::<String>::with_theme(&theme)
+            .with_prompt("Template ID or GitHub repository (owner/repo)")
+            .interact_text()?
+            .trim()
+            .to_string();
 
-            return create_template_config_from_template_str(
-                project_name.clone(),
-                project_path.clone(),
-                &template_id,
-                &templates,
-            );
-        }
+        create_template_config_from_template_str(
+            project_name.clone(),
+            project_path.clone(),
+            &template_id,
+            &templates,
+        )
     } else if client_selection == none_index {
         // Ask for server language only
         let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
