@@ -14,9 +14,8 @@ on:
 name: CI
 
 concurrency:
-  # Use the PR number when available; otherwise a unique run_id so non-PR
-  # events never share a group.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  # When a PR number isn't available, the event won't be a `pull_request` event so it won't matter.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   # Only cancel when the event is a pull_request
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
