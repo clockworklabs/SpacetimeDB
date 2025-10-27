@@ -1,20 +1,30 @@
 ---
 title: Overview
+id: overview
 slug: /
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { InstallCardLink } from "@site/src/components/InstallCardLink";
+import { CardLink } from "@site/src/components/CardLink";
+import { CardLinkGrid } from "@site/src/components/CardLinkGrid";
+import { QuickstartLinks } from "@site/src/components/QuickstartLinks";
+import DocsList from "@site/src/components/DocsList";
 
 # SpacetimeDB Documentation
 
 ## Installation
 
-You can run SpacetimeDB as a standalone database server via the `spacetime` CLI tool.
+You can get started by first installing the `spacetime` CLI tool. The `spacetime` CLI tool makes it extremely easy to manage your databases and deployments.
 
-You can find the instructions to install the CLI tool for your platform [here](https://spacetimedb.com/install).
+<InstallCardLink />
 
-To get started running your own standalone instance of SpacetimeDB check out our [Getting Started Guide](/getting-started).
+## Quickstart Guides
+
+Choose your favorite language and follow one of our quickstart guides to get started building your first app with SpacetimeDB.
+
+<QuickstartLinks /> 
 
 ## What is SpacetimeDB?
 
