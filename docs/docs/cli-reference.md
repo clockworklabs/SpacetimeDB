@@ -331,7 +331,7 @@ Initializes a new spacetime project. WARNING: This command is UNSTABLE and subje
 ###### <b>Options:</b>
 
 * `-n`, `--name <NAME>` — Project name
-* `--server-lang <LANG>` — Server language: rust, csharp, typescript (it can only be used when --template is not specified)
+* `--lang <LANG>` — Server language: rust, csharp, typescript (it can only be used when --template is not specified)
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode

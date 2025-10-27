@@ -132,7 +132,7 @@ pub fn cli() -> clap::Command {
                 .help("The path where we will create the spacetime project (defaults to hyphenated project name)"),
         )
         .arg(
-            Arg::new("server-lang").long("server-lang").value_name("LANG").help(
+            Arg::new("lang").long("lang").value_name("LANG").help(
                 "Server language: rust, csharp, typescript (it can only be used when --template is not specified)",
             ),
         )
@@ -430,10 +430,10 @@ async fn get_template_config_non_interactive(
     }
 
     // No template - require at least one language option
-    let server_lang_str = args.get_one::<String>("server-lang").cloned();
+    let server_lang_str = args.get_one::<String>("lang").cloned();
 
     if server_lang_str.is_none() {
-        anyhow::bail!("Either --template or --server-lang must be provided in non-interactive mode");
+        anyhow::bail!("Either --template or --lang must be provided in non-interactive mode");
     }
 
     Ok(TemplateConfig {
@@ -484,7 +484,7 @@ async fn get_template_config_interactive(
         return create_template_config_from_template_str(project_name, project_path, template_str, &templates);
     }
 
-    let server_lang_arg = args.get_one::<String>("server-lang");
+    let server_lang_arg = args.get_one::<String>("lang");
     if server_lang_arg.is_some() {
         let server_lang = parse_server_lang(&server_lang_arg.cloned())?;
         if let Some(lang_str) = server_lang_arg {
@@ -1069,12 +1069,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
 
     let is_interactive = !args.get_flag("non-interactive");
     let template = args.get_one::<String>("template");
-    let server_lang = args.get_one::<String>("server-lang");
+    let server_lang = args.get_one::<String>("lang");
     let name = args.get_one::<String>("name");
 
-    // Validate that template and server-lang options are not used together
+    // Validate that template and lang options are not used together
     if template.is_some() && server_lang.is_some() {
-        anyhow::bail!("Cannot specify both --template and --server-lang. Language is determined by the template.");
+        anyhow::bail!("Cannot specify both --template and --lang. Language is determined by the template.");
     }
 
     if !is_interactive {
@@ -1083,7 +1083,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
             anyhow::bail!("--name is required in non-interactive mode");
         }
         if template.is_none() && server_lang.is_none() {
-            anyhow::bail!("Either --template or --server-lang must be provided in non-interactive mode");
+            anyhow::bail!("Either --template or --lang must be provided in non-interactive mode");
         }
     }
 

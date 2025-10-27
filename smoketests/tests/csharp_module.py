@@ -23,7 +23,7 @@ class CreateProject(unittest.TestCase):
             run_cmd("dotnet", "pack", cwd=bindings, capture_stderr=True)
 
             with tempfile.TemporaryDirectory() as tmpdir:
-                spacetime("init", "--non-interactive", "--name=csharp-project", "--server-lang=csharp", tmpdir)
+                spacetime("init", "--non-interactive", "--name=csharp-project", "--lang=csharp", tmpdir)
 
                 server_path = Path(tmpdir) / "spacetimedb"
 

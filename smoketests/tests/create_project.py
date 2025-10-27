@@ -13,6 +13,6 @@ class CreateProject(unittest.TestCase):
                 spacetime("init", "--non-interactive", "--name=test-project")
             with self.assertRaises(Exception):
                 spacetime("init", "--non-interactive", "--name=test-project", tmpdir)
-            spacetime("init", "--non-interactive", "--name=test-project", "--server-lang=rust", tmpdir)
+            spacetime("init", "--non-interactive", "--name=test-project", "--lang=rust", tmpdir)
             with self.assertRaises(Exception):
-                spacetime("init", "--non-interactive", "--name=test-project", "--server-lang=rust", tmpdir)
+                spacetime("init", "--non-interactive", "--name=test-project", "--lang=rust", tmpdir)

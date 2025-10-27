@@ -129,7 +129,7 @@ class BaseQuickstart(Smoketest):
     def generate_server(self, server_path: Path):
         """Generate the server code from the quickstart documentation."""
         logging.info(f"Generating server code {self.lang}: {server_path}...")
-        self.spacetime("init", "--non-interactive", "--name=spacetimedb-project", "--server-lang", self.lang, server_path, capture_stderr=True)
+        self.spacetime("init", "--non-interactive", "--name=spacetimedb-project", "--lang", self.lang, server_path, capture_stderr=True)
         self.project_path = server_path / "spacetimedb"
         shutil.copy2(STDB_DIR / "rust-toolchain.toml", self.project_path)
         _write_file(self.project_path / self.server_file, _parse_quickstart(self.server_doc, self.lang))

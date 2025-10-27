@@ -14,7 +14,7 @@ In your `blackholio` directory, run the following command to initialize the Spac
 Run the following command to initialize the SpacetimeDB server module project with Rust as the language:
 
 ```bash
-spacetime init --name server-rust --server-lang rust --non-interactive server-rust
+spacetime init --name server-rust --lang rust server-rust
 ```
 
 This command creates a new folder named `server-rust` alongside your Unity project `client-unity` directory and sets up the SpacetimeDB server project with Rust as the programming language.
@@ -23,7 +23,7 @@ This command creates a new folder named `server-rust` alongside your Unity proje
 Run the following command to initialize the SpacetimeDB server module project with C# as the language:
 
 ```bash
-spacetime init --name server-csharp --server-lang csharp --non-interactive server-csharp
+spacetime init --name server-csharp --lang csharp server-csharp
 ```
 
 This command creates a new folder named `server-csharp` alongside your Unity project `client-unity` directory and sets up the SpacetimeDB server project with C# as the programming language.
@@ -617,4 +617,3 @@ spacetime logs blackholio
 You've learned how to setup a Unity project with the SpacetimeDB SDK, write a basic SpacetimeDB server module, and how to connect your Unity client to SpacetimeDB. That's pretty much all there is to the setup. You're now ready to start building the game.
 
 In the [next part](/docs/unity/part-3), we'll build out the functionality of the game and you'll learn how to access your table data and call reducers in Unity.
-
