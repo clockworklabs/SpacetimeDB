@@ -86,7 +86,10 @@ jobs:
           workspaces: |
             .
             modules/quickstart-chat
-          shared-key: quickstart-chat-test
+          shared-key: spacetimedb
+          key: ${{ github.ref }}
+          cache-on-failure: true
+          cache-all-crates: true
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
