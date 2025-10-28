@@ -1715,7 +1715,7 @@ impl ModuleHost {
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn one_off_query<F: BuildableWebsocketFormat>(
         &self,
-        caller_identity: Identity,
+        auth: AuthCtx,
         query: String,
         client: Arc<ClientConnectionSender>,
         message_id: Vec<u8>,
@@ -1726,7 +1726,6 @@ impl ModuleHost {
         let replica_ctx = self.replica_ctx();
         let db = replica_ctx.relational_db.clone();
         let subscriptions = replica_ctx.subscriptions.clone();
-        let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
         let metrics = self
             .on_module_thread("one_off_query", move || {

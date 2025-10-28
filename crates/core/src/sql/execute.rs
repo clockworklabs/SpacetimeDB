@@ -125,7 +125,7 @@ pub fn execute_sql(
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql);
         let mut updates = Vec::with_capacity(ast.len());
         let res = execute(
-            &mut DbProgram::new(db, &mut (&mut tx).into(), auth),
+            &mut DbProgram::new(db, &mut (&mut tx).into(), auth.clone()),
             ast,
             sql,
             &mut updates,
@@ -133,7 +133,7 @@ pub fn execute_sql(
         if res.is_ok() && !updates.is_empty() {
             let event = ModuleEvent {
                 timestamp: Timestamp::now(),
-                caller_identity: auth.caller,
+                caller_identity: auth.caller(),
                 caller_connection_id: None,
                 function_call: ModuleFunctionCall {
                     reducer: String::new(),
@@ -209,7 +209,11 @@ pub async fn run(
         Statement::Select(stmt) => {
             // Materialize views and downgrade to a read-only transaction
             let tx = match module {
-                Some(module) => module.materialize_views(tx, &stmt, auth.caller, Workload::Sql).await?,
+                Some(module) => {
+                    module
+                        .materialize_views(tx, &stmt, auth.caller(), Workload::Sql)
+                        .await?
+                }
                 None => tx,
             };
 
@@ -257,8 +261,8 @@ pub async fn run(
         }
         Statement::DML(stmt) => {
             // An extra layer of auth is required for DML
-            if auth.caller != auth.owner {
-                return Err(anyhow!("Only owners are authorized to run SQL DML statements").into());
+            if !auth.has_write_access() {
+                return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
             }
 
             // Evaluate the mutation
@@ -310,7 +314,7 @@ pub async fn run(
                     None,
                     ModuleEvent {
                         timestamp: Timestamp::now(),
-                        caller_identity: auth.caller,
+                        caller_identity: auth.caller(),
                         caller_connection_id: None,
                         function_call: ModuleFunctionCall {
                             reducer: String::new(),
@@ -542,7 +546,7 @@ pub(crate) mod tests {
         expected: impl IntoIterator<Item = ProductValue>,
     ) {
         assert_eq!(
-            run(db, sql, *auth, None, None, &mut vec![])
+            run(db, sql, auth.clone(), None, None, &mut vec![])
                 .await
                 .unwrap()
                 .rows
@@ -1499,26 +1503,26 @@ pub(crate) mod tests {
 
         let run = |db, sql, auth, subs, mut tmp_vec| rt.block_on(run(db, sql, auth, subs, None, &mut tmp_vec));
         // No row limit, both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth.clone(), None, tmp_vec.clone()).is_ok());
 
         // Set row limit.
-        assert!(run(&db, "SET row_limit = 4", internal_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SET row_limit = 4", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
 
         // External query fails.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone()).is_err());
+        assert!(run(&db, "SELECT * FROM T", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth.clone(), None, tmp_vec.clone()).is_err());
 
         // Increase row limit.
         assert!(run(
             &db,
             "DELETE FROM st_var WHERE name = 'row_limit'",
-            internal_auth,
+            internal_auth.clone(),
             None,
             tmp_vec.clone()
         )
         .is_ok());
-        assert!(run(&db, "SET row_limit = 5", internal_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SET row_limit = 5", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
 
         // Both queries pass.
         assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
@@ -1572,11 +1576,17 @@ pub(crate) mod tests {
             ..ExecutionMetrics::default()
         };
 
-        check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth, ins)?;
-        check(&db, "UPDATE T SET a = 2", internal_auth, upd)?;
+        check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth.clone(), ins)?;
+        check(&db, "UPDATE T SET a = 2", internal_auth.clone(), upd)?;
         assert_eq!(
-            rt.block_on(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()))?
-                .rows,
+            rt.block_on(run(
+                &db,
+                "SELECT * FROM T",
+                internal_auth.clone(),
+                None,
+                tmp_vec.clone()
+            ))?
+            .rows,
             vec![product!(2u8)]
         );
         check(&db, "DELETE FROM T", internal_auth, del)?;

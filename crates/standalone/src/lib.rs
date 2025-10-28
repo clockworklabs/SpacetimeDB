@@ -5,7 +5,7 @@ pub mod version;
 
 use crate::control_db::ControlDb;
 use crate::subcommands::{extract_schema, start};
-use anyhow::{ensure, Context as _};
+use anyhow::Context as _;
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
@@ -14,13 +14,13 @@ use spacetimedb::db;
 use spacetimedb::db::persistence::LocalPersistenceProvider;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::{DiskStorage, HostController, MigratePlanResult, UpdateDatabaseResult};
-use spacetimedb::identity::Identity;
+use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
-use spacetimedb_client_api::{ControlStateReadAccess as _, DatabaseResetDef, Host, NodeDelegate};
+use spacetimedb_client_api::{ControlStateReadAccess, DatabaseResetDef, Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
@@ -258,13 +258,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             // The database already exists, so we'll try to update it.
             // If that fails, we'll keep the old one.
             Some(database) => {
-                ensure!(
-                    &database.owner_identity == publisher,
-                    "Permission denied: `{}` does not own database `{}`",
-                    publisher,
-                    spec.database_identity.to_abbreviated_hex()
-                );
-
                 let database_id = database.id;
                 let database_identity = database.database_identity;
 
@@ -353,19 +346,10 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         }
     }
 
-    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+    async fn delete_database(&self, _caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
         let Some(database) = self.control_db.get_database_by_identity(database_identity)? else {
             return Ok(());
         };
-        anyhow::ensure!(
-            &database.owner_identity == caller_identity,
-            // TODO: `PermissionDenied` should be a variant of `Error`,
-            //       so we can match on it and return better error responses
-            //       from HTTP endpoints.
-            "Permission denied: `{caller_identity}` does not own database `{}`",
-            database_identity.to_abbreviated_hex()
-        );
-
         self.control_db.delete_database(database.id)?;
 
         for instance in self.control_db.get_replicas_by_database(database.id)? {
@@ -475,6 +459,19 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
             database: database.database_identity.into(),
             source: None,
         })
+    }
+
+    async fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> Result<AuthCtx, spacetimedb_client_api::Unauthorized> {
+        let database = self
+            .get_database_by_identity(&database)?
+            .with_context(|| format!("database {database} not found"))
+            .with_context(|| format!("Unable to authorize {subject} for SQL"))?;
+
+        Ok(AuthCtx::new(database.owner_identity, subject))
     }
 }
 
