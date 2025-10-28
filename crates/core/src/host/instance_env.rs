@@ -4,6 +4,7 @@ use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
+use chrono::{DateTime, Utc};
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
@@ -222,7 +223,7 @@ impl InstanceEnv {
         }
 
         let record = Record {
-            ts: chrono::Utc::now(),
+            ts: Self::now_for_logging(),
             target: None,
             filename: None,
             line_number: None,
@@ -230,6 +231,12 @@ impl InstanceEnv {
             message: &message,
         };
         self.console_log(LogLevel::Info, &record, &Noop);
+    }
+
+    /// Returns the current time suitable for logging.
+    pub fn now_for_logging() -> DateTime<Utc> {
+        // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start).
+        chrono::Utc::now()
     }
 
     /// Project `cols` in `row_ref` encoded in BSATN to `buffer`
