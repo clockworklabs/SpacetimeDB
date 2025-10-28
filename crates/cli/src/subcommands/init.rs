@@ -127,6 +127,12 @@ pub fn cli() -> clap::Command {
         )
         .arg(Arg::new("project-name").value_name("PROJECT_NAME").help("Project name"))
         .arg(
+            Arg::new("server-only")
+                .long("server-only")
+                .help("Initialize server only from the template (no client)")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("lang").long("lang").value_name("LANG").help(
                 "Server language: rust, csharp, typescript (it can only be used when --template is not specified)",
             ),
@@ -217,7 +223,12 @@ async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Re
     Ok(name)
 }
 
-async fn get_project_path(args: &ArgMatches, project_name: &str, is_interactive: bool) -> anyhow::Result<PathBuf> {
+async fn get_project_path(
+    args: &ArgMatches,
+    project_name: &str,
+    is_interactive: bool,
+    is_server_only: bool,
+) -> anyhow::Result<PathBuf> {
     if let Some(path) = args.get_one::<PathBuf>("project-path") {
         if is_interactive {
             println!("{} {}", "Project path:".bold(), path.display());
@@ -245,7 +256,18 @@ async fn get_project_path(args: &ArgMatches, project_name: &str, is_interactive:
                 }
                 match std::fs::read_dir(path) {
                     Ok(entries) => {
-                        if entries.count() > 0 {
+                        // If server-only, allow non-empty directories (client files won't be created)
+                        // but only if the `spacetimedb` subdirectory does not already exist
+                        let entries_vec = entries.collect::<Vec<_>>();
+                        if is_server_only
+                            && !entries_vec.iter().any(|e| match e {
+                                Ok(dir_entry) => dir_entry.file_name() == "spacetimedb",
+                                Err(_) => false,
+                            })
+                        {
+                            return Ok(());
+                        }
+                        if entries_vec.iter().filter(|e| e.is_ok()).count() > 0 {
                             return Err(format!(
                                 "Directory '{}' already exists and is not empty. Please choose a different path.",
                                 input
@@ -419,8 +441,10 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         config.spacetimedb_token().is_none()
     };
 
+    let is_server_only = args.get_flag("server-only");
+
     let project_name = get_project_name(args, is_interactive).await?;
-    let project_path = get_project_path(args, &project_name, is_interactive).await?;
+    let project_path = get_project_path(args, &project_name, is_interactive, is_server_only).await?;
 
     let mut template_config = if is_interactive {
         get_template_config_interactive(args, project_name, project_path.clone()).await?
@@ -431,7 +455,7 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
     template_config.use_local = use_local;
 
     ensure_empty_directory(&template_config.project_name, &template_config.project_path)?;
-    init_from_template(&template_config, &template_config.project_path).await?;
+    init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
 
     // If server is TypeScript, handle dependency installation
     if template_config.server_lang == Some(ServerLanguage::TypeScript) {
@@ -640,7 +664,7 @@ async fn get_template_config_interactive(
     }
 }
 
-fn clone_github_template(repo_input: &str, target: &Path) -> anyhow::Result<()> {
+fn clone_github_template(repo_input: &str, target: &Path, is_server_only: bool) -> anyhow::Result<()> {
     let is_git_url = |s: &str| {
         s.starts_with("git@") || s.starts_with("ssh://") || s.starts_with("http://") || s.starts_with("https://")
     };
@@ -684,7 +708,13 @@ fn clone_github_template(repo_input: &str, target: &Path) -> anyhow::Result<()> 
         .clone(&repo_url, temp_dir.path())
         .context("Failed to clone repository")?;
 
-    copy_dir_all(temp_dir.path(), target)?;
+    if is_server_only {
+        let server_subdir = temp_dir.path().join("spacetimedb");
+        let server_subdir_target = target.join("spacetimedb");
+        copy_dir_all(&server_subdir, &server_subdir_target)?;
+    } else {
+        copy_dir_all(temp_dir.path(), target)?;
+    }
 
     Ok(())
 }
@@ -931,44 +961,6 @@ fn get_or_create_direct_child<'a>(parent: &'a mut Element, name: &str) -> &'a mu
     }
 }
 
-/// Upsert simple <name>text</name> under `parent`
-fn upsert_child_text(parent: &mut Element, name: &str, text: &str) {
-    if let Some(XMLNode::Element(el)) = parent
-        .children
-        .iter_mut()
-        .find(|n| matches!(n, XMLNode::Element(e) if e.name == name))
-    {
-        el.children.clear();
-        el.children.push(XMLNode::Text(text.to_string()));
-        return;
-    }
-    let mut el = Element::new(name);
-    el.children.push(XMLNode::Text(text.to_string()));
-    parent.children.push(XMLNode::Element(el));
-    match parent.children.last_mut() {
-        Some(XMLNode::Element(_)) => {}
-        _ => unreachable!("just pushed an Element"),
-    }
-}
-
-/// C#-ish safe identifier: letters/digits/_/., no leading digit
-fn sanitize_cs_identifier(name: &str) -> String {
-    let mut s: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
-        s.insert(0, '_');
-    }
-    s
-}
-
 /// Pretty-print XML with indentation.
 /// Keeps UTF-8 declaration if present.
 fn pretty_format_xml(xml: &str) -> anyhow::Result<String> {
@@ -1050,17 +1042,22 @@ PUBLIC_SPACETIMEDB_HOST={host}
     Ok(())
 }
 
-pub async fn init_from_template(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
+pub async fn init_from_template(
+    config: &TemplateConfig,
+    project_path: &Path,
+    is_server_only: bool,
+) -> anyhow::Result<()> {
     println!("{}", "Initializing project from template...".cyan());
 
     match config.template_type {
-        TemplateType::Builtin => init_builtin(config, project_path)?,
-        TemplateType::GitHub => init_github_template(config, project_path)?,
+        TemplateType::Builtin => init_builtin(config, project_path, is_server_only)?,
+        TemplateType::GitHub => init_github_template(config, project_path, is_server_only)?,
         TemplateType::Empty => init_empty(config, project_path)?,
     }
 
     let cursorrules_content = embedded::get_cursorrules();
-    let cursorrules_path = project_path.join(".cursorrules");
+    let cursorrules_path = project_path.join(".cursor/rules/spacetimedb.mdc");
+    fs::create_dir_all(cursorrules_path.parent().unwrap())?;
     fs::write(cursorrules_path, cursorrules_content)?;
 
     println!("{}", "Project initialized successfully!".green());
@@ -1069,7 +1066,7 @@ pub async fn init_from_template(config: &TemplateConfig, project_path: &Path) ->
     Ok(())
 }
 
-fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
+fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bool) -> anyhow::Result<()> {
     let template_def = config
         .template_def
         .as_ref()
@@ -1077,15 +1074,36 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
 
     let template_files = embedded::get_template_files();
 
-    println!(
-        "Setting up client ({})...",
-        config.client_lang.map(|l| l.as_str()).unwrap_or("none")
-    );
-    let client_source = &template_def.client_source;
-    if let Some(files) = template_files.get(client_source.as_str()) {
-        copy_embedded_files(files, project_path)?;
-    } else {
-        anyhow::bail!("Client template not found: {}", client_source);
+    if !is_server_only {
+        println!(
+            "Setting up client ({})...",
+            config.client_lang.map(|l| l.as_str()).unwrap_or("none")
+        );
+        let client_source = &template_def.client_source;
+        if let Some(files) = template_files.get(client_source.as_str()) {
+            copy_embedded_files(files, project_path)?;
+        } else {
+            anyhow::bail!("Client template not found: {}", client_source);
+        }
+
+        // Update client name
+        match config.client_lang {
+            Some(ClientLanguage::TypeScript) => {
+                update_package_json(project_path, &config.project_name)?;
+                write_typescript_client_env_file(project_path, &config.project_name, config.use_local)?;
+                println!(
+                    "{}",
+                    "Note: Run 'npm install' in the project directory to install dependencies".yellow()
+                );
+            }
+            Some(ClientLanguage::Rust) => {
+                update_cargo_toml_name(project_path, &config.project_name)?;
+            }
+            Some(ClientLanguage::Csharp) => {
+                update_csproj_client_to_nuget(project_path)?;
+            }
+            None => {}
+        }
     }
 
     println!(
@@ -1114,25 +1132,6 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
         None => {}
     }
 
-    // Update client name
-    match config.client_lang {
-        Some(ClientLanguage::TypeScript) => {
-            update_package_json(project_path, &config.project_name)?;
-            write_typescript_client_env_file(project_path, &config.project_name, config.use_local)?;
-            println!(
-                "{}",
-                "Note: Run 'npm install' in the project directory to install dependencies".yellow()
-            );
-        }
-        Some(ClientLanguage::Rust) => {
-            update_cargo_toml_name(project_path, &config.project_name)?;
-        }
-        Some(ClientLanguage::Csharp) => {
-            update_csproj_client_to_nuget(project_path)?;
-        }
-        None => {}
-    }
-
     Ok(())
 }
 
@@ -1147,9 +1146,9 @@ fn copy_embedded_files(files: &HashMap<&str, &str>, target_dir: &Path) -> anyhow
     Ok(())
 }
 
-fn init_github_template(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
+fn init_github_template(config: &TemplateConfig, project_path: &Path, is_server_only: bool) -> anyhow::Result<()> {
     let repo = config.github_repo.as_ref().unwrap();
-    clone_github_template(repo, project_path)?;
+    clone_github_template(repo, project_path, is_server_only)?;
 
     let package_path = project_path.join("package.json");
     if package_path.exists() {
