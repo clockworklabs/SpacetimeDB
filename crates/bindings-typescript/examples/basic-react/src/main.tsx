@@ -5,8 +5,8 @@ import { Identity } from 'spacetimedb';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection, ErrorContext } from './module_bindings/index.ts';
 
-const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? "ws://localhost:3000";
-const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? "my-db";
+const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
+const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'my-db';
 
 const onConnect = (conn: DbConnection, identity: Identity, token: string) => {
   localStorage.setItem('auth_token', token);
