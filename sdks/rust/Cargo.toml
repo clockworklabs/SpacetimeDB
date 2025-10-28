@@ -44,7 +44,7 @@ once_cell.workspace = true
 prometheus.workspace = true
 rand.workspace = true
 
-getrandom = { version = "0.3.2", features = ["wasm_js"], optional = true }
+getrandom = { version = "0.3.4", features = ["wasm_js"], optional = true }
 gloo-console = { version = "0.3.0", optional = true }
 gloo-net = { version = "0.6.0", optional = true }
 gloo-storage = { version = "0.3.0", optional = true }
