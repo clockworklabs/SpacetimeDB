@@ -113,7 +113,7 @@ fn generate_template_files() {
     generated_code.push_str("    }\n");
     generated_code.push_str("}\n");
 
-    generated_code.push_str("\n");
+    generated_code.push('\n');
     generated_code.push_str("pub fn get_typescript_bindings_version() -> &'static str {\n");
     generated_code.push_str(&format!("    \"{}\"\n", ts_bindings_version.escape_default()));
     generated_code.push_str("}\n");

@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use toml_edit::{value, DocumentMut, Item};
+use xmltree::{Element, XMLNode};
 
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
@@ -795,6 +796,213 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
     Ok(())
 }
 
+pub fn update_csproj_server_to_nuget(dir: &Path) -> anyhow::Result<()> {
+    if let Some(csproj_path) = find_first_csproj(dir)? {
+        let original =
+            fs::read_to_string(&csproj_path).with_context(|| format!("reading {}", csproj_path.display()))?;
+        let mut root: Element =
+            Element::parse(original.as_bytes()).with_context(|| format!("parsing xml {}", csproj_path.display()))?;
+
+        upsert_packageref(
+            &mut root,
+            "SpacetimeDB.Runtime",
+            &get_spacetimedb_csharp_runtime_version(),
+        );
+        remove_all_project_references(&mut root);
+
+        write_if_changed(csproj_path, original, root)?;
+    }
+    Ok(())
+}
+
+pub fn update_csproj_client_to_nuget(dir: &Path) -> anyhow::Result<()> {
+    if let Some(csproj_path) = find_first_csproj(dir)? {
+        let original =
+            fs::read_to_string(&csproj_path).with_context(|| format!("reading {}", csproj_path.display()))?;
+        let mut root: Element =
+            Element::parse(original.as_bytes()).with_context(|| format!("parsing xml {}", csproj_path.display()))?;
+
+        upsert_packageref(
+            &mut root,
+            "SpacetimeDB.ClientSDK",
+            &get_spacetimedb_csharp_clientsdk_version(),
+        );
+        remove_all_project_references(&mut root);
+
+        write_if_changed(csproj_path, original, root)?;
+    }
+    Ok(())
+}
+
+// Helpers
+
+fn write_if_changed(path: PathBuf, original: String, root: Element) -> anyhow::Result<()> {
+    let mut out = Vec::new();
+    root.write(&mut out)?;
+    let compact = String::from_utf8(out)?;
+    let updated = pretty_format_xml(&compact)?;
+    if updated != original {
+        fs::write(&path, updated).with_context(|| format!("writing {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn find_first_csproj(dir: &Path) -> anyhow::Result<Option<PathBuf>> {
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    for entry in fs::read_dir(dir)? {
+        let p = entry?.path();
+        if p.extension().map(|e| e == "csproj").unwrap_or(false) {
+            return Ok(Some(p));
+        }
+    }
+    Ok(None)
+}
+
+/// Remove every <ProjectReference/> under any <ItemGroup>
+fn remove_all_project_references(project: &mut Element) {
+    for node in project.children.iter_mut() {
+        if let XMLNode::Element(item_group) = node {
+            if item_group.name == "ItemGroup" {
+                item_group
+                    .children
+                    .retain(|n| !matches!(n, XMLNode::Element(el) if el.name == "ProjectReference"));
+            }
+        }
+    }
+    // Optional: prune empty ItemGroups
+    project.children.retain(|n| {
+        if let XMLNode::Element(el) = n {
+            if el.name == "ItemGroup" {
+                return el.children.iter().any(|c| matches!(c, XMLNode::Element(_)));
+            }
+        }
+        true
+    });
+}
+
+/// Insert or update <PackageReference Include="..." Version="..."/>
+fn upsert_packageref(project: &mut Element, include: &str, version: &str) {
+    // Try to find an existing PackageReference
+    for node in project.children.iter_mut() {
+        if let XMLNode::Element(item_group) = node {
+            if item_group.name == "ItemGroup" {
+                if let Some(XMLNode::Element(existing)) = item_group.children.iter_mut().find(|n| {
+                    matches!(n,
+                        XMLNode::Element(e)
+                        if e.name == "PackageReference"
+                           && e.attributes.get("Include").map(|v| v == include).unwrap_or(false)
+                    )
+                }) {
+                    existing.attributes.insert("Version".to_string(), version.to_string());
+                    return;
+                }
+            }
+        }
+    }
+    // Otherwise create one in (or create) an ItemGroup
+    let item_group = get_or_create_direct_child(project, "ItemGroup");
+    let mut pr = Element::new("PackageReference");
+    pr.attributes.insert("Include".into(), include.to_string());
+    pr.attributes.insert("Version".into(), version.to_string());
+    item_group.children.push(XMLNode::Element(pr));
+}
+
+fn get_or_create_direct_child<'a>(parent: &'a mut Element, name: &str) -> &'a mut Element {
+    // First, scan IMMUTABLY to find the index of an existing child.
+    if let Some(idx) = parent.children.iter().enumerate().find_map(|(i, n)| match n {
+        XMLNode::Element(e) if e.name == name => Some(i),
+        _ => None,
+    }) {
+        // Now borrow MUTABLY by index.
+        if let XMLNode::Element(el) = &mut parent.children[idx] {
+            return el;
+        }
+        unreachable!("Matched non-element while checking by name");
+    }
+
+    // Not found: create, then borrow by index.
+    parent.children.push(XMLNode::Element(Element::new(name)));
+    let idx = parent.children.len() - 1;
+    match &mut parent.children[idx] {
+        XMLNode::Element(el) => el,
+        _ => unreachable!("just pushed an Element"),
+    }
+}
+
+/// Upsert simple <name>text</name> under `parent`
+fn upsert_child_text(parent: &mut Element, name: &str, text: &str) {
+    if let Some(XMLNode::Element(el)) = parent
+        .children
+        .iter_mut()
+        .find(|n| matches!(n, XMLNode::Element(e) if e.name == name))
+    {
+        el.children.clear();
+        el.children.push(XMLNode::Text(text.to_string()));
+        return;
+    }
+    let mut el = Element::new(name);
+    el.children.push(XMLNode::Text(text.to_string()));
+    parent.children.push(XMLNode::Element(el));
+    match parent.children.last_mut() {
+        Some(XMLNode::Element(_)) => {}
+        _ => unreachable!("just pushed an Element"),
+    }
+}
+
+/// C#-ish safe identifier: letters/digits/_/., no leading digit
+fn sanitize_cs_identifier(name: &str) -> String {
+    let mut s: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        s.insert(0, '_');
+    }
+    s
+}
+
+/// Pretty-print XML with indentation.
+/// Keeps UTF-8 declaration if present.
+fn pretty_format_xml(xml: &str) -> anyhow::Result<String> {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+    use quick_xml::Writer;
+    use std::io::Cursor;
+
+    let mut reader = Reader::from_str(xml);
+    reader.trim_text(true);
+    let mut buf = Vec::new();
+    let mut writer = Writer::new_with_indent(Cursor::new(Vec::new()), b' ', 2);
+
+    loop {
+        match reader.read_event_into(&mut buf)? {
+            Event::Eof => break,
+            e => writer.write_event(e)?,
+        }
+        buf.clear();
+    }
+
+    let result = writer.into_inner().into_inner();
+    Ok(String::from_utf8(result)?)
+}
+
+/// Just do 1.* for now
+fn get_spacetimedb_csharp_runtime_version() -> String {
+    "1.*".to_string()
+}
+
+fn get_spacetimedb_csharp_clientsdk_version() -> String {
+    "1.*".to_string()
+}
+
 /// Writes a `.env.development` file that includes all common
 /// frontend environment variable variants for SpacetimeDB.
 fn write_typescript_client_env_file(client_dir: &Path, module_name: &str, use_local: bool) -> anyhow::Result<()> {
@@ -900,7 +1108,9 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
         Some(ServerLanguage::Rust) => {
             update_cargo_toml_name(&server_dir, &config.project_name)?;
         }
-        Some(ServerLanguage::Csharp) => {}
+        Some(ServerLanguage::Csharp) => {
+            update_csproj_server_to_nuget(&server_dir, &config.project_name)?;
+        }
         None => {}
     }
 
@@ -917,7 +1127,9 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
         Some(ClientLanguage::Rust) => {
             update_cargo_toml_name(project_path, &config.project_name)?;
         }
-        Some(ClientLanguage::Csharp) => {}
+        Some(ClientLanguage::Csharp) => {
+            update_csproj_client_to_nuget(project_path, &config.project_name)?;
+        }
         None => {}
     }
 
@@ -1031,7 +1243,7 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
                 if config.use_local { "--server local " } else { "" },
                 config.project_name
             );
-            println!("  spacetime generate --lang csharp --out-dir src/module_bindings --project-path spacetimedb");
+            println!("  spacetime generate --lang csharp --out-dir module_bindings --project-path spacetimedb");
         }
         (TemplateType::Empty, _, Some(ClientLanguage::TypeScript)) => {
             println!("  npm install");

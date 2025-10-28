@@ -78,6 +78,8 @@ git2.workspace = true
 dialoguer.workspace = true
 rolldown.workspace = true
 rolldown_utils.workspace = true
+xmltree.workspace = true
+quick-xml.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }

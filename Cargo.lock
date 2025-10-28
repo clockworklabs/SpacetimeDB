@@ -7083,6 +7083,7 @@ dependencies = [
  "itertools 0.12.1",
  "mimalloc",
  "percent-encoding",
+ "quick-xml 0.31.0",
  "regex",
  "reqwest 0.12.24",
  "rolldown",
@@ -7119,6 +7120,7 @@ dependencies = [
  "wasmbin",
  "webbrowser",
  "windows-sys 0.59.0",
+ "xmltree",
 ]
 
 [[package]]
@@ -10524,6 +10526,21 @@ name = "xi-unicode"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a67300977d3dc3f8034dae89778f502b6ba20b269527b3223ba59c0cf393bb8a"
+
+[[package]]
+name = "xml-rs"
+version = "0.8.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f"
+
+[[package]]
+name = "xmltree"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b619f8c85654798007fb10afa5125590b43b088c225a25fc2fec100a9fad0fc6"
+dependencies = [
+ "xml-rs",
+]
 
 [[package]]
 name = "xxhash-rust"
