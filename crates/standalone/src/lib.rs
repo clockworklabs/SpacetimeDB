@@ -20,7 +20,7 @@ use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
-use spacetimedb_client_api::{DatabaseResetDef, Host, NodeDelegate};
+use spacetimedb_client_api::{ControlStateReadAccess as _, DatabaseResetDef, Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
@@ -451,6 +451,30 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         Ok(self
             .control_db
             .spacetime_replace_domains(database_identity, owner_identity, domain_names)?)
+    }
+}
+
+impl spacetimedb_client_api::Authorization for StandaloneEnv {
+    async fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: spacetimedb_client_api::Action,
+    ) -> Result<(), spacetimedb_client_api::Unauthorized> {
+        let database = self
+            .get_database_by_identity(&database)?
+            .with_context(|| format!("database {database} not found"))
+            .with_context(|| format!("Unable to authorize {subject} to perform {action:?})"))?;
+        if subject == database.owner_identity {
+            return Ok(());
+        }
+
+        Err(spacetimedb_client_api::Unauthorized::Unauthorized {
+            subject,
+            action,
+            database: database.database_identity.into(),
+            source: None,
+        })
     }
 }
 
