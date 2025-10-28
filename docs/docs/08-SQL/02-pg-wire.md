@@ -91,9 +91,9 @@ _For PowerShell_:
 $env:PGPASSWORD = (spacetime login show --token | Select-String 'Your auth token.*is (.*)' | % { $_.Matches[0].Groups[1].Value })
 ```
 
-### Enabling the _PGWire_ in SpacetimeDB Standalone
+### Enabling _PGWire_ in SpacetimeDB Standalone
 
-By default, the _PGWire_ is disabled when starting the `SpacetimeDB Standalone` server.
+_PGWire_ is disabled by default when starting a `SpacetimeDB Standalone` server.
 
 To enable it, start the server with the `--pg-port` flag:
 
