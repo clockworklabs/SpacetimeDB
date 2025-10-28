@@ -12,18 +12,36 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 
 This progressive tutorial is continued from [part 1](/unity/part-1).
 
+## Project Structure
+
+Now that we have our client project setup we can configure the module directory. Regardless of what language you choose, your module will always go into a `spacetimedb` directory within your client directory like this:
+
+```
+blackholio                      # This is the directory for your Unity project
+├── Assembly-CSharp.csproj
+├── Assets/
+├── Library/
+├── ...                         # rest of the Unity files
+└── spacetimedb/                # This is where your server modules live
+```
+
+
 ## Create a Server Module
 
 If you have not already installed the `spacetime` CLI, check out our [Getting Started](/getting-started) guide for instructions on how to install.
 
-In your `blackholio` directory, run the following command to initialize the SpacetimeDB server module project with your desired language:
+In the same directory as your `blackholio` directory, run the following command to initialize the SpacetimeDB server module project with your desired language:
+
+:::warning
+The `blackholio` directory specified here is the same `blackholio` directory you created during part 1.
+:::
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
 Run the following command to initialize the SpacetimeDB server module project with Rust as the language:
 
 ```bash
-spacetime init --lang rust server-rust
+spacetime init --lang rust --server-only blackholio
 ```
 
 This command creates a new folder named `server-rust` alongside your Unity project `client-unity` directory and sets up the SpacetimeDB server project with Rust as the programming language.
@@ -33,10 +51,10 @@ This command creates a new folder named `server-rust` alongside your Unity proje
 Run the following command to initialize the SpacetimeDB server module project with C# as the language:
 
 ```bash
-spacetime init --lang csharp server-csharp
+spacetime init --lang csharp --server-only blackholio
 ```
 
-This command creates a new folder named `server-csharp` alongside your Unity project `client-unity` directory and sets up the SpacetimeDB server project with C# as the programming language.
+This command creates a new folder named `spacetimedb` inside of your Unity project `blackholio` directory and sets up the SpacetimeDB server project with C# as the programming language.
 
 </TabItem>
 </Tabs>
@@ -45,15 +63,15 @@ This command creates a new folder named `server-csharp` alongside your Unity pro
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
-In this section we'll be making some edits to the file `server-rust/src/lib.rs`. We recommend you open up this file in an IDE like VSCode or RustRover.
+In this section we'll be making some edits to the file `blackholio/spacetimedb/src/lib.rs`. We recommend you open up this file in an IDE like VSCode or RustRover.
 
-**Important: Open the `server-rust/src/lib.rs` file and delete its contents. We will be writing it from scratch here.**
+**Important: Open the `blackholio/spacetimedb/src/lib.rs` file and delete its contents. We will be writing it from scratch here.**
 
 </TabItem>
 <TabItem value="csharp" label="C#">
-In this section we'll be making some edits to the file `server-csharp/Lib.cs`. We recommend you open up this file in an IDE like VSCode or Rider.
+In this section we'll be making some edits to the file `blackholio/spacetimedb/Lib.cs`. We recommend you open up this file in an IDE like VSCode or Rider.
 
-**Important: Open the `server-csharp/Lib.cs` file and delete its contents. We will be writing it from scratch here.**
+**Important: Open the `blackholio/spacetimedb/Lib.cs` file and delete its contents. We will be writing it from scratch here.**
 
 </TabItem>
 </Tabs>
@@ -373,12 +391,12 @@ Starting SpacetimeDB listening on 127.0.0.1:3000
   <TabItem value="rust" label="Rust">
     Now that SpacetimeDB is running we can publish our module to the SpacetimeDB
     host. In a separate terminal window, navigate to the
-    `blackholio/server-rust` directory.
+    `blackholio/spacetimedb` directory.
   </TabItem>
   <TabItem value="csharp" label="C#">
     Now that SpacetimeDB is running we can publish our module to the SpacetimeDB
     host. In a separate terminal window, navigate to the
-    `blackholio/server-csharp` directory.
+    `blackholio/spacetimedb` directory.
   </TabItem>
 </Tabs>
 
@@ -494,7 +512,7 @@ The `spacetime` CLI has built in functionality to let us generate C# types that 
     directory run the following command:
   </TabItem>
   <TabItem value="csharp" label="C#">
-    Let's generate our types for our module. In the `blackholio/server-csharp`
+    Let's generate our types for our module. In the `blackholio/spacetimedb`
     directory run the following command:
   </TabItem>
 </Tabs>
