@@ -1,6 +1,5 @@
 //! Utilities for error handling when dealing with V8.
 
-use super::de::scratch_buf;
 use super::serialize_to_js;
 use super::string::IntoJsString;
 use crate::{
@@ -44,13 +43,6 @@ impl<'scope, M: IntoJsString> IntoException<'scope> for TypeError<M> {
             Err(err) => err.into_range_error().into_exception(scope),
         }
     }
-}
-
-/// Returns a "module not found" exception to be thrown.
-pub fn module_exception(scope: &mut PinScope<'_, '_>, spec: Local<'_, v8::String>) -> TypeError<String> {
-    let mut buf = scratch_buf::<32>();
-    let spec = spec.to_rust_cow_lossy(scope, &mut buf);
-    TypeError(format!("Could not find module {spec:?}"))
 }
 
 /// A type converting into a JS `RangeError` exception.
