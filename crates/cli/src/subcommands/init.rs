@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
+use convert_case::{Case, Casing};
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -186,21 +187,7 @@ pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool>
 }
 
 fn slugify(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_alphanumeric() {
-                c.to_ascii_lowercase()
-            } else if c.is_whitespace() || c == '_' {
-                '-'
-            } else {
-                c
-            }
-        })
-        .collect::<String>()
-        .split('-')
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
+    name.to_case(Case::Kebab)
 }
 
 async fn get_project_name(args: &ArgMatches, is_interactive: bool) -> anyhow::Result<String> {
@@ -342,7 +329,7 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
     // Prompt for package manager
     let package_manager = if is_interactive {
         let theme = ColorfulTheme::default();
-        let choices = vec!["npm", "pnpm", "yarn", "bun", "other"];
+        let choices = vec!["npm", "pnpm", "yarn", "bun", "none"];
         let selection = Select::with_theme(&theme)
             .with_prompt("Which package manager would you like to use?")
             .items(&choices)
@@ -413,7 +400,11 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
     } else {
         println!(
             "{}",
-            format!("Please install dependencies manually in {}.", server_dir.display()).yellow()
+            format!(
+                "You have chosen not to use a package manager. Please install dependencies manually in {}.",
+                server_dir.display()
+            )
+            .yellow()
         );
     }
 
@@ -587,13 +578,39 @@ async fn get_template_config_interactive(
             println!("  {} - {}", template.id, template.description);
         }
         println!();
-        let template_id: String = Input::<String>::with_theme(&theme)
-            .with_prompt("Template ID or GitHub repository (owner/repo)")
-            .interact_text()?
-            .trim()
-            .to_string();
 
-        create_template_config_from_template_str(project_name.clone(), project_path.clone(), &template_id, &templates)
+        loop {
+            let template_id = Input::<String>::with_theme(&theme)
+                .with_prompt("Template ID or GitHub repository (owner/repo) or git URL")
+                .interact_text()?
+                .trim()
+                .to_string();
+            let template_config = create_template_config_from_template_str(
+                project_name.clone(),
+                project_path.clone(),
+                &template_id,
+                &templates,
+            );
+            // If template_id looks like a builtin template ID (e.g. kebab-case, all lowercase, no slashes, alphanumeric and dashes only)
+            // then ensure that it is a valid builtin template ID, if not reprompt
+            let is_builtin_like = |s: &str| {
+                !s.is_empty()
+                    && !s.contains('/')
+                    && s.chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            };
+            if !is_builtin_like(&template_id) {
+                break template_config;
+            }
+            if templates.iter().any(|t| t.id == template_id) {
+                break template_config;
+            }
+            eprintln!(
+                "{}",
+                "Unrecognized format. Enter a built-in ID (e.g. \"rust-chat\"), a GitHub repo (\"owner/repo\"), or a git URL."
+                    .bold()
+            );
+        }
     } else if client_selection == none_index {
         // Ask for server language only
         let server_lang_choices = vec!["Rust", "C#", "TypeScript"];
@@ -626,12 +643,16 @@ async fn get_template_config_interactive(
 }
 
 fn clone_github_template(repo_input: &str, target: &Path) -> anyhow::Result<()> {
-    let repo_url = if repo_input.starts_with("http") {
+    let is_git_url = |s: &str| {
+        s.starts_with("git@") || s.starts_with("ssh://") || s.starts_with("http://") || s.starts_with("https://")
+    };
+
+    let repo_url = if is_git_url(repo_input) {
         repo_input.to_string()
     } else if repo_input.contains('/') {
         format!("https://github.com/{}", repo_input)
     } else {
-        anyhow::bail!("Invalid repository format. Use 'owner/repo' or full URL");
+        anyhow::bail!("Invalid repository format. Use 'owner/repo' or full git clone URL");
     };
 
     println!("  Cloning from {}...", repo_url);
