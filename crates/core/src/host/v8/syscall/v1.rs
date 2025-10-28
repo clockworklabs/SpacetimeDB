@@ -1,17 +1,17 @@
-use std::rc::Rc;
-
-use super::de::{deserialize_js, property, scratch_buf};
-use super::error::{module_exception, ExcResult, ExceptionThrown, TypeError};
-use super::from_value::cast;
-use super::ser::serialize_to_js;
-use super::string::{str_from_ident, StringConst};
-use super::{
-    call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace,
-    TerminationError, Throwable,
-};
+use super::hooks::{get_hook_function, set_hook_slots};
+use super::{AbiVersion, FnRet, ModuleHook};
 use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
+use crate::host::v8::de::{deserialize_js, scratch_buf};
+use crate::host::v8::error::{ExcResult, ExceptionThrown, TypeError};
+use crate::host::v8::from_value::cast;
+use crate::host::v8::ser::serialize_to_js;
+use crate::host::v8::string::{str_from_ident, StringConst};
+use crate::host::v8::{
+    call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace,
+    TerminationError, Throwable,
+};
 use crate::host::wasm_common::instrumentation::span;
 use crate::host::wasm_common::module_host_actor::{ReducerOp, ReducerResult};
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, TimingSpanIdx};
@@ -20,51 +20,39 @@ use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::{errno, ColId, IndexId, ReducerId, TableId};
 use spacetimedb_sats::Serialize;
 use v8::{
-    callback_scope, ConstructorBehavior, Context, FixedArray, Function, FunctionCallbackArguments, Isolate, Local,
-    Module, Object, PinCallbackScope, PinScope, Value,
+    callback_scope, ConstructorBehavior, Function, FunctionCallbackArguments, Isolate, Local, Module, Object,
+    PinCallbackScope, PinScope,
 };
 
-/// A dependency resolver for the user's module
-/// that will resolve `spacetimedb_sys` to a module that exposes the ABI.
-pub(super) fn resolve_sys_module<'s>(
-    context: Local<'s, Context>,
-    spec: Local<'s, v8::String>,
-    _attrs: Local<'s, FixedArray>,
-    _referrer: Local<'s, Module>,
-) -> Option<Local<'s, Module>> {
-    callback_scope!(unsafe scope, context);
+macro_rules! create_synthetic_module {
+    ($scope:expr, $module_name:expr, $(($wrapper:ident, $abi_call:expr, $fun:ident),)*) => {{
+        let export_names = &[$(str_from_ident!($fun).string($scope)),*];
+        let eval_steps = |context, module| {
+            callback_scope!(unsafe scope, context);
+            $(
+                register_module_fun(scope, &module, str_from_ident!($fun), |s, a| {
+                    $wrapper($abi_call, s, a, $fun)
+                })?;
+            )*
 
-    if spec == SYS_MODULE_NAME.string(scope) {
-        Some(register_sys_module(scope))
-    } else {
-        module_exception(scope, spec).throw(scope);
-        None
-    }
+            Some(v8::undefined(scope).into())
+        };
+
+        Module::create_synthetic_module(
+            $scope,
+            const { StringConst::new($module_name) }.string($scope),
+            export_names,
+            eval_steps,
+        )
+    }}
 }
 
 /// Registers all module -> host syscalls in the JS module `spacetimedb_sys`.
-fn register_sys_module<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
-    let module_name = SYS_MODULE_NAME.string(scope);
-
-    macro_rules! create_synthetic_module {
-        ($(($wrapper:ident, $abi_call:expr, $fun:ident),)*) => {{
-            let export_names = &[$(str_from_ident!($fun).string(scope)),*];
-            let eval_steps = |context, module| {
-                callback_scope!(unsafe scope, context);
-                $(
-                    register_module_fun(scope, &module, str_from_ident!($fun), |s, a| {
-                        $wrapper($abi_call, s, a, $fun)
-                    })?;
-                )*
-
-                Some(v8::undefined(scope).into())
-            };
-
-            Module::create_synthetic_module(scope, module_name, export_names, eval_steps)
-        }}
-    }
-
+pub(super) fn sys_v1_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    use register_hooks_v1_0 as register_hooks;
     create_synthetic_module!(
+        scope,
+        "spacetime:sys@1.0",
         (with_nothing, (), register_hooks),
         (with_sys_result_ret, AbiCall::TableIdFromName, table_id_from_name),
         (with_sys_result_ret, AbiCall::IndexIdFromName, index_id_from_name),
@@ -121,11 +109,6 @@ fn register_sys_module<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
         (with_sys_result_ret, AbiCall::GetJwt, get_jwt_payload),
     )
 }
-
-const SYS_MODULE_NAME: &StringConst = &StringConst::new("spacetime:sys@1.0");
-
-/// The return type of a module -> host syscall.
-pub(super) type FnRet<'scope> = ExcResult<Local<'scope, Value>>;
 
 /// Registers a function in `module`
 /// where the function has `name` and does `body`.
@@ -328,63 +311,30 @@ fn with_span<'scope, T, E: From<ExceptionThrown>>(
 ///
 /// Throws a `TypeError` if:
 /// - `hooks` is not an object that has functions `__describe_module__` and `__call_reducer__`.
-fn register_hooks<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
+fn register_hooks_v1_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
     // Convert `hooks` to an object.
     let hooks = cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
 
-    // Set the hook.
-    let ctx = scope.get_current_context();
-    // Call `set_slot` first, as it creates the annex
-    // and `set_embedder_data` is currently buggy.
-    ctx.set_slot(Rc::new(AbiVersion::V1));
-    ctx.set_embedder_data(HOOKS_SLOT, hooks.into());
+    let describe_module = get_hook_function(scope, hooks, str_from_ident!(__describe_module__))?;
+    let call_reducer = get_hook_function(scope, hooks, str_from_ident!(__call_reducer__))?;
 
-    // Validate that `__call_reducer__` + `__describe_module__` are functions.
-    let _ = describe_module_fun(scope)?;
-    let _ = call_reducer_fun(scope)?;
+    // Set the hooks.
+    set_hook_slots(
+        scope,
+        AbiVersion::V1,
+        &[
+            (ModuleHook::DescribeModule, describe_module),
+            (ModuleHook::CallReducer, call_reducer),
+        ],
+    )?;
 
     Ok(v8::undefined(scope).into())
 }
 
-/// The `v8::Context::{get,set}_embedder_data` slot that holds the hooks object.
-const HOOKS_SLOT: i32 = 20;
-
-/// The version of the ABI that is exposed to V8.
-#[derive(Copy, Clone)]
-enum AbiVersion {
-    V1,
-}
-
-/// Returns the, in [`register_hooks`],
-/// previously registered object with hooks.
-fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<(AbiVersion, Local<'scope, Object>)> {
-    let ctx = scope.get_current_context();
-    let abi_version = *ctx
-        .get_slot::<AbiVersion>()
-        .ok_or_else(|| TypeError("module hooks were never registered").throw(scope))?;
-
-    let hooks = ctx
-        .get_embedder_data(scope, HOOKS_SLOT)
-        .expect("if `AbiVersion` is set hooks must be set");
-    Ok((abi_version, hooks.cast()))
-}
-
-/// Gets a handle to the registered `__call_reducer__` function hook.
-pub(super) fn call_reducer_fun<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<Local<'scope, Function>> {
-    let (abi_ver, hooks_obj) = get_hooks(scope)?;
-    let AbiVersion::V1 = abi_ver;
-
-    let key = str_from_ident!(__call_reducer__).string(scope);
-    let object = property(scope, hooks_obj, key)?;
-    let fun = cast!(scope, object, Function, "module function hook `__call_reducer__`").map_err(|e| e.throw(scope))?;
-
-    Ok(fun)
-}
-
 /// Calls the `__call_reducer__` function `fun`.
-pub(super) fn call_call_reducer<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    fun: Local<'scope, Function>,
+pub(super) fn call_call_reducer(
+    scope: &mut PinScope<'_, '_>,
+    fun: Local<'_, Function>,
     op: ReducerOp<'_>,
 ) -> ExcResult<ReducerResult> {
     let ReducerOp {
@@ -412,23 +362,8 @@ pub(super) fn call_call_reducer<'scope>(
     Ok(user_res)
 }
 
-/// Gets a handle to the registered `__describe_module__` function hook. on `object`.
-fn describe_module_fun<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<Local<'scope, Function>> {
-    let (abi_ver, hooks_obj) = get_hooks(scope)?;
-    let AbiVersion::V1 = abi_ver;
-
-    let key = str_from_ident!(__describe_module__).string(scope);
-    let object = property(scope, hooks_obj, key)?;
-    let fun =
-        cast!(scope, object, Function, "module function hook `__describe_module__`").map_err(|e| e.throw(scope))?;
-    Ok(fun)
-}
-
 /// Calls the registered `__describe_module__` function hook.
-pub(super) fn call_describe_module<'scope>(scope: &mut PinScope<'scope, '_>) -> ExcResult<RawModuleDef> {
-    // Get the registered function hook.
-    let fun = describe_module_fun(scope)?;
-
+pub(super) fn call_describe_module(scope: &mut PinScope<'_, '_>, fun: Local<'_, Function>) -> ExcResult<RawModuleDef> {
     // Call the function.
     let raw_mod_js = call_free_fun(scope, fun, &[])?;
 

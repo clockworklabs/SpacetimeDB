@@ -5,7 +5,9 @@ use self::error::{
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
-use self::syscall::{call_call_reducer, call_describe_module, call_reducer_fun, resolve_sys_module, FnRet};
+use self::syscall::{
+    call_call_reducer, call_describe_module, get_hook, resolve_sys_module, FnRet, HookFunction, ModuleHook,
+};
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
@@ -18,6 +20,7 @@ use crate::host::{ReducerCallResult, Scheduler};
 use crate::module_host_context::{ModuleCreationContext, ModuleCreationContextLimited};
 use crate::replica_context::ReplicaContext;
 use crate::util::asyncify;
+use anyhow::Context as _;
 use core::str;
 use itertools::Either;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
@@ -329,12 +332,13 @@ fn startup_instance_worker<'scope>(
     scope: &mut PinScope<'scope, '_>,
     program: Arc<str>,
     module_or_mcc: Either<ModuleCommon, ModuleCreationContextLimited>,
-) -> anyhow::Result<(Local<'scope, Function>, Either<ModuleCommon, ModuleCommon>)> {
+) -> anyhow::Result<(HookFunction<'scope>, Either<ModuleCommon, ModuleCommon>)> {
     // Start-up the user's module.
     eval_user_module_catch(scope, &program).map_err(DescribeError::Setup)?;
 
     // Find the `__call_reducer__` function.
-    let call_reducer_fun = catch_exception(scope, |scope| Ok(call_reducer_fun(scope)?)).map_err(|(e, _)| e)?;
+    let call_reducer_fun =
+        get_hook(scope, ModuleHook::CallReducer).context("The `spacetimedb/server` module was never imported")?;
 
     // If we don't have a module, make one.
     let module_common = match module_or_mcc {
@@ -578,7 +582,7 @@ fn call_reducer<'scope>(
     instance_common: &mut InstanceCommon,
     replica_ctx: &ReplicaContext,
     scope: &mut PinScope<'scope, '_>,
-    fun: Local<'scope, Function>,
+    fun: HookFunction<'_>,
     tx: Option<MutTxId>,
     params: CallReducerParams,
 ) -> (super::ReducerCallResult, bool) {
@@ -655,7 +659,10 @@ fn extract_description<'scope>(
         |a, b, c| log_traceback(replica_ctx, a, b, c),
         || {
             catch_exception(scope, |scope| {
-                let def = call_describe_module(scope)?;
+                let Some(describe_module) = get_hook(scope, ModuleHook::DescribeModule) else {
+                    return Ok(RawModuleDef::V9(Default::default()));
+                };
+                let def = call_describe_module(scope, describe_module)?;
                 Ok(def)
             })
             .map_err(|(e, _)| e)
@@ -663,6 +670,7 @@ fn extract_description<'scope>(
         },
     )
 }
+
 #[cfg(test)]
 mod test {
     use super::to_value::test::with_scope;
@@ -691,7 +699,7 @@ mod test {
     fn call_call_reducer_works() {
         let call = |code| {
             with_module_catch(code, |scope| {
-                let fun = call_reducer_fun(scope)?;
+                let fun = get_hook(scope, ModuleHook::CallReducer).unwrap();
                 let op = ReducerOp {
                     id: ReducerId(42),
                     name: "foobar",
@@ -769,7 +777,11 @@ js error Uncaught Error: foobar
                 },
             })
         "#;
-        let raw_mod = with_module_catch(code, call_describe_module).map_err(|e| e.to_string());
+        let raw_mod = with_module_catch(code, |scope| {
+            let describe_module = get_hook(scope, ModuleHook::DescribeModule).unwrap();
+            call_describe_module(scope, describe_module)
+        })
+        .map_err(|e| e.to_string());
         assert_eq!(raw_mod, Ok(RawModuleDef::V9(<_>::default())));
     }
 }
