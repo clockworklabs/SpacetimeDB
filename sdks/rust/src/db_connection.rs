@@ -978,9 +978,6 @@ but you must call one of them, or else the connection will never progress.
     #[cfg(not(feature = "web"))]
     fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
         let (runtime, handle) = enter_or_create_runtime()?;
-        let db_callbacks = DbCallbacks::default();
-        let reducer_callbacks = ReducerCallbacks::default();
-        let procedure_callbacks = ProcedureCallbacks::default();
 
         let connection_id_override = get_connection_id_override();
         let ws_connection = tokio::task::block_in_place(|| {
@@ -998,50 +995,30 @@ but you must call one of them, or else the connection will never progress.
 
         let (_websocket_loop_handle, raw_msg_recv, raw_msg_send) = ws_connection.spawn_message_loop(&handle);
         let (_parse_loop_handle, parsed_recv_chan) = spawn_parse_loop::<M>(raw_msg_recv, &handle);
-
-        let inner = Arc::new(StdMutex::new(DbContextImplInner {
-            runtime,
-
-            db_callbacks,
-            reducer_callbacks,
-            subscriptions: SubscriptionManager::default(),
-
-            on_connect: self.on_connect,
-            on_connect_error: self.on_connect_error,
-            on_disconnect: self.on_disconnect,
-            call_reducer_flags: <_>::default(),
-            procedure_callbacks,
-        }));
-
-        let mut cache = ClientCache::default();
-        M::register_tables(&mut cache);
-        let cache = Arc::new(StdMutex::new(cache));
-        let send_chan = Arc::new(StdMutex::new(Some(raw_msg_send)));
+        let parsed_recv_chan = Arc::new(TokioMutex::new(parsed_recv_chan));
 
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
-        let ctx_imp = DbContextImpl {
-            runtime: handle,
-            inner,
-            send_chan,
-            cache,
-            recv: Arc::new(TokioMutex::new(parsed_recv_chan)),
-            pending_mutations_send,
-            pending_mutations_recv: Arc::new(TokioMutex::new(pending_mutations_recv)),
-            identity: Arc::new(StdMutex::new(None)),
-            connection_id: Arc::new(StdMutex::new(connection_id_override)),
-        };
+        let pending_mutations_recv = Arc::new(TokioMutex::new(pending_mutations_recv));
 
-        Ok(ctx_imp)
+        let inner_ctx = build_db_ctx_inner(runtime, self.on_connect, self.on_connect_error, self.on_disconnect);
+        Ok(build_db_ctx(
+            handle,
+            inner_ctx,
+            raw_msg_send,
+            parsed_recv_chan,
+            pending_mutations_send,
+            pending_mutations_recv,
+            connection_id_override,
+        ))
     }
 
+    /// Open a WebSocket connection, build an empty client cache, &c,
+    /// to construct a [`DbContextImpl`].
     #[cfg(feature = "web")]
-    pub async fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
-        let db_callbacks = DbCallbacks::default();
-        let reducer_callbacks = ReducerCallbacks::default();
-
+    async fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
         let connection_id_override = get_connection_id_override();
         let ws_connection = WsConnection::connect(
-            self.uri.unwrap(),
+            self.uri.clone().unwrap(),
             self.module_name.as_ref().unwrap(),
             self.token.as_deref(),
             connection_id_override,
@@ -1054,36 +1031,20 @@ but you must call one of them, or else the connection will never progress.
 
         let (raw_msg_recv, raw_msg_send) = ws_connection.spawn_message_loop();
         let parsed_recv_chan = spawn_parse_loop::<M>(raw_msg_recv);
-
-        let inner = Arc::new(StdMutex::new(DbContextImplInner {
-            db_callbacks,
-            reducer_callbacks,
-            subscriptions: SubscriptionManager::default(),
-
-            on_connect: self.on_connect,
-            on_connect_error: self.on_connect_error,
-            on_disconnect: self.on_disconnect,
-            call_reducer_flags: <_>::default(),
-        }));
-
-        let mut cache = ClientCache::default();
-        M::register_tables(&mut cache);
-        let cache = Arc::new(StdMutex::new(cache));
-        let send_chan = Arc::new(StdMutex::new(Some(raw_msg_send)));
+        let parsed_recv_chan = Arc::new(StdMutex::new(parsed_recv_chan));
 
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
-        let ctx_imp = DbContextImpl {
-            inner,
-            send_chan,
-            cache,
-            recv: Arc::new(StdMutex::new(parsed_recv_chan)),
-            pending_mutations_send,
-            pending_mutations_recv: Arc::new(StdMutex::new(pending_mutations_recv)),
-            identity: Arc::new(StdMutex::new(None)),
-            connection_id: Arc::new(StdMutex::new(connection_id_override)),
-        };
+        let pending_mutations_recv = Arc::new(StdMutex::new(pending_mutations_recv));
 
-        Ok(ctx_imp)
+        let inner_ctx = build_db_ctx_inner(self.on_connect, self.on_connect_error, self.on_disconnect);
+        Ok(build_db_ctx(
+            inner_ctx,
+            raw_msg_send,
+            parsed_recv_chan,
+            pending_mutations_send,
+            pending_mutations_recv,
+            connection_id_override,
+        ))
     }
 
     /// Set the URI of the SpacetimeDB host which is running the remote module.
@@ -1212,6 +1173,60 @@ Instead of registering multiple `on_disconnect` callbacks, register a single cal
         }
         self.on_disconnect = Some(Box::new(callback));
         self
+    }
+}
+
+/// Create a [`DbContextImplInner`] wrapped in `Arc<Mutex<...>>`.
+fn build_db_ctx_inner<M: SpacetimeModule>(
+    #[cfg(not(feature = "web"))] runtime: Option<Runtime>,
+
+    on_connect_cb: Option<OnConnectCallback<M>>,
+    on_connect_error_cb: Option<OnConnectErrorCallback<M>>,
+    on_disconnect_cb: Option<OnDisconnectCallback<M>>,
+) -> Arc<StdMutex<DbContextImplInner<M>>> {
+    Arc::new(StdMutex::new(DbContextImplInner {
+        #[cfg(not(feature = "web"))]
+        runtime,
+
+        db_callbacks: DbCallbacks::default(),
+        reducer_callbacks: ReducerCallbacks::default(),
+        subscriptions: SubscriptionManager::default(),
+
+        on_connect: on_connect_cb,
+        on_connect_error: on_connect_error_cb,
+        on_disconnect: on_disconnect_cb,
+        call_reducer_flags: <_>::default(),
+
+        procedure_callbacks: ProcedureCallbacks::default(),
+    }))
+}
+
+/// Assemble and return a [`DbContextImpl`] from the provided [`DbContextImplInner`], and channels.
+fn build_db_ctx<M: SpacetimeModule>(
+    #[cfg(not(feature = "web"))] runtime_handle: runtime::Handle,
+
+    inner_ctx: Arc<StdMutex<DbContextImplInner<M>>>,
+    raw_msg_send: mpsc::UnboundedSender<ws::ClientMessage<Bytes>>,
+    parsed_msg_recv: SharedAsyncCell<mpsc::UnboundedReceiver<ParsedMessage<M>>>,
+    pending_mutations_send: mpsc::UnboundedSender<PendingMutation<M>>,
+    pending_mutations_recv: SharedAsyncCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,
+    connection_id: Option<ConnectionId>,
+) -> DbContextImpl<M> {
+    let mut cache = ClientCache::default();
+    M::register_tables(&mut cache);
+    let cache = Arc::new(StdMutex::new(cache));
+
+    DbContextImpl {
+        #[cfg(not(feature = "web"))]
+        runtime: runtime_handle,
+        inner: inner_ctx,
+        send_chan: Arc::new(StdMutex::new(Some(raw_msg_send))),
+        cache,
+        recv: parsed_msg_recv,
+        pending_mutations_send,
+        pending_mutations_recv,
+        identity: Arc::new(StdMutex::new(None)),
+        connection_id: Arc::new(StdMutex::new(connection_id)),
     }
 }
 
