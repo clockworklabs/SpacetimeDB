@@ -264,11 +264,11 @@ async fn fetch_ws_token(host: &Uri, auth_token: &str) -> Result<String, WsError>
     use js_sys::{Reflect, JSON};
     use wasm_bindgen::{JsCast, JsValue};
 
-    let url = format!("{}v1/identity/websocket-token", host);
+    let url = format!("{host}v1/identity/websocket-token");
 
     // helpers to convert gloo_net::Error or JsValue into WsError::TokenVerification
     let gloo_to_ws_err = |e: gloo_net::Error| match e {
-        gloo_net::Error::JsError(js_err) => WsError::TokenVerification(js_err.message.into()),
+        gloo_net::Error::JsError(js_err) => WsError::TokenVerification(js_err.message),
         gloo_net::Error::SerdeError(e) => WsError::TokenVerification(e.to_string()),
         gloo_net::Error::GlooError(msg) => WsError::TokenVerification(msg),
     };
@@ -278,7 +278,7 @@ async fn fetch_ws_token(host: &Uri, auth_token: &str) -> Result<String, WsError>
         } else if let Some(s) = e.as_string() {
             WsError::TokenVerification(s)
         } else {
-            WsError::TokenVerification(format!("{:?}", e))
+            WsError::TokenVerification(format!("{e:?}"))
         }
     };
 
@@ -547,7 +547,6 @@ impl WsConnection {
         mpsc::UnboundedReceiver<ServerMessage<BsatnFormat>>,
         mpsc::UnboundedSender<ClientMessage<Bytes>>,
     ) {
-
         let websocket_received = CLIENT_METRICS.websocket_received.with_label_values(&self.db_name);
         let websocket_received_msg_size = CLIENT_METRICS
             .websocket_received_msg_size
