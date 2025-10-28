@@ -1109,7 +1109,7 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
             update_cargo_toml_name(&server_dir, &config.project_name)?;
         }
         Some(ServerLanguage::Csharp) => {
-            update_csproj_server_to_nuget(&server_dir, &config.project_name)?;
+            update_csproj_server_to_nuget(&server_dir)?;
         }
         None => {}
     }
@@ -1128,7 +1128,7 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<
             update_cargo_toml_name(project_path, &config.project_name)?;
         }
         Some(ClientLanguage::Csharp) => {
-            update_csproj_client_to_nuget(project_path, &config.project_name)?;
+            update_csproj_client_to_nuget(project_path)?;
         }
         None => {}
     }
