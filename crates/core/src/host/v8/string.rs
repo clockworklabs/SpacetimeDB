@@ -36,6 +36,10 @@ impl StringConst {
         v8::String::new_from_onebyte_const(scope, &self.0)
             .expect("`create_external_onebyte_const` should've asserted `.len() < kMaxLength`")
     }
+
+    pub(super) fn as_str(&'static self) -> &'static str {
+        self.0.as_str()
+    }
 }
 
 /// Converts an identifier to a compile-time ASCII string.
