@@ -95,7 +95,7 @@ $env:PGPASSWORD = (spacetime login show --token | Select-String 'Your auth token
 
 _PGWire_ is disabled by default when starting a `SpacetimeDB Standalone` server.
 
-To enable it, start the server with the `--pg-port` flag:
+To enable it, start the server with the `--pg-port` option:
 
 ```bash
 spacetime start --pg-port 5432 [ARGS]
