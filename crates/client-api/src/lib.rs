@@ -490,6 +490,20 @@ pub trait Authorization {
         database: Identity,
         action: Action,
     ) -> impl Future<Output = Result<(), Unauthorized>> + Send;
+
+    /// Obtain an attenuated [AuthCtx] for `subject` to evaluate SQL against
+    /// `database`.
+    ///
+    /// "SQL" includes the sql endpoint, pg wire connections, as well as
+    /// subscription queries.
+    ///
+    /// If any SQL should be rejected outright, or the authorization database
+    /// is not available, return `Err(Unauthorized)`.
+    fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> impl Future<Output = Result<AuthCtx, Unauthorized>> + Send;
 }
 
 impl<T: Authorization> Authorization for Arc<T> {
@@ -500,6 +514,14 @@ impl<T: Authorization> Authorization for Arc<T> {
         action: Action,
     ) -> impl Future<Output = Result<(), Unauthorized>> + Send {
         (**self).authorize_action(subject, database, action)
+    }
+
+    fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> impl Future<Output = Result<AuthCtx, Unauthorized>> + Send {
+        (**self).authorize_sql(subject, database)
     }
 }
 

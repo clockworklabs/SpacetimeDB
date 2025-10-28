@@ -10,6 +10,7 @@ use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate};
 use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{u256, ProductValue};
@@ -335,7 +336,7 @@ impl ExecutionUnit {
 }
 
 impl AuthAccess for ExecutionUnit {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        self.eval_plan.check_auth(owner, caller)
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
+        self.eval_plan.check_auth(auth)
     }
 }
