@@ -317,6 +317,22 @@ fn create_template_config_from_template_str(
     }
 }
 
+#[cfg(windows)]
+fn run_pm(pm: &str, args: &[&str], cwd: &Path) -> std::io::Result<std::process::ExitStatus> {
+    // Use cmd to resolve .cmd/.bat/.exe shims properly on Windows
+    std::process::Command::new("cmd")
+        .arg("/C")
+        .arg(pm)
+        .args(args)
+        .current_dir(cwd)
+        .status()
+}
+
+#[cfg(not(windows))]
+fn run_pm(pm: &str, args: &[&str], cwd: &Path) -> std::io::Result<std::process::ExitStatus> {
+    std::process::Command::new(pm).args(args).current_dir(cwd).status()
+}
+
 pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) -> anyhow::Result<()> {
     println!(
         "\n{}",
@@ -347,19 +363,6 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
     if let Some(pm) = package_manager {
         println!("Installing dependencies with {}...", pm);
 
-        #[cfg(windows)]
-        let mut pm_cmd = pm;
-        #[cfg(not(windows))]
-        let pm_cmd = pm;
-
-        // On Windows, npm/yarn/pnpm are CMD shims, bun is a real exe
-        #[cfg(windows)]
-        {
-            if ["npm", "yarn", "pnpm"].contains(&pm) {
-                pm_cmd = Box::leak(format!("{pm}.cmd").into_boxed_str());
-            }
-        }
-
         // Command arguments
         let mut args_map: HashMap<&str, Vec<&str>> = HashMap::new();
         args_map.insert("npm", vec!["install", "--no-fund", "--no-audit", "--loglevel=error"]);
@@ -372,11 +375,8 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
 
         let args: &[&str] = args_map.get(pm).map(|v| v.as_slice()).unwrap_or(&[]);
 
-        // Run and stream output
-        let status = std::process::Command::new(pm_cmd)
-            .args(args)
-            .current_dir(server_dir)
-            .status();
+        // Run and stream output cross-platform
+        let status = run_pm(pm, args, server_dir);
 
         match status {
             Ok(s) if s.success() => {
@@ -386,6 +386,16 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
                 eprintln!(
                     "{}",
                     format!("Installation failed (exit code {}).", s.code().unwrap_or(-1)).red()
+                );
+                println!(
+                    "{}",
+                    format!("Please run '{} install' manually in {}.", pm, server_dir.display()).yellow()
+                );
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!(
+                    "{}",
+                    format!("Failed to find '{}'. Is it installed and on PATH?", pm).red()
                 );
                 println!(
                     "{}",
