@@ -1216,7 +1216,7 @@ fn console_log<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackA
     let function = env.log_record_function();
     let record = Record {
         // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start)
-        ts: chrono::Utc::now(),
+        ts: InstanceEnv::now_for_logging(),
         target: None,
         filename: filename.as_deref(),
         line_number: Some(frame.get_line_number() as u32),
