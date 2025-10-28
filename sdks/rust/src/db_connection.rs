@@ -54,6 +54,11 @@ use tokio::{
 
 pub(crate) type SharedCell<T> = Arc<StdMutex<T>>;
 
+#[cfg(not(feature = "web"))]
+type SharedAsyncCell<T> = Arc<TokioMutex<T>>;
+#[cfg(feature = "web")]
+type SharedAsyncCell<T> = SharedCell<T>;
+
 /// Implementation of `DbConnection`, `EventContext`,
 /// and anything else that provides access to the database connection.
 ///
@@ -74,10 +79,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
 
     /// Receiver channel for WebSocket messages,
     /// which are pre-parsed in the background by [`parse_loop`].
-    #[cfg(not(feature = "web"))]
-    recv: Arc<TokioMutex<mpsc::UnboundedReceiver<ParsedMessage<M>>>>,
-    #[cfg(feature = "web")]
-    recv: SharedCell<mpsc::UnboundedReceiver<ParsedMessage<M>>>,
+    recv: SharedAsyncCell<mpsc::UnboundedReceiver<ParsedMessage<M>>>,
 
     /// Channel into which operations which apparently mutate SDK state,
     /// e.g. registering callbacks, push [`PendingMutation`] messages,
@@ -87,10 +89,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
 
     /// Receive end of `pending_mutations_send`,
     /// from which [Self::apply_pending_mutations] and friends read mutations.
-    #[cfg(not(feature = "web"))]
-    pending_mutations_recv: Arc<TokioMutex<mpsc::UnboundedReceiver<PendingMutation<M>>>>,
-    #[cfg(feature = "web")]
-    pending_mutations_recv: SharedCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,
+    pending_mutations_recv: SharedAsyncCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,
 
     /// This connection's `Identity`.
     ///

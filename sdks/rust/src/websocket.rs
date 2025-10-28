@@ -33,6 +33,11 @@ use tokio_tungstenite_wasm::{Message as WebSocketMessage, WebSocketStream};
 use crate::compression::decompress_server_message;
 use crate::metrics::CLIENT_METRICS;
 
+#[cfg(not(feature = "web"))]
+type TokioTungsteniteError = tokio_tungstenite::tungstenite::Error;
+#[cfg(feature = "web")]
+type TokioTungsteniteError = tokio_tungstenite_wasm::Error;
+
 #[derive(Error, Debug, Clone)]
 pub enum UriError {
     #[error("Unknown URI scheme {scheme}, expected http, https, ws or wss")]
@@ -59,22 +64,12 @@ pub enum WsError {
     #[error(transparent)]
     UriError(#[from] UriError),
 
-    #[cfg(not(feature = "web"))]
     #[error("Error in WebSocket connection with {uri}: {source}")]
     Tungstenite {
         uri: Uri,
         #[source]
         // `Arc` is required for `Self: Clone`, as `tungstenite::Error: !Clone`.
-        source: Arc<tokio_tungstenite::tungstenite::Error>,
-    },
-
-    #[cfg(feature = "web")]
-    #[error("Error in WebSocket connection with {uri}: {source}")]
-    Tungstenite {
-        uri: Uri,
-        #[source]
-        // `Arc` is required for `Self: Clone`, as `tungstenite::Error: !Clone`.
-        source: Arc<tokio_tungstenite_wasm::Error>,
+        source: Arc<TokioTungsteniteError>,
     },
 
     #[error("Received empty raw message, but valid messages always start with a one-byte compression flag")]
