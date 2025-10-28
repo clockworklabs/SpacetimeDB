@@ -30,6 +30,7 @@ use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
+use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
@@ -68,6 +69,35 @@ use std::{
 
 type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
+#[derive(Default)]
+pub struct ReadSet {
+    table_scans: IntSet<TableId>,
+    index_keys: IntMap<TableId, IntMap<IndexId, AlgebraicValue>>,
+}
+
+impl ReadSet {
+    fn insert_table_scan(&mut self, table_id: TableId) {
+        self.table_scans.insert(table_id);
+    }
+
+    fn insert_index_scan(
+        &mut self,
+        table_id: TableId,
+        index_id: IndexId,
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+    ) {
+        match (lower, upper) {
+            (Bound::Included(lower), Bound::Included(upper)) if lower == upper => {
+                self.index_keys.entry(table_id).or_default().insert(index_id, lower);
+            }
+            _ => {
+                self.table_scans.insert(table_id);
+            }
+        }
+    }
+}
+
 /// Represents a Mutable transaction. Holds locks for its duration
 ///
 /// The initialization of this struct is sensitive because improper
@@ -78,6 +108,7 @@ pub struct MutTxId {
     pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
+    pub(super) read_sets: IntMap<ViewId, ReadSet>,
     // TODO(cloutiertyler): The below were made `pub` for the datastore split. We should
     // make these private again.
     pub timer: Instant,
@@ -85,7 +116,31 @@ pub struct MutTxId {
     pub metrics: ExecutionMetrics,
 }
 
-static_assert_size!(MutTxId, 400);
+static_assert_size!(MutTxId, 432);
+
+impl MutTxId {
+    pub fn track_table_scan(&mut self, view_id: Option<ViewId>, table_id: TableId) {
+        if let Some(view_id) = view_id {
+            self.read_sets.entry(view_id).or_default().insert_table_scan(table_id)
+        }
+    }
+
+    pub fn track_index_scan(
+        &mut self,
+        view_id: Option<ViewId>,
+        table_id: TableId,
+        index_id: IndexId,
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+    ) {
+        if let Some(view_id) = view_id {
+            self.read_sets
+                .entry(view_id)
+                .or_default()
+                .insert_index_scan(table_id, index_id, lower, upper)
+        }
+    }
+}
 
 impl Datastore for MutTxId {
     fn blob_store(&self) -> &dyn BlobStore {
@@ -919,7 +974,12 @@ impl MutTxId {
         prefix_elems: ColId,
         rstart: &[u8],
         rend: &[u8],
-    ) -> Result<(TableId, IndexScanRanged<'a>)> {
+    ) -> Result<(
+        TableId,
+        Bound<AlgebraicValue>,
+        Bound<AlgebraicValue>,
+        IndexScanRanged<'a>,
+    )> {
         // Extract the table id, and commit/tx indices.
         let (table_id, commit_index, tx_index) = self
             .get_table_and_index(index_id)
@@ -938,9 +998,12 @@ impl MutTxId {
         let tx_iter = tx_index.map(|i| i.seek_range(&bounds));
         let commit_iter = commit_index.seek_range(&bounds);
 
+        let (lower, upper) = bounds;
+
         let dt = self.tx_state.get_delete_table(table_id);
         let iter = combine_range_index_iters(dt, tx_iter, commit_iter);
-        Ok((table_id, iter))
+
+        Ok((table_id, lower, upper, iter))
     }
 
     /// Translate `index_id` to the table id, and commit/tx indices.
