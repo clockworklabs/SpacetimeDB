@@ -57,7 +57,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fs::File;
 use std::io;
-use std::ops::RangeBounds;
+use std::ops::{Bound, RangeBounds};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -1353,7 +1353,15 @@ impl RelationalDB {
         prefix_elems: ColId,
         rstart: &[u8],
         rend: &[u8],
-    ) -> Result<(TableId, impl Iterator<Item = RowRef<'a>>), DBError> {
+    ) -> Result<
+        (
+            TableId,
+            Bound<AlgebraicValue>,
+            Bound<AlgebraicValue>,
+            impl Iterator<Item = RowRef<'a>>,
+        ),
+        DBError,
+    > {
         Ok(tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?)
     }
 
