@@ -17,13 +17,16 @@ This progressive tutorial is continued from [part 1](/unity/part-1).
 Now that we have our client project setup we can configure the module directory. Regardless of what language you choose, your module will always go into a `spacetimedb` directory within your client directory like this:
 
 ```
-blackholio                      # This is the directory for your Unity project
+blackholio/                     # This is the directory for your Unity project
 ├── Assembly-CSharp.csproj
 ├── Assets/
+│   └── module_bindings/        # This directory contains the client logic to communicate with the module
 ├── Library/
 ├── ...                         # rest of the Unity files
 └── spacetimedb/                # This is where your server modules live
 ```
+
+Your `module_bindings` directory can go wherever you want as long as it is inside of `Assets/` in your Unity project. We'll configure this in a later step.
 
 
 ## Create a Server Module
