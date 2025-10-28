@@ -199,7 +199,7 @@ mod web_mod {
             /// Gets the value of a cookie by name.
             pub fn get(name: &str) -> Result<Option<String>, CookieError> {
                 let doc = get_html_document();
-                let all = doc.cookie().map_err(|e| CookieError::Get(e))?;
+                let all = doc.cookie().map_err(CookieError::Get)?;
                 for cookie in all.split(';') {
                     let cookie = cookie.trim();
                     if let Some((k, v)) = cookie.split_once('=') {
@@ -248,19 +248,19 @@ mod web_mod {
                 let mut parts = vec![format!("{}={}", self.name, self.value)];
 
                 if let Some(path) = self.path {
-                    parts.push(format!("Path={}", path));
+                    parts.push(format!("Path={path}"));
                 }
                 if let Some(domain) = self.domain {
-                    parts.push(format!("Domain={}", domain));
+                    parts.push(format!("Domain={domain}"));
                 }
                 if let Some(age) = self.max_age {
-                    parts.push(format!("Max-Age={}", age));
+                    parts.push(format!("Max-Age={age}"));
                 }
                 if self.secure {
                     parts.push("Secure".into());
                 }
                 if let Some(same) = self.same_site {
-                    parts.push(format!("SameSite={}", same.to_string()));
+                    parts.push(format!("SameSite={same}"));
                 }
 
                 let cookie_str = parts.join("; ");
@@ -289,12 +289,12 @@ mod web_mod {
             None,
         }
 
-        impl ToString for SameSite {
-            fn to_string(&self) -> String {
+        impl std::fmt::Display for SameSite {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 match self {
-                    SameSite::Strict => "Strict".into(),
-                    SameSite::Lax => "Lax".into(),
-                    SameSite::None => "None".into(),
+                    SameSite::Strict => f.write_str("Strict"),
+                    SameSite::Lax => f.write_str("Lax"),
+                    SameSite::None => f.write_str("None"),
                 }
             }
         }
