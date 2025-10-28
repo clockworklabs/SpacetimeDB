@@ -69,6 +69,8 @@ use std::{
 
 type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
+/// Views track their read sets and update the [`CommittedState`] with them.
+/// The [`CommittedState`] maintains these read sets in order to determine when to re-evaluate a view.
 #[derive(Default)]
 pub struct ReadSet {
     table_scans: IntSet<TableId>,
@@ -76,10 +78,24 @@ pub struct ReadSet {
 }
 
 impl ReadSet {
+    /// Enumerate the tables that are scanned and tracked by this read set
+    pub fn tables_scanned(&self) -> impl Iterator<Item = &TableId> + '_ {
+        self.table_scans.iter()
+    }
+
+    /// Enumerate the single index keys that are tracked by this read set
+    pub fn index_keys_scanned(&self) -> impl Iterator<Item = (&TableId, &IndexId, &AlgebraicValue)> + '_ {
+        self.index_keys
+            .iter()
+            .flat_map(|(table_id, keys)| keys.iter().map(move |(index_id, key)| (table_id, index_id, key)))
+    }
+
+    /// Track a table scan in this read set
     fn insert_table_scan(&mut self, table_id: TableId) {
         self.table_scans.insert(table_id);
     }
 
+    /// Track an index scan in this read set
     fn insert_index_scan(
         &mut self,
         table_id: TableId,
@@ -98,6 +114,8 @@ impl ReadSet {
     }
 }
 
+pub type ViewReadSets = IntMap<ViewId, ReadSet>;
+
 /// Represents a Mutable transaction. Holds locks for its duration
 ///
 /// The initialization of this struct is sensitive because improper
@@ -108,7 +126,7 @@ pub struct MutTxId {
     pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
-    pub(super) read_sets: IntMap<ViewId, ReadSet>,
+    pub(super) read_sets: ViewReadSets,
     // TODO(cloutiertyler): The below were made `pub` for the datastore split. We should
     // make these private again.
     pub timer: Instant,
@@ -1518,7 +1536,9 @@ impl MutTxId {
     /// - `String`, the name of the reducer which ran during this transaction.
     pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
-        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+        let tx_data = self
+            .committed_state_write_lock
+            .merge(self.tx_state, self.read_sets, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -1560,7 +1580,9 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
     pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
-        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+        let tx_data = self
+            .committed_state_write_lock
+            .merge(self.tx_state, self.read_sets, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
