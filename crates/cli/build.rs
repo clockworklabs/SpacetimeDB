@@ -72,14 +72,15 @@ fn generate_template_files() {
 
     let repo_root = get_repo_root();
     let workspace_cargo = repo_root.join("Cargo.toml");
-    if let Ok(relative_workspace) = workspace_cargo.strip_prefix(manifest_path) {
-        println!("cargo:rerun-if-changed={}", relative_workspace.display());
-    } else {
-        println!("cargo:rerun-if-changed={}", workspace_cargo.display());
-    }
+    println!("cargo:rerun-if-changed={}", workspace_cargo.display());
 
     let (workspace_edition, workspace_versions) =
         extract_workspace_metadata(&workspace_cargo).expect("Failed to extract workspace metadata");
+
+    let ts_bindings_package = repo_root.join("crates/bindings-typescript/package.json");
+    println!("cargo:rerun-if-changed={}", ts_bindings_package.display());
+    let ts_bindings_version =
+        extract_ts_bindings_version(&ts_bindings_package).expect("Failed to read TypeScript bindings version");
 
     let cursorrules_path = repo_root.join("docs/.cursor/rules/spacetimedb.mdc");
     if cursorrules_path.exists() {
@@ -110,6 +111,11 @@ fn generate_template_files() {
     }
     generated_code.push_str("        _ => None,\n");
     generated_code.push_str("    }\n");
+    generated_code.push_str("}\n");
+
+    generated_code.push_str("\n");
+    generated_code.push_str("pub fn get_typescript_bindings_version() -> &'static str {\n");
+    generated_code.push_str(&format!("    \"{}\"\n", ts_bindings_version.escape_default()));
     generated_code.push_str("}\n");
 
     write_if_changed(&dest_path, generated_code.as_bytes()).expect("Failed to write embedded_templates.rs");
@@ -304,6 +310,22 @@ fn extract_workspace_metadata(path: &Path) -> io::Result<(String, BTreeMap<Strin
     }
 
     Ok((edition, versions))
+}
+
+fn extract_ts_bindings_version(path: &Path) -> io::Result<String> {
+    let content = fs::read_to_string(path)?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&content).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+    parsed
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Missing \"version\" field in TypeScript bindings package.json",
+            )
+        })
 }
 
 fn normalize_version(version: &str) -> String {

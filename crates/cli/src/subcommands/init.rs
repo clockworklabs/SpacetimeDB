@@ -12,7 +12,6 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use toml_edit::{value, DocumentMut, Item};
 
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
@@ -20,8 +19,6 @@ use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 mod embedded {
     include!(concat!(env!("OUT_DIR"), "/embedded_templates.rs"));
 }
-
-const TYPESCRIPT_BINDINGS_PACKAGE_JSON: &str = include_str!("../../../bindings-typescript/package.json");
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TemplateDefinition {
@@ -713,15 +710,7 @@ fn copy_dir_all(src: &Path, dst: &Path) -> anyhow::Result<()> {
 }
 
 fn get_spacetimedb_typescript_version() -> &'static str {
-    static VERSION: OnceLock<String> = OnceLock::new();
-    VERSION.get_or_init(|| {
-        let package: serde_json::Value = serde_json::from_str(TYPESCRIPT_BINDINGS_PACKAGE_JSON)
-            .expect("Failed to parse TypeScript bindings package.json");
-        package["version"]
-            .as_str()
-            .expect("Version not found in package.json")
-            .to_string()
-    })
+    embedded::get_typescript_bindings_version()
 }
 
 fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
