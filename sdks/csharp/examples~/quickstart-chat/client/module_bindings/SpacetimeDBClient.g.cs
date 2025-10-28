@@ -472,6 +472,7 @@ namespace SpacetimeDB.Types
                 "ClientDisconnected" => BSATNHelpers.Decode<Reducer.ClientDisconnected>(encodedArgs),
                 "SendMessage" => BSATNHelpers.Decode<Reducer.SendMessage>(encodedArgs),
                 "SetName" => BSATNHelpers.Decode<Reducer.SetName>(encodedArgs),
+                "" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),
                 var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
             };
         }

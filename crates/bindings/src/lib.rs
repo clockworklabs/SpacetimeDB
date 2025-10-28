@@ -1,6 +1,10 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
+use core::cell::{LazyCell, OnceCell, RefCell};
+use core::ops::Deref;
+use spacetimedb_lib::bsatn;
+
 #[cfg(feature = "unstable")]
 mod client_visibility_filter;
 pub mod log_stopwatch;
@@ -12,16 +16,11 @@ pub mod rt;
 #[doc(hidden)]
 pub mod table;
 
+#[cfg(feature = "unstable")]
+pub use client_visibility_filter::Filter;
 pub use log;
 #[cfg(feature = "rand")]
 pub use rand08 as rand;
-use spacetimedb_lib::bsatn;
-use std::cell::LazyCell;
-use std::cell::{OnceCell, RefCell};
-use std::ops::Deref;
-
-#[cfg(feature = "unstable")]
-pub use client_visibility_filter::Filter;
 #[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
@@ -820,25 +819,25 @@ pub use spacetimedb_bindings_macro::procedure;
 /// }
 ///
 /// // A view that selects at most one row from a table
-/// #[view(public)]
+/// #[view(name = my_player, public)]
 /// fn my_player(ctx: &ViewContext) -> Option<Player> {
 ///     ctx.db.player().identity().find(ctx.sender)
 /// }
 ///
 /// // An example of column projection
-/// #[view(public)]
+/// #[view(name = my_player_id, public)]
 /// fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
 ///     ctx.db.player().identity().find(ctx.sender).map(|Player { id, .. }| PlayerId { id })
 /// }
 ///
 /// // An example of a parameterized view
-/// #[view(public)]
+/// #[view(name = players_at_level, public)]
 /// fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
 ///     ctx.db.player().level().filter(level).collect()
 /// }
 ///
 /// // An example that is analogous to a semijoin in sql
-/// #[view(public)]
+/// #[view(name = players_at_coordinates, public)]
 /// fn players_at_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<Player> {
 ///     ctx
 ///         .db
@@ -850,7 +849,7 @@ pub use spacetimedb_bindings_macro::procedure;
 /// }
 ///
 /// // An example of a join that combines fields from two different tables
-/// #[view(public)]
+/// #[view(name = players_with_coordinates, public)]
 /// fn players_with_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<PlayerAndLocation> {
 ///     ctx
 ///         .db
@@ -1135,6 +1134,9 @@ impl DbContext for ReducerContext {
 #[non_exhaustive]
 pub struct Local {}
 
+/// The [JWT] of an [`AuthCtx`].
+///
+/// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
 #[non_exhaustive]
 pub struct JwtClaims {
     payload: String,
@@ -1145,7 +1147,8 @@ pub struct JwtClaims {
 /// Authentication information for the caller of a reducer.
 pub struct AuthCtx {
     is_internal: bool,
-    // NOTE(jsdt): cannot directly use a LazyLock without making this struct generic.
+    // NOTE(jsdt): cannot directly use a `LazyCell` without making this struct generic,
+    // which would cause `ReducerContext` to become generic as well.
     jwt: Box<dyn Deref<Target = Option<JwtClaims>>>,
 }
 
@@ -1157,19 +1160,25 @@ impl AuthCtx {
         }
     }
 
-    /// Create an [`AuthCtx`] for an internal call, with no JWT.
+    /// Creates an [`AuthCtx`] for an internal call, with no [JWT].
     /// This represents a scheduled reducer.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn internal() -> AuthCtx {
         Self::new(true, || None)
     }
 
-    /// Creates an [`AuthCtx`] using the json claims from a JWT.
+    /// Creates an [`AuthCtx`] using the json claims from a [JWT].
     /// This can be used to write unit tests.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {
         Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
     }
 
-    /// Creates an [`AuthCtx`] that reads the JWT for the given connection id.
+    /// Creates an [`AuthCtx`] that reads the [JWT] for the given connection id.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
         Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
     }
@@ -1179,13 +1188,17 @@ impl AuthCtx {
         self.is_internal
     }
 
-    /// Check if there is a JWT without loading it.
-    /// If [`AuthCtx::is_internal`] is true, this will return false.
+    /// Checks if there is a [JWT] without loading it.
+    /// If [`AuthCtx::is_internal`] returns true, this will return false.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn has_jwt(&self) -> bool {
         self.jwt.is_some()
     }
 
-    /// Load the jwt.
+    /// Loads the [JWT].
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn jwt(&self) -> Option<&JwtClaims> {
         self.jwt.as_ref().deref().as_ref()
     }
@@ -1240,6 +1253,9 @@ impl JwtClaims {
     }
 
     /// Get the whole JWT payload as a json string.
+    ///
+    /// This method is intended for parsing custom claims,
+    /// beyond the methods offered by [`JwtClaims`].
     pub fn raw_payload(&self) -> &str {
         &self.payload
     }
