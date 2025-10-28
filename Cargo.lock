@@ -7775,7 +7775,7 @@ dependencies = [
  "flate2",
  "futures",
  "futures-channel",
- "getrandom 0.3.2",
+ "getrandom 0.3.4",
  "gloo-console",
  "gloo-net",
  "gloo-storage",
