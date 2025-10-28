@@ -95,7 +95,9 @@ impl ReadSet {
         self.table_scans.insert(table_id);
     }
 
-    /// Track an index scan in this read set
+    /// Track an index scan in this read set.
+    /// If we only read a single index key we record the key.
+    /// If we read a range, we treat it as though we scanned the entire table.
     fn insert_index_scan(
         &mut self,
         table_id: TableId,
@@ -137,13 +139,15 @@ pub struct MutTxId {
 static_assert_size!(MutTxId, 432);
 
 impl MutTxId {
-    pub fn track_table_scan(&mut self, view_id: Option<ViewId>, table_id: TableId) {
+    /// Record that a view performs a table scan in this transaction's read set
+    pub fn record_table_scan(&mut self, view_id: Option<ViewId>, table_id: TableId) {
         if let Some(view_id) = view_id {
             self.read_sets.entry(view_id).or_default().insert_table_scan(table_id)
         }
     }
 
-    pub fn track_index_scan(
+    /// Record that a view performs an index scan in this transaction's read set
+    pub fn record_index_scan(
         &mut self,
         view_id: Option<ViewId>,
         table_id: TableId,

@@ -54,18 +54,18 @@ type IndexKeyReadSet = HashMap<AlgebraicValue, IntSet<ViewId>>;
 type IndexColReadSet = HashMap<ColList, IndexKeyReadSet>;
 
 #[derive(Default)]
-struct CommittedReadSet {
+struct CommittedReadSets {
     tables: IntMap<TableId, IntSet<ViewId>>,
     index_keys: IntMap<TableId, IndexColReadSet>,
 }
 
-impl MemoryUsage for CommittedReadSet {
+impl MemoryUsage for CommittedReadSets {
     fn heap_usage(&self) -> usize {
         self.tables.heap_usage() + self.index_keys.heap_usage()
     }
 }
 
-impl CommittedReadSet {
+impl CommittedReadSets {
     /// Record in the [`CommittedState`] that this view scans this table
     fn view_scans_table(&mut self, view_id: ViewId, table_id: TableId) {
         self.tables.entry(table_id).or_default().insert(view_id);
@@ -109,8 +109,11 @@ pub struct CommittedState {
     /// We should split `CommittedState` into two types
     /// where one, e.g., `ReplayCommittedState`, has this field.
     table_dropped: IntSet<TableId>,
-    /// The read sets for each view
-    read_sets: CommittedReadSet,
+    /// We track the read sets for each view in the committed state.
+    /// We check each reducer's write set against these read sets.
+    /// Any overlap will trigger a re-evaluation of the affected view,
+    /// and its read set will be updated accordingly.
+    read_sets: CommittedReadSets,
 }
 
 impl MemoryUsage for CommittedState {

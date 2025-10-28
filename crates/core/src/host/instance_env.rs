@@ -471,7 +471,7 @@ impl InstanceEnv {
         stdb.table_row_count_mut(tx, table_id)
             .ok_or(NodesError::TableNotFound)
             .inspect(|_| {
-                tx.track_table_scan(self.view_id, table_id);
+                tx.record_table_scan(self.view_id, table_id);
             })
     }
 
@@ -496,7 +496,7 @@ impl InstanceEnv {
             &mut bytes_scanned,
         );
 
-        tx.track_table_scan(self.view_id, table_id);
+        tx.record_table_scan(self.view_id, table_id);
 
         tx.metrics.rows_scanned += rows_scanned;
         tx.metrics.bytes_scanned += bytes_scanned;
@@ -527,7 +527,7 @@ impl InstanceEnv {
         // Scan the index and serialize rows to bsatn
         let chunks = ChunkedWriter::collect_iter(pool, iter, &mut rows_scanned, &mut bytes_scanned);
 
-        tx.track_index_scan(self.view_id, table_id, index_id, lower, upper);
+        tx.record_index_scan(self.view_id, table_id, index_id, lower, upper);
 
         tx.metrics.index_seeks += 1;
         tx.metrics.rows_scanned += rows_scanned;
