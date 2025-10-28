@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   run-tests:
+    # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-latest
     steps:
       - name: Print current ref and sha
