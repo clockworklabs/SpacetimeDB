@@ -163,6 +163,7 @@ pub struct DatabaseDef {
     pub num_replicas: Option<NonZeroU8>,
     /// The host type of the supplied program.
     pub host_type: HostType,
+    pub parent: Option<Identity>,
 }
 
 /// Parameters for resetting a database via [`ControlStateDelegate::reset_database`].
