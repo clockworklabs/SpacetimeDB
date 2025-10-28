@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "1.6.0",
+  "version": "1.6.2",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
