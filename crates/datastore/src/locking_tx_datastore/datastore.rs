@@ -2662,7 +2662,8 @@ mod tests {
         let table_id = datastore.create_table_mut_tx(&mut tx, table_schema)?;
         let index_id = datastore.index_id_from_name_mut_tx(&tx, "index")?.unwrap();
         let find_row_by_key = |tx: &MutTxId, key: u32| {
-            tx.index_scan_point(table_id, index_id, &key.into())
+            let key: AlgebraicValue = key.into();
+            tx.index_scan(table_id, index_id, &key)
                 .unwrap()
                 .map(|row| row.pointer())
                 .collect::<Vec<_>>()
@@ -3441,7 +3442,8 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         assert_eq!(tx.get_schema(table_id).unwrap().columns, columns_original);
         let index_key_types = |tx: &MutTxId| {
-            tx.table(table_id)
+            tx.committed_state_write_lock
+                .get_table(table_id)
                 .unwrap()
                 .indexes
                 .values()
@@ -3570,7 +3572,7 @@ mod tests {
             .map(|row| row.to_product_value())
             .collect::<Vec<_>>();
         assert_eq!(rows, old_rows, "Rows shouldn't be changed if rolledback");
-        let table = tx.table(rollback_table_id);
+        let table = tx.table_name(rollback_table_id);
         assert!(table.is_none(), "new table shouldn't be created if rolledback");
 
         // Add column and actually commit this time.
