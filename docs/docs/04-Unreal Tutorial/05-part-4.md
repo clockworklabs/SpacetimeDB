@@ -237,9 +237,9 @@ pub struct MoveAllPlayersTimer {
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
-const START_PLAYER_SPEED: u32 = 10;
+const START_PLAYER_SPEED: i32 = 10;
 
-fn mass_to_max_move_speed(mass: u32) -> f32 {
+fn mass_to_max_move_speed(mass: i32) -> f32 {
     2.0 * START_PLAYER_SPEED as f32 / (1.0 + (mass as f32 / START_PLAYER_MASS as f32).sqrt())
 }
 
@@ -288,9 +288,9 @@ public partial struct MoveAllPlayersTimer
     public ScheduleAt scheduled_at;
 }
 
-const uint START_PLAYER_SPEED = 10;
+const int START_PLAYER_SPEED = 10;
 
-public static float MassToMaxMoveSpeed(uint mass) => 2f * START_PLAYER_SPEED / (1f + MathF.Sqrt((float)mass / START_PLAYER_MASS));
+public static float MassToMaxMoveSpeed(int mass) => 2f * START_PLAYER_SPEED / (1f + MathF.Sqrt((float)mass / START_PLAYER_MASS));
 
 [Reducer]
 public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
@@ -366,6 +366,9 @@ spacetime generate --lang unrealcpp --uproject-dir .. --module-name blackholio
 ```
 
 ### Moving on the Client
+
+<Tabs groupId="client-language" defaultValue="cpp">
+<TabItem value="cpp" label="C++">
 
 The final step is to update `BlackholioPlayerController` on the client to call the `update_player_input` reducer.  
 Open `BlackholioPlayerController.cpp` and replace the stubbed function added earlier with the following:
@@ -449,6 +452,26 @@ void ABlackholioPlayerController::Tick(float DeltaSeconds)
 :::warning
 Be sure to rebuild your project after making changes to the code.
 :::
+
+</TabItem>
+<TabItem value="blueprint" label="Blueprint">
+
+The final step is to update `BP_PlayerController` on the client to call the `update_player_input` reducer.  
+
+Add **Function** named `ComputeDesiredDirection` as follows:
+![Add ComputeDesiredDirection](/images/unreal/part-4-01-blueprint-playercontroller-1.png)
+![Add ComputeDesiredDirection](/images/unreal/part-4-01-blueprint-playercontroller-2.png)
+
+- Add **Output** as `Result` with **Vector 2D** as the type.
+- Add **Local Variable** as `ViewpointCenter` with **Vector 2D** as the type.
+- Add **Local Variable** as `MousePosition` with **Vector 2D** as the type.
+- Check **Pure**
+
+Finally, update the `Event Tick` function to use this logic and trigger the reducer:
+![Update Event Tick](/images/unreal/part-4-01-blueprint-playercontroller-3.png)
+
+</TabItem>
+</Tabs>
 
 Let's try it out! Press play and roam freely around the arena! Now we're cooking with gas.
 

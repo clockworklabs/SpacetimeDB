@@ -13,14 +13,14 @@ void UCircleTable::PostInitialize()
     Data = MakeShared<UClientCache<FCircleType>>();
 
     TSharedPtr<FTableCache<FCircleType>> CircleTable = Data->GetOrAdd(TableName);
-    CircleTable->AddUniqueConstraint<uint32>("entity_id", [](const FCircleType& Row) -> const uint32& {
+    CircleTable->AddUniqueConstraint<int32>("entity_id", [](const FCircleType& Row) -> const int32& {
         return Row.EntityId; });
 
     EntityId = NewObject<UCircleEntityIdUniqueIndex>(this);
     EntityId->SetCache(CircleTable);
 
     // Register a new multi-key B-Tree index named "player_id" on the CircleTable.
-    CircleTable->AddMultiKeyBTreeIndex<TTuple<uint32>>(
+    CircleTable->AddMultiKeyBTreeIndex<TTuple<int32>>(
         TEXT("player_id"),
         [](const FCircleType& Row)
         {
@@ -39,7 +39,7 @@ FTableAppliedDiff<FCircleType> UCircleTable::Update(TArray<FWithBsatn<FCircleTyp
 {
     FTableAppliedDiff<FCircleType> Diff = BaseUpdate<FCircleType>(InsertsRef, DeletesRef, Data, TableName);
 
-    Diff.DeriveUpdatesByPrimaryKey<uint32>(
+    Diff.DeriveUpdatesByPrimaryKey<int32>(
         [](const FCircleType& Row) 
         {
             return Row.EntityId; 
