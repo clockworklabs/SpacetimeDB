@@ -100,7 +100,7 @@ Usage: update-flow [OPTIONS]
 **Options:**
 
 - `--target`: Target triple to build for, by default the current target. Used by github workflows to check the update flow on multiple platforms.
-- `--github-token-auth`: Whether to enable github token authentication feature when building the update binary. By default this is enabled.
+- `--github-token-auth`: Whether to enable github token authentication feature when building the update binary. By default this is disabled.
 - `--help`: Print help (see a summary with '-h')
 
 ### `unreal-tests`
