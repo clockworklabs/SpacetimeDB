@@ -1274,13 +1274,8 @@ impl ModuleHost {
         .await;
 
         let log_message = match &res {
-            Err(ReducerCallError::NoSuchReducer) => Some(format!(
-                "External attempt to call nonexistent reducer \"{reducer_name}\" failed. Have you run `spacetime generate` recently?"
-            )),
-            Err(ReducerCallError::Args(_)) => Some(format!(
-                "External attempt to call reducer \"{reducer_name}\" failed, invalid arguments.\n\
-                 This is likely due to a mismatched client schema, have you run `spacetime generate` recently?",
-            )),
+            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
+            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
             _ => None,
         };
         if let Some(log_message) = log_message {
@@ -1317,13 +1312,8 @@ impl ModuleHost {
         .await;
 
         let log_message = match &res {
-            Err(ProcedureCallError::NoSuchProcedure) => Some(format!(
-                "External attempt to call nonexistent procedure \"{procedure_name}\" failed. Have you run `spacetime generate` recently?"
-            )),
-            Err(ProcedureCallError::Args(_)) => Some(format!(
-                "External attempt to call procedure \"{procedure_name}\" failed, invalid arguments.\n\
-                 This is likely due to a mismatched client schema, have you run `spacetime generate` recently?"
-            )),
+            Err(ProcedureCallError::NoSuchProcedure) => Some(no_such_function_log_message("procedure", procedure_name)),
+            Err(ProcedureCallError::Args(_)) => Some(args_error_log_message("procedure", procedure_name)),
             _ => None,
         };
 
@@ -1627,4 +1617,15 @@ impl WeakModuleHost {
             closed,
         })
     }
+}
+
+fn no_such_function_log_message(function_kind: &str, function_name: &str) -> String {
+    format!("External attempt to call nonexistent {function_kind} \"{function_name}\" failed. Have you run `spacetime generate` recently?")
+}
+
+fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
+    format!(
+        "External attempt to call {function_kind} \"{function_name}\" failed, invalid arguments.\n\
+         This is likely due to a mismatched client schema, have you run `spacetime generate` recently?"
+    )
 }
