@@ -445,6 +445,7 @@ impl InstanceCommon {
             ..
         } = result;
 
+        // TODO(shub): deduplicate with reducer and view logic.
         if self.allocated_memory != memory_allocation {
             self.metric_wasm_memory_bytes.set(memory_allocation as i64);
             self.allocated_memory = memory_allocation;
