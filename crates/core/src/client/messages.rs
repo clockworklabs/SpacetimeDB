@@ -669,9 +669,15 @@ impl ToProtocol for ProcedureResultMessage {
         // Note that procedure returns are sent only to the caller, not broadcast to all subscribers,
         // so we don't have to bother with memoizing the serialization the way we do for reducer args.
         match protocol {
-            Protocol::Binary => FormatSwitch::Bsatn(convert(self, |val| bsatn::to_vec(&val).unwrap().into())),
+            Protocol::Binary => FormatSwitch::Bsatn(convert(self, |val| {
+                bsatn::to_vec(&val)
+                    .expect("Procedure return value failed to serialize to BSATN")
+                    .into()
+            })),
             Protocol::Text => FormatSwitch::Json(convert(self, |val| {
-                serde_json::to_string(&SerializeWrapper(val)).unwrap().into()
+                serde_json::to_string(&SerializeWrapper(val))
+                    .expect("Procedure return value failed to serialize to JSON")
+                    .into()
             })),
         }
     }
