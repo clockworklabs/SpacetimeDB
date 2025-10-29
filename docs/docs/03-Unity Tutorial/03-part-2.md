@@ -23,7 +23,7 @@ blackholio/                     # This is the directory for your Unity project
 │   └── module_bindings/        # This directory contains the client logic to communicate with the module
 ├── Library/
 ├── ...                         # rest of the Unity files
-└── spacetimedb/                # This is where your server modules live
+└── spacetimedb/                # This is where your server module lives
 ```
 
 Your `module_bindings` directory can go wherever you want as long as it is inside of `Assets/` in your Unity project. We'll configure this in a later step.

@@ -12,7 +12,28 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 
 This progressive tutorial is continued from [part 1](/unreal/part-1).
 
+## Project Structure
+
+Now that we have our client project setup we can configure the module directory. Regardless of what language you choose, your module will always go into a `spacetimedb` directory within your client directory like this:
+
+```
+blackholio/                      # Unreal project root
+├── Binaries/
+├── blackholio.sln
+├── blackholio.uproject
+├── Config/
+├── Content/
+├── Plugins/
+│   └── SpacetimeDbSdk/          # This is where the SpacetimeDB Unreal SDK lives
+├── ... rest of Unreal files
+└── spacetimedb/                 # This is where the server module lives
+```
+
 ## Create a Server Module
+
+:::note
+Ensure you have SpacetimeDB version >=1.4.0 installed to enable Unreal Engine code generation support.
+:::
 
 If you have not already installed the `spacetime` CLI, check out our [Getting Started](/getting-started) guide for instructions on how to install.
 
@@ -23,19 +44,19 @@ In your `blackholio` directory, run the following command to initialize the Spac
 Run the following command to initialize the SpacetimeDB server module project with Rust as the language:
 
 ```bash
-spacetime init --lang rust server-rust
+spacetime init --lang rust blackholio
 ```
 
-This command creates a new folder named `server-rust` alongside your Unreal project `client_unreal` directory and sets up the SpacetimeDB server project with Rust as the programming language.
+This command creates a new folder named `blackholio` alongside your Unreal project `blackholio` directory and sets up the SpacetimeDB server project with Rust as the programming language.
 </TabItem>
 <TabItem value="csharp" label="C#">
 Run the following command to initialize the SpacetimeDB server module project with C# as the language:
 
 ```bash
-spacetime init --lang csharp server-csharp
+spacetime init --lang csharp blackholio
 ```
 
-This command creates a new folder named `server-csharp` alongside your Unreal project `client-unreal` directory and sets up the SpacetimeDB server project with C# as the programming language.
+This command creates a new folder named `blackholio` inside of your Unreal project `blackholio` directory and sets up the SpacetimeDB server project with C# as the programming language.
 </TabItem>
 </Tabs>
 
@@ -43,14 +64,14 @@ This command creates a new folder named `server-csharp` alongside your Unreal pr
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
-In this section we'll be making some edits to the file `server-rust/src/lib.rs`. We recommend you open up this file in an IDE like VSCode or RustRover.
+In this section we'll be making some edits to the file `blackholio/spacetimedb/src/lib.rs`. We recommend you open up this file in an IDE like VSCode or RustRover.
 
-**Important: Open the `server-rust/src/lib.rs` file and delete its contents. We will be writing it from scratch here.**
+**Important: Open the `blackholio/spacetimedb/src/lib.rs` file and delete its contents. We will be writing it from scratch here.**
 </TabItem>
 <TabItem value="csharp" label="C#">
-In this section we'll be making some edits to the file `server-csharp/Lib.cs`. We recommend you open up this file in an IDE like VSCode or Rider.
+In this section we'll be making some edits to the file `blackholio/spacetimedb/Lib.cs`. We recommend you open up this file in an IDE like VSCode or Rider.
 
-**Important: Open the `server-csharp/Lib.cs` file and delete its contents. We will be writing it from scratch here.**
+**Important: Open the `blackholio/spacetimedb/Lib.cs` file and delete its contents. We will be writing it from scratch here.**
 </TabItem>
 </Tabs>
 
@@ -364,10 +385,10 @@ Starting SpacetimeDB listening on 127.0.0.1:3000
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
-Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/server-rust` directory.
+Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/spacetimedb` directory.
 </TabItem>
 <TabItem value="csharp" label="C#">
-Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/server-csharp` directory.
+Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/spacetimedb` directory.
 </TabItem>
 </Tabs>
 
@@ -477,21 +498,21 @@ The `spacetime` CLI has built in functionality to let us generate Unreal C++ typ
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
-Let's generate our types for our module. In the `blackholio/server-rust` directory run the following command:
+Let's generate our types for our module. In the `blackholio/spacetimedb` directory run the following command:
 </TabItem>
 <TabItem value="csharp" label="C#">
-Let's generate our types for our module. In the `blackholio/server-csharp` directory run the following command:
+Let's generate our types for our module. In the `blackholio/spacetimedb` directory run the following command:
 </TabItem>
 </Tabs>
 
 ```sh
-spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-path ./ --module-name client_unreal
+spacetime generate --lang unrealcpp --uproject-dir ../../blackholio --project-path ./ --module-name blackholio
 ```
 
-This will generate a set of files in the `client_unreal/Source/client_unreal/Private/ModuleBindings` and `client_unreal/Source/client_unreal/Public/ModuleBindings` directories which contain the code generated types and reducer functions that are defined in your module, but usable on the client.
+This will generate a set of files in the `blackholio/Source/blackholio/Private/ModuleBindings` and `blackholio/Source/blackholio/Public/ModuleBindings` directories which contain the code generated types and reducer functions that are defined in your module, but usable on the client.
 
 :::note
-`--uproject-dir` is straightforward as the path to the .uproject file. `--module-name` is the name of the Unreal module which in most projects is the name of the project, in this case `client_unreal`.
+`--uproject-dir` is straightforward as the path to the .uproject file. `--module-name` is the name of the Unreal module which in most projects is the name of the project, in this case `blackholio`.
 :::
 
 ```
@@ -514,11 +535,11 @@ This will generate a set of files in the `client_unreal/Source/client_unreal/Pri
 └── SpacetimeDBClient.g.h
 ```
 
-This will also generate a file in the `client_unreal/Source/client_unreal/Private/ModuleBindings/SpacetimeDBClient.g.h` directory with a type aware `UDbConnection` class. We will use this class to connect to your database from Unreal.
+This will also generate a file in the `blackholio/Source/blackholio/Private/ModuleBindings/SpacetimeDBClient.g.h` directory with a type aware `UDbConnection` class. We will use this class to connect to your database from Unreal.
 
 ### Connecting to the Database
 
-Update `client_unreal.Build.cs` to include the `SpacetimeDbSdk`. Add `SpacetimeDbSdk` and `Paper2D` to `PublicDependencyModuleNames`, and confirm that `PrivateDependencyModuleNames` includes the following modules for current and future needs:
+Update `blackholio.Build.cs` to include the `SpacetimeDbSdk`. Add `SpacetimeDbSdk` and `Paper2D` to `PublicDependencyModuleNames`, and confirm that `PrivateDependencyModuleNames` includes the following modules for current and future needs:
 
 ```cpp
         PublicDependencyModuleNames.AddRange(new string[]
