@@ -10,12 +10,8 @@ use smallvec::SmallVec;
 use spacetimedb_execution::{Datastore, DeltaStore, Row};
 use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{IndexId, TableId};
-use spacetimedb_table::table::{IndexScanRangeIter, TableScanIter};
 
-use spacetimedb_datastore::{
-    locking_tx_datastore::{state_view::StateView, TxId},
-    traits::TxData,
-};
+use spacetimedb_datastore::{locking_tx_datastore::state_view::StateView, traits::TxData};
 
 use super::module_subscription_manager::QueriedTableIndexIds;
 
@@ -45,9 +41,9 @@ impl DeltaTableIndexes {
     }
 
     /// Construct the btree indexes required by the subscription manager for this delta table.
-    fn from_tx_data(tx: &TxId, data: &TxData, meta: &QueriedTableIndexIds) -> Self {
-        fn build_indexes_for_rows<'a>(
-            tx: &'a TxId,
+    fn from_tx_data<Tx: StateView>(tx: &Tx, data: &TxData, meta: &QueriedTableIndexIds) -> Self {
+        fn build_indexes_for_rows<'a, Tx: StateView>(
+            tx: &'a Tx,
             meta: &'a QueriedTableIndexIds,
             rows: impl Iterator<Item = (&'a TableId, &'a Arc<[ProductValue]>)>,
         ) -> HashMap<(TableId, IndexId), DeltaTableIndex> {
@@ -84,14 +80,17 @@ impl DeltaTableIndexes {
 }
 
 /// A wrapper around a read only tx delta queries
-pub struct DeltaTx<'a> {
-    tx: &'a TxId,
+pub struct DeltaTx<'a, Tx> {
+    tx: &'a Tx,
     data: Option<&'a TxData>,
     indexes: DeltaTableIndexes,
 }
 
-impl<'a> DeltaTx<'a> {
-    pub fn new(tx: &'a TxId, data: &'a TxData, indexes: &QueriedTableIndexIds) -> Self {
+impl<'a, Tx> DeltaTx<'a, Tx>
+where
+    Tx: StateView,
+{
+    pub fn new(tx: &'a Tx, data: &'a TxData, indexes: &QueriedTableIndexIds) -> Self {
         Self {
             tx,
             data: Some(data),
@@ -100,16 +99,16 @@ impl<'a> DeltaTx<'a> {
     }
 }
 
-impl Deref for DeltaTx<'_> {
-    type Target = TxId;
+impl<Tx> Deref for DeltaTx<'_, Tx> {
+    type Target = Tx;
 
     fn deref(&self) -> &Self::Target {
         self.tx
     }
 }
 
-impl<'a> From<&'a TxId> for DeltaTx<'a> {
-    fn from(tx: &'a TxId) -> Self {
+impl<'a, Tx> From<&'a Tx> for DeltaTx<'a, Tx> {
+    fn from(tx: &'a Tx) -> Self {
         Self {
             tx,
             data: None,
@@ -118,14 +117,17 @@ impl<'a> From<&'a TxId> for DeltaTx<'a> {
     }
 }
 
-impl Datastore for DeltaTx<'_> {
+impl<Tx> Datastore for DeltaTx<'_, Tx>
+where
+    Tx: Datastore,
+{
     type TableIter<'a>
-        = TableScanIter<'a>
+        = Tx::TableIter<'a>
     where
         Self: 'a;
 
     type IndexIter<'a>
-        = IndexScanRangeIter<'a>
+        = Tx::IndexIter<'a>
     where
         Self: 'a;
 
@@ -147,7 +149,7 @@ impl Datastore for DeltaTx<'_> {
     }
 }
 
-impl DeltaStore for DeltaTx<'_> {
+impl<Tx> DeltaStore for DeltaTx<'_, Tx> {
     fn num_inserts(&self, table_id: TableId) -> usize {
         self.data
             .and_then(|data| {

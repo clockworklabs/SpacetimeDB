@@ -22,6 +22,7 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_durability::TxOffset;
+use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
@@ -1127,12 +1128,15 @@ impl SubscriptionManager {
     /// we removed rayon and switched to a single-threaded execution,
     /// which removed significant overhead associated with thread switching.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn eval_updates_sequential(
+    pub fn eval_updates_sequential<Tx>(
         &self,
-        (tx, tx_offset): (&DeltaTx, TransactionOffset),
+        (tx, tx_offset): (&DeltaTx<'_, Tx>, TransactionOffset),
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
-    ) -> ExecutionMetrics {
+    ) -> ExecutionMetrics
+    where
+        Tx: Datastore + StateView,
+    {
         use FormatSwitch::{Bsatn, Json};
 
         let tables = &event.status.database_update().unwrap().tables;
@@ -1147,7 +1151,10 @@ impl SubscriptionManager {
         }
 
         /// Returns the value pointed to by this join edge
-        fn find_rhs_val(edge: &JoinEdge, row: &ProductValue, tx: &DeltaTx) -> Option<AlgebraicValue> {
+        fn find_rhs_val<Tx>(edge: &JoinEdge, row: &ProductValue, tx: &DeltaTx<'_, Tx>) -> Option<AlgebraicValue>
+        where
+            Tx: StateView,
+        {
             // What if the joining row was deleted in this tx?
             // Will we prune a query that we shouldn't have?
             //

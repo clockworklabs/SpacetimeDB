@@ -43,9 +43,7 @@ impl Datastore for TxId {
         Self: 'a;
 
     fn row_count(&self, table_id: TableId) -> u64 {
-        self.committed_state_shared_lock
-            .table_row_count(table_id)
-            .unwrap_or_default()
+        self.table_row_count(table_id).unwrap_or_default()
     }
 
     fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {

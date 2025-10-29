@@ -330,7 +330,7 @@ impl ExecutionUnit {
 
     /// The estimated number of rows returned by this execution unit.
     pub fn row_estimate(&self, tx: &TxId) -> u64 {
-        estimation::num_rows(tx, &self.eval_plan)
+        estimation::num_rows(&TxMode::from(tx), &self.eval_plan)
     }
 }
 

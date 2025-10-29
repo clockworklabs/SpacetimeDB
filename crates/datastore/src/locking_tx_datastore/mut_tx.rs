@@ -63,6 +63,7 @@ use spacetimedb_table::{
 };
 use std::{
     collections::HashMap,
+    num::NonZeroU64,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -2585,5 +2586,26 @@ fn unindexed_iter_by_col_range_warn(
                 );
             }
         }
+    }
+}
+
+impl MutTxId {
+    /// The Number of Distinct Values (NDV) for a column or list of columns,
+    /// if there's an index available on `cols`.
+    ///
+    /// Returns `None` if:
+    /// - No such table as `table_id` exists.
+    /// - The table `table_id` does not have an index on exactly the `cols`.
+    /// - The table `table_id` contains zero rows (i.e. the index is empty).
+    //
+    // This method must never return 0, as it's used as the divisor in quotients.
+    // Do not change its return type to a bare `u64`.
+    //
+    // Note, because this method is used for the purpose of estimation,
+    // we only consider the committed state.
+    pub fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<NonZeroU64> {
+        let table = self.committed_state_write_lock.get_table(table_id)?;
+        let (_, index) = table.get_index_by_cols(cols)?;
+        NonZeroU64::new(index.num_keys() as u64)
     }
 }

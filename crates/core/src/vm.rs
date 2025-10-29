@@ -4,13 +4,13 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
 use core::ops::{Bound, RangeBounds};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::execution_context::ExecutionContext;
 use spacetimedb_datastore::locking_tx_datastore::state_view::IterByColRangeMutTx;
 use spacetimedb_datastore::locking_tx_datastore::IterByColRangeTx;
-use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_datastore::system_tables::{st_var_schema, StVarName, StVarRow};
+use spacetimedb_execution::Datastore;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -30,6 +30,44 @@ use std::sync::Arc;
 pub enum TxMode<'a> {
     MutTx(&'a mut MutTx),
     Tx(&'a Tx),
+}
+
+impl Datastore for TxMode<'_> {
+    type TableIter<'a>
+        = Either<<Tx as Datastore>::TableIter<'a>, <MutTx as Datastore>::TableIter<'a>>
+    where
+        Self: 'a;
+
+    type IndexIter<'a>
+        = Either<<Tx as Datastore>::IndexIter<'a>, <MutTx as Datastore>::IndexIter<'a>>
+    where
+        Self: 'a;
+
+    fn row_count(&self, table_id: TableId) -> u64 {
+        match self {
+            Self::Tx(tx) => tx.row_count(table_id),
+            Self::MutTx(tx) => tx.row_count(table_id),
+        }
+    }
+
+    fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {
+        match self {
+            Self::Tx(tx) => tx.table_scan(table_id).map(Either::Left),
+            Self::MutTx(tx) => tx.table_scan(table_id).map(Either::Right),
+        }
+    }
+
+    fn index_scan<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> anyhow::Result<Self::IndexIter<'a>> {
+        match self {
+            Self::Tx(tx) => tx.index_scan(table_id, index_id, range).map(Either::Left),
+            Self::MutTx(tx) => tx.index_scan(table_id, index_id, range).map(Either::Right),
+        }
+    }
 }
 
 impl TxMode<'_> {
@@ -462,12 +500,16 @@ pub struct DbProgram<'db, 'tx> {
 pub fn check_row_limit<Query>(
     queries: &[Query],
     db: &RelationalDB,
-    tx: &TxId,
-    row_est: impl Fn(&Query, &TxId) -> u64,
+    tx: &TxMode<'_>,
+    row_est: impl Fn(&Query, &TxMode<'_>) -> u64,
     auth: &AuthCtx,
 ) -> Result<(), DBError> {
+    let row_limit = |tx: &TxMode| match tx {
+        TxMode::Tx(tx) => db.row_limit(tx),
+        TxMode::MutTx(tx) => db.row_limit_mut(tx),
+    };
     if auth.caller != auth.owner {
-        if let Some(limit) = db.row_limit(tx)? {
+        if let Some(limit) = row_limit(tx)? {
             let mut estimate: u64 = 0;
             for query in queries {
                 estimate = estimate.saturating_add(row_est(query, tx));
@@ -488,15 +530,13 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     }
 
     fn _eval_query<const N: usize>(&mut self, query: &QueryExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
-        if let TxMode::Tx(tx) = self.tx {
-            check_row_limit(
-                &[query],
-                self.db,
-                tx,
-                |expr, tx| estimation::num_rows(tx, expr),
-                &self.auth,
-            )?;
-        }
+        check_row_limit(
+            &[query],
+            self.db,
+            self.tx,
+            |expr, tx| estimation::num_rows(tx, expr),
+            &self.auth,
+        )?;
 
         let table_access = query.source.table_access();
         tracing::trace!(table = query.source.table_name());

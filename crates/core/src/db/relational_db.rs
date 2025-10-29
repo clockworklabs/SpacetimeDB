@@ -1437,6 +1437,16 @@ impl RelationalDB {
         Ok(None)
     }
 
+    /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
+    pub(crate) fn row_limit_mut(&self, tx: &MutTx) -> Result<Option<u64>, DBError> {
+        let data = self.read_var_mut(tx, StVarName::RowLimit);
+
+        if let Some(StVarValue::U64(limit)) = data? {
+            return Ok(Some(limit));
+        }
+        Ok(None)
+    }
+
     /// Read the value of [ST_VARNAME_SLOW_QRY] from `st_var`
     pub(crate) fn query_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
         if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowQryThreshold)? {
@@ -1467,6 +1477,17 @@ impl RelationalDB {
     pub(crate) fn read_var(&self, tx: &Tx, name: StVarName) -> Result<Option<StVarValue>, DBError> {
         if let Some(row_ref) = self
             .iter_by_col_eq(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
+            .next()
+        {
+            return Ok(Some(StVarRow::try_from(row_ref)?.value));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of a system variable from `st_var`
+    pub(crate) fn read_var_mut(&self, tx: &MutTx, name: StVarName) -> Result<Option<StVarValue>, DBError> {
+        if let Some(row_ref) = self
+            .iter_by_col_eq_mut(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
             .next()
         {
             return Ok(Some(StVarRow::try_from(row_ref)?.value));

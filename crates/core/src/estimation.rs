@@ -1,17 +1,19 @@
-use crate::db::relational_db::Tx;
-use spacetimedb_datastore::locking_tx_datastore::state_view::StateView as _;
+use std::num::NonZeroU64;
+
+use crate::vm::TxMode;
+use spacetimedb_execution::Datastore;
 use spacetimedb_lib::query::Delta;
 use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, TableScan};
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr};
 
 /// The estimated number of rows that a query plan will return.
-pub fn num_rows(tx: &Tx, expr: &QueryExpr) -> u64 {
+pub fn num_rows(tx: &TxMode, expr: &QueryExpr) -> u64 {
     row_est(tx, &expr.source, &expr.query)
 }
 
 /// Use cardinality estimates to predict the total number of rows scanned by a query
-pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
+pub fn estimate_rows_scanned(tx: &TxMode, plan: &PhysicalPlan) -> u64 {
     match plan {
         PhysicalPlan::TableScan(..) | PhysicalPlan::IxScan(..) => row_estimate(tx, plan),
         PhysicalPlan::Filter(input, _) => estimate_rows_scanned(tx, input).saturating_add(row_estimate(tx, input)),
@@ -46,7 +48,7 @@ pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
 }
 
 /// Estimate the cardinality of a physical plan
-pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
+pub fn row_estimate(tx: &TxMode, plan: &PhysicalPlan) -> u64 {
     match plan {
         // Use a row limit as the estimate if present
         PhysicalPlan::TableScan(TableScan { limit: Some(n), .. }, _)
@@ -59,7 +61,7 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
                 delta: None,
             },
             _,
-        ) => tx.table_row_count(schema.table_id).unwrap_or_default(),
+        ) => table_row_count(tx, schema.table_id),
         // We don't estimate the cardinality of delta scans currently
         PhysicalPlan::TableScan(
             TableScan {
@@ -80,7 +82,7 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
             _,
         ) if ix.prefix.is_empty() => index_row_est(tx, ix.schema.table_id, &ColList::from(*col_id)),
         // For all other index scans we assume a worst-case scenario.
-        PhysicalPlan::IxScan(IxScan { schema, .. }, _) => tx.table_row_count(schema.table_id).unwrap_or_default(),
+        PhysicalPlan::IxScan(IxScan { schema, .. }, _) => table_row_count(tx, schema.table_id),
         // Same for filters
         PhysicalPlan::Filter(input, _) => row_estimate(tx, input),
         // Nested loop joins are cross joins
@@ -103,10 +105,10 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
 }
 
 /// The estimated number of rows that a query sub-plan will return.
-fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
+fn row_est(tx: &TxMode, src: &SourceExpr, ops: &[Query]) -> u64 {
     match ops {
         // The base case is the table row count.
-        [] => src.table_id().and_then(|id| tx.table_row_count(id)).unwrap_or(0),
+        [] => src.table_id().map(|id| table_row_count(tx, id)).unwrap_or_default(),
         // Walk in reverse from the end (`op`) to the beginning.
         [input @ .., op] => match op {
             // How selective is an index lookup?
@@ -152,17 +154,31 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
     }
 }
 
+fn table_row_count(tx: &TxMode, table_id: TableId) -> u64 {
+    match tx {
+        TxMode::Tx(tx) => tx.row_count(table_id),
+        TxMode::MutTx(tx) => tx.row_count(table_id),
+    }
+}
+
+fn num_distinct_values(tx: &TxMode, table_id: TableId, cols: &ColList) -> Option<NonZeroU64> {
+    match tx {
+        TxMode::Tx(tx) => tx.num_distinct_values(table_id, cols),
+        TxMode::MutTx(tx) => tx.num_distinct_values(table_id, cols),
+    }
+}
+
 /// The estimated number of rows that an index probe will return.
 /// Note this method is not applicable to range scans.
-fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
-    tx.num_distinct_values(table_id, cols)
-        .map_or(0, |ndv| tx.table_row_count(table_id).unwrap_or(0) / ndv)
+fn index_row_est(tx: &TxMode, table_id: TableId, cols: &ColList) -> u64 {
+    num_distinct_values(tx, table_id, cols).map_or(0, |ndv| table_row_count(tx, table_id) / ndv)
 }
 
 #[cfg(test)]
 mod tests {
     use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit};
     use crate::sql::ast::SchemaViewer;
+    use crate::vm::TxMode;
     use crate::{
         db::relational_db::{tests_utils::TestDB, RelationalDB},
         error::DBError,
@@ -183,7 +199,7 @@ mod tests {
     fn num_rows_for(db: &RelationalDB, sql: &str) -> u64 {
         let tx = begin_tx(db);
         match &*compile_sql(db, &AuthCtx::for_testing(), &tx, sql).expect("Failed to compile sql") {
-            [CrudExpr::Query(expr)] => num_rows(&tx, expr),
+            [CrudExpr::Query(expr)] => num_rows(&TxMode::from(&tx), expr),
             exprs => panic!("unexpected result from compilation: {exprs:#?}"),
         }
     }
@@ -199,7 +215,7 @@ mod tests {
             .expect("failed to compile sql query")
             .into_iter()
             .map(|plan| plan.optimize().expect("failed to optimize sql query"))
-            .map(|plan| row_estimate(&tx, &plan))
+            .map(|plan| row_estimate(&TxMode::from(&*tx), &plan))
             .sum()
     }
 

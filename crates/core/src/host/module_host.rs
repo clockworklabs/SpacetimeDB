@@ -21,7 +21,7 @@ use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::BuildableWebsocketFormat;
 use crate::util::jobs::{SingleCoreExecutor, WeakSingleCoreExecutor};
-use crate::vm::check_row_limit;
+use crate::vm::{check_row_limit, TxMode};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
@@ -1375,7 +1375,7 @@ impl ModuleHost {
                     check_row_limit(
                         &optimized,
                         &db,
-                        &tx,
+                        &TxMode::from(&*tx),
                         // Estimate the number of rows this query will scan
                         |plan, tx| estimate_rows_scanned(tx, plan),
                         &auth,

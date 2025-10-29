@@ -231,7 +231,7 @@ pub fn run(
                 check_row_limit(
                     &[&plan],
                     db,
-                    &tx,
+                    &TxMode::from(&*tx),
                     |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
                     &auth,
                 )?;

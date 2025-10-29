@@ -3,7 +3,6 @@ use crate::{error::DBError, worker_metrics::WORKER_METRICS};
 use anyhow::Result;
 use module_subscription_manager::Plan;
 use prometheus::IntCounter;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     ByteListLen, Compression, DatabaseUpdate, QueryUpdate, SingleQueryUpdate, TableUpdate,
 };
@@ -169,8 +168,8 @@ where
     F: BuildableWebsocketFormat,
 {
     plans
-        .par_iter()
-        .flat_map_iter(|plan| plan.plans_fragments().map(|fragment| (plan.sql(), fragment)))
+        .iter()
+        .flat_map(|plan| plan.plans_fragments().map(|fragment| (plan.sql(), fragment)))
         .filter(|(_, plan)| {
             // Since subscriptions only support selects and inner joins,
             // we filter out any plans that read from an empty table.
