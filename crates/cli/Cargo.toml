@@ -80,8 +80,8 @@ rolldown.workspace = true
 rolldown_utils.workspace = true
 xmltree.workspace = true
 quick-xml.workspace = true
-names = "0.14"
-notify = "7.0"
+names.workspace = true
+notify.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }
