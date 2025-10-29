@@ -1,6 +1,9 @@
+use std::fmt;
+use std::future::Future;
 use std::num::NonZeroU8;
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use axum::response::ErrorResponse;
 use bytes::Bytes;
@@ -17,6 +20,7 @@ use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, Regi
 use spacetimedb_lib::{ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
+use thiserror::Error;
 use tokio::sync::watch;
 
 pub mod auth;
@@ -410,6 +414,92 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         (**self).module_logs_dir(replica_id)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum Unauthorized {
+    #[error(
+        "{} is not authorized to perform action{}: {}",
+        subject,
+        database.map(|ident| format!(" on database {ident}")).unwrap_or_default(),
+        action
+    )]
+    Unauthorized {
+        subject: Identity,
+        action: Action,
+        // `Option` for future, non-database-bound actions.
+        database: Option<Identity>,
+        #[source]
+        source: Option<anyhow::Error>,
+    },
+    #[error("authorization failed due to internal error")]
+    InternalError(#[from] anyhow::Error),
+}
+
+impl axum::response::IntoResponse for Unauthorized {
+    fn into_response(self) -> axum::response::Response {
+        let (status, e) = match self {
+            unauthorized @ Self::Unauthorized { .. } => (StatusCode::UNAUTHORIZED, anyhow!(unauthorized)),
+            Self::InternalError(e) => {
+                log::error!("internal error: {e:#}");
+                (StatusCode::INTERNAL_SERVER_ERROR, e)
+            }
+        };
+
+        (status, format!("{e:#}")).into_response()
+    }
+}
+
+/// Action to be authorized via [Authorization::authorize_action].
+#[derive(Debug)]
+pub enum Action {
+    CreateDatabase { parent: Option<Identity> },
+    UpdateDatabase,
+    ResetDatabase,
+    DeleteDatabase,
+    RenameDatabase,
+    ViewModuleLogs,
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CreateDatabase { parent } => match parent {
+                Some(parent) => write!(f, "create database with parent {}", parent),
+                None => f.write_str("create database"),
+            },
+            Self::UpdateDatabase => f.write_str("update database"),
+            Self::ResetDatabase => f.write_str("reset database"),
+            Self::DeleteDatabase => f.write_str("delete database"),
+            Self::RenameDatabase => f.write_str("rename database"),
+            Self::ViewModuleLogs => f.write_str("view module logs"),
+        }
+    }
+}
+
+/// Trait to delegate authorization of "actions" performed through the
+/// client API to an external, edition-specific implementation.
+pub trait Authorization {
+    /// Authorize `subject` to perform [Action] `action` on `database`.
+    ///
+    /// Return `Ok(())` if permission is granted, `Err(Unauthorized)` if denied.
+    fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: Action,
+    ) -> impl Future<Output = Result<(), Unauthorized>> + Send;
+}
+
+impl<T: Authorization> Authorization for Arc<T> {
+    fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: Action,
+    ) -> impl Future<Output = Result<(), Unauthorized>> + Send {
+        (**self).authorize_action(subject, database, action)
     }
 }
 
