@@ -3,7 +3,10 @@ title: 1 - Setup
 slug: /unreal/part-1
 ---
 
-# Unreal Tutorial - Part 1 - Setup
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Setup
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 

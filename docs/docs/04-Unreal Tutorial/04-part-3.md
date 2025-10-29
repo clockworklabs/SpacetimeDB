@@ -6,7 +6,7 @@ slug: /unreal/part-3
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unreal Tutorial - Part 3 - Gameplay
+# Gameplay
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
@@ -1751,17 +1751,10 @@ FVector2D ABlackholioPlayerController::ComputeDesiredDirection() const
 
 ### Entering the Game
 
-<Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-At this point, you may need to regenerate your bindings the following command from the `server-rust` directory.
-</TabItem>
-<TabItem value="csharp" label="C#">
-At this point, you may need to regenerate your bindings the following command from the `server-csharp` directory.
-</TabItem>
-</Tabs>
+At this point, you may need to regenerate your bindings the following command from the `blackholio/spacetimedb` directory.
 
 ```sh
-spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-path ./ --module-name client_unreal
+spacetime generate --lang unrealcpp --uproject-dir .. --module-name blackholio
 ```
 
 The last step is to call the `enter_game` reducer on the server, passing in a username for the player.

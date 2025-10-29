@@ -363,7 +363,7 @@ spacetime publish --server local blackholio --delete-data
 Regenerate your server bindings with:
 
 ```sh
-spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen
+spacetime generate --lang csharp --out-dir ../Assets/module_bindings
 ```
 
 ### Moving on the Client

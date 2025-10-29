@@ -6,7 +6,7 @@ slug: /unreal/part-4
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unreal Tutorial - Part 4 - Moving and Colliding
+# Moving and Colliding
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
@@ -18,7 +18,7 @@ At this point, we're very close to having a working game. All we have to do is m
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
-Let's start by building out a simple math library to help us do collision calculations. Create a new `math.rs` file in the `server-rust/src` directory and add the following contents. Let's also move the `DbVector2` type from `lib.rs` into this file.
+Let's start by building out a simple math library to help us do collision calculations. Create a new `math.rs` file in the `blackholio/spacetimedb/src` directory and add the following contents. Let's also move the `DbVector2` type from `lib.rs` into this file.
 
 ```rust
 use spacetimedb::SpacetimeType;
@@ -362,7 +362,7 @@ spacetime publish --server local blackholio --delete-data
 Regenerate your server bindings with:
 
 ```sh
-spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-path ./ --module-name client_unreal
+spacetime generate --lang unrealcpp --uproject-dir .. --module-name blackholio
 ```
 
 ### Moving on the Client

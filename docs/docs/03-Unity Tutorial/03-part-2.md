@@ -390,18 +390,7 @@ This following log output indicates that SpacetimeDB is successfully running on 
 Starting SpacetimeDB listening on 127.0.0.1:3000
 ```
 
-<Tabs groupId="server-language" defaultValue="rust">
-  <TabItem value="rust" label="Rust">
-    Now that SpacetimeDB is running we can publish our module to the SpacetimeDB
-    host. In a separate terminal window, navigate to the
-    `blackholio/spacetimedb` directory.
-  </TabItem>
-  <TabItem value="csharp" label="C#">
-    Now that SpacetimeDB is running we can publish our module to the SpacetimeDB
-    host. In a separate terminal window, navigate to the
-    `blackholio/spacetimedb` directory.
-  </TabItem>
-</Tabs>
+Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/spacetimedb` directory.
 
 If you are not already logged in to the `spacetime` CLI, run the `spacetime login` command to log in to your SpacetimeDB website account. Once you are logged in, run `spacetime publish --server local blackholio`. This will publish our Blackholio server logic to SpacetimeDB.
 

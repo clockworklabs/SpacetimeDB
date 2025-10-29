@@ -6,7 +6,7 @@ slug: /unreal/part-2
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unreal Tutorial - Part 2 - Connecting to SpacetimeDB
+# Connecting to SpacetimeDB
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
@@ -32,28 +32,32 @@ blackholio/                      # Unreal project root
 ## Create a Server Module
 
 :::note
-Ensure you have SpacetimeDB version >=1.4.0 installed to enable Unreal Engine code generation support.
+Ensure you have SpacetimeDB version >=1.4.0 installed to enable Unreal Engine code generation support. You can use `spacetime --version` to check your version and you can use `spacetime version upgrade` to install the latest version.
 :::
 
 If you have not already installed the `spacetime` CLI, check out our [Getting Started](/getting-started) guide for instructions on how to install.
 
-In your `blackholio` directory, run the following command to initialize the SpacetimeDB server module project with your desired language:
+In the same directory that contains your `blackholio` project, run the following command to initialize the SpacetimeDB server module project with your desired language:
+
+:::warning
+The `blackholio` directory specified here is the same `blackholio` directory you created during part 1.
+:::
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
 Run the following command to initialize the SpacetimeDB server module project with Rust as the language:
 
 ```bash
-spacetime init --lang rust blackholio
+spacetime init --lang rust --server-only blackholio
 ```
 
-This command creates a new folder named `blackholio` alongside your Unreal project `blackholio` directory and sets up the SpacetimeDB server project with Rust as the programming language.
+This command creates a new folder named `blackholio` inside of your Unreal project `blackholio` directory and sets up the SpacetimeDB server project with Rust as the programming language.
 </TabItem>
 <TabItem value="csharp" label="C#">
 Run the following command to initialize the SpacetimeDB server module project with C# as the language:
 
 ```bash
-spacetime init --lang csharp blackholio
+spacetime init --lang csharp --server-only blackholio
 ```
 
 This command creates a new folder named `blackholio` inside of your Unreal project `blackholio` directory and sets up the SpacetimeDB server project with C# as the programming language.
@@ -383,14 +387,7 @@ This following log output indicates that SpacetimeDB is successfully running on 
 Starting SpacetimeDB listening on 127.0.0.1:3000
 ```
 
-<Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
 Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/spacetimedb` directory.
-</TabItem>
-<TabItem value="csharp" label="C#">
-Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/spacetimedb` directory.
-</TabItem>
-</Tabs>
 
 If you are not already logged in to the `spacetime` CLI, run the `spacetime login` command to log in to your SpacetimeDB website account. Once you are logged in, run `spacetime publish --server local blackholio`. This will publish our Blackholio server logic to SpacetimeDB.
 
@@ -409,7 +406,7 @@ Created new database with name: blackholio, identity: c200d2c69b4524292b91822afa
 <TabItem value="rust" label="Rust">
 
 ```sh
-spacetime call blackholio debug
+spacetime call --server local blackholio debug
 ```
 
 </TabItem>
@@ -417,7 +414,7 @@ spacetime call blackholio debug
 Next, use the `spacetime` command to call our newly defined `Debug` reducer:
 
 ```sh
-spacetime call blackholio Debug
+spacetime call --server local blackholio Debug
 ```
 
 </TabItem>
@@ -426,7 +423,7 @@ spacetime call blackholio Debug
 If the call completed successfully, that command will have no output, but we can see the debug logs by running:
 
 ```sh
-spacetime logs blackholio
+spacetime logs --server local blackholio
 ```
 
 You should see something like the following output:
