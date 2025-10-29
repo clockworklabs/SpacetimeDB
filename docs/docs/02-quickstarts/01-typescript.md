@@ -24,7 +24,7 @@ SpacetimeDB runs your module inside the database host (not Node.js). There’s n
 
 ## Install SpacetimeDB
 
-If you haven’t already, start by [installing SpacetimeDB](https://spacetimedb.com/install). This installs the `spacetime` CLI used to build, publish, and interact with your database.
+If you haven’t already, start by [installing SpacetimeDB](pathname:///install). This installs the `spacetime` CLI used to build, publish, and interact with your database.
 
 <InstallCardLink />
 
@@ -270,7 +270,7 @@ By the end of this introduction, you will have created a basic single page web a
 
 ## Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/modules/rust/quickstart) or [C# Module Quickstart](/modules/c-sharp/quickstart) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
 
 ```bash
 cd quickstart-chat
@@ -721,7 +721,7 @@ spacetime generate --lang typescript --out-dir client/src/module_bindings --proj
 
 :::note
 
-This command assumes you've already created a server module in `quickstart-chat/server`. If you haven't completed one of the server module quickstart guides, you can follow either the [Rust](/modules/rust/quickstart) or [C#](/modules/c-sharp/quickstart) module quickstart to create one and then return here.
+This command assumes you've already created a server module in `quickstart-chat/server`. If you haven't completed one of the server module quickstart guides, you can follow either the [Rust](/docs/quickstarts/rust) or [C#](/docs/quickstarts/c-sharp) module quickstart to create one and then return here.
 
 :::
 

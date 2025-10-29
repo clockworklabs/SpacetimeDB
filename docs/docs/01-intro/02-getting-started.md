@@ -5,7 +5,7 @@ slug: /getting-started
 
 To develop SpacetimeDB databases locally, you will need to run the Standalone version of the server.
 
-1. [Install](https://spacetimedb.com/install) the SpacetimeDB CLI (Command Line Interface)
+1. [Install](pathname:///install) the SpacetimeDB CLI (Command Line Interface)
 2. Run the start command:
 
 ```bash
@@ -33,14 +33,14 @@ You are now ready to start developing SpacetimeDB modules. See below for a quick
 
 ### Server (Module)
 
-- [Rust](/modules/rust/quickstart)
-- [C#](/modules/c-sharp/quickstart)
+- [Rust](/docs/quickstarts/rust)
+- [C#](/docs/quickstarts/c-sharp)
 
 ⚡**Note:** Rust is [roughly 2x faster](https://faun.dev/c/links/faun/c-vs-rust-vs-go-a-performance-benchmarking-in-kubernetes/) than C#
 
 ### Client
 
-- [Rust](/sdks/rust/quickstart)
-- [C# (Standalone)](/sdks/c-sharp/quickstart)
-- [C# (Unity)](/unity/part-1)
-- [Typescript](/sdks/typescript/quickstart)
+- [Rust](/docs/quickstarts/rust)
+- [C# (Standalone)](/docs/quickstarts/c-sharp)
+- [C# (Unity)](/docs/tutorials/unity/part-1)
+- [Typescript](/docs/quickstarts/typescript)

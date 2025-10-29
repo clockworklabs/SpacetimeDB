@@ -91,7 +91,7 @@ public sealed class SubscriptionBuilder
     /// Data from all the provided queries will be returned at the same time.
     ///
     /// See the SpacetimeDB SQL docs for more information on SQL syntax:
-    /// <a href="https://spacetimedb.com/docs/sql">https://spacetimedb.com/docs/sql</a>
+    /// <a href="pathname:///docs/sql">pathname:///docs/sql</a>
     /// </summary>
     public SubscriptionHandle Subscribe(
         string[] querySqls

@@ -1,6 +1,6 @@
 ---
 title: PostgreSQL Wire Protocol (PGWire)
-slug: /docs/sql/pg-wire
+slug: /sql/pg-wire
 ---
 
 # PostgreSQL Wire Protocol (PGWire) Compatibility
@@ -94,7 +94,7 @@ $env:PGPASSWORD = (spacetime login show --token | Select-String 'Your auth token
 ## Examples
 
 In the following example, we assume you are using the `quickstart-chat` database created in
-the [Rust Module Quickstart](/modules/rust/quickstart) or [C# Module Quickstart](/modules/c-sharp/quickstart),
+the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp),
 and have set the `auth token` as shown above.
 
 ### Using `psql`

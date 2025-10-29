@@ -28,10 +28,10 @@ Please file an issue [here](https://github.com/clockworklabs/SpacetimeDB/issues)
 
 First you'll get started with the core client/server setup. For part 2, you'll be able to choose between [Rust](/modules/rust) or [C#](/modules/c-sharp) for your server module language:
 
-- [Part 1 - Setup](/unity/part-1)
-- [Part 2 - Connecting to SpacetimeDB](/unity/part-2)
-- [Part 3 - Gameplay](/unity/part-3)
-- [Part 4 - Moving and Colliding](/unity/part-4)
+- [Part 1 - Setup](/docs/tutorials/unity/part-1)
+- [Part 2 - Connecting to SpacetimeDB](/docs/tutorials/unity/part-2)
+- [Part 3 - Gameplay](/docs/tutorials/unity/part-3)
+- [Part 4 - Moving and Colliding](/docs/tutorials/unity/part-4)
 
 ## Blackhol.io Tutorial - Advanced
 

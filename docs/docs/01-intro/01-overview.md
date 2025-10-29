@@ -92,20 +92,20 @@ You write SQL queries specifying what information a client is interested in -- f
 
 Every SpacetimeDB database contains a collection of [stored procedures](https://en.wikipedia.org/wiki/Stored_procedure) and schema definitions. Such a collection is called a **module**, which can be written in C# or Rust. They specify a database schema and the business logic that responds to client requests. Modules are administered using the `spacetime` CLI tool.
 
-- [Rust](/modules/rust) - [(Quickstart)](/modules/rust/quickstart)
-- [C#](/modules/c-sharp) - [(Quickstart)](/modules/c-sharp/quickstart)
+- [Rust](/modules/rust) - [(Quickstart)](/docs/quickstarts/rust)
+- [C#](/modules/c-sharp) - [(Quickstart)](/docs/quickstarts/c-sharp)
 
 ### Client-side SDKs
 
 **Clients** are applications that connect to SpacetimeDB databases. The `spacetime` CLI tool supports automatically generating interface code that makes it easy to interact with a particular database.
 
-- [Rust](/sdks/rust) - [(Quickstart)](/sdks/rust/quickstart)
-- [C#](/sdks/c-sharp) - [(Quickstart)](/sdks/c-sharp/quickstart)
-- [TypeScript](/sdks/typescript) - [(Quickstart)](/sdks/typescript/quickstart)
+- [Rust](/sdks/rust) - [(Quickstart)](/docs/quickstarts/rust)
+- [C#](/sdks/c-sharp) - [(Quickstart)](/docs/quickstarts/c-sharp)
+- [TypeScript](/sdks/typescript) - [(Quickstart)](/docs/quickstarts/typescript)
 
 ### Unity
 
-SpacetimeDB was designed first and foremost as the backend for multiplayer Unity games. To learn more about using SpacetimeDB with Unity, jump on over to the [SpacetimeDB Unity Tutorial](/unity/part-1).
+SpacetimeDB was designed first and foremost as the backend for multiplayer Unity games. To learn more about using SpacetimeDB with Unity, jump on over to the [SpacetimeDB Unity Tutorial](/docs/tutorials/unity/part-1).
 
 ## Key architectural concepts
 
@@ -121,7 +121,7 @@ A database exports [tables](#table), which store data, and [reducers](#reducer),
 
 A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C# or Rust.
 
-(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](#module-libraries) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
+(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](#module-libraries) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](pathname:///install) is used to deploy the application.)
 
 ### Table
 
@@ -356,4 +356,4 @@ A user has a single [`Identity`](#identity), but may open multiple connections t
    Follow our [Quick Start](/getting-started) guide!
 
 1. How do I create a Unity game with SpacetimeDB?
-   Follow our [Unity Tutorial](/unity) guide!
+   Follow our [Unity Tutorial](/docs/tutorials/unity) guide!

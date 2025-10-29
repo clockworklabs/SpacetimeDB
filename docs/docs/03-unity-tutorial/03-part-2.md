@@ -10,7 +10,7 @@ import TabItem from '@theme/TabItem';
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-This progressive tutorial is continued from [part 1](/unity/part-1).
+This progressive tutorial is continued from [part 1](/docs/tutorials/unity/part-1).
 
 ## Create a Server Module
 
@@ -678,4 +678,4 @@ spacetime logs blackholio
 
 You've learned how to setup a Unity project with the SpacetimeDB SDK, write a basic SpacetimeDB server module, and how to connect your Unity client to SpacetimeDB. That's pretty much all there is to the setup. You're now ready to start building the game.
 
-In the [next part](/unity/part-3), we'll build out the functionality of the game and you'll learn how to access your table data and call reducers in Unity.
+In the [next part](/docs/tutorials/unity/part-3), we'll build out the functionality of the game and you'll learn how to access your table data and call reducers in Unity.

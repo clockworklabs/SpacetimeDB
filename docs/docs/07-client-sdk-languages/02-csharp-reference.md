@@ -32,7 +32,7 @@ If you would like to create a console application using .NET, you can create a n
 dotnet add package SpacetimeDB.ClientSDK
 ```
 
-(See also the [CSharp Quickstart](/modules/c-sharp/quickstart) for an in-depth example of such a console application.)
+(See also the [CSharp Quickstart](/docs/quickstarts/c-sharp) for an in-depth example of such a console application.)
 
 ### Using Unity
 
@@ -42,7 +42,7 @@ Add the SpacetimeDB Unity Package using the Package Manager. Open the Package Ma
 https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git
 ```
 
-(See also the [Unity Tutorial](/unity/part-1))
+(See also the [Unity Tutorial](/docs/tutorials/unity/part-1))
 
 ## Generate module bindings
 
@@ -819,7 +819,7 @@ class RemoteTableHandle
 
 The `OnInsert` callback runs whenever a new row is inserted into the client cache, either when applying a subscription or being notified of a transaction. The passed [`EventContext`](#type-eventcontext) contains an [`Event`](#record-event) which can identify the change which caused the insertion, and also allows the callback to interact with the connection, inspect the client cache and invoke reducers. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/sdks/c-sharp/quickstart#register-callbacks) for examples of regstering and unregistering row callbacks.
+See [the quickstart](/docs/quickstarts/c-sharp#register-callbacks) for examples of regstering and unregistering row callbacks.
 
 #### Callback `OnDelete`
 
@@ -833,7 +833,7 @@ class RemoteTableHandle
 
 The `OnDelete` callback runs whenever a previously-resident row is deleted from the client cache. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/sdks/c-sharp/quickstart#register-callbacks) for examples of regstering and unregistering row callbacks.
+See [the quickstart](/docs/quickstarts/c-sharp#register-callbacks) for examples of regstering and unregistering row callbacks.
 
 #### Callback `OnUpdate`
 
@@ -847,7 +847,7 @@ class RemoteTableHandle
 
 The `OnUpdate` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key. The table must have a primary key for callbacks to be triggered. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/sdks/c-sharp/quickstart#register-callbacks) for examples of regstering and unregistering row callbacks.
+See [the quickstart](/docs/quickstarts/c-sharp#register-callbacks) for examples of regstering and unregistering row callbacks.
 
 ### Unique constraint index access
 

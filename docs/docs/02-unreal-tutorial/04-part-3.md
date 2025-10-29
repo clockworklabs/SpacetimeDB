@@ -10,7 +10,7 @@ import TabItem from '@theme/TabItem';
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-This progressive tutorial is continued from [part 2](/unreal/part-2).
+This progressive tutorial is continued from [part 2](/docs/tutorials/unreal/part-2).
 
 ### Spawning Food
 

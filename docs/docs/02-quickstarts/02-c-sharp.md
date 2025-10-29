@@ -22,7 +22,7 @@ A reducer is a function which traverses and updates the database. Each reducer c
 
 ## Install SpacetimeDB
 
-If you haven't already, start by [installing SpacetimeDB](https://spacetimedb.com/install). This will install the `spacetime` command line interface (CLI), which contains all the functionality for interacting with SpacetimeDB.
+If you haven't already, start by [installing SpacetimeDB](pathname:///install). This will install the `spacetime` command line interface (CLI), which contains all the functionality for interacting with SpacetimeDB.
 
 <InstallCardLink />
 
@@ -315,15 +315,15 @@ spacetime sql quickstart-chat "SELECT * FROM message"
 
 You've just set up your first database in SpacetimeDB! You can find the full code for this module [in the C# server module example](https://github.com/clockworklabs/SpacetimeDB/tree/master/sdks/csharp/examples~/quickstart-chat/server).
 
-# Creating the client 
 
+# Creating the client 
 Next, we'll show you how to get up and running with a simple SpacetimeDB app with a client written in C#.
 
-We'll implement a command-line client for the module created in our [Rust](../../modules/rust/quickstart) or [C# Module](../../modules/c-sharp/quickstart) Quickstart guides. Ensure you followed one of these guides before continuing.
+We'll implement a command-line client for the module created in our [Rust](/docs/quickstarts/rust) or [C# Module](/docs/quickstarts/c-sharp) Quickstart guides. Ensure you followed one of these guides before continuing.
 
 ## Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/modules/rust/quickstart) or [C# Module Quickstart](/modules/c-sharp/quickstart) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
 
 ```bash
 cd quickstart-chat
@@ -877,4 +877,4 @@ You can find the full code for this client [in the C# client SDK's examples](htt
 
 Check out the [C# client SDK Reference](/sdks/c-sharp) for a more comprehensive view of the SpacetimeDB C# client SDK.
 
-If you are interested in developing in the Unity game engine, check out our [Unity Comprehensive Tutorial](/unity) and [Blackholio](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio) game example.
+If you are interested in developing in the Unity game engine, check out our [Unity Comprehensive Tutorial](/docs/tutorials/unity) and [Blackholio](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio) game example.

@@ -6,7 +6,7 @@ toc_max_heading_level: 6
 
 # C# Module Library
 
-[SpacetimeDB](https://spacetimedb.com/) allows using the C# language to write server-side applications called **modules**. Modules, which run inside a relational database, have direct access to database tables, and expose public functions called **reducers** that can be invoked over the network. Clients connect directly to the database to read data.
+[SpacetimeDB](pathname:///) allows using the C# language to write server-side applications called **modules**. Modules, which run inside a relational database, have direct access to database tables, and expose public functions called **reducers** that can be invoked over the network. Clients connect directly to the database to read data.
 
 ```text
     Client Application                          SpacetimeDB
@@ -25,11 +25,11 @@ toc_max_heading_level: 6
 └───────────────────────┘                └───────────────────────┘
 ```
 
-C# modules are written with the the C# Module Library (this package). They are built using the [dotnet CLI tool](https://learn.microsoft.com/en-us/dotnet/core/tools/) and deployed using the [`spacetime` CLI tool](https://spacetimedb.com/install). C# modules can import any [NuGet package](https://www.nuget.org/packages) that supports being compiled to WebAssembly.
+C# modules are written with the the C# Module Library (this package). They are built using the [dotnet CLI tool](https://learn.microsoft.com/en-us/dotnet/core/tools/) and deployed using the [`spacetime` CLI tool](pathname:///install). C# modules can import any [NuGet package](https://www.nuget.org/packages) that supports being compiled to WebAssembly.
 
 (Note: C# can also be used to write **clients** of SpacetimeDB databases, but this requires using a different library, the SpacetimeDB C# Client SDK. See the documentation on [clients] for more information.)
 
-This reference assumes you are familiar with the basics of C#. If you aren't, check out the [C# language documentation](https://learn.microsoft.com/en-us/dotnet/csharp/). For a guided introduction to C# Modules, see the [C# Module Quickstart](https://spacetimedb.com/docs/modules/c-sharp/quickstart).
+This reference assumes you are familiar with the basics of C#. If you aren't, check out the [C# language documentation](https://learn.microsoft.com/en-us/dotnet/csharp/). For a guided introduction to C# Modules, see the [C# Module Quickstart](/docs/quickstarts/c-sharp).
 
 ## Overview
 
@@ -68,7 +68,7 @@ Tables and reducers in C# modules can use any type annotated with [`[SpacetimeDB
 
 ## Setup
 
-To create a C# module, install the [`spacetime` CLI tool](https://spacetimedb.com/install) in your preferred shell. Navigate to your work directory and run the following command:
+To create a C# module, install the [`spacetime` CLI tool](pathname:///install) in your preferred shell. Navigate to your work directory and run the following command:
 
 ```bash
 spacetime init --lang csharp my-project-directory
@@ -212,7 +212,7 @@ You can also generate code for clients of your module using the `spacetime gener
 
 ## How it works
 
-Under the hood, SpacetimeDB modules are WebAssembly modules that import a [specific WebAssembly ABI](https://spacetimedb.com/docs/webassembly-abi) and export a small number of special functions. This is automatically configured when you add the `SpacetimeDB.Runtime` package as a dependency of your application.
+Under the hood, SpacetimeDB modules are WebAssembly modules that import a [specific WebAssembly ABI](pathname:///docs/webassembly-abi) and export a small number of special functions. This is automatically configured when you add the `SpacetimeDB.Runtime` package as a dependency of your application.
 
 The SpacetimeDB host is an application that hosts SpacetimeDB databases. [Its source code is available](https://github.com/clockworklabs/SpacetimeDB) under [the Business Source License with an Additional Use Grant](https://github.com/clockworklabs/SpacetimeDB/blob/master/LICENSE.txt). You can run your own host, or you can upload your module to the public SpacetimeDB network. <!-- TODO: want a link to some dashboard for the public network. --> The network will create a database for you and install your module in it to serve client requests.
 
@@ -406,7 +406,7 @@ Using the `[SpacetimeDB.Table(Name = "table_name", Public)]` flag makes a table 
 
 (Note that, when run by the module owner, the `spacetime sql <SQL_QUERY>` command can also read private tables. This is for debugging convenience. Only the module owner can see these tables. This is determined by the `Identity` stored by the `spacetime login` command. Run `spacetime login show` to print your current logged-in `Identity`.)
 
-To learn how to subscribe to a public table, see the [client SDK documentation](https://spacetimedb.com/docs/sdks).
+To learn how to subscribe to a public table, see the [client SDK documentation](pathname:///docs/sdks).
 
 ### Unique and Primary Key Columns
 
@@ -1420,9 +1420,9 @@ When a [scheduled reducer](#scheduled-reducers) should execute, either at a spec
 
 Stored in reducer-scheduling tables as a column.
 
-[client]: https://spacetimedb.com/docs/#client
-[clients]: https://spacetimedb.com/docs/#client
-[client SDK documentation]: https://spacetimedb.com/docs/#client
+[client]: pathname:///docs/#client
+[clients]: pathname:///docs/#client
+[client SDK documentation]: pathname:///docs/#client
 [`DateTimeOffset`]: https://learn.microsoft.com/en-us/dotnet/api/system.datetimeoffset?view=net-9.0
 [`TimeSpan`]: https://learn.microsoft.com/en-us/dotnet/api/system.timespan?view=net-9.0
 [unix epoch]: https://en.wikipedia.org/wiki/Unix_time

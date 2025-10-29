@@ -47,7 +47,8 @@ const config: Config = {
   favicon: 'https://spacetimedb.com/favicon-32x32.png',
 
   url: 'https://spacetimedb.com',
-  baseUrl: '/docs/',
+  // this means the site is served at https://spacetimedb.com/docs/
+  baseUrl: '/docs/', 
 
   onBrokenLinks: 'throw',
   onBrokenAnchors: 'throw',
@@ -196,28 +197,6 @@ const config: Config = {
         },
       },
     ],
-    [
-      '@docusaurus/plugin-client-redirects',
-      {
-        redirects: [
-          { from: '/sdks/typescript/quickstart', to: '/quickstarts/typescript' },
-          { from: '/sdks/c-sharp/quickstart', to: '/quickstarts/c-sharp' },
-          { from: '/sdks/rust/quickstart', to: '/quickstarts/rust' },
-          { from: '/modules/typescript/quickstart', to: '/quickstarts/typescript' },
-          { from: '/modules/c-sharp/quickstart', to: '/quickstarts/c-sharp' },
-          { from: '/modules/rust/quickstart', to: '/quickstarts/rust' },
-          { from: '/unity', to: '/tutorials/unity' },
-          { from: '/unity/part-1', to: '/tutorials/unity/part-1' },
-          { from: '/unity/part-2', to: '/tutorials/unity/part-2' },
-          { from: '/unity/part-3', to: '/tutorials/unity/part-3' },
-          { from: '/unreal', to: '/tutorials/unreal' },
-          { from: '/unreal/part-1', to: '/tutorials/unreal/part-1' },
-          { from: '/unreal/part-2', to: '/tutorials/unreal/part-2' },
-          { from: '/unreal/part-3', to: '/tutorials/unreal/part-3' },
-        ],
-      },
-    ],
-
   ],
 
 };

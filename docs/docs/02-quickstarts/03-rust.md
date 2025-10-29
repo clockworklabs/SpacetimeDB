@@ -23,7 +23,7 @@ A reducer is a function that traverses and updates the database. Each reducer ca
 
 ## Install SpacetimeDB
 
-If you haven't already, start by [installing SpacetimeDB](https://spacetimedb.com/install). This will install the `spacetime` command line interface (CLI), which provides all the functionality needed to interact with SpacetimeDB.
+If you haven't already, start by [installing SpacetimeDB](pathname:///install). This will install the `spacetime` command line interface (CLI), which provides all the functionality needed to interact with SpacetimeDB.
 
 <InstallCardLink />
 
@@ -306,7 +306,7 @@ We'll implement a command-line client for the module created in our Rust or C# M
 
 ## Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/modules/rust/quickstart) or [C# Module Quickstart](/modules/c-sharp/quickstart) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
 
 ```bash
 cd quickstart-chat
