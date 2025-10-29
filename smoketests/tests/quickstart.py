@@ -178,8 +178,8 @@ class BaseQuickstart(Smoketest):
 
 class Rust(BaseQuickstart):
     lang = "rust"
-    server_doc = STDB_DIR / "docs/docs/02-quickstarts/02-rust.md"
-    client_doc = STDB_DIR / "docs/docs/02-quickstarts/02-rust.md"
+    server_doc = STDB_DIR / "docs/docs/02-quickstarts/03-rust.md"
+    client_doc = STDB_DIR / "docs/docs/02-quickstarts/03-rust.md"
     server_file = "src/lib.rs"
     client_file = "src/main.rs"
     module_bindings = "src/module_bindings"
