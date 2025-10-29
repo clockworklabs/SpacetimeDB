@@ -1,10 +1,11 @@
-use crate::common_args;
 use crate::config::Config;
+use crate::generate::Language;
 use crate::subcommands::init;
 use crate::util::{
     add_auth_header_opt, database_identity, detect_module_language, get_auth_header, get_login_token_or_log_in,
     spacetime_reverse_dns, ResponseExt,
 };
+use crate::{common_args, generate};
 use crate::{publish, tasks};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
@@ -29,7 +30,7 @@ use tokio::task::JoinHandle;
 
 pub fn cli() -> Command {
     Command::new("dev")
-        .about("Start development mode with auto-rebuild and publish")
+        .about("Start development mode with auto-regenerate client module bindings, auto-rebuild, and auto-publish on file changes.")
         .arg(
             Arg::new("database")
                 .long("database")
@@ -41,6 +42,29 @@ pub fn cli() -> Command {
                 .value_parser(clap::value_parser!(PathBuf))
                 .default_value(".")
                 .help("The path to the project directory"),
+        )
+        .arg(
+            Arg::new("module-bindings-path")
+                .long("module-bindings-path")
+                .value_parser(clap::value_parser!(PathBuf))
+                .default_value("src/module_bindings")
+                .help("The path to the module bindings directory relative to the project directory, defaults to `<project-path>/src/module_bindings`"),
+        )
+        // NOTE: All server templates must have their server code in `spacetimedb/` directory
+        // This is not a requirement in general, but is a requirement for all templates 
+        // i.e. `spacetime dev` is valid on non-templates.
+        .arg(
+            Arg::new("module-project-path")
+                .long("module-project-path")
+                .value_parser(clap::value_parser!(PathBuf))
+                .default_value("spacetimedb")
+                .help("The path to the SpacetimeDB server module project relative to the project directory, defaults to `<project-path>/spacetimedb`"),
+        )
+        .arg(
+            Arg::new("client-lang")
+                .long("client-lang")
+                .value_parser(clap::value_parser!(Language))
+                .help("The programming language for the generated client module bindings (e.g., typescript, csharp, python). If not specified, it will be detected from the project."),
         )
         .arg(
             Arg::new("local")
@@ -65,7 +89,10 @@ struct DatabaseRow {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
+    let spacetimedb_project_path = args.get_one::<PathBuf>("module-project-path").unwrap();
+    let module_bindings_path = args.get_one::<PathBuf>("module-bindings-path").unwrap();
     let use_local = args.get_flag("local");
+    let client_language = args.get_one::<Language>("client-lang");
     let force = args.get_flag("force");
 
     let server = if let Some(s) = args.get_one::<String>("server") {
@@ -76,7 +103,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         Some("maincloud")
     };
 
-    let mut spacetimedb_dir = project_path.join("spacetimedb");
+    if module_bindings_path.is_absolute() {
+        anyhow::bail!("Module bindings path must be a relative path");
+    }
+    let mut module_bindings_dir = project_path.join(module_bindings_path);
+
+    if spacetimedb_project_path.is_absolute() {
+        anyhow::bail!("SpacetimeDB project path must be a relative path");
+    }
+    let mut spacetimedb_dir = project_path.join(spacetimedb_project_path);
+
+    // Check if we are in a SpacetimeDB project directory
+
     if !spacetimedb_dir.exists() || !spacetimedb_dir.is_dir() {
         println!("{}", "No SpacetimeDB project found in current directory.".yellow());
         let should_init = Confirm::new()
@@ -95,7 +133,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             let canonical_created_path = created_project_path
                 .canonicalize()
                 .context("Failed to canonicalize created project path")?;
-            spacetimedb_dir = canonical_created_path.join("spacetimedb");
+            spacetimedb_dir = canonical_created_path.join(spacetimedb_project_path);
+            module_bindings_dir = canonical_created_path.join(module_bindings_path);
 
             if !spacetimedb_dir.exists() {
                 anyhow::bail!("Project initialization did not create spacetimedb directory");
@@ -103,6 +142,21 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         } else {
             anyhow::bail!("Not in a SpacetimeDB project directory");
         }
+    }
+
+    if !module_bindings_dir.exists() {
+        // Create the module bindings directory if it doesn't exist
+        std::fs::create_dir_all(&module_bindings_dir).with_context(|| {
+            format!(
+                "Failed to create module bindings path {}",
+                module_bindings_dir.display()
+            )
+        })?;
+    } else if !module_bindings_dir.is_dir() {
+        anyhow::bail!(
+            "Module bindings path {} exists but is not a directory.",
+            module_bindings_path.display()
+        );
     }
 
     let use_local = if use_local {
@@ -160,7 +214,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     println!("{}", "Press Ctrl+C to stop".dimmed());
     println!();
 
-    build_and_publish(&config, &spacetimedb_dir, &database_name, server, use_local).await?;
+    generate_build_and_publish(
+        &config,
+        &spacetimedb_dir,
+        &module_bindings_dir,
+        &database_name,
+        client_language,
+        server,
+        use_local,
+    )
+    .await?;
 
     let db_identity = database_identity(&config, &database_name, server).await?;
     let _log_handle = start_log_stream(config.clone(), db_identity.to_hex().to_string(), server).await?;
@@ -196,7 +259,17 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             }
 
             println!("\n{}", "File change detected, rebuilding...".yellow());
-            match build_and_publish(&config, &spacetimedb_dir, &database_name, server, use_local).await {
+            match generate_build_and_publish(
+                &config,
+                &spacetimedb_dir,
+                &module_bindings_dir,
+                &database_name,
+                client_language,
+                server,
+                use_local,
+            )
+            .await
+            {
                 Ok(_) => {}
                 Err(e) => {
                     eprintln!("{} {}", "Error:".red().bold(), e);
@@ -207,19 +280,44 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 }
 
-async fn build_and_publish(
+async fn generate_build_and_publish(
     config: &Config,
     project_path: &Path,
+    module_bindings_path: &Path,
     database_name: &str,
+    client_language: Option<&Language>,
     server: Option<&str>,
     _use_local: bool,
 ) -> Result<(), anyhow::Error> {
-    detect_module_language(project_path)?;
+    let module_language = detect_module_language(project_path)?;
+    let client_language = client_language.unwrap_or_else(|| match module_language {
+        crate::util::ModuleLanguage::Rust => &Language::Rust,
+        crate::util::ModuleLanguage::Csharp => &Language::Csharp,
+        crate::util::ModuleLanguage::Javascript => &Language::TypeScript,
+    });
+    let client_language_str = match client_language {
+        Language::Rust => "rust",
+        Language::Csharp => "csharp",
+        Language::TypeScript => "typescript",
+        Language::UnrealCpp => "unrealcpp",
+    };
 
     println!("{}", "Building...".cyan());
     let (_path_to_program, _host_type) =
         tasks::build(project_path, Some(Path::new("src")), false).context("Failed to build project")?;
     println!("{}", "Build complete!".green());
+
+    println!("{}", "Generating module bindings...".cyan());
+    let generate_args = generate::cli().get_matches_from(vec![
+        "generate",
+        "--lang",
+        client_language_str,
+        "--project-path",
+        project_path.to_str().unwrap(),
+        "--out-dir",
+        module_bindings_path.to_str().unwrap(),
+    ]);
+    generate::exec(config.clone(), &generate_args).await?;
 
     println!("{}", "Publishing...".cyan());
 
