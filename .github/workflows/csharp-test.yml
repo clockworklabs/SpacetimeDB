@@ -70,15 +70,14 @@ jobs:
         id: cache-rust-deps
         with:
           workspaces: demo/Blackholio/server-rust
-          key: ${{ steps.checkout-stdb.outputs.commit }}
+          shared-key: spacetimedb
+          key: ${{ github.ref }}
           # Cache Rust deps even if unit tests have failed.
           cache-on-failure: true
           # Cache the CLI as well.
           cache-all-crates: true
 
       - name: Install SpacetimeDB CLI from the local checkout
-        # Rebuild only if we didn't get a precise cache hit.
-        if: steps.cache-rust-deps.outputs.cache-hit == 'false'
         run: |
           cargo install --force --path crates/cli --locked --message-format=short
           cargo install --force --path crates/standalone --locked --message-format=short
