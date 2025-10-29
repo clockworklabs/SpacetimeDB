@@ -6,7 +6,7 @@ slug: /unity/part-4
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unity Tutorial - Part 4 - Moving and Colliding
+# Moving and Colliding
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 

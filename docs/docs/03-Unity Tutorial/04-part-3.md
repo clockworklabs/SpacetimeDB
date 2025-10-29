@@ -6,7 +6,7 @@ slug: /unity/part-3
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unity Tutorial - Part 3 - Gameplay
+# Gameplay
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 

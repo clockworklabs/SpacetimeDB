@@ -6,7 +6,7 @@ slug: /unity/part-2
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unity Tutorial - Part 2 - Connecting to SpacetimeDB
+# Connecting to SpacetimeDB
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
@@ -17,7 +17,7 @@ This progressive tutorial is continued from [part 1](/unity/part-1).
 Now that we have our client project setup we can configure the module directory. Regardless of what language you choose, your module will always go into a `spacetimedb` directory within your client directory like this:
 
 ```
-blackholio/                     # This is the directory for your Unity project
+blackholio/                     # This is the directory for your Unity project lives
 ├── Assembly-CSharp.csproj
 ├── Assets/
 │   └── module_bindings/        # This directory contains the client logic to communicate with the module
@@ -26,14 +26,14 @@ blackholio/                     # This is the directory for your Unity project
 └── spacetimedb/                # This is where your server module lives
 ```
 
-Your `module_bindings` directory can go wherever you want as long as it is inside of `Assets/` in your Unity project. We'll configure this in a later step.
+Your `module_bindings` directory can go wherever you want as long as it is inside of `Assets/` in your Unity project. We'll configure this in a later step. For now we will create a new module in the `blackholio` directory which will generate the `spacetimedb` directory for us.
 
 
 ## Create a Server Module
 
 If you have not already installed the `spacetime` CLI, check out our [Getting Started](/getting-started) guide for instructions on how to install.
 
-In the same directory as your `blackholio` directory, run the following command to initialize the SpacetimeDB server module project with your desired language:
+In the same directory that contains your `blackholio` project, run the following command to initialize the SpacetimeDB server module project with your desired language:
 
 :::warning
 The `blackholio` directory specified here is the same `blackholio` directory you created during part 1.
@@ -47,7 +47,7 @@ Run the following command to initialize the SpacetimeDB server module project wi
 spacetime init --lang rust --server-only blackholio
 ```
 
-This command creates a new folder named `server-rust` alongside your Unity project `client-unity` directory and sets up the SpacetimeDB server project with Rust as the programming language.
+This command creates a new folder named `spacetimedb` inside of your Unity project `blackholio` directory and sets up the SpacetimeDB server project with Rust as the programming language.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -422,7 +422,7 @@ Created new database with name: blackholio, identity: c200d2c69b4524292b91822afa
 Next, use the `spacetime` command to call our newly defined `debug` reducer:
 
 ```sh
-spacetime call blackholio debug
+spacetime call --server local blackholio debug
 ```
 
 </TabItem>
@@ -430,7 +430,7 @@ spacetime call blackholio debug
 Next, use the `spacetime` command to call our newly defined `Debug` reducer:
 
 ```sh
-spacetime call blackholio Debug
+spacetime call --server local blackholio Debug
 ```
 
 </TabItem>
@@ -439,7 +439,7 @@ spacetime call blackholio Debug
 If the call completed successfully, that command will have no output, but we can see the debug logs by running:
 
 ```sh
-spacetime logs blackholio
+spacetime logs --server local blackholio
 ```
 
 You should see something like the following output:
