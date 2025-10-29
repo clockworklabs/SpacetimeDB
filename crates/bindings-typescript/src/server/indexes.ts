@@ -46,6 +46,13 @@ export type Indexes<
   [k in keyof I]: Index<TableDef, I[k]>;
 };
 
+export type ReadonlyIndexes<
+  TableDef extends UntypedTableDef,
+  I extends Record<string, UntypedIndex<keyof TableDef['columns'] & string>>,
+> = {
+  [k in keyof I]: ReadonlyIndex<TableDef, I[k]>;
+};
+
 /**
  * A type representing a database index, which can be either unique or ranged.
  */
@@ -56,32 +63,51 @@ export type Index<
   ? UniqueIndex<TableDef, I>
   : RangedIndex<TableDef, I>;
 
+export type ReadonlyIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = I['unique'] extends true
+  ? ReadonlyUniqueIndex<TableDef, I>
+  : ReadonlyRangedIndex<TableDef, I>;
+
+export interface ReadonlyUniqueIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> {
+  find(col_val: IndexVal<TableDef, I>): RowType<TableDef> | null;
+}
+
 /**
  * A type representing a unique index on a database table.
  * Unique indexes enforce that the indexed columns contain unique values.
  */
-export type UniqueIndex<
+export interface UniqueIndex<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> = {
-  find(col_val: IndexVal<TableDef, I>): RowType<TableDef> | null;
+> extends ReadonlyUniqueIndex<TableDef, I> {
   delete(col_val: IndexVal<TableDef, I>): boolean;
   update(col_val: RowType<TableDef>): RowType<TableDef>;
-};
+}
+
+export interface ReadonlyRangedIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> {
+  filter(
+    range: IndexScanRangeBounds<TableDef, I>
+  ): IterableIterator<RowType<TableDef>>;
+}
 
 /**
  * A type representing a ranged index on a database table.
  * Ranged indexes allow for range queries on the indexed columns.
  */
-export type RangedIndex<
+export interface RangedIndex<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> = {
-  filter(
-    range: IndexScanRangeBounds<TableDef, I>
-  ): IterableIterator<RowType<TableDef>>;
+> extends ReadonlyRangedIndex<TableDef, I> {
   delete(range: IndexScanRangeBounds<TableDef, I>): number;
-};
+}
 
 /**
  * A helper type to extract the value type of an index based on the table definition and index definition.
