@@ -10,8 +10,8 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use std::{fmt, fs};
 use std::path::{Path, PathBuf};
+use std::{fmt, fs};
 use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
@@ -337,7 +337,10 @@ fn run_pm(pm: PackageManager, args: &[&str], cwd: &Path) -> std::io::Result<std:
 
 #[cfg(not(windows))]
 fn run_pm(pm: PackageManager, args: &[&str], cwd: &Path) -> std::io::Result<std::process::ExitStatus> {
-    std::process::Command::new(pm.to_string()).args(args).current_dir(cwd).status()
+    std::process::Command::new(pm.to_string())
+        .args(args)
+        .current_dir(cwd)
+        .status()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -384,7 +387,10 @@ pub fn prompt_for_typescript_package_manager() -> anyhow::Result<Option<PackageM
     })
 }
 
-pub fn install_typescript_dependencies(package_dir: &Path, package_manager: Option<PackageManager>) -> anyhow::Result<()> {
+pub fn install_typescript_dependencies(
+    package_dir: &Path,
+    package_manager: Option<PackageManager>,
+) -> anyhow::Result<()> {
     if let Some(pm) = package_manager {
         println!("Installing dependencies with {}...", pm);
 
@@ -398,7 +404,10 @@ pub fn install_typescript_dependencies(package_dir: &Path, package_manager: Opti
         );
         args_map.insert("bun", vec!["install"]);
 
-        let args: &[&str] = args_map.get(pm.to_string().as_str()).map(|v| v.as_slice()).unwrap_or(&[]);
+        let args: &[&str] = args_map
+            .get(pm.to_string().as_str())
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
 
         // Run and stream output cross-platform
         let status = run_pm(pm, args, package_dir);
@@ -475,10 +484,12 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
     ensure_empty_directory(&template_config.project_name, &template_config.project_path, is_server_only)?;
     init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
 
-    if template_config.server_lang == Some(ServerLanguage::TypeScript) && template_config.client_lang == Some(ClientLanguage::TypeScript) {
+    if template_config.server_lang == Some(ServerLanguage::TypeScript)
+        && template_config.client_lang == Some(ClientLanguage::TypeScript)
+    {
         // If server & client are TypeScript, handle dependency installation
         // NOTE: All server templates must have their server code in `spacetimedb/` directory
-        // This is not a requirement in general, but is a requirement for all templates 
+        // This is not a requirement in general, but is a requirement for all templates
         // i.e. `spacetime dev` is valid on non-templates.
         let pm = if is_interactive {
             prompt_for_typescript_package_manager()?
@@ -504,7 +515,7 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
             None
         };
         // NOTE: All server templates must have their server code in `spacetimedb/` directory
-        // This is not a requirement in general, but is a requirement for all templates 
+        // This is not a requirement in general, but is a requirement for all templates
         // i.e. `spacetime dev` is valid on non-templates.
         let server_dir = template_config.project_path.join("spacetimedb");
         install_typescript_dependencies(&server_dir, pm)?;
