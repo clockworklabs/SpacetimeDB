@@ -2,8 +2,8 @@ use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use std::collections::HashMap;
-use std::{env, fs};
 use std::path::Path;
+use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
 
@@ -70,8 +70,8 @@ enum CiCmd {
         target: Option<String>,
         #[arg(
             long,
-            default_value = "true",
-            long_help = "Whether to enable github token authentication feature when building the update binary. By default this is enabled."
+            default_value = "false",
+            long_help = "Whether to enable github token authentication feature when building the update binary. By default this is disabled."
         )]
         github_token_auth: bool,
     },
@@ -139,7 +139,6 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Some(CiCmd::Test) => {
-            run!("sudo mkdir -p /stdb && sudo chmod 777 /stdb")?;
             run!("cargo test --all -- --skip unreal")?;
             run!("bash tools/check-diff.sh")?;
             run!("cargo run -p spacetimedb-codegen --example regen-csharp-moduledef && bash tools/check-diff.sh crates/bindings-csharp")?;
@@ -162,19 +161,20 @@ fn main() -> Result<()> {
             run!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
         }
 
-        Some(CiCmd::Smoketests { args }) => {
+        Some(CiCmd::Smoketests { mut args }) => {
+            let default_args = ["-x", "clear_database", "replication"];
+            if args.is_empty() {
+                args = default_args.iter().map(ToString::to_string).collect();
+            }
             // Note: clear_database and replication only work in private
-            run!(&format!(
-                "python -m smoketests {} -x clear_database replication",
-                args.join(" ")
-            ))?;
+            run!(&format!("python -m smoketests {}", args.join(" ")))?;
         }
 
         Some(CiCmd::UpdateFlow {
             target,
             github_token_auth,
         }) => {
-            let target = target.unwrap_or_else(|| env!("TARGET").to_string());
+            let target = target.map(|t| format!("--target {t}")).unwrap_or_default();
             let github_token_auth_flag = if github_token_auth {
                 "--features github-token-auth "
             } else {
@@ -183,7 +183,7 @@ fn main() -> Result<()> {
 
             run!(&format!("echo 'checking update flow for target: {target}'"))?;
             run!(&format!(
-                "cargo build {github_token_auth_flag}--target {target} -p spacetimedb-update"
+                "cargo build {github_token_auth_flag}{target} -p spacetimedb-update"
             ))?;
             // NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
             // My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
