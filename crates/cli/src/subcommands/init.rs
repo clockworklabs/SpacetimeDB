@@ -778,7 +778,17 @@ fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn to_patch_wildcard(ver: &str) -> String {
+    let mut parts: Vec<&str> = ver.split('.').collect();
+    if parts.len() >= 3 {
+        parts[2] = "*";
+    }
+    parts.join(".")
+}
+
 fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> {
+    let version = env!("CARGO_PKG_VERSION");
+    let patch_wildcard = to_patch_wildcard(version);
     let cargo_path = dir.join("Cargo.toml");
     if !cargo_path.exists() {
         return Ok(());
@@ -814,6 +824,8 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
                                 if let Some(version) = embedded::get_workspace_dependency_version(&key) {
                                     set_dependency_version(dep_item, version, true);
                                 }
+                            } else if key == "spacetimedb-sdk" {
+                                set_dependency_version(dep_item, patch_wildcard.as_str(), true);
                             }
                             continue;
                         }
