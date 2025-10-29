@@ -696,11 +696,11 @@ pub enum ProcedureCallError {
     Args(#[from] InvalidProcedureArguments),
     #[error(transparent)]
     NoSuchModule(#[from] NoSuchModule),
-    #[error("no such procedure")]
+    #[error("No such procedure")]
     NoSuchProcedure,
     #[error("Procedure terminated due to insufficient budget")]
     OutOfEnergy,
-    #[error("The WASM instance encountered a fatal error: {0}")]
+    #[error("The module instance encountered a fatal error: {0}")]
     InternalError(String),
 }
 

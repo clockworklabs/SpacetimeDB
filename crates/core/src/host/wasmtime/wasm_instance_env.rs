@@ -259,7 +259,7 @@ impl WasmInstanceEnv {
     /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is over.
     ///
     /// Returns time measurements which can be recorded as metrics,
-    /// and the errors written by the WASM code to hte standard error sink.
+    /// and the errors written by the WASM code to the standard error sink.
     ///
     /// This resets the call times and clears the arguments source and error sink.
     pub fn finish_funcall(&mut self) -> (ExecutionTimings, Vec<u8>) {
@@ -1376,6 +1376,20 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
+    ///
+    /// Returns immediately if `wake_at_micros_since_unix_epoch` is in the past.
+    ///
+    /// Upon resuming, returns the current timestamp as microseconds since the Unix epoch.
+    ///
+    /// Not particularly useful, except for testing SpacetimeDB internals related to suspending procedure execution.
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - The calling WASM instance is holding open a transaction.
+    /// - The calling WASM instance is not executing a procedure.
+    // TODO(procedure-sleep-until): remove this
     pub fn procedure_sleep_until<'caller>(
         mut caller: Caller<'caller, Self>,
         (wake_at_micros_since_unix_epoch,): (i64,),

@@ -117,7 +117,7 @@ pub struct ProcedureExecuteResult {
     #[allow(unused)]
     pub timings: ExecutionTimings,
     pub memory_allocation: usize,
-    pub call_result: Result<Bytes, anyhow::Error>,
+    pub call_result: anyhow::Result<Bytes>,
 }
 
 pub struct WasmModuleHostActor<T: WasmModule> {
@@ -433,7 +433,7 @@ impl InstanceCommon {
             reducer_name: &procedure_def.name,
         };
 
-        // TODO: replace with call to separate function `procedure_budget`.
+        // TODO(procedure-energy): replace with call to separate function `procedure_budget`.
         let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
 
         let result = vm_call_procedure(op, budget).await;
@@ -441,7 +441,7 @@ impl InstanceCommon {
         let ProcedureExecuteResult {
             memory_allocation,
             call_result,
-            // TODO: Do something with timing and energy.
+            // TODO(procedure-energy): Do something with timing and energy.
             ..
         } = result;
 
@@ -473,8 +473,6 @@ impl InstanceCommon {
                 }
             }
             Ok(return_val) => {
-                // TODO: deserialize return_val at its appropriate type, which you get out of the procedure def,
-                // then return it in `Ok`.
                 let return_type = &procedure_def.return_type;
                 let seed = spacetimedb_sats::WithTypespace::new(self.info.module_def.typespace(), return_type);
                 let return_val = seed
@@ -839,6 +837,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
     }
 }
 
+/// Describes a procedure call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct ProcedureOp {
     pub id: ProcedureId,

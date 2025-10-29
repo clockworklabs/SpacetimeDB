@@ -588,13 +588,18 @@ fn convert<F: WebsocketFormat>(msg: OneOffQueryResponseMessage<F>) -> ws::Server
     })
 }
 
+/// Result of a procedure run.
 #[derive(Debug)]
 pub enum ProcedureStatus {
+    /// The procedure ran to completion and returned this value.
     Returned(AlgebraicValue),
+    /// The procedure was terminated due to running out of energy.
     OutOfEnergy,
+    /// The procedure failed to run to completion. This string describes the failure.
     InternalError(String),
 }
 
+/// Will be sent to the caller of a procedure after that procedure finishes running.
 #[derive(Debug)]
 pub struct ProcedureResultMessage {
     status: ProcedureStatus,

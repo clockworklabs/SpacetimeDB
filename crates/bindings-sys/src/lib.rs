@@ -660,6 +660,7 @@ pub mod raw {
         ///
         /// - The calling WASM instance is holding open a transaction.
         /// - The calling WASM instance is not executing a procedure.
+        // TODO(procedure-sleep-until): remove this
         pub fn procedure_sleep_until(wake_at_micros_since_unix_epoch: i64) -> i64;
     }
 

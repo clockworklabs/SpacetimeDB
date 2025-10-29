@@ -188,7 +188,7 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
 /// Modules from before the introduction of procedures will not have a `__call_procedure__` export,
 /// which is fine because they also won't define any procedures.
 ///
-/// Panicks if the `instance` has an export at the expected name,
+/// Panics if the `instance` has an export at the expected name,
 /// but it is not a function or is a function of an inappropriate type.
 /// For new modules, this will be caught during publish.
 /// Old modules from before the introduction of procedures might have an export at that name,
@@ -411,9 +411,8 @@ fn prepare_store_for_call(store: &mut Store<WasmInstanceEnv>, budget: ReducerBud
     // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
     set_store_fuel(store, budget.into());
 
-    // This seems odd, as we don't use epoch interruption, at least as far as I (pgoldman 2025-08-22) know.
-    // But this call was here prior to my last edit.
-    // The previous line git-blames to https://github.com/clockworklabs/spacetimeDB/pull/2738 .
+    // We enable epoch interruption only to log on long-running WASM functions.
+    // Our epoch interrupt callback logs and then immediately resumes execution.
     store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
 }
 

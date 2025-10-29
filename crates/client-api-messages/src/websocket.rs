@@ -307,6 +307,9 @@ pub struct OneOffQuery {
 
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
+/// Request a procedure run.
+///
+/// Parametric over the argument type to enable [`ClientMessage::map_args`].
 pub struct CallProcedure<Args> {
     /// The name of the procedure to call.
     pub procedure: Box<str>,
@@ -370,7 +373,7 @@ pub enum ServerMessage<F: WebsocketFormat> {
     SubscribeMultiApplied(SubscribeMultiApplied<F>),
     /// Sent in response to an `UnsubscribeMulti` message. This contains the matching rows.
     UnsubscribeMultiApplied(UnsubscribeMultiApplied<F>),
-    /// Sent in response to a `ProcedureCall` message. This contains the return value.
+    /// Sent in response to a [`CallProcedure`] message. This contains the return value.
     ProcedureResult(ProcedureResult<F>),
 }
 
@@ -751,6 +754,10 @@ pub struct OneOffTable<F: WebsocketFormat> {
     pub rows: F::List,
 }
 
+/// The result of running a procedure,
+/// including the return value of the procedure on success.
+///
+/// Sent in response to a [`CallProcedure`] message.
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct ProcedureResult<F: WebsocketFormat> {
@@ -770,6 +777,8 @@ pub struct ProcedureResult<F: WebsocketFormat> {
     pub request_id: u32,
 }
 
+/// The status of a procedure call,
+/// including the return value on success.
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub enum ProcedureStatus<F: WebsocketFormat> {
