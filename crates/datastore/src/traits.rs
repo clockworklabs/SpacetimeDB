@@ -509,6 +509,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn schema_for_table_mut_tx(&self, tx: &Self::MutTx, table_id: TableId) -> Result<Arc<TableSchema>>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()>;
+    fn view_id_from_name_mut_tx(&self, tx: &Self::MutTx, view_name: &str) -> Result<Option<ViewId>>;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>>;
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool;
     fn table_name_from_id_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Option<Cow<'a, str>>>;
