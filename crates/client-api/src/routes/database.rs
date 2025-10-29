@@ -8,7 +8,7 @@ use crate::auth::{
 };
 use crate::routes::subscribe::generate_random_connection_id;
 pub use crate::util::{ByteStringBody, NameOrIdentity};
-use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
+use crate::{log_and_500, ControlStateDelegate, DatabaseDef, Host, NodeDelegate};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
 use axum::response::{ErrorResponse, IntoResponse};
@@ -20,9 +20,9 @@ use http::StatusCode;
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
-use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
+use spacetimedb::host::{ModuleHost, ReducerOutcome};
 use spacetimedb::host::{ProcedureCallError, ReducerCallError};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
@@ -56,32 +56,17 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
     ByteStringBody(body): ByteStringBody,
 ) -> axum::response::Result<impl IntoResponse> {
-    if content_type != headers::ContentType::json() {
-        return Err(axum::extract::rejection::MissingJsonContentType::default().into());
-    }
+    assert_content_type_json(content_type)?;
+
     let caller_identity = auth.claims.identity;
 
     let args = FunctionArgs::Json(body);
 
-    let db_identity = name_or_identity.resolve(&worker_ctx).await?;
-    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
-        .await?
-        .ok_or_else(|| {
-            log::error!("Could not find database: {}", db_identity.to_hex());
-            NO_SUCH_DATABASE
-        })?;
-    let owner_identity = database.owner_identity;
-
-    let leader = worker_ctx
-        .leader(database.id)
-        .await
-        .map_err(log_and_500)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-    let module = leader.module().await.map_err(log_and_500)?;
-
     // HTTP callers always need a connection ID to provide to connect/disconnect,
     // so generate one.
     let connection_id = generate_random_connection_id();
+
+    let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
     module
         .call_identity_connected(auth.into(), connection_id)
@@ -134,6 +119,14 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     }
 }
 
+fn assert_content_type_json(content_type: headers::ContentType) -> axum::response::Result<()> {
+    if content_type != headers::ContentType::json() {
+        Err(axum::extract::rejection::MissingJsonContentType::default().into())
+    } else {
+        Ok(())
+    }
+}
+
 fn reducer_outcome_response(owner_identity: &Identity, reducer: &str, outcome: ReducerOutcome) -> (StatusCode, String) {
     match outcome {
         ReducerOutcome::Committed => (StatusCode::OK, "".to_owned()),
@@ -183,6 +176,37 @@ fn client_disconnected_error_to_response(err: ReducerCallError) -> ErrorResponse
     (StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", anyhow::anyhow!(err))).into()
 }
 
+async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
+    worker_ctx: &S,
+    name_or_identity: NameOrIdentity,
+) -> axum::response::Result<(Host, Database)> {
+    let db_identity = name_or_identity.resolve(worker_ctx).await?;
+    let database = worker_ctx_find_database(worker_ctx, &db_identity)
+        .await?
+        .ok_or_else(|| {
+            log::error!("Could not find database: {}", db_identity.to_hex());
+            NO_SUCH_DATABASE
+        })?;
+
+    let leader = worker_ctx
+        .leader(database.id)
+        .await
+        .map_err(log_and_500)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok((leader, database))
+}
+
+async fn find_module_and_database<S: ControlStateDelegate + NodeDelegate>(
+    worker_ctx: &S,
+    name_or_identity: NameOrIdentity,
+) -> axum::response::Result<(ModuleHost, Database)> {
+    let (leader, database) = find_leader_and_database(worker_ctx, name_or_identity).await?;
+    let module = leader.module().await.map_err(log_and_500)?;
+
+    Ok((module, database))
+}
+
 #[derive(Debug, derive_more::From)]
 pub enum DBCallErr {
     HandlerError(ErrorResponse),
@@ -206,27 +230,13 @@ async fn procedure<S: ControlStateDelegate + NodeDelegate>(
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
     ByteStringBody(body): ByteStringBody,
 ) -> axum::response::Result<impl IntoResponse> {
-    if content_type != headers::ContentType::json() {
-        return Err(axum::extract::rejection::MissingJsonContentType::default().into());
-    }
+    assert_content_type_json(content_type)?;
+
     let caller_identity = auth.claims.identity;
 
     let args = FunctionArgs::Json(body);
 
-    let db_identity = name_or_identity.resolve(&worker_ctx).await?;
-    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
-        .await?
-        .ok_or_else(|| {
-            log::error!("Could not find database: {}", db_identity.to_hex());
-            NO_SUCH_DATABASE
-        })?;
-
-    let leader = worker_ctx
-        .leader(database.id)
-        .await
-        .map_err(log_and_500)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-    let module = leader.module().await.map_err(log_and_500)?;
+    let (module, _) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
     // HTTP callers always need a connection ID to provide to connect/disconnect,
     // so generate one.
@@ -315,17 +325,7 @@ pub async fn schema<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let db_identity = name_or_identity.resolve(&worker_ctx).await?;
-    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
-        .await?
-        .ok_or(NO_SUCH_DATABASE)?;
-
-    let leader = worker_ctx
-        .leader(database.id)
-        .await
-        .map_err(log_and_500)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-    let module = leader.module().await.map_err(log_and_500)?;
+    let (module, _) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
     let module_def = &module.info.module_def;
     let response_json = match version {
@@ -513,19 +513,10 @@ where
     // Anyone is authorized to execute SQL queries. The SQL engine will determine
     // which queries this identity is allowed to execute against the database.
 
-    let db_identity = name_or_identity.resolve(&worker_ctx).await?;
-    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
-        .await?
-        .ok_or(NO_SUCH_DATABASE)?;
+    let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
 
     let auth = AuthCtx::new(database.owner_identity, caller_identity);
     log::debug!("auth: {auth:?}");
-
-    let host = worker_ctx
-        .leader(database.id)
-        .await
-        .map_err(log_and_500)?
-        .ok_or(StatusCode::NOT_FOUND)?;
 
     host.exec_sql(auth, database, confirmed, sql).await
 }
