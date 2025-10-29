@@ -9,8 +9,9 @@ use super::{
     SharedMutexGuard, SharedWriteGuard,
 };
 use crate::system_tables::{
-    system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow, StViewFields,
-    StViewParamRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
+    system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow, StViewColumnFields,
+    StViewFields, StViewParamFields, StViewParamRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
+    ST_VIEW_PARAM_ID,
 };
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
@@ -29,6 +30,7 @@ use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
+use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
@@ -46,7 +48,7 @@ use spacetimedb_sats::{
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
 use spacetimedb_schema::{
-    def::{ColumnDef, ModuleDef, ViewDef},
+    def::{ModuleDef, ViewColumnDef, ViewDef},
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_table::{
@@ -67,6 +69,55 @@ use std::{
 
 type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
+/// Views track their read sets and update the [`CommittedState`] with them.
+/// The [`CommittedState`] maintains these read sets in order to determine when to re-evaluate a view.
+#[derive(Default)]
+pub struct ReadSet {
+    table_scans: IntSet<TableId>,
+    index_keys: IntMap<TableId, IntMap<IndexId, AlgebraicValue>>,
+}
+
+impl ReadSet {
+    /// Enumerate the tables that are scanned and tracked by this read set
+    pub fn tables_scanned(&self) -> impl Iterator<Item = &TableId> + '_ {
+        self.table_scans.iter()
+    }
+
+    /// Enumerate the single index keys that are tracked by this read set
+    pub fn index_keys_scanned(&self) -> impl Iterator<Item = (&TableId, &IndexId, &AlgebraicValue)> + '_ {
+        self.index_keys
+            .iter()
+            .flat_map(|(table_id, keys)| keys.iter().map(move |(index_id, key)| (table_id, index_id, key)))
+    }
+
+    /// Track a table scan in this read set
+    fn insert_table_scan(&mut self, table_id: TableId) {
+        self.table_scans.insert(table_id);
+    }
+
+    /// Track an index scan in this read set.
+    /// If we only read a single index key we record the key.
+    /// If we read a range, we treat it as though we scanned the entire table.
+    fn insert_index_scan(
+        &mut self,
+        table_id: TableId,
+        index_id: IndexId,
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+    ) {
+        match (lower, upper) {
+            (Bound::Included(lower), Bound::Included(upper)) if lower == upper => {
+                self.index_keys.entry(table_id).or_default().insert(index_id, lower);
+            }
+            _ => {
+                self.table_scans.insert(table_id);
+            }
+        }
+    }
+}
+
+pub type ViewReadSets = IntMap<ViewId, ReadSet>;
+
 /// Represents a Mutable transaction. Holds locks for its duration
 ///
 /// The initialization of this struct is sensitive because improper
@@ -77,6 +128,7 @@ pub struct MutTxId {
     pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
+    pub(super) read_sets: ViewReadSets,
     // TODO(cloutiertyler): The below were made `pub` for the datastore split. We should
     // make these private again.
     pub timer: Instant,
@@ -84,7 +136,33 @@ pub struct MutTxId {
     pub metrics: ExecutionMetrics,
 }
 
-static_assert_size!(MutTxId, 400);
+static_assert_size!(MutTxId, 432);
+
+impl MutTxId {
+    /// Record that a view performs a table scan in this transaction's read set
+    pub fn record_table_scan(&mut self, view_id: Option<ViewId>, table_id: TableId) {
+        if let Some(view_id) = view_id {
+            self.read_sets.entry(view_id).or_default().insert_table_scan(table_id)
+        }
+    }
+
+    /// Record that a view performs an index scan in this transaction's read set
+    pub fn record_index_scan(
+        &mut self,
+        view_id: Option<ViewId>,
+        table_id: TableId,
+        index_id: IndexId,
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+    ) {
+        if let Some(view_id) = view_id {
+            self.read_sets
+                .entry(view_id)
+                .or_default()
+                .insert_index_scan(table_id, index_id, lower, upper)
+        }
+    }
+}
 
 impl Datastore for MutTxId {
     fn blob_store(&self) -> &dyn BlobStore {
@@ -184,7 +262,7 @@ impl MutTxId {
         Ok(())
     }
 
-    /// Create a backing table for a view.
+    /// Create a backing table for a view and update the system tables.
     ///
     /// Requires:
     /// - Everything [`Self::create_table`] requires.
@@ -193,11 +271,7 @@ impl MutTxId {
     /// - Everything [`Self::create_table`] ensures.
     /// - The returned [`ViewId`] is unique and not [`ViewId::SENTINEL`].
     /// - All view metadata maintained by the datastore is created atomically
-    pub fn create_view_with_backing_table(
-        &mut self,
-        module_def: &ModuleDef,
-        view_def: &ViewDef,
-    ) -> Result<(ViewId, TableId)> {
+    pub fn create_view(&mut self, module_def: &ModuleDef, view_def: &ViewDef) -> Result<(ViewId, TableId)> {
         let table_schema = TableSchema::from_view_def(module_def, view_def);
         let table_id = self.create_table(table_schema)?;
 
@@ -206,14 +280,33 @@ impl MutTxId {
             is_anonymous,
             is_public,
             params,
-            columns,
+            return_columns,
             ..
         } = view_def;
 
         let view_id = self.insert_into_st_view(name.clone().into(), table_id, *is_public, *is_anonymous)?;
         self.insert_into_st_view_param(view_id, params)?;
-        self.insert_into_st_view_column(view_id, columns)?;
+        self.insert_into_st_view_column(view_id, return_columns)?;
         Ok((view_id, table_id))
+    }
+
+    /// Drop the backing table of a view and update the system tables.
+    pub fn drop_view(&mut self, view_id: ViewId) -> Result<()> {
+        // Drop the view's metadata
+        self.drop_st_view(view_id)?;
+        self.drop_st_view_param(view_id)?;
+        self.drop_st_view_column(view_id)?;
+
+        // Drop the view's backing table if materialized
+        if let StViewRow {
+            table_id: Some(table_id),
+            ..
+        } = self.lookup_st_view(view_id)?
+        {
+            return self.drop_table(table_id);
+        };
+
+        Ok(())
     }
 
     /// Create a table.
@@ -320,6 +413,15 @@ impl MutTxId {
         })
     }
 
+    fn lookup_st_view(&self, view_id: ViewId) -> Result<StViewRow> {
+        let row = self
+            .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewId, &view_id.into())?
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_view, view_id.into()))?;
+
+        StViewRow::try_from(row)
+    }
+
     /// Insert a row into `st_view`, auto-increments and returns the [`ViewId`].
     fn insert_into_st_view(
         &mut self,
@@ -365,7 +467,7 @@ impl MutTxId {
     }
 
     /// For each column or field returned in a view, insert a row into `st_view_column`.
-    fn insert_into_st_view_column(&mut self, view_id: ViewId, columns: &[ColumnDef]) -> Result<()> {
+    fn insert_into_st_view_column(&mut self, view_id: ViewId, columns: &[ViewColumnDef]) -> Result<()> {
         for def in columns {
             self.insert_via_serialize_bsatn(
                 ST_VIEW_COLUMN_ID,
@@ -425,6 +527,26 @@ impl MutTxId {
         self.delete_col_eq(ST_COLUMN_ID, StColumnFields::TableId.col_id(), &table_id.into())
     }
 
+    /// Drops the row in `st_table` for this `table_id`
+    fn drop_st_table(&mut self, table_id: TableId) -> Result<()> {
+        self.delete_col_eq(ST_TABLE_ID, StTableFields::TableId.col_id(), &table_id.into())
+    }
+
+    /// Drops the row in `st_view` for this `view_id`
+    fn drop_st_view(&mut self, view_id: ViewId) -> Result<()> {
+        self.delete_col_eq(ST_VIEW_ID, StViewFields::ViewId.col_id(), &view_id.into())
+    }
+
+    /// Drops the rows in `st_view_param` for this `view_id`
+    fn drop_st_view_param(&mut self, view_id: ViewId) -> Result<()> {
+        self.delete_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId.col_id(), &view_id.into())
+    }
+
+    /// Drops the rows in `st_view_column` for this `view_id`
+    fn drop_st_view_column(&mut self, view_id: ViewId) -> Result<()> {
+        self.delete_col_eq(ST_VIEW_COLUMN_ID, StViewColumnFields::ViewId.col_id(), &view_id.into())
+    }
+
     pub fn drop_table(&mut self, table_id: TableId) -> Result<()> {
         self.clear_table(table_id)?;
 
@@ -443,7 +565,7 @@ impl MutTxId {
         }
 
         // Drop the table and their columns
-        self.delete_col_eq(ST_TABLE_ID, StTableFields::TableId.col_id(), &table_id.into())?;
+        self.drop_st_table(table_id)?;
         self.drop_st_column(table_id)?;
 
         if let Some(schedule) = &schema.schedule {
@@ -490,6 +612,14 @@ impl MutTxId {
         self.insert_via_serialize_bsatn(ST_TABLE_ID, &row)?;
 
         Ok(ret)
+    }
+
+    pub fn view_id_from_name(&self, view_name: &str) -> Result<Option<ViewId>> {
+        let view_name = &view_name.into();
+        let row = self
+            .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, view_name)?
+            .next();
+        Ok(row.map(|row| row.read_col(StViewFields::ViewId).unwrap()))
     }
 
     pub fn table_id_from_name(&self, table_name: &str) -> Result<Option<TableId>> {
@@ -866,7 +996,12 @@ impl MutTxId {
         prefix_elems: ColId,
         rstart: &[u8],
         rend: &[u8],
-    ) -> Result<(TableId, IndexScanRanged<'a>)> {
+    ) -> Result<(
+        TableId,
+        Bound<AlgebraicValue>,
+        Bound<AlgebraicValue>,
+        IndexScanRanged<'a>,
+    )> {
         // Extract the table id, and commit/tx indices.
         let (table_id, commit_index, tx_index) = self
             .get_table_and_index(index_id)
@@ -885,9 +1020,12 @@ impl MutTxId {
         let tx_iter = tx_index.map(|i| i.seek_range(&bounds));
         let commit_iter = commit_index.seek_range(&bounds);
 
+        let (lower, upper) = bounds;
+
         let dt = self.tx_state.get_delete_table(table_id);
         let iter = combine_range_index_iters(dt, tx_iter, commit_iter);
-        Ok((table_id, iter))
+
+        Ok((table_id, lower, upper, iter))
     }
 
     /// Translate `index_id` to the table id, and commit/tx indices.
@@ -1402,7 +1540,9 @@ impl MutTxId {
     /// - `String`, the name of the reducer which ran during this transaction.
     pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
-        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+        let tx_data = self
+            .committed_state_write_lock
+            .merge(self.tx_state, self.read_sets, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -1444,7 +1584,9 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
     pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
-        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+        let tx_data = self
+            .committed_state_write_lock
+            .merge(self.tx_state, self.read_sets, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended

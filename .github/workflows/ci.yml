@@ -13,6 +13,12 @@ on:
 
 name: CI
 
+concurrency:
+  # When a PR number isn't available, the event won't be a `pull_request` event so it won't matter.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  # Only cancel when the event is a pull_request
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   docker_smoketests:
     name: Smoketests
@@ -209,6 +215,8 @@ jobs:
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
     runs-on: spacetimedb-runner
+    # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     container:
       image: ghcr.io/epicgames/unreal-engine:dev-5.6
       credentials:
