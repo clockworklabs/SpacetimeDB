@@ -1,0 +1,23 @@
+﻿Write a SpacetimeDB backend module in C# that defines a sum type and uses it in multiple table columns.
+
+TYPES
+- Struct: Circle
+  - Fields:
+    - Radius: int
+- Struct: Rectangle
+  - Fields:
+    - Width: int
+    - Height: int
+- Sum: Shape = Circle | Rectangle
+
+TABLE
+- drawings
+  - Struct: Drawing
+  - Fields:
+    - Id: int (primary key)
+    - A: Shape
+    - B: Shape
+
+REDUCERS
+- Seed: insert exactly one row into drawings
+  - (Id=1, A=Circle{Radius=10}, B=Rectangle{Width=4, Height=6})
