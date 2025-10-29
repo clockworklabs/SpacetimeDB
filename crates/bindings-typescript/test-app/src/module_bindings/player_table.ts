@@ -68,29 +68,21 @@ export class PlayerTableHandle<TableName extends string>
   iter(): Iterable<Player> {
     return this.tableCache.iter();
   }
+
   /**
-   * Access to the `ownerId` unique index on the table `player`,
-   * which allows point queries on the field of the same name
-   * via the [`PlayerOwnerIdUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.player.ownerId().find(...)`.
-   *
-   * Get a handle on the `ownerId` unique index on the table `player`.
+   * Access to the `ownerId` index on the table `player`,
+   * with `ctx.db.player.ownerId.find(...)`.
    */
   ownerId = {
-    // Find the subscribed row whose `ownerId` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: string): Player | undefined => {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: string): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.ownerId, col_val)) {
+        if (__deepEqual(row.ownerId, col_vals)) {
           return row;
         }
       }
     },
   };
-
   onInsert = (cb: (ctx: EventContext, row: Player) => void) => {
     return this.tableCache.onInsert(cb);
   };
