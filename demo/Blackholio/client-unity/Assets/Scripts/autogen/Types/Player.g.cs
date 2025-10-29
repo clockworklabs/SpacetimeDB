@@ -16,13 +16,13 @@ namespace SpacetimeDB.Types
         [DataMember(Name = "identity")]
         public SpacetimeDB.Identity Identity;
         [DataMember(Name = "player_id")]
-        public uint PlayerId;
+        public int PlayerId;
         [DataMember(Name = "name")]
         public string Name;
 
         public Player(
             SpacetimeDB.Identity Identity,
-            uint PlayerId,
+            int PlayerId,
             string Name
         )
         {

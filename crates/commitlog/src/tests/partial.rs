@@ -1,18 +1,20 @@
 use std::{
     cmp,
-    fmt::Debug,
+    fmt::{self, Debug},
     io::{self, Seek as _, SeekFrom},
-    iter::repeat,
+    iter::{self, repeat},
+    num::NonZeroU16,
     sync::RwLockWriteGuard,
 };
 
 use log::debug;
+use pretty_assertions::assert_matches;
 
 use crate::{
     commitlog, error, payload,
     repo::{self, Repo, SegmentLen},
-    segment::FileLike,
-    tests::helpers::enable_logging,
+    segment::{self, FileLike},
+    tests::helpers::{enable_logging, fill_log_with},
     Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
 };
 
@@ -140,6 +142,42 @@ fn overwrite_reopen() {
     );
 }
 
+/// Edge case surfaced in production:
+///
+/// If the first commit in the last segment is corrupt, creating a new segment
+/// would fail because the `tx_range` is the same as the corrupt segment.
+///
+/// We don't automatically recover from that, but test that `open` returns an
+/// error providing some context.
+#[test]
+fn first_commit_in_last_segment_corrupt() {
+    enable_logging();
+
+    let repo = repo::Memory::new();
+    let options = Options {
+        max_segment_size: 512,
+        max_records_in_commit: NonZeroU16::new(1).unwrap(),
+        ..<_>::default()
+    };
+    {
+        let mut log = commitlog::Generic::open(repo.clone(), options).unwrap();
+        fill_log_with(&mut log, iter::once([b'x'; 64]).cycle().take(9));
+    }
+    let segments = repo.existing_offsets().unwrap();
+    assert_eq!(2, segments.len(), "repo should contain 2 segments");
+
+    {
+        let last_segment = repo.open_segment_writer(*segments.last().unwrap()).unwrap();
+        let mut data = last_segment.buf_mut();
+        data[segment::Header::LEN + 1..].fill(0);
+    }
+
+    assert_matches!(
+        commitlog::Generic::<_, [u8; 64]>::open(repo, options),
+        Err(e) if e.kind() == io::ErrorKind::InvalidData,
+    );
+}
+
 fn open_log<T>(repo: ShortMem) -> commitlog::Generic<ShortMem, T> {
     commitlog::Generic::open(
         repo,
@@ -226,6 +264,12 @@ impl ShortMem {
             inner: repo::Memory::new(),
             max_len,
         }
+    }
+}
+
+impl fmt::Display for ShortMem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.inner, f)
     }
 }
 

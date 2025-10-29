@@ -11,7 +11,7 @@ public class PlayerController : MonoBehaviour
 
     public static PlayerController Local { get; private set; }
 
-    private uint PlayerId;
+    private int PlayerId;
     private float LastMovementSendTimestamp;
     private Vector2? LockInputPosition;
     private List<CircleController> OwnedCircles = new List<CircleController>();
@@ -56,9 +56,9 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    public uint TotalMass()
+    public int TotalMass()
     {
-        return (uint)OwnedCircles
+        return (int)OwnedCircles
             .Select(circle => GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
             .Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
     }
