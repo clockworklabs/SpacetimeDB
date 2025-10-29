@@ -31,7 +31,7 @@ def _parse_quickstart(doc_path: Path, language: str) -> str:
         found = False
         filtered_blocks = []
         for block in blocks:
-            # The doc first create an empy class Module, so we need to fixup the closing
+            # The doc first create an empty class Module, so we need to fixup the closing
             if "partial class Module" in block:
                 block = block.replace("}", "")
                 end = "\n}"
@@ -178,8 +178,8 @@ class BaseQuickstart(Smoketest):
 
 class Rust(BaseQuickstart):
     lang = "rust"
-    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/02-rust-quickstart.md"
-    client_doc = STDB_DIR / "docs/docs/07-Client SDK Languages/04-rust-quickstart.md"
+    server_doc = STDB_DIR / "docs/docs/02-quickstarts/02-rust.md"
+    client_doc = STDB_DIR / "docs/docs/02-quickstarts/02-rust.md"
     server_file = "src/lib.rs"
     client_file = "src/main.rs"
     module_bindings = "src/module_bindings"
@@ -227,8 +227,8 @@ fn user_input_direct(ctx: &DbConnection) {
 
 class CSharp(BaseQuickstart):
     lang = "csharp"
-    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/04-csharp-quickstart.md"
-    client_doc = STDB_DIR / "docs/docs/07-Client SDK Languages/02-csharp-quickstart.md"
+    server_doc = STDB_DIR / "docs/docs/02-quickstarts/02-c-sharp.md"
+    client_doc = STDB_DIR / "docs/docs/02-quickstarts/02-c-sharp.md"
     server_file = "Lib.cs"
     client_file = "Program.cs"
     module_bindings = "module_bindings"
