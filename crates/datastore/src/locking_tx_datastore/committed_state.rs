@@ -6,15 +6,11 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
-use crate::system_tables::{
-    ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
-    ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX,
-};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, IndexError, TableError},
     execution_context::ExecutionContext,
-    locking_tx_datastore::state_view::iter_st_column_for_table,
+    locking_tx_datastore::{mut_tx::ViewReadSets, state_view::iter_st_column_for_table},
     system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
         StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
@@ -25,12 +21,19 @@ use crate::{
     },
     traits::TxData,
 };
+use crate::{
+    locking_tx_datastore::mut_tx::ReadSet,
+    system_tables::{
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
+        ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX,
+    },
+};
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
-use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
+use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
-use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::{
@@ -46,6 +49,40 @@ use spacetimedb_table::{
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use thin_vec::ThinVec;
+
+type IndexKeyReadSet = HashMap<AlgebraicValue, IntSet<ViewId>>;
+type IndexColReadSet = HashMap<ColList, IndexKeyReadSet>;
+
+#[derive(Default)]
+struct CommittedReadSets {
+    tables: IntMap<TableId, IntSet<ViewId>>,
+    index_keys: IntMap<TableId, IndexColReadSet>,
+}
+
+impl MemoryUsage for CommittedReadSets {
+    fn heap_usage(&self) -> usize {
+        self.tables.heap_usage() + self.index_keys.heap_usage()
+    }
+}
+
+impl CommittedReadSets {
+    /// Record in the [`CommittedState`] that this view scans this table
+    fn view_scans_table(&mut self, view_id: ViewId, table_id: TableId) {
+        self.tables.entry(table_id).or_default().insert(view_id);
+    }
+
+    /// Record in the [`CommittedState`] that this view reads this index `key` for these table `cols`
+    fn view_reads_index_key(&mut self, view_id: ViewId, table_id: TableId, cols: ColList, key: &AlgebraicValue) {
+        self.index_keys
+            .entry(table_id)
+            .or_default()
+            .entry(cols)
+            .or_default()
+            .entry(key.clone())
+            .or_default()
+            .insert(view_id);
+    }
+}
 
 /// Contains the live, in-memory snapshot of a database. This structure
 /// is exposed in order to support tools wanting to process the commit
@@ -72,6 +109,11 @@ pub struct CommittedState {
     /// We should split `CommittedState` into two types
     /// where one, e.g., `ReplayCommittedState`, has this field.
     table_dropped: IntSet<TableId>,
+    /// We track the read sets for each view in the committed state.
+    /// We check each reducer's write set against these read sets.
+    /// Any overlap will trigger a re-evaluation of the affected view,
+    /// and its read set will be updated accordingly.
+    read_sets: CommittedReadSets,
 }
 
 impl MemoryUsage for CommittedState {
@@ -83,6 +125,7 @@ impl MemoryUsage for CommittedState {
             index_id_map,
             page_pool: _,
             table_dropped,
+            read_sets,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
@@ -90,6 +133,7 @@ impl MemoryUsage for CommittedState {
             + blob_store.heap_usage()
             + index_id_map.heap_usage()
             + table_dropped.heap_usage()
+            + read_sets.heap_usage()
     }
 }
 
@@ -152,6 +196,7 @@ impl CommittedState {
             blob_store: <_>::default(),
             index_id_map: <_>::default(),
             table_dropped: <_>::default(),
+            read_sets: <_>::default(),
             page_pool,
         }
     }
@@ -359,7 +404,7 @@ impl CommittedState {
             let dropped_table_id = Self::read_table_id(row);
             self.tables
                 .remove(&dropped_table_id)
-                .expect("table to remove should exist");
+                .unwrap_or_else(|| panic!("table {} to remove should exist", dropped_table_id));
             // Mark the table as dropped so that when
             // processing row deletions for that table later,
             // they are simply ignored in (1).
@@ -614,9 +659,12 @@ impl CommittedState {
         tx_data.has_rows_or_connect_disconnect(ctx.reducer_context())
     }
 
-    pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
+    pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
+
+        // Merge read sets from the `MutTxId` into the `CommittedState`
+        self.merge_read_sets(read_sets);
 
         // First, apply deletes. This will free up space in the committed tables.
         self.merge_apply_deletes(
@@ -646,6 +694,26 @@ impl CommittedState {
         }
 
         tx_data
+    }
+
+    fn merge_read_set(&mut self, view_id: ViewId, read_set: ReadSet) {
+        for table_id in read_set.tables_scanned() {
+            self.read_sets.view_scans_table(view_id, *table_id);
+        }
+        for (table_id, index_id, key) in read_set.index_keys_scanned() {
+            if let Some(cols) = self
+                .get_schema(*table_id)
+                .map(|table_schema| table_schema.col_list_for_index_id(*index_id))
+            {
+                self.read_sets.view_reads_index_key(view_id, *table_id, cols, key);
+            }
+        }
+    }
+
+    fn merge_read_sets(&mut self, read_sets: ViewReadSets) {
+        for (view_id, read_set) in read_sets {
+            self.merge_read_set(view_id, read_set);
+        }
     }
 
     fn merge_apply_deletes(
