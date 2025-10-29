@@ -26,9 +26,9 @@ jobs:
       matrix:
         include:
           - runner: spacetimedb-runner
-            smoketest_args: "--docker -x clear_database replication"
+            smoketest_args: '--docker -x clear_database replication'
           - runner: windows-latest
-            smoketest_args: "--no-build-cli -x clear_database replication"
+            smoketest_args: '--no-build-cli -x clear_database replication'
         runner: [spacetimedb-runner, windows-latest]
     runs-on: ${{ matrix.runner }}
     steps:
@@ -265,47 +265,7 @@ jobs:
         env:
           UE_ROOT_PATH: /home/ue4/UnrealEngine
         run: |
-
-          apt-get update
-          apt-get install -y acl curl ca-certificates
-
-          REPO="$GITHUB_WORKSPACE"
-          # Let ue4 read/write the workspace & tool caches without changing ownership
-          for p in "$REPO" "${RUNNER_TEMP:-/__t}" "${RUNNER_TOOL_CACHE:-/__t}"; do
-            [ -d "$p" ] && setfacl -R -m u:ue4:rwX -m d:u:ue4:rwX "$p" || true
-          done
-
-          # Rust tool caches live under the runner tool cache so they persist
-          export CARGO_HOME="${RUNNER_TOOL_CACHE:-/__t}/cargo"
-          export RUSTUP_HOME="${RUNNER_TOOL_CACHE:-/__t}/rustup"
-          mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
-          chown -R ue4:ue4 "$CARGO_HOME" "$RUSTUP_HOME"
-
-          # Make sure the UE build script is executable (and parents traversable)
-          UE_DIR="${UE_ROOT_PATH:-/home/ue4/UnrealEngine}"
-          chmod a+rx "$UE_DIR" "$UE_DIR/Engine" "$UE_DIR/Engine/Build" "$UE_DIR/Engine/Build/BatchFiles/Linux" || true
-          chmod a+rx "$UE_DIR/Engine/Build/BatchFiles/Linux/Build.sh" || true
-
-          # Run the build & tests as ue4 (who owns the UE tree)
-          sudo -E -H -u ue4 env \
-            HOME=/home/ue4 \
-            XDG_CONFIG_HOME=/home/ue4/.config \
-            CARGO_HOME="$CARGO_HOME" \
-            RUSTUP_HOME="$RUSTUP_HOME" \
-            PATH="$CARGO_HOME/bin:$PATH" \
-            bash -lc '
-              set -euxo pipefail
-              # Install rustup for ue4 if needed (uses the shared caches)
-              if ! command -v cargo >/dev/null 2>&1; then
-                curl -sSf https://sh.rustup.rs | sh -s -- -y
-              fi
-              rustup show >/dev/null
-              git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
-
-              cd "$GITHUB_WORKSPACE/sdks/unreal"
-              cargo --version
-              cargo test
-            '
+          cargo ci unreal-tests
 
   ci_command_docs:
     name: Check CI command docs
