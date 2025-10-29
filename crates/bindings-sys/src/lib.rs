@@ -661,6 +661,7 @@ pub mod raw {
         /// - The calling WASM instance is holding open a transaction.
         /// - The calling WASM instance is not executing a procedure.
         // TODO(procedure-sleep-until): remove this
+        #[cfg(feature = "unstable")]
         pub fn procedure_sleep_until(wake_at_micros_since_unix_epoch: i64) -> i64;
     }
 
@@ -1241,6 +1242,7 @@ impl Drop for RowIter {
 pub mod procedure {
     //! Side-effecting or asynchronous operations which only procedures are allowed to perform.
     #[inline]
+    #[cfg(feature = "unstable")]
     pub fn sleep_until(wake_at_timestamp: i64) -> i64 {
         // Safety: Just calling an `extern "C"` function.
         // Nothing weird happening here.

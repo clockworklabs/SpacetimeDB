@@ -1383,6 +1383,9 @@ impl WasmInstanceEnv {
     /// Upon resuming, returns the current timestamp as microseconds since the Unix epoch.
     ///
     /// Not particularly useful, except for testing SpacetimeDB internals related to suspending procedure execution.
+    ///
+    /// In our public module-facing interfaces, this function is marked as unstable.
+    ///
     /// # Traps
     ///
     /// Traps if:

@@ -1089,7 +1089,8 @@ impl ProcedureContext {
     /// log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
     /// # }
     /// ```
-    // TODO(procedure-async): mark this method `async`.
+    // TODO(procedure-sleep-until): remove this method
+    #[cfg(feature = "unstable")]
     pub fn sleep_until(&mut self, timestamp: Timestamp) {
         let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
         let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
