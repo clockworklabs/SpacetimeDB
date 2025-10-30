@@ -25,8 +25,8 @@ use spacetimedb::client::messages::{
     serialize, IdentityTokenMessage, SerializableMessage, SerializeBuffer, SwitchedServerMessage, ToProtocol,
 };
 use spacetimedb::client::{
-    ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageExecutionError, MessageHandleError,
-    MeteredReceiver, MeteredSender, Protocol,
+    ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
+    MessageHandleError, MeteredReceiver, MeteredSender, Protocol,
 };
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
@@ -80,6 +80,12 @@ pub struct SubscribeQueryParams {
     /// This knob works by setting other, more specific, knobs to the value.
     #[serde(default)]
     pub light: bool,
+    /// If `true`, send the subscription updates only after the transaction
+    /// offset they're computed from is confirmed to be durable.
+    ///
+    /// If `false`, send them immediately.
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 pub fn generate_random_connection_id() -> ConnectionId {
@@ -93,6 +99,7 @@ pub async fn handle_websocket<S>(
         connection_id,
         compression,
         light,
+        confirmed,
     }): Query<SubscribeQueryParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
     Extension(auth): Extension<SpacetimeAuth>,
@@ -127,6 +134,7 @@ where
         protocol,
         compression,
         tx_update_full: !light,
+        confirmed_reads: confirmed,
     };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
@@ -147,8 +155,9 @@ where
 
     let mut module_rx = leader.module_watcher().await.map_err(log_and_500)?;
 
+    let client_identity = auth.claims.identity;
     let client_id = ClientActorId {
-        identity: auth.identity,
+        identity: client_identity,
         connection_id,
         name: ctx.client_actor_index().next_client_name(),
     };
@@ -178,7 +187,13 @@ where
 
         log::debug!("websocket: New client connected from {client_log_string}");
 
-        let connected = match ClientConnection::call_client_connected_maybe_reject(&mut module_rx, client_id).await {
+        let connected = match ClientConnection::call_client_connected_maybe_reject(
+            &mut module_rx,
+            client_id,
+            auth.clone().into(),
+        )
+        .await
+        {
             Ok(connected) => {
                 log::debug!("websocket: client_connected returned Ok for {client_log_string}");
                 connected
@@ -199,9 +214,17 @@ where
             "websocket: Database accepted connection from {client_log_string}; spawning ws_client_actor and ClientConnection"
         );
 
-        let actor = |client, sendrx| ws_client_actor(ws_opts, client, ws, sendrx);
-        let client =
-            ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor, connected).await;
+        let actor = |client, receiver| ws_client_actor(ws_opts, client, ws, receiver);
+        let client = ClientConnection::spawn(
+            client_id,
+            auth.into(),
+            client_config,
+            leader.replica_id,
+            module_rx,
+            actor,
+            connected,
+        )
+        .await;
 
         // Send the client their identity token message as the first message
         // NOTE: We're adding this to the protocol because some client libraries are
@@ -209,11 +232,11 @@ where
         // Clients that receive the token from the response headers should ignore this
         // message.
         let message = IdentityTokenMessage {
-            identity: auth.identity,
+            identity: client_identity,
             token: identity_token,
             connection_id,
         };
-        if let Err(e) = client.send_message(message) {
+        if let Err(e) = client.send_message(None, message) {
             log::warn!("websocket: Error sending IdentityToken message to {client_log_string}: {e}");
         }
     });
@@ -341,7 +364,7 @@ async fn ws_client_actor(
     options: WebSocketOptions,
     client: ClientConnection,
     ws: WebSocketStream,
-    sendrx: MeteredReceiver<SerializableMessage>,
+    sendrx: ClientConnectionReceiver,
 ) {
     // ensure that even if this task gets cancelled, we always cleanup the connection
     let mut client = scopeguard::guard(client, |client| {
@@ -357,7 +380,7 @@ async fn ws_client_actor_inner(
     client: &mut ClientConnection,
     config: WebSocketOptions,
     ws: WebSocketStream,
-    sendrx: MeteredReceiver<SerializableMessage>,
+    sendrx: ClientConnectionReceiver,
 ) {
     let database = client.module().info().database_identity;
     let client_id = client.id;
@@ -965,6 +988,33 @@ enum UnorderedWsMessage {
     Error(MessageExecutionError),
 }
 
+/// Abstraction over [`ClientConnectionReceiver`], so tests can use a plain
+/// [`mpsc::Receiver`].
+trait Receiver {
+    fn recv(&mut self) -> impl Future<Output = Option<SerializableMessage>> + Send;
+    fn close(&mut self);
+}
+
+impl Receiver for ClientConnectionReceiver {
+    async fn recv(&mut self) -> Option<SerializableMessage> {
+        ClientConnectionReceiver::recv(self).await
+    }
+
+    fn close(&mut self) {
+        ClientConnectionReceiver::close(self);
+    }
+}
+
+impl Receiver for mpsc::Receiver<SerializableMessage> {
+    async fn recv(&mut self) -> Option<SerializableMessage> {
+        mpsc::Receiver::recv(self).await
+    }
+
+    fn close(&mut self) {
+        mpsc::Receiver::close(self);
+    }
+}
+
 /// Sink that sends outgoing messages to the `ws` sink.
 ///
 /// Consumes `messages`, which yields subscription updates and reducer call
@@ -990,10 +1040,9 @@ async fn ws_send_loop(
     state: Arc<ActorState>,
     config: ClientConfig,
     mut ws: impl Sink<WsMessage, Error: Display> + Unpin,
-    mut messages: MeteredReceiver<SerializableMessage>,
+    mut messages: impl Receiver,
     mut unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
 ) {
-    let mut messages_buf = Vec::with_capacity(32);
     let mut serialize_buf = SerializeBuffer::new(config);
 
     loop {
@@ -1057,26 +1106,35 @@ async fn ws_send_loop(
                 }
             },
 
-            n = messages.recv_many(&mut messages_buf, 32), if !closed => {
-                if n == 0 {
-                    continue;
-                }
-                log::trace!("sending {n} outgoing messages");
-                for msg in messages_buf.drain(..n) {
-                    let (msg_alloc, res) = send_message(
-                        &state.database,
-                        config,
-                        serialize_buf,
-                        msg.workload().zip(msg.num_rows()),
-                        &mut ws,
-                        msg
-                    ).await;
-                    serialize_buf = msg_alloc;
-
-                    if let Err(e) = res {
-                        log::warn!("websocket send error: {e}");
-                        return;
+            maybe_message = messages.recv(), if !closed => {
+                let Some(message) = maybe_message else {
+                    // The message sender was dropped, even though no close
+                    // handshake is in progress. This should not normally happen,
+                    // but initiating close seems like the correct thing to do.
+                    log::warn!("message sender dropped without close handshake");
+                    if let Err(e) = ws.send(WsMessage::Close(None)).await {
+                        log::warn!("error sending close frame: {e:#}");
+                        break;
                     }
+                    state.close();
+                    // Continue so that `ws_client_actor` keeps waiting for an
+                    // acknowledgement from the client.
+                    continue;
+                };
+                log::trace!("sending outgoing message");
+                let (msg_alloc, res) = send_message(
+                    &state.database,
+                    config,
+                    serialize_buf,
+                    message.workload().zip(message.num_rows()),
+                    &mut ws,
+                    message
+                ).await;
+                serialize_buf = msg_alloc;
+
+                if let Err(e) = res {
+                    log::warn!("websocket send error: {e}");
+                    return;
                 }
             },
         }
@@ -1211,7 +1269,7 @@ mod tests {
         sink, stream,
     };
     use pretty_assertions::assert_matches;
-    use spacetimedb::client::ClientName;
+    use spacetimedb::client::{messages::SerializableMessage, ClientName};
     use tokio::time::sleep;
 
     use super::*;
@@ -1389,10 +1447,15 @@ mod tests {
     async fn send_loop_terminates_when_unordered_closed() {
         let state = Arc::new(dummy_actor_state());
         let (messages_tx, messages_rx) = mpsc::channel(64);
-        let messages = MeteredReceiver::new(messages_rx);
         let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
 
-        let send_loop = ws_send_loop(state, ClientConfig::for_test(), sink::drain(), messages, unordered_rx);
+        let send_loop = ws_send_loop(
+            state,
+            ClientConfig::for_test(),
+            sink::drain(),
+            messages_rx,
+            unordered_rx,
+        );
         pin_mut!(send_loop);
 
         assert!(is_pending(&mut send_loop).await);
@@ -1407,14 +1470,13 @@ mod tests {
     async fn send_loop_close_message_closes_state_and_messages() {
         let state = Arc::new(dummy_actor_state());
         let (messages_tx, messages_rx) = mpsc::channel(64);
-        let messages = MeteredReceiver::new(messages_rx);
         let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
 
         let send_loop = ws_send_loop(
             state.clone(),
             ClientConfig::for_test(),
             sink::drain(),
-            messages,
+            messages_rx,
             unordered_rx,
         );
         pin_mut!(send_loop);
@@ -1455,24 +1517,23 @@ mod tests {
             })),
         ];
 
-        for msg in input {
+        for message in input {
             let state = Arc::new(dummy_actor_state());
             let (messages_tx, messages_rx) = mpsc::channel(64);
-            let messages = MeteredReceiver::new(messages_rx);
             let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
 
             let send_loop = ws_send_loop(
                 state.clone(),
                 ClientConfig::for_test(),
                 UnfeedableSink,
-                messages,
+                messages_rx,
                 unordered_rx,
             );
             pin_mut!(send_loop);
 
-            match msg {
+            match message {
                 Either::Left(unordered) => unordered_tx.send(unordered).unwrap(),
-                Either::Right(msg) => messages_tx.send(msg).await.unwrap(),
+                Either::Right(message) => messages_tx.send(message).await.unwrap(),
             }
             send_loop.await;
         }
@@ -1502,24 +1563,23 @@ mod tests {
             })),
         ];
 
-        for msg in input {
+        for message in input {
             let state = Arc::new(dummy_actor_state());
             let (messages_tx, messages_rx) = mpsc::channel(64);
-            let messages = MeteredReceiver::new(messages_rx);
             let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
 
             let send_loop = ws_send_loop(
                 state.clone(),
                 ClientConfig::for_test(),
                 UnflushableSink,
-                messages,
+                messages_rx,
                 unordered_rx,
             );
             pin_mut!(send_loop);
 
-            match msg {
+            match message {
                 Either::Left(unordered) => unordered_tx.send(unordered).unwrap(),
-                Either::Right(msg) => messages_tx.send(msg).await.unwrap(),
+                Either::Right(message) => messages_tx.send(message).await.unwrap(),
             }
             send_loop.await;
         }

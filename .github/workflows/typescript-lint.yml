@@ -22,11 +22,9 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9.7
           run_install: true
 
       - name: Get pnpm store directory
-        working-directory: sdks/typescript
         shell: bash
         run: |
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
@@ -40,5 +38,4 @@ jobs:
             ${{ runner.os }}-pnpm-store-
 
       - name: Lint
-        working-directory: sdks/typescript
         run: pnpm lint

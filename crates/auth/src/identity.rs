@@ -6,9 +6,26 @@ use serde::{Deserialize, Serialize};
 use spacetimedb_lib::Identity;
 use std::time::SystemTime;
 
+#[derive(Debug, Clone)]
+pub struct ConnectionAuthCtx {
+    pub claims: SpacetimeIdentityClaims,
+    pub jwt_payload: String,
+}
+
+impl TryFrom<SpacetimeIdentityClaims> for ConnectionAuthCtx {
+    type Error = anyhow::Error;
+    fn try_from(claims: SpacetimeIdentityClaims) -> Result<Self, Self::Error> {
+        let payload = serde_json::to_string(&claims).map_err(|e| anyhow::anyhow!("Failed to serialize claims: {e}"))?;
+        Ok(ConnectionAuthCtx {
+            claims,
+            jwt_payload: payload,
+        })
+    }
+}
+
 // These are the claims that can be attached to a request/connection.
 #[serde_with::serde_as]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SpacetimeIdentityClaims {
     #[serde(rename = "hex_identity")]
     pub identity: Identity,
@@ -93,9 +110,7 @@ impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
         if let Some(token_identity) = self.identity {
             if token_identity != computed_identity {
                 return Err(anyhow::anyhow!(
-                    "Identity mismatch: token identity {:?} does not match computed identity {:?}",
-                    token_identity,
-                    computed_identity,
+                    "Identity mismatch: token identity {token_identity:?} does not match computed identity {computed_identity:?}",
                 ));
             }
         }

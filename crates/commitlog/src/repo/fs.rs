@@ -1,5 +1,7 @@
+use std::fmt;
 use std::fs::{self, File};
 use std::io;
+use std::sync::Arc;
 
 use log::{debug, warn};
 use spacetimedb_fs_utils::compression::{compress_with_zstd, CompressReader};
@@ -23,21 +25,35 @@ const SEGMENT_FILE_EXT: &str = ".stdb.log";
 // - io_uring
 //
 
+pub type OnNewSegmentFn = dyn Fn() + Send + Sync + 'static;
+
 /// A commitlog repository [`Repo`] which stores commits in ordinary files on
 /// disk.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Fs {
     /// The base directory within which segment files will be stored.
     root: CommitLogDir,
+
+    /// Channel through which to send a message whenever we create a new segment.
+    ///
+    /// The other end of this channel will be a `SnapshotWorker`,
+    /// which will capture a snapshot each time we rotate segments.
+    on_new_segment: Option<Arc<OnNewSegmentFn>>,
+}
+
+impl std::fmt::Debug for Fs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Fs").field("root", &self.root).finish_non_exhaustive()
+    }
 }
 
 impl Fs {
     /// Create a commitlog repository which stores segments in the directory `root`.
     ///
     /// `root` must name an extant, accessible, writeable directory.
-    pub fn new(root: CommitLogDir) -> io::Result<Self> {
+    pub fn new(root: CommitLogDir, on_new_segment: Option<Arc<OnNewSegmentFn>>) -> io::Result<Self> {
         root.create()?;
-        Ok(Self { root })
+        Ok(Self { root, on_new_segment })
     }
 
     /// Get the filename for a segment starting with `offset` within this
@@ -58,6 +74,12 @@ impl Fs {
         }
 
         Ok(sz)
+    }
+}
+
+impl fmt::Display for Fs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.root.display())
     }
 }
 
@@ -86,14 +108,29 @@ impl Repo for Fs {
             .or_else(|e| {
                 if e.kind() == io::ErrorKind::AlreadyExists {
                     debug!("segment {offset} already exists");
+                    // If the segment is completely empty, we can resume writing.
                     let file = self.open_segment_writer(offset)?;
                     if file.metadata()?.len() == 0 {
                         debug!("segment {offset} is empty");
                         return Ok(file);
                     }
+
+                    // Otherwise, provide some context.
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        format!("repo {}: segment {} already exists and is non-empty", self, offset),
+                    ));
                 }
 
                 Err(e)
+            })
+            .inspect(|_| {
+                // We're rotating commitlog segments, so we should also take a snapshot at the earliest opportunity.
+                if let Some(on_new_segment) = self.on_new_segment.as_ref() {
+                    // No need to handle the error here: if the snapshot worker is closed we'll eventually close too,
+                    // and we don't want to die prematurely if there are still TXes to write.
+                    on_new_segment();
+                }
             })
     }
 
@@ -108,7 +145,10 @@ impl Repo for Fs {
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
         let _ = self.remove_offset_index(offset).map_err(|e| {
-            warn!("failed to remove offset index for segment {offset}, error: {e}");
+            warn!(
+                "repo {}: failed to remove offset index for segment {}: {}",
+                self, offset, e
+            );
         });
         fs::remove_file(self.segment_path(offset))
     }

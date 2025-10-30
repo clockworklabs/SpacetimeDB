@@ -2,10 +2,11 @@ use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtoc
 use super::{ClientConnection, DataMessage, Protocol};
 use crate::energy::EnergyQuanta;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, ReducerId};
+use crate::host::{FunctionArgs, ReducerId};
 use crate::identity::Identity;
 use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
+use spacetimedb_client_api_messages::websocket::CallProcedure;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
@@ -36,14 +37,14 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             let DeserializeWrapper(message) =
                 serde_json::from_str::<DeserializeWrapper<ClientMessage<Cow<str>>>>(&text)?;
             message.map_args(|s| {
-                ReducerArgs::Json(match s {
+                FunctionArgs::Json(match s {
                     Cow::Borrowed(s) => text.slice_ref(s),
                     Cow::Owned(string) => string.into(),
                 })
             })
         }
         DataMessage::Binary(message_buf) => bsatn::from_slice::<ClientMessage<&[u8]>>(&message_buf)?
-            .map_args(|b| ReducerArgs::Bsatn(message_buf.slice_ref(b))),
+            .map_args(|b| FunctionArgs::Bsatn(message_buf.slice_ref(b))),
     };
 
     let module = client.module();
@@ -129,9 +130,27 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|err| (None, None, err))
         }
+        ClientMessage::CallProcedure(CallProcedure {
+            ref procedure,
+            args,
+            request_id,
+            flags: _,
+        }) => {
+            let res = client.call_procedure(procedure, args, request_id, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Procedure, &database_identity, procedure)
+                .observe(timer.elapsed().as_secs_f64());
+            if let Err(e) = res {
+                log::warn!("Procedure call failed: {e:#}");
+            }
+            // `ClientConnection::call_procedure` handles sending the error message to the client if the call fails,
+            // so we don't need to return an `Err` here.
+            Ok(())
+        }
     };
-    res.map_err(|(reducer, reducer_id, err)| MessageExecutionError {
-        reducer: reducer.cloned(),
+    res.map_err(|(reducer_name, reducer_id, err)| MessageExecutionError {
+        reducer: reducer_name.cloned(),
         reducer_id,
         caller_identity: client.id.identity,
         caller_connection_id: Some(client.id.connection_id),

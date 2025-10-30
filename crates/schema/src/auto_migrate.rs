@@ -8,13 +8,14 @@ use spacetimedb_data_structures::{
 };
 use spacetimedb_lib::{
     db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType},
-    AlgebraicType,
+    hash_bytes, AlgebraicType, Identity,
 };
 use spacetimedb_sats::{
     layout::{HasLayout, SumTypeLayout},
     WithTypespace,
 };
 use termcolor_formatter::{ColorScheme, TermColorFormatter};
+use thiserror::Error;
 mod formatter;
 mod termcolor_formatter;
 
@@ -50,9 +51,19 @@ impl<'def> MigratePlan<'def> {
         }
     }
 
+    pub fn breaks_client(&self) -> bool {
+        match self {
+            //TODO: fix it when support for manual migration plans is added.
+            MigratePlan::Manual(_) => true,
+            MigratePlan::Auto(plan) => plan
+                .steps
+                .iter()
+                .any(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers)),
+        }
+    }
+
     pub fn pretty_print(&self, style: PrettyPrintStyle) -> anyhow::Result<String> {
         use PrettyPrintStyle::*;
-
         match self {
             MigratePlan::Manual(_) => {
                 anyhow::bail!("Manual migration plans are not yet supported for pretty printing.")
@@ -70,6 +81,101 @@ impl<'def> MigratePlan<'def> {
             }
             .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}")),
         }
+    }
+}
+
+/// A migration policy that determines whether a module update is allowed to break client compatibility.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MigrationPolicy {
+    /// Migration must maintain backward compatibility with existing clients.
+    Compatible,
+    /// To use this, a valid [`MigrationToken`] must be provided.
+    /// The token is issued through the pre-publish API (see the `client-api` crate)
+    /// and proves that the publisher explicitly acknowledged the breaking change.
+    BreakClients(spacetimedb_lib::Hash),
+}
+
+impl MigrationPolicy {
+    /// Verifies whether the given migration plan is allowed under the current policy.
+    ///
+    /// Returns `Ok(())` if allowed, otherwise an appropriate `MigrationPolicyError`
+    fn permits_plan(&self, plan: &MigratePlan<'_>, token: &MigrationToken) -> anyhow::Result<(), MigrationPolicyError> {
+        match self {
+            MigrationPolicy::Compatible => {
+                if plan.breaks_client() {
+                    Err(MigrationPolicyError::ClientBreakingChangeDisallowed)
+                } else {
+                    Ok(())
+                }
+            }
+            MigrationPolicy::BreakClients(expected_hash) => {
+                if token.hash() == *expected_hash {
+                    Ok(())
+                } else {
+                    Err(MigrationPolicyError::InvalidToken)
+                }
+            }
+        }
+    }
+
+    /// Attempts to generate a migration plan and validate it under this policy.
+    ///
+    /// Fails if migration is not permitted by the policy or migration planning fails.
+    pub fn try_migrate<'def>(
+        &self,
+        database_identity: Identity,
+        old_module_hash: spacetimedb_lib::Hash,
+        old_module_def: &'def ModuleDef,
+        new_module_hash: spacetimedb_lib::Hash,
+        new_module_def: &'def ModuleDef,
+    ) -> anyhow::Result<MigratePlan<'def>, MigrationPolicyError> {
+        let plan = ponder_migrate(old_module_def, new_module_def).map_err(MigrationPolicyError::AutoMigrateFailure)?;
+
+        let token = MigrationToken {
+            database_identity,
+            old_module_hash,
+            new_module_hash,
+        };
+        self.permits_plan(&plan, &token)?;
+        Ok(plan)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum MigrationPolicyError {
+    #[error("Automatic migration planning failed")]
+    AutoMigrateFailure(ErrorStream<AutoMigrateError>),
+
+    #[error("Token provided is invalid or does not match expected hash")]
+    InvalidToken,
+
+    #[error("Migration plan contains a client-breaking change which is disallowed under current policy")]
+    ClientBreakingChangeDisallowed,
+}
+
+/// A token acknowledging a breaking migration.
+///
+/// Note: This token is only intended as a UX safeguard, not as a security measure.
+/// No secret is used in its generation, which means anyone can reproduce it given
+/// the inputs. That is acceptable for our purposes since it only signals user intent,
+/// not authorization.
+pub struct MigrationToken {
+    pub database_identity: Identity,
+    pub old_module_hash: spacetimedb_lib::Hash,
+    pub new_module_hash: spacetimedb_lib::Hash,
+}
+
+impl MigrationToken {
+    pub fn hash(&self) -> spacetimedb_lib::Hash {
+        hash_bytes(
+            format!(
+                "{}{}{}",
+                self.database_identity.to_hex(),
+                self.old_module_hash.to_hex(),
+                self.new_module_hash.to_hex()
+            )
+            .as_str(),
+        )
     }
 }
 
@@ -94,6 +200,16 @@ pub struct AutoMigratePlan<'def> {
     /// The migration steps to perform.
     /// Order matters: `Remove`s of a particular `Def` must be ordered before `Add`s.
     pub steps: Vec<AutoMigrateStep<'def>>,
+}
+
+impl AutoMigratePlan<'_> {
+    fn any_step(&self, f: impl Fn(&AutoMigrateStep) -> bool) -> bool {
+        self.steps.iter().any(f)
+    }
+
+    fn disconnects_all_users(&self) -> bool {
+        self.any_step(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers))
+    }
 }
 
 /// Checks that must be performed before performing an automatic migration.
@@ -134,6 +250,8 @@ pub enum AutoMigrateStep<'def> {
     RemoveSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
     /// Remove a schedule annotation from a table.
     RemoveSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a view and corresponding view table
+    RemoveView(<ViewDef as ModuleDefLookup>::Key<'def>),
     /// Remove a row-level security query.
     RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
 
@@ -162,11 +280,16 @@ pub enum AutoMigrateStep<'def> {
     AddSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
     /// Add a schedule annotation to a table.
     AddSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
+    /// Add a view and corresponding view table
+    AddView(<ViewDef as ModuleDefLookup>::Key<'def>),
     /// Add a row-level security query.
     AddRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
 
     /// Change the access of a table.
     ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
+
+    /// Recompute a view, update its backing table, and push updates to clients
+    UpdateView(<ViewDef as ModuleDefLookup>::Key<'def>),
 
     /// Disconnect all users connected to the module.
     DisconnectAllUsers,
@@ -322,6 +445,7 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
         prechecks: Vec::new(),
     };
 
+    let views_ok = auto_migrate_views(&mut plan);
     let tables_ok = auto_migrate_tables(&mut plan);
 
     // Our diffing algorithm will detect added constraints / indexes / sequences in new tables, we use this to filter those out.
@@ -340,7 +464,8 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
     // have already been reflected in the database state.
     let rls_ok = auto_migrate_row_level_security(&mut plan);
 
-    let ((), (), (), (), ()) = (tables_ok, indexes_ok, sequences_ok, constraints_ok, rls_ok).combine_errors()?;
+    let ((), (), (), (), (), ()) =
+        (views_ok, tables_ok, indexes_ok, sequences_ok, constraints_ok, rls_ok).combine_errors()?;
 
     plan.steps.sort();
     plan.prechecks.sort();
@@ -381,6 +506,116 @@ fn diff<'def, T: ModuleDefLookup, I: Iterator<Item = &'def T>>(
                 None
             }
         }))
+}
+
+fn auto_migrate_views(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
+    diff(plan.old, plan.new, ModuleDef::views)
+        .map(|table_diff| -> Result<()> {
+            match table_diff {
+                Diff::Add { new } => {
+                    plan.steps.push(AutoMigrateStep::AddView(new.key()));
+                    Ok(())
+                }
+                // From the user's perspective, views do not have persistent state.
+                // Hence removal does not require a manual migration - just disconnecting clients.
+                Diff::Remove { old } if plan.disconnects_all_users() => {
+                    plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
+                    Ok(())
+                }
+                Diff::Remove { old } => {
+                    plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
+                    plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
+                    Ok(())
+                }
+                Diff::MaybeChange { old, new } => auto_migrate_view(plan, old, new),
+            }
+        })
+        .collect_all_errors()
+}
+
+fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef, new: &'def ViewDef) -> Result<()> {
+    let key = old.key();
+
+    if old.is_public != new.is_public {
+        plan.steps.push(AutoMigrateStep::ChangeAccess(key));
+    }
+
+    // We can always auto-migrate a view because we can always re-compute it.
+    // However certain things require us to disconnect clients:
+    // 1. If we add or remove a column or parameter
+    // 2. If we change the order of the columns or parameters
+    // 3. If we change the types of the columns or parameters
+    // 4. If we change the context parameter
+    let Any(incompatible_return_type) = diff(plan.old, plan.new, |def| {
+        def.lookup_expect::<ViewDef>(key).return_columns.iter()
+    })
+    .map(|col_diff| {
+        match col_diff {
+            // We must disconnect clients if we add or remove a parameter or column
+            Diff::Add { .. } | Diff::Remove { .. } => Any(true),
+            Diff::MaybeChange { old, new } => {
+                if old.col_id != new.col_id {
+                    return Any(true);
+                };
+
+                ensure_old_ty_upgradable_to_new(
+                    false,
+                    &|| old.view_name.clone(),
+                    &|| old.name.clone(),
+                    &WithTypespace::new(plan.old.typespace(), &old.ty)
+                        .resolve_refs()
+                        .expect("valid ViewDefs must have valid type refs"),
+                    &WithTypespace::new(plan.new.typespace(), &new.ty)
+                        .resolve_refs()
+                        .expect("valid ViewDefs must have valid type refs"),
+                )
+                .unwrap_or(Any(true))
+            }
+        }
+    })
+    .collect();
+
+    let Any(incompatible_param_types) = diff(plan.old, plan.new, |def| {
+        def.lookup_expect::<ViewDef>(key).param_columns.iter()
+    })
+    .map(|col_diff| {
+        match col_diff {
+            // We must disconnect clients if we add or remove a parameter or column
+            Diff::Add { .. } | Diff::Remove { .. } => Any(true),
+            Diff::MaybeChange { old, new } => {
+                if old.col_id != new.col_id {
+                    return Any(true);
+                };
+
+                ensure_old_ty_upgradable_to_new(
+                    false,
+                    &|| old.view_name.clone(),
+                    &|| old.name.clone(),
+                    &WithTypespace::new(plan.old.typespace(), &old.ty)
+                        .resolve_refs()
+                        .expect("valid ViewDefs must have valid type refs"),
+                    &WithTypespace::new(plan.new.typespace(), &new.ty)
+                        .resolve_refs()
+                        .expect("valid ViewDefs must have valid type refs"),
+                )
+                .unwrap_or(Any(true))
+            }
+        }
+    })
+    .collect();
+
+    if old.is_anonymous != new.is_anonymous || incompatible_return_type || incompatible_param_types {
+        plan.steps.push(AutoMigrateStep::AddView(new.key()));
+        plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
+
+        if !plan.disconnects_all_users() {
+            plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
+        }
+    } else {
+        plan.steps.push(AutoMigrateStep::UpdateView(old.key()));
+    }
+
+    Ok(())
 }
 
 fn auto_migrate_tables(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
@@ -457,7 +692,13 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                 let new_ty = WithTypespace::new(plan.new.typespace(), &new.ty)
                     .resolve_refs()
                     .expect("valid TableDef must have valid type refs");
-                let types_ok = ensure_old_ty_upgradable_to_new(false, old, &old_ty, &new_ty);
+                let types_ok = ensure_old_ty_upgradable_to_new(
+                    false,
+                    &|| old.table_name.clone(),
+                    &|| old.name.clone(),
+                    &old_ty,
+                    &new_ty,
+                );
 
                 // Note that the diff algorithm relies on `ModuleDefLookup` for `ColumnDef`,
                 // which looks up columns by NAME, NOT position: precisely to allow this step to work!
@@ -488,11 +729,7 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     // If we're adding a column, we'll rewrite the whole table.
     // That makes any `ChangeColumns` moot, so we can skip it.
     if columns_added {
-        if !plan
-            .steps
-            .iter()
-            .any(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers))
-        {
+        if !plan.disconnects_all_users() {
             plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
         }
         plan.steps.push(AutoMigrateStep::AddColumns(key));
@@ -542,19 +779,21 @@ impl<M1: BitOr<Output = M1> + Default, M2: BitOr<Output = M2> + Default> FromIte
 
 fn ensure_old_ty_upgradable_to_new(
     within: bool,
-    old: &ColumnDef,
+    old_container_name: &impl Fn() -> Identifier,
+    old_column_name: &impl Fn() -> Identifier,
     old_ty: &AlgebraicType,
     new_ty: &AlgebraicType,
 ) -> Result<Any> {
     use AutoMigrateError::*;
 
     // Ensures an `old_ty` within `old` is upgradable to `new_ty`.
-    let ensure = |(old_ty, new_ty)| ensure_old_ty_upgradable_to_new(true, old, old_ty, new_ty);
+    let ensure =
+        |(old_ty, new_ty)| ensure_old_ty_upgradable_to_new(true, old_container_name, old_column_name, old_ty, new_ty);
 
     // Returns a `ChangeColumnTypeParts` error using the current `old_ty` and `new_ty`.
     let parts_for_error = || ChangeColumnTypeParts {
-        table: old.table_name.clone(),
-        column: old.name.clone(),
+        table: old_container_name(),
+        column: old_column_name(),
         type1: old_ty.clone().into(),
         type2: new_ty.clone().into(),
     };
@@ -657,9 +896,13 @@ fn ensure_old_ty_upgradable_to_new(
         }
 
         // For arrays, we need to check each field's upgradability due to sums.
-        (AlgebraicType::Array(old_ty), AlgebraicType::Array(new_ty)) => {
-            ensure_old_ty_upgradable_to_new(true, old, &old_ty.elem_ty, &new_ty.elem_ty)
-        }
+        (AlgebraicType::Array(old_ty), AlgebraicType::Array(new_ty)) => ensure_old_ty_upgradable_to_new(
+            true,
+            old_container_name,
+            old_column_name,
+            &old_ty.elem_ty,
+            &new_ty.elem_ty,
+        ),
 
         // We only have the simple cases left, and there, no change is good change.
         (old_ty, new_ty) if old_ty == new_ty => Ok(Any(false)),
@@ -798,6 +1041,15 @@ mod tests {
     use v9::{RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
 
+    fn create_module_def(build_module: impl Fn(&mut RawModuleDefV9Builder)) -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        build_module(&mut builder);
+        builder
+            .finish()
+            .try_into()
+            .expect("new_def should be a valid database definition")
+    }
+
     fn initial_module_def() -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
         let schedule_at = builder.add_type::<ScheduleAt>();
@@ -851,6 +1103,17 @@ mod tests {
             "check_deliveries",
             ProductType::from([("a", AlgebraicType::Ref(deliveries_type))]),
             None,
+        );
+
+        // Add a view and add its return type to the typespace
+        let view_return_ty = AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::U64)]);
+        let view_return_ty_ref = builder.add_algebraic_type([], "my_view_return", view_return_ty, true);
+        builder.add_view(
+            "my_view",
+            true,
+            true,
+            ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
+            AlgebraicType::option(AlgebraicType::Ref(view_return_ty_ref)),
         );
 
         builder
@@ -938,6 +1201,17 @@ mod tests {
             None,
         );
 
+        // Add a view and add its return type to the typespace
+        let view_return_ty = AlgebraicType::product([("a", AlgebraicType::U64)]);
+        let view_return_ty_ref = builder.add_algebraic_type([], "my_view_return", view_return_ty, true);
+        builder.add_view(
+            "my_view",
+            true,
+            true,
+            ProductType::from([("x", AlgebraicType::U32)]),
+            AlgebraicType::option(AlgebraicType::Ref(view_return_ty_ref)),
+        );
+
         let new_inspections_type = builder
             .build_table_with_new_type(
                 "Inspections",
@@ -987,6 +1261,7 @@ mod tests {
         let bananas = expect_identifier("Bananas");
         let deliveries = expect_identifier("Deliveries");
         let oranges = expect_identifier("Oranges");
+        let my_view = expect_identifier("my_view");
 
         let bananas_sequence = "Bananas_id_seq";
         let apples_unique_constraint = "Apples_id_key";
@@ -1068,6 +1343,9 @@ mod tests {
         assert!(steps.contains(&AutoMigrateStep::AddColumns(&bananas)), "{steps:?}");
         // Column is changed but it will not reflect in steps due to `AutoMigrateStep::AddColumns`
         assert!(!steps.contains(&AutoMigrateStep::ChangeColumns(&bananas)), "{steps:?}");
+
+        assert!(steps.contains(&AutoMigrateStep::RemoveView(&my_view)), "{steps:?}");
+        assert!(steps.contains(&AutoMigrateStep::AddView(&my_view)), "{steps:?}");
     }
 
     #[test]
@@ -1473,5 +1751,498 @@ mod tests {
             plan.pretty_print(PrettyPrintStyle::NoColor)
                 .expect("should pretty print")
         );
+    }
+
+    #[test]
+    fn add_view() {
+        let old_def = create_module_def(|_| {});
+        let new_def = create_module_def(|builder| {
+            let return_type_ref = builder.add_algebraic_type(
+                [],
+                "my_view_return_type",
+                AlgebraicType::product([("a", AlgebraicType::U64)]),
+                true,
+            );
+            builder.add_view(
+                "my_view",
+                true,
+                true,
+                ProductType::from([("x", AlgebraicType::U32)]),
+                AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+            );
+        });
+
+        let my_view = expect_identifier("my_view");
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        let steps = &plan.steps[..];
+
+        assert!(!plan.disconnects_all_users(), "{plan:#?}");
+        assert!(steps.contains(&AutoMigrateStep::AddView(&my_view)), "{steps:?}");
+        assert!(!steps.contains(&AutoMigrateStep::RemoveView(&my_view)), "{steps:?}");
+    }
+
+    #[test]
+    fn remove_view() {
+        let old_def = create_module_def(|builder| {
+            let return_type_ref = builder.add_algebraic_type(
+                [],
+                "my_view_return_type",
+                AlgebraicType::product([("a", AlgebraicType::U64)]),
+                true,
+            );
+            builder.add_view(
+                "my_view",
+                true,
+                true,
+                ProductType::from([("x", AlgebraicType::U32)]),
+                AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+            );
+        });
+        let new_def = create_module_def(|_| {});
+
+        let my_view = expect_identifier("my_view");
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        let steps = &plan.steps[..];
+
+        assert!(plan.disconnects_all_users(), "{plan:#?}");
+        assert!(steps.contains(&AutoMigrateStep::RemoveView(&my_view)), "{steps:?}");
+        assert!(!steps.contains(&AutoMigrateStep::AddView(&my_view)), "{steps:?}");
+    }
+
+    #[test]
+    fn migrate_view_recompute() {
+        struct TestCase {
+            desc: &'static str,
+            old_def: ModuleDef,
+            new_def: ModuleDef,
+        }
+
+        for TestCase {
+            desc: name,
+            old_def,
+            new_def,
+        } in [
+            TestCase {
+                desc: "Return `Vec<T>` instead of `Option<T>`",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+            TestCase {
+                desc: "No change; recompute view",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+        ] {
+            let my_view = expect_identifier("my_view");
+
+            let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+            let steps = &plan.steps[..];
+
+            assert!(!plan.disconnects_all_users(), "{name}, plan: {plan:#?}");
+
+            assert!(
+                steps.contains(&AutoMigrateStep::UpdateView(&my_view)),
+                "{name}, steps: {steps:?}"
+            );
+            assert!(
+                !steps.contains(&AutoMigrateStep::AddView(&my_view)),
+                "{name}, steps: {steps:?}"
+            );
+            assert!(
+                !steps.contains(&AutoMigrateStep::RemoveView(&my_view)),
+                "{name}, steps: {steps:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn migrate_view_disconnect_clients() {
+        struct TestCase {
+            desc: &'static str,
+            old_def: ModuleDef,
+            new_def: ModuleDef,
+        }
+
+        for TestCase {
+            desc: name,
+            old_def,
+            new_def,
+        } in [
+            TestCase {
+                desc: "Change context parameter",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        false,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+            TestCase {
+                desc: "Add parameter",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+            TestCase {
+                desc: "Remove parameter",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+            TestCase {
+                desc: "Reorder parameters",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("y", AlgebraicType::U32), ("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+            TestCase {
+                desc: "Change parameter type",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::String)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+            TestCase {
+                desc: "Add column",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+            TestCase {
+                desc: "Remove column",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+            TestCase {
+                desc: "Reorder columns",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("b", AlgebraicType::U64), ("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+            TestCase {
+                desc: "Change column type",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::String)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+        ] {
+            let my_view = expect_identifier("my_view");
+
+            let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+            let steps = &plan.steps[..];
+
+            assert!(plan.disconnects_all_users(), "{name}, plan: {plan:?}");
+
+            assert!(
+                steps.contains(&AutoMigrateStep::AddView(&my_view)),
+                "{name}, steps: {steps:?}"
+            );
+            assert!(
+                steps.contains(&AutoMigrateStep::RemoveView(&my_view)),
+                "{name}, steps: {steps:?}"
+            );
+            assert!(
+                !steps.contains(&AutoMigrateStep::UpdateView(&my_view)),
+                "{name}, steps: {steps:?}"
+            );
+        }
     }
 }

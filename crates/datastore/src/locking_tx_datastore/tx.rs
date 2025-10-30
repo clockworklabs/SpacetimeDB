@@ -6,15 +6,15 @@ use super::{
 };
 use crate::execution_context::ExecutionContext;
 use crate::locking_tx_datastore::state_view::IterTx;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_primitives::{ColList, TableId};
+use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::TableSchema;
-use spacetimedb_table::blob_store::BlobStore;
-use spacetimedb_table::table::Table;
-use std::num::NonZeroU64;
+use spacetimedb_table::table::{IndexScanRangeIter, TableScanIter};
 use std::sync::Arc;
+use std::{future, num::NonZeroU64};
 use std::{
     ops::RangeBounds,
     time::{Duration, Instant},
@@ -32,12 +32,44 @@ pub struct TxId {
 }
 
 impl Datastore for TxId {
-    fn blob_store(&self) -> &dyn BlobStore {
-        &self.committed_state_shared_lock.blob_store
+    type TableIter<'a>
+        = TableScanIter<'a>
+    where
+        Self: 'a;
+
+    type IndexIter<'a>
+        = IndexScanRangeIter<'a>
+    where
+        Self: 'a;
+
+    fn row_count(&self, table_id: TableId) -> u64 {
+        self.committed_state_shared_lock
+            .table_row_count(table_id)
+            .unwrap_or_default()
     }
 
-    fn table(&self, table_id: TableId) -> Option<&Table> {
-        self.committed_state_shared_lock.get_table(table_id)
+    fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {
+        self.committed_state_shared_lock
+            .get_table(table_id)
+            .map(|table| table.scan_rows(&self.committed_state_shared_lock.blob_store))
+            .ok_or_else(|| anyhow::anyhow!("TableId `{table_id}` does not exist"))
+    }
+
+    fn index_scan<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> anyhow::Result<Self::IndexIter<'a>> {
+        self.committed_state_shared_lock
+            .get_table(table_id)
+            .ok_or_else(|| anyhow::anyhow!("TableId `{table_id}` does not exist"))
+            .and_then(|table| {
+                table
+                    .get_index_by_id_with_table(&self.committed_state_shared_lock.blob_store, index_id)
+                    .map(|i| i.seek_range(range))
+                    .ok_or_else(|| anyhow::anyhow!("IndexId `{index_id}` does not exist"))
+            })
     }
 }
 
@@ -89,9 +121,18 @@ impl TxId {
     /// allowing new mutable transactions to start if this was the last read-only transaction.
     ///
     /// Returns:
+    /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    pub(super) fn release(self) -> (TxMetrics, String) {
+    pub(super) fn release(self) -> (TxOffset, TxMetrics, String) {
+        // A read tx doesn't consume `next_tx_offset`, so subtract one to obtain
+        // the offset that was visible to the transaction.
+        //
+        // Note that technically the tx could have run against an empty database,
+        // in which case we'd wrongly return zero (a non-existent transaction).
+        // This doesn not happen in practice, however, as [RelationalDB::set_initialized]
+        // creates a transaction.
+        let tx_offset = self.committed_state_shared_lock.next_tx_offset.saturating_sub(1);
         let tx_metrics = TxMetrics::new(
             &self.ctx,
             self.timer,
@@ -102,7 +143,7 @@ impl TxId {
             &self.committed_state_shared_lock,
         );
         let reducer = self.ctx.into_reducer_name();
-        (tx_metrics, reducer)
+        (tx_offset, tx_metrics, reducer)
     }
 
     /// The Number of Distinct Values (NDV) for a column or list of columns,
@@ -119,5 +160,9 @@ impl TxId {
         let table = self.committed_state_shared_lock.get_table(table_id)?;
         let (_, index) = table.get_index_by_cols(cols)?;
         NonZeroU64::new(index.num_keys() as u64)
+    }
+
+    pub fn tx_offset(&self) -> future::Ready<TxOffset> {
+        future::ready(self.committed_state_shared_lock.next_tx_offset)
     }
 }

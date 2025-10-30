@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::def::{
     ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
-    SequenceDef, TableDef, UniqueConstraintData,
+    SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef, ViewParamDef,
 };
 use crate::identifier::Identifier;
 
@@ -173,6 +173,20 @@ impl TableSchema {
         if let Some(s) = self.schedule.as_mut() {
             s.table_id = id;
         }
+    }
+
+    /// Reset all the ids in this schema to sentinel values.
+    /// It is useful when cloning a schema to create a new table.
+    pub fn reset(&mut self) {
+        self.update_table_id(TableId::SENTINEL);
+        self.indexes.iter_mut().for_each(|i| i.index_id = IndexId::SENTINEL);
+        self.sequences
+            .iter_mut()
+            .for_each(|i| i.sequence_id = SequenceId::SENTINEL);
+        self.constraints
+            .iter_mut()
+            .for_each(|i| i.constraint_id = ConstraintId::SENTINEL);
+        self.row_type = columns_to_row_type(&self.columns);
     }
 
     /// Convert a table schema into a list of columns.
@@ -573,6 +587,106 @@ pub fn column_schemas_from_defs(module_def: &ModuleDef, columns: &[ColumnDef], t
         .collect()
 }
 
+impl TableSchema {
+    /// Every view is materialized by default. For example:
+    /// ```rust,ignore
+    /// #[table]
+    /// pub struct MyTable {
+    ///     a: u32,
+    ///     b: u32,
+    /// }
+    ///
+    /// #[view(name = my_view, public)]
+    /// fn my_view(ctx: &ViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
+    ///
+    /// #[view(name = my_anonymous_view, public)]
+    /// fn my_anonymous_view(ctx: &AnonymousViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
+    /// ```
+    ///
+    /// The above views are materialized with the following schemas:
+    ///
+    /// my_view:
+    ///
+    /// | sender   | x   | y   | a   | b   |
+    /// |----------|-----|-----|-----|-----|
+    /// | Identity | u32 | u32 | u32 | u32 |
+    ///
+    /// my_anonymous_view:
+    ///
+    /// | x   | y   | a   | b   |
+    /// |-----|-----|-----|-----|
+    /// | u32 | u32 | u32 | u32 |
+    pub fn from_view_def(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
+        module_def.expect_contains(view_def);
+
+        let ViewDef {
+            name,
+            is_anonymous,
+            is_public,
+            params: _,
+            params_for_generate: _,
+            return_type: _,
+            return_type_for_generate: _,
+            return_columns,
+            param_columns,
+        } = view_def;
+
+        let num_args = param_columns.len();
+        let num_cols = return_columns.len();
+        let n = num_args + num_cols + if *is_anonymous { 0 } else { 1 };
+
+        let mut columns = Vec::with_capacity(n);
+
+        if !is_anonymous {
+            columns.push(ColumnSchema {
+                table_id: TableId::SENTINEL,
+                col_pos: ColId(0),
+                col_name: "sender".into(),
+                col_type: AlgebraicType::identity(),
+            });
+        }
+
+        let n = columns.len();
+
+        let param_iter = param_columns
+            .iter()
+            .map(|def| ColumnSchema::from_view_param_def(module_def, def));
+
+        let column_iter = return_columns
+            .iter()
+            .map(|def| ColumnSchema::from_view_column_def(module_def, def));
+
+        columns.extend(
+            param_iter
+                .chain(column_iter)
+                .enumerate()
+                .map(|(i, schema)| ColumnSchema {
+                    col_pos: (n + i).into(),
+                    ..schema
+                }),
+        );
+
+        let table_access = if *is_public {
+            StAccess::Public
+        } else {
+            StAccess::Private
+        };
+
+        TableSchema::new(
+            TableId::SENTINEL,
+            (*name).clone().into(),
+            columns,
+            vec![],
+            vec![],
+            vec![],
+            StTableType::User,
+            table_access,
+            None,
+            None,
+        )
+    }
+}
+
 impl Schema for TableSchema {
     type Def = TableDef;
     type Id = TableId;
@@ -765,6 +879,30 @@ impl ColumnSchema {
             col_type: ty,
         }
     }
+
+    fn from_view_column_def(module_def: &ModuleDef, def: &ViewColumnDef) -> Self {
+        let col_type = WithTypespace::new(module_def.typespace(), &def.ty)
+            .resolve_refs()
+            .expect("validated module should have all types resolve");
+        ColumnSchema {
+            table_id: TableId::SENTINEL,
+            col_pos: def.col_id,
+            col_name: (*def.name).into(),
+            col_type,
+        }
+    }
+
+    fn from_view_param_def(module_def: &ModuleDef, def: &ViewParamDef) -> Self {
+        let col_type = WithTypespace::new(module_def.typespace(), &def.ty)
+            .resolve_refs()
+            .expect("validated module should have all types resolve");
+        ColumnSchema {
+            table_id: TableId::SENTINEL,
+            col_pos: def.col_id,
+            col_name: (*def.name).into(),
+            col_type,
+        }
+    }
 }
 
 impl Schema for ColumnSchema {
@@ -850,14 +988,12 @@ pub struct SequenceSchema {
     pub col_pos: ColId,
     /// The increment value for the sequence.
     pub increment: i128,
-    /// The starting value for the sequence.
+    /// The initial value to be returned by this sequence.
     pub start: i128,
     /// The minimum value for the sequence.
     pub min_value: i128,
     /// The maximum value for the sequence.
     pub max_value: i128,
-    /// How many values have already been allocated for the sequence.
-    pub allocated: i128,
 }
 
 impl Schema for SequenceSchema {
@@ -877,7 +1013,7 @@ impl Schema for SequenceSchema {
             start: def.start.unwrap_or(1),
             min_value: def.min_value.unwrap_or(1),
             max_value: def.max_value.unwrap_or(i128::MAX),
-            allocated: 0, // TODO: information not available in the `Def`s anymore, which is correct, but this may need to be overridden later.
+            // allocated: 0, // TODO: information not available in the `Def`s anymore, which is correct, but this may need to be overridden later.
         }
     }
 
@@ -910,20 +1046,20 @@ pub struct ScheduleSchema {
     /// The name of the schedule.
     pub schedule_name: Box<str>,
 
-    /// The name of the reducer to call.
-    pub reducer_name: Box<str>,
+    /// The name of the reducer or procedure to call.
+    pub function_name: Box<str>,
 
     /// The column containing the `ScheduleAt` enum.
     pub at_column: ColId,
 }
 
 impl ScheduleSchema {
-    pub fn for_test(name: impl Into<Box<str>>, reducer: impl Into<Box<str>>, at: impl Into<ColId>) -> Self {
+    pub fn for_test(name: impl Into<Box<str>>, function: impl Into<Box<str>>, at: impl Into<ColId>) -> Self {
         Self {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
             schedule_name: name.into(),
-            reducer_name: reducer.into(),
+            function_name: function.into(),
             at_column: at.into(),
         }
     }
@@ -943,7 +1079,7 @@ impl Schema for ScheduleSchema {
             table_id: parent_id,
             schedule_id: id,
             schedule_name: (*def.name).into(),
-            reducer_name: (*def.reducer_name).into(),
+            function_name: (*def.function_name).into(),
             at_column: def.at_column,
             // Ignore def.at_column and id_column. Those are recovered at runtime.
         }
@@ -952,9 +1088,9 @@ impl Schema for ScheduleSchema {
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.schedule_name[..], &def.name[..], "Schedule name mismatch");
         ensure_eq!(
-            &self.reducer_name[..],
-            &def.reducer_name[..],
-            "Schedule reducer name mismatch"
+            &self.function_name[..],
+            &def.function_name[..],
+            "Schedule function name mismatch"
         );
         Ok(())
     }

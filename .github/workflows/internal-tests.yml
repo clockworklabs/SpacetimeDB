@@ -1,0 +1,113 @@
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+name: Internal Tests
+
+permissions:
+  contents: read
+
+concurrency:
+  # When a PR number isn't available, the event won't be a `pull_request` event so it won't matter.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  # Only cancel when the event is a pull_request
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  run-tests:
+    # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print current ref and sha
+        run: |
+          echo "github.ref=${{ github.ref }}"
+          echo "github.sha=${{ github.sha }}"
+
+      - name: Trigger and wait for Internal Tests
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          script: |
+            const targetOwner = 'clockworklabs';
+            const targetRepo = 'SpacetimeDBPrivate';
+            const workflowId = 'internal-tests.yml';
+            const targetRef = 'master';
+            const publicRef = context.sha;
+            const preDispatch = new Date().toISOString();
+
+            // Dispatch the workflow in the target repository
+            await github.rest.actions.createWorkflowDispatch({
+              owner: targetOwner,
+              repo: targetRepo,
+              workflow_id: workflowId,
+              ref: targetRef,
+              inputs: { public_ref: publicRef }
+            });
+
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+            // Wait for workflow to be kicked off
+            await sleep(30000);
+
+            // Find the dispatched run by name
+            let runId = null;
+            for (let attempt = 0; attempt < 20 && !runId; attempt++) { // up to ~10 minutes to locate the run
+              const runsResp = await github.rest.actions.listWorkflowRuns({
+                owner: targetOwner,
+                repo: targetRepo,
+                workflow_id: workflowId,
+                event: 'workflow_dispatch',
+                branch: targetRef,
+                per_page: 50,
+              });
+
+              const expectedName = `Internal Tests [${publicRef}]`;
+              const candidates = runsResp.data.workflow_runs
+                .filter(r => r.name === expectedName && new Date(r.created_at) >= new Date(preDispatch))
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+              if (candidates.length > 0) {
+                runId = candidates[0].id;
+                break;
+              }
+              await sleep(30000);
+            }
+
+            if (!runId) {
+              core.setFailed('Failed to locate dispatched run in the private repository.');
+              return;
+            }
+
+            // Provide direct link and context prior to waiting
+            const runUrl = `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
+            core.info(`View run: ${runUrl}`);
+            core.info('Waiting for workflow result...');
+
+            // Wait for completion
+            let conclusion = null;
+            for (let attempt = 0; attempt < 240; attempt++) { // up to ~2 hours
+              const runResp = await github.rest.actions.getWorkflowRun({
+                owner: targetOwner,
+                repo: targetRepo,
+                run_id: runId
+              });
+              const { status, conclusion: c } = runResp.data;
+              if (status === 'completed') {
+                conclusion = c || 'success';
+                break;
+              }
+              await sleep(30000);
+            }
+
+            if (!conclusion) {
+              core.setFailed('Timed out waiting for private workflow to complete.');
+              return;
+            }
+
+            core.info(`Private workflow conclusion: ${conclusion}`);
+            if (conclusion !== 'success') {
+              core.setFailed(`Private workflow failed with conclusion: ${conclusion}`);
+            }

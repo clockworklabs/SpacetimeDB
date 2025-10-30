@@ -1,6 +1,10 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
+use core::cell::{LazyCell, OnceCell, RefCell};
+use core::ops::Deref;
+use spacetimedb_lib::bsatn;
+
 #[cfg(feature = "unstable")]
 mod client_visibility_filter;
 pub mod log_stopwatch;
@@ -12,15 +16,11 @@ pub mod rt;
 #[doc(hidden)]
 pub mod table;
 
-use spacetimedb_lib::bsatn;
-use std::cell::RefCell;
-
+#[cfg(feature = "unstable")]
+pub use client_visibility_filter::Filter;
 pub use log;
 #[cfg(feature = "rand")]
 pub use rand08 as rand;
-
-#[cfg(feature = "unstable")]
-pub use client_visibility_filter::Filter;
 #[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
@@ -41,9 +41,14 @@ pub use spacetimedb_lib::TimeDuration;
 pub use spacetimedb_lib::Timestamp;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
-pub use table::{AutoIncOverflow, RangedIndex, Table, TryInsertError, UniqueColumn, UniqueConstraintViolation};
+pub use table::{
+    AutoIncOverflow, RangedIndex, RangedIndexReadOnly, Table, TryInsertError, UniqueColumn, UniqueColumnReadOnly,
+    UniqueConstraintViolation,
+};
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
+
+pub type ProcedureResult = Vec<u8>;
 
 pub use spacetimedb_bindings_macro::duration;
 
@@ -538,6 +543,7 @@ pub use spacetimedb_bindings_macro::table;
 /// If an error occurs in the disconnect reducer,
 /// the client is still recorded as disconnected.
 ///
+// TODO(docs): Move these docs to be on `table`, rather than `reducer`. This will reduce duplication with procedure docs.
 /// # Scheduled reducers
 ///
 /// In addition to life cycle annotations, reducers can be made **scheduled**.
@@ -663,6 +669,219 @@ pub use spacetimedb_bindings_macro::table;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::reducer;
 
+/// Marks a function as a SpacetimeDB procedure.
+///
+/// A procedure is a function that runs within the database and can be invoked remotely by [clients],
+/// but unlike a [`reducer`], a  procedure is not automatically transactional.
+/// This allows procedures to perform certain side-effecting operations,
+/// but also means that module developers must be more careful not to corrupt the database state
+/// when execution aborts or operations fail.
+///
+/// When in doubt, prefer writing [`reducer`]s unless you need to perform an operation only available to procedures.
+///
+/// The first argument of a procedure is always `&mut ProcedureContext`.
+/// The [`ProcedureContext`] exposes information about the caller and allows side-effecting operations.
+///
+/// After this, a procedure can take any number of arguments.
+/// These arguments must implement the [`SpacetimeType`], [`Serialize`], and [`Deserialize`] traits.
+/// All of these traits can be derived at once by marking a type with `#[derive(SpacetimeType)]`.
+///
+/// A procedure may return any type that implements [`SpacetimeType`], [`Serialize`] and [`Deserialize`].
+/// Unlike [reducer]s, SpacetimeDB does not assign any special semantics to [`Result`] return values.
+///
+/// If a procedure returns successfully (as opposed to panicking), its return value will be sent to the calling client.
+/// If a procedure panics, its panic message will be sent to the calling client instead.
+/// Procedure arguments and return values are not otherwise broadcast to clients.
+///
+/// ```no_run
+/// # use spacetimedb::{procedure, SpacetimeType, ProcedureContext, Timestamp};
+/// #[procedure]
+/// fn return_value(ctx: &mut ProcedureContext, arg: MyArgument) -> MyReturnValue {
+///     MyReturnValue {
+///         a: format!("Hello, {}", ctx.sender),
+///         b: ctx.timestamp,
+///     }
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// struct MyArgument {
+///     val: u32,
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// struct MyReturnValue {
+///     a: String,
+///     b: Timestamp,
+/// }
+/// ```
+///
+/// # Blocking operations
+///
+/// Procedures are allowed to perform certain operations which take time.
+/// During the execution of these operations, the procedure's execution will be suspended,
+/// allowing other database operations to run in parallel.
+///
+/// Procedures must not hold open a transaction while performing a blocking operation.
+// TODO(procedure-http): add example with an HTTP request.
+// TODO(procedure-transaction): document obtaining and using a transaction within a procedure.
+///
+/// # Scheduled procedures
+// TODO(docs): after moving scheduled reducer docs into table secion, link there.
+///
+/// Like [reducer]s, procedures can be made **scheduled**.
+/// This allows calling procedures at a particular time, or in a loop.
+/// It also allows reducers to enqueue procedure runs.
+///
+/// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
+/// when a database is under heavy load.
+///
+/// [clients]: https://spacetimedb.com/docs/#client
+// TODO(procedure-async): update docs and examples with `async`-ness.
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::procedure;
+
+/// Marks a function as a spacetimedb view.
+///
+/// A view is a function with read-only access to the database.
+///
+/// The first argument of a view is always a [`&ViewContext`] or [`&AnonymousViewContext`].
+/// The former can only read from the database whereas latter can also access info about the caller.
+///
+/// After this, a view can take any number of arguments just like reducers.
+/// These arguments must implement the [`SpacetimeType`], [`Serialize`], and [`Deserialize`] traits.
+/// All of these traits can be derived at once by marking a type with `#[derive(SpacetimeType)]`.
+///
+/// Views return `Vec<T>` or `Option<T>` where `T` is a `SpacetimeType`.
+///
+/// ```no_run
+/// # mod demo {
+/// use spacetimedb::{view, table, AnonymousViewContext, SpacetimeType, ViewContext};
+/// use spacetimedb_lib::Identity;
+///
+/// #[table(name = player)]
+/// struct Player {
+///     #[auto_inc]
+///     #[primary_key]
+///     id: u64,
+///
+///     #[unique]
+///     identity: Identity,
+///
+///     #[index(btree)]
+///     level: u32,
+/// }
+///
+/// impl Player {
+///     fn merge(self, location: Location) -> PlayerAndLocation {
+///         PlayerAndLocation {
+///             player_id: self.id,
+///             level: self.level,
+///             x: location.x,
+///             y: location.y,
+///         }
+///     }
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// struct PlayerId {
+///     id: u64,
+/// }
+///
+/// #[table(name = location, index(name = coordinates, btree(columns = [x, y])))]
+/// struct Location {
+///     #[unique]
+///     player_id: u64,
+///     x: u64,
+///     y: u64,
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// struct PlayerAndLocation {
+///     player_id: u64,
+///     level: u32,
+///     x: u64,
+///     y: u64,
+/// }
+///
+/// // A view that selects at most one row from a table
+/// #[view(name = my_player, public)]
+/// fn my_player(ctx: &ViewContext) -> Option<Player> {
+///     ctx.db.player().identity().find(ctx.sender)
+/// }
+///
+/// // An example of column projection
+/// #[view(name = my_player_id, public)]
+/// fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
+///     ctx.db.player().identity().find(ctx.sender).map(|Player { id, .. }| PlayerId { id })
+/// }
+///
+/// // An example of a parameterized view
+/// #[view(name = players_at_level, public)]
+/// fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
+///     ctx.db.player().level().filter(level).collect()
+/// }
+///
+/// // An example that is analogous to a semijoin in sql
+/// #[view(name = players_at_coordinates, public)]
+/// fn players_at_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<Player> {
+///     ctx
+///         .db
+///         .location()
+///         .coordinates()
+///         .filter((x, y))
+///         .filter_map(|location| ctx.db.player().id().find(location.player_id))
+///         .collect()
+/// }
+///
+/// // An example of a join that combines fields from two different tables
+/// #[view(name = players_with_coordinates, public)]
+/// fn players_with_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<PlayerAndLocation> {
+///     ctx
+///         .db
+///         .location()
+///         .coordinates()
+///         .filter((x, y))
+///         .filter_map(|location| ctx
+///             .db
+///             .player()
+///             .id()
+///             .find(location.player_id)
+///             .map(|player| player.merge(location))
+///         )
+///         .collect()
+/// }
+/// # }
+/// ```
+///
+/// Just like reducers, views are limited in their ability to interact with the outside world.
+/// They have no access to any network or filesystem interfaces.
+/// Calling methods from [`std::io`], [`std::net`], or [`std::fs`] will result in runtime errors.
+///
+/// Views are callable by reducers and other views simply by passing their `ViewContext`..
+/// This is a regular function call.
+/// The callee will run within the caller's transaction.
+///
+///
+/// [`&ViewContext`]: `ViewContext`
+/// [`&AnonymousViewContext`]: `AnonymousViewContext`
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::view;
+
+/// One of two possible types that can be passed as the first argument to a `#[view]`.
+/// The other is [`ViewContext`].
+/// Use this type if the view does not depend on the caller's identity.
+pub struct AnonymousViewContext {
+    pub db: LocalReadOnly,
+}
+
+/// One of two possible types that can be passed as the first argument to a `#[view]`.
+/// The other is [`AnonymousViewContext`].
+/// Use this type if the view depends on the caller's identity.
+pub struct ViewContext {
+    pub sender: Identity,
+    pub db: LocalReadOnly,
+}
+
 /// The context that any reducer is provided with.
 ///
 /// This must be the first argument of the reducer. Clients of the module will
@@ -687,11 +906,8 @@ pub struct ReducerContext {
 
     /// The `ConnectionId` of the client that invoked the reducer.
     ///
-    /// `None` if no `ConnectionId` was supplied to the `/database/call` HTTP endpoint,
-    /// or via the CLI's `spacetime call` subcommand.
-    ///
-    /// For automatic reducers, i.e. `init`, `client_connected`, `client_disconnected`, and scheduled reducers,
-    /// this will be the module's `ConnectionId`.
+    /// Will be `None` for certain reducers invoked automatically by the host,
+    /// including `init` and scheduled reducers.
     pub connection_id: Option<ConnectionId>,
 
     /// Allows accessing the local database attached to a module.
@@ -732,6 +948,8 @@ pub struct ReducerContext {
     /// See the [`#[table]`](macro@crate::table) macro for more information.
     pub db: Local,
 
+    sender_auth: AuthCtx,
+
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
 }
@@ -744,8 +962,32 @@ impl ReducerContext {
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
+            sender_auth: AuthCtx::internal(),
+            #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
         }
+    }
+
+    #[doc(hidden)]
+    fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
+        let sender_auth = match connection_id {
+            Some(cid) => AuthCtx::from_connection_id(cid),
+            None => AuthCtx::internal(),
+        };
+        Self {
+            db,
+            sender,
+            timestamp,
+            connection_id,
+            sender_auth,
+            #[cfg(feature = "rand08")]
+            rng: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// Returns the authorization information for the caller of this reducer.
+    pub fn sender_auth(&self) -> &AuthCtx {
+        &self.sender_auth
     }
 
     /// Read the current module's [`Identity`].
@@ -759,6 +1001,84 @@ impl ReducerContext {
         // As such, we've just defined a host call
         // which reads the module identity out of the `InstanceEnv`.
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+    }
+
+    /// Create an anonymous (no sender) read-only view context
+    pub fn as_anonymous_read_only(&self) -> AnonymousViewContext {
+        AnonymousViewContext { db: LocalReadOnly {} }
+    }
+
+    /// Create a sender-bound read-only view context using this reducer's caller.
+    pub fn as_read_only(&self) -> ViewContext {
+        ViewContext {
+            sender: self.sender,
+            db: LocalReadOnly {},
+        }
+    }
+}
+
+/// The context that any procedure is provided with.
+///
+/// Each procedure must accept `&mut ProcedureContext` as its first argument.
+///
+/// Includes information about the client calling the procedure and the time of invocation,
+/// and exposes methods for running transactions and performing side-effecting operations.
+pub struct ProcedureContext {
+    /// The `Identity` of the client that invoked the procedure.
+    pub sender: Identity,
+
+    /// The time at which the procedure was started.
+    pub timestamp: Timestamp,
+
+    /// The `ConnectionId` of the client that invoked the procedure.
+    ///
+    /// Will be `None` for certain scheduled procedures.
+    pub connection_id: Option<ConnectionId>,
+    // TODO: Add rng?
+    // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
+    // as it could actually be seeded by OS randomness rather than a deterministic source.
+}
+
+impl ProcedureContext {
+    /// Read the current module's [`Identity`].
+    pub fn identity(&self) -> Identity {
+        // Hypothetically, we *could* read the module identity out of the system tables.
+        // However, this would be:
+        // - Onerous, because we have no tooling to inspect the system tables from module code.
+        // - Slow (at least relatively),
+        //   because it would involve multiple host calls which hit the datastore,
+        //   as compared to a single host call which does not.
+        // As such, we've just defined a host call
+        // which reads the module identity out of the `InstanceEnv`.
+        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+    }
+
+    /// Suspend execution until approximately `Timestamp`.
+    ///
+    /// This will update `self.timestamp` to the new time after execution resumes.
+    ///
+    /// Actual time suspended may not be exactly equal to `duration`.
+    /// Callers should read `self.timestamp` after resuming to determine the new time.
+    ///
+    /// ```no_run
+    /// # use std::time::Duration;
+    /// # use spacetimedb::{procedure, ProcedureContext};
+    /// # #[procedure]
+    /// # fn sleep_one_second(ctx: &mut ProcedureContext) {
+    /// let prev_time = ctx.timestamp;
+    /// let target = prev_time + Duration::from_secs(1);
+    /// ctx.sleep_until(target);
+    /// let new_time = ctx.timestamp;
+    /// let actual_delta = new_time.duration_since(prev_time).unwrap();
+    /// log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
+    /// # }
+    /// ```
+    // TODO(procedure-sleep-until): remove this method
+    #[cfg(feature = "unstable")]
+    pub fn sleep_until(&mut self, timestamp: Timestamp) {
+        let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
+        let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
+        self.timestamp = new_time;
     }
 }
 
@@ -788,6 +1108,10 @@ impl DbContext for ReducerContext {
     }
 }
 
+// `ProcedureContext` is *not* a `DbContext`. We will add a `TxContext`
+// which can be obtained from `ProcedureContext::start_tx`,
+// and that will be a `DbContext`.
+
 /// Allows accessing the local database attached to the module.
 ///
 /// This slightly strange type appears to have no methods, but that is misleading.
@@ -795,6 +1119,136 @@ impl DbContext for ReducerContext {
 /// These are generated methods that allow you to access specific tables.
 #[non_exhaustive]
 pub struct Local {}
+
+/// The [JWT] of an [`AuthCtx`].
+///
+/// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
+#[non_exhaustive]
+pub struct JwtClaims {
+    payload: String,
+    parsed: OnceCell<serde_json::Value>,
+    audience: OnceCell<Vec<String>>,
+}
+
+/// Authentication information for the caller of a reducer.
+pub struct AuthCtx {
+    is_internal: bool,
+    // NOTE(jsdt): cannot directly use a `LazyCell` without making this struct generic,
+    // which would cause `ReducerContext` to become generic as well.
+    jwt: Box<dyn Deref<Target = Option<JwtClaims>>>,
+}
+
+impl AuthCtx {
+    fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
+        AuthCtx {
+            is_internal,
+            jwt: Box::new(LazyCell::new(jwt_fn)),
+        }
+    }
+
+    /// Creates an [`AuthCtx`] for an internal call, with no [JWT].
+    /// This represents a scheduled reducer.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
+    pub fn internal() -> AuthCtx {
+        Self::new(true, || None)
+    }
+
+    /// Creates an [`AuthCtx`] using the json claims from a [JWT].
+    /// This can be used to write unit tests.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
+    pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {
+        Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
+    }
+
+    /// Creates an [`AuthCtx`] that reads the [JWT] for the given connection id.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
+    fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
+        Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
+    }
+
+    /// Returns whether this reducer was spawned from inside the database.
+    pub fn is_internal(&self) -> bool {
+        self.is_internal
+    }
+
+    /// Checks if there is a [JWT] without loading it.
+    /// If [`AuthCtx::is_internal`] returns true, this will return false.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
+    pub fn has_jwt(&self) -> bool {
+        self.jwt.is_some()
+    }
+
+    /// Loads the [JWT].
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
+    pub fn jwt(&self) -> Option<&JwtClaims> {
+        self.jwt.as_ref().deref().as_ref()
+    }
+}
+
+impl JwtClaims {
+    fn new(jwt: String) -> Self {
+        Self {
+            payload: jwt,
+            parsed: OnceCell::new(),
+            audience: OnceCell::new(),
+        }
+    }
+
+    fn get_parsed(&self) -> &serde_json::Value {
+        self.parsed
+            .get_or_init(|| serde_json::from_str(&self.payload).expect("Failed to parse JWT payload"))
+    }
+
+    /// Returns the tokens subject, from the sub claim.
+    pub fn subject(&self) -> &str {
+        self.get_parsed()
+            .get("sub")
+            .expect("Missing 'sub' claim")
+            .as_str()
+            .expect("Token 'sub' claim is not a string")
+    }
+
+    /// Returns the issuer for these credentials, from the iss claim.
+    pub fn issuer(&self) -> &str {
+        self.get_parsed().get("iss").unwrap().as_str().unwrap()
+    }
+
+    fn extract_audience(&self) -> Vec<String> {
+        let aud = self.get_parsed().get("aud").unwrap();
+        match aud {
+            serde_json::Value::String(s) => vec![s.clone()],
+            serde_json::Value::Array(arr) => arr.iter().filter_map(|v| v.as_str().map(String::from)).collect(),
+            _ => panic!("Unexpected type for 'aud' claim in JWT"),
+        }
+    }
+
+    /// Returns the audience for these credentials, from the aud claim.
+    pub fn audience(&self) -> &[String] {
+        self.audience.get_or_init(|| self.extract_audience())
+    }
+
+    /// Returns the identity for these credentials, which is
+    /// based on the iss and sub claims.
+    pub fn identity(&self) -> Identity {
+        Identity::from_claims(self.issuer(), self.subject())
+    }
+
+    /// Get the whole JWT payload as a json string.
+    ///
+    /// This method is intended for parsing custom claims,
+    /// beyond the methods offered by [`JwtClaims`].
+    pub fn raw_payload(&self) -> &str {
+        &self.payload
+    }
+}
+/// The read-only version of [`Local`]
+#[non_exhaustive]
+pub struct LocalReadOnly {}
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]
@@ -899,4 +1353,38 @@ macro_rules! __volatile_nonatomic_schedule_immediate_impl {
             $crate::rt::volatile_nonatomic_schedule_immediate::<_, _, $repeater>($repeater, ($($args,)*))
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_single_audience() {
+        let example_payload = r#"
+        {
+          "iss": "https://securetoken.google.com/my-project-id",
+          "aud": "my-project-id",
+          "auth_time": 1695560000,
+          "user_id": "abc123XYZ",
+          "sub": "abc123XYZ",
+          "iat": 1695560100,
+          "exp": 1695563700,
+          "email": "user@example.com",
+          "email_verified": true,
+          "firebase": {
+            "identities": {
+              "email": ["user@example.com"]
+            },
+            "sign_in_provider": "password"
+          },
+          "name": "Jane Doe",
+          "picture": "https://lh3.googleusercontent.com/a-/profile.jpg"
+        }
+        "#;
+        let auth = AuthCtx::from_jwt_payload(example_payload.to_string());
+        let audience = auth.jwt().unwrap().audience();
+        assert_eq!(audience.len(), 1);
+        assert_eq!(audience, &["my-project-id".to_string()]);
+    }
 }

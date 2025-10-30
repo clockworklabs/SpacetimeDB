@@ -1,14 +1,17 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
-use crate::database_logger::{BacktraceProvider, LogLevel, Record};
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
+use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
+use chrono::{DateTime, Utc};
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_lib::Timestamp;
-use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
+use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
     buffer::{CountWriter, TeeWriter},
@@ -16,8 +19,10 @@ use spacetimedb_sats::{
 };
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
+use std::fmt::Display;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::vec::IntoIter;
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -26,6 +31,7 @@ pub struct InstanceEnv {
     pub tx: TxSlot,
     /// The timestamp the current reducer began running.
     pub start_time: Timestamp,
+    pub view_id: Option<ViewId>,
 }
 
 #[derive(Clone, Default)]
@@ -167,26 +173,78 @@ impl InstanceEnv {
             scheduler,
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
+            view_id: None,
         }
     }
 
-    /// Signal to this `InstanceEnv` that a reducer call is beginning.
-    pub fn start_reducer(&mut self, ts: Timestamp) {
+    /// Returns the database's identity.
+    pub fn database_identity(&self) -> &Identity {
+        &self.replica_ctx.database.database_identity
+    }
+
+    /// Signal to this `InstanceEnv` that a reducer or procedure call is beginning.
+    pub fn start_funcall(&mut self, ts: Timestamp) {
         self.start_time = ts;
+        self.view_id = None;
+    }
+
+    /// Signal to this `InstanceEnv` that a we're going to execute a view and compute its read set.
+    pub fn start_view(&mut self, view_id: ViewId) {
+        self.view_id = Some(view_id);
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         self.tx.get()
     }
 
+    pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
+        let tx = &mut *self.get_tx()?;
+        Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?)
+    }
+
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
+    pub(crate) fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
         self.replica_ctx.logger.write(level, record, bt);
         log::trace!(
             "MOD({}): {}",
             self.replica_ctx.database_identity.to_abbreviated_hex(),
             record.message
         );
+    }
+
+    /// End a console timer by logging the span at INFO level.
+    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
+        let elapsed = span.start.elapsed();
+        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+
+        /// A backtrace provider that provides nothing.
+        struct Noop;
+        impl BacktraceProvider for Noop {
+            fn capture(&self) -> Box<dyn ModuleBacktrace> {
+                Box::new(Noop)
+            }
+        }
+        impl ModuleBacktrace for Noop {
+            fn frames(&self) -> Vec<BacktraceFrame<'_>> {
+                Vec::new()
+            }
+        }
+
+        let record = Record {
+            ts: Self::now_for_logging(),
+            target: None,
+            filename: None,
+            line_number: None,
+            function,
+            message: &message,
+        };
+        self.console_log(LogLevel::Info, &record, &Noop);
+    }
+
+    /// Returns the current time suitable for logging.
+    pub fn now_for_logging() -> DateTime<Utc> {
+        // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start).
+        chrono::Utc::now()
     }
 
     /// Project `cols` in `row_ref` encoded in BSATN to `buffer`
@@ -325,7 +383,7 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         // Find all rows in the table to delete.
-        let (table_id, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, _, _, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
 
@@ -410,7 +468,11 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Query the row count for id.
-        stdb.table_row_count_mut(tx, table_id).ok_or(NodesError::TableNotFound)
+        stdb.table_row_count_mut(tx, table_id)
+            .ok_or(NodesError::TableNotFound)
+            .inspect(|_| {
+                tx.record_table_scan(self.view_id, table_id);
+            })
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -433,6 +495,8 @@ impl InstanceEnv {
             &mut rows_scanned,
             &mut bytes_scanned,
         );
+
+        tx.record_table_scan(self.view_id, table_id);
 
         tx.metrics.rows_scanned += rows_scanned;
         tx.metrics.bytes_scanned += bytes_scanned;
@@ -458,16 +522,45 @@ impl InstanceEnv {
         let mut bytes_scanned = 0;
 
         // Open index iterator
-        let (_, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, lower, upper, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
 
         // Scan the index and serialize rows to bsatn
         let chunks = ChunkedWriter::collect_iter(pool, iter, &mut rows_scanned, &mut bytes_scanned);
+
+        tx.record_index_scan(self.view_id, table_id, index_id, lower, upper);
 
         tx.metrics.index_seeks += 1;
         tx.metrics.rows_scanned += rows_scanned;
         tx.metrics.bytes_scanned += bytes_scanned;
 
         Ok(chunks)
+    }
+
+    pub fn fill_buffer_from_iter(
+        iter: &mut IntoIter<Vec<u8>>,
+        mut buffer: &mut [u8],
+        chunk_pool: &mut ChunkPool,
+    ) -> usize {
+        let mut written = 0;
+        // Fill the buffer as much as possible.
+        while let Some(chunk) = iter.as_slice().first() {
+            let Some((buf_chunk, rest)) = buffer.split_at_mut_checked(chunk.len()) else {
+                // Cannot fit chunk into the buffer,
+                // either because we already filled it too much,
+                // or because it is too small.
+                break;
+            };
+            buf_chunk.copy_from_slice(chunk);
+            written += chunk.len();
+            buffer = rest;
+
+            // Advance the iterator, as we used a chunk.
+            // SAFETY: We peeked one `chunk`, so there must be one at least.
+            let chunk = unsafe { iter.next().unwrap_unchecked() };
+            chunk_pool.put(chunk);
+        }
+
+        written
     }
 }
 
@@ -498,6 +591,13 @@ impl From<GetTxError> for NodesError {
         NodesError::NotInTransaction
     }
 }
+
+impl Display for GetTxError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "not in a transaction")
+    }
+}
+impl std::error::Error for GetTxError {}
 
 #[cfg(test)]
 mod test {
@@ -564,6 +664,7 @@ mod test {
                 scheduler,
                 tx: TxSlot::default(),
                 start_time: Timestamp::now(),
+                view_id: None,
             },
             runtime,
         ))

@@ -3,10 +3,7 @@ use std::{
     num::NonZeroU16,
     panic,
     sync::{
-        atomic::{
-            AtomicI64, AtomicU64,
-            Ordering::{Acquire, Relaxed, Release},
-        },
+        atomic::{AtomicU64, Ordering::Relaxed},
         Arc, Weak,
     },
     time::Duration,
@@ -18,13 +15,15 @@ use log::{info, trace, warn};
 use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
 use spacetimedb_paths::server::CommitLogDir;
 use tokio::{
-    sync::mpsc,
+    sync::{mpsc, watch},
     task::{spawn_blocking, AbortHandle, JoinHandle},
     time::{interval, MissedTickBehavior},
 };
 use tracing::instrument;
 
-use crate::{Durability, History, TxOffset};
+use crate::{Durability, DurableOffset, History, TxOffset};
+
+pub use spacetimedb_commitlog::repo::OnNewSegmentFn;
 
 /// [`Local`] configuration.
 #[derive(Clone, Copy, Debug)]
@@ -62,17 +61,7 @@ pub struct Local<T> {
     clog: Arc<Commitlog<Txdata<T>>>,
     /// The durable transaction offset, as reported by the background
     /// [`FlushAndSyncTask`].
-    ///
-    /// A negative number indicates that we haven't flushed yet, or that the
-    /// number overflowed. In either case, appending new transactions shall panic.
-    ///
-    /// The offset will be used by the datastore to squash durable transactions
-    /// into the committed state, thereby making them visible to durable-only
-    /// readers.
-    ///
-    /// We don't want to hang on to those transactions longer than needed, so
-    /// acquire / release or stronger should be used to prevent stale reads.
-    durable_offset: Arc<AtomicI64>,
+    durable_offset: watch::Receiver<Option<TxOffset>>,
     /// Backlog of transactions to be written to disk by the background
     /// [`PersisterTask`].
     ///
@@ -94,16 +83,21 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     /// The `root` directory must already exist.
     ///
     /// Background tasks are spawned onto the provided tokio runtime.
-    pub fn open(root: CommitLogDir, rt: tokio::runtime::Handle, opts: Options) -> io::Result<Self> {
+    ///
+    /// We will send a message down the `on_new_segment` channel whenever we begin a new commitlog segment.
+    /// This is used to capture a snapshot each new segment.
+    pub fn open(
+        root: CommitLogDir,
+        rt: tokio::runtime::Handle,
+        opts: Options,
+        on_new_segment: Option<Arc<OnNewSegmentFn>>,
+    ) -> io::Result<Self> {
         info!("open local durability");
 
-        let clog = Arc::new(Commitlog::open(root, opts.commitlog)?);
+        let clog = Arc::new(Commitlog::open(root, opts.commitlog, on_new_segment)?);
         let (queue, rx) = mpsc::unbounded_channel();
         let queue_depth = Arc::new(AtomicU64::new(0));
-        let offset = {
-            let offset = clog.max_committed_offset().map(|x| x as i64).unwrap_or(-1);
-            Arc::new(AtomicI64::new(offset))
-        };
+        let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
 
         let persister_task = rt.spawn(
             PersisterTask {
@@ -118,7 +112,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             FlushAndSyncTask {
                 clog: Arc::downgrade(&clog),
                 period: opts.sync_interval,
-                offset: offset.clone(),
+                offset: durable_tx,
                 abort: persister_task.abort_handle(),
             }
             .run(),
@@ -126,7 +120,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
 
         Ok(Self {
             clog,
-            durable_offset: offset,
+            durable_offset: durable_rx,
             queue,
             queue_depth,
             persister_task,
@@ -256,7 +250,7 @@ fn flush_error(e: io::Error) {
 struct FlushAndSyncTask<T> {
     clog: Weak<Commitlog<Txdata<T>>>,
     period: Duration,
-    offset: Arc<AtomicI64>,
+    offset: watch::Sender<Option<TxOffset>>,
     /// Handle to abort the [`PersisterTask`] if fsync panics.
     abort: AbortHandle,
 }
@@ -277,8 +271,7 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
             };
             // Skip if nothing changed.
             if let Some(committed) = clog.max_committed_offset() {
-                let durable = self.offset.load(Acquire);
-                if durable.is_positive() && committed == durable as _ {
+                if self.offset.borrow().is_some_and(|durable| durable == committed) {
                     continue;
                 }
             }
@@ -297,8 +290,9 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
                 }
                 Ok(Ok(Some(new_offset))) => {
                     trace!("synced to offset {new_offset}");
-                    // NOTE: Overflow will make `durable_tx_offset` return `None`
-                    self.offset.store(new_offset as i64, Release);
+                    self.offset.send_modify(|val| {
+                        val.replace(new_offset);
+                    });
                 }
                 // No data to flush.
                 Ok(Ok(None)) => {}
@@ -317,9 +311,8 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
         self.queue_depth.fetch_add(1, Relaxed);
     }
 
-    fn durable_tx_offset(&self) -> Option<TxOffset> {
-        let offset = self.durable_offset.load(Acquire);
-        (offset > -1).then_some(offset as u64)
+    fn durable_tx_offset(&self) -> DurableOffset {
+        self.durable_offset.clone().into()
     }
 }
 

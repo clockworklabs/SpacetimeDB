@@ -2,7 +2,7 @@
 // See `serde` version `v1.0.169` for the parts where MIT / Apache-2.0 applies.
 
 mod impls;
-#[cfg(feature = "serde")]
+#[cfg(any(test, feature = "serde"))]
 pub mod serde;
 
 #[doc(hidden)]
@@ -158,6 +158,11 @@ pub trait Deserializer<'de>: Sized {
 pub trait Error: Sized {
     /// Raised when there is general error when deserializing a type.
     fn custom(msg: impl fmt::Display) -> Self;
+
+    /// Deserializing named products are not supported for this visitor.
+    fn named_products_not_supported() -> Self {
+        Self::custom("named products not supported")
+    }
 
     /// The product length was not as promised.
     fn invalid_product_length<'de, T: ProductVisitor<'de>>(len: usize, expected: &T) -> Self {
@@ -714,12 +719,7 @@ impl<'de, E: Error> SumAccess<'de> for NoneAccess<E> {
 impl<'de, E: Error> VariantAccess<'de> for NoneAccess<E> {
     type Error = E;
     fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
-        use crate::algebraic_value::de::*;
-        seed.deserialize(ValueDeserializer::new(crate::AlgebraicValue::unit()))
-            .map_err(|err| match err {
-                ValueDeserializeError::MismatchedType => E::custom("mismatched type"),
-                ValueDeserializeError::Custom(err) => E::custom(err),
-            })
+        seed.deserialize(UnitAccess::new())
     }
 }
 
@@ -746,5 +746,130 @@ impl<'de, D: Deserializer<'de>> VariantAccess<'de> for SomeAccess<D> {
     type Error = D::Error;
     fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
         seed.deserialize(self.0)
+    }
+}
+
+/// A `Deserializer` that represents a unit value.
+// used in the implementation of `VariantAccess for NoneAccess`
+pub struct UnitAccess<E>(PhantomData<E>);
+
+impl<E: Error> UnitAccess<E> {
+    /// Returns a new [`UnitAccess`].
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<E: Error> Default for UnitAccess<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'de, E: Error> SeqProductAccess<'de> for UnitAccess<E> {
+    type Error = E;
+
+    fn next_element_seed<T: DeserializeSeed<'de>>(&mut self, _seed: T) -> Result<Option<T::Output>, Self::Error> {
+        Ok(None)
+    }
+}
+
+impl<'de, E: Error> NamedProductAccess<'de> for UnitAccess<E> {
+    type Error = E;
+
+    fn get_field_ident<V: FieldNameVisitor<'de>>(&mut self, _visitor: V) -> Result<Option<V::Output>, Self::Error> {
+        Ok(None)
+    }
+
+    fn get_field_value_seed<T: DeserializeSeed<'de>>(&mut self, _seed: T) -> Result<T::Output, Self::Error> {
+        unreachable!()
+    }
+}
+
+impl<'de, E: Error> Deserializer<'de> for UnitAccess<E> {
+    type Error = E;
+
+    fn deserialize_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
+        visitor.visit_seq_product(self)
+    }
+
+    fn deserialize_sum<V: SumVisitor<'de>>(self, _visitor: V) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_bool(self) -> Result<bool, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u8(self) -> Result<u8, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u16(self) -> Result<u16, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u32(self) -> Result<u32, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u64(self) -> Result<u64, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u128(self) -> Result<u128, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_u256(self) -> Result<u256, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i8(self) -> Result<i8, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i16(self) -> Result<i16, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i32(self) -> Result<i32, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i64(self) -> Result<i64, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i128(self) -> Result<i128, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_i256(self) -> Result<i256, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_f32(self) -> Result<f32, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_f64(self) -> Result<f64, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_str<V: SliceVisitor<'de, str>>(self, _visitor: V) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_bytes<V: SliceVisitor<'de, [u8]>>(self, _visitor: V) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
+    }
+
+    fn deserialize_array_seed<V: ArrayVisitor<'de, T::Output>, T: DeserializeSeed<'de> + Clone>(
+        self,
+        _visitor: V,
+        _seed: T,
+    ) -> Result<V::Output, Self::Error> {
+        Err(E::custom("invalid type"))
     }
 }

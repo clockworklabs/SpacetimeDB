@@ -6,16 +6,15 @@ use std::ops::Deref;
 
 use super::code_indenter::CodeIndenter;
 use super::Lang;
-use crate::indent_scope;
 use crate::util::{
     collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_tables, print_auto_generated_file_comment,
-    type_ref_name,
+    print_auto_generated_version_comment, type_ref_name,
 };
+use crate::{indent_scope, OutputFile};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm, ModuleDef, TableDef, TypeDef};
-use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::type_for_generate::{
     AlgebraicTypeDef, AlgebraicTypeUse, PlainEnumTypeDef, ProductTypeDef, SumTypeDef, TypespaceForGenerate,
@@ -434,19 +433,7 @@ pub struct Csharp<'opts> {
 }
 
 impl Lang for Csharp<'_> {
-    fn table_filename(&self, _module: &ModuleDef, table: &TableDef) -> String {
-        format!("Tables/{}.g.cs", table.name.deref().to_case(Case::Pascal))
-    }
-
-    fn type_filename(&self, type_name: &spacetimedb_schema::def::ScopedTypeName) -> String {
-        format!("Types/{}.g.cs", collect_case(Case::Pascal, type_name.name_segments()))
-    }
-
-    fn reducer_filename(&self, reducer_name: &Identifier) -> String {
-        format!("Reducers/{}.g.cs", reducer_name.deref().to_case(Case::Pascal))
-    }
-
-    fn generate_table(&self, module: &ModuleDef, table: &TableDef) -> String {
+    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
         let mut output = CsharpAutogen::new(
             self.namespace,
             &[
@@ -455,6 +442,7 @@ impl Lang for Csharp<'_> {
                 "System.Collections.Generic",
                 "System.Runtime.Serialization",
             ],
+            false,
         );
 
         writeln!(output, "public sealed partial class RemoteTables");
@@ -572,19 +560,27 @@ impl Lang for Csharp<'_> {
             writeln!(output, "public readonly {csharp_table_class_name} {csharp_table_name};");
         });
 
-        output.into_inner()
-    }
-
-    fn generate_type(&self, module: &ModuleDef, typ: &TypeDef) -> String {
-        let name = collect_case(Case::Pascal, typ.name.name_segments());
-        match &module.typespace_for_generate()[typ.ty] {
-            AlgebraicTypeDef::Sum(sum) => autogen_csharp_sum(module, name, sum, self.namespace),
-            AlgebraicTypeDef::Product(prod) => autogen_csharp_tuple(module, name, prod, self.namespace),
-            AlgebraicTypeDef::PlainEnum(plain_enum) => autogen_csharp_plain_enum(name, plain_enum, self.namespace),
+        OutputFile {
+            filename: format!("Tables/{}.g.cs", table.name.deref().to_case(Case::Pascal)),
+            code: output.into_inner(),
         }
     }
 
-    fn generate_reducer(&self, module: &ModuleDef, reducer: &spacetimedb_schema::def::ReducerDef) -> String {
+    fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
+        let name = collect_case(Case::Pascal, typ.name.name_segments());
+        let filename = format!("Types/{name}.g.cs");
+        let code = match &module.typespace_for_generate()[typ.ty] {
+            AlgebraicTypeDef::Sum(sum) => autogen_csharp_sum(module, name.clone(), sum, self.namespace),
+            AlgebraicTypeDef::Product(prod) => autogen_csharp_tuple(module, name.clone(), prod, self.namespace),
+            AlgebraicTypeDef::PlainEnum(plain_enum) => {
+                autogen_csharp_plain_enum(name.clone(), plain_enum, self.namespace)
+            }
+        };
+
+        vec![OutputFile { filename, code }]
+    }
+
+    fn generate_reducer_file(&self, module: &ModuleDef, reducer: &spacetimedb_schema::def::ReducerDef) -> OutputFile {
         let mut output = CsharpAutogen::new(
             self.namespace,
             &[
@@ -592,6 +588,7 @@ impl Lang for Csharp<'_> {
                 "System.Collections.Generic",
                 "System.Runtime.Serialization",
             ],
+            false,
         );
 
         writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
@@ -704,10 +701,13 @@ impl Lang for Csharp<'_> {
             });
         }
 
-        output.into_inner()
+        OutputFile {
+            filename: format!("Reducers/{}.g.cs", reducer.name.deref().to_case(Case::Pascal)),
+            code: output.into_inner(),
+        }
     }
 
-    fn generate_globals(&self, module: &ModuleDef) -> Vec<(String, String)> {
+    fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
         let mut output = CsharpAutogen::new(
             self.namespace,
             &[
@@ -715,6 +715,7 @@ impl Lang for Csharp<'_> {
                 "System.Collections.Generic",
                 "System.Runtime.Serialization",
             ],
+            true, // print the version in the globals file
         );
 
         writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
@@ -790,6 +791,10 @@ impl Lang for Csharp<'_> {
                     }
                     writeln!(
                         output,
+                        r#""" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),"#
+                    );
+                    writeln!(
+                        output,
                         r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
                     );
                 }
@@ -860,7 +865,10 @@ impl Lang for Csharp<'_> {
             });
         });
 
-        vec![("SpacetimeDBClient.g.cs".to_owned(), output.into_inner())]
+        vec![OutputFile {
+            filename: "SpacetimeDBClient.g.cs".to_owned(),
+            code: output.into_inner(),
+        }]
     }
 }
 
@@ -944,10 +952,13 @@ impl std::ops::DerefMut for CsharpAutogen {
 }
 
 impl CsharpAutogen {
-    pub fn new(namespace: &str, extra_usings: &[&str]) -> Self {
+    pub fn new(namespace: &str, extra_usings: &[&str], include_version: bool) -> Self {
         let mut output = CodeIndenter::new(String::new(), INDENT);
 
         print_auto_generated_file_comment(&mut output);
+        if include_version {
+            print_auto_generated_version_comment(&mut output);
+        }
 
         writeln!(output, "#nullable enable");
         writeln!(output);
@@ -983,7 +994,7 @@ impl CsharpAutogen {
 }
 
 fn autogen_csharp_sum(module: &ModuleDef, sum_type_name: String, sum_type: &SumTypeDef, namespace: &str) -> String {
-    let mut output = CsharpAutogen::new(namespace, &[]);
+    let mut output = CsharpAutogen::new(namespace, &[], false);
 
     writeln!(output, "[SpacetimeDB.Type]");
     write!(
@@ -1020,7 +1031,7 @@ fn autogen_csharp_sum(module: &ModuleDef, sum_type_name: String, sum_type: &SumT
 }
 
 fn autogen_csharp_plain_enum(enum_type_name: String, enum_type: &PlainEnumTypeDef, namespace: &str) -> String {
-    let mut output = CsharpAutogen::new(namespace, &[]);
+    let mut output = CsharpAutogen::new(namespace, &[], false);
 
     writeln!(output, "[SpacetimeDB.Type]");
     writeln!(output, "public enum {enum_type_name}");
@@ -1037,6 +1048,7 @@ fn autogen_csharp_tuple(module: &ModuleDef, name: String, tuple: &ProductTypeDef
     let mut output = CsharpAutogen::new(
         namespace,
         &["System.Collections.Generic", "System.Runtime.Serialization"],
+        false,
     );
 
     autogen_csharp_product_common(module, &mut output, name, tuple, "", |_| {});

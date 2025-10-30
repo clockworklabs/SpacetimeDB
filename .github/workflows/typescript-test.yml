@@ -7,8 +7,14 @@ on:
   pull_request:
   merge_group:
 
+concurrency:
+  # When a PR number isn't available, the event won't be a `pull_request` event so it won't matter.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  # Only cancel when the event is a pull_request
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  compile-and-test:
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,12 +28,11 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9.7
           run_install: true
 
       - name: Get pnpm store directory
         shell: bash
-        working-directory: sdks/typescript
+        working-directory: crates/bindings-typescript
         run: |
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
@@ -38,13 +43,13 @@ jobs:
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
+      
+      - name: Build module library and SDK
+        working-directory: crates/bindings-typescript
+        run: pnpm build
 
-      - name: Compile
-        working-directory: sdks/typescript
-        run: pnpm compile
-
-      - name: Run sdk tests
-        working-directory: sdks/typescript/packages/sdk
+      - name: Run module library and SDK tests
+        working-directory: crates/bindings-typescript 
         run: pnpm test
 
       # - name: Extract SpacetimeDB branch name from file
@@ -78,7 +83,9 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: modules/quickstart-chat
+          workspaces: |
+            .
+            modules/quickstart-chat
           shared-key: quickstart-chat-test
 
       - name: Install SpacetimeDB CLI from the local checkout
@@ -90,28 +97,21 @@ jobs:
           ln -s $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
           # Clear any existing information
           spacetime server clear -y
-        env:
-          # Share the target directory with our local project to avoid rebuilding same SpacetimeDB crates twice.
-          CARGO_TARGET_DIR: modules/quickstart-chat/target
 
       - name: Generate client bindings
         working-directory: modules/quickstart-chat
         run: |
-          spacetime generate --lang typescript --out-dir ../../sdks/typescript/examples/quickstart-chat/src/module_bindings
-          cd ../../sdks/typescript
-          pnpm lint --write
+          spacetime generate --lang typescript --out-dir ../../crates/bindings-typescript/examples/quickstart-chat/src/module_bindings
+          cd ../../crates/bindings-typescript
+          pnpm format
 
       - name: Check for changes
-        working-directory: sdks/typescript
+        working-directory: crates/bindings-typescript
         run: |
-          # This was copied from SpacetimeDB/tools/check-diff.sh.
-          # It's required because `spacetime generate` creates lines with the SpacetimeDB commit
-          # version, which would make this `git diff` check very brittle if included.
-          PATTERN='^// This was generated using spacetimedb cli version.*'
-          if ! git diff --exit-code --ignore-matching-lines="$PATTERN" -- examples/quickstart-chat/src/module_bindings; then
+          "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples/quickstart-chat/src/module_bindings || {
             echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
             exit 1
-          fi
+          }
 
       # - name: Start SpacetimeDB
       #   run: |
@@ -130,7 +130,7 @@ jobs:
       #     spacetime logs quickstart-chat
 
       - name: Check that quickstart-chat builds
-        working-directory: sdks/typescript/examples/quickstart-chat
+        working-directory: crates/bindings-typescript/examples/quickstart-chat
         run: pnpm build
 
       # - name: Run quickstart-chat tests

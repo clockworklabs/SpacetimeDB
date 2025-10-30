@@ -1,0 +1,191 @@
+{
+  "name": "spacetimedb",
+  "version": "1.6.2",
+  "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
+  "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
+  "bugs": {
+    "url": "https://github.com/clockworklabs/SpacetimeDB/issues"
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md",
+    "LICENSE.txt"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clockworklabs/SpacetimeDB.git"
+  },
+  "license": "ISC",
+  "author": "Clockwork Labs",
+  "type": "module",
+  "sideEffects": [
+    "./src/server/polyfills.ts",
+    "./src/server/register_hooks.ts"
+  ],
+  "scripts": {
+    "build:js": "tsup",
+    "build:types": "tsc -p tsconfig.build.json",
+    "build": "pnpm -s build:js && pnpm -s build:types",
+    "format": "prettier . --write --ignore-path ../../.prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "brotli-size": "brotli-size dist/index.js",
+    "size": "pnpm -s build && size-limit",
+    "generate:moduledef": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/lib/autogen",
+    "generate:client-api": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-client-api-messages --example get_ws_schema > ws_schema.json && cargo run -p spacetimedb-cli generate --lang typescript --out-dir src/sdk/client_api --module-def ws_schema.json && rm ws_schema.json && find src/sdk/client_api -type f -exec perl -pi -e 's#spacetimedb#../../index#g' {} + && prettier --write src/sdk/client_api",
+    "generate:test-app": "pnpm --filter @clockworklabs/test-app generate",
+    "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app",
+    "prepublishOnly": "pnpm run build && pnpm run test && pnpm run size"
+  },
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "browser": "./dist/index.browser.mjs",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.mjs"
+    },
+    "./sdk": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "browser": "./dist/sdk/index.browser.mjs",
+      "import": "./dist/sdk/index.mjs",
+      "require": "./dist/sdk/index.cjs",
+      "default": "./dist/sdk/index.mjs"
+    },
+    "./react": {
+      "development": "./src/react/index.ts",
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.mjs",
+      "require": "./dist/react/index.cjs",
+      "default": "./dist/react/index.mjs"
+    },
+    "./server": {
+      "development": "./src/server/index.ts",
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.mjs",
+      "require": "./dist/server/index.cjs",
+      "default": "./dist/server/index.mjs"
+    }
+  },
+  "size-limit": [
+    {
+      "name": "cjs (brotli)",
+      "path": "dist/index.cjs",
+      "brotli": true,
+      "limit": "25 kB"
+    },
+    {
+      "name": "esm (brotli)",
+      "path": "dist/index.mjs",
+      "brotli": true,
+      "limit": "20 kB"
+    },
+    {
+      "name": "esm (gzip)",
+      "path": "dist/index.mjs",
+      "gzip": true,
+      "limit": "25 kB"
+    },
+    {
+      "name": "esm (uncompressed)",
+      "path": "dist/index.mjs",
+      "brotli": false,
+      "limit": "150 kB"
+    },
+    {
+      "name": "esm min (brotli)",
+      "path": "dist/min/index.browser.mjs",
+      "brotli": true,
+      "limit": "12 kB"
+    },
+    {
+      "name": "esm min (gzip)",
+      "path": "dist/min/index.browser.mjs",
+      "gzip": true,
+      "limit": "15 kB"
+    },
+    {
+      "name": "esm min (uncompressed)",
+      "path": "dist/min/index.browser.mjs",
+      "brotli": false,
+      "limit": "60 kB"
+    },
+    {
+      "name": "react esm min (brotli)",
+      "path": "dist/min/react/index.mjs",
+      "brotli": true,
+      "limit": "10 kB"
+    },
+    {
+      "name": "react esm min (uncompressed)",
+      "path": "dist/min/react/index.mjs",
+      "limit": "10 kB"
+    },
+    {
+      "name": "react esm min (gzip)",
+      "path": "dist/min/react/index.mjs",
+      "gzip": true,
+      "limit": "15 kB"
+    },
+    {
+      "name": "sdk esm min (brotli)",
+      "path": "dist/min/sdk/index.browser.mjs",
+      "brotli": true,
+      "limit": "10 kB"
+    },
+    {
+      "name": "sdk esm min (gzip)",
+      "path": "dist/min/sdk/index.browser.mjs",
+      "gzip": true,
+      "limit": "15 kB"
+    },
+    {
+      "name": "sdk esm min (uncompressed)",
+      "path": "dist/min/sdk/index.browser.mjs",
+      "limit": "10 kB"
+    }
+  ],
+  "dependencies": {
+    "base64-js": "^1.5.1",
+    "fast-text-encoding": "^1.0.0",
+    "prettier": "^3.3.3"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
+    "undici": "^6.19.2"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "undici": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@size-limit/file": "^11.2.0",
+    "@types/fast-text-encoding": "^1.0.3",
+    "@types/react": "^19.1.13",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/parser": "^8.18.2",
+    "@vitest/coverage-v8": "^3.2.4",
+    "brotli-size-cli": "^1.0.0",
+    "eslint": "^9.33.0",
+    "globals": "^15.14.0",
+    "size-limit": "^11.2.0",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.1.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.18.2",
+    "vite": "^7.1.5",
+    "vitest": "^3.2.4"
+  }
+}

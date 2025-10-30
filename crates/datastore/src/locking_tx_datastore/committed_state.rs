@@ -10,29 +10,36 @@ use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, IndexError, TableError},
     execution_context::ExecutionContext,
-    locking_tx_datastore::state_view::iter_st_column_for_table,
+    locking_tx_datastore::{mut_tx::ViewReadSets, state_view::iter_st_column_for_table},
     system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
         StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
         ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME,
-        ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX,
-        ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID,
-        ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
+        ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID,
+        ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID,
+        ST_VAR_IDX,
     },
     traits::TxData,
 };
+use crate::{
+    locking_tx_datastore::mut_tx::ReadSet,
+    system_tables::{
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
+        ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX,
+    },
+};
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
-use itertools::Itertools;
-use spacetimedb_data_structures::map::{HashSet, IntMap};
-use spacetimedb_lib::{
-    db::auth::{StAccess, StTableType},
-    Identity,
-};
-use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
+use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
+use spacetimedb_durability::TxOffset;
+use spacetimedb_lib::{db::auth::StTableType, Identity};
+use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema};
+use spacetimedb_schema::{
+    def::IndexAlgorithm,
+    schema::{ColumnSchema, TableSchema},
+};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -41,6 +48,41 @@ use spacetimedb_table::{
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use thin_vec::ThinVec;
+
+type IndexKeyReadSet = HashMap<AlgebraicValue, IntSet<ViewId>>;
+type IndexColReadSet = HashMap<ColList, IndexKeyReadSet>;
+
+#[derive(Default)]
+struct CommittedReadSets {
+    tables: IntMap<TableId, IntSet<ViewId>>,
+    index_keys: IntMap<TableId, IndexColReadSet>,
+}
+
+impl MemoryUsage for CommittedReadSets {
+    fn heap_usage(&self) -> usize {
+        self.tables.heap_usage() + self.index_keys.heap_usage()
+    }
+}
+
+impl CommittedReadSets {
+    /// Record in the [`CommittedState`] that this view scans this table
+    fn view_scans_table(&mut self, view_id: ViewId, table_id: TableId) {
+        self.tables.entry(table_id).or_default().insert(view_id);
+    }
+
+    /// Record in the [`CommittedState`] that this view reads this index `key` for these table `cols`
+    fn view_reads_index_key(&mut self, view_id: ViewId, table_id: TableId, cols: ColList, key: &AlgebraicValue) {
+        self.index_keys
+            .entry(table_id)
+            .or_default()
+            .entry(cols)
+            .or_default()
+            .entry(key.clone())
+            .or_default()
+            .insert(view_id);
+    }
+}
 
 /// Contains the live, in-memory snapshot of a database. This structure
 /// is exposed in order to support tools wanting to process the commit
@@ -62,6 +104,16 @@ pub struct CommittedState {
     /// Pages are shared between all modules running on a particular host,
     /// not allocated per-module.
     pub(super) page_pool: PagePool,
+    /// Whether the table was dropped during replay.
+    /// TODO(centril): Only used during bootstrap and is otherwise unused.
+    /// We should split `CommittedState` into two types
+    /// where one, e.g., `ReplayCommittedState`, has this field.
+    table_dropped: IntSet<TableId>,
+    /// We track the read sets for each view in the committed state.
+    /// We check each reducer's write set against these read sets.
+    /// Any overlap will trigger a re-evaluation of the affected view,
+    /// and its read set will be updated accordingly.
+    read_sets: CommittedReadSets,
 }
 
 impl MemoryUsage for CommittedState {
@@ -72,9 +124,16 @@ impl MemoryUsage for CommittedState {
             blob_store,
             index_id_map,
             page_pool: _,
+            table_dropped,
+            read_sets,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
-        next_tx_offset.heap_usage() + tables.heap_usage() + blob_store.heap_usage() + index_id_map.heap_usage()
+        next_tx_offset.heap_usage()
+            + tables.heap_usage()
+            + blob_store.heap_usage()
+            + index_id_map.heap_usage()
+            + table_dropped.heap_usage()
+            + read_sets.heap_usage()
     }
 }
 
@@ -129,23 +188,6 @@ impl StateView for CommittedState {
     }
 }
 
-/// Swallow `Err(TableError::Duplicate(_))`, which signals a set-semantic collision,
-/// and convert it into `Ok(())`.
-///
-/// This necessarily drops any `Ok` payload, since a `Duplicate` will not hold that payload.
-///
-/// Used because the datastore's external APIs (as in, those that face the rest of SpacetimeDB)
-/// treat duplicate insertion as a silent no-op,
-/// whereas `Table` and friends treat it as an error.
-fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) -> Result<()> {
-    match res {
-        Ok(_) => Ok(()),
-        Err(InsertError::Duplicate(_)) => Ok(()),
-        Err(InsertError::Bflatn(e)) => Err(e.into()),
-        Err(InsertError::IndexError(e)) => Err(IndexError::from(e).into()),
-    }
-}
-
 impl CommittedState {
     pub(super) fn new(page_pool: PagePool) -> Self {
         Self {
@@ -153,6 +195,8 @@ impl CommittedState {
             tables: <_>::default(),
             blob_store: <_>::default(),
             index_id_map: <_>::default(),
+            table_dropped: <_>::default(),
+            read_sets: <_>::default(),
             page_pool,
         }
     }
@@ -184,13 +228,12 @@ impl CommittedState {
                 table_id,
                 table_name: schema.table_name.clone(),
                 table_type: StTableType::System,
-                table_access: StAccess::Public,
+                table_access: schema.table_access,
                 table_primary_key: schema.primary_key.map(Into::into),
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_TABLES.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_tables.insert(pool, blob_store, &row))?;
+            st_tables.insert(pool, blob_store, &row)?;
         }
 
         // Insert the columns into `st_columns`
@@ -205,8 +248,7 @@ impl CommittedState {
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_COLUMNS.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_columns.insert(pool, blob_store, &row))?;
+            st_columns.insert(pool, blob_store, &row)?;
             // Increment row count for st_columns.
             with_label_values(ST_COLUMN_ID, ST_COLUMN_NAME).inc();
         }
@@ -216,26 +258,16 @@ impl CommittedState {
         // Insert constraints into `st_constraints`
         let (st_constraints, blob_store, pool) =
             self.get_table_and_blob_store_or_create(ST_CONSTRAINT_ID, &schemas[ST_CONSTRAINT_IDX]);
-        for (i, constraint) in ref_schemas
-            .iter()
-            .flat_map(|x| &x.constraints)
-            .sorted_by_key(|x| (x.table_id, x.data.unique_columns()))
-            .cloned()
-            .enumerate()
-        {
-            // Start sequence from 1,
-            // to avoid any confusion with 0 as the autoinc sentinel value.
-            let constraint_id = (i + 1).into();
+        for constraint in ref_schemas.iter().flat_map(|x| &x.constraints) {
             let row = StConstraintRow {
-                constraint_id,
-                constraint_name: constraint.constraint_name,
+                constraint_id: constraint.constraint_id,
+                constraint_name: constraint.constraint_name.clone(),
                 table_id: constraint.table_id,
-                constraint_data: constraint.data.into(),
+                constraint_data: constraint.data.clone().into(),
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_CONSTRAINTS.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_constraints.insert(pool, blob_store, &row))?;
+            st_constraints.insert(pool, blob_store, &row)?;
             // Increment row count for st_constraints.
             with_label_values(ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME).inc();
         }
@@ -243,21 +275,12 @@ impl CommittedState {
         // Insert the indexes into `st_indexes`
         let (st_indexes, blob_store, pool) =
             self.get_table_and_blob_store_or_create(ST_INDEX_ID, &schemas[ST_INDEX_IDX]);
-        for (i, mut index) in ref_schemas
-            .iter()
-            .flat_map(|x| &x.indexes)
-            .sorted_by_key(|x| (x.table_id, x.index_algorithm.columns()))
-            .cloned()
-            .enumerate()
-        {
-            // Start sequence from 1,
-            // to avoid any confusion with 0 as the autoinc sentinel value.
-            index.index_id = (i + 1).into();
-            let row: StIndexRow = index.into();
+
+        for index in ref_schemas.iter().flat_map(|x| &x.indexes) {
+            let row: StIndexRow = index.clone().into();
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_INDEXES.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_indexes.insert(pool, blob_store, &row))?;
+            st_indexes.insert(pool, blob_store, &row)?;
             // Increment row count for st_indexes.
             with_label_values(ST_INDEX_ID, ST_INDEX_NAME).inc();
         }
@@ -273,73 +296,120 @@ impl CommittedState {
         self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
 
         self.create_table(ST_ROW_LEVEL_SECURITY_ID, schemas[ST_ROW_LEVEL_SECURITY_IDX].clone());
+        self.create_table(
+            ST_CONNECTION_CREDENTIALS_ID,
+            schemas[ST_CONNECTION_CREDENTIALS_IDX].clone(),
+        );
 
-        // IMPORTANT: It is crucial that the `st_sequences` table is created last
+        self.create_table(ST_VIEW_ID, schemas[ST_VIEW_IDX].clone());
+        self.create_table(ST_VIEW_PARAM_ID, schemas[ST_VIEW_PARAM_IDX].clone());
+        self.create_table(ST_VIEW_COLUMN_ID, schemas[ST_VIEW_COLUMN_IDX].clone());
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
             self.get_table_and_blob_store_or_create(ST_SEQUENCE_ID, &schemas[ST_SEQUENCE_IDX]);
-        // We create sequences last to get right the starting number
-        // so, we don't sort here
-        for (i, col) in ref_schemas.iter().flat_map(|x| &x.sequences).enumerate() {
-            // Start sequence from 1,
-            // to avoid any confusion with 0 as the autoinc sentinel value.
-            let sequence_id = (i + 1).into();
+        for seq in ref_schemas.iter().flat_map(|x| &x.sequences) {
             let row = StSequenceRow {
-                sequence_id,
-                sequence_name: col.sequence_name.clone(),
-                table_id: col.table_id,
-                col_pos: col.col_pos,
-                increment: col.increment,
-                min_value: col.min_value,
-                max_value: col.max_value,
-                // All sequences for system tables start from the reserved
-                // range + 1.
-                // Logically, we thus have used up the default pre-allocation
-                // and must allocate again on the next increment.
-                start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
-                allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
+                sequence_id: seq.sequence_id,
+                sequence_name: seq.sequence_name.clone(),
+                table_id: seq.table_id,
+                col_pos: seq.col_pos,
+                increment: seq.increment,
+                min_value: seq.min_value,
+                max_value: seq.max_value,
+                start: seq.start,
+                // In practice, this means we will actually start at start - 1, since `allocated`
+                // overrides start, but we keep these fields set this way to match databases
+                // that were bootstrapped before 1.4 and don't have a snapshot.
+                // This is covered with the test:
+                //   db::relational_db::tests::load_1_2_quickstart_without_snapshot_test
+                allocated: seq.start - 1,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_SEQUENCES.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_sequences.insert(pool, blob_store, &row))?;
+            st_sequences.insert(pool, blob_store, &row)?;
             // Increment row count for st_sequences
             with_label_values(ST_SEQUENCE_ID, ST_SEQUENCE_NAME).inc();
         }
 
-        self.reset_system_table_schemas()?;
-
+        // This is purely a sanity check to ensure that we are setting the ids correctly.
+        self.assert_system_table_schemas_match()?;
         Ok(())
     }
 
-    /// Compute the system table schemas from the system tables,
-    /// and store those schemas in the in-memory [`Table`] structures.
-    ///
-    /// Necessary during bootstrap because system tables include auto_inc IDs
-    /// for objects like indexes and constraints
-    /// which are computed at insert-time,
-    /// and therefore not included in the hardcoded schemas.
-    pub(super) fn reset_system_table_schemas(&mut self) -> Result<()> {
-        // Re-read the schema with the correct ids...
+    pub(super) fn assert_system_table_schemas_match(&self) -> Result<()> {
         for schema in system_tables() {
-            self.tables.get_mut(&schema.table_id).unwrap().schema =
-                Arc::new(self.schema_for_table_raw(schema.table_id)?);
+            let table_id = schema.table_id;
+            let in_memory = self
+                .tables
+                .get(&table_id)
+                .ok_or(TableError::IdNotFoundState(table_id))?
+                .schema
+                .clone();
+            let mut in_st_tables = self.schema_for_table_raw(table_id)?;
+            // We normalize so that the orders will match when checking for equality.
+            in_st_tables.normalize();
+            let in_memory = {
+                let mut s = in_memory.as_ref().clone();
+                s.normalize();
+                s
+            };
+
+            if in_memory != in_st_tables {
+                return Err(anyhow!(
+                    "System table schema mismatch for table id {table_id}. Expected: {schema:?}, found: {in_memory:?}"
+                )
+                .into());
+            }
         }
 
         Ok(())
     }
 
-    pub(super) fn replay_delete_by_rel(&mut self, table_id: TableId, rel: &ProductValue) -> Result<()> {
-        let table = self
-            .tables
-            .get_mut(&table_id)
-            .ok_or(TableError::IdNotFoundState(table_id))?;
-        let blob_store = &mut self.blob_store;
+    pub(super) fn replay_truncate(&mut self, table_id: TableId) -> Result<()> {
+        // (1) Table dropped? Avoid an error and just ignore the row instead.
+        if self.table_dropped.contains(&table_id) {
+            return Ok(());
+        }
+
+        // Get the table for mutation.
+        let (table, blob_store, ..) = self.get_table_and_blob_store_mut(table_id)?;
+
+        // We do not need to consider a truncation of `st_table` itself,
+        // as if that happens, the database is bricked.
+
+        table.clear(blob_store);
+
+        Ok(())
+    }
+
+    pub(super) fn replay_delete_by_rel(&mut self, table_id: TableId, row: &ProductValue) -> Result<()> {
+        // (1) Table dropped? Avoid an error and just ignore the row instead.
+        if self.table_dropped.contains(&table_id) {
+            return Ok(());
+        }
+
+        // Get the table for mutation.
+        let (table, blob_store, _, page_pool) = self.get_table_and_blob_store_mut(table_id)?;
+
+        // Delete the row.
         table
-            .delete_equal_row(&self.page_pool, blob_store, rel)
+            .delete_equal_row(page_pool, blob_store, row)
             .map_err(TableError::Bflatn)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
+
+        if table_id == ST_TABLE_ID {
+            // A row was removed from `st_table`, so a table was dropped.
+            // Remove that table from the in-memory structures.
+            let dropped_table_id = Self::read_table_id(row);
+            self.tables
+                .remove(&dropped_table_id)
+                .unwrap_or_else(|| panic!("table {} to remove should exist", dropped_table_id));
+            // Mark the table as dropped so that when
+            // processing row deletions for that table later,
+            // they are simply ignored in (1).
+            self.table_dropped.insert(dropped_table_id);
+        }
 
         Ok(())
     }
@@ -375,8 +445,7 @@ impl CommittedState {
     ///
     /// The `row_ptr` is a pointer to `row`.
     fn st_column_changed(&mut self, row: &ProductValue, row_ptr: RowPointer) -> Result<()> {
-        let target_table_id = TableId::deserialize(ValueDeserializer::from_ref(&row.elements[0]))
-            .expect("first field in `st_column` should decode to a `TableId`");
+        let target_table_id = Self::read_table_id(row);
         let target_col_id = ColId::deserialize(ValueDeserializer::from_ref(&row.elements[1]))
             .expect("second field in `st_column` should decode to a `ColId`");
 
@@ -386,13 +455,18 @@ impl CommittedState {
         // we may end up with two definitions for the same `col_pos`.
         // Of those two, we're interested in the one we just inserted
         // and not the other one, as it is being replaced.
-        let columns = iter_st_column_for_table(self, &target_table_id.into())?
+        let mut columns = iter_st_column_for_table(self, &target_table_id.into())?
             .filter_map(|row_ref| {
                 StColumnRow::try_from(row_ref)
                     .map(|c| (c.col_pos != target_col_id || row_ref.pointer() == row_ptr).then(|| c.into()))
                     .transpose()
             })
             .collect::<Result<Vec<_>>>()?;
+
+        // Columns in `st_column` are not in general sorted by their `col_pos`,
+        // though they will happen to be for tables which have never undergone migrations
+        // because their initial insertion order matches their `col_pos` order.
+        columns.sort_by_key(|col: &ColumnSchema| col.col_pos);
 
         // Update the columns and layout of the the in-memory table.
         if let Some(table) = self.tables.get_mut(&target_table_id) {
@@ -402,16 +476,20 @@ impl CommittedState {
         Ok(())
     }
 
-    pub(super) fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
+    /// Assuming that a `TableId` is stored as the first field in `row`, read it.
+    fn read_table_id(row: &ProductValue) -> TableId {
+        TableId::deserialize(ValueDeserializer::from_ref(&row.elements[0]))
+            .expect("first field in `st_column` should decode to a `TableId`")
+    }
+
+    /// Builds the in-memory state of sequences from `st_sequence` system table.
+    /// The tables store the lasted allocated value, which tells us where to start generating.
+    pub(super) fn build_sequence_state(&mut self) -> Result<SequencesState> {
+        let mut sequence_state = SequencesState::default();
         let st_sequences = self.tables.get(&ST_SEQUENCE_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
             let sequence = StSequenceRow::try_from(row_ref)?;
-            let mut seq = Sequence::new(sequence.into());
-
-            // Now we need to recover the last allocation value.
-            if seq.value < seq.allocated() + 1 {
-                seq.value = seq.allocated() + 1;
-            }
+            let seq = Sequence::new(sequence.clone().into(), Some(sequence.allocated));
 
             // Clobber any existing in-memory `Sequence`.
             // Such a value may exist because, when replaying without a snapshot,
@@ -426,7 +504,7 @@ impl CommittedState {
             // will correctly reflect the state after creating user tables.
             sequence_state.insert(seq);
         }
-        Ok(())
+        Ok(sequence_state)
     }
 
     pub(super) fn build_indexes(&mut self) -> Result<()> {
@@ -450,9 +528,9 @@ impl CommittedState {
         for index_row in rows {
             let index_id = index_row.index_id;
             let table_id = index_row.table_id;
-            let (Some(table), blob_store, index_id_map) = self.get_table_and_blob_store_mut(table_id) else {
-                panic!("Cannot create index for table which doesn't exist in committed state");
-            };
+            let (table, blob_store, index_id_map, _) = self
+                .get_table_and_blob_store_mut(table_id)
+                .expect("index should exist in committed state; cannot create it");
             let algo: IndexAlgorithm = index_row.index_algorithm.into();
             let columns: ColSet = algo.columns().into();
             let is_unique = unique_constraints.contains(&(table_id, columns));
@@ -553,8 +631,7 @@ impl CommittedState {
             "Cannot get TX_STATE RowPointer from CommittedState.",
         );
         let table = self
-            .tables
-            .get(&table_id)
+            .get_table(table_id)
             .expect("Attempt to get COMMITTED_STATE row from table not present in tables.");
         // TODO(perf, deep-integration): Use `get_row_ref_unchecked`.
         table.get_row_ref(&self.blob_store, row_ptr).unwrap()
@@ -582,15 +659,32 @@ impl CommittedState {
         tx_data.has_rows_or_connect_disconnect(ctx.reducer_context())
     }
 
-    pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
+    pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
+        let mut truncates = IntSet::default();
+
+        // Merge read sets from the `MutTxId` into the `CommittedState`
+        self.merge_read_sets(read_sets);
 
         // First, apply deletes. This will free up space in the committed tables.
-        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables);
+        self.merge_apply_deletes(
+            &mut tx_data,
+            tx_state.delete_tables,
+            tx_state.pending_schema_changes,
+            &mut truncates,
+        );
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
-        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
+        self.merge_apply_inserts(
+            &mut tx_data,
+            tx_state.insert_tables,
+            tx_state.blob_store,
+            &mut truncates,
+        );
+
+        // Record any truncated tables in the `TxData`.
+        tx_data.add_truncates(truncates);
 
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
@@ -602,31 +696,100 @@ impl CommittedState {
         tx_data
     }
 
-    fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, DeleteTable>) {
+    fn merge_read_set(&mut self, view_id: ViewId, read_set: ReadSet) {
+        for table_id in read_set.tables_scanned() {
+            self.read_sets.view_scans_table(view_id, *table_id);
+        }
+        for (table_id, index_id, key) in read_set.index_keys_scanned() {
+            if let Some(cols) = self
+                .get_schema(*table_id)
+                .map(|table_schema| table_schema.col_list_for_index_id(*index_id))
+            {
+                self.read_sets.view_reads_index_key(view_id, *table_id, cols, key);
+            }
+        }
+    }
+
+    fn merge_read_sets(&mut self, read_sets: ViewReadSets) {
+        for (view_id, read_set) in read_sets {
+            self.merge_read_set(view_id, read_set);
+        }
+    }
+
+    fn merge_apply_deletes(
+        &mut self,
+        tx_data: &mut TxData,
+        delete_tables: BTreeMap<TableId, DeleteTable>,
+        pending_schema_changes: ThinVec<PendingSchemaChange>,
+        truncates: &mut IntSet<TableId>,
+    ) {
+        fn delete_rows(
+            tx_data: &mut TxData,
+            table_id: TableId,
+            table: &mut Table,
+            blob_store: &mut dyn BlobStore,
+            row_ptrs_len: usize,
+            row_ptrs: impl Iterator<Item = RowPointer>,
+            truncates: &mut IntSet<TableId>,
+        ) {
+            let mut deletes = Vec::with_capacity(row_ptrs_len);
+
+            // Note: we maintain the invariant that the delete_tables
+            // holds only committed rows which should be deleted,
+            // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
+            // so no need to check before applying the deletes.
+            for row_ptr in row_ptrs {
+                debug_assert!(row_ptr.squashed_offset().is_committed_state());
+
+                // TODO: re-write `TxData` to remove `ProductValue`s
+                let pv = table
+                    .delete(blob_store, row_ptr, |row| row.to_product_value())
+                    .expect("Delete for non-existent row!");
+                deletes.push(pv);
+            }
+
+            if !deletes.is_empty() {
+                let table_name = &*table.get_schema().table_name;
+                tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
+                let truncated = table.row_count == 0;
+                if truncated {
+                    truncates.insert(table_id);
+                }
+            }
+        }
+
         for (table_id, row_ptrs) in delete_tables {
-            if let (Some(table), blob_store, _) = self.get_table_and_blob_store_mut(table_id) {
-                let mut deletes = Vec::with_capacity(row_ptrs.len());
+            match self.get_table_and_blob_store_mut(table_id) {
+                Ok((table, blob_store, ..)) => delete_rows(
+                    tx_data,
+                    table_id,
+                    table,
+                    blob_store,
+                    row_ptrs.len(),
+                    row_ptrs.iter(),
+                    truncates,
+                ),
+                Err(_) if !row_ptrs.is_empty() => panic!("Deletion for non-existent table {table_id:?}... huh?"),
+                Err(_) => {}
+            }
+        }
 
-                // Note: we maintain the invariant that the delete_tables
-                // holds only committed rows which should be deleted,
-                // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
-                // so no need to check before applying the deletes.
-                for row_ptr in row_ptrs.iter() {
-                    debug_assert!(row_ptr.squashed_offset().is_committed_state());
-
-                    // TODO: re-write `TxData` to remove `ProductValue`s
-                    let pv = table
-                        .delete(blob_store, row_ptr, |row| row.to_product_value())
-                        .expect("Delete for non-existent row!");
-                    deletes.push(pv);
-                }
-
-                if !deletes.is_empty() {
-                    let table_name = &*table.get_schema().table_name;
-                    tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
-                }
-            } else if !row_ptrs.is_empty() {
-                panic!("Deletion for non-existent table {table_id:?}... huh?");
+        // Delete all tables marked for deletion.
+        // The order here does not matter as once a `table_id` has been dropped
+        // it will never be re-created.
+        for change in pending_schema_changes {
+            if let PendingSchemaChange::TableRemoved(table_id, mut table) = change {
+                let row_ptrs = table.scan_all_row_ptrs();
+                truncates.insert(table_id);
+                delete_rows(
+                    tx_data,
+                    table_id,
+                    &mut table,
+                    &mut self.blob_store,
+                    row_ptrs.len(),
+                    row_ptrs.into_iter(),
+                    truncates,
+                );
             }
         }
     }
@@ -636,6 +799,7 @@ impl CommittedState {
         tx_data: &mut TxData,
         insert_tables: BTreeMap<TableId, Table>,
         tx_blob_store: impl BlobStore,
+        truncates: &mut IntSet<TableId>,
     ) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
         //             rather than copying individual rows out of them.
@@ -664,6 +828,11 @@ impl CommittedState {
             if !inserts.is_empty() {
                 let table_name = &*commit_table.get_schema().table_name;
                 tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
+
+                // if table has inserted rows, it cannot be truncated
+                if truncates.contains(&table_id) {
+                    truncates.remove(&table_id);
+                }
             }
 
             let (schema, _indexes, pages) = tx_table.consume_for_merge();
@@ -679,12 +848,13 @@ impl CommittedState {
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.
-    pub(super) fn rollback(&mut self, seq_state: &mut SequencesState, tx_state: TxState) {
+    pub(super) fn rollback(&mut self, seq_state: &mut SequencesState, tx_state: TxState) -> TxOffset {
         // Roll back the changes in the reverse order in which they were made
         // so that e.g., the last change is undone first.
         for change in tx_state.pending_schema_changes.into_iter().rev() {
             self.rollback_pending_schema_change(seq_state, change);
         }
+        self.next_tx_offset.saturating_sub(1)
     }
 
     fn rollback_pending_schema_change(
@@ -788,12 +958,21 @@ impl CommittedState {
     pub(super) fn get_table_and_blob_store_mut(
         &mut self,
         table_id: TableId,
-    ) -> (Option<&mut Table>, &mut dyn BlobStore, &mut IndexIdMap) {
-        (
-            self.tables.get_mut(&table_id),
+    ) -> Result<(&mut Table, &mut dyn BlobStore, &mut IndexIdMap, &PagePool)> {
+        // NOTE(centril): `TableError` is a fairly large type.
+        // Not making this lazy made `TableError::drop` show up in perf.
+        // TODO(centril): Box all the errors.
+        #[allow(clippy::unnecessary_lazy_evaluations)]
+        let table = self
+            .tables
+            .get_mut(&table_id)
+            .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
+        Ok((
+            table,
             &mut self.blob_store as &mut dyn BlobStore,
             &mut self.index_id_map,
-        )
+            &self.page_pool,
+        ))
     }
 
     fn make_table(schema: Arc<TableSchema>) -> Table {

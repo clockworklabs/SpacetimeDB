@@ -14,7 +14,7 @@ use spacetimedb_physical_plan::plan::{
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::product;
 
-use crate::{iter::get_index, Datastore, DeltaStore, Row, Tuple};
+use crate::{Datastore, DeltaStore, Row, Tuple};
 
 /// An executor for explicit column projections.
 /// Note, this plan can only be constructed from the http api,
@@ -90,7 +90,7 @@ impl ProjectListExecutor {
                         // It's a valid optimization but one that should be done by the optimizer.
                         // There should be no optimizations performed during execution.
                         PipelinedExecutor::TableScan(table_scan) => {
-                            n += tx.table_or_err(table_scan.table)?.num_rows() as usize;
+                            n += tx.row_count(table_scan.table) as usize;
                         }
                         _ => {
                             plan.execute(tx, metrics, &mut |_| {
@@ -629,7 +629,7 @@ impl PipelinedIxScan {
     ) -> Result<()> {
         // A single column index scan
         let single_col_scan = || {
-            tx.index_scan_range(
+            tx.index_scan(
                 self.table_id,
                 self.index_id,
                 &(self.lower.as_ref(), self.upper.as_ref()),
@@ -642,7 +642,7 @@ impl PipelinedIxScan {
         };
         // A multi-column index scan
         let multi_col_scan = |prefix: &[AlgebraicValue]| {
-            tx.index_scan_range(
+            tx.index_scan(
                 self.table_id,
                 self.index_id,
                 &(
@@ -728,11 +728,21 @@ impl PipelinedIxJoin {
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
-        let rhs_index = get_index(tx, self.rhs_table, self.rhs_index)?;
-
         let mut n = 0;
         let mut index_seeks = 0;
         let mut bytes_scanned = 0;
+
+        let iter_rhs = |u: &Tuple, lhs_field: &TupleField, bytes_scanned: &mut usize| -> Result<_> {
+            let key = project(u, lhs_field, bytes_scanned);
+            Ok(tx
+                .index_scan(self.rhs_table, self.rhs_index, &key)?
+                .map(Row::Ptr)
+                .map(Tuple::Row))
+        };
+
+        let probe_rhs = |u: &Tuple, lhs_field: &TupleField, bytes_scanned: &mut usize| -> Result<_> {
+            Ok(iter_rhs(u, lhs_field, bytes_scanned)?.next())
+        };
 
         match self {
             Self {
@@ -747,10 +757,7 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if rhs_index
-                        .index()
-                        .contains_any(&project(&u, lhs_field, &mut bytes_scanned))
-                    {
+                    if probe_rhs(&u, lhs_field, &mut bytes_scanned)?.is_some() {
                         f(u)?;
                     }
                     Ok(())
@@ -767,12 +774,7 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if let Some(v) = rhs_index
-                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
-                        .next()
-                        .map(Row::Ptr)
-                        .map(Tuple::Row)
-                    {
+                    if let Some(v) = probe_rhs(&u, lhs_field, &mut bytes_scanned)? {
                         f(v)?;
                     }
                     Ok(())
@@ -789,12 +791,7 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if let Some(v) = rhs_index
-                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
-                        .next()
-                        .map(Row::Ptr)
-                        .map(Tuple::Row)
-                    {
+                    if let Some(v) = probe_rhs(&u, lhs_field, &mut bytes_scanned)? {
                         f(u.join(v))?;
                     }
                     Ok(())
@@ -812,10 +809,8 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if let Some(n) = rhs_index.index().count(&project(&u, lhs_field, &mut bytes_scanned)) {
-                        for _ in 0..n {
-                            f(u.clone())?;
-                        }
+                    for _ in iter_rhs(&u, lhs_field, &mut bytes_scanned)? {
+                        f(u.clone())?;
                     }
                     Ok(())
                 })?;
@@ -831,11 +826,7 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    for v in rhs_index
-                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
-                        .map(Row::Ptr)
-                        .map(Tuple::Row)
-                    {
+                    for v in iter_rhs(&u, lhs_field, &mut bytes_scanned)? {
                         f(v)?;
                     }
                     Ok(())
@@ -852,11 +843,7 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    for v in rhs_index
-                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
-                        .map(Row::Ptr)
-                        .map(Tuple::Row)
-                    {
+                    for v in iter_rhs(&u, lhs_field, &mut bytes_scanned)? {
                         f(u.clone().join(v))?;
                     }
                     Ok(())

@@ -14,6 +14,7 @@ namespace SpacetimeDB
         public readonly ConnectionId? ConnectionId;
         public readonly Random Rng;
         public readonly Timestamp Timestamp;
+        public readonly AuthCtx AuthCtx;
 
         // We need this property to be non-static for parity with client SDK.
         public Identity Identity => Internal.IReducerContext.GetIdentity();
@@ -29,6 +30,7 @@ namespace SpacetimeDB
             ConnectionId = connectionId;
             Rng = random;
             Timestamp = time;
+            AuthCtx = AuthCtx.BuildFromSystemTables(connectionId, identity);
         }
     }
 
@@ -1092,6 +1094,8 @@ static class ModuleRegistration
             (identity, connectionId, random, time) =>
                 new SpacetimeDB.ReducerContext(identity, connectionId, random, time)
         );
+        var __memoryStream = new MemoryStream();
+        var __writer = new BinaryWriter(__memoryStream);
 
         SpacetimeDB.Internal.Module.RegisterReducer<Init>();
         SpacetimeDB.Internal.Module.RegisterReducer<InsertData>();

@@ -8,7 +8,8 @@ use super::system_tables::ModuleKind;
 use super::Result;
 use crate::execution_context::{ReducerContext, Workload};
 use crate::system_tables::ST_TABLE_ID;
-use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_data_structures::map::{IntMap, IntSet};
+use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
@@ -175,15 +176,21 @@ pub struct TxData {
     inserts: BTreeMap<TableId, Arc<[ProductValue]>>,
     /// The deleted rows per table.
     deletes: BTreeMap<TableId, Arc<[ProductValue]>>,
+    /// *Truncating* means that all rows in the table have been deleted.
+    /// In other words, a truncated table is a cleared table.
+    ///
+    /// Note that when a table has an entry in `truncates`,
+    /// it will also have an entry in `deletes`.
+    truncates: IntSet<TableId>,
     /// Map of all `TableId`s in both `inserts` and `deletes` to their
     /// corresponding table name.
+    // TODO: Store table name as ref counted string.
     tables: IntMap<TableId, String>,
     /// Tx offset of the transaction which performed these operations.
     ///
     /// `None` implies that `inserts` and `deletes` are both empty,
     /// but `Some` does not necessarily imply that either is non-empty.
     tx_offset: Option<u64>,
-    // TODO: Store an `Arc<String>` or equivalent instead.
 }
 
 impl TxData {
@@ -208,9 +215,15 @@ impl TxData {
     }
 
     /// Set `rows` as the deleted rows for `(table_id, table_name)`.
+    ///
+    /// When `truncated` is set, the table has been emptied in this transaction.
     pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
         self.deletes.insert(table_id, rows);
         self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+    }
+
+    pub fn add_truncates(&mut self, truncated_tables: impl IntoIterator<Item = TableId>) {
+        self.truncates.extend(truncated_tables);
     }
 
     /// Obtain an iterator over the inserted rows per table.
@@ -261,12 +274,16 @@ impl TxData {
         })
     }
 
+    pub fn truncates(&self) -> impl Iterator<Item = TableId> + '_ {
+        self.truncates.iter().copied()
+    }
+
     /// Check if this [`TxData`] contains any `inserted | deleted` rows or `connect/disconnect` operations.
     ///
     /// This is used to determine if a transaction should be written to disk.
     pub fn has_rows_or_connect_disconnect(&self, reducer_context: Option<&ReducerContext>) -> bool {
         self.inserts().any(|(_, inserted_rows)| !inserted_rows.is_empty())
-            || self.deletes().any(|(_, deleted_rows)| !deleted_rows.is_empty())
+            || self.deletes().any(|(.., deleted_rows)| !deleted_rows.is_empty())
             || matches!(
                 reducer_context.map(|rcx| rcx.name.strip_prefix("__identity_")),
                 Some(Some("connected__" | "disconnected__"))
@@ -327,9 +344,19 @@ pub trait Tx {
     /// Release this read-only transaction.
     ///
     /// Returns:
+    /// - [`TxOffset`], the smallest transaction offset visible to this transaction.
+    ///
+    ///   Note that, if the transaction was running under an isolation level
+    ///   weaker than [`IsolationLevel::Snapshot`], it may have observed
+    ///   transactions at a later offset than when it started.
+    ///
+    ///   Implementations must uphold that the returned transaction offset
+    ///   accounts for such read anomalies, i.e. the offset must include the
+    ///   observed transactions.
+    ///
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String);
+    fn release_tx(&self, tx: Self::Tx) -> (TxOffset, TxMetrics, String);
 }
 
 pub trait MutTx {
@@ -341,17 +368,27 @@ pub trait MutTx {
     /// Commits `tx`, applying its changes to the committed state.
     ///
     /// Returns:
+    /// - [`TxOffset`], the offset this transaction was committed at.
+    ///
+    ///   Note that, if the transaction was running under an isolation level
+    ///   weaker than [`IsolationLevel::Snapshot`], it may have observed
+    ///   transactions at a later offset than when it started.
+    ///
+    ///   Implementations must uphold that the returned transaction offset
+    ///   accounts for such read anomalies, i.e. the offset must include the
+    ///   observed transactions.
+    ///
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, TxMetrics, String)>>;
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>>;
 
     /// Rolls back this transaction, discarding its changes.
     ///
     /// Returns:
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran within this transaction.
-    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String);
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxOffset, TxMetrics, String);
 }
 
 /// Standard metadata associated with a database.
@@ -472,6 +509,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn schema_for_table_mut_tx(&self, tx: &Self::MutTx, table_id: TableId) -> Result<Arc<TableSchema>>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()>;
+    fn view_id_from_name_mut_tx(&self, tx: &Self::MutTx, view_name: &str) -> Result<Option<ViewId>>;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>>;
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool;
     fn table_name_from_id_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Option<Cow<'a, str>>>;

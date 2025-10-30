@@ -2,13 +2,13 @@ use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use clap::ArgMatches;
 use reqwest::{StatusCode, Url};
-use spacetimedb_client_api_messages::name::PublishOp;
 use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
-use std::fs;
+use spacetimedb_client_api_messages::name::{PrePublishResult, PrettyPrintStyle, PublishOp};
 use std::path::PathBuf;
+use std::{env, fs};
 
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, get_auth_header, ResponseExt};
+use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, unauth_error_context, y_or_n};
 use crate::{build, common_args};
 
@@ -46,7 +46,18 @@ pub fn cli() -> clap::Command {
                 .short('b')
                 .conflicts_with("project_path")
                 .conflicts_with("build_options")
+                .conflicts_with("js_file")
                 .help("The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project."),
+        )
+        .arg(
+            Arg::new("js_file")
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("js-path")
+                .short('j')
+                .conflicts_with("project_path")
+                .conflicts_with("build_options")
+                .conflicts_with("wasm_file")
+                .help("UNSTABLE: The system path (absolute or relative) to the javascript file we should publish, instead of building the project."),
         )
         .arg(
             Arg::new("num_replicas")
@@ -54,6 +65,12 @@ pub fn cli() -> clap::Command {
                 .long("num-replicas")
                 .hide(true)
                 .help("UNSTABLE: The number of replicas the database should have")
+        )
+        .arg(
+            Arg::new("break_clients")
+                .long("break-clients")
+                .action(SetTrue)
+                .help("Allow breaking changes when publishing to an existing database identity. This will break existing clients.")
         )
         .arg(
             common_args::anonymous()
@@ -84,29 +101,17 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let force = args.get_flag("force");
     let anon_identity = args.get_flag("anon_identity");
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
+    let js_file = args.get_one::<PathBuf>("js_file");
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
     let num_replicas = args.get_one::<u8>("num_replicas");
+    let break_clients_flag = args.get_flag("break_clients");
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
     // we want to use the default identity
     // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
     //  easily create a new identity with an email
     let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
-
-    let client = reqwest::Client::new();
-
-    // If a domain or identity was provided, we should locally make sure it looks correct and
-    let mut builder = if let Some(name_or_identity) = name_or_identity {
-        if !is_identity(name_or_identity) {
-            parse_database_name(name_or_identity)?;
-        }
-        let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
-        let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
-        client.put(format!("{database_host}/v1/database/{domain}"))
-    } else {
-        client.post(format!("{database_host}/v1/database"))
-    };
 
     if !path_to_project.exists() {
         return Err(anyhow::anyhow!(
@@ -115,13 +120,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         ));
     }
 
-    let path_to_wasm = if let Some(path) = wasm_file {
-        println!("Skipping build. Instead we are publishing {}", path.display());
-        path.clone()
+    // Decide program file path and read program.
+    // Optionally build the program.
+    let (path_to_program, host_type) = if let Some(path) = wasm_file {
+        println!("(WASM) Skipping build. Instead we are publishing {}", path.display());
+        (path.clone(), "Wasm")
+    } else if let Some(path) = js_file {
+        println!("(JS) Skipping build. Instead we are publishing {}", path.display());
+        (path.clone(), "Js")
     } else {
         build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
     };
-    let program_bytes = fs::read(path_to_wasm)?;
+    let program_bytes = fs::read(path_to_program)?;
 
     let server_address = {
         let url = Url::parse(&database_host)?;
@@ -140,6 +150,36 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         server.unwrap_or(config.default_server_name().unwrap_or("<default>")),
         database_host
     );
+
+    let client = reqwest::Client::new();
+    // If a domain or identity was provided, we should locally make sure it looks correct and
+    let mut builder = if let Some(name_or_identity) = name_or_identity {
+        if !is_identity(name_or_identity) {
+            parse_database_name(name_or_identity)?;
+        }
+        let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
+        let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
+
+        let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
+
+        if !clear_database {
+            builder = apply_pre_publish_if_needed(
+                builder,
+                &client,
+                &database_host,
+                &domain.to_string(),
+                host_type,
+                &program_bytes,
+                &auth_header,
+                break_clients_flag,
+            )
+            .await?;
+        };
+
+        builder
+    } else {
+        client.post(format!("{database_host}/v1/database"))
+    };
 
     if clear_database {
         // Note: `name_or_identity` should be set, because it is `required` in the CLI arg config.
@@ -168,6 +208,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     println!("Publishing module...");
 
     builder = add_auth_header_opt(builder, &auth_header);
+
+    // Set the host type.
+    builder = builder.query(&[("host_type", host_type)]);
+
+    // JS/TS is beta quality atm.
+    if host_type == "Js" {
+        println!("JavaScript / TypeScript support is currently in BETA.");
+        println!("There may be bugs. Please file issues if you encounter any.");
+        println!("<https://github.com/clockworklabs/SpacetimeDB/issues/new>");
+    }
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
@@ -218,4 +268,94 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     Ok(())
+}
+
+/// Determine the pretty print style based on the NO_COLOR environment variable.
+///
+/// See: https://no-color.org
+pub fn pretty_print_style_from_env() -> PrettyPrintStyle {
+    match env::var("NO_COLOR") {
+        Ok(_) => PrettyPrintStyle::NoColor,
+        Err(_) => PrettyPrintStyle::AnsiColor,
+    }
+}
+
+/// Applies pre-publish logic: checking for migration plan, prompting user, and
+/// modifying the request builder accordingly.
+#[allow(clippy::too_many_arguments)]
+async fn apply_pre_publish_if_needed(
+    mut builder: reqwest::RequestBuilder,
+    client: &reqwest::Client,
+    base_url: &str,
+    domain: &String,
+    host_type: &str,
+    program_bytes: &[u8],
+    auth_header: &AuthHeader,
+    break_clients_flag: bool,
+) -> Result<reqwest::RequestBuilder, anyhow::Error> {
+    if let Some(pre) = call_pre_publish(
+        client,
+        base_url,
+        &domain.to_string(),
+        host_type,
+        program_bytes,
+        auth_header,
+    )
+    .await?
+    {
+        println!("{}", pre.migrate_plan);
+
+        if pre.break_clients
+            && !y_or_n(
+                break_clients_flag,
+                "The above changes will BREAK existing clients. Do you want to proceed?",
+            )?
+        {
+            println!("Aborting");
+            // Early exit: return an error or a special signal. Here we bail out by returning Err.
+            anyhow::bail!("Publishing aborted by user");
+        }
+
+        builder = builder
+            .query(&[("token", pre.token)])
+            .query(&[("policy", "BreakClients")]);
+    }
+
+    Ok(builder)
+}
+
+async fn call_pre_publish(
+    client: &reqwest::Client,
+    database_host: &str,
+    domain: &String,
+    host_type: &str,
+    program_bytes: &[u8],
+    auth_header: &AuthHeader,
+) -> Result<Option<PrePublishResult>, anyhow::Error> {
+    let mut builder = client.post(format!("{database_host}/v1/database/{domain}/pre_publish"));
+    let style = pretty_print_style_from_env();
+    builder = builder
+        .query(&[("pretty_print_style", style)])
+        .query(&[("host_type", host_type)]);
+
+    builder = add_auth_header_opt(builder, auth_header);
+
+    println!("Checking for breaking changes...");
+    let res = builder.body(program_bytes.to_vec()).send().await?;
+
+    if res.status() == StatusCode::NOT_FOUND {
+        // This is a new database, so there are no breaking changes
+        return Ok(None);
+    }
+
+    if !res.status().is_success() {
+        anyhow::bail!(
+            "Pre-publish check failed with status {}: {}",
+            res.status(),
+            res.text().await?
+        );
+    }
+
+    let pre_publish_result: PrePublishResult = res.json_or_error().await?;
+    Ok(Some(pre_publish_result))
 }

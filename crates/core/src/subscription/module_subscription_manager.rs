@@ -21,6 +21,7 @@ use spacetimedb_client_api_messages::websocket::{
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
@@ -29,7 +30,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 /// Clients are uniquely identified by their Identity and ConnectionId.
 /// Identity is insufficient because different ConnectionIds can use the same Identity.
@@ -548,12 +549,37 @@ impl<T> SenderWithGauge<T> {
     }
 }
 
+/// The offset used to control visibility of the message if the client has
+/// requested confirmed reads.
+///
+/// [`SendWorkerMessage`]s are sent while holding the database lock, i.e.
+/// without committing the transaction. When the transaction commits, the
+/// message sender is expected to send the transaction offset along this channel.
+///
+/// NOTE: If the send end is dropped before sending the offset, the
+/// [`SendWorker`] will assume that the message sender was cancelled, and exit
+/// itself.
+pub type TransactionOffset = oneshot::Receiver<TxOffset>;
+
+/// Create a TransactionOffset from a known TxOffset.
+pub fn from_tx_offset(offset: TxOffset) -> TransactionOffset {
+    let (tx, rx) = oneshot::channel();
+    let _ = tx.send(offset);
+    rx
+}
+
 /// Message sent by the [`SubscriptionManager`] to the [`SendWorker`].
 #[derive(Debug)]
 enum SendWorkerMessage {
     /// A transaction has completed and the [`SubscriptionManager`] has evaluated the incremental queries,
     /// so the [`SendWorker`] should broadcast them to clients.
-    Broadcast(ComputedQueries),
+    ///
+    /// The `tx_offset` of the transaction is used to control visibility of
+    /// the results if the client has requested confirmed reads.
+    Broadcast {
+        tx_offset: TransactionOffset,
+        queries: ComputedQueries,
+    },
 
     /// A new client has been registered in the [`SubscriptionManager`],
     /// so the [`SendWorker`] should also record its existence.
@@ -566,9 +592,14 @@ enum SendWorkerMessage {
         outbound_ref: Client,
     },
 
-    // Send a message to a client.
+    /// Send a message to a client.
+    ///
+    /// In some cases, `message` may contain query results. In this case,
+    /// `tx_offset` is `Some`, and later used to control visibility of the
+    /// message if the the client has requested confirmed reads.
     SendMessage {
         recipient: Arc<ClientConnectionSender>,
+        tx_offset: Option<TransactionOffset>,
         message: SerializableMessage,
     },
 
@@ -757,20 +788,20 @@ impl SubscriptionManager {
             .get_mut(&client_id)
             .filter(|ci| !ci.dropped.load(Ordering::Acquire))
         else {
-            return Err(anyhow::anyhow!("Client not found: {:?}", client_id).into());
+            return Err(anyhow::anyhow!("Client not found: {client_id:?}").into());
         };
 
         #[cfg(test)]
         ci.assert_ref_count_consistency();
 
         let Some(query_hashes) = ci.subscriptions.remove(&subscription_id) else {
-            return Err(anyhow::anyhow!("Subscription not found: {:?}", subscription_id).into());
+            return Err(anyhow::anyhow!("Subscription not found: {subscription_id:?}").into());
         };
         let mut queries_to_return = Vec::new();
         for hash in query_hashes {
             let remaining_refs = {
                 let Some(count) = ci.subscription_ref_count.get_mut(&hash) else {
-                    return Err(anyhow::anyhow!("Query count not found for query hash: {:?}", hash).into());
+                    return Err(anyhow::anyhow!("Query count not found for query hash: {hash:?}").into());
                 };
                 *count -= 1;
                 *count
@@ -782,7 +813,7 @@ impl SubscriptionManager {
             // The client is no longer subscribed to this query.
             ci.subscription_ref_count.remove(&hash);
             let Some(query_state) = self.queries.get_mut(&hash) else {
-                return Err(anyhow::anyhow!("Query state not found for query hash: {:?}", hash).into());
+                return Err(anyhow::anyhow!("Query state not found for query hash: {hash:?}").into());
             };
             queries_to_return.push(query_state.query.clone());
             query_state.subscriptions.remove(&client_id);
@@ -839,9 +870,7 @@ impl SubscriptionManager {
         let hash_set = match ci.subscriptions.try_insert(subscription_id, HashSet::new()) {
             Err(OccupiedError { .. }) => {
                 return Err(anyhow::anyhow!(
-                    "Subscription with id {:?} already exists for client: {:?}",
-                    query_id,
-                    client_id
+                    "Subscription with id {query_id:?} already exists for client: {client_id:?}"
                 )
                 .into());
             }
@@ -1100,7 +1129,7 @@ impl SubscriptionManager {
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn eval_updates_sequential(
         &self,
-        tx: &DeltaTx,
+        (tx, tx_offset): (&DeltaTx, TransactionOffset),
         event: Arc<ModuleEvent>,
         caller: Option<Arc<ClientConnectionSender>>,
     ) -> ExecutionMetrics {
@@ -1266,12 +1295,15 @@ impl SubscriptionManager {
         // then return ASAP in order to unlock the datastore and start running the next transaction.
         // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
         self.send_worker_queue
-            .send(SendWorkerMessage::Broadcast(ComputedQueries {
-                updates,
-                errs,
-                event,
-                caller,
-            }))
+            .send(SendWorkerMessage::Broadcast {
+                tx_offset,
+                queries: ComputedQueries {
+                    updates,
+                    errs,
+                    event,
+                    caller,
+                },
+            })
             .expect("send worker has panicked, or otherwise dropped its recv queue!");
 
         drop(span);
@@ -1370,10 +1402,12 @@ impl BroadcastQueue {
     pub fn send_client_message(
         &self,
         recipient: Arc<ClientConnectionSender>,
+        tx_offset: Option<TransactionOffset>,
         message: impl Into<SerializableMessage>,
     ) -> Result<(), BroadcastError> {
         self.0.send(SendWorkerMessage::SendMessage {
             recipient,
+            tx_offset,
             message: message.into(),
         })?;
         Ok(())
@@ -1427,14 +1461,31 @@ impl SendWorker {
                     self.clients
                         .insert(client_id, SendWorkerClient { dropped, outbound_ref });
                 }
-                SendWorkerMessage::SendMessage { recipient, message } => {
-                    let _ = recipient.send_message(message);
-                }
+                SendWorkerMessage::SendMessage {
+                    recipient,
+                    tx_offset,
+                    message,
+                } => match tx_offset {
+                    None => {
+                        let _ = recipient.send_message(None, message);
+                    }
+                    Some(tx_offset) => {
+                        let Ok(tx_offset) = tx_offset.await else {
+                            tracing::error!("tx offset sender dropped, exiting send worker");
+                            return;
+                        };
+                        let _ = recipient.send_message(Some(tx_offset), message);
+                    }
+                },
                 SendWorkerMessage::RemoveClient(client_id) => {
                     self.clients.remove(&client_id);
                 }
-                SendWorkerMessage::Broadcast(queries) => {
-                    self.send_one_computed_queries(queries);
+                SendWorkerMessage::Broadcast { tx_offset, queries } => {
+                    let Ok(tx_offset) = tx_offset.await else {
+                        tracing::error!("tx offset sender dropped, exiting send worker");
+                        return;
+                    };
+                    self.send_one_computed_queries(tx_offset, queries);
                 }
             }
         }
@@ -1442,6 +1493,7 @@ impl SendWorker {
 
     fn send_one_computed_queries(
         &mut self,
+        tx_offset: TxOffset,
         ComputedQueries {
             updates,
             errs,
@@ -1527,7 +1579,7 @@ impl SendWorker {
                 event: Some(event.clone()),
                 database_update,
             };
-            send_to_client(&caller, message);
+            send_to_client(&caller, Some(tx_offset), message);
         }
 
         // Send all the other updates.
@@ -1537,7 +1589,7 @@ impl SendWorker {
             // Conditionally send out a full update or a light one otherwise.
             let event = client.config.tx_update_full.then(|| event.clone());
             let message = TransactionUpdateMessage { event, database_update };
-            send_to_client(&client, message);
+            send_to_client(&client, Some(tx_offset), message);
         }
 
         // Put back the aggregation maps into the worker.
@@ -1550,6 +1602,7 @@ impl SendWorker {
                 client.dropped.store(true, Ordering::Release);
                 send_to_client(
                     &client.outbound_ref,
+                    None,
                     SubscriptionMessage {
                         request_id: None,
                         query_id: None,
@@ -1565,8 +1618,13 @@ impl SendWorker {
     }
 }
 
-fn send_to_client(client: &ClientConnectionSender, message: impl Into<SerializableMessage>) {
-    if let Err(e) = client.send_message(message) {
+fn send_to_client(
+    client: &ClientConnectionSender,
+    tx_offset: Option<TxOffset>,
+    message: impl Into<SerializableMessage>,
+) {
+    tracing::trace!(client = %client.id, tx_offset, "send_to_client");
+    if let Err(e) = client.send_message(tx_offset, message) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }
 }
@@ -1581,12 +1639,14 @@ mod tests {
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::product;
     use spacetimedb_subscription::SubscriptionPlan;
+    use tokio::sync::oneshot;
 
     use super::{Plan, SubscriptionManager};
     use crate::db::relational_db::tests_utils::with_read_only;
     use crate::host::module_host::DatabaseTableUpdate;
     use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
+    use crate::subscription::tx::DeltaTx;
     use crate::{
         client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
@@ -1617,7 +1677,7 @@ mod tests {
         (Identity::ZERO, ConnectionId::from_u128(connection_id))
     }
 
-    fn client(connection_id: u128) -> ClientConnectionSender {
+    fn client(connection_id: u128, db: &RelationalDB) -> ClientConnectionSender {
         let (identity, connection_id) = id(connection_id);
         ClientConnectionSender::dummy(
             ClientActorId {
@@ -1626,6 +1686,7 @@ mod tests {
                 name: ClientName(0),
             },
             ClientConfig::for_test(),
+            db.clone(),
         )
     }
 
@@ -1639,7 +1700,7 @@ mod tests {
         let hash = plan.hash();
 
         let id = id(0);
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -1663,7 +1724,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -1686,7 +1747,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -1712,7 +1773,7 @@ mod tests {
         let sql = "select * from T";
         let plan = compile_plan(&db, sql)?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -1737,7 +1798,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -1766,7 +1827,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -1803,7 +1864,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let clients = (0..3).map(|i| Arc::new(client(i))).collect::<Vec<_>>();
+        let clients = (0..3).map(|i| Arc::new(client(i, &db))).collect::<Vec<_>>();
 
         // All of the clients are using the same query id.
         let query_id: ClientQueryId = QueryId::new(1);
@@ -1844,7 +1905,7 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let clients = (0..3).map(|i| Arc::new(client(i))).collect::<Vec<_>>();
+        let clients = (0..3).map(|i| Arc::new(client(i, &db))).collect::<Vec<_>>();
 
         // All of the clients are using the same query id.
         let query_id: ClientQueryId = QueryId::new(1);
@@ -1895,7 +1956,7 @@ mod tests {
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -1940,7 +2001,7 @@ mod tests {
             .map(|sql| compile_plan(&db, &sql))
             .collect::<ResultTest<Vec<_>>>()?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -1984,7 +2045,7 @@ mod tests {
 
         let table_id = create_table(&db, "t")?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2057,7 +2118,7 @@ mod tests {
 
         let table_id = create_table(&db, "t")?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2127,7 +2188,7 @@ mod tests {
         let t_id = db.create_table_for_test("t", &schema, &[0.into()])?;
         let s_id = db.create_table_for_test("s", &schema, &[0.into()])?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2199,7 +2260,7 @@ mod tests {
         let sql = "select * from T";
         let plan = compile_plan(&db, sql)?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -2224,7 +2285,7 @@ mod tests {
         let sql = "select * from T";
         let plan = compile_plan(&db, sql)?;
 
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let query_id: ClientQueryId = QueryId::new(1);
 
@@ -2252,7 +2313,7 @@ mod tests {
         let hash = plan.hash();
 
         let id = id(0);
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2278,7 +2339,7 @@ mod tests {
         let hash = plan.hash();
 
         let id = id(0);
-        let client = Arc::new(client(0));
+        let client = Arc::new(client(0, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2310,10 +2371,10 @@ mod tests {
         let hash = plan.hash();
 
         let id0 = id(0);
-        let client0 = Arc::new(client(0));
+        let client0 = Arc::new(client(0, &db));
 
         let id1 = id(1);
-        let client1 = Arc::new(client(1));
+        let client1 = Arc::new(client(1, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2358,10 +2419,10 @@ mod tests {
         let hash_select1 = plan_select1.hash();
 
         let id0 = id(0);
-        let client0 = Arc::new(client(0));
+        let client0 = Arc::new(client(0, &db));
 
         let id1 = id(1);
-        let client1 = Arc::new(client(1));
+        let client1 = Arc::new(client(1, &db));
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2420,7 +2481,7 @@ mod tests {
         let id0 = Identity::ZERO;
         let client0 = ClientActorId::for_test(id0);
         let config = ClientConfig::for_test();
-        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, config);
+        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, config, (*db).clone());
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
@@ -2442,9 +2503,20 @@ mod tests {
             timer: None,
         });
 
-        db.with_read_only(Workload::Update, |tx| {
-            subscriptions.eval_updates_sequential(&(&*tx).into(), event, Some(Arc::new(client0)))
-        });
+        // This block ensures that the transaction is released before waiting
+        // for a message to appear on `rx`.
+        // The message won't be sent until the transaction offset is known,
+        // and it is known when the transaction commits.
+        {
+            let (offset_tx, offset_rx) = oneshot::channel();
+            let tx = scopeguard::guard(db.begin_tx(Workload::Update), |tx| {
+                let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
+                let _ = offset_tx.send(tx_offset);
+                db.report_read_tx_metrics(reducer, tx_metrics);
+            });
+            let delta_tx = DeltaTx::from(&*tx);
+            subscriptions.eval_updates_sequential((&delta_tx, offset_rx), event, Some(Arc::new(client0)));
+        }
 
         runtime.block_on(async move {
             tokio::time::timeout(Duration::from_millis(20), async move {

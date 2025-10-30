@@ -1,4 +1,4 @@
-use std::io;
+use std::{fmt, io};
 
 use log::{debug, warn};
 
@@ -15,6 +15,7 @@ pub(crate) mod fs;
 pub mod mem;
 
 pub use fs::Fs;
+pub use fs::OnNewSegmentFn;
 #[cfg(any(test, feature = "test"))]
 pub use mem::Memory;
 
@@ -58,7 +59,10 @@ impl<T: FileLike + io::Read + io::Write + SegmentLen + Send + Sync> SegmentWrite
 ///
 /// This is mainly an internal trait to allow testing against an in-memory
 /// representation.
-pub trait Repo: Clone {
+///
+/// The [fmt::Display] should provide context about the location of the repo,
+/// e.g. the root directory for a filesystem-based implementation.
+pub trait Repo: Clone + fmt::Display {
     /// The type of log segments managed by this repo, which must behave like a file.
     type SegmentWriter: SegmentWriter + 'static;
     type SegmentReader: SegmentReader + 'static;

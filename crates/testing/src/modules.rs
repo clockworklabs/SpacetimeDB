@@ -12,13 +12,14 @@ use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::{generate_random_connection_id, WebSocketOptions};
 use spacetimedb_paths::{RootDir, SpacetimePaths};
+use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::host::ReducerArgs;
+use spacetimedb::host::FunctionArgs;
 use spacetimedb::messages::websocket::CallReducerFlags;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_lib::{bsatn, sats};
@@ -54,7 +55,7 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
-    async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> anyhow::Result<()> {
+    async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
         let result = self
             .client
             .call_reducer(reducer, args, 0, Instant::now(), CallReducerFlags::FullUpdate)
@@ -71,12 +72,12 @@ impl ModuleHandle {
 
     pub async fn call_reducer_json(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
         let args = serde_json::to_string(&args).unwrap();
-        self.call_reducer(reducer, ReducerArgs::Json(args.into())).await
+        self.call_reducer(reducer, FunctionArgs::Json(args.into())).await
     }
 
     pub async fn call_reducer_binary(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
         let args = bsatn::to_vec(&args).unwrap();
-        self.call_reducer(reducer, ReducerArgs::Bsatn(args.into())).await
+        self.call_reducer(reducer, FunctionArgs::Bsatn(args.into())).await
     }
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
@@ -93,6 +94,7 @@ impl ModuleHandle {
 pub struct CompiledModule {
     name: String,
     path: PathBuf,
+    pub(super) host_type: HostType,
     program_bytes: OnceLock<Vec<u8>>,
 }
 
@@ -104,7 +106,7 @@ pub enum CompilationMode {
 
 impl CompiledModule {
     pub fn compile(name: &str, mode: CompilationMode) -> Self {
-        let path = spacetimedb_cli::build(
+        let (path, host_type) = spacetimedb_cli::build(
             &module_path(name),
             Some(PathBuf::from("src")).as_deref(),
             mode == CompilationMode::Debug,
@@ -113,6 +115,7 @@ impl CompiledModule {
         Self {
             name: name.to_owned(),
             path,
+            host_type: host_type.parse().unwrap(),
             program_bytes: OnceLock::new(),
         }
     }
@@ -126,7 +129,7 @@ impl CompiledModule {
     }
 
     pub async fn extract_schema(&self) -> ModuleDef {
-        spacetimedb::host::extract_schema(self.program_bytes().into(), HostType::Wasm)
+        spacetimedb::host::extract_schema(self.program_bytes().into(), self.host_type)
             .await
             .unwrap()
     }
@@ -186,13 +189,13 @@ impl CompiledModule {
             },
             &certs,
             paths.data_dir.into(),
-            JobCores::default(),
+            JobCores::without_pinned_cores(tokio::runtime::Handle::current()),
         )
         .await
         .unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
-        let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().identity;
+        let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;
         let connection_id = generate_random_connection_id();
 
         let program_bytes = self.program_bytes().to_owned();
@@ -203,8 +206,9 @@ impl CompiledModule {
                 database_identity: db_identity,
                 program_bytes,
                 num_replicas: None,
-                host_type: HostType::Wasm,
+                host_type: self.host_type,
             },
+            MigrationPolicy::Compatible,
         )
         .await
         .unwrap();
@@ -302,6 +306,20 @@ impl ModuleLanguage for Rust {
     fn get_module() -> &'static CompiledModule {
         lazy_static::lazy_static! {
             pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}
+
+pub struct TypeScript;
+
+impl ModuleLanguage for TypeScript {
+    const NAME: &'static str = "typescript";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-ts", COMPILATION_MODE);
         }
 
         &MODULE

@@ -24,7 +24,7 @@ pub async fn create_identity<S: ControlStateDelegate + NodeDelegate>(
     let auth = SpacetimeAuth::alloc(&ctx).await?;
 
     let identity_response = CreateIdentityResponse {
-        identity: auth.identity,
+        identity: auth.claims.identity,
         token: auth.creds.token().to_owned(),
     };
     Ok(axum::Json(identity_response))
@@ -103,7 +103,7 @@ pub async fn create_websocket_token<S: NodeDelegate>(
     SpacetimeAuthRequired(auth): SpacetimeAuthRequired,
 ) -> axum::response::Result<impl IntoResponse> {
     let expiry = Duration::from_secs(60);
-    let token = auth
+    let (_, token) = auth
         .re_sign_with_expiry(ctx.jwt_auth_provider(), expiry)
         .map_err(log_and_500)?;
     // let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(expiry)).map_err(log_and_500)?;
@@ -121,7 +121,7 @@ pub async fn validate_token(
 ) -> axum::response::Result<impl IntoResponse> {
     let identity = Identity::from(identity);
 
-    if auth.identity != identity {
+    if auth.claims.identity != identity {
         return Err(StatusCode::BAD_REQUEST.into());
     }
 

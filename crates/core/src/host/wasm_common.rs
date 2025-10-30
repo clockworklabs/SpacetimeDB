@@ -14,6 +14,8 @@ use spacetimedb_table::table::UniqueConstraintViolation;
 
 pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
 
+pub const CALL_PROCEDURE_DUNDER: &str = "__call_procedure__";
+
 pub const DESCRIBE_MODULE_DUNDER: &str = "__describe_module__";
 
 /// functions with this prefix run prior to __setup__, initializing global variables and the like
@@ -320,7 +322,7 @@ impl<I: ResourceIndex> ResourceSlab<I> {
 decl_index!(RowIterIdx => std::vec::IntoIter<Vec<u8>>);
 pub(super) type RowIters = ResourceSlab<RowIterIdx>;
 
-pub(super) struct TimingSpan {
+pub(crate) struct TimingSpan {
     pub start: Instant,
     pub name: String,
 }
@@ -337,6 +339,7 @@ impl TimingSpan {
 decl_index!(TimingSpanIdx => TimingSpan);
 pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 
+/// Converts a [`NodesError`] to an error code, if possible.
 pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
     match err {
         NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
@@ -362,6 +365,18 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
     }
 }
 
+/// Converts a [`NodesError`] to an error code and logs, if possible.
+pub fn err_to_errno_and_log<C: From<u16>>(func: AbiCall, err: NodesError) -> anyhow::Result<C> {
+    let Some(errno) = err_to_errno(&err) else {
+        return Err(AbiRuntimeError { func, err }.into());
+    };
+    log::debug!(
+        "abi call to {func} returned an errno: {errno} ({})",
+        errno::strerror(errno).unwrap_or("<unknown>")
+    );
+    Ok(errno.get().into())
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("runtime error calling {func}: {err}")]
 pub struct AbiRuntimeError {
@@ -371,8 +386,8 @@ pub struct AbiRuntimeError {
 }
 
 macro_rules! abi_funcs {
-    ($mac:ident) => {
-        $mac! {
+    ($link_sync:ident,  $link_async:ident) => {
+        $link_sync! {
             "spacetime_10.0"::table_id_from_name,
             "spacetime_10.0"::datastore_table_row_count,
             "spacetime_10.0"::datastore_table_scan_bsatn,
@@ -395,6 +410,14 @@ macro_rules! abi_funcs {
 
             // unstable:
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
+
+            "spacetime_10.1"::bytes_source_remaining_length,
+
+            "spacetime_10.2"::get_jwt,
+        }
+
+        $link_async! {
+            "spacetime_10.3"::procedure_sleep_until,
         }
     };
 }

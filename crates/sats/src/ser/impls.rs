@@ -1,4 +1,4 @@
-use super::{Serialize, SerializeArray, SerializeNamedProduct, SerializeSeqProduct, Serializer};
+use super::{Serialize, SerializeArray, SerializeSeqProduct, Serializer};
 use crate::{i256, u256};
 use crate::{AlgebraicType, AlgebraicValue, ArrayValue, ProductValue, SumValue, ValueWithType, F32, F64};
 use core::ops::Bound;
@@ -44,7 +44,36 @@ macro_rules! impl_prim {
     };
 }
 
-impl_serialize!([] (), (self, ser) => ser.serialize_seq_product(0)?.end());
+// All the tuple types:
+#[macro_export]
+macro_rules! count {
+    () => (0usize);
+    ( $x:tt $($xs:tt)* ) => (1usize + $crate::count!($($xs)*));
+}
+macro_rules! impl_serialize_tuple {
+    ($($ty_name:ident),*) => {
+        impl_serialize!([$($ty_name: Serialize),*] ($($ty_name,)*), (self, ser) => {
+            let mut _tup = ser.serialize_seq_product(count!($($ty_name)*))?;
+            #[allow(non_snake_case)]
+            let ($($ty_name,)*) = self;
+            $(_tup.serialize_element($ty_name)?;)*
+            _tup.end()
+        });
+    };
+}
+impl_serialize_tuple!();
+impl_serialize_tuple!(T0);
+impl_serialize_tuple!(T0, T1);
+impl_serialize_tuple!(T0, T1, T2);
+impl_serialize_tuple!(T0, T1, T2, T3);
+impl_serialize_tuple!(T0, T1, T2, T3, T4);
+impl_serialize_tuple!(T0, T1, T2, T3, T4, T5);
+impl_serialize_tuple!(T0, T1, T2, T3, T4, T5, T6);
+impl_serialize_tuple!(T0, T1, T2, T3, T4, T5, T6, T7);
+impl_serialize_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8);
+impl_serialize_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9);
+impl_serialize_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+impl_serialize_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
 
 // `u8` is implemented below as we wish to provide different `__serialize_array` impl (see below).
 impl_prim! {
@@ -190,19 +219,10 @@ impl_serialize!(
     }
 );
 impl_serialize!([] ValueWithType<'_, SumValue>, (self, ser) => {
-    let sv = self.value();
-    let (tag, val) = (sv.tag, &*sv.value);
-    let var_ty = &self.ty().variants[tag as usize]; // Extract the variant type by tag.
-    ser.serialize_variant(tag, var_ty.name(), &self.with(&var_ty.algebraic_type, val))
+   ser.serialize_variant_raw(self)
 });
 impl_serialize!([] ValueWithType<'_, ProductValue>, (self, ser) => {
-    let val = &self.value().elements;
-    assert_eq!(val.len(), self.ty().elements.len());
-    let mut prod = ser.serialize_named_product(val.len())?;
-    for (val, el_ty) in val.iter().zip(&*self.ty().elements) {
-        prod.serialize_element(el_ty.name(), &self.with(&el_ty.algebraic_type, val))?
-    }
-    prod.end()
+    ser.serialize_named_product_raw(self)
 });
 impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => {
     let mut ty = &*self.ty().elem_ty;
@@ -238,6 +258,7 @@ impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => {
 });
 
 impl_serialize!([] spacetimedb_primitives::TableId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::ViewId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::SequenceId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::IndexId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::ConstraintId, (self, ser) => ser.serialize_u32(self.0));

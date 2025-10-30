@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use spacetimedb_execution::{Datastore, DeltaStore, Row};
 use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{IndexId, TableId};
-use spacetimedb_table::{blob_store::BlobStore, table::Table};
+use spacetimedb_table::table::{IndexScanRangeIter, TableScanIter};
 
 use spacetimedb_datastore::{
     locking_tx_datastore::{state_view::StateView, TxId},
@@ -119,12 +119,31 @@ impl<'a> From<&'a TxId> for DeltaTx<'a> {
 }
 
 impl Datastore for DeltaTx<'_> {
-    fn table(&self, table_id: TableId) -> Option<&Table> {
-        self.tx.table(table_id)
+    type TableIter<'a>
+        = TableScanIter<'a>
+    where
+        Self: 'a;
+
+    type IndexIter<'a>
+        = IndexScanRangeIter<'a>
+    where
+        Self: 'a;
+
+    fn row_count(&self, table_id: TableId) -> u64 {
+        self.tx.row_count(table_id)
     }
 
-    fn blob_store(&self) -> &dyn BlobStore {
-        self.tx.blob_store()
+    fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {
+        self.tx.table_scan(table_id)
+    }
+
+    fn index_scan<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> anyhow::Result<Self::IndexIter<'a>> {
+        self.tx.index_scan(table_id, index_id, range)
     }
 }
 
@@ -133,8 +152,8 @@ impl DeltaStore for DeltaTx<'_> {
         self.data
             .and_then(|data| {
                 data.inserts()
-                    .find(|(id, _)| **id == table_id)
-                    .map(|(_, rows)| rows.len())
+                    .find(|(id, ..)| **id == table_id)
+                    .map(|(.., rows)| rows.len())
             })
             .unwrap_or_default()
     }
@@ -143,8 +162,8 @@ impl DeltaStore for DeltaTx<'_> {
         self.data
             .and_then(|data| {
                 data.deletes()
-                    .find(|(id, _)| **id == table_id)
-                    .map(|(_, rows)| rows.len())
+                    .find(|(id, ..)| **id == table_id)
+                    .map(|(.., rows)| rows.len())
             })
             .unwrap_or_default()
     }
@@ -152,16 +171,16 @@ impl DeltaStore for DeltaTx<'_> {
     fn inserts_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
         self.data.and_then(|data| {
             data.inserts()
-                .find(|(id, _)| **id == table_id)
-                .map(|(_, rows)| rows.iter())
+                .find(|(id, ..)| **id == table_id)
+                .map(|(.., rows)| rows.iter())
         })
     }
 
     fn deletes_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
         self.data.and_then(|data| {
             data.deletes()
-                .find(|(id, _)| **id == table_id)
-                .map(|(_, rows)| rows.iter())
+                .find(|(id, ..)| **id == table_id)
+                .map(|(.., rows)| rows.iter())
         })
     }
 
@@ -171,7 +190,7 @@ impl DeltaStore for DeltaTx<'_> {
         index_id: IndexId,
         delta: Delta,
         range: impl RangeBounds<AlgebraicValue>,
-    ) -> impl Iterator<Item = Row> {
+    ) -> impl Iterator<Item = Row<'_>> {
         fn scan_index<'a>(
             data: Option<&'a TxData>,
             indexes: &'a DeltaTableIndexes,
@@ -221,7 +240,7 @@ impl DeltaStore for DeltaTx<'_> {
         index_id: IndexId,
         delta: Delta,
         point: &AlgebraicValue,
-    ) -> impl Iterator<Item = Row> {
+    ) -> impl Iterator<Item = Row<'_>> {
         self.index_scan_range_for_delta(table_id, index_id, delta, point)
     }
 }

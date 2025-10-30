@@ -13,7 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Verify that upgrade-version still works
-        run: cd tools/upgrade-version && cargo run -- 123.456.789
+        run: cargo bump-versions 123.456.789 --rust-and-cli --csharp --typescript
       - name: Show diff
         run: git diff HEAD
 

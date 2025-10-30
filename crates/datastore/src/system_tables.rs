@@ -32,6 +32,7 @@ use spacetimedb_schema::schema::{
 };
 use spacetimedb_table::table::RowRef;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::str::FromStr;
 use strum::Display;
 use v9::{RawModuleDefV9Builder, TableType};
@@ -60,6 +61,18 @@ pub const ST_SCHEDULED_ID: TableId = TableId(9);
 
 /// The static ID of the table that defines the row level security (RLS) policies
 pub const ST_ROW_LEVEL_SECURITY_ID: TableId = TableId(10);
+
+/// The static ID of the table that stores the credentials for each connection.
+pub const ST_CONNECTION_CREDENTIALS_ID: TableId = TableId(11);
+
+/// The static ID of the table that tracks views
+pub const ST_VIEW_ID: TableId = TableId(12);
+/// The static ID of the table that tracks view parameters
+pub const ST_VIEW_PARAM_ID: TableId = TableId(13);
+/// The static ID of the table that tracks view columns
+pub const ST_VIEW_COLUMN_ID: TableId = TableId(14);
+
+pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
 pub const ST_COLUMN_NAME: &str = "st_column";
 pub const ST_SEQUENCE_NAME: &str = "st_sequence";
@@ -70,9 +83,13 @@ pub(crate) const ST_CLIENT_NAME: &str = "st_client";
 pub(crate) const ST_SCHEDULED_NAME: &str = "st_scheduled";
 pub(crate) const ST_VAR_NAME: &str = "st_var";
 pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
+pub(crate) const ST_VIEW_NAME: &str = "st_view";
+pub(crate) const ST_VIEW_PARAM_NAME: &str = "st_view_param";
+pub(crate) const ST_VIEW_COLUMN_NAME: &str = "st_view_column";
 /// Reserved range of sequence values used for system tables.
 ///
-/// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE + 1`.
+/// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE`.
+/// Versions before 1.4 started at one more that number.
 ///
 /// The range applies to all sequences allocated by system tables, i.e. table-,
 /// sequence-, index-, and constraint-ids.
@@ -90,6 +107,7 @@ pub const ST_RESERVED_SEQUENCE_RANGE: u32 = 4096;
 #[derive(Debug, Display)]
 pub enum SystemTable {
     st_table,
+    st_view,
     st_column,
     st_sequence,
     st_index,
@@ -97,7 +115,7 @@ pub enum SystemTable {
     st_row_level_security,
 }
 
-pub fn system_tables() -> [TableSchema; 10] {
+pub fn system_tables() -> [TableSchema; 14] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -109,9 +127,11 @@ pub fn system_tables() -> [TableSchema; 10] {
         st_var_schema(),
         st_scheduled_schema(),
         st_row_level_security_schema(),
-        // Is important this is always last, so the starting sequence for each
-        // system table is correct.
         st_sequence_schema(),
+        st_connection_credential_schema(),
+        st_view_schema(),
+        st_view_param_schema(),
+        st_view_column_schema(),
     ]
 }
 
@@ -149,8 +169,11 @@ pub(crate) const ST_CLIENT_IDX: usize = 5;
 pub(crate) const ST_VAR_IDX: usize = 6;
 pub(crate) const ST_SCHEDULED_IDX: usize = 7;
 pub(crate) const ST_ROW_LEVEL_SECURITY_IDX: usize = 8;
-// Must be the last index in the array.
 pub(crate) const ST_SEQUENCE_IDX: usize = 9;
+pub(crate) const ST_CONNECTION_CREDENTIALS_IDX: usize = 10;
+pub(crate) const ST_VIEW_IDX: usize = 11;
+pub(crate) const ST_VIEW_PARAM_IDX: usize = 12;
+pub(crate) const ST_VIEW_COLUMN_IDX: usize = 13;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -195,11 +218,33 @@ st_fields_enum!(enum StTableFields {
     "table_primary_key", PrimaryKey = 4,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum StViewFields {
+    "view_id", ViewId = 0,
+    "view_name", ViewName = 1,
+    "table_id", TableId = 2,
+    "is_public", IsPublic = 3,
+    "is_anonymous", IsAnonymous = 4,
+});
+// WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StColumnFields {
     "table_id", TableId = 0,
     "col_pos", ColPos = 1,
     "col_name", ColName = 2,
     "col_type", ColType = 3,
+});
+// WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum StViewColumnFields {
+    "view_id", ViewId = 0,
+    "col_pos", ColPos = 1,
+    "col_name", ColName = 2,
+    "col_type", ColType = 3,
+});
+// WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum StViewParamFields {
+    "view_id", ViewId = 0,
+    "param_pos", ParamPos = 1,
+    "param_name", ParamName = 2,
+    "param_type", ParamType = 3,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StIndexFields {
@@ -248,6 +293,13 @@ st_fields_enum!(enum StClientFields {
     "identity", Identity = 0,
     "connection_id", ConnectionId = 1,
 });
+
+// WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum StConnectionCredentialsFields {
+    "connection_id", ConnectionId = 0,
+    "jwt_payload", JwtPayload = 1,
+});
+
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StVarFields {
     "name", Name = 0,
@@ -291,6 +343,15 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(StTableFields::TableName)
         .with_index_no_accessor_name(btree(StTableFields::TableName));
 
+    let st_view_type = builder.add_type::<StViewRow>();
+    builder
+        .build_table(ST_VIEW_NAME, *st_view_type.as_ref().expect("should be ref"))
+        .with_type(TableType::System)
+        .with_auto_inc_primary_key(StViewFields::ViewId)
+        .with_index_no_accessor_name(btree(StViewFields::ViewId))
+        .with_unique_constraint(StViewFields::ViewName)
+        .with_index_no_accessor_name(btree(StViewFields::ViewName));
+
     let st_raw_column_type = builder.add_type::<StColumnRow>();
     let st_col_row_unique_cols = [StColumnFields::TableId.col_id(), StColumnFields::ColPos.col_id()];
     builder
@@ -298,6 +359,22 @@ fn system_module_def() -> ModuleDef {
         .with_type(TableType::System)
         .with_unique_constraint(st_col_row_unique_cols)
         .with_index_no_accessor_name(btree(st_col_row_unique_cols));
+
+    let st_view_col_type = builder.add_type::<StViewColumnRow>();
+    let st_view_col_unique_cols = [StViewColumnFields::ViewId.col_id(), StViewColumnFields::ColPos.col_id()];
+    builder
+        .build_table(ST_VIEW_COLUMN_NAME, *st_view_col_type.as_ref().expect("should be ref"))
+        .with_type(TableType::System)
+        .with_unique_constraint(st_view_col_unique_cols)
+        .with_index_no_accessor_name(btree(st_view_col_unique_cols));
+
+    let st_view_param_type = builder.add_type::<StViewParamRow>();
+    let st_view_param_unique_cols = [StViewParamFields::ViewId.col_id(), StViewParamFields::ParamPos.col_id()];
+    builder
+        .build_table(ST_VIEW_PARAM_NAME, *st_view_param_type.as_ref().expect("should be ref"))
+        .with_type(TableType::System)
+        .with_unique_constraint(st_view_param_unique_cols)
+        .with_index_no_accessor_name(btree(st_view_param_unique_cols));
 
     let st_index_type = builder.add_type::<StIndexRow>();
     builder
@@ -341,6 +418,18 @@ fn system_module_def() -> ModuleDef {
         .with_type(TableType::System);
     // TODO: add empty unique constraint here, once we've implemented those.
 
+    let st_connection_credentials_type = builder.add_type::<StConnectionCredentialsRow>();
+    builder
+        .build_table(
+            ST_CONNECTION_CREDENTIALS_NAME,
+            *st_connection_credentials_type.as_ref().expect("should be ref"),
+        )
+        .with_type(TableType::System)
+        .with_unique_constraint(StConnectionCredentialsFields::ConnectionId)
+        .with_index_no_accessor_name(btree(StConnectionCredentialsFields::ConnectionId))
+        .with_access(v9::TableAccess::Private)
+        .with_primary_key(StConnectionCredentialsFields::ConnectionId);
+
     let st_client_type = builder.add_type::<StClientRow>();
     let st_client_unique_cols = [StClientFields::Identity, StClientFields::ConnectionId];
     builder
@@ -382,6 +471,10 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StClientFields>(&result, ST_CLIENT_NAME);
     validate_system_table::<StVarFields>(&result, ST_VAR_NAME);
     validate_system_table::<StScheduledFields>(&result, ST_SCHEDULED_NAME);
+    validate_system_table::<StConnectionCredentialsFields>(&result, ST_CONNECTION_CREDENTIALS_NAME);
+    validate_system_table::<StViewFields>(&result, ST_VIEW_NAME);
+    validate_system_table::<StViewParamFields>(&result, ST_VIEW_PARAM_NAME);
+    validate_system_table::<StViewColumnFields>(&result, ST_VIEW_COLUMN_NAME);
 
     result
 }
@@ -400,13 +493,121 @@ lazy_static::lazy_static! {
     static ref SYSTEM_MODULE_DEF: ModuleDef = system_module_def();
 }
 
+lazy_static::lazy_static! {
+// We enumerate the constraints used by system tables here, so that we can assign them stable IDs.
+// When adding a new index, we just need to make sure we are incrementing the last ID used.
+    pub static ref CONSTRAINT_IDS: HashMap<&'static str, ConstraintId> = {
+        let mut m = HashMap::new();
+        m.insert("st_table_table_id_key", ConstraintId(1));
+        m.insert("st_table_table_name_key", ConstraintId(2));
+        m.insert("st_column_table_id_col_pos_key", ConstraintId(3));
+        m.insert("st_sequence_sequence_id_key", ConstraintId(4));
+        m.insert("st_index_index_id_key", ConstraintId(5));
+        m.insert("st_constraint_constraint_id_key", ConstraintId(6));
+        m.insert("st_client_identity_connection_id_key", ConstraintId(7));
+        m.insert("st_var_name_key", ConstraintId(8));
+        m.insert("st_scheduled_schedule_id_key", ConstraintId(9));
+        m.insert("st_scheduled_table_id_key", ConstraintId(10));
+        m.insert("st_row_level_security_sql_key", ConstraintId(11));
+        m.insert("st_connection_credentials_connection_id_key", ConstraintId(12));
+        m.insert("st_view_view_id_key", ConstraintId(13));
+        m.insert("st_view_view_name_key", ConstraintId(14));
+        m.insert("st_view_param_view_id_param_pos_key", ConstraintId(15));
+        m.insert("st_view_column_view_id_col_pos_key", ConstraintId(16));
+        m
+    };
+}
+
+lazy_static::lazy_static! {
+// We enumerate the indexes used by system tables here, so that we can assign them stable IDs.
+// When adding a new index, we just need to make sure we are incrementing the last ID used.
+    pub static ref INDEX_IDS: HashMap<&'static str, IndexId> = {
+        let mut m = HashMap::new();
+        m.insert("st_table_table_id_idx_btree", IndexId(1));
+        m.insert("st_table_table_name_idx_btree", IndexId(2));
+        m.insert("st_column_table_id_col_pos_idx_btree", IndexId(3));
+        m.insert("st_sequence_sequence_id_idx_btree", IndexId(4));
+        m.insert("st_index_index_id_idx_btree", IndexId(5));
+        m.insert("st_constraint_constraint_id_idx_btree", IndexId(6));
+        m.insert("st_client_identity_connection_id_idx_btree", IndexId(7));
+        m.insert("st_var_name_idx_btree", IndexId(8));
+        m.insert("st_scheduled_schedule_id_idx_btree", IndexId(9));
+        m.insert("st_scheduled_table_id_idx_btree", IndexId(10));
+        m.insert("st_row_level_security_table_id_idx_btree", IndexId(11));
+        m.insert("st_row_level_security_sql_idx_btree", IndexId(12));
+        m.insert("st_connection_credentials_connection_id_idx_btree", IndexId(13));
+        m.insert("st_view_view_id_idx_btree", IndexId(14));
+        m.insert("st_view_view_name_idx_btree", IndexId(15));
+        m.insert("st_view_param_view_id_param_pos_idx_btree", IndexId(16));
+        m.insert("st_view_column_view_id_col_pos_idx_btree", IndexId(17));
+        m
+    };
+}
+
+// We enumerate of the sequences used by system tables here, so that we can assign them stable IDs.
+// When adding a new sequence, we just need to make sure we are incrementing the last ID used.
+lazy_static::lazy_static! {
+    pub static ref SEQUENCE_IDS: HashMap<&'static str, SequenceId> = {
+        let mut m = HashMap::new();
+        m.insert("st_table_table_id_seq", SequenceId(1));
+        m.insert("st_index_index_id_seq", SequenceId(2));
+        m.insert("st_constraint_constraint_id_seq", SequenceId(3));
+        m.insert("st_scheduled_schedule_id_seq", SequenceId(4));
+        m.insert("st_sequence_sequence_id_seq", SequenceId(5));
+        m.insert("st_view_view_id_seq", SequenceId(6));
+        m
+    };
+}
+
 fn st_schema(name: &str, id: TableId) -> TableSchema {
-    let result = TableSchema::from_module_def(
+    let mut result = TableSchema::from_module_def(
         &SYSTEM_MODULE_DEF,
         SYSTEM_MODULE_DEF.table(name).expect("missing system table definition"),
         (),
         id,
     );
+    // The result we get will have sentinel ids filled in the constraints, indexes, and sequences.
+    // We replace them here with stable values in the reserved range.
+    for index in &mut result.indexes {
+        index.index_id = INDEX_IDS.get(&index.index_name[..]).copied().unwrap_or_else(|| {
+            panic!(
+                "missing system table index id for index {} of table {}",
+                index.index_name, result.table_name
+            )
+        });
+    }
+    for constraint in &mut result.constraints {
+        constraint.constraint_id = CONSTRAINT_IDS
+            .get(&constraint.constraint_name[..])
+            .copied()
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing system table constraint id for constraint {} of table {}",
+                    constraint.constraint_name, result.table_name
+                )
+            });
+    }
+    for sequence in &mut result.sequences {
+        sequence.sequence_id = SEQUENCE_IDS
+            .get(&sequence.sequence_name[..])
+            .copied()
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing system table sequence id for sequence {} of table {}",
+                    sequence.sequence_name, result.table_name
+                )
+            });
+        sequence.start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
+        // sequence.allocated = ST_RESERVED_SEQUENCE_RANGE as i128;
+    }
+    if let Some(sch) = result.schedule {
+        panic!(
+            "system tables cannot have schedules, but table {}: {sch:?}",
+            result.table_name
+        );
+    }
+    result.normalize();
+    // Note, if we ever added system tables with schedules, we would need to set their IDs here too.
     result
 }
 
@@ -442,12 +643,28 @@ fn st_client_schema() -> TableSchema {
     st_schema(ST_CLIENT_NAME, ST_CLIENT_ID)
 }
 
+fn st_connection_credential_schema() -> TableSchema {
+    st_schema(ST_CONNECTION_CREDENTIALS_NAME, ST_CONNECTION_CREDENTIALS_ID)
+}
+
 fn st_scheduled_schema() -> TableSchema {
     st_schema(ST_SCHEDULED_NAME, ST_SCHEDULED_ID)
 }
 
 pub fn st_var_schema() -> TableSchema {
     st_schema(ST_VAR_NAME, ST_VAR_ID)
+}
+
+pub fn st_view_schema() -> TableSchema {
+    st_schema(ST_VIEW_NAME, ST_VIEW_ID)
+}
+
+pub fn st_view_param_schema() -> TableSchema {
+    st_schema(ST_VIEW_PARAM_NAME, ST_VIEW_PARAM_ID)
+}
+
+pub fn st_view_column_schema() -> TableSchema {
+    st_schema(ST_VIEW_COLUMN_NAME, ST_VIEW_COLUMN_ID)
 }
 
 /// If `table_id` refers to a known system table, return its schema.
@@ -466,8 +683,12 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_ROW_LEVEL_SECURITY_ID => Some(st_row_level_security_schema()),
         ST_MODULE_ID => Some(st_module_schema()),
         ST_CLIENT_ID => Some(st_client_schema()),
+        ST_CONNECTION_CREDENTIALS_ID => Some(st_connection_credential_schema()),
         ST_VAR_ID => Some(st_var_schema()),
         ST_SCHEDULED_ID => Some(st_scheduled_schema()),
+        ST_VIEW_ID => Some(st_view_schema()),
+        ST_VIEW_PARAM_ID => Some(st_view_param_schema()),
+        ST_VIEW_COLUMN_ID => Some(st_view_column_schema()),
         _ => None,
     }
 }
@@ -500,6 +721,39 @@ impl TryFrom<RowRef<'_>> for StTableRow {
 impl From<StTableRow> for ProductValue {
     fn from(x: StTableRow) -> Self {
         to_product_value(&x)
+    }
+}
+
+/// System Table [ST_VIEW_NAME]
+///
+/// | view_id | view_name | table_id | is_public | is_anonymous |
+/// |---------|-----------|----------|-----------|--------------|
+/// | 1       | "player"  | 4        | true      | true         |
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StViewRow {
+    /// An auto-inc id for each view
+    pub view_id: ViewId,
+    /// The name of the view function as defined in the module
+    pub view_name: Box<str>,
+    /// The [`TableId`] for this view if materialized.
+    /// Currently all views are materialized and therefore are assigned a [`TableId`] by default.
+    pub table_id: Option<TableId>,
+    /// Is this a public or a private view?
+    /// Currently only public views are supported.
+    /// Private views may be supported in the future.
+    pub is_public: bool,
+    /// Is this view anonymous?
+    /// An anonymous view does not know who called it.
+    /// Specifically, it is a view that has an `AnonymousViewContext` as its first argument.
+    /// This type does not have access to the [`Identity`] of the caller.
+    pub is_anonymous: bool,
+}
+
+impl TryFrom<RowRef<'_>> for StViewRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
     }
 }
 
@@ -577,6 +831,36 @@ impl From<ColumnSchema> for StColumnRow {
             col_type: column.col_type.into(),
         }
     }
+}
+
+/// System Table [ST_VIEW_COLUMN_NAME]
+///
+/// | view_id | col_pos | col_name | col_type           |
+/// |---------|---------|----------|--------------------|
+/// | 1       | 0       | "x"      | AlgebraicType::U32 |
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StViewColumnRow {
+    /// A foreign key referencing [`ST_VIEW_NAME`].
+    pub view_id: ViewId,
+    pub col_pos: ColId,
+    pub col_name: Box<str>,
+    pub col_type: AlgebraicTypeViaBytes,
+}
+
+/// System Table [ST_VIEW_PARAM_NAME]
+///
+/// | view_id | param_pos | param_name | param_type            |
+/// |---------|-----------|------------|-----------------------|
+/// | 1       | 0         | "y"        | AlgebraicType::U32    |
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StViewParamRow {
+    /// A foreign key referencing [`ST_VIEW_NAME`].
+    pub view_id: ViewId,
+    pub param_pos: ColId,
+    pub param_name: Box<str>,
+    pub param_type: AlgebraicTypeViaBytes,
 }
 
 /// System Table [ST_INDEX_NAME]
@@ -681,9 +965,13 @@ pub struct StSequenceRow {
     pub table_id: TableId,
     pub col_pos: ColId,
     pub increment: i128,
+    // The original starting value of this sequence.
+    // This is actually not useful, since allocated tells us where to start generating new values.
     pub start: i128,
     pub min_value: i128,
     pub max_value: i128,
+    // Allocated is a lower bound on the next value of the sequence.
+    // This exists so that we don't need to update this row every time we allocate a value from the sequence.
     pub allocated: i128,
 }
 
@@ -711,7 +999,6 @@ impl From<StSequenceRow> for SequenceSchema {
             increment: sequence.increment,
             min_value: sequence.min_value,
             max_value: sequence.max_value,
-            allocated: sequence.allocated,
         }
     }
 }
@@ -847,6 +1134,12 @@ impl From<ConnectionId> for ConnectionIdViaU128 {
     }
 }
 
+impl From<ConnectionIdViaU128> for AlgebraicValue {
+    fn from(val: ConnectionIdViaU128) -> Self {
+        AlgebraicValue::U128(val.0.to_u128().into())
+    }
+}
+
 /// A wrapper for [`Identity`] that acts like [`AlgebraicType::U256`] for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IdentityViaU256(pub Identity);
@@ -938,6 +1231,18 @@ pub struct StClientRow {
     pub connection_id: ConnectionIdViaU128,
 }
 
+/// System table [ST_CONNECTION_CREDENTIALS_NAME]
+///
+/// | connection_id                      | jwt_payload                                             |
+/// |------------------------------------|---------------------------------------------------------|
+/// | 0x6bdea3ab517f5857dc9b1b5fe99e1b14 | '{"iss":"issuer","sub":"user-id","iat":1629212345,...}' |
+#[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StConnectionCredentialsRow {
+    pub connection_id: ConnectionIdViaU128,
+    pub jwt_payload: String,
+}
+
 impl From<StClientRow> for ProductValue {
     fn from(var: StClientRow) -> Self {
         to_product_value(&var)
@@ -1025,7 +1330,7 @@ impl FromStr for StVarName {
             ST_VARNAME_SLOW_QRY => Ok(StVarName::SlowQryThreshold),
             ST_VARNAME_SLOW_SUB => Ok(StVarName::SlowSubThreshold),
             ST_VARNAME_SLOW_INC => Ok(StVarName::SlowIncThreshold),
-            _ => Err(anyhow::anyhow!("Invalid system variable {}", s)),
+            _ => Err(anyhow::anyhow!("Invalid system variable {s}")),
         }
     }
 }
@@ -1081,6 +1386,11 @@ impl TryFrom<RowRef<'_>> for StVarRow {
 pub struct StScheduledRow {
     pub(crate) schedule_id: ScheduleId,
     pub(crate) table_id: TableId,
+    /// The name of the reducer or procedure which will run when this table's rows reach their execution time.
+    ///
+    /// Note that, despite the column name, this may refer to either a reducer or a procedure.
+    /// We cannot change the schema of existing system tables,
+    /// so we are unable to rename this column.
     pub(crate) reducer_name: Box<str>,
     pub(crate) schedule_name: Box<str>,
     pub(crate) at_column: ColId,
@@ -1103,7 +1413,7 @@ impl From<StScheduledRow> for ScheduleSchema {
     fn from(row: StScheduledRow) -> Self {
         Self {
             table_id: row.table_id,
-            reducer_name: row.reducer_name,
+            function_name: row.reducer_name,
             schedule_id: row.schedule_id,
             schedule_name: row.schedule_name,
             at_column: row.at_column,
@@ -1144,6 +1454,111 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_index_ids_are_unique() {
+        let mut ids = std::collections::HashSet::new();
+        for table in system_tables() {
+            for index in table.indexes.iter() {
+                assert!(
+                    ids.insert(index.index_id),
+                    "duplicate index id {:?} for index {}",
+                    index.index_id,
+                    index.index_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_index_ids_are_valid() {
+        for table in system_tables() {
+            for index in table.indexes.iter() {
+                assert!(
+                    index.index_id.0 < ST_RESERVED_SEQUENCE_RANGE,
+                    "index id {:?} for index {} is too large for reserved range",
+                    index.index_id,
+                    index.index_name
+                );
+                assert_ne!(
+                    index.index_id,
+                    IndexId::SENTINEL,
+                    "index {} has the sentinel id",
+                    index.index_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_constraint_ids_are_valid() {
+        for table in system_tables() {
+            for constraint in table.constraints.iter() {
+                assert!(
+                    constraint.constraint_id.0 < ST_RESERVED_SEQUENCE_RANGE,
+                    "id {:?} for constraint {} is too large for reserved range",
+                    constraint.constraint_id,
+                    constraint.constraint_name
+                );
+                assert_ne!(
+                    constraint.constraint_id,
+                    ConstraintId::SENTINEL,
+                    "constraint {} has the sentinel id",
+                    constraint.constraint_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_constraint_ids_are_unique() {
+        let mut ids = std::collections::HashSet::new();
+        for table in system_tables() {
+            for constraint in table.constraints.iter() {
+                assert!(
+                    ids.insert(constraint.constraint_id),
+                    "duplicate id {:?} for constraint {}",
+                    constraint.constraint_id,
+                    constraint.constraint_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_sequence_ids_are_valid() {
+        for table in system_tables() {
+            for sequence in table.sequences.iter() {
+                assert!(
+                    sequence.sequence_id.0 < ST_RESERVED_SEQUENCE_RANGE,
+                    "id {:?} for sequence {} is too large for reserved range",
+                    sequence.sequence_id,
+                    sequence.sequence_name
+                );
+                assert_ne!(
+                    sequence.sequence_id,
+                    SequenceId::SENTINEL,
+                    "sequence {} has the sentinel id",
+                    sequence.sequence_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_sequence_ids_are_unique() {
+        let mut ids = std::collections::HashSet::new();
+        for table in system_tables() {
+            for sequence in table.sequences.iter() {
+                assert!(
+                    ids.insert(sequence.sequence_id),
+                    "duplicate id {:?} for sequence {}",
+                    sequence.sequence_id,
+                    sequence.sequence_name
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_sequences_within_reserved_range() {
         let mut num_tables = 0;
         let mut num_indexes = 0;
@@ -1158,19 +1573,19 @@ mod tests {
         }
 
         assert!(
-            num_tables <= ST_RESERVED_SEQUENCE_RANGE,
+            num_tables < ST_RESERVED_SEQUENCE_RANGE,
             "number of system tables exceeds reserved sequence range"
         );
         assert!(
-            num_indexes <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            num_indexes < ST_RESERVED_SEQUENCE_RANGE as usize,
             "number of system indexes exceeds reserved sequence range"
         );
         assert!(
-            num_constraints <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            num_constraints < ST_RESERVED_SEQUENCE_RANGE as usize,
             "number of system constraints exceeds reserved sequence range"
         );
         assert!(
-            num_sequences <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            num_sequences < ST_RESERVED_SEQUENCE_RANGE as usize,
             "number of system sequences exceeds reserved sequence range"
         );
     }

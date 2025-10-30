@@ -5,16 +5,19 @@ use log::info;
 use pretty_assertions::assert_matches;
 use rand::seq::IndexedRandom as _;
 use spacetimedb::{
-    db::relational_db::{
-        tests_utils::{TempReplicaDir, TestDB},
-        SNAPSHOT_FREQUENCY,
+    db::{
+        relational_db::{
+            tests_utils::{TempReplicaDir, TestDB},
+            Persistence, SNAPSHOT_FREQUENCY,
+        },
+        snapshot::{self, SnapshotWorker},
     },
     error::DBError,
     Identity,
 };
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::datastore::Locking;
-use spacetimedb_durability::{EmptyHistory, TxOffset};
+use spacetimedb_durability::{EmptyHistory, NoDurability, TxOffset};
 use spacetimedb_fs_utils::dir_trie::DirTrie;
 use spacetimedb_lib::{
     bsatn,
@@ -227,9 +230,17 @@ impl SourceSnapshot {
 
 async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffset> {
     let start = Instant::now();
-    let mut watch = spawn_blocking(|| {
+    // NOTE: `_db` needs to stay alive until the snapshot is taken,
+    // because the snapshot worker holds only a weak reference.
+    let (mut watch, _db) = spawn_blocking(|| {
         let tmp = TempReplicaDir::new()?;
-        let db = TestDB::open_db(&tmp, EmptyHistory::new(), None, Some(repo), None, 0)?;
+
+        let persistence = Persistence {
+            durability: Arc::new(NoDurability::default()),
+            disk_size: Arc::new(|| Ok(0)),
+            snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled)),
+        };
+        let db = TestDB::open_db(&tmp, EmptyHistory::new(), Some(persistence), None, 0)?;
         let watch = db.subscribe_to_snapshots().unwrap();
 
         let table_id = db.with_auto_commit(Workload::Internal, |tx| {
@@ -245,13 +256,13 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
             })?;
         }
 
-        Ok::<_, DBError>(watch)
+        Ok::<_, DBError>((watch, db))
     })
     .await
     .unwrap()?;
 
-    let mut snapshot_offset = 0;
-    while watch.changed().await.is_ok() {
+    let mut snapshot_offset = *watch.borrow();
+    while snapshot_offset < SNAPSHOT_FREQUENCY && watch.changed().await.is_ok() {
         snapshot_offset = *watch.borrow_and_update();
     }
     assert!(snapshot_offset >= SNAPSHOT_FREQUENCY);
@@ -263,7 +274,11 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     Ok(snapshot_offset)
 }
 
-fn table(name: &str, columns: ProductType, f: impl FnOnce(RawTableDefBuilder) -> RawTableDefBuilder) -> TableSchema {
+fn table(
+    name: &str,
+    columns: ProductType,
+    f: impl FnOnce(RawTableDefBuilder<'_>) -> RawTableDefBuilder,
+) -> TableSchema {
     let mut builder = RawModuleDefV9Builder::new();
     f(builder.build_table_with_new_type(name, columns, true));
     let raw = builder.finish();

@@ -106,6 +106,27 @@ pub enum PublishResult {
     PermissionDenied { name: DatabaseName },
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Default)]
+pub enum MigrationPolicy {
+    #[default]
+    Compatible,
+    BreakClients,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Default)]
+pub enum PrettyPrintStyle {
+    #[default]
+    AnsiColor,
+    NoColor,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct PrePublishResult {
+    pub migrate_plan: Box<str>,
+    pub break_clients: bool,
+    pub token: spacetimedb_lib::Hash,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum DnsLookupResponse {
     /// The lookup was successful and the domain and identity are returned.
@@ -150,7 +171,7 @@ pub enum SetDefaultDomainResult {
 ///
 /// Must match the regex `^[a-z0-9]+(-[a-z0-9]+)*$`
 #[derive(Clone, Debug, serde_with::DeserializeFromStr, serde_with::SerializeDisplay)]
-pub struct DatabaseName(String);
+pub struct DatabaseName(pub String);
 
 impl AsRef<str> for DatabaseName {
     fn as_ref(&self) -> &str {
