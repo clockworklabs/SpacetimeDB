@@ -623,44 +623,34 @@ impl TableSchema {
 
         let ViewDef {
             name,
-            is_anonymous,
             is_public,
-            params: _,
-            params_for_generate: _,
-            return_type: _,
-            return_type_for_generate: _,
             return_columns,
-            param_columns: _,
+            ..
         } = view_def;
 
-        let num_cols = return_columns.len();
-        let n = num_cols + 1 + if *is_anonymous { 0 } else { 1 };
+        let n = return_columns.len() + 2;
         let mut columns = Vec::with_capacity(n);
-
-        if !is_anonymous {
-            columns.push(ColumnSchema {
-                table_id: TableId::SENTINEL,
-                col_pos: ColId(0),
-                col_name: "sender".into(),
-                col_type: AlgebraicType::identity(),
-            });
-        }
 
         columns.push(ColumnSchema {
             table_id: TableId::SENTINEL,
-            col_pos: ColId((if *is_anonymous { 0 } else { 1 })),
+            col_pos: ColId(0),
+            col_name: "sender".into(),
+            col_type: AlgebraicType::option(AlgebraicType::identity()),
+        });
+
+        columns.push(ColumnSchema {
+            table_id: TableId::SENTINEL,
+            col_pos: ColId(1),
             col_name: "arg_id".into(),
             col_type: AlgebraicType::U64,
         });
-
-        let n = columns.len();
 
         columns.extend(
             return_columns
                 .iter()
                 .map(|def| ColumnSchema::from_view_column_def(module_def, def))
                 .enumerate()
-                .map(|(i, schema)| (ColId::from(n + i), schema))
+                .map(|(i, schema)| (ColId::from(i + 2), schema))
                 .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema }),
         );
 
