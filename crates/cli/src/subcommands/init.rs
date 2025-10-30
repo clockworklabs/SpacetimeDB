@@ -481,7 +481,7 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
 
     template_config.use_local = use_local;
 
-    ensure_empty_directory(&template_config.project_name, &template_config.project_path)?;
+    ensure_empty_directory(&template_config.project_name, &template_config.project_path, is_server_only)?;
     init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
 
     if template_config.server_lang == Some(ServerLanguage::TypeScript)
@@ -555,7 +555,7 @@ async fn get_template_config_non_interactive(
     })
 }
 
-pub fn ensure_empty_directory(_project_name: &str, project_path: &Path) -> anyhow::Result<()> {
+pub fn ensure_empty_directory(_project_name: &str, project_path: &Path, is_server_only: bool) -> anyhow::Result<()> {
     if project_path.exists() {
         if !project_path.is_dir() {
             anyhow::bail!(
@@ -565,10 +565,20 @@ pub fn ensure_empty_directory(_project_name: &str, project_path: &Path) -> anyho
         }
 
         if std::fs::read_dir(project_path).unwrap().count() > 0 {
-            anyhow::bail!(
-                "Cannot create new SpacetimeDB project in non-empty directory: {}",
-                project_path.display()
-            );
+            if is_server_only {
+                let server_dir = project_path.join("spacetimedb");
+                if server_dir.exists() && std::fs::read_dir(server_dir).unwrap().count() > 0 {
+                    anyhow::bail!(
+                        "A SpacetimeDB module already exists in the target directory: {}",
+                        project_path.display()
+                    );
+                }
+            } else {
+                anyhow::bail!(
+                    "Cannot create new SpacetimeDB project in non-empty directory: {}",
+                    project_path.display()
+                );
+            }
         }
     } else {
         fs::create_dir_all(project_path).context("Failed to create directory")?;
@@ -826,7 +836,17 @@ fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn to_patch_wildcard(ver: &str) -> String {
+    let mut parts: Vec<&str> = ver.split('.').collect();
+    if parts.len() >= 3 {
+        parts[2] = "*";
+    }
+    parts.join(".")
+}
+
 fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> {
+    let version = env!("CARGO_PKG_VERSION");
+    let patch_wildcard = to_patch_wildcard(version);
     let cargo_path = dir.join("Cargo.toml");
     if !cargo_path.exists() {
         return Ok(());
@@ -862,6 +882,8 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
                                 if let Some(version) = embedded::get_workspace_dependency_version(&key) {
                                     set_dependency_version(dep_item, version, true);
                                 }
+                            } else if key == "spacetimedb-sdk" {
+                                set_dependency_version(dep_item, patch_wildcard.as_str(), true);
                             }
                             continue;
                         }

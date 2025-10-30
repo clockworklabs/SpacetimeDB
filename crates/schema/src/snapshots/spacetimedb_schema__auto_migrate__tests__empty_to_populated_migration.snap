@@ -51,5 +51,13 @@ expression: "plan.pretty_print(PrettyPrintStyle::AnsiColor).expect(\"should pret
     [0m[1m[34mAuto-increment constraints:[0m
         • Inspections_scheduled_id_seq on scheduled_id
 
+▸ ▸ [0m[1m[32mCreated[0m anonymous view: [0m[1m[36mmy_view[0m
+    [0m[1m[34mParameters:[0m
+        • x: [0m[35mU32[0m
+        • y: [0m[35mU32[0m
+    [0m[1m[34mColumns:[0m
+        • a: [0m[35mU64[0m
+        • b: [0m[35mU64[0m
+
 ▸ [0m[1m[32mCreated[0m row level security policy:
     `[0m[34mSELECT * FROM Apples[0m`

@@ -43,7 +43,7 @@ Inside the `spacetimedb/` directory will be a `src/index.ts` entrypoint (require
 From the `spacetimedb/` directory you can lint/typecheck locally if you like, but to make the module live you’ll publish it to a database:
 
 ```bash
-cd spacetimedb
+cd quickstart-chat
 spacetime publish --project-path spacetimedb quickstart-chat
 ```
 
