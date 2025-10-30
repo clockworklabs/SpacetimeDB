@@ -28,6 +28,51 @@ export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
   TableDef['columns']
 >;
 
+type ColumnNames<TableDef extends UntypedTableDef> =
+  keyof RowType<TableDef> & string;
+
+/**
+ * Describes how a single column is referenced in a row expression. Carries the
+ * column name, table name, and value type so callers can keep all metadata
+ * together when building query DSLs.
+ */
+export type ColumnExpr<
+  TableDef extends UntypedTableDef,
+  ColumnName extends ColumnNames<TableDef>,
+> = {
+  type: 'column';
+  column: ColumnName;
+  table: TableDef['name'];
+  valueType: RowType<TableDef>[ColumnName];
+};
+
+/**
+ * A typed projection of all columns in the table where every column is mapped
+ * to a {@link ColumnExpr}.
+ */
+export type RowExpr<TableDef extends UntypedTableDef> = {
+  /** Refers to a column in the table */
+  readonly [C in ColumnNames<TableDef>]: ColumnExpr<TableDef, C>;
+};
+
+/**
+ * Extracts a narrower row type containing only the columns whose inferred value
+ * type matches `Value`.
+ */
+export type RowTypeWithValue<
+  TableDef extends UntypedTableDef,
+  Value,
+> = Pick<
+  RowType<TableDef>,
+  {
+    [K in keyof RowType<TableDef> & string]: RowType<TableDef>[K] extends Value
+      ? Value extends RowType<TableDef>[K]
+        ? K
+        : never
+      : never;
+  }[keyof RowType<TableDef> & string]
+>;
+
 /**
  * Coerces a column which may be a TypeBuilder or ColumnBuilder into a ColumnBuilder
  */

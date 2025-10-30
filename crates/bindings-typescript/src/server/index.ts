@@ -4,6 +4,17 @@ export { table } from './table';
 export * as errors from './errors';
 export { SenderError } from './errors';
 export { type Reducer, type ReducerCtx } from './reducers';
+export {
+  createQuery,
+  eq,
+  gt,
+  lt,
+  and,
+  literal,
+  type Query,
+  type Expr,
+  type ValueExpr,
+} from './query_builder';
 
 import './polyfills'; // Ensure polyfills are loaded
 import './register_hooks'; // Ensure module hooks are registered
