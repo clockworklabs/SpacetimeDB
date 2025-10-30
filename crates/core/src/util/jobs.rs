@@ -71,6 +71,9 @@ impl CoreInfo {
             // However, `max_blocking_threads` will panic if passed 0, so we set a limit of 1
             // and use `on_thread_start` to log an error when spawning a blocking task.
             .max_blocking_threads(1)
+            // Enable the timer system so that `procedure_sleep_until` can work.
+            // TODO(procedure-sleep): Remove this.
+            .enable_time()
             .on_thread_start({
                 use std::sync::atomic::{AtomicBool, Ordering};
                 let already_spawned_worker = AtomicBool::new(false);
