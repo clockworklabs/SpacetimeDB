@@ -55,7 +55,7 @@ pub mod __codegen {
     pub use crate::spacetime_module::{
         parse_reducer_args, AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, ErrorContext, EventContext,
         InModule, Reducer, ReducerEventContext, SpacetimeModule, SubscriptionEventContext, SubscriptionHandle,
-        TableUpdate,
+        TableUpdate, ProcedureEventContext,
     };
     pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
     pub use crate::{

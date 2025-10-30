@@ -1,4 +1,4 @@
-use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef, TypeDef};
+use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef};
 
 mod code_indenter;
 pub mod csharp;
@@ -18,6 +18,7 @@ pub fn generate(module: &ModuleDef, lang: &dyn Lang) -> Vec<OutputFile> {
         module.tables().map(|tbl| lang.generate_table_file(module, tbl)),
         module.types().flat_map(|typ| lang.generate_type_files(module, typ)),
         util::iter_reducers(module).map(|reducer| lang.generate_reducer_file(module, reducer)),
+        util::iter_procedures(module).map(|procedure| lang.generate_procedure_file(module, procedure)),
         lang.generate_global_files(module),
     )
     .collect()
@@ -32,5 +33,6 @@ pub trait Lang {
     fn generate_table_file(&self, module: &ModuleDef, tbl: &TableDef) -> OutputFile;
     fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile>;
     fn generate_reducer_file(&self, module: &ModuleDef, reducer: &ReducerDef) -> OutputFile;
+    fn generate_procedure_file(&self, module: &ModuleDef, procedure: &ProcedureDef) -> OutputFile;
     fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile>;
 }

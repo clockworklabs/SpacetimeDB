@@ -5202,6 +5202,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "procedure-client"
+version = "1.6.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "spacetimedb-sdk",
+ "test-counter",
+]
+
+[[package]]
 name = "prometheus"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6471,6 +6481,16 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sdk-test-module"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "paste",
+ "spacetimedb 1.6.0",
+]
+
+[[package]]
+name = "sdk-test-procedure-module"
 version = "0.1.0"
 dependencies = [
  "anyhow",

@@ -314,6 +314,18 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         }
     }
 
+    fn generate_procedure_file(
+        &self,
+        _module: &ModuleDef,
+        procedure: &spacetimedb_schema::def::ProcedureDef,
+    ) -> OutputFile {
+        // TODO(procedure-typescript-client): implement this
+        OutputFile {
+            filename: procedure_module_name(&procedure.name) + ".ts",
+            code: "".to_string(),
+        }
+    }
+
     fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
@@ -1049,6 +1061,10 @@ fn reducer_module_name(reducer_name: &Identifier) -> String {
 
 fn reducer_function_name(reducer: &ReducerDef) -> String {
     reducer.name.deref().to_case(Case::Camel)
+}
+
+fn procedure_module_name(procedure_name: &Identifier) -> String {
+    procedure_name.deref().to_case(Case::Snake) + "_procedure"
 }
 
 pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
