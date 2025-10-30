@@ -85,6 +85,9 @@ class JwtClaimsImpl implements JwtClaims {
   }
   get audience() {
     const aud = this.fullPayload['aud'];
+    if (aud == null) {
+      return [];
+    }
     return typeof aud === 'string' ? [aud] : (aud as string[]);
   }
 }
