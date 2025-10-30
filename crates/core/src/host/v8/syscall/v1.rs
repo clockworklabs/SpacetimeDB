@@ -1,5 +1,5 @@
 use super::hooks::{get_hook_function, set_hook_slots};
-use super::{AbiVersion, FnRet, ModuleHook};
+use super::{AbiVersion, FnRet, ModuleHookKey};
 use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
@@ -323,8 +323,8 @@ fn register_hooks_v1_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionC
         scope,
         AbiVersion::V1,
         &[
-            (ModuleHook::DescribeModule, describe_module),
-            (ModuleHook::CallReducer, call_reducer),
+            (ModuleHookKey::DescribeModule, describe_module),
+            (ModuleHookKey::CallReducer, call_reducer),
         ],
     )?;
 

@@ -6,7 +6,7 @@ use self::error::{
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
-    call_call_reducer, call_describe_module, get_hook, resolve_sys_module, FnRet, HookFunction, ModuleHook,
+    call_call_reducer, call_describe_module, get_hook, resolve_sys_module, FnRet, HookFunction, ModuleHookKey,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
@@ -338,7 +338,7 @@ fn startup_instance_worker<'scope>(
 
     // Find the `__call_reducer__` function.
     let call_reducer_fun =
-        get_hook(scope, ModuleHook::CallReducer).context("The `spacetimedb/server` module was never imported")?;
+        get_hook(scope, ModuleHookKey::CallReducer).context("The `spacetimedb/server` module was never imported")?;
 
     // If we don't have a module, make one.
     let module_common = match module_or_mcc {
@@ -659,7 +659,7 @@ fn extract_description<'scope>(
         |a, b, c| log_traceback(replica_ctx, a, b, c),
         || {
             catch_exception(scope, |scope| {
-                let Some(describe_module) = get_hook(scope, ModuleHook::DescribeModule) else {
+                let Some(describe_module) = get_hook(scope, ModuleHookKey::DescribeModule) else {
                     return Ok(RawModuleDef::V9(Default::default()));
                 };
                 let def = call_describe_module(scope, describe_module)?;
@@ -699,7 +699,7 @@ mod test {
     fn call_call_reducer_works() {
         let call = |code| {
             with_module_catch(code, |scope| {
-                let fun = get_hook(scope, ModuleHook::CallReducer).unwrap();
+                let fun = get_hook(scope, ModuleHookKey::CallReducer).unwrap();
                 let op = ReducerOp {
                     id: ReducerId(42),
                     name: "foobar",
@@ -778,7 +778,7 @@ js error Uncaught Error: foobar
             })
         "#;
         let raw_mod = with_module_catch(code, |scope| {
-            let describe_module = get_hook(scope, ModuleHook::DescribeModule).unwrap();
+            let describe_module = get_hook(scope, ModuleHookKey::DescribeModule).unwrap();
             call_describe_module(scope, describe_module)
         })
         .map_err(|e| e.to_string());
