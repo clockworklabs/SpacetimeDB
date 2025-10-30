@@ -158,6 +158,7 @@ pub struct ClientConnectionReceiver {
 
 struct ClientConnectionReceiverMetrics {
     wait_time: Histogram,
+    durable_offset_wait_time: Histogram,
 }
 
 impl ClientConnectionReceiver {
@@ -175,6 +176,9 @@ impl ClientConnectionReceiver {
             metrics: db.map(|db| ClientConnectionReceiverMetrics {
                 wait_time: WORKER_METRICS
                     .outgoing_wait_time
+                    .with_label_values(db, &confirmed_reads),
+                durable_offset_wait_time: WORKER_METRICS
+                    .outgoing_durable_offset_wait_time
                     .with_label_values(db, &confirmed_reads),
             }),
         }
@@ -244,6 +248,10 @@ impl ClientConnectionReceiver {
                         timestamp,
                     });
                     trace!("waiting for offset {tx_offset} to become durable");
+                    let t = self
+                        .metrics
+                        .as_ref()
+                        .map(|metrics| metrics.durable_offset_wait_time.start_timer());
                     durable
                         .wait_for(tx_offset)
                         .await
@@ -251,6 +259,9 @@ impl ClientConnectionReceiver {
                             warn!("database went away while waiting for durable offset");
                         })
                         .ok()?;
+                    if let Some(t) = t {
+                        t.observe_duration();
+                    }
                     self.current
                         .take()
                         .inspect(|update| report_wait_time(update.timestamp))

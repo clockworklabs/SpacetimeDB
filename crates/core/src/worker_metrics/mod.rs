@@ -291,6 +291,11 @@ metrics_group!(
         #[labels(db: Identity, confirmed: bool)]
         pub outgoing_wait_time: HistogramVec,
 
+        #[name = spacetime_outgoing_durable_offset_wait_time]
+        #[help = "The duration outgoing messages wait for the durable offset to catch up"]
+        #[labels(db: Identity, confirmed: bool)]
+        pub outgoing_durable_offset_wait_time: HistogramVec,
+
         #[name = spacetime_replay_total_time_seconds]
         #[help = "Total time spent replaying a database upon restart, including snapshot read, snapshot restore and commitlog replay"]
         #[labels(db: Identity)]
