@@ -12,16 +12,19 @@ use crate::host::v8::error::TypeError;
 use crate::host::v8::from_value::cast;
 use crate::host::v8::string::StringConst;
 
-pub(super) fn get_hook_function<'s>(
-    scope: &mut PinScope<'s, '_>,
+/// Returns the hook function `name` on `hooks_obj`.
+pub(super) fn get_hook_function<'scope>(
+    scope: &mut PinScope<'scope, '_>,
     hooks_obj: Local<'_, Object>,
     name: &'static StringConst,
-) -> ExcResult<Local<'s, Function>> {
+) -> ExcResult<Local<'scope, Function>> {
     let key = name.string(scope);
     let object = property(scope, hooks_obj, key)?;
     cast!(scope, object, Function, "module function hook `{}`", name.as_str()).map_err(|e| e.throw(scope))
 }
 
+/// Registers all the module function `hooks`
+/// and sets the given `AbiVersion` to `abi`.
 pub(super) fn set_hook_slots(
     scope: &mut PinScope<'_, '_>,
     abi: AbiVersion,
@@ -34,7 +37,7 @@ pub(super) fn set_hook_slots(
     for &(hook, func) in hooks {
         hooks_info
             .register(hook, abi)
-            .map_err(|_| TypeError("cannot call register_hooks multiple times").throw(scope))?;
+            .map_err(|_| TypeError("cannot call `register_hooks` multiple times").throw(scope))?;
         ctx.set_embedder_data(hook.to_slot_index(), func.into());
     }
     Ok(())
@@ -47,7 +50,8 @@ pub(in crate::host::v8) enum ModuleHook {
 }
 
 impl ModuleHook {
-    /// Get the `v8::Context::{get,set}_embedder_data` slot that holds this hook.
+    /// Returns the index for the slot that holds the module function hook.
+    /// The index is passed to `v8::Context::{get,set}_embedder_data`.
     fn to_slot_index(self) -> i32 {
         match self {
             ModuleHook::DescribeModule => 20,
@@ -56,6 +60,9 @@ impl ModuleHook {
     }
 }
 
+/// Holds the `AbiVersion` used by the module
+/// and the module hooks registered by the module
+/// for that version.
 #[derive(Default)]
 struct HooksInfo {
     abi: OnceCell<AbiVersion>,
@@ -63,6 +70,7 @@ struct HooksInfo {
 }
 
 impl HooksInfo {
+    /// Returns, and possibly creates, the [`HooksInfo`] stored in `ctx`.
     fn get_or_create(ctx: &Context) -> Rc<Self> {
         ctx.get_slot().unwrap_or_else(|| {
             let this = Rc::<Self>::default();
@@ -78,16 +86,18 @@ impl HooksInfo {
         self.registered[hook].set(())
     }
 
+    /// Returns the `AbiVersion` for the given `hook`, if any.
     fn get(&self, hook: ModuleHook) -> Option<AbiVersion> {
         self.registered[hook].get().and(self.abi.get().copied())
     }
 }
 
 #[derive(Copy, Clone)]
-pub(in crate::host::v8) struct HookFunction<'s>(pub AbiVersion, pub Local<'s, Function>);
+/// The actual callable module hook function and its abi version.
+pub(in super::super) struct HookFunction<'scope>(pub AbiVersion, pub Local<'scope, Function>);
 
 /// Returns the hook function previously registered in [`register_hooks`].
-pub(in crate::host::v8) fn get_hook<'scope>(
+pub(in super::super) fn get_hook<'scope>(
     scope: &mut PinScope<'scope, '_>,
     hook: ModuleHook,
 ) -> Option<HookFunction<'scope>> {
