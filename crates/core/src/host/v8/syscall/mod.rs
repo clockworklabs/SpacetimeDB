@@ -23,20 +23,20 @@ pub enum AbiVersion {
 
 /// A dependency resolver for the user's module
 /// that will resolve `spacetimedb_sys` to a module that exposes the ABI.
-pub(super) fn resolve_sys_module<'s>(
-    context: Local<'s, Context>,
-    spec: Local<'s, v8::String>,
-    _attrs: Local<'s, FixedArray>,
-    _referrer: Local<'s, Module>,
-) -> Option<Local<'s, Module>> {
+pub(super) fn resolve_sys_module<'scope>(
+    context: Local<'scope, Context>,
+    spec: Local<'scope, v8::String>,
+    _attrs: Local<'scope, FixedArray>,
+    _referrer: Local<'scope, Module>,
+) -> Option<Local<'scope, Module>> {
     callback_scope!(unsafe scope, context);
     resolve_sys_module_inner(scope, spec).ok()
 }
 
-fn resolve_sys_module_inner<'s>(
-    scope: &mut PinScope<'s, '_>,
-    spec: Local<'s, v8::String>,
-) -> ExcResult<Local<'s, Module>> {
+fn resolve_sys_module_inner<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    spec: Local<'scope, v8::String>,
+) -> ExcResult<Local<'scope, Module>> {
     let scratch = &mut scratch_buf::<32>();
     let spec = spec.to_rust_cow_lossy(scope, scratch);
 
@@ -65,6 +65,9 @@ fn resolve_sys_module_inner<'s>(
     }
 }
 
+/// Calls the registered `__call_reducer__` function hook.
+///
+/// This handles any (future) ABI version differences.
 pub(super) fn call_call_reducer(
     scope: &mut PinScope<'_, '_>,
     fun: HookFunction<'_>,
@@ -77,6 +80,8 @@ pub(super) fn call_call_reducer(
 }
 
 /// Calls the registered `__describe_module__` function hook.
+///
+/// This handles any (future) ABI version differences.
 pub(super) fn call_describe_module<'scope>(
     scope: &mut PinScope<'scope, '_>,
     fun: HookFunction<'_>,
