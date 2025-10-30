@@ -196,7 +196,7 @@ export const hooks: ModuleHooks = {
       timestamp: new Timestamp(timestamp),
       connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
       db: getDbView(),
-      authCtx: AuthCtxImpl.fromSystemTables(
+      senderAuth: AuthCtxImpl.fromSystemTables(
         ConnectionId.nullIfZero(new ConnectionId(connId)),
         senderIdentity
       ),
