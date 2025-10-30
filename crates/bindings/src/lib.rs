@@ -720,24 +720,9 @@ pub use spacetimedb_bindings_macro::reducer;
 /// Procedures are allowed to perform certain operations which take time.
 /// During the execution of these operations, the procedure's execution will be suspended,
 /// allowing other database operations to run in parallel.
-/// The simplest (and least useful) of these operators is [`ProcedureContext::sleep_until`].
 ///
 /// Procedures must not hold open a transaction while performing a blocking operation.
-///
-/// ```no_run
-/// # use std::time::Duration;
-/// # use spacetimedb::{procedure, ProcedureContext};
-/// #[procedure]
-/// fn sleep_one_second(ctx: &mut ProcedureContext) {
-///     let prev_time = ctx.timestamp;
-///     let target = prev_time + Duration::from_secs(1);
-///     ctx.sleep_until(target);
-///     let new_time = ctx.timestamp;
-///     let actual_delta = new_time.duration_since(prev_time).unwrap();
-///     log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
-/// }
-/// ```
-// TODO(procedure-http): replace this example with an HTTP request.
+// TODO(procedure-http): add example with an HTTP request.
 // TODO(procedure-transaction): document obtaining and using a transaction within a procedure.
 ///
 /// # Scheduled procedures
@@ -1088,7 +1073,8 @@ impl ProcedureContext {
     /// log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
     /// # }
     /// ```
-    // TODO(procedure-async): mark this method `async`.
+    // TODO(procedure-sleep-until): remove this method
+    #[cfg(feature = "unstable")]
     pub fn sleep_until(&mut self, timestamp: Timestamp) {
         let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
         let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
