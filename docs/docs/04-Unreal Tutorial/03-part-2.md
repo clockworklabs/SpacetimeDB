@@ -409,7 +409,7 @@ Created new database with name: blackholio, identity: c200d2c69b4524292b91822afa
 <TabItem value="rust" label="Rust">
 
 ```sh
-spacetime call blackholio debug
+spacetime call --server local blackholio debug
 ```
 
 </TabItem>
@@ -417,7 +417,7 @@ spacetime call blackholio debug
 Next, use the `spacetime` command to call our newly defined `Debug` reducer:
 
 ```sh
-spacetime call blackholio Debug
+spacetime call --server local blackholio Debug
 ```
 
 </TabItem>
@@ -426,7 +426,7 @@ spacetime call blackholio Debug
 If the call completed successfully, that command will have no output, but we can see the debug logs by running:
 
 ```sh
-spacetime logs blackholio
+spacetime logs --server local blackholio
 ```
 
 You should see something like the following output:
@@ -459,7 +459,7 @@ The `client_connected` argument to the `spacetimedb::reducer` macro indicates to
 
 > SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
 >
-> - `init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
+> - `init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish --server local <name> --delete-data`.
 > - `client_connected` - Called when a user connects to the SpacetimeDB database. Their identity can be found in the `sender` value of the `ReducerContext`.
 > - `client_disconnected` - Called when a user disconnects from the SpacetimeDB database.
 
@@ -479,7 +479,7 @@ The `ReducerKind.ClientConnected` argument to the `SpacetimeDB.Reducer` attribut
 
 > SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
 >
-> - `ReducerKind.Init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
+> - `ReducerKind.Init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish --server local <name> --delete-data`.
 > - `ReducerKind.ClientConnected` - Called when a user connects to the SpacetimeDB database. Their identity can be found in the `Sender` value of the `ReducerContext`.
 > - `ReducerKind.ClientDisconnected` - Called when a user disconnects from the SpacetimeDB database.
 
@@ -753,7 +753,7 @@ Subscription applied indicates that the SpacetimeDB SDK has evaluated your subsc
 We can also see that the server has logged the connection as well.
 
 ```sh
-spacetime logs blackholio
+spacetime logs --server local blackholio
 ...
 2025-01-10T03:51:02.078700Z DEBUG: src/lib.rs:63: c200fb5be9524bfb8289c351516a1d9ea800f70a17a9a6937f11c0ed3854087d just connected.
 ```

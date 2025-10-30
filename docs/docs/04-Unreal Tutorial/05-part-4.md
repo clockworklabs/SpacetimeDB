@@ -644,7 +644,7 @@ Notice that the food automatically respawns as you vaccuum them up. This is beca
 
 ## Connecting to Maincloud
 
-- Publish to Maincloud `spacetime publish -s maincloud <your database name> --delete-data`
+- Publish to Maincloud `spacetime publish --server maincloud <your database name> --delete-data`
   - `<your database name>` This name should be unique and cannot contain any special characters other than internal hyphens (`-`).
 - Update the URL in the Unreal project to: `https://maincloud.spacetimedb.com`
 - Update the module name in the Unreal project to `<your database name>`.
@@ -652,7 +652,7 @@ Notice that the food automatically respawns as you vaccuum them up. This is beca
 
 ![Maincloud Setup](/images/unreal/part-4-01-maincloud.png)
 
-To delete your Maincloud database, you can run: `spacetime delete -s maincloud <your database name>`
+To delete your Maincloud database, you can run: `spacetime delete --server maincloud <your database name>`
 
 ## Conclusion
 

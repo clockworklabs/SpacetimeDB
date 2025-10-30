@@ -38,13 +38,13 @@ Inside the `spacetimedb/` directory will be a `src/index.ts` entrypoint (require
 ## How to Build & Publish
 
 > [!IMPORTANT]
-> TypeScript modules are built and published with the `spacetime` CLI. `spacetime publish` will transpile and bundle your server module for you starting with the `src/index.ts` entrypoint. If you bundle your js yourself, you can specify `spacetime publish --js-path <path-to-your-bundle-file>` when publishing.
+> TypeScript modules are built and published with the `spacetime` CLI. `spacetime publish` will transpile and bundle your server module for you starting with the `src/index.ts` entrypoint. If you bundle your js yourself, you can specify `spacetime publish --server local --js-path <path-to-your-bundle-file>` when publishing.
 
 From the `spacetimedb/` directory you can lint/typecheck locally if you like, but to make the module live you’ll publish it to a database:
 
 ```bash
 cd spacetimedb
-spacetime publish --project-path spacetimedb quickstart-chat
+spacetime publish --server local --project-path spacetimedb quickstart-chat
 ```
 
 Publishing bundles your TypeScript into a single artifact and installs it into the `quickstart-chat` database.
@@ -203,7 +203,7 @@ spacetime start
 From the `quickstart-chat` directory (the parent of `spacetimedb/`):
 
 ```bash
-spacetime publish --project-path spacetimedb quickstart-chat
+spacetime publish --server local --project-path spacetimedb quickstart-chat
 ```
 
 You can choose any unique, URL-safe database name in place of `quickstart-chat`. The CLI will show the database **Identity** (a hex string) as well; you can use either the name or identity with CLI commands.
@@ -215,13 +215,13 @@ Use the CLI to call reducers. Arguments are passed as JSON (strings may be given
 Send a message:
 
 ```bash
-spacetime call quickstart-chat send_message "Hello, World!"
+spacetime call --server local quickstart-chat send_message "Hello, World!"
 ```
 
 Check that it ran by viewing logs (owner-only):
 
 ```bash
-spacetime logs quickstart-chat
+spacetime logs --server local quickstart-chat
 ```
 
 You should see output similar to:
@@ -238,7 +238,7 @@ You should see output similar to:
 SpacetimeDB supports a subset of SQL so you can query your data:
 
 ```bash
-spacetime sql quickstart-chat "SELECT * FROM message"
+spacetime sql --server local quickstart-chat "SELECT * FROM message"
 ```
 
 Output will resemble:
