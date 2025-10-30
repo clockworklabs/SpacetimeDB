@@ -173,9 +173,19 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
     return output if full_output else output.stdout
 
 @functools.cache
+def pnpm_path():
+    pnpm = shutil.which("pnpm")
+    if not pnpm:
+        raise Exception("pnpm not installed")
+    return pnpm
+
+def pnpm(*args, **kwargs):
+    return run_cmd(pnpm_path(), *args, **kwargs)
+
+@functools.cache
 def build_typescript_sdk():
-    run_cmd("pnpm", "install", cwd=TYPESCRIPT_BINDINGS_PATH)
-    run_cmd("pnpm", "build", cwd=TYPESCRIPT_BINDINGS_PATH)
+    pnpm("install", cwd=TYPESCRIPT_BINDINGS_PATH)
+    pnpm("build", cwd=TYPESCRIPT_BINDINGS_PATH)
 
 def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)

@@ -6,7 +6,7 @@ import tempfile
 import xmltodict
 
 import smoketests
-from .. import Smoketest, STDB_DIR, run_cmd, TEMPLATE_CARGO_TOML, TYPESCRIPT_BINDINGS_PATH, build_typescript_sdk
+from .. import Smoketest, STDB_DIR, run_cmd, TEMPLATE_CARGO_TOML, TYPESCRIPT_BINDINGS_PATH, build_typescript_sdk, pnpm
 
 
 def _write_file(path: Path, content: str):
@@ -342,7 +342,7 @@ class TypeScript(Rust):
 
     def server_postprocess(self, server_path: Path):
         build_typescript_sdk()
-        run_cmd("pnpm", "install", f"spacetimedb@file:{TYPESCRIPT_BINDINGS_PATH}", cwd=server_path)
+        pnpm("install", TYPESCRIPT_BINDINGS_PATH, cwd=server_path)
 
     def test_quickstart(self):
         """Run the TypeScript quickstart guides for server."""
