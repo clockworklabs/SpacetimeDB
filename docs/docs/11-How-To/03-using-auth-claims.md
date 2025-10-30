@@ -15,7 +15,7 @@ Within a SpacetimeDB reducer, you can access the auth claims from a client's tok
 
 The subject (`sub`) and issuer (`iss`) are the most commonly accessed claims in a JWT. The subject usually represents the user's unique identifier, while the issuer indicates which authentication provider issued the token. These are required claims, which are used to compute each user's `Identity`. Because these are so commonly used, there are helper functions to get them.
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -41,21 +41,12 @@ INFO: src\lib.rs:64: sub: 321321321321321, iss: https://accounts.google.com
 <TabItem value="csharp" label="C#">
 
 ```cs
-// ************************TODO: update + test this after Jeff implements this in C# ************************
 [Reducer(ReducerKind.ClientConnected)]
-public void Connect(ReducerContext ctx) {
-    var auth_ctx = ctx.SenderAuth();
-    var (subject, issuer) = auth_ctx.Jwt() switch {
-        Some(var claims) => (claims.Subject, claims.Issuer),
-        None => throw new Exception("Client connected without JWT"),
-    };
-    log.Info($"sub: {subject}, iss: {issuer}");
+public static void ClientConnected(ReducerContext ctx)
+{
+    var claims = ctx.SenderAuth.Jwt ?? throw new Exception("Client connected without JWT");
+    Log.Info($"Client connected with csub: {claims.Subject}, and iss: {claims.Issuer}");
 }
-```
-
-*Example output when using a Google-issued token:*
-```
-INFO: src\Lib.cs:64: sub: 321321321321321, iss: https://accounts.google.com
 ```
 
 </TabItem>
@@ -65,7 +56,7 @@ INFO: src\Lib.cs:64: sub: 321321321321321, iss: https://accounts.google.com
 import { SenderError } from "spacetimedb/server";
 
 spacetimedb.clientConnected((ctx) => {
-  const jwt = ctx.authCtx.jwt;
+  const jwt = ctx.senderAuth.jwt;
   if (jwt == null) {
     throw new SenderError("Unauthorized: JWT is required to connect");
   }
@@ -108,26 +99,44 @@ pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
 <TabItem value="csharp" label="C#">
 
 ```cs
-// ************************TODO: update + test this after Jeff implements this in C# ************************
-[Reducer(ReducerKind.ClientConnected)]
-public void Connect(ReducerContext ctx) {
-    var auth_ctx = ctx.SenderAuth();
-    var (subject, issuer) = auth_ctx.Jwt() switch {
-        Some(var claims) => (claims.Subject, claims.Issuer),
-        None => throw new Exception("Client connected without JWT"),
-    };
-    log.Info($"sub: {subject}, iss: {issuer}");
+// The oidc client ids configured for SpacetimeAuth.
+public static readonly List<string> OIDC_CLIENT_IDS = new()
+{
+    "client_XXXXXXXXXXXXXXXXXXXXXX",
+};
+public void Connect(ReducerContext ctx)
+{
+    var claims = ctx.SenderAuth.Jwt ?? throw new Exception("Client connected without JWT");
+    if (claims.Issuer != "https://auth.spacetimedb.com/oidc")
+    {
+        throw new Exception("Unauthorized: invalid issuer");
+    }
+    if (!OIDC_CLIENT_IDS.Any(s => claims.Audience.Contains(s)))
+    {
+        throw new Exception("Unauthorized: invalid audience");
+    }
 }
-```
-
-*Example output when using a Google-issued token:*
-```
-INFO: src\Lib.cs:64: sub: 321321321321321, iss: https://accounts.google.com
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TS">
-dummy
+
+```typescript
+const OIDC_CLIENT_IDS = ["client_XXXXXXXXXXXXXXXXXXXXXX"];
+spacetimedb.clientConnected((ctx) => {
+  const jwt = ctx.senderAuth.jwt;
+  if (jwt == null) {
+    throw new SenderError("Unauthorized: JWT is required to connect");
+  }
+  if (jwt.issuer != "https://auth.spacetimedb.com/oidc") {
+    throw new SenderError(`Unauthorized: Invalid issuer ${jwt.issuer}`);
+  }
+  if (!jwt.audience.some((aud) => OIDC_CLIENT_IDS.includes(aud))) {
+    throw new SenderError(`Unauthorized: Invalid audience ${jwt.audience}`);
+  }
+});
+```
+
 </TabItem>
 </Tabs>
 
@@ -183,26 +192,66 @@ pub fn admin_only_reducer(ctx: &ReducerContext) -> Result<(), String> {
 <TabItem value="csharp" label="C#">
 
 ```cs
-// ************************TODO: update + test this after Jeff implements this in C# ************************
-[Reducer(ReducerKind.ClientConnected)]
-public void Connect(ReducerContext ctx) {
-    var auth_ctx = ctx.SenderAuth();
-    var (subject, issuer) = auth_ctx.Jwt() switch {
-        Some(var claims) => (claims.Subject, claims.Issuer),
-        None => throw new Exception("Client connected without JWT"),
-    };
-    log.Info($"sub: {subject}, iss: {issuer}");
-}
-```
+// Throw if the sender does not have admin access.
+private static void EnsureAdminAccess(ReducerContext ctx)
+{
+    var auth = ctx.SenderAuth;
+    if (auth.IsInternal)
+    {
+        return;
+    }
 
-*Example output when using a Google-issued token:*
-```
-INFO: src\Lib.cs:64: sub: 321321321321321, iss: https://accounts.google.com
+    var claims = auth.Jwt ?? throw new Exception("Missing JWT claims");
+
+    using var jwtPayload = JsonDocument.Parse(claims.RawPayload);
+    var root = jwtPayload.RootElement;
+    bool hasAdmin =
+        root.TryGetProperty("roles", out var rolesProp) &&
+        rolesProp.ValueKind == JsonValueKind.Array &&
+        rolesProp.EnumerateArray().Any(e =>
+            e.ValueKind == JsonValueKind.String && e.GetString() == "admin"
+        );
+
+    if (!hasAdmin)
+    {
+        throw new Exception("Unauthorized: admin role required");
+    }
+}
+
+[Reducer]
+public static void AdminOnlyReducer(ReducerContext ctx)
+{
+    EnsureAdminAccess(ctx);
+    // We can now be sure that the caller is an admin.
+}
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TS">
-dummy
+
+```typescript
+
+// Return an error to the client if they don't have admin rights.
+function ensureAdminAccess(ctx: ReducerCtx<any>) {
+  const auth = ctx.senderAuth;
+  if (auth.isInternal) {
+    return;
+  }
+  const jwt = auth.jwt;
+  if (jwt == null) {
+    throw new SenderError("Unauthorized: JWT is required");
+  }
+  const roles = jwt.fullPayload["roles"];
+  if (!Array.isArray(roles) || !roles.includes("admin")) {
+    throw new SenderError("Unauthorized: Admin role is required");
+  }
+}
+
+spacetimedb.reducer("adminonly", (ctx) => {
+  ensureAdminAccess(ctx);
+});
+```
+
 </TabItem>
 </Tabs>
 
