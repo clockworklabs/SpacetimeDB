@@ -115,6 +115,47 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.5.1)(jsdom@26.1.0)(terser@5.43.1)(tsx@4.20.4)
 
+  crates/bindings-typescript/examples/basic-react:
+    dependencies:
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../..
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.18
+        version: 18.3.23
+      '@types/react-dom':
+        specifier: ^18.3.5
+        version: 18.3.7(@types/react@18.3.23)
+      '@vitejs/plugin-react':
+        specifier: ^5.0.2
+        version: 5.0.2(vite@7.1.5(@types/node@24.3.0)(jiti@2.5.1)(terser@5.43.1)(tsx@4.20.4))
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
+      vite:
+        specifier: ^7.1.5
+        version: 7.1.5(@types/node@24.3.0)(jiti@2.5.1)(terser@5.43.1)(tsx@4.20.4)
+
+  crates/bindings-typescript/examples/empty:
+    dependencies:
+      spacetimedb:
+        specifier: ^1.5.0
+        version: 1.6.2(react@19.2.0)(undici@6.21.3)
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
+      vite:
+        specifier: ^7.1.5
+        version: 7.1.5(@types/node@24.3.0)(jiti@2.5.1)(terser@5.43.1)(tsx@4.20.4)
+
   crates/bindings-typescript/examples/quickstart-chat:
     dependencies:
       react:
@@ -7946,6 +7987,17 @@ packages:
 
   space-separated-tokens@2.0.2:
     resolution: {integrity: sha512-PEGlAwrG8yXGXRjW32fGbg66JAlOAwbObuqVoJpv/mRgoWDQfgH1wDPvtzWyUSNAXBGSk8h755YDbbcEy3SH2Q==}
+
+  spacetimedb@1.6.2:
+    resolution: {integrity: sha512-XOdIgnTT1j2wZNiPdEIiv9uzhpnbqO0Rk/kOxVA9XhMMmrbtS3bXduBf1MzcaS/gJzXFK+Tf27j1HVa5SNbhLQ==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0-0 || ^19.0.0
+      undici: ^6.19.2
+    peerDependenciesMeta:
+      react:
+        optional: true
+      undici:
+        optional: true
 
   spdy-transport@3.0.0:
     resolution: {integrity: sha512-hsLVFE5SjA6TCisWeJXFKniGGOpBgMLmerfO2aCyCU5s7nJ/rpAepqmFifv/GCbSbueEeAJJnmSQ2rKC/g8Fcw==}
@@ -19396,6 +19448,15 @@ snapshots:
       whatwg-url: 7.1.0
 
   space-separated-tokens@2.0.2: {}
+
+  spacetimedb@1.6.2(react@19.2.0)(undici@6.21.3):
+    dependencies:
+      base64-js: 1.5.1
+      fast-text-encoding: 1.0.6
+      prettier: 3.6.2
+    optionalDependencies:
+      react: 19.2.0
+      undici: 6.21.3
 
   spdy-transport@3.0.0:
     dependencies:

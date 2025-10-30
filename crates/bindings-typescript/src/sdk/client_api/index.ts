@@ -107,7 +107,11 @@ const reducersSchema = __reducers();
 
 const REMOTE_MODULE = {
   versionInfo: {
+<<<<<<< HEAD
     cliVersion: '1.7.0' as const,
+=======
+    cliVersion: '1.6.0',
+>>>>>>> 6d91ae0f5 (Now generating module_bindings for examples and also moved pnpm scripts into portable rust scripts)
   },
   tables: tablesSchema.schemaType.tables,
   reducers: reducersSchema.reducersType.reducers,

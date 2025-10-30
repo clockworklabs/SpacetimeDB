@@ -31,65 +31,56 @@ import {
 } from 'spacetimedb';
 
 // Import and reexport all reducer arg types
-import { IdentityConnected } from './identity_connected_reducer.ts';
-export { IdentityConnected };
-import { IdentityDisconnected } from './identity_disconnected_reducer.ts';
-export { IdentityDisconnected };
-import { SendMessage } from './send_message_reducer.ts';
-export { SendMessage };
-import { SetName } from './set_name_reducer.ts';
-export { SetName };
+import { Init } from './init_reducer.ts';
+export { Init };
+import { ClientConnected } from './client_connected_reducer.ts';
+export { ClientConnected };
+import { ClientDisconnected } from './client_disconnected_reducer.ts';
+export { ClientDisconnected };
+import { Add } from './add_reducer.ts';
+export { Add };
+import { SayHello } from './say_hello_reducer.ts';
+export { SayHello };
 
 // Import and reexport all table handle types
-import { MessageTableHandle } from './message_table.ts';
-export { MessageTableHandle };
-import { UserTableHandle } from './user_table.ts';
-export { UserTableHandle };
+import { PersonTableHandle } from './person_table.ts';
+export { PersonTableHandle };
 
 // Import and reexport all types
-import { Message } from './message_type.ts';
-export { Message };
-import { User } from './user_type.ts';
-export { User };
+import { Person } from './person_type.ts';
+export { Person };
 
 const REMOTE_MODULE = {
   tables: {
-    message: {
-      tableName: 'message' as const,
-      rowType: Message.getTypeScriptAlgebraicType(),
-    },
-    user: {
-      tableName: 'user' as const,
-      rowType: User.getTypeScriptAlgebraicType(),
-      primaryKey: 'identity' as const,
-      primaryKeyInfo: {
-        colName: 'identity' as const,
-        colType: (
-          User.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product
-        ).value.elements[0].algebraicType,
-      },
+    person: {
+      tableName: 'person' as const,
+      rowType: Person.getTypeScriptAlgebraicType(),
     },
   },
   reducers: {
-    identity_connected: {
-      reducerName: 'identity_connected',
-      argsType: IdentityConnected.getTypeScriptAlgebraicType(),
+    init: {
+      reducerName: 'init',
+      argsType: Init.getTypeScriptAlgebraicType(),
     },
-    identity_disconnected: {
-      reducerName: 'identity_disconnected',
-      argsType: IdentityDisconnected.getTypeScriptAlgebraicType(),
+    client_connected: {
+      reducerName: 'client_connected',
+      argsType: ClientConnected.getTypeScriptAlgebraicType(),
     },
-    send_message: {
-      reducerName: 'send_message',
-      argsType: SendMessage.getTypeScriptAlgebraicType(),
+    client_disconnected: {
+      reducerName: 'client_disconnected',
+      argsType: ClientDisconnected.getTypeScriptAlgebraicType(),
     },
-    set_name: {
-      reducerName: 'set_name',
-      argsType: SetName.getTypeScriptAlgebraicType(),
+    add: {
+      reducerName: 'add',
+      argsType: Add.getTypeScriptAlgebraicType(),
+    },
+    say_hello: {
+      reducerName: 'say_hello',
+      argsType: SayHello.getTypeScriptAlgebraicType(),
     },
   },
   versionInfo: {
-    cliVersion: '1.7.0',
+    cliVersion: '1.6.0',
   },
   // Constructors which are used by the DbConnectionImpl to
   // extract type information from the generated RemoteModule.
@@ -119,15 +110,16 @@ const REMOTE_MODULE = {
   setReducerFlagsConstructor: () => {
     return new SetReducerFlags();
   },
-} satisfies RemoteModule;
+};
 
 // A type representing all the possible variants of a reducer.
 export type Reducer =
   | never
-  | { name: 'IdentityConnected'; args: IdentityConnected }
-  | { name: 'IdentityDisconnected'; args: IdentityDisconnected }
-  | { name: 'SendMessage'; args: SendMessage }
-  | { name: 'SetName'; args: SetName };
+  | { name: 'Init'; args: Init }
+  | { name: 'ClientConnected'; args: ClientConnected }
+  | { name: 'ClientDisconnected'; args: ClientDisconnected }
+  | { name: 'Add'; args: Add }
+  | { name: 'SayHello'; args: SayHello };
 
 export class RemoteReducers {
   constructor(
@@ -135,95 +127,127 @@ export class RemoteReducers {
     private setCallReducerFlags: SetReducerFlags
   ) {}
 
-  onIdentityConnected(callback: (ctx: ReducerEventContext) => void) {
-    this.connection.onReducer('identity_connected', callback);
-  }
-
-  removeOnIdentityConnected(callback: (ctx: ReducerEventContext) => void) {
-    this.connection.offReducer('identity_connected', callback);
-  }
-
-  onIdentityDisconnected(callback: (ctx: ReducerEventContext) => void) {
-    this.connection.onReducer('identity_disconnected', callback);
-  }
-
-  removeOnIdentityDisconnected(callback: (ctx: ReducerEventContext) => void) {
-    this.connection.offReducer('identity_disconnected', callback);
-  }
-
-  sendMessage(text: string) {
-    const __args = { text };
-    let __writer = new __BinaryWriter(1024);
-    SendMessage.serialize(__writer, __args);
-    let __argsBuffer = __writer.getBuffer();
+  init() {
     this.connection.callReducer(
-      'send_message',
-      __argsBuffer,
-      this.setCallReducerFlags.sendMessageFlags
+      'init',
+      new Uint8Array(0),
+      this.setCallReducerFlags.initFlags
     );
   }
 
-  onSendMessage(callback: (ctx: ReducerEventContext, text: string) => void) {
-    this.connection.onReducer('send_message', callback);
+  onInit(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer('init', callback);
   }
 
-  removeOnSendMessage(
-    callback: (ctx: ReducerEventContext, text: string) => void
-  ) {
-    this.connection.offReducer('send_message', callback);
+  removeOnInit(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer('init', callback);
   }
 
-  setName(name: string) {
+  clientConnected() {
+    this.connection.callReducer(
+      'client_connected',
+      new Uint8Array(0),
+      this.setCallReducerFlags.clientConnectedFlags
+    );
+  }
+
+  onClientConnected(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer('client_connected', callback);
+  }
+
+  removeOnClientConnected(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer('client_connected', callback);
+  }
+
+  clientDisconnected() {
+    this.connection.callReducer(
+      'client_disconnected',
+      new Uint8Array(0),
+      this.setCallReducerFlags.clientDisconnectedFlags
+    );
+  }
+
+  onClientDisconnected(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer('client_disconnected', callback);
+  }
+
+  removeOnClientDisconnected(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer('client_disconnected', callback);
+  }
+
+  add(name: string) {
     const __args = { name };
     let __writer = new __BinaryWriter(1024);
-    SetName.serialize(__writer, __args);
+    Add.serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer(
-      'set_name',
+      'add',
       __argsBuffer,
-      this.setCallReducerFlags.setNameFlags
+      this.setCallReducerFlags.addFlags
     );
   }
 
-  onSetName(callback: (ctx: ReducerEventContext, name: string) => void) {
-    this.connection.onReducer('set_name', callback);
+  onAdd(callback: (ctx: ReducerEventContext, name: string) => void) {
+    this.connection.onReducer('add', callback);
   }
 
-  removeOnSetName(callback: (ctx: ReducerEventContext, name: string) => void) {
-    this.connection.offReducer('set_name', callback);
+  removeOnAdd(callback: (ctx: ReducerEventContext, name: string) => void) {
+    this.connection.offReducer('add', callback);
+  }
+
+  sayHello() {
+    this.connection.callReducer(
+      'say_hello',
+      new Uint8Array(0),
+      this.setCallReducerFlags.sayHelloFlags
+    );
+  }
+
+  onSayHello(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.onReducer('say_hello', callback);
+  }
+
+  removeOnSayHello(callback: (ctx: ReducerEventContext) => void) {
+    this.connection.offReducer('say_hello', callback);
   }
 }
 
 export class SetReducerFlags {
-  sendMessageFlags: __CallReducerFlags = 'FullUpdate';
-  sendMessage(flags: __CallReducerFlags) {
-    this.sendMessageFlags = flags;
+  initFlags: __CallReducerFlags = 'FullUpdate';
+  init(flags: __CallReducerFlags) {
+    this.initFlags = flags;
   }
 
-  setNameFlags: __CallReducerFlags = 'FullUpdate';
-  setName(flags: __CallReducerFlags) {
-    this.setNameFlags = flags;
+  clientConnectedFlags: __CallReducerFlags = 'FullUpdate';
+  clientConnected(flags: __CallReducerFlags) {
+    this.clientConnectedFlags = flags;
+  }
+
+  clientDisconnectedFlags: __CallReducerFlags = 'FullUpdate';
+  clientDisconnected(flags: __CallReducerFlags) {
+    this.clientDisconnectedFlags = flags;
+  }
+
+  addFlags: __CallReducerFlags = 'FullUpdate';
+  add(flags: __CallReducerFlags) {
+    this.addFlags = flags;
+  }
+
+  sayHelloFlags: __CallReducerFlags = 'FullUpdate';
+  sayHello(flags: __CallReducerFlags) {
+    this.sayHelloFlags = flags;
   }
 }
 
 export class RemoteTables {
   constructor(private connection: __DbConnectionImpl) {}
 
-  get message(): MessageTableHandle<'message'> {
+  get person(): PersonTableHandle<'person'> {
     // clientCache is a private property
-    return new MessageTableHandle(
+    return new PersonTableHandle(
       (
         this.connection as unknown as { clientCache: __ClientCache }
-      ).clientCache.getOrCreateTable<Message>(REMOTE_MODULE.tables.message)
-    );
-  }
-
-  get user(): UserTableHandle<'user'> {
-    // clientCache is a private property
-    return new UserTableHandle(
-      (
-        this.connection as unknown as { clientCache: __ClientCache }
-      ).clientCache.getOrCreateTable<User>(REMOTE_MODULE.tables.user)
+      ).clientCache.getOrCreateTable<Person>(REMOTE_MODULE.tables.person)
     );
   }
 }
