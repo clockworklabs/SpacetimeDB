@@ -6,33 +6,13 @@ slug: /unreal/part-1
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unreal Tutorial - Part 1 - Setup
+# Setup
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
 > A completed version of the game we'll create in this tutorial is available at:
 >
 > [https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio)
-
-## Prepare Project Structure
-
-:::note
-Ensure you have SpacetimeDB version >=1.4.0 installed to enable Unreal Engine code generation support.
-:::
-
-This project is separated into two subdirectories;
-
-1. Server (module) code
-2. Client code
-
-First, we'll create a project root directory (you can choose the name):
-
-```bash
-mkdir blackholio
-cd blackholio
-```
-
-We'll start by populating the client directory.
 
 ## Setting up the Tutorial Unreal Project
 
@@ -47,8 +27,7 @@ Launch Unreal 5.6 and create a new project by selecting Games from the Unreal Pr
 :::warning
 Select the **Blank** template and in **Project Defaults** select **C++**.
 :::
-For **Project Name** use `client_unreal`.
-For **Project Location**, use your `blackholio` directory (created in the previous step).
+For **Project Name** use `blackholio`.
 
 Click **Create** to generate the blank project.
 
@@ -71,13 +50,13 @@ Before beginning make sure to close the Unreal project and IDE.
 1. Navigate to your Unreal project directory and create a `Plugins` folder if it doesn’t already exist:
 
    ```bash
-   cd client_unreal
+   cd blackholio
    mkdir Plugins
    ```
 
 2. Download or clone the SDK from GitHub and copy the SpacetimeDbSdk folder into your new Plugins directory.
-   - This should create `/client_unreal/Plugins/SpacetimeDbSdk`.
-3. In the root of the Unreal project, right click the client_unreal.uproject and select **Generate Visual Studio project files**. On Windows 11 you may need to expand **Show more options** to select the generate option.
+   - This should create `/blackholio/Plugins/SpacetimeDbSdk`.
+3. In the root of the Unreal project, right click the blackholio.uproject and select **Generate Visual Studio project files**. On Windows 11 you may need to expand **Show more options** to select the generate option.
 
 ![Generate project files](/images/unreal/part-1-02-01-generate-project.png)
 ![Generate project files](/images/unreal/part-1-02-02-generate-project.png)
@@ -86,7 +65,7 @@ Before beginning make sure to close the Unreal project and IDE.
 
 <Tabs groupId="client-language" defaultValue="cpp">
 <TabItem value="cpp" label="C++">
-1. Open the `client_unreal` project in your IDE (Visual Studio or JetBrains Rider) and run the project to launch the Unreal Editor.
+1. Open the `blackholio` project in your IDE (Visual Studio or JetBrains Rider) and run the project to launch the Unreal Editor.
    - This will enable **Live Coding**, making the workflow a bit smoother.
    - Unreal will prompt you to build the `SpacetimeDbSdk` plugin. Do so.
 2. Open **Tools -> New C++ Class** in the top menu, select **Actor** as the parent and click **Next**

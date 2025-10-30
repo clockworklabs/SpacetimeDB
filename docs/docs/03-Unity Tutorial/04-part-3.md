@@ -6,7 +6,7 @@ slug: /unity/part-3
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unity Tutorial - Part 3 - Gameplay
+# Gameplay
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
@@ -1235,19 +1235,10 @@ Lastly modify the `GameManager.SetupArena` method to set the `WorldSize` on the 
 
 ### Entering the Game
 
-<Tabs groupId="server-language" defaultValue="rust">
-  <TabItem value="rust" label="Rust">
-    At this point, you may need to regenerate your bindings the following
-    command from the `server-rust` directory.
-  </TabItem>
-  <TabItem value="csharp" label="C#">
-    At this point, you may need to regenerate your bindings the following
-    command from the `server-csharp` directory.
-  </TabItem>
-</Tabs>
+At this point, you may need to regenerate your bindings the following command from the `blackholio/spacetimedb` directory.
 
 ```sh
-spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen
+spacetime generate --lang csharp --out-dir ../Assets/module_bindings
 ```
 
 The last step is to call the `enter_game` reducer on the server, passing in a username for our player, which will spawn a circle for our player. For the sake of simplicity, let's call the `enter_game` reducer from the `HandleSubscriptionApplied` callback with the name "3Blave".
@@ -1282,7 +1273,7 @@ The label won't be centered at this point. Feel free to adjust it if you like. W
 
 ### Troubleshooting
 
-- If you get an error when running the generate command, make sure you have an empty subfolder in your Unity project Assets folder called `autogen`
+- If you get an error when running the generate command, make sure you have an empty subfolder in your Unity project Assets folder called `module_bindings`
 
 - If you get an error in your Unity console when starting the game, double check that you have published your module and you have the correct module name specified in your `GameManager`.
 

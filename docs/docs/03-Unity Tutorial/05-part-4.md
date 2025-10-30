@@ -6,7 +6,7 @@ slug: /unity/part-4
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unity Tutorial - Part 4 - Moving and Colliding
+# Moving and Colliding
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
@@ -363,7 +363,7 @@ spacetime publish --server local blackholio --delete-data
 Regenerate your server bindings with:
 
 ```sh
-spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen
+spacetime generate --lang csharp --out-dir ../Assets/module_bindings
 ```
 
 ### Moving on the Client

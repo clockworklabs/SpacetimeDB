@@ -334,19 +334,19 @@ Show the current login info
 
 Initializes a new spacetime project. WARNING: This command is UNSTABLE and subject to breaking changes.
 
-**Usage:** `spacetime init --lang <lang> [project-path]`
+**Usage:** `spacetime init [OPTIONS] <PROJECT_NAME>`
 
 ###### <b>Arguments:</b>
 
-- `<PROJECT-PATH>` — The path where we will create the spacetime project
-
-  Default value: `.`
+* `<PROJECT_NAME>` — Project name
 
 ###### <b>Options:</b>
 
-- `-l`, `--lang <LANG>` — The spacetime module language.
-
-  Possible values: `csharp`, `rust`
+* `--project-path <PATH>` — Directory where the project will be created (defaults to ./\<PROJECT\_NAME\>)
+* `--lang <LANG>` — Server language: rust, csharp, typescript (it can only be used when --template is not specified)
+* `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
+* `--local` — Use local deployment instead of Maincloud
+* `--non-interactive` — Run in non-interactive mode
 
 ## spacetime build
 
