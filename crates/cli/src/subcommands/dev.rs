@@ -8,15 +8,17 @@ use crate::util::{
 use crate::{common_args, generate};
 use crate::{publish, tasks};
 use anyhow::Context;
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgMatches, Command};
 use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect};
 use futures::stream::{self, StreamExt};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use regex::Regex;
 use serde::Deserialize;
 use std::borrow::Cow;
+use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
@@ -27,6 +29,7 @@ use tabled::{
 };
 use termcolor::{Color, ColorSpec, WriteColor};
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
 
 pub fn cli() -> Command {
     Command::new("dev")
@@ -66,12 +69,6 @@ pub fn cli() -> Command {
                 .value_parser(clap::value_parser!(Language))
                 .help("The programming language for the generated client module bindings (e.g., typescript, csharp, python). If not specified, it will be detected from the project."),
         )
-        .arg(
-            Arg::new("local")
-                .long("local")
-                .action(ArgAction::SetTrue)
-                .help("Use local deployment instead of Maincloud"),
-        )
         .arg(common_args::server().help("The nickname, host name or URL of the server to publish to"))
         .arg(common_args::yes())
 }
@@ -91,30 +88,36 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     let spacetimedb_project_path = args.get_one::<PathBuf>("module-project-path").unwrap();
     let module_bindings_path = args.get_one::<PathBuf>("module-bindings-path").unwrap();
-    let use_local = args.get_flag("local");
     let client_language = args.get_one::<Language>("client-lang");
     let force = args.get_flag("force");
 
+    // If you don't specify a server, we default to your default server
+    // If you don't have one of those, we default to "maincloud"
     let server = if let Some(s) = args.get_one::<String>("server") {
         Some(s.as_str())
-    } else if use_local {
-        None
     } else {
-        Some("maincloud")
+        None
     };
+
+    let default_server_name = config.default_server_name().map(|s| s.to_string());
+
+    let mut resolved_server = server
+        .or_else(|| default_server_name.as_ref().map(|s| s.as_str()))
+        .ok_or_else(|| anyhow::anyhow!("Server not specified and no default server configured."))?;
+
+    let mut project_dir = project_path.clone();
 
     if module_bindings_path.is_absolute() {
         anyhow::bail!("Module bindings path must be a relative path");
     }
-    let mut module_bindings_dir = project_path.join(module_bindings_path);
+    let mut module_bindings_dir = project_dir.join(module_bindings_path);
 
     if spacetimedb_project_path.is_absolute() {
         anyhow::bail!("SpacetimeDB project path must be a relative path");
     }
-    let mut spacetimedb_dir = project_path.join(spacetimedb_project_path);
+    let mut spacetimedb_dir = project_dir.join(spacetimedb_project_path);
 
     // Check if we are in a SpacetimeDB project directory
-
     if !spacetimedb_dir.exists() || !spacetimedb_dir.is_dir() {
         println!("{}", "No SpacetimeDB project found in current directory.".yellow());
         let should_init = Confirm::new()
@@ -123,7 +126,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             .interact()?;
 
         if should_init {
-            let init_args = init::cli().get_matches_from(if use_local {
+            let init_args = init::cli().get_matches_from(if resolved_server == "local" {
                 vec!["init", "--local"]
             } else {
                 vec!["init"]
@@ -135,6 +138,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 .context("Failed to canonicalize created project path")?;
             spacetimedb_dir = canonical_created_path.join(spacetimedb_project_path);
             module_bindings_dir = canonical_created_path.join(module_bindings_path);
+            project_dir = canonical_created_path;
 
             if !spacetimedb_dir.exists() {
                 anyhow::bail!("Project initialization did not create spacetimedb directory");
@@ -159,17 +163,30 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         );
     }
 
-    let use_local = if use_local {
-        true
-    } else if config.spacetimedb_token().is_some() {
-        false
-    } else {
+    if resolved_server == "maincloud" && config.spacetimedb_token().is_none() {
         let should_login = Confirm::new()
-            .with_prompt("Would you like to sign in to use Maincloud? (Select 'no' to use localhost)")
+            .with_prompt("Would you like to sign in now?")
             .default(true)
             .interact()?;
-        !should_login
-    };
+        if !should_login && server != None {
+            // The user explicitly provided --server maincloud but doesn't want to log in
+            anyhow::bail!("Login required to publish to maincloud server");
+        } else if !should_login {
+            // Print warning saying that without logging in we will use local server regardless
+            // of what their default server is in their config
+            println!(
+                "{} {}",
+                "Warning:".yellow().bold(),
+                "Without logging in, the local server will be used regardless of your default server.".dimmed()
+            );
+            // Switch the server to local
+            resolved_server = "local";
+        } else {
+            // Login
+            get_login_token_or_log_in(&mut config, Some(resolved_server), !force).await?;
+        }
+    }
+    let use_local = resolved_server == "local";
 
     let database_name = if let Some(name) = args.get_one::<String>("database") {
         name.clone()
@@ -180,7 +197,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         if use_local {
             generate_database_name()
         } else {
-            let token = get_login_token_or_log_in(&mut config, server, !force).await?;
+            // If not logged in before, but login was successful just now, this will have the token
+            let token = get_login_token_or_log_in(&mut config, Some(resolved_server), !force).await?;
 
             let choice = FuzzySelect::with_theme(&ColorfulTheme::default())
                 .with_prompt("Database selection")
@@ -191,7 +209,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             if choice == 0 {
                 generate_database_name()
             } else {
-                select_database(&config, server, &token).await?
+                select_database(&config, resolved_server, &token).await?
             }
         }
     };
@@ -216,17 +234,21 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     generate_build_and_publish(
         &config,
+        &project_dir,
         &spacetimedb_dir,
         &module_bindings_dir,
         &database_name,
         client_language,
-        server,
+        resolved_server,
         use_local,
     )
     .await?;
 
-    let db_identity = database_identity(&config, &database_name, server).await?;
-    let _log_handle = start_log_stream(config.clone(), db_identity.to_hex().to_string(), server).await?;
+    // Sleep for a second to allow the database to be published on Maincloud
+    sleep(Duration::from_secs(1)).await;
+
+    let db_identity = database_identity(&config, &database_name, Some(resolved_server)).await?;
+    let _log_handle = start_log_stream(config.clone(), db_identity.to_hex().to_string(), Some(resolved_server)).await?;
 
     let (tx, rx) = channel();
     let mut watcher: RecommendedWatcher = Watcher::new(
@@ -261,11 +283,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             println!("\n{}", "File change detected, rebuilding...".yellow());
             match generate_build_and_publish(
                 &config,
+                &project_dir,
                 &spacetimedb_dir,
                 &module_bindings_dir,
                 &database_name,
                 client_language,
-                server,
+                resolved_server,
                 use_local,
             )
             .await
@@ -280,16 +303,60 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 }
 
+/// Upserts the various SPACETIMEDB_DB_NAME variants into `.env.local`,
+/// preserving comments/formatting and leaving other keys (like HOST) unchanged.
+fn upsert_env_db_names(env_path: &Path, database_name: &str) -> anyhow::Result<()> {
+    let keys = [
+        "SPACETIMEDB_DB_NAME",             // generic / backend
+        "VITE_SPACETIMEDB_DB_NAME",        // Vite
+        "NEXT_PUBLIC_SPACETIMEDB_DB_NAME", // Next.js
+        "REACT_APP_SPACETIMEDB_DB_NAME",   // CRA
+        "EXPO_PUBLIC_SPACETIMEDB_DB_NAME", // Expo
+        "PUBLIC_SPACETIMEDB_DB_NAME",      // SvelteKit
+    ];
+
+    let mut contents = if env_path.exists() {
+        fs::read_to_string(env_path)?
+    } else {
+        String::new()
+    };
+
+    for key in keys {
+        // Match lines like: KEY = value   (preserve any spacing before/after '=')
+        let re = Regex::new(&format!(r"(?m)^(?P<prefix>\s*{key}\s*=\s*)(?P<val>.*)$"))?;
+        if re.is_match(&contents) {
+            // Replace only the value, keep existing spacing
+            contents = re
+                .replace_all(&contents, format!("${{prefix}}{database_name}"))
+                .to_string();
+        } else {
+            // Not present: append it
+            if !contents.is_empty() && !contents.ends_with('\n') {
+                contents.push('\n');
+            }
+            contents.push_str(&format!("{key}={database_name}\n"));
+        }
+    }
+
+    if !contents.ends_with('\n') {
+        contents.push('\n');
+    }
+
+    fs::write(env_path, contents)?;
+    Ok(())
+}
+
 async fn generate_build_and_publish(
     config: &Config,
-    project_path: &Path,
-    module_bindings_path: &Path,
+    project_dir: &Path,
+    spacetimedb_dir: &Path,
+    module_bindings_dir: &Path,
     database_name: &str,
     client_language: Option<&Language>,
-    server: Option<&str>,
+    server: &str,
     _use_local: bool,
 ) -> Result<(), anyhow::Error> {
-    let module_language = detect_module_language(project_path)?;
+    let module_language = detect_module_language(spacetimedb_dir)?;
     let client_language = client_language.unwrap_or_else(|| match module_language {
         crate::util::ModuleLanguage::Rust => &Language::Rust,
         crate::util::ModuleLanguage::Csharp => &Language::Csharp,
@@ -302,9 +369,20 @@ async fn generate_build_and_publish(
         Language::UnrealCpp => "unrealcpp",
     };
 
+    if client_language == &Language::TypeScript {
+        // Update SPACETIMEDB_DBNAME environment variables in `.env.local` for TypeScript client
+        println!(
+            "{} {}...",
+            "Updating .env.local with database name".cyan(),
+            database_name
+        );
+        let env_path = project_dir.join(".env.local");
+        upsert_env_db_names(&env_path, database_name)?;
+    }
+
     println!("{}", "Building...".cyan());
     let (_path_to_program, _host_type) =
-        tasks::build(project_path, Some(Path::new("src")), false).context("Failed to build project")?;
+        tasks::build(spacetimedb_dir, Some(Path::new("src")), false).context("Failed to build project")?;
     println!("{}", "Build complete!".green());
 
     println!("{}", "Generating module bindings...".cyan());
@@ -313,21 +391,18 @@ async fn generate_build_and_publish(
         "--lang",
         client_language_str,
         "--project-path",
-        project_path.to_str().unwrap(),
+        spacetimedb_dir.to_str().unwrap(),
         "--out-dir",
-        module_bindings_path.to_str().unwrap(),
+        module_bindings_dir.to_str().unwrap(),
     ]);
     generate::exec(config.clone(), &generate_args).await?;
 
     println!("{}", "Publishing...".cyan());
 
-    let project_path_str = project_path.to_str().unwrap();
-    let server_arg = server.map(|s| s.to_string());
+    let project_path_str = spacetimedb_dir.to_str().unwrap();
 
     let mut publish_args = vec!["publish", database_name, "--project-path", project_path_str, "--yes"];
-    if let Some(ref s) = server_arg {
-        publish_args.extend_from_slice(&["--server", s]);
-    }
+    publish_args.extend_from_slice(&["--server", server]);
 
     let publish_cmd = publish::cli();
     let publish_matches = publish_cmd
@@ -342,7 +417,7 @@ async fn generate_build_and_publish(
     Ok(())
 }
 
-async fn select_database(config: &Config, server: Option<&str>, token: &str) -> Result<String, anyhow::Error> {
+async fn select_database(config: &Config, server: &str, token: &str) -> Result<String, anyhow::Error> {
     let identity = crate::util::decode_identity(&token.to_string())?;
 
     let spinner = ProgressBar::new_spinner();
@@ -358,7 +433,7 @@ async fn select_database(config: &Config, server: Option<&str>, token: &str) -> 
     let res = client
         .get(format!(
             "{}/v1/identity/{}/databases",
-            config.get_host_url(server)?,
+            config.get_host_url(Some(server))?,
             identity
         ))
         .bearer_auth(token)
@@ -385,7 +460,7 @@ async fn select_database(config: &Config, server: Option<&str>, token: &str) -> 
             .map(|identity_str| {
                 let config = config.clone();
                 async move {
-                    let names_response = spacetime_reverse_dns(&config, &identity_str, server).await?;
+                    let names_response = spacetime_reverse_dns(&config, &identity_str, Some(server)).await?;
                     let name = if names_response.names.is_empty() {
                         identity_str.clone()
                     } else {
