@@ -648,7 +648,7 @@ impl TableSchema {
 
         columns.push(ColumnSchema {
             table_id: TableId::SENTINEL,
-            col_pos: ColId(1),
+            col_pos: ColId((if *is_anonymous { 0 } else { 1 })),
             col_name: "arg_id".into(),
             col_type: AlgebraicType::U64,
         });
