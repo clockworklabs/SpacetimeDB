@@ -35,7 +35,8 @@ jobs:
             const targetRepo = 'SpacetimeDBPrivate';
             const workflowId = 'internal-tests.yml';
             const targetRef = 'master';
-            const publicRef = context.sha;
+            // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
+            const publicRef = (context.eventName === 'pull_request') ? context.ref : context.sha;
             const preDispatch = new Date().toISOString();
 
             // Dispatch the workflow in the target repository
