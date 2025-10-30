@@ -169,8 +169,8 @@ impl RawConfig {
             ecdsa_public_key: None,
         };
         RawConfig {
-            default_server: local.nickname.clone(),
-            server_configs: vec![local, maincloud],
+            default_server: maincloud.nickname.clone(),
+            server_configs: vec![maincloud, local],
             web_session_token: None,
             spacetimedb_token: None,
         }

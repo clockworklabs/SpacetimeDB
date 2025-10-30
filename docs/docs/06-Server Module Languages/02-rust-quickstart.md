@@ -245,7 +245,7 @@ And that's all of our module code! We'll run `spacetime publish` to compile our 
 From the `quickstart-chat` directory, run in another tab:
 
 ```bash
-spacetime publish --project-path spacetimedb quickstart-chat
+spacetime publish --server local --project-path spacetimedb quickstart-chat
 ```
 
 ## Call Reducers
@@ -253,13 +253,13 @@ spacetime publish --project-path spacetimedb quickstart-chat
 You can use the CLI (command line interface) to run reducers. The arguments to the reducer are passed in JSON format.
 
 ```bash
-spacetime call quickstart-chat send_message "Hello, World!"
+spacetime call --server local quickstart-chat send_message "Hello, World!"
 ```
 
 Once we've called our `send_message` reducer, we can check to make sure it ran by running the `logs` command.
 
 ```bash
-spacetime logs quickstart-chat
+spacetime logs --server local quickstart-chat
 ```
 
 You should now see the output that your module printed in the database.
@@ -276,7 +276,7 @@ You should now see the output that your module printed in the database.
 SpacetimeDB supports a subset of the SQL syntax so that you can easily query the data of your database. We can run a query using the `sql` command.
 
 ```bash
-spacetime sql quickstart-chat "SELECT * FROM message"
+spacetime sql --server local quickstart-chat "SELECT * FROM message"
 ```
 
 ```bash

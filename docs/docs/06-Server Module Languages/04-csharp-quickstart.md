@@ -264,7 +264,7 @@ And that's all of our module code! We'll run `spacetime publish` to compile our 
 From the `quickstart-chat` directory, run:
 
 ```bash
-spacetime publish --project-path spacetimedb quickstart-chat
+spacetime publish --server local --project-path spacetimedb quickstart-chat
 ```
 
 Note: If the WebAssembly optimizer `wasm-opt` is installed, `spacetime publish` will automatically optimize the Web Assembly output of the published module. Instruction for installing the `wasm-opt` binary can be found in [Rust's wasm-opt documentation](https://docs.rs/wasm-opt/latest/wasm_opt/).
@@ -274,13 +274,13 @@ Note: If the WebAssembly optimizer `wasm-opt` is installed, `spacetime publish` 
 You can use the CLI (command line interface) to run reducers. The arguments to the reducer are passed in JSON format.
 
 ```bash
-spacetime call quickstart-chat SendMessage "Hello, World!"
+spacetime call --server local quickstart-chat SendMessage "Hello, World!"
 ```
 
 Once we've called our `SendMessage` reducer, we can check to make sure it ran by running the `logs` command.
 
 ```bash
-spacetime logs quickstart-chat
+spacetime logs --server local quickstart-chat
 ```
 
 You should now see the output that your module printed in the database.
@@ -294,7 +294,7 @@ info: Hello, World!
 SpacetimeDB supports a subset of the SQL syntax so that you can easily query the data of your database. We can run a query using the `sql` command.
 
 ```bash
-spacetime sql quickstart-chat "SELECT * FROM message"
+spacetime sql --server local quickstart-chat "SELECT * FROM message"
 ```
 
 ```bash

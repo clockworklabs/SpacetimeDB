@@ -262,7 +262,7 @@ pub async fn exec_ex(
     Ok(())
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Language {
     Csharp,
     TypeScript,
