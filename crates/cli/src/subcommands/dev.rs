@@ -303,16 +303,17 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 }
 
-/// Upserts the various SPACETIMEDB_DB_NAME variants into `.env.local`,
-/// preserving comments/formatting and leaving other keys (like HOST) unchanged.
-fn upsert_env_db_names(env_path: &Path, database_name: &str) -> anyhow::Result<()> {
-    let keys = [
-        "SPACETIMEDB_DB_NAME",             // generic / backend
-        "VITE_SPACETIMEDB_DB_NAME",        // Vite
-        "NEXT_PUBLIC_SPACETIMEDB_DB_NAME", // Next.js
-        "REACT_APP_SPACETIMEDB_DB_NAME",   // CRA
-        "EXPO_PUBLIC_SPACETIMEDB_DB_NAME", // Expo
-        "PUBLIC_SPACETIMEDB_DB_NAME",      // SvelteKit
+/// Upserts all SPACETIMEDB_DB_NAME and SPACETIMEDB_HOST variants into `.env.local`,
+/// preserving comments/formatting and leaving unrelated keys unchanged.
+fn upsert_env_db_names_and_hosts(env_path: &Path, server_host_url: &str, database_name: &str) -> anyhow::Result<()> {
+    // Framework-agnostic variants (same list for both DB_NAME and HOST)
+    let prefixes = [
+        "SPACETIMEDB",             // generic / backend
+        "VITE_SPACETIMEDB",        // Vite
+        "NEXT_PUBLIC_SPACETIMEDB", // Next.js
+        "REACT_APP_SPACETIMEDB",   // CRA
+        "EXPO_PUBLIC_SPACETIMEDB", // Expo
+        "PUBLIC_SPACETIMEDB",      // SvelteKit
     ];
 
     let mut contents = if env_path.exists() {
@@ -321,20 +322,18 @@ fn upsert_env_db_names(env_path: &Path, database_name: &str) -> anyhow::Result<(
         String::new()
     };
 
-    for key in keys {
-        // Match lines like: KEY = value   (preserve any spacing before/after '=')
-        let re = Regex::new(&format!(r"(?m)^(?P<prefix>\s*{key}\s*=\s*)(?P<val>.*)$"))?;
-        if re.is_match(&contents) {
-            // Replace only the value, keep existing spacing
-            contents = re
-                .replace_all(&contents, format!("${{prefix}}{database_name}"))
-                .to_string();
-        } else {
-            // Not present: append it
-            if !contents.is_empty() && !contents.ends_with('\n') {
-                contents.push('\n');
+    for prefix in prefixes {
+        for (suffix, value) in [("DB_NAME", database_name), ("HOST", server_host_url)] {
+            let key = format!("{prefix}_{suffix}");
+            let re = Regex::new(&format!(r"(?m)^(?P<prefix>\s*{key}\s*=\s*)(?P<val>.*)$"))?;
+            if re.is_match(&contents) {
+                contents = re.replace_all(&contents, format!("${{prefix}}{value}")).to_string();
+            } else {
+                if !contents.is_empty() && !contents.ends_with('\n') {
+                    contents.push('\n');
+                }
+                contents.push_str(&format!("{key}={value}\n"));
             }
-            contents.push_str(&format!("{key}={database_name}\n"));
         }
     }
 
@@ -377,7 +376,8 @@ async fn generate_build_and_publish(
             database_name
         );
         let env_path = project_dir.join(".env.local");
-        upsert_env_db_names(&env_path, database_name)?;
+        let server_host_url = config.get_host_url(Some(server))?;
+        upsert_env_db_names_and_hosts(&env_path, &server_host_url, database_name)?;
     }
 
     println!("{}", "Building...".cyan());
