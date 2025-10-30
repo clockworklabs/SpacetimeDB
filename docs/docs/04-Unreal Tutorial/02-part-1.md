@@ -63,6 +63,8 @@ Before beginning make sure to close the Unreal project and IDE.
 
 ### Create the GameManager Actor
 
+<Tabs groupId="client-language" defaultValue="cpp">
+<TabItem value="cpp" label="C++">
 1. Open the `blackholio` project in your IDE (Visual Studio or JetBrains Rider) and run the project to launch the Unreal Editor.
    - This will enable **Live Coding**, making the workflow a bit smoother.
    - Unreal will prompt you to build the `SpacetimeDbSdk` plugin. Do so.
