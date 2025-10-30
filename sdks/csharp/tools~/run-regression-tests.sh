@@ -15,13 +15,13 @@ STDB_PATH="$SDK_PATH/../.."
 cargo build --manifest-path "$STDB_PATH/crates/standalone/Cargo.toml"
 
 # Publish module for btree test
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y -p "$SDK_PATH/examples~/regression-tests/server" btree-repro
+cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y --server local -p "$SDK_PATH/examples~/regression-tests/server" btree-repro
 
 # Publish module for republishing module test
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y -p "$SDK_PATH/examples~/regression-tests/republishing/server-initial" republish-test
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call republish-test Insert 1
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -p "$SDK_PATH/examples~/regression-tests/republishing/server-republish" --break-clients republish-test
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call republish-test Insert 2
+cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y --server local -p "$SDK_PATH/examples~/regression-tests/republishing/server-initial" republish-test
+cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server local republish-test Insert 1
+cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish  --server local -p "$SDK_PATH/examples~/regression-tests/republishing/server-republish" --break-clients republish-test
+cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server local republish-test Insert 2
 
 # Run client for btree test
 cd "$SDK_PATH/examples~/regression-tests/client" && dotnet run -c Debug

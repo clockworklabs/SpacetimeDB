@@ -7,7 +7,7 @@ use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{call_call_reducer, call_describe_module, call_reducer_fun, resolve_sys_module, FnRet};
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
-use super::module_host::{CallReducerParams, Module, ModuleInfo, ModuleRuntime};
+use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::module_host::Instance;
@@ -200,7 +200,7 @@ impl JsInstanceEnv {
     fn start_reducer(&mut self, name: &str, ts: Timestamp) {
         self.reducer_start = Instant::now();
         name.clone_into(&mut self.reducer_name);
-        self.instance_env.start_reducer(ts);
+        self.instance_env.start_funcall(ts);
     }
 
     /// Returns the name of the most recent reducer to be run in this environment.
@@ -295,6 +295,13 @@ impl JsInstance {
 
         response
     }
+
+    pub async fn call_procedure(
+        &mut self,
+        _params: CallProcedureParams,
+    ) -> Result<super::ProcedureCallResult, super::ProcedureCallError> {
+        todo!("JS/TS module procedure support")
+    }
 }
 
 /// A request for the worker in [`spawn_instance_worker`].
@@ -333,7 +340,7 @@ fn startup_instance_worker<'scope>(
     let module_common = match module_or_mcc {
         Either::Left(module_common) => Either::Left(module_common),
         Either::Right(mcc) => {
-            let def = extract_description(scope)?;
+            let def = extract_description(scope, &mcc.replica_ctx)?;
 
             // Validate and create a common module from the raw definition.
             Either::Right(build_common_module_from_raw(mcc, def)?)
@@ -577,72 +584,84 @@ fn call_reducer<'scope>(
 ) -> (super::ReducerCallResult, bool) {
     let mut trapped = false;
 
-    let (res, _) = instance_common.call_reducer_with_tx(replica_ctx, tx, params, log_traceback, |tx, op, budget| {
-        // TODO(v8): Start the budget timeout and long-running logger.
-        let env = env_on_isolate_unwrap(scope);
-        let mut tx_slot = env.instance_env.tx.clone();
+    let (res, _) = instance_common.call_reducer_with_tx(
+        replica_ctx,
+        tx,
+        params,
+        move |a, b, c| log_traceback(replica_ctx, a, b, c),
+        |tx, op, budget| {
+            // TODO(v8): Start the budget timeout and long-running logger.
+            let env = env_on_isolate_unwrap(scope);
+            let mut tx_slot = env.instance_env.tx.clone();
 
-        // Start the timer.
-        // We'd like this tightly around `__call_reducer__`.
-        env.start_reducer(op.name, op.timestamp);
+            // Start the timer.
+            // We'd like this tightly around `__call_reducer__`.
+            env.start_reducer(op.name, op.timestamp);
 
-        // Call `__call_reducer__` with `tx` provided.
-        // It should not be available before.
-        let (tx, call_result) = tx_slot.set(tx, || {
-            catch_exception(scope, |scope| {
-                let res = call_call_reducer(scope, fun, op)?;
-                Ok(res)
-            })
-            .map_err(|(e, can_continue)| {
-                // Convert `can_continue` to whether the isolate has "trapped".
-                // Also cancel execution termination if needed,
-                // that can occur due to terminating long running reducers.
-                trapped = match can_continue {
-                    CanContinue::No => false,
-                    CanContinue::Yes => true,
-                    CanContinue::YesCancelTermination => {
-                        scope.cancel_terminate_execution();
-                        true
-                    }
-                };
+            // Call `__call_reducer__` with `tx` provided.
+            // It should not be available before.
+            let (tx, call_result) = tx_slot.set(tx, || {
+                catch_exception(scope, |scope| {
+                    let res = call_call_reducer(scope, fun, op)?;
+                    Ok(res)
+                })
+                .map_err(|(e, can_continue)| {
+                    // Convert `can_continue` to whether the isolate has "trapped".
+                    // Also cancel execution termination if needed,
+                    // that can occur due to terminating long running reducers.
+                    trapped = match can_continue {
+                        CanContinue::No => false,
+                        CanContinue::Yes => true,
+                        CanContinue::YesCancelTermination => {
+                            scope.cancel_terminate_execution();
+                            true
+                        }
+                    };
 
-                e
-            })
-            .map_err(anyhow::Error::from)
-        });
+                    e
+                })
+                .map_err(anyhow::Error::from)
+            });
 
-        // Finish timings.
-        let timings = env_on_isolate_unwrap(scope).finish_reducer();
+            // Finish timings.
+            let timings = env_on_isolate_unwrap(scope).finish_reducer();
 
-        // Derive energy stats.
-        let energy = energy_from_elapsed(budget, timings.total_duration);
+            // Derive energy stats.
+            let energy = energy_from_elapsed(budget, timings.total_duration);
 
-        // Fetch the currently used heap size in V8.
-        // The used size is ostensibly fairer than the total size.
-        let memory_allocation = scope.get_heap_statistics().used_heap_size();
+            // Fetch the currently used heap size in V8.
+            // The used size is ostensibly fairer than the total size.
+            let memory_allocation = scope.get_heap_statistics().used_heap_size();
 
-        let exec_result = ExecuteResult {
-            energy,
-            timings,
-            memory_allocation,
-            call_result,
-        };
-        (tx, exec_result)
-    });
+            let exec_result = ExecuteResult {
+                energy,
+                timings,
+                memory_allocation,
+                call_result,
+            };
+            (tx, exec_result)
+        },
+    );
 
     (res, trapped)
 }
 
 /// Extracts the raw module def by running the registered `__describe_module__` hook.
-fn extract_description<'scope>(scope: &mut PinScope<'scope, '_>) -> Result<RawModuleDef, DescribeError> {
-    run_describer(log_traceback, || {
-        catch_exception(scope, |scope| {
-            let def = call_describe_module(scope)?;
-            Ok(def)
-        })
-        .map_err(|(e, _)| e)
-        .map_err(Into::into)
-    })
+fn extract_description<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    replica_ctx: &ReplicaContext,
+) -> Result<RawModuleDef, DescribeError> {
+    run_describer(
+        |a, b, c| log_traceback(replica_ctx, a, b, c),
+        || {
+            catch_exception(scope, |scope| {
+                let def = call_describe_module(scope)?;
+                Ok(def)
+            })
+            .map_err(|(e, _)| e)
+            .map_err(Into::into)
+        },
+    )
 }
 #[cfg(test)]
 mod test {

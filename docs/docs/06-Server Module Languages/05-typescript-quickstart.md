@@ -35,20 +35,6 @@ spacetime init --lang typescript quickstart-chat
 
 Inside the `spacetimedb/` directory will be a `src/index.ts` entrypoint (required for publishing).
 
-## How to Build & Publish
-
-> [!IMPORTANT]
-> TypeScript modules are built and published with the `spacetime` CLI. `spacetime publish` will transpile and bundle your server module for you starting with the `src/index.ts` entrypoint. If you bundle your js yourself, you can specify `spacetime publish --server local --js-path <path-to-your-bundle-file>` when publishing.
-
-From the `spacetimedb/` directory you can lint/typecheck locally if you like, but to make the module live you’ll publish it to a database:
-
-```bash
-cd spacetimedb
-spacetime publish --server local --project-path spacetimedb quickstart-chat
-```
-
-Publishing bundles your TypeScript into a single artifact and installs it into the `quickstart-chat` database.
-
 ## Declare imports
 
 Open `spacetimedb/src/index.ts`. Replace its contents with the following imports to start building a bare-bones real-time chat server:
@@ -199,6 +185,11 @@ spacetime start
 (If it’s already running, you can skip this step.)
 
 ## Publish the module
+
+From the `spacetimedb/` directory you can lint/typecheck locally if you like, but to make the module live you’ll need to publish it to a database. Publishing bundles your TypeScript into a single artifact and installs it into the `quickstart-chat` database.
+
+> [!IMPORTANT]
+> TypeScript modules are built and published with the `spacetime` CLI. `spacetime publish` will transpile and bundle your server module for you starting with the `src/index.ts` entrypoint. If you bundle your js yourself, you can specify `spacetime publish --js-path <path-to-your-bundle-file>` when publishing.
 
 From the `quickstart-chat` directory (the parent of `spacetimedb/`):
 

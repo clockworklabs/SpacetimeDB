@@ -46,7 +46,6 @@ spacetime init --lang csharp quickstart-chat
 ```
 
 `spacetime init` will ask you for a project path in which to put your project. By default this will be `./quickstart-chat`. This basic project will have a few helper files like Cursor rules for SpacetimeDB and a `spacetimedb` directory which is where your SpacetimeDB module code will go.
-```
 
 ## Declare imports
 

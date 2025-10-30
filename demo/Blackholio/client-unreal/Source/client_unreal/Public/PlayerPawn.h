@@ -18,7 +18,8 @@ public:
 	APlayerPawn();
 	void Initialize(FPlayerType Player);
 
-	uint32 PlayerId = 0;
+	UPROPERTY(BlueprintReadWrite, Category="BH|Player")
+	int32 PlayerId = 0;
 	UPROPERTY(BlueprintReadWrite, Category="BH|Player")
 	bool bIsLocalPlayer = false;
 	
@@ -37,7 +38,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="BH|Input")
 	void Suicide();
 	
-	uint32 TotalMass() const;
+	int32 TotalMass() const;
 	UFUNCTION(BlueprintPure, Category="BH|Player")
 	FVector CenterOfMass() const;
 

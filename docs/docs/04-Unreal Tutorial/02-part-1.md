@@ -3,7 +3,10 @@ title: 1 - Setup
 slug: /unreal/part-1
 ---
 
-# Unreal Tutorial - Part 1 - Setup
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Setup
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
@@ -60,6 +63,8 @@ Before beginning make sure to close the Unreal project and IDE.
 
 ### Create the GameManager Actor
 
+<Tabs groupId="client-language" defaultValue="cpp">
+<TabItem value="cpp" label="C++">
 1. Open the `blackholio` project in your IDE (Visual Studio or JetBrains Rider) and run the project to launch the Unreal Editor.
    - This will enable **Live Coding**, making the workflow a bit smoother.
    - Unreal will prompt you to build the `SpacetimeDbSdk` plugin. Do so.
@@ -70,11 +75,22 @@ Before beginning make sure to close the Unreal project and IDE.
 The `GameManager` class will be where we will put the high level initialization and coordination logic for our game.
 
 > **Note:** In a production Unreal project, you would typically implement this logic in a Subsystem. For simplicity, this tutorial uses a singleton actor.
+</TabItem>
+<TabItem value="blueprint" label="Blueprint">
+1. Open the `client_unreal` project to launch the Unreal Editor.
+2. **Create a GameManager Blueprint**  
+   - In the **Content Drawer**, click **Add**, then select **Blueprint -> Blueprint Class**.  
+   - Click **Actor**.  
+   - Name the blueprint `BP_GameManager`.
+</TabItem>
+</Tabs>
 
 ### Set Up the Level
 
 Set up the empty level, add the new `GameManager` to the level, and add lighting.
 
+<Tabs groupId="client-language" defaultValue="cpp">
+<TabItem value="cpp" label="C++">
 1. **Create a new level**
    - Open **File -> New Level** in the top menu, select **Empty Level**, and click **Create**.
    - Save the level and name it `Blackholio`.
@@ -104,11 +120,38 @@ Set up the empty level, add the new `GameManager` to the level, and add lighting
    - Enable and set **Exposure -> Min EV100** to 1.0.
    - Enable and set **Exposure -> Max EV100** to 1.0.
    - Enable **Post Process Volume Settings -> Infinite Extend (Unbounded)**.
+</TabItem>
+<TabItem value="blueprint" label="Blueprint">
+1. **Create a new level**
+   - Open **File -> New Level** in the top menu, select **Empty Level**, and click **Create**.
+   - Save the level and name it `Blackholio`.
 
+2. **Update Maps & Modes**  
+   - Open **Edit -> Project Settings** in the top menu, then select **Project -> Maps & Modes** on the left.
+   - Set **Editor Startup Map** to `Blackholio`.
+   - Set **Game Default Map** to `Blackholio`.
+
+3. **Add to the Level**
+   - Drag the `BP_GameManager` blueprint from the **Content Drawer** into the scene view.
+
+4. **Add a Directional Light**
+   - Click **Add** in the top toolbar, then select **Lights -> Directional Light**.
+   - Set **Rotation** to -105.0, -31.0, -14.0.
+
+5. **Add a Post Process Volume**  
+   - Click **Add** in the top toolbar, then select **Volumes -> Post Process Volume**.  
+   - Enable and set **Exposure -> Exposure Compensation** to 0.0.  
+   - Enable and set **Exposure -> Min EV100** to 1.0.  
+   - Enable and set **Exposure -> Max EV100** to 1.0.  
+   - Enable **Post Process Volume Settings -> Infinite Extend (Unbounded)**.
+</TabItem>
+</Tabs>
 ### Add a Simple GameMode
 
 Create a simple GameMode to tweak the startup settings and connect it to the World Settings.
 
+<Tabs groupId="client-language" defaultValue="cpp">
+<TabItem value="cpp" label="C++">
 1. **Create the C++ class**
    - Open **Tools -> New C++ Class** in the top menu, select **GameModeBase** as the parent, and click **Next**.
    - Select **Public** as the class type.
@@ -123,6 +166,19 @@ Create a simple GameMode to tweak the startup settings and connect it to the Wor
    - Open **Window -> World Settings** in the top menu.
    - Change **GameMode Override** from **None** to `BP_BlackholioGameMode`.
    - Save the level.
+</TabItem>
+<TabItem value="blueprint" label="Blueprint">
+1. **Create a GameMode Blueprint**  
+   - In the **Content Drawer**, click **Add**, then select **Blueprint -> Blueprint Class**.  
+   - Expand **All Classes**, and click `Game Mode Base`.
+   - Name the blueprint `BP_GameMode`.
+
+2. **Update World Settings**  
+   - Open **Window -> World Settings** in the top menu.  
+   - Change **GameMode Override** from **None** to `BP_GameMode`.  
+   - Save the level.
+</TabItem>
+</Tabs>
 
 At this point, the foundation of the Unreal project is set up. Pressing Play will show a blank screen, but the game should start without errors. Next, we’ll create the SpacetimeDB server module so we have something to connect to.
 

@@ -3,6 +3,11 @@ title: 1 - Setup
 slug: /unity/part-1
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Setup
+
 ![Unity Tutorial Hero Image](/images/unity/part-1-hero-image.png)
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
@@ -24,12 +29,10 @@ Open Unity and create a new project by selecting "New" from the Unity Hub or goi
 ![Unity Hub New Project](/images/unity/part-1-unity-hub-new-project.jpg)
 
 :::warning
-
-**Choose the `Universal 2D`** template to select a template which uses the Unity Universal Render Pipeline.
-
+**Make sure to choose the `Universal 2D` template for your new project.**
 :::
 
-For `Project Name` use `blackholio`. For `Project Location` select a directory that you can navigate to via the CLI because we will need to do so in the next step.
+For `Project Name` use `blackholio`. For `Project Location` select a directory that you can navigate to via the CLI because we will need to do so in part 2.
 
 ![Universal 2D Template](/images/unity/part-1-universal-2d-template.png)
 

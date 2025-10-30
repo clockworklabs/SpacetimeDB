@@ -1,6 +1,6 @@
 use super::{ClientConfig, DataMessage, Protocol};
-use crate::host::module_host::{EventStatus, ModuleEvent};
-use crate::host::ArgsTuple;
+use crate::host::module_host::{EventStatus, ModuleEvent, ProcedureCallError};
+use crate::host::{ArgsTuple, ProcedureCallResult};
 use crate::messages::websocket as ws;
 use crate::subscription::websocket_building::{brotli_compress, decide_compression, gzip_compress};
 use bytes::{BufMut, Bytes, BytesMut};
@@ -13,7 +13,7 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
-use spacetimedb_lib::{ConnectionId, TimeDuration};
+use spacetimedb_lib::{AlgebraicValue, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
 use std::sync::Arc;
@@ -167,6 +167,7 @@ pub enum SerializableMessage {
     Subscribe(SubscriptionUpdateMessage),
     Subscription(SubscriptionMessage),
     TxUpdate(TransactionUpdateMessage),
+    ProcedureResult(ProcedureResultMessage),
 }
 
 impl SerializableMessage {
@@ -177,7 +178,7 @@ impl SerializableMessage {
             Self::Subscribe(msg) => Some(msg.num_rows()),
             Self::Subscription(msg) => Some(msg.num_rows()),
             Self::TxUpdate(msg) => Some(msg.num_rows()),
-            Self::Identity(_) => None,
+            Self::Identity(_) | Self::ProcedureResult(_) => None,
         }
     }
 
@@ -194,6 +195,7 @@ impl SerializableMessage {
             },
             Self::TxUpdate(_) => Some(WorkloadType::Update),
             Self::Identity(_) => None,
+            Self::ProcedureResult(_) => Some(WorkloadType::Procedure),
         }
     }
 }
@@ -208,6 +210,7 @@ impl ToProtocol for SerializableMessage {
             SerializableMessage::Subscribe(msg) => msg.to_protocol(protocol),
             SerializableMessage::TxUpdate(msg) => msg.to_protocol(protocol),
             SerializableMessage::Subscription(msg) => msg.to_protocol(protocol),
+            SerializableMessage::ProcedureResult(msg) => msg.to_protocol(protocol),
         }
     }
 }
@@ -583,4 +586,99 @@ fn convert<F: WebsocketFormat>(msg: OneOffQueryResponseMessage<F>) -> ws::Server
         tables: msg.results.into_boxed_slice(),
         total_host_execution_duration: msg.total_host_execution_duration,
     })
+}
+
+/// Result of a procedure run.
+#[derive(Debug)]
+pub enum ProcedureStatus {
+    /// The procedure ran to completion and returned this value.
+    Returned(AlgebraicValue),
+    /// The procedure was terminated due to running out of energy.
+    OutOfEnergy,
+    /// The procedure failed to run to completion. This string describes the failure.
+    InternalError(String),
+}
+
+/// Will be sent to the caller of a procedure after that procedure finishes running.
+#[derive(Debug)]
+pub struct ProcedureResultMessage {
+    status: ProcedureStatus,
+    timestamp: Timestamp,
+    total_host_execution_duration: TimeDuration,
+    request_id: u32,
+}
+
+impl ProcedureResultMessage {
+    pub fn from_result(res: &Result<ProcedureCallResult, ProcedureCallError>, request_id: RequestId) -> Self {
+        let (status, timestamp, execution_duration) = match res {
+            Ok(ProcedureCallResult {
+                return_val,
+                execution_duration,
+                start_timestamp,
+            }) => (
+                ProcedureStatus::Returned(return_val.clone()),
+                *start_timestamp,
+                TimeDuration::from(*execution_duration),
+            ),
+            Err(err) => (
+                match err {
+                    ProcedureCallError::OutOfEnergy => ProcedureStatus::OutOfEnergy,
+                    _ => ProcedureStatus::InternalError(format!("{err}")),
+                },
+                Timestamp::UNIX_EPOCH,
+                TimeDuration::ZERO,
+            ),
+        };
+
+        ProcedureResultMessage {
+            status,
+            timestamp,
+            total_host_execution_duration: execution_duration,
+            request_id,
+        }
+    }
+}
+
+impl ToProtocol for ProcedureResultMessage {
+    type Encoded = SwitchedServerMessage;
+
+    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
+        fn convert<F: WebsocketFormat>(
+            msg: ProcedureResultMessage,
+            serialize_value: impl Fn(AlgebraicValue) -> F::Single,
+        ) -> ws::ServerMessage<F> {
+            let ProcedureResultMessage {
+                status,
+                timestamp,
+                total_host_execution_duration,
+                request_id,
+            } = msg;
+            let status = match status {
+                ProcedureStatus::InternalError(msg) => ws::ProcedureStatus::InternalError(msg),
+                ProcedureStatus::OutOfEnergy => ws::ProcedureStatus::OutOfEnergy,
+                ProcedureStatus::Returned(val) => ws::ProcedureStatus::Returned(serialize_value(val)),
+            };
+            ws::ServerMessage::ProcedureResult(ws::ProcedureResult {
+                status,
+                timestamp,
+                total_host_execution_duration,
+                request_id,
+            })
+        }
+
+        // Note that procedure returns are sent only to the caller, not broadcast to all subscribers,
+        // so we don't have to bother with memoizing the serialization the way we do for reducer args.
+        match protocol {
+            Protocol::Binary => FormatSwitch::Bsatn(convert(self, |val| {
+                bsatn::to_vec(&val)
+                    .expect("Procedure return value failed to serialize to BSATN")
+                    .into()
+            })),
+            Protocol::Text => FormatSwitch::Json(convert(self, |val| {
+                serde_json::to_string(&SerializeWrapper(val))
+                    .expect("Procedure return value failed to serialize to JSON")
+                    .into()
+            })),
+        }
+    }
 }
