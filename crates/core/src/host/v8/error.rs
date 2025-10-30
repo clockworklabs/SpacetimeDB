@@ -3,7 +3,11 @@
 use super::de::scratch_buf;
 use super::serialize_to_js;
 use super::string::IntoJsString;
-use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace};
+use crate::{
+    database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record},
+    host::instance_env::InstanceEnv,
+    replica_context::ReplicaContext,
+};
 use core::fmt;
 use spacetimedb_sats::Serialize;
 use v8::{tc_scope, Exception, HandleScope, Local, PinScope, PinnedRef, StackFrame, StackTrace, TryCatch, Value};
@@ -228,9 +232,7 @@ pub(super) struct JsError {
 impl fmt::Display for JsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "js error {}", self.msg)?;
-        if !f.alternate() {
-            writeln!(f, "{}", self.trace)?;
-        }
+        writeln!(f, "{}", self.trace)?;
         Ok(())
     }
 }
@@ -272,17 +274,32 @@ impl fmt::Display for JsStackTrace {
 
 impl BacktraceProvider for JsStackTrace {
     fn capture(&self) -> Box<dyn ModuleBacktrace> {
-        Box::new(self.clone())
+        let trace = self
+            .frames
+            .iter()
+            .map(|f| {
+                (
+                    format!("{}:{}:{}", f.script_name(), f.line, f.column),
+                    f.fn_name().to_owned(),
+                )
+            })
+            .collect();
+        Box::new(JsBacktrace { trace })
     }
 }
 
-impl ModuleBacktrace for JsStackTrace {
+/// A rendered backtrace for a JS exception.
+struct JsBacktrace {
+    trace: Vec<(String, String)>,
+}
+
+impl ModuleBacktrace for JsBacktrace {
     fn frames(&self) -> Vec<BacktraceFrame<'_>> {
-        self.frames
+        self.trace
             .iter()
-            .map(|frame| BacktraceFrame {
-                module_name: frame.script_name.as_deref(),
-                func_name: frame.fn_name.as_deref(),
+            .map(|(module_name, func_name)| BacktraceFrame {
+                module_name: Some(module_name),
+                func_name: Some(func_name),
             })
             .collect()
     }
@@ -388,13 +405,28 @@ impl JsError {
     }
 }
 
-pub(super) fn log_traceback(func_type: &str, func: &str, e: &anyhow::Error) {
-    log::info!("{func_type} \"{func}\" runtime error: {e:#}");
+pub(super) fn log_traceback(replica_ctx: &ReplicaContext, func_type: &str, func: &str, e: &anyhow::Error) {
+    log::info!("{func_type} \"{func}\" runtime error: {e:}");
     if let Some(js_err) = e.downcast_ref::<JsError>() {
         log::info!("js error {}", js_err.msg);
         for (index, frame) in js_err.trace.frames.iter().enumerate() {
             log::info!("  Frame #{index}: {frame}");
         }
+
+        // Also log to module logs.
+        let first_frame = js_err.trace.frames.first();
+        let filename = first_frame.map(|f| f.script_name());
+        let line_number = first_frame.map(|f| f.line as u32);
+        let message = &js_err.msg;
+        let record = Record {
+            ts: InstanceEnv::now_for_logging(),
+            target: None,
+            filename,
+            line_number,
+            function: Some(func),
+            message,
+        };
+        replica_ctx.logger.write(LogLevel::Panic, &record, &js_err.trace);
     }
 }
 

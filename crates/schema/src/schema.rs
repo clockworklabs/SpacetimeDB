@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::def::{
     ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
-    SequenceDef, TableDef, UniqueConstraintData, ViewDef,
+    SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
 };
 use crate::identifier::Identifier;
 
@@ -607,65 +607,51 @@ impl TableSchema {
     ///
     /// my_view:
     ///
-    /// | sender   | x   | y   | a   | b   |
-    /// |----------|-----|-----|-----|-----|
-    /// | Identity | u32 | u32 | u32 | u32 |
+    /// | sender   | arg_id | a   | b   |
+    /// |----------|--------|-----|-----|
+    /// | Identity | 1      | u32 | u32 |
     ///
     /// my_anonymous_view:
     ///
-    /// | x   | y   | a   | b   |
-    /// |-----|-----|-----|-----|
-    /// | u32 | u32 | u32 | u32 |
+    /// | arg_id | a   | b   |
+    /// |--------|-----|-----|
+    /// | 1      | u32 | u32 |
+    ///
+    /// Note, `arg_id` is a foreign key into `st_view_arg`.
     pub fn from_view_def(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
         module_def.expect_contains(view_def);
 
         let ViewDef {
             name,
-            is_anonymous,
             is_public,
-            params,
-            params_for_generate: _,
-            return_type: _,
-            return_type_for_generate: _,
-            columns: cols,
+            return_columns,
+            ..
         } = view_def;
 
-        let num_args = params.elements.len();
-        let num_cols = cols.len();
-        let n = num_args + num_cols + if *is_anonymous { 0 } else { 1 };
-
+        let n = return_columns.len() + 2;
         let mut columns = Vec::with_capacity(n);
 
-        if !is_anonymous {
-            columns.push(ColumnSchema {
-                table_id: TableId::SENTINEL,
-                col_pos: ColId(0),
-                col_name: "sender".into(),
-                col_type: AlgebraicType::identity(),
-            });
-        }
+        columns.push(ColumnSchema {
+            table_id: TableId::SENTINEL,
+            col_pos: ColId(0),
+            col_name: "sender".into(),
+            col_type: AlgebraicType::option(AlgebraicType::identity()),
+        });
 
-        let n = columns.len();
-
-        for (i, elem) in params.elements.iter().cloned().enumerate() {
-            columns.push(ColumnSchema {
-                table_id: TableId::SENTINEL,
-                col_pos: (n + i).into(),
-                col_name: elem.name.unwrap_or_else(|| format!("param_{i}").into_boxed_str()),
-                col_type: elem.algebraic_type,
-            });
-        }
-
-        let n = columns.len();
+        columns.push(ColumnSchema {
+            table_id: TableId::SENTINEL,
+            col_pos: ColId(1),
+            col_name: "arg_id".into(),
+            col_type: AlgebraicType::U64,
+        });
 
         columns.extend(
-            column_schemas_from_defs(module_def, cols, TableId::SENTINEL)
-                .into_iter()
+            return_columns
+                .iter()
+                .map(|def| ColumnSchema::from_view_column_def(module_def, def))
                 .enumerate()
-                .map(|(i, schema)| ColumnSchema {
-                    col_pos: (n + i).into(),
-                    ..schema
-                }),
+                .map(|(i, schema)| (ColId::from(i + 2), schema))
+                .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema }),
         );
 
         let table_access = if *is_public {
@@ -879,6 +865,18 @@ impl ColumnSchema {
             col_pos: pos.into(),
             col_name: name.into(),
             col_type: ty,
+        }
+    }
+
+    fn from_view_column_def(module_def: &ModuleDef, def: &ViewColumnDef) -> Self {
+        let col_type = WithTypespace::new(module_def.typespace(), &def.ty)
+            .resolve_refs()
+            .expect("validated module should have all types resolve");
+        ColumnSchema {
+            table_id: TableId::SENTINEL,
+            col_pos: def.col_id,
+            col_name: (*def.name).into(),
+            col_type,
         }
     }
 }

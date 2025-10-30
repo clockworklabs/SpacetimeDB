@@ -38,6 +38,8 @@ export default tseslint.config(
           './tsconfig.json',
           './crates/bindings-typescript/tsconfig.json',
           './crates/bindings-typescript/test-app/tsconfig.json',
+          './crates/bindings-typescript/examples/basic-react/tsconfig.json',
+          './crates/bindings-typescript/examples/empty/tsconfig.json',
           './crates/bindings-typescript/examples/quickstart-chat/tsconfig.json',
           './docs/tsconfig.json',
         ],

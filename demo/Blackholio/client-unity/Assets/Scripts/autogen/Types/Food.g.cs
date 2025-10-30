@@ -14,9 +14,9 @@ namespace SpacetimeDB.Types
     public sealed partial class Food
     {
         [DataMember(Name = "entity_id")]
-        public uint EntityId;
+        public int EntityId;
 
-        public Food(uint EntityId)
+        public Food(int EntityId)
         {
             this.EntityId = EntityId;
         }

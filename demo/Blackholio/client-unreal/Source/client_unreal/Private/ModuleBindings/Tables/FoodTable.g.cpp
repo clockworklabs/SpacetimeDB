@@ -13,7 +13,7 @@ void UFoodTable::PostInitialize()
     Data = MakeShared<UClientCache<FFoodType>>();
 
     TSharedPtr<FTableCache<FFoodType>> FoodTable = Data->GetOrAdd(TableName);
-    FoodTable->AddUniqueConstraint<uint32>("entity_id", [](const FFoodType& Row) -> const uint32& {
+    FoodTable->AddUniqueConstraint<int32>("entity_id", [](const FFoodType& Row) -> const int32& {
         return Row.EntityId; });
 
     EntityId = NewObject<UFoodEntityIdUniqueIndex>(this);
@@ -26,7 +26,7 @@ FTableAppliedDiff<FFoodType> UFoodTable::Update(TArray<FWithBsatn<FFoodType>> In
 {
     FTableAppliedDiff<FFoodType> Diff = BaseUpdate<FFoodType>(InsertsRef, DeletesRef, Data, TableName);
 
-    Diff.DeriveUpdatesByPrimaryKey<uint32>(
+    Diff.DeriveUpdatesByPrimaryKey<int32>(
         [](const FFoodType& Row) 
         {
             return Row.EntityId; 

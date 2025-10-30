@@ -174,8 +174,7 @@ where
         .filter(|(_, plan)| {
             // Since subscriptions only support selects and inner joins,
             // we filter out any plans that read from an empty table.
-            plan.table_ids()
-                .all(|table_id| tx.table(table_id).is_some_and(|t| t.row_count > 0))
+            plan.table_ids().all(|table_id| tx.row_count(table_id) > 0)
         })
         .map(|(sql, plan)| (sql, plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
         .map(|(sql, plan, table_id, table_name)| {
