@@ -1256,8 +1256,8 @@ mod tests {
         ST_COLUMN_NAME, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID,
         ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE,
         ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID,
-        ST_SEQUENCE_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID,
-        ST_VIEW_NAME, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_NAME, ST_VIEW_READS_TABLE_ID, ST_VIEW_READS_TABLE_NAME,
+        ST_SEQUENCE_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_CLIENT_ID, ST_VIEW_CLIENT_NAME,
+        ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_NAME,
     };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
@@ -1713,7 +1713,7 @@ mod tests {
             TableRow { id: ST_VIEW_ID.into(), name: ST_VIEW_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StViewFields::ViewId.into()) },
             TableRow { id: ST_VIEW_PARAM_ID.into(), name: ST_VIEW_PARAM_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_VIEW_COLUMN_ID.into(), name: ST_VIEW_COLUMN_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
-            TableRow { id: ST_VIEW_READS_TABLE_ID.into(), name: ST_VIEW_READS_TABLE_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
+            TableRow { id: ST_VIEW_CLIENT_ID.into(), name: ST_VIEW_CLIENT_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
 
         ]));
         #[rustfmt::skip]
@@ -1790,9 +1790,11 @@ mod tests {
             ColRow { table: ST_VIEW_COLUMN_ID.into(), pos: 2, name: "col_name", ty: AlgebraicType::String },
             ColRow { table: ST_VIEW_COLUMN_ID.into(), pos: 3, name: "col_type", ty: AlgebraicType::bytes() },
 
-            ColRow { table: ST_VIEW_READS_TABLE_ID.into(), pos: 0, name: "view_id", ty: ViewId::get_type() },
-            ColRow { table: ST_VIEW_READS_TABLE_ID.into(), pos: 1, name: "sender", ty: AlgebraicType::option(AlgebraicType::identity()) },
-            ColRow { table: ST_VIEW_READS_TABLE_ID.into(), pos: 2, name: "table_id", ty: TableId::get_type() },
+            ColRow { table: ST_VIEW_CLIENT_ID.into(), pos: 0, name: "view_id", ty: ViewId::get_type() },
+            ColRow { table: ST_VIEW_CLIENT_ID.into(), pos: 1, name: "identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_VIEW_CLIENT_ID.into(), pos: 2, name: "connection_id", ty: AlgebraicType::U128 },
+            ColRow { table: ST_VIEW_CLIENT_ID.into(), pos: 3, name: "product_arg_hash", ty: AlgebraicType::U256 },
+            ColRow { table: ST_VIEW_CLIENT_ID.into(), pos: 4, name: "product_arg_bytes", ty: AlgebraicType::bytes() },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1813,7 +1815,9 @@ mod tests {
             IndexRow { id: 15, table: ST_VIEW_ID.into(), col: col(1), name: "st_view_view_name_idx_btree", },
             IndexRow { id: 16, table: ST_VIEW_PARAM_ID.into(), col: col_list![0, 1], name: "st_view_param_view_id_param_pos_idx_btree", },
             IndexRow { id: 17, table: ST_VIEW_COLUMN_ID.into(), col: col_list![0, 1], name: "st_view_column_view_id_col_pos_idx_btree", },
-            IndexRow { id: 18, table: ST_VIEW_READS_TABLE_ID.into(), col: col_list![0, 1, 2], name: "st_view_reads_table_view_id_sender_table_id_idx_btree", },
+            IndexRow { id: 18, table: ST_VIEW_CLIENT_ID.into(), col: col(0), name: "st_view_client_view_id_idx_btree", },
+            IndexRow { id: 19, table: ST_VIEW_CLIENT_ID.into(), col: col_list![0, 3], name: "st_view_client_view_id_product_arg_hash_idx_btree", },
+            IndexRow { id: 20, table: ST_VIEW_CLIENT_ID.into(), col: col_list![1, 2], name: "st_view_client_identity_connection_id_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -2269,7 +2273,9 @@ mod tests {
             IndexRow { id: 15, table: ST_VIEW_ID.into(), col: col(1), name: "st_view_view_name_idx_btree", },
             IndexRow { id: 16, table: ST_VIEW_PARAM_ID.into(), col: col_list![0, 1], name: "st_view_param_view_id_param_pos_idx_btree", },
             IndexRow { id: 17, table: ST_VIEW_COLUMN_ID.into(), col: col_list![0, 1], name: "st_view_column_view_id_col_pos_idx_btree", },
-            IndexRow { id: 18, table: ST_VIEW_READS_TABLE_ID.into(), col: col_list![0, 1, 2], name: "st_view_reads_table_view_id_sender_table_id_idx_btree", },
+            IndexRow { id: 18, table: ST_VIEW_CLIENT_ID.into(), col: col(0), name: "st_view_client_view_id_idx_btree", },
+            IndexRow { id: 19, table: ST_VIEW_CLIENT_ID.into(), col: col_list![0, 3], name: "st_view_client_view_id_product_arg_hash_idx_btree", },
+            IndexRow { id: 20, table: ST_VIEW_CLIENT_ID.into(), col: col_list![1, 2], name: "st_view_client_identity_connection_id_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },

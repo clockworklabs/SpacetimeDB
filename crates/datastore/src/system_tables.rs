@@ -71,8 +71,8 @@ pub const ST_VIEW_ID: TableId = TableId(12);
 pub const ST_VIEW_PARAM_ID: TableId = TableId(13);
 /// The static ID of the table that tracks view columns
 pub const ST_VIEW_COLUMN_ID: TableId = TableId(14);
-/// The static ID of the table that tracks the tables a view reads
-pub const ST_VIEW_READS_TABLE_ID: TableId = TableId(15);
+/// The static ID of the table that tracks the clients subscribed to each view
+pub const ST_VIEW_CLIENT_ID: TableId = TableId(15);
 
 pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
@@ -88,7 +88,7 @@ pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
 pub(crate) const ST_VIEW_NAME: &str = "st_view";
 pub(crate) const ST_VIEW_PARAM_NAME: &str = "st_view_param";
 pub(crate) const ST_VIEW_COLUMN_NAME: &str = "st_view_column";
-pub(crate) const ST_VIEW_READS_TABLE_NAME: &str = "st_view_reads_table";
+pub(crate) const ST_VIEW_CLIENT_NAME: &str = "st_view_client";
 /// Reserved range of sequence values used for system tables.
 ///
 /// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE`.
@@ -135,7 +135,7 @@ pub fn system_tables() -> [TableSchema; 15] {
         st_view_schema(),
         st_view_param_schema(),
         st_view_column_schema(),
-        st_view_reads_table_schema(),
+        st_view_client_schema(),
     ]
 }
 
@@ -178,7 +178,7 @@ pub(crate) const ST_CONNECTION_CREDENTIALS_IDX: usize = 10;
 pub(crate) const ST_VIEW_IDX: usize = 11;
 pub(crate) const ST_VIEW_PARAM_IDX: usize = 12;
 pub(crate) const ST_VIEW_COLUMN_IDX: usize = 13;
-pub(crate) const ST_VIEW_READS_TABLE_IDX: usize = 14;
+pub(crate) const ST_VIEW_CLIENT_IDX: usize = 14;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -245,10 +245,12 @@ st_fields_enum!(enum StViewColumnFields {
     "col_type", ColType = 3,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
-st_fields_enum!(enum StViewReadsTableFields {
+st_fields_enum!(enum StViewClientFields {
     "view_id", ViewId = 0,
-    "sender", Sender = 1,
-    "table_id", TableId = 2,
+    "identity", Identity = 1,
+    "connection_id", ConnectionId = 2,
+    "product_arg_hash", ProductArgHash = 3,
+    "product_arg_bytes", ProductArgBytes = 4,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StViewParamFields {
@@ -387,18 +389,16 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(st_view_param_unique_cols)
         .with_index_no_accessor_name(btree(st_view_param_unique_cols));
 
-    let st_view_reads_table_type = builder.add_type::<StViewReadsTableRow>();
+    let st_view_client_type = builder.add_type::<StViewClientRow>();
     builder
         .build_table(
-            ST_VIEW_READS_TABLE_NAME,
-            *st_view_reads_table_type.as_ref().expect("should be ref"),
+            ST_VIEW_CLIENT_NAME,
+            *st_view_client_type.as_ref().expect("should be ref"),
         )
         .with_type(TableType::System)
-        .with_index_no_accessor_name(btree([
-            StViewReadsTableFields::ViewId.col_id(),
-            StViewReadsTableFields::Sender.col_id(),
-            StViewReadsTableFields::TableId.col_id(),
-        ]));
+        .with_index_no_accessor_name(btree([StViewClientFields::ViewId]))
+        .with_index_no_accessor_name(btree([StViewClientFields::ViewId, StViewClientFields::ProductArgHash]))
+        .with_index_no_accessor_name(btree([StViewClientFields::Identity, StViewClientFields::ConnectionId]));
 
     let st_index_type = builder.add_type::<StIndexRow>();
     builder
@@ -499,7 +499,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StViewFields>(&result, ST_VIEW_NAME);
     validate_system_table::<StViewParamFields>(&result, ST_VIEW_PARAM_NAME);
     validate_system_table::<StViewColumnFields>(&result, ST_VIEW_COLUMN_NAME);
-    validate_system_table::<StViewReadsTableFields>(&result, ST_VIEW_READS_TABLE_NAME);
+    validate_system_table::<StViewClientFields>(&result, ST_VIEW_CLIENT_NAME);
 
     result
 }
@@ -565,7 +565,9 @@ lazy_static::lazy_static! {
         m.insert("st_view_view_name_idx_btree", IndexId(15));
         m.insert("st_view_param_view_id_param_pos_idx_btree", IndexId(16));
         m.insert("st_view_column_view_id_col_pos_idx_btree", IndexId(17));
-        m.insert("st_view_reads_table_view_id_sender_table_id_idx_btree", IndexId(18));
+        m.insert("st_view_client_view_id_idx_btree", IndexId(18));
+        m.insert("st_view_client_view_id_product_arg_hash_idx_btree", IndexId(19));
+        m.insert("st_view_client_identity_connection_id_idx_btree", IndexId(20));
         m
     };
 }
@@ -693,8 +695,8 @@ pub fn st_view_column_schema() -> TableSchema {
     st_schema(ST_VIEW_COLUMN_NAME, ST_VIEW_COLUMN_ID)
 }
 
-pub fn st_view_reads_table_schema() -> TableSchema {
-    st_schema(ST_VIEW_READS_TABLE_NAME, ST_VIEW_READS_TABLE_ID)
+pub fn st_view_client_schema() -> TableSchema {
+    st_schema(ST_VIEW_CLIENT_NAME, ST_VIEW_CLIENT_ID)
 }
 
 /// If `table_id` refers to a known system table, return its schema.
@@ -719,7 +721,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_VIEW_ID => Some(st_view_schema()),
         ST_VIEW_PARAM_ID => Some(st_view_param_schema()),
         ST_VIEW_COLUMN_ID => Some(st_view_column_schema()),
-        ST_VIEW_READS_TABLE_ID => Some(st_view_reads_table_schema()),
+        ST_VIEW_CLIENT_ID => Some(st_view_client_schema()),
         _ => None,
     }
 }
@@ -894,18 +896,19 @@ pub struct StViewParamRow {
     pub param_type: AlgebraicTypeViaBytes,
 }
 
-/// System Table [ST_VIEW_READS_TABLE_NAME]
+/// System table [ST_VIEW_CLIENT_NAME]
 ///
-/// | view_id | sender         | table_id |
-/// |---------|----------------|----------|
-/// | 1       | (some = 0x...) | 4097     |
-#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+/// | view_id | identity | connection_id | product_arg_hash | product_arg_bytes |
+/// |---------|----------|---------------|------------------|-------------------|
+/// | 1       | 0x...    | 0x...         | 0x...            | <bytes>           |
+#[derive(Debug, Clone, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
-pub struct StViewReadsTableRow {
-    /// A foreign key referencing [`ST_VIEW_NAME`].
+pub struct StViewClientRow {
     pub view_id: ViewId,
-    pub sender: Option<Identity>,
-    pub table_id: TableId,
+    pub identity: IdentityViaU256,
+    pub connection_id: ConnectionIdViaU128,
+    pub product_arg_hash: Hash,
+    pub product_arg_bytes: Box<[u8]>,
 }
 
 /// System Table [ST_INDEX_NAME]
