@@ -286,6 +286,11 @@ metrics_group!(
         #[labels(db: Identity)]
         pub total_outgoing_queue_length: IntGaugeVec,
 
+        #[name = spacetime_outgoing_wait_time]
+        #[help = "The duration outgoing messages are queued in the client connection receiver"]
+        #[labels(db: Identity, confirmed: bool)]
+        pub outgoing_wait_time: HistogramVec,
+
         #[name = spacetime_replay_total_time_seconds]
         #[help = "Total time spent replaying a database upon restart, including snapshot read, snapshot restore and commitlog replay"]
         #[labels(db: Identity)]

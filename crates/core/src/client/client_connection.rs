@@ -101,6 +101,8 @@ struct ClientUpdate {
     pub tx_offset: Option<TxOffset>,
     /// Type-erased outgoing message.
     pub message: SerializableMessage,
+    /// Timestamp for tracking queue time.
+    pub timestamp: Instant,
 }
 
 /// Types with access to the [`DurableOffset`] of a database.
@@ -151,6 +153,11 @@ pub struct ClientConnectionReceiver {
     channel: MeteredReceiver<ClientUpdate>,
     current: Option<ClientUpdate>,
     offset_supply: Box<dyn DurableOffsetSupply>,
+    metrics: Option<ClientConnectionReceiverMetrics>,
+}
+
+struct ClientConnectionReceiverMetrics {
+    wait_time: Histogram,
 }
 
 impl ClientConnectionReceiver {
@@ -158,12 +165,18 @@ impl ClientConnectionReceiver {
         confirmed_reads: bool,
         channel: MeteredReceiver<ClientUpdate>,
         offset_supply: impl DurableOffsetSupply + 'static,
+        db: Option<&Identity>,
     ) -> Self {
         Self {
             confirmed_reads,
             channel,
             current: None,
             offset_supply: Box::new(offset_supply),
+            metrics: db.map(|db| ClientConnectionReceiverMetrics {
+                wait_time: WORKER_METRICS
+                    .outgoing_wait_time
+                    .with_label_values(db, &confirmed_reads),
+            }),
         }
     }
 
@@ -201,11 +214,22 @@ impl ClientConnectionReceiver {
     //
     // TODO: Can we make a cancel-safe `recv_many` with confirmed reads semantics?
     pub async fn recv(&mut self) -> Option<SerializableMessage> {
-        let ClientUpdate { tx_offset, message } = match self.current.take() {
+        let ClientUpdate {
+            tx_offset,
+            message,
+            timestamp,
+        } = match self.current.take() {
             None => self.channel.recv().await?,
             Some(update) => update,
         };
+        let report_wait_time = |start: Instant| {
+            if let Some(metrics) = &self.metrics {
+                metrics.wait_time.observe(start.elapsed().as_secs_f64());
+            }
+        };
+
         if !self.confirmed_reads {
+            report_wait_time(timestamp);
             return Some(message);
         }
 
@@ -217,6 +241,7 @@ impl ClientConnectionReceiver {
                     self.current = Some(ClientUpdate {
                         tx_offset: Some(tx_offset),
                         message,
+                        timestamp,
                     });
                     trace!("waiting for offset {tx_offset} to become durable");
                     durable
@@ -226,14 +251,21 @@ impl ClientConnectionReceiver {
                             warn!("database went away while waiting for durable offset");
                         })
                         .ok()?;
-                    self.current.take().map(|update| update.message)
+                    self.current
+                        .take()
+                        .inspect(|update| report_wait_time(update.timestamp))
+                        .map(|update| update.message)
                 }
                 // Database shut down or crashed.
                 Err(NoSuchModule) => None,
                 // In-memory database.
-                Ok(None) => Some(message),
+                Ok(None) => {
+                    report_wait_time(timestamp);
+                    Some(message)
+                }
             }
         } else {
+            report_wait_time(timestamp);
             Some(message)
         }
     }
@@ -325,7 +357,8 @@ impl ClientConnectionSender {
             Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
         };
 
-        let receiver = ClientConnectionReceiver::new(config.confirmed_reads, MeteredReceiver::new(rx), offset_supply);
+        let receiver =
+            ClientConnectionReceiver::new(config.confirmed_reads, MeteredReceiver::new(rx), offset_supply, None);
         let cancelled = AtomicBool::new(false);
         let dummy_claims = SpacetimeIdentityClaims {
             identity: id.identity,
@@ -372,6 +405,7 @@ impl ClientConnectionSender {
         self.send(ClientUpdate {
             tx_offset,
             message: message.into(),
+            timestamp: Instant::now(),
         })
     }
 
@@ -719,6 +753,7 @@ impl ClientConnection {
             config.confirmed_reads,
             MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone()),
             module_rx.clone(),
+            Some(&database_identity),
         );
 
         let sender = Arc::new(ClientConnectionSender {
