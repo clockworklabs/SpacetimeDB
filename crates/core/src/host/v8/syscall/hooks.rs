@@ -28,15 +28,16 @@ pub(super) fn get_hook_function<'scope>(
 pub(super) fn set_hook_slots(
     scope: &mut PinScope<'_, '_>,
     abi: AbiVersion,
-    hooks: &[(ModuleHook, Local<'_, Function>)],
+    hooks: &[(ModuleHookKey, Local<'_, Function>)],
 ) -> ExcResult<()> {
     // Make sure to call `set_slot` first, as it creates the annex
     // and `set_embedder_data` is currently buggy.
     let ctx = scope.get_current_context();
-    let hooks_info = HooksInfo::get_or_create(&ctx);
+    let hooks_info = HooksInfo::get_or_create(&ctx, abi)
+        .map_err(|_| TypeError("cannot call `register_hooks` from different versions").throw(scope))?;
     for &(hook, func) in hooks {
         hooks_info
-            .register(hook, abi)
+            .register(hook)
             .map_err(|_| TypeError("cannot call `register_hooks` multiple times").throw(scope))?;
         ctx.set_embedder_data(hook.to_slot_index(), func.into());
     }
@@ -44,18 +45,20 @@ pub(super) fn set_hook_slots(
 }
 
 #[derive(enum_map::Enum, Copy, Clone)]
-pub(in crate::host::v8) enum ModuleHook {
+pub(in super::super) enum ModuleHookKey {
     DescribeModule,
     CallReducer,
 }
 
-impl ModuleHook {
+impl ModuleHookKey {
     /// Returns the index for the slot that holds the module function hook.
     /// The index is passed to `v8::Context::{get,set}_embedder_data`.
     fn to_slot_index(self) -> i32 {
         match self {
-            ModuleHook::DescribeModule => 20,
-            ModuleHook::CallReducer => 21,
+            // high numbers to avoid overlapping with rusty_v8 - can be
+            // reverted to just 0, 1... once denoland/rusty_v8#1868 merges
+            ModuleHookKey::DescribeModule => 20,
+            ModuleHookKey::CallReducer => 21,
         }
     }
 }
@@ -63,32 +66,39 @@ impl ModuleHook {
 /// Holds the `AbiVersion` used by the module
 /// and the module hooks registered by the module
 /// for that version.
-#[derive(Default)]
 struct HooksInfo {
-    abi: OnceCell<AbiVersion>,
-    registered: EnumMap<ModuleHook, OnceCell<()>>,
+    abi: AbiVersion,
+    registered: EnumMap<ModuleHookKey, OnceCell<()>>,
 }
 
 impl HooksInfo {
     /// Returns, and possibly creates, the [`HooksInfo`] stored in `ctx`.
-    fn get_or_create(ctx: &Context) -> Rc<Self> {
-        ctx.get_slot().unwrap_or_else(|| {
-            let this = Rc::<Self>::default();
-            ctx.set_slot(this.clone());
-            this
-        })
+    ///
+    /// Returns an error if `abi` doesn't match the abi version in the
+    /// already existing `HooksInfo`.
+    fn get_or_create(ctx: &Context, abi: AbiVersion) -> Result<Rc<Self>, ()> {
+        match ctx.get_slot::<Self>() {
+            Some(this) if this.abi == abi => Ok(this),
+            Some(_) => Err(()),
+            None => {
+                let this = Rc::new(Self {
+                    abi,
+                    registered: EnumMap::default(),
+                });
+                ctx.set_slot(this.clone());
+                Ok(this)
+            }
+        }
     }
 
-    fn register(&self, hook: ModuleHook, abi: AbiVersion) -> Result<(), ()> {
-        if *self.abi.get_or_init(|| abi) != abi {
-            return Err(());
-        }
+    /// Mark down the given `hook` as registered, returning an error if it already was.
+    fn register(&self, hook: ModuleHookKey) -> Result<(), ()> {
         self.registered[hook].set(())
     }
 
     /// Returns the `AbiVersion` for the given `hook`, if any.
-    fn get(&self, hook: ModuleHook) -> Option<AbiVersion> {
-        self.registered[hook].get().and(self.abi.get().copied())
+    fn get(&self, hook: ModuleHookKey) -> Option<AbiVersion> {
+        self.registered[hook].get().map(|_| self.abi)
     }
 }
 
@@ -99,7 +109,7 @@ pub(in super::super) struct HookFunction<'scope>(pub AbiVersion, pub Local<'scop
 /// Returns the hook function previously registered in [`register_hooks`].
 pub(in super::super) fn get_hook<'scope>(
     scope: &mut PinScope<'scope, '_>,
-    hook: ModuleHook,
+    hook: ModuleHookKey,
 ) -> Option<HookFunction<'scope>> {
     let ctx = scope.get_current_context();
     let hooks = ctx.get_slot::<HooksInfo>()?;

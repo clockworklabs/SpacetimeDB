@@ -8,17 +8,19 @@ pub fn determine_spacetime_abi<I>(
 ) -> Result<VersionTuple, AbiVersionError> {
     let it = imports.into_iter().filter_map(|imp| {
         let s = get_module(&imp);
-        let err = || AbiVersionError::Parse { module: s.to_owned() };
-        s.strip_prefix(MODULE_PREFIX).map(|ver| {
-            let (major, minor) = ver.split_once('.').ok_or_else(err)?;
-            let (major, minor) = Option::zip(major.parse().ok(), minor.parse().ok()).ok_or_else(err)?;
-            Ok(VersionTuple { major, minor })
-        })
+        s.strip_prefix(MODULE_PREFIX)
+            .map(|ver| parse_abi_version(ver).ok_or_else(|| AbiVersionError::Parse { module: s.to_owned() }))
     });
     itertools::process_results(it, |mut it| {
         let first = it.next().ok_or(AbiVersionError::NotDetected)?;
         it.try_fold(first, refine_ver_req)
     })?
+}
+
+pub fn parse_abi_version(ver: &str) -> Option<VersionTuple> {
+    let (major, minor) = ver.split_once('.')?;
+    let (major, minor) = Option::zip(major.parse().ok(), minor.parse().ok())?;
+    Some(VersionTuple { major, minor })
 }
 
 fn refine_ver_req(ver: VersionTuple, new: VersionTuple) -> Result<VersionTuple, AbiVersionError> {

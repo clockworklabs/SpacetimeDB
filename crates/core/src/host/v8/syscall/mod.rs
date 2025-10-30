@@ -1,16 +1,18 @@
 use spacetimedb_lib::RawModuleDef;
+use spacetimedb_lib::VersionTuple;
 use v8::{callback_scope, Context, FixedArray, Local, Module, PinScope};
 
 use crate::host::v8::de::scratch_buf;
 use crate::host::v8::error::ExcResult;
 use crate::host::v8::error::Throwable;
 use crate::host::v8::error::TypeError;
+use crate::host::wasm_common::abi::parse_abi_version;
 use crate::host::wasm_common::module_host_actor::{ReducerOp, ReducerResult};
 
 mod hooks;
 mod v1;
 
-pub(super) use self::hooks::{get_hook, HookFunction, ModuleHook};
+pub(super) use self::hooks::{get_hook, HookFunction, ModuleHookKey};
 
 /// The return type of a module -> host syscall.
 pub(super) type FnRet<'scope> = ExcResult<Local<'scope, v8::Value>>;
@@ -47,17 +49,15 @@ fn resolve_sys_module_inner<'scope>(
         .and_then(|spec| spec.split_once('@'))
         .ok_or_else(|| generic_error().throw(scope))?;
 
-    let (maj, min) = ver
-        .split_once('.')
-        .and_then(|(maj, min)| Option::zip(maj.parse::<u32>().ok(), min.parse::<u32>().ok()))
+    let VersionTuple { major, minor } = parse_abi_version(ver)
         .ok_or_else(|| TypeError(format!("Invalid version in module spec {spec:?}")).throw(scope))?;
 
     match module {
-        "sys" => match (maj, min) {
+        "sys" => match (major, minor) {
             (1, 0) => Ok(v1::sys_v1_0(scope)),
             _ => Err(TypeError(format!(
                 "Could not import {spec:?}, likely because this module was built for a newer version of SpacetimeDB.\n\
-                It requires sys module v{maj}.{min}, but that version is not supported by the database."
+                It requires sys module v{major}.{minor}, but that version is not supported by the database."
             ))
             .throw(scope)),
         },
