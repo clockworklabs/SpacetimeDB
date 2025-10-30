@@ -28,6 +28,14 @@
       "client_lang": "rust"
     },
     {
+      "id": "basic-cpp",
+      "description": "A basic C++ server template with only stubs for code",
+      "server_source": "templates/basic-rust/server",
+      "client_source": "",
+      "server_lang": "rust",
+      "client_lang": ""
+    },
+    {
       "id": "basic-react",
       "description": "React web app with TypeScript server",
       "server_source": "basic-react/spacetimedb",
