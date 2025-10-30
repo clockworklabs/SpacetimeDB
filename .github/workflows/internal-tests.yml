@@ -40,6 +40,12 @@ jobs:
             const publicRef = (context.eventName === 'pull_request') ? context.head_ref : context.sha;
             const preDispatch = new Date().toISOString();
 
+            console.log("context.eventName=", context.eventName);
+            console.log("context.ref=", context.ref);
+            console.log("context.head_ref=", context.head_ref);
+            console.log("context.sha=", context.sha);
+            console.log("Dispatch workflow with publicRef=", publicRef);
+
             // Dispatch the workflow in the target repository
             await github.rest.actions.createWorkflowDispatch({
               owner: targetOwner,
