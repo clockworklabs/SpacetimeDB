@@ -1,0 +1,18 @@
+[package]
+name = "replace-spacetimedb"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "replace_spacetimedb"
+path = "src/lib.rs"
+
+[[bin]]
+name = "replace-spacetimedb"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+regex.workspace = true
+ignore = "0.4"
+memchr = "2"
