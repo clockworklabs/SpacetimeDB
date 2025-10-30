@@ -1075,10 +1075,10 @@ fn get_spacetimedb_csharp_clientsdk_version() -> String {
     "1.*".to_string()
 }
 
-/// Writes a `.env.development` file that includes all common
+/// Writes a `.env.local` file that includes all common
 /// frontend environment variable variants for SpacetimeDB.
 fn write_typescript_client_env_file(client_dir: &Path, module_name: &str, use_local: bool) -> anyhow::Result<()> {
-    let env_path = client_dir.join(".env.development");
+    let env_path = client_dir.join(".env.local");
 
     let db_name = module_name;
     let host = if use_local {
