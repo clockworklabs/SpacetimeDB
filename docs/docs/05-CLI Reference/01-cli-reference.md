@@ -342,7 +342,7 @@ Initializes a new spacetime project. WARNING: This command is UNSTABLE and subje
 
 ###### <b>Options:</b>
 
-* `--project-path <PATH>` — Directory where the project will be created (defaults to ./<PROJECT_NAME>)
+* `--project-path <PATH>` — Directory where the project will be created (defaults to ./\<PROJECT\_NAME\>)
 * `--lang <LANG>` — Server language: rust, csharp, typescript (it can only be used when --template is not specified)
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
