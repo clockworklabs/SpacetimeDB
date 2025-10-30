@@ -2,7 +2,8 @@ use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{
-    iter_procedures, iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment, print_auto_generated_version_comment
+    iter_procedures, iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment,
+    print_auto_generated_version_comment,
 };
 use crate::OutputFile;
 use convert_case::{Case, Casing};
@@ -495,7 +496,7 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
 
         out.newline();
 
-        let mut  imports = Imports::new();
+        let mut imports = Imports::new();
         gen_imports(&mut imports, &procedure.params_for_generate.elements);
         add_one_import(&mut imports, &procedure.return_type_for_generate);
         print_imports(module, out, imports);
@@ -543,8 +544,6 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
             arg_names_list += &arg_name;
             arg_names_list += ", ";
         }
-
-        
 
         writeln!(
             out,
@@ -965,7 +964,7 @@ fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
     }
     for procedure in iter_procedures(module) {
         let mod_name = procedure_module_name(&procedure.name);
-        let trait_name =  procedure_function_name(procedure);
+        let trait_name = procedure_function_name(procedure);
         writeln!(out, "pub use {mod_name}::{trait_name};");
     }
 }
@@ -1035,10 +1034,7 @@ impl __sdk::InModule for Reducer {{
                             // Write a catch-all pattern to handle the case where the module defines zero reducers,
                             // 'cause references are always considered inhabited,
                             // even references to uninhabited types.
-                            writeln!(
-                                out,
-                                "_ => unreachable!(),"
-                            );
+                            writeln!(out, "_ => unreachable!(),");
                         },
                         "}\n",
                     );
@@ -1219,10 +1215,7 @@ fn print_applied_diff_defn(module: &ModuleDef, out: &mut Indenter) {
             // Also write a `PhantomData` field which uses the lifetime `r`,
             // in case the module defines zero tables,
             // as unused lifetime params are an error.
-            writeln!(
-                out,
-                "__unused: std::marker::PhantomData<&'r ()>,",
-            );
+            writeln!(out, "__unused: std::marker::PhantomData<&'r ()>,",);
         },
         "}\n",
     );
@@ -1787,16 +1780,18 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports) {
 }
 
 fn add_one_import(imports: &mut Imports, import: &AlgebraicTypeUse) {
-    import.for_each_ref(|r| { imports.insert(r); })
+    import.for_each_ref(|r| {
+        imports.insert(r);
+    })
 }
 
-fn gen_imports(imports: &mut  Imports, roots: &[(Identifier, AlgebraicTypeUse)],) {
+fn gen_imports(imports: &mut Imports, roots: &[(Identifier, AlgebraicTypeUse)]) {
     for (_, ty) in roots {
         add_one_import(imports, ty);
     }
 }
 
-fn remove_skipped_imports(imports:  &mut Imports, dont_import: &[AlgebraicTypeRef]) {
+fn remove_skipped_imports(imports: &mut Imports, dont_import: &[AlgebraicTypeRef]) {
     for skip in dont_import {
         imports.remove(skip);
     }
@@ -1815,7 +1810,7 @@ fn gen_and_print_imports(
 ) {
     let mut imports = BTreeSet::new();
 
-    gen_imports(&mut  imports, roots);
+    gen_imports(&mut imports, roots);
     remove_skipped_imports(&mut imports, dont_import);
 
     print_imports(module, out, imports);

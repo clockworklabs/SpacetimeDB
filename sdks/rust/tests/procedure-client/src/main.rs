@@ -2,9 +2,9 @@ mod module_bindings;
 
 use module_bindings::*;
 
+use anyhow::Context;
 use spacetimedb_sdk::DbConnectionBuilder;
 use test_counter::TestCounter;
-use anyhow::Context;
 
 const LOCALHOST: &str = "http://localhost:3000";
 
@@ -93,13 +93,14 @@ fn exec_procedure_return_values() {
                     }
                 }));
             });
-            ctx.procedures.return_struct_then(1234, "foo".to_string(), move |_, res| {
-                return_struct_result(res.context("return_struct failed unexpectedly").and_then(|strukt| {
-                    anyhow::ensure!(strukt.a == 1234);
-                    anyhow::ensure!(&*strukt.b == "foo");
-                    Ok(())
-                }));
-            });
+            ctx.procedures
+                .return_struct_then(1234, "foo".to_string(), move |_, res| {
+                    return_struct_result(res.context("return_struct failed unexpectedly").and_then(|strukt| {
+                        anyhow::ensure!(strukt.a == 1234);
+                        anyhow::ensure!(&*strukt.b == "foo");
+                        Ok(())
+                    }));
+                });
             ctx.procedures.return_enum_a_then(1234, move |_, res| {
                 return_enum_a_result(res.context("return_enum_a failed unexpectedly").and_then(|enum_a| {
                     anyhow::ensure!(matches!(enum_a, ReturnEnum::A(1234)));

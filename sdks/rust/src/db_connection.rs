@@ -23,7 +23,7 @@ use crate::{
     __codegen::InternalError,
     callbacks::{
         CallbackId, DbCallbacks, ProcedureCallback, ProcedureCallbacks, ReducerCallback, ReducerCallbacks, RowCallback,
- UpdateCallback,
+        UpdateCallback,
     },
     client_cache::{ClientCache, TableHandle},
     spacetime_module::{AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, InModule, SpacetimeModule},
@@ -746,7 +746,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         &self,
         procedure_name: &'static str,
         args: Args,
-        callback: impl FnOnce(&<M as SpacetimeModule>::ProcedureEventContext, Result<RetVal, InternalError>) + Send + 'static,
+        callback: impl FnOnce(&<M as SpacetimeModule>::ProcedureEventContext, Result<RetVal, InternalError>)
+            + Send
+            + 'static,
     ) {
         self.queue_mutation(PendingMutation::InvokeProcedureWithCallback {
             procedure: procedure_name,

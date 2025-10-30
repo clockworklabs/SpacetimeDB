@@ -54,8 +54,8 @@ pub mod __codegen {
     pub use crate::error::{Error, InternalError, Result};
     pub use crate::spacetime_module::{
         parse_reducer_args, AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, ErrorContext, EventContext,
-        InModule, Reducer, ReducerEventContext, SpacetimeModule, SubscriptionEventContext, SubscriptionHandle,
-        TableUpdate, ProcedureEventContext,
+        InModule, ProcedureEventContext, Reducer, ReducerEventContext, SpacetimeModule, SubscriptionEventContext,
+        SubscriptionHandle, TableUpdate,
     };
     pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
     pub use crate::{
