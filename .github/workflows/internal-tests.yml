@@ -36,7 +36,7 @@ jobs:
             const workflowId = 'internal-tests.yml';
             const targetRef = 'master';
             // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
-            const publicRef = (context.eventName === 'pull_request') ? context.ref : context.sha;
+            const publicRef = (context.eventName === 'pull_request') ? context.head_ref : context.sha;
             const preDispatch = new Date().toISOString();
 
             // Dispatch the workflow in the target repository
