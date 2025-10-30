@@ -224,6 +224,10 @@ new.json
 # Temporary templates dir for CLI's init command
 /crates/cli/.templates
 
+# C++ build data
+modules/benchmarks-cpp/build/
+modules/module-test-cpp/build/
+
 # Symlinked output from `nix build`
 result
 

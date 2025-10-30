@@ -1,0 +1,62 @@
+cmake_minimum_required(VERSION 3.20)
+project(spacetime_cpp_module)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Set the module source file
+set(MODULE_SOURCE "src/lib.cpp" CACHE STRING "Source file for the SpacetimeDB module")
+
+# Set optimization level for Release builds
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O2")
+endif()
+
+# Include the SpacetimeDB C++ SDK
+set(SPACETIMEDB_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/spacetimedb-cpp-sdk")
+include_directories(${SPACETIMEDB_SDK_DIR}/include)
+
+# Collect all source files for the SpacetimeDB library
+file(GLOB_RECURSE SPACETIMEDB_SOURCES
+    "${SPACETIMEDB_SDK_DIR}/src/*.cpp"
+    "${SPACETIMEDB_SDK_DIR}/src/*.c"
+)
+
+# Create SpacetimeDB library
+add_library(spacetimedb_cpp_library STATIC ${SPACETIMEDB_SOURCES})
+target_include_directories(spacetimedb_cpp_library PUBLIC ${SPACETIMEDB_SDK_DIR}/include)
+
+# Create the main module executable
+add_executable(lib ${MODULE_SOURCE})
+target_link_libraries(lib spacetimedb_cpp_library)
+
+# Configure Emscripten-specific settings for WASM output
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  # Export list as a single variable (no extra quoting per-platform)
+  set(EXPORTED_FUNCS "['_malloc','_free','___describe_module__','___call_reducer__']")
+
+  # Produce a standalone .wasm (no JS harness) with no entry point
+  target_link_options(lib PRIVATE
+    "SHELL:-sSTANDALONE_WASM=1"
+    "SHELL:-sWASM=1"
+    "SHELL:--no-entry"
+    # Exports
+    "SHELL:-sEXPORTED_FUNCTIONS=${EXPORTED_FUNCS}"
+    # Keep this ON for correctness; you can flip to 0 temporarily to probe
+    "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=1"
+    # Trim runtime
+    "SHELL:-sFILESYSTEM=0"
+    "SHELL:-sDISABLE_EXCEPTION_CATCHING=1"
+    "SHELL:-sALLOW_MEMORY_GROWTH=0"
+    "SHELL:-sINITIAL_MEMORY=16MB"
+    "SHELL:-sSUPPORT_LONGJMP=0"
+    "SHELL:-sSUPPORT_ERRNO=0"
+    # C++20 and O2 at link step (Emscripten accepts them here too)
+    "SHELL:-std=c++20"
+    "SHELL:-O2"
+  )
+
+  # Name the output lib.wasm
+  set_target_properties(lib PROPERTIES OUTPUT_NAME "lib" SUFFIX ".wasm")
+endif()

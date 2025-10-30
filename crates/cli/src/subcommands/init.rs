@@ -1478,6 +1478,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
         }
     }
 
+    match project_lang {
+        ModuleLanguage::Rust => exec_init_rust(args).await,
+        ModuleLanguage::Csharp => exec_init_csharp(args).await,
+        ModuleLanguage::Javascript => exec_init_typescript(args).await,
+        ModuleLanguage::Cpp => exec_init_cpp(args).await,
+    }
     exec_init(&mut config, args, is_interactive).await
 }
 
@@ -1749,3 +1755,120 @@ fn strip_mdc_frontmatter(content: &str) -> &str {
     }
     content
 }
+
+fn check_for_emscripten() -> bool {
+    if find_executable("emcc").is_some() && find_executable("cmake").is_some() {
+        return true;
+    }
+    println!(
+        "{}",
+        "Warning: You have created a C++ project, but you are missing emcc (Emscripten) or cmake.".yellow()
+    );
+    println!(
+        "{}",
+        "Install Emscripten from: https://emscripten.org/docs/getting_started/downloads.html".yellow()
+    );
+    println!("{}", "Install CMake from: https://cmake.org/download/".yellow());
+    false
+}
+
+pub async fn exec_init_cpp(args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
+
+    // Create template files
+    let export_files = vec![
+        (include_str!("project/cpp/CMakeLists._txt"), "CMakeLists.txt"),
+        (include_str!("project/cpp/lib._cpp"), "src/lib.cpp"),
+        (include_str!("project/cpp/_gitignore"), ".gitignore"),
+    ];
+
+    for data_file in export_files {
+        let path = project_path.join(data_file.1);
+        create_directory(path.parent().unwrap())?;
+        std::fs::write(path, data_file.0)?;
+    }
+
+    // Copy the SpacetimeDB C++ SDK
+    let sdk_dest = project_path.join("spacetimedb-cpp-sdk");
+    create_directory(&sdk_dest)?;
+
+    // Try to find and copy the SDK from the development environment
+    let current_dir = std::env::current_dir().context("Failed to get current directory")?;
+    let mut found_sdk = false;
+
+    // Look for bindings-cpp in current directory and parent directories
+    let mut search_dir = current_dir.clone();
+    for _ in 0..10 {
+        let bindings_cpp_path = search_dir.join("crates").join("bindings-cpp");
+        if bindings_cpp_path.exists() {
+            // Copy include directory
+            let src_include = bindings_cpp_path.join("include");
+            let dest_include = sdk_dest.join("include");
+            if src_include.exists() {
+                copy_dir_recursive(&src_include, &dest_include).context("Failed to copy SDK include directory")?;
+                println!("✓ Copied SpacetimeDB C++ SDK include files");
+            }
+
+            // Copy src directory
+            let src_src = bindings_cpp_path.join("src");
+            let dest_src = sdk_dest.join("src");
+            if src_src.exists() {
+                copy_dir_recursive(&src_src, &dest_src).context("Failed to copy SDK src directory")?;
+                println!("✓ Copied SpacetimeDB C++ SDK source files");
+            }
+            found_sdk = true;
+            break;
+        }
+
+        if let Some(parent) = search_dir.parent() {
+            search_dir = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+
+    if !found_sdk {
+        println!("{}", "Note: Could not automatically find SpacetimeDB C++ SDK.".yellow());
+        println!("To complete setup, copy the SDK files manually:");
+        println!(
+            "  cp -r <spacetimedb-repo>/crates/bindings-cpp/include {}/spacetimedb-cpp-sdk/",
+            project_path.display()
+        );
+        println!(
+            "  cp -r <spacetimedb-repo>/crates/bindings-cpp/src {}/spacetimedb-cpp-sdk/",
+            project_path.display()
+        );
+    }
+
+    // Check dependencies
+    check_for_emscripten();
+    check_for_git();
+
+    println!(
+        "{}",
+        format!("C++ project successfully created at path: {}", project_path.display()).green()
+    );
+    println!("To build and publish your module:");
+    println!("  cd {}", project_path.display());
+    println!("  spacetime publish . your-database-name");
+
+    Ok(())
+}
+
+fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), anyhow::Error> {
+    create_directory(dest)?;
+
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dest_path = dest.join(entry.file_name());
+
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dest_path)?;
+        } else {
+            std::fs::copy(&src_path, &dest_path)?;
+        }
+    }
+    Ok(())
+}
+
