@@ -481,7 +481,11 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
 
     template_config.use_local = use_local;
 
-    ensure_empty_directory(&template_config.project_name, &template_config.project_path, is_server_only)?;
+    ensure_empty_directory(
+        &template_config.project_name,
+        &template_config.project_path,
+        is_server_only,
+    )?;
     init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
 
     if template_config.server_lang == Some(ServerLanguage::TypeScript)
