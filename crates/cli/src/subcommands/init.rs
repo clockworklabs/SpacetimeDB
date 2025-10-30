@@ -10,8 +10,8 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{fmt, fs};
 use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
@@ -325,48 +325,72 @@ fn create_template_config_from_template_str(
 }
 
 #[cfg(windows)]
-fn run_pm(pm: &str, args: &[&str], cwd: &Path) -> std::io::Result<std::process::ExitStatus> {
+fn run_pm(pm: PackageManager, args: &[&str], cwd: &Path) -> std::io::Result<std::process::ExitStatus> {
     // Use cmd to resolve .cmd/.bat/.exe shims properly on Windows
     std::process::Command::new("cmd")
         .arg("/C")
-        .arg(pm)
+        .arg(pm.to_string())
         .args(args)
         .current_dir(cwd)
         .status()
 }
 
 #[cfg(not(windows))]
-fn run_pm(pm: &str, args: &[&str], cwd: &Path) -> std::io::Result<std::process::ExitStatus> {
-    std::process::Command::new(pm).args(args).current_dir(cwd).status()
+fn run_pm(pm: PackageManager, args: &[&str], cwd: &Path) -> std::io::Result<std::process::ExitStatus> {
+    std::process::Command::new(pm.to_string())
+        .args(args)
+        .current_dir(cwd)
+        .status()
 }
 
-pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) -> anyhow::Result<()> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PackageManager {
+    Npm,
+    Pnpm,
+    Yarn,
+    Bun,
+}
+
+impl fmt::Display for PackageManager {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            PackageManager::Npm => "npm",
+            PackageManager::Pnpm => "pnpm",
+            PackageManager::Yarn => "yarn",
+            PackageManager::Bun => "bun",
+        };
+        write!(f, "{s}")
+    }
+}
+
+pub fn prompt_for_typescript_package_manager() -> anyhow::Result<Option<PackageManager>> {
     println!(
         "\n{}",
         "TypeScript server requires dependencies to be installed before publishing.".yellow()
     );
 
     // Prompt for package manager
-    let package_manager = if is_interactive {
-        let theme = ColorfulTheme::default();
-        let choices = vec!["npm", "pnpm", "yarn", "bun", "none"];
-        let selection = Select::with_theme(&theme)
-            .with_prompt("Which package manager would you like to use?")
-            .items(&choices)
-            .default(0)
-            .interact()?;
+    let theme = ColorfulTheme::default();
+    let choices = vec!["npm", "pnpm", "yarn", "bun", "none"];
+    let selection = Select::with_theme(&theme)
+        .with_prompt("Which package manager would you like to use?")
+        .items(&choices)
+        .default(0)
+        .interact()?;
 
-        match selection {
-            0 => Some("npm"),
-            1 => Some("pnpm"),
-            2 => Some("yarn"),
-            3 => Some("bun"),
-            _ => None,
-        }
-    } else {
-        None
-    };
+    Ok(match selection {
+        0 => Some(PackageManager::Npm),
+        1 => Some(PackageManager::Pnpm),
+        2 => Some(PackageManager::Yarn),
+        3 => Some(PackageManager::Bun),
+        _ => None,
+    })
+}
 
+pub fn install_typescript_dependencies(
+    package_dir: &Path,
+    package_manager: Option<PackageManager>,
+) -> anyhow::Result<()> {
     if let Some(pm) = package_manager {
         println!("Installing dependencies with {}...", pm);
 
@@ -380,10 +404,13 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
         );
         args_map.insert("bun", vec!["install"]);
 
-        let args: &[&str] = args_map.get(pm).map(|v| v.as_slice()).unwrap_or(&[]);
+        let args: &[&str] = args_map
+            .get(pm.to_string().as_str())
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
 
         // Run and stream output cross-platform
-        let status = run_pm(pm, args, server_dir);
+        let status = run_pm(pm, args, package_dir);
 
         match status {
             Ok(s) if s.success() => {
@@ -396,7 +423,7 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
                 );
                 println!(
                     "{}",
-                    format!("Please run '{} install' manually in {}.", pm, server_dir.display()).yellow()
+                    format!("Please run '{} install' manually in {}.", pm, package_dir.display()).yellow()
                 );
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -406,14 +433,14 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
                 );
                 println!(
                     "{}",
-                    format!("Please run '{} install' manually in {}.", pm, server_dir.display()).yellow()
+                    format!("Please run '{} install' manually in {}.", pm, package_dir.display()).yellow()
                 );
             }
             Err(e) => {
                 eprintln!("{}", format!("Failed to execute {}: {}", pm, e).red());
                 println!(
                     "{}",
-                    format!("Please run '{} install' manually in {}.", pm, server_dir.display()).yellow()
+                    format!("Please run '{} install' manually in {}.", pm, package_dir.display()).yellow()
                 );
             }
         }
@@ -422,7 +449,7 @@ pub fn install_typescript_dependencies(server_dir: &Path, is_interactive: bool) 
             "{}",
             format!(
                 "You have chosen not to use a package manager. Please install dependencies manually in {}.",
-                server_dir.display()
+                package_dir.display()
             )
             .yellow()
         );
@@ -454,13 +481,48 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
 
     template_config.use_local = use_local;
 
-    ensure_empty_directory(&template_config.project_name, &template_config.project_path, is_server_only)?;
+    ensure_empty_directory(
+        &template_config.project_name,
+        &template_config.project_path,
+        is_server_only,
+    )?;
     init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
 
-    // If server is TypeScript, handle dependency installation
-    if template_config.server_lang == Some(ServerLanguage::TypeScript) {
+    if template_config.server_lang == Some(ServerLanguage::TypeScript)
+        && template_config.client_lang == Some(ClientLanguage::TypeScript)
+    {
+        // If server & client are TypeScript, handle dependency installation
+        // NOTE: All server templates must have their server code in `spacetimedb/` directory
+        // This is not a requirement in general, but is a requirement for all templates
+        // i.e. `spacetime dev` is valid on non-templates.
+        let pm = if is_interactive {
+            prompt_for_typescript_package_manager()?
+        } else {
+            None
+        };
+        let client_dir = template_config.project_path;
+        let server_dir = client_dir.join("spacetimedb");
+        install_typescript_dependencies(&server_dir, pm)?;
+        install_typescript_dependencies(&client_dir, pm)?;
+    } else if template_config.client_lang == Some(ClientLanguage::TypeScript) {
+        let pm = if is_interactive {
+            prompt_for_typescript_package_manager()?
+        } else {
+            None
+        };
+        let client_dir = template_config.project_path;
+        install_typescript_dependencies(&client_dir, pm)?;
+    } else if template_config.server_lang == Some(ServerLanguage::TypeScript) {
+        let pm = if is_interactive {
+            prompt_for_typescript_package_manager()?
+        } else {
+            None
+        };
+        // NOTE: All server templates must have their server code in `spacetimedb/` directory
+        // This is not a requirement in general, but is a requirement for all templates
+        // i.e. `spacetime dev` is valid on non-templates.
         let server_dir = template_config.project_path.join("spacetimedb");
-        install_typescript_dependencies(&server_dir, is_interactive)?;
+        install_typescript_dependencies(&server_dir, pm)?;
     }
 
     Ok(project_path)
@@ -1017,10 +1079,10 @@ fn get_spacetimedb_csharp_clientsdk_version() -> String {
     "1.*".to_string()
 }
 
-/// Writes a `.env.development` file that includes all common
+/// Writes a `.env.local` file that includes all common
 /// frontend environment variable variants for SpacetimeDB.
 fn write_typescript_client_env_file(client_dir: &Path, module_name: &str, use_local: bool) -> anyhow::Result<()> {
-    let env_path = client_dir.join(".env.development");
+    let env_path = client_dir.join(".env.local");
 
     let db_name = module_name;
     let host = if use_local {
