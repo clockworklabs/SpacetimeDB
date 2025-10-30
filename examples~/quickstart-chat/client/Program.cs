@@ -34,10 +34,10 @@ void Main()
 }
 
 /// The URI of the SpacetimeDB instance hosting our chat module.
-const string HOST = "http://localhost:3000";
+string HOST = Environment.GetEnvironmentVariable("SPACETIMEDB_HOST") ?? "http://localhost:3000";
 
 /// The module name we chose when we published our module.
-const string DBNAME = "quickstart-chat";
+string DB_NAME = Environment.GetEnvironmentVariable("SPACETIMEDB_DB_NAME") ?? "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
 DbConnection ConnectToDB()
@@ -45,7 +45,7 @@ DbConnection ConnectToDB()
     DbConnection? conn = null;
     conn = DbConnection.Builder()
         .WithUri(HOST)
-        .WithModuleName(DBNAME)
+        .WithModuleName(DB_NAME)
         .WithToken(AuthToken.Token)
         .OnConnect(OnConnected)
         .OnConnectError(OnConnectError)
