@@ -607,17 +607,17 @@ impl TableSchema {
     ///
     /// my_view:
     ///
-    /// | sender   | product_arg_hash | a   | b   |
-    /// |----------|------------------|-----|-----|
-    /// | Identity | 0x...            | u32 | u32 |
+    /// | sender   | arg_id | a   | b   |
+    /// |----------|--------|-----|-----|
+    /// | Identity | 1      | u32 | u32 |
     ///
     /// my_anonymous_view:
     ///
-    /// | product_arg_hash | a   | b   |
-    /// |------------------|-----|-----|
-    /// | 0x...            | u32 | u32 |
+    /// | arg_id | a   | b   |
+    /// |--------|-----|-----|
+    /// | 1      | u32 | u32 |
     ///
-    /// Note, `product_arg_hash` is a foreign key into `st_view_client`.
+    /// Note, `arg_id` is a foreign key into `st_view_arg`.
     pub fn from_view_def(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
         module_def.expect_contains(view_def);
 
@@ -649,8 +649,8 @@ impl TableSchema {
         columns.push(ColumnSchema {
             table_id: TableId::SENTINEL,
             col_pos: ColId(1),
-            col_name: "product_arg_hash".into(),
-            col_type: AlgebraicType::bytes(),
+            col_name: "arg_id".into(),
+            col_type: AlgebraicType::U64,
         });
 
         let n = columns.len();
