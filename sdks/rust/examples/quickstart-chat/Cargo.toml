@@ -1,0 +1,10 @@
+[package]
+name = "rust-quickstart-chat"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+exclude = ["spacetimedb"]
+
+[dependencies]
+spacetimedb-sdk = { path = "../../../../sdks/rust" }

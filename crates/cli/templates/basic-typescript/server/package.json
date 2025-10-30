@@ -1,0 +1,15 @@
+{
+  "name": "spacetime-module",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "build": "spacetime build",
+    "publish": "spacetime publish"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "spacetimedb": "1.6.*"
+  }
+}

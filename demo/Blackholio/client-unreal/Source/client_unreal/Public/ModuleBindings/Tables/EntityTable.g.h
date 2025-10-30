@@ -20,7 +20,7 @@ class CLIENT_UNREAL_API UEntityEntityIdUniqueIndex : public UObject
 private:
     // Declare an instance of your templated helper.
     // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FEntityType, uint32, FTableCache<FEntityType>> EntityIdIndexHelper;
+    FUniqueIndexHelper<FEntityType, int32, FTableCache<FEntityType>> EntityIdIndexHelper;
 
 public:
     UEntityEntityIdUniqueIndex()
@@ -33,8 +33,8 @@ public:
      * @param Key The entityid to search for.
      * @return The found FEntityType, or a default-constructed FEntityType if not found.
      */
-    // NOTE: Not exposed to Blueprint because uint32 types are not Blueprint-compatible
-    FEntityType Find(uint32 Key)
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|EntityIndex")
+    FEntityType Find(int32 Key)
     {
         // Simply delegate the call to the internal helper
         return EntityIdIndexHelper.FindUniqueIndex(Key);

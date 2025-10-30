@@ -13,17 +13,17 @@ struct CLIENT_UNREAL_API FCircleType
 {
     GENERATED_BODY()
 
-    // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 EntityId = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    int32 EntityId = 0;
 
-    // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 PlayerId = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+    int32 PlayerId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FDbVector2Type Direction;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    float Speed = 0.f;
+    float Speed = 0.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FSpacetimeDBTimestamp LastSplitTime;

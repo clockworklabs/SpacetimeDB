@@ -86,7 +86,7 @@ Tables and reducers in Rust modules can use any type that implements the [`Space
 To create a Rust module, install the [`spacetime` CLI tool](https://spacetimedb.com/install) in your preferred shell. Navigate to your work directory and run the following command:
 
 ```text
-spacetime init --lang rust my-project-directory
+spacetime init --lang rust --project-path my-project-directory my-project
 ```
 
 This creates a Cargo project in `my-project-directory` with the following `Cargo.toml`:

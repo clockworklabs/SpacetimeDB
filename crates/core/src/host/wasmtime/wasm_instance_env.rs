@@ -1263,8 +1263,7 @@ impl WasmInstanceEnv {
             let function = env.log_record_function();
 
             let record = Record {
-                // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start)
-                ts: chrono::Utc::now(),
+                ts: InstanceEnv::now_for_logging(),
                 target: target.as_deref(),
                 filename: filename.as_deref(),
                 line_number,

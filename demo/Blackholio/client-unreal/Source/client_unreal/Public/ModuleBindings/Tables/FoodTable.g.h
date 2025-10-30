@@ -20,7 +20,7 @@ class CLIENT_UNREAL_API UFoodEntityIdUniqueIndex : public UObject
 private:
     // Declare an instance of your templated helper.
     // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FFoodType, uint32, FTableCache<FFoodType>> EntityIdIndexHelper;
+    FUniqueIndexHelper<FFoodType, int32, FTableCache<FFoodType>> EntityIdIndexHelper;
 
 public:
     UFoodEntityIdUniqueIndex()
@@ -33,8 +33,8 @@ public:
      * @param Key The entityid to search for.
      * @return The found FFoodType, or a default-constructed FFoodType if not found.
      */
-    // NOTE: Not exposed to Blueprint because uint32 types are not Blueprint-compatible
-    FFoodType Find(uint32 Key)
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|FoodIndex")
+    FFoodType Find(int32 Key)
     {
         // Simply delegate the call to the internal helper
         return EntityIdIndexHelper.FindUniqueIndex(Key);
