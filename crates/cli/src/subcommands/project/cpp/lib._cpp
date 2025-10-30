@@ -1,0 +1,44 @@
+#include "spacetimedb.h"
+
+using namespace SpacetimeDb;
+
+// Define a simple table
+struct Person {
+    std::string name;
+};
+SPACETIMEDB_STRUCT(Person, name)
+SPACETIMEDB_TABLE(Person, person, Public)
+
+// Called when the module is initially published
+SPACETIMEDB_INIT(init)
+{
+    // Module initialization logic goes here
+}
+
+// Called every time a new client connects
+SPACETIMEDB_CLIENT_CONNECTED(identity_connected)
+{
+    // Client connection logic goes here
+}
+
+// Called every time a client disconnects  
+SPACETIMEDB_CLIENT_DISCONNECTED(identity_disconnected)
+{
+    // Client disconnection logic goes here
+}
+
+// Add a person to the table
+SPACETIMEDB_REDUCER(add, ReducerContext ctx, std::string name)
+{
+    ctx.db[person].insert(Person{name});
+}
+
+// Say hello to everyone in the table
+SPACETIMEDB_REDUCER(say_hello, ReducerContext ctx)
+{
+    auto table = ctx.db[person];
+    for (const auto& person : table) {
+        LOG_INFO("Hello, " + person.name + "!");
+    }
+    LOG_INFO("Hello, World!");
+}
