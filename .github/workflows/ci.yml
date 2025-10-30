@@ -25,9 +25,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - { runner: spacetimedb-runner, smoketest_args: --docker }
+          - { runner: ubuntu-latest, smoketest_args: --docker }
           - { runner: windows-latest, smoketest_args: --no-build-cli }
-        runner: [ spacetimedb-runner, windows-latest ]
+        runner: [ ubuntu-latest, windows-latest ]
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Find Git ref
@@ -84,7 +84,7 @@ jobs:
 
   test:
     name: Test Suite
-    runs-on: spacetimedb-runner
+    runs-on: ubuntu-latest
     steps:
       - name: Find Git ref
         env:
@@ -145,7 +145,7 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: spacetimedb-runner
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -184,7 +184,7 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: spacetimedb-runner
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
@@ -237,7 +237,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-runner }
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-latest }
           - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
