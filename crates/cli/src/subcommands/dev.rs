@@ -93,16 +93,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // If you don't specify a server, we default to your default server
     // If you don't have one of those, we default to "maincloud"
-    let server = if let Some(s) = args.get_one::<String>("server") {
-        Some(s.as_str())
-    } else {
-        None
-    };
+    let server = args.get_one::<String>("server").map(|s| s.as_str());
 
     let default_server_name = config.default_server_name().map(|s| s.to_string());
 
     let mut resolved_server = server
-        .or_else(|| default_server_name.as_ref().map(|s| s.as_str()))
+        .or(default_server_name.as_deref())
         .ok_or_else(|| anyhow::anyhow!("Server not specified and no default server configured."))?;
 
     let mut project_dir = project_path.clone();
@@ -168,7 +164,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             .with_prompt("Would you like to sign in now?")
             .default(true)
             .interact()?;
-        if !should_login && server != None {
+        if !should_login && server.is_some() {
             // The user explicitly provided --server maincloud but doesn't want to log in
             anyhow::bail!("Login required to publish to maincloud server");
         } else if !should_login {
@@ -240,7 +236,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         &database_name,
         client_language,
         resolved_server,
-        use_local,
     )
     .await?;
 
@@ -289,7 +284,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 &database_name,
                 client_language,
                 resolved_server,
-                use_local,
             )
             .await
             {
@@ -353,10 +347,9 @@ async fn generate_build_and_publish(
     database_name: &str,
     client_language: Option<&Language>,
     server: &str,
-    _use_local: bool,
 ) -> Result<(), anyhow::Error> {
     let module_language = detect_module_language(spacetimedb_dir)?;
-    let client_language = client_language.unwrap_or_else(|| match module_language {
+    let client_language = client_language.unwrap_or(match module_language {
         crate::util::ModuleLanguage::Rust => &Language::Rust,
         crate::util::ModuleLanguage::Csharp => &Language::Csharp,
         crate::util::ModuleLanguage::Javascript => &Language::TypeScript,
