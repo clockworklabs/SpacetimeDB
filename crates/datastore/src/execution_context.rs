@@ -131,7 +131,6 @@ pub enum WorkloadType {
     Unsubscribe,
     Update,
     Internal,
-    Procedure,
 }
 
 impl Default for WorkloadType {
