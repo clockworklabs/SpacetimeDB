@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   unity-testsuite:
-    runs-on: spacetimedb-runner-2
+    runs-on: bare-metal
     # Cancel any previous testsuites running on the same PR and/or ref.
     concurrency:
       group: unity-test-${{ github.event.pull_request.number || github.ref }}

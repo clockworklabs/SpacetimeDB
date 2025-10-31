@@ -25,9 +25,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - { runner: spacetimedb-runner-2, smoketest_args: --docker }
+          - { runner: bare-metal, smoketest_args: --docker }
           - { runner: windows-latest, smoketest_args: --no-build-cli }
-        runner: [ spacetimedb-runner-2, windows-latest ]
+        runner: [ bare-metal, windows-latest ]
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Find Git ref
@@ -84,7 +84,7 @@ jobs:
 
   test:
     name: Test Suite
-    runs-on: spacetimedb-runner-2
+    runs-on: bare-metal
     steps:
       - name: Find Git ref
         env:
@@ -145,7 +145,7 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: spacetimedb-runner-2
+    runs-on: bare-metal
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -184,7 +184,7 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: spacetimedb-runner-2
+    runs-on: bare-metal
     steps:
       - uses: actions/checkout@v3
 
@@ -237,7 +237,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-runner-2 }
+          - { target: x86_64-unknown-linux-gnu, runner: bare-metal }
           - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
@@ -276,7 +276,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-runner-2
+    runs-on: bare-metal
     # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     container:
