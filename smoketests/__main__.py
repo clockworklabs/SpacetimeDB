@@ -113,23 +113,23 @@ def main():
                 subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
 
-    config_file = tempfile.NamedTemporaryFile(mode="w+b", suffix=".toml", buffering=0)
-    config_file.write(BASE_STDB_CONFIG_PATH.read_bytes())
-    config_file.flush()
+    with tempfile.NamedTemporaryFile(mode="w+b", suffix=".toml", buffering=0) as config_file:
+        config_file.write(BASE_STDB_CONFIG_PATH.read_bytes())
+        config_file.flush()
 
-    if args.remote_server is not None:
-        smoketests.spacetime("--config-path", config_file.name, "server", "edit", "localhost", "--url", args.remote_server, "--yes")
-        smoketests.REMOTE_SERVER = True
+        if args.remote_server is not None:
+            smoketests.spacetime("--config-path", config_file.name, "server", "edit", "localhost", "--url", args.remote_server, "--yes")
+            smoketests.REMOTE_SERVER = True
 
-    if args.spacetime_login:
-        smoketests.spacetime("--config-path", config_file.name, "logout")
-        smoketests.spacetime("--config-path", config_file.name, "login")
-        smoketests.USE_SPACETIME_LOGIN = True
-    else:
-        smoketests.new_identity(config_file.name)
+        if args.spacetime_login:
+            smoketests.spacetime("--config-path", config_file.name, "logout")
+            smoketests.spacetime("--config-path", config_file.name, "login")
+            smoketests.USE_SPACETIME_LOGIN = True
+        else:
+            smoketests.new_identity(config_file.name)
 
-    config_file.seek(0)
-    smoketests.STDB_CONFIG = config_file.read().decode()
+        config_file.seek(0)
+        smoketests.STDB_CONFIG = config_file.read().decode()
 
     if not args.skip_dotnet:
         smoketests.HAVE_DOTNET = check_dotnet()
