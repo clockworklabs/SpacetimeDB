@@ -926,7 +926,6 @@ impl MutTx for Locking {
             sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
-            read_sets: <_>::default(),
             timer,
             ctx,
             metrics,
