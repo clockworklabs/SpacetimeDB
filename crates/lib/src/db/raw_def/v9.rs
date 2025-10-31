@@ -82,16 +82,9 @@ pub struct RawModuleDefV9 {
     pub types: Vec<RawTypeDefV9>,
 
     /// Miscellaneous additional module exports.
-    ///
-    /// The enum [`RawMiscModuleExportV9`] can have new variants added
-    /// without breaking existing compiled modules.
-    /// As such, this acts as a sort of dumping ground for any exports added after we defined `RawModuleDefV9`.
-    ///
-    /// If/when we define `RawModuleDefV10`, these should be moved out of `misc_exports` and into their own fields,
-    /// and the new `misc_exports` should once again be initially empty.
     pub misc_exports: Vec<RawMiscModuleExportV9>,
 
-    /// Row level security definitions.
+    /// Low level security definitions.
     ///
     /// Each definition must have a unique name.
     pub row_level_security: Vec<RawRowLevelSecurityDefV9>,
@@ -301,7 +294,7 @@ pub fn direct(col: impl Into<ColId>) -> RawIndexAlgorithm {
     RawIndexAlgorithm::Direct { column: col.into() }
 }
 
-/// Marks a table as a timer table for a scheduled reducer or procedure.
+/// Marks a table as a timer table for a scheduled reducer.
 ///
 /// The table must have columns:
 /// - `scheduled_id` of type `u64`.
@@ -314,9 +307,7 @@ pub struct RawScheduleDefV9 {
     /// Even though there is ABSOLUTELY NO REASON TO.
     pub name: Option<Box<str>>,
 
-    /// The name of the reducer or procedure to call.
-    ///
-    /// Despite the field name here, this may be either a reducer or a procedure.
+    /// The name of the reducer to call.
     pub reducer_name: RawIdentifier,
 
     /// The column of the `scheduled_at` field of this scheduled table.
@@ -367,18 +358,12 @@ pub struct RawRowLevelSecurityDefV9 {
 }
 
 /// A miscellaneous module export.
-///
-/// All of the variants here were added after the format of [`RawModuleDefV9`] was already stabilized.
-/// If/when we define `RawModuleDefV10`, these should allbe moved out of `misc_exports` and into their own fields.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[non_exhaustive]
 pub enum RawMiscModuleExportV9 {
-    /// A default value for a column added during a supervised automigration.
     ColumnDefaultValue(RawColumnDefaultValueV9),
-    /// A procedure definition.
-    Procedure(RawProcedureDefV9),
 }
 
 /// Marks a particular table's column as having a particular default.
@@ -472,27 +457,6 @@ pub enum Lifecycle {
     OnConnect,
     /// The reducer will be invoked when a client disconnects.
     OnDisconnect,
-}
-
-/// A procedure definition.
-///
-/// Will be wrapped in [`RawMiscModuleExportV9`] and included in the [`RawModuleDefV9`]'s `misc_exports` vec.
-#[derive(Debug, Clone, SpacetimeType)]
-#[sats(crate = crate)]
-#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-pub struct RawProcedureDefV9 {
-    /// The name of the procedure.
-    pub name: RawIdentifier,
-
-    /// The types and optional names of the parameters, in order.
-    /// This `ProductType` need not be registered in the typespace.
-    pub params: ProductType,
-
-    /// The type of the return value.
-    ///
-    /// If this is a user-defined product or sum type,
-    /// it should be registered in the typespace and indirected through an [`AlgebraicType::Ref`].
-    pub return_type: AlgebraicType,
 }
 
 /// A builder for a [`RawModuleDefV9`].
@@ -667,31 +631,6 @@ impl RawModuleDefV9Builder {
         });
     }
 
-    /// Add a procedure to the in-progress module.
-    ///
-    /// Accepts a `ProductType` of arguments.
-    /// The arguments `ProductType` need not be registered in the typespace.
-    ///
-    /// Also accepts an `AlgebraicType` return type.
-    /// If this is a user-defined product or sum type,
-    /// it should be registered in the typespace and indirected through an `AlgebraicType::Ref`.
-    ///
-    /// The `&mut ProcedureContext` first argument to the procedure should not be included in the `params`.
-    pub fn add_procedure(
-        &mut self,
-        name: impl Into<RawIdentifier>,
-        params: spacetimedb_sats::ProductType,
-        return_type: spacetimedb_sats::AlgebraicType,
-    ) {
-        self.module
-            .misc_exports
-            .push(RawMiscModuleExportV9::Procedure(RawProcedureDefV9 {
-                name: name.into(),
-                params,
-                return_type,
-            }))
-    }
-
     /// Add a row-level security policy to the module.
     ///
     /// The `sql` expression should be a valid SQL expression that will be used to filter rows.
@@ -857,16 +796,13 @@ impl RawTableDefBuilder<'_> {
 
     /// Adds a schedule definition to the table.
     ///
-    /// The `function_name` should name a reducer or procedure
-    /// which accepts one argument, a row of this table.
-    ///
     /// The table must have the appropriate columns for a scheduled table.
     pub fn with_schedule(
         mut self,
-        function_name: impl Into<RawIdentifier>,
+        reducer_name: impl Into<RawIdentifier>,
         scheduled_at_column: impl Into<ColId>,
     ) -> Self {
-        let reducer_name = function_name.into();
+        let reducer_name = reducer_name.into();
         let scheduled_at_column = scheduled_at_column.into();
         self.table.schedule = Some(RawScheduleDefV9 {
             name: None,

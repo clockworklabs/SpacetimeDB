@@ -1158,7 +1158,7 @@ fn volatile_nonatomic_schedule_immediate<'scope>(
     get_env(scope)?
         .instance_env
         .scheduler
-        .volatile_nonatomic_schedule_immediate(name, crate::host::FunctionArgs::Bsatn(args.into()));
+        .volatile_nonatomic_schedule_immediate(name, crate::host::ReducerArgs::Bsatn(args.into()));
 
     Ok(())
 }

@@ -7695,7 +7695,6 @@ version = "1.6.0"
 dependencies = [
  "bitflags 2.10.0",
  "either",
- "enum-as-inner",
  "itertools 0.12.1",
  "nohash-hasher",
  "proptest",
