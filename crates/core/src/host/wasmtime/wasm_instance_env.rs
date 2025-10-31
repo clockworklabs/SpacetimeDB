@@ -9,12 +9,13 @@ use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, Timin
 use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_lib::{ConnectionId, Timestamp};
+use spacetimedb_datastore::locking_tx_datastore::UniqueView;
+use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::time::Instant;
-use wasmtime::{AsContext, Caller, StoreContextMut};
+use wasmtime::{AsContext, Caller, FuncType, StoreContextMut};
 
 /// A stream of bytes which the WASM module can read from
 /// using [`WasmInstanceEnv::bytes_source_read`].
@@ -103,7 +104,7 @@ pub(super) struct WasmInstanceEnv {
     /// Track time spent in module-defined spans.
     timing_spans: TimingSpanSet,
 
-    /// The point in time the last, or current, reducer or procedure call started at.
+    /// The point in time the last, or current, reducer, procedure or view call started at.
     funcall_start: Instant,
 
     /// Track time spent in all wasm instance env calls (aka syscall time).
@@ -112,7 +113,7 @@ pub(super) struct WasmInstanceEnv {
     /// to this tracker.
     call_times: CallTimes,
 
-    /// The name of the last, including current, reducer or procedure to be executed by this environment.
+    /// The name of the last, including current, reducer, procedure, or view to be executed by this environment.
     funcall_name: String,
 
     /// A pool of unused allocated chunks that can be reused.
@@ -124,6 +125,12 @@ const STANDARD_BYTES_SINK: u32 = 1;
 
 type WasmResult<T> = Result<T, WasmError>;
 type RtResult<T> = anyhow::Result<T>;
+
+pub enum FuncCallType {
+    Reducer,
+    Procedure,
+    View(UniqueView),
+}
 
 /// Wraps an `InstanceEnv` with the magic necessary to push
 /// and pull bytes from webassembly memory.
@@ -224,7 +231,13 @@ impl WasmInstanceEnv {
     ///
     /// Returns the handle used by reducers and procedures to read from `args`
     /// as well as the handle used to write the reducer error message or procedure return value.
-    pub fn start_funcall(&mut self, name: &str, args: bytes::Bytes, ts: Timestamp) -> (BytesSourceId, u32) {
+    pub fn start_funcall(
+        &mut self,
+        name: &str,
+        args: bytes::Bytes,
+        ts: Timestamp,
+        func_type: FuncCallType,
+    ) -> (BytesSourceId, u32) {
         // Create the output sink.
         // Reducers which fail will write their error message here.
         // Procedures will write their result here.
@@ -234,6 +247,15 @@ impl WasmInstanceEnv {
 
         self.funcall_start = Instant::now();
         name.clone_into(&mut self.funcall_name);
+
+        match func_type {
+            FuncCallType::Reducer | FuncCallType::Procedure => {
+                self.instance_env.start_funcall(ts);
+            }
+            FuncCallType::View(view) => {
+                self.instance_env.start_view(ts, view);
+            }
+        }
         self.instance_env.start_funcall(ts);
 
         (args, errors)

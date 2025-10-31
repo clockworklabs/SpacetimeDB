@@ -1,12 +1,15 @@
 use crate::db::MetricsRecorderQueue;
-use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
+use crate::error::{DBError, DatabaseError, RestoreSnapshotError, ViewError};
+use crate::host::ArgsTuple;
 use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
 use crate::util::{asyncify, spawn_rayon};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
+use bytes::Bytes;
 use enum_map::EnumMap;
 use fs2::FileExt;
+use log::trace;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_data_structures::map::IntSet;
@@ -18,8 +21,9 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
-use spacetimedb_datastore::system_tables::{system_tables, StModuleRow, StViewRow, ST_VIEW_ID};
+use spacetimedb_datastore::system_tables::{system_tables, StModuleRow, StViewArgFields, StViewRow, ST_VIEW_ID};
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
+use spacetimedb_datastore::system_tables::{StViewArgRow, ST_VIEW_ARG_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
     UpdateFlags,
@@ -32,16 +36,18 @@ use spacetimedb_datastore::{
     traits::TxData,
 };
 use spacetimedb_durability as durability;
+use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
+use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_lib::st_var::StVarValue;
-use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
+use spacetimedb_lib::{bsatn, ConnectionId};
 use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType, ProductValue, Typespace};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -1511,6 +1517,115 @@ impl RelationalDB {
             })
             .into()
         })
+    }
+
+    /// Get or insert view argument into `ST_VIEW_ARG_ID`.
+    pub fn get_or_insert_st_view_arg(&self, tx: &mut MutTxId, args: &Bytes) -> Result<u64, DBError> {
+        let bytes_av = AlgebraicValue::Bytes(args.to_vec().into());
+        let mut rows = self.iter_by_col_eq_mut(tx, ST_VIEW_ARG_ID, [StViewArgFields::Bytes], &bytes_av)?;
+
+        // Extract the first matching `arg_id`, if any.
+        if let Some(res) = rows.next() {
+            let row = StViewArgRow::try_from(res).expect("valid StViewArgRow");
+            return Ok(row.id);
+        }
+
+        let view_arg_bytes = product![0u64, bytes_av]
+            .to_bsatn_vec()
+            .map_err(|_| ViewError::SerializeArgs)?;
+
+        let (_, view_arg_row, _) = self.insert(tx, ST_VIEW_ARG_ID, &view_arg_bytes)?;
+        let StViewArgRow { id: arg_id, .. } = view_arg_row.try_into().expect("valid StViewArgRow");
+
+        Ok(arg_id)
+    }
+
+    /// Evaluate and update View.
+    /// This involves:
+    /// 1. Serializing the view arguments into `ST_VIEW_ARG_ID`
+    /// 2. Deleting all rows in the view table matching the view arguments
+    /// 3. Deserializing the return value from the view execution
+    /// 4. Inserting all rows from the return value into the view table, with the arg_id
+    ///    set to the inserted view argument's id.
+    /// The `typespace` is needed for deserializing the return value.
+    pub fn evaluate_view(
+        &self,
+        tx: &mut MutTxId,
+        // Name of the view to update
+        view: &str,
+        // Arguments passed to the view call
+        args: ArgsTuple,
+        // Return type of the view call
+        return_type: AlgebraicType,
+        // Serialized bytes of the return value from the view call
+        //TODO: pass arg_id; do the insertion during starting of invoking view
+        bytes: Bytes,
+        typespace: &Typespace,
+        // Identity of the caller (for non-anonymous views)
+        caller_identity: Identity,
+    ) -> Result<(), DBError> {
+        let st_view_row = tx.lookup_st_view_by_name(view)?;
+
+        let (table_id, is_anonymous) = (
+            st_view_row
+                .table_id
+                .ok_or_else(|| ViewError::ViewNotFound(view.to_string()))?,
+            st_view_row.is_anonymous,
+        );
+
+        // Insert the view arguments into ST_VIEW_ARG_ID
+        let arg_id = self.get_or_insert_st_view_arg(tx, &args.get_bsatn())?;
+
+        let input_rows = product![
+            if is_anonymous {
+                AlgebraicValue::OptionNone()
+            } else {
+                AlgebraicValue::OptionSome(caller_identity.into())
+            },
+            AlgebraicValue::U64(arg_id)
+        ];
+
+        // Delete all existing rows in the view table matching the view arguments
+        let rows_to_delete: Vec<_> = self
+            .iter_by_col_eq_mut(tx, table_id, [0, 1], &input_rows.clone().into())?
+            .map(|res| res.pointer())
+            .collect();
+
+        let count = self.delete(tx, table_id, rows_to_delete);
+        trace!("Deleted {count} rows from view table {table_id} for arg_id {arg_id}");
+
+        // Deserialize the return value
+        let seed = spacetimedb_sats::WithTypespace::new(typespace, &return_type);
+        let return_val = seed
+            .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
+            .map_err(|e| ViewError::DeserializeReturn(e.to_string()))?;
+
+        let products: Vec<ProductValue> = if return_type.is_array() {
+            let arr = return_val.into_array().expect("return type is array");
+            Ok(arr.into_iter().map(|v| v.into_product().unwrap()).collect())
+        } else if return_type.is_option() {
+            let opt = return_val.into_option().expect("return type is option");
+            Ok(opt.into_iter().map(|v| v.into_product().unwrap()).collect())
+        } else {
+            Err(ViewError::InvalidReturnType(return_type.clone()))
+        }?;
+
+        // Insert all rows from the return value into the view table
+        for product in products {
+            let row = {
+                let mut elements = Vec::with_capacity(2 + product.elements.len());
+                elements.extend_from_slice(&input_rows.elements);
+                elements.append(&mut product.elements.to_vec());
+
+                ProductValue {
+                    elements: elements.into_boxed_slice(),
+                }
+            };
+            let row_bytes = row.to_bsatn_vec().map_err(|_| ViewError::SerializeRow)?;
+            self.insert(tx, table_id, &row_bytes)?;
+        }
+
+        Ok(())
     }
 }
 

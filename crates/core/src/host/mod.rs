@@ -69,7 +69,7 @@ impl FunctionArgs {
 
 #[derive(Debug, Clone)]
 pub struct ArgsTuple {
-    tuple: ProductValue,
+    pub tuple: ProductValue,
     bsatn: OnceCell<Bytes>,
     json: OnceCell<ByteString>,
 }
@@ -127,6 +127,15 @@ pub struct InvalidReducerArguments(
 #[derive(thiserror::Error, Debug)]
 #[error("invalid arguments for procedure {}: {}", .0.function_name, .0.err)]
 pub struct InvalidProcedureArguments(
+    #[from]
+    #[source]
+    InvalidFunctionArguments,
+);
+
+/// Newtype over [`InvalidFunctionArguments`] which renders with the word "view".
+#[derive(thiserror::Error, Debug)]
+#[error("invalid arguments for view {}: {}", .0.function_name, .0.err)]
+pub struct InvalidViewArguments(
     #[from]
     #[source]
     InvalidFunctionArguments,

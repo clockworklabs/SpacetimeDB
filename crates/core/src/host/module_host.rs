@@ -10,7 +10,8 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
-use crate::host::InvalidFunctionArguments;
+use crate::host::host_controller::ViewCallResult;
+use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -45,9 +46,9 @@ use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_primitives::{ProcedureId, TableId};
+use spacetimedb_lib::{AlgebraicType, ConnectionId};
+use spacetimedb_primitives::{ProcedureId, TableId, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
@@ -341,7 +342,7 @@ pub enum Instance {
 }
 
 impl Module {
-    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+    pub fn replica_ctx(&self) -> &Arc<ReplicaContext> {
         match self {
             Module::Wasm(module) => module.replica_ctx(),
             Module::Js(module) => module.replica_ctx(),
@@ -403,6 +404,13 @@ impl Instance {
         }
     }
 
+    fn call_view(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
+        match self {
+            Instance::Wasm(inst) => inst.call_view(tx, params),
+            Instance::Js(_inst) => unimplemented!("JS views are not implemented yet"),
+        }
+    }
+
     async fn call_procedure(&mut self, params: CallProcedureParams) -> Result<ProcedureCallResult, ProcedureCallError> {
         match self {
             Instance::Wasm(inst) => inst.call_procedure(params).await,
@@ -431,6 +439,7 @@ pub fn create_table_from_view_def(
     module_def: &ModuleDef,
     view_def: &ViewDef,
 ) -> anyhow::Result<()> {
+    println!("Creating view table for view {:?}", &view_def);
     stdb.create_view(tx, module_def, view_def)
         .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
     Ok(())
@@ -528,6 +537,19 @@ pub struct CallReducerParams {
     pub args: ArgsTuple,
 }
 
+pub struct CallViewParams {
+    pub timestamp: Timestamp,
+    pub caller_identity: Identity,
+    pub caller_connection_id: Option<ConnectionId>,
+    pub timer: Option<Instant>,
+    pub view_id: ViewId,
+    pub args: ArgsTuple,
+    /// The expected return type of the view, used for deserialization.
+    /// This type information is obtained from the [`ModuleDef`].
+    pub return_type: AlgebraicType,
+    pub is_anonymous: bool,
+}
+
 pub struct CallProcedureParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
@@ -622,7 +644,7 @@ impl ModuleInstanceManager {
 #[derive(Clone)]
 pub struct ModuleHost {
     pub info: Arc<ModuleInfo>,
-    module: Arc<Module>,
+    pub module: Arc<Module>,
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
     instance_manager: Arc<Mutex<ModuleInstanceManager>>,
@@ -688,6 +710,16 @@ pub enum ReducerCallError {
     ScheduleReducerNotFound,
     #[error("can't directly call special {0:?} lifecycle reducer")]
     LifecycleReducer(Lifecycle),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ViewCallError {
+    #[error(transparent)]
+    Args(#[from] InvalidViewArguments),
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error("no such view")]
+    NoSuchView,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -1416,6 +1448,58 @@ impl ModuleHost {
             }
         })
         .await?
+    }
+
+    pub async fn call_view(
+        &self,
+        tx: MutTxId,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        timer: Option<Instant>,
+        view_name: &str,
+        args: FunctionArgs,
+    ) -> Result<ViewCallResult, ViewCallError> {
+        let (view_id, view_def) = self
+            .info
+            .module_def
+            .view_full(view_name)
+            .ok_or(ViewCallError::NoSuchView)?;
+
+        let view_seed = ArgsSeed(self.info.module_def.typespace().with_type(view_def));
+        //TODO: can we put the args into `ST_VIEW_ARG` table at this point?
+        let args = args.into_tuple(view_seed).map_err(InvalidViewArguments)?;
+        let return_type = view_def.return_type.clone();
+        let is_anonymous = view_def.is_anonymous;
+
+        let res = Ok(self
+            .call(&view_def.name, move |inst| {
+                inst.call_view(
+                    tx,
+                    CallViewParams {
+                        timestamp: Timestamp::now(),
+                        caller_identity,
+                        caller_connection_id,
+                        timer,
+                        view_id,
+                        args,
+                        return_type,
+                        is_anonymous,
+                    },
+                )
+            })
+            .await?);
+
+        let log_message = match &res {
+            Err(ViewCallError::NoSuchView) => Some(no_such_function_log_message("view", view_name)),
+            Err(ViewCallError::Args(_)) => Some(args_error_log_message("view", view_name)),
+            _ => None,
+        };
+
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, view_name, &log_message)
+        }
+
+        res
     }
 
     pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
