@@ -227,10 +227,6 @@ strong {
   color: var(--clockworklabs-strong-color);
 }
 
-footer {
-  display: none;
-}
-
 .tabs__item {
   border-bottom-width: 1px;
 }

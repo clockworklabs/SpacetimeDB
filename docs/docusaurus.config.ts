@@ -94,6 +94,7 @@ const config: Config = {
       'classic',
       {
         docs: {
+          editUrl: "https://github.com/clockworklabs/SpacetimeDB/edit/master/docs/",
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           sidebarCollapsed: false,
