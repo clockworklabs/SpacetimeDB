@@ -125,7 +125,7 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 #[proc_macro_attribute]
 pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
-        let args = view::ViewArgs::parse(args, &original_function.sig.ident)?;
+        let args = view::ViewArgs::parse(args)?;
         view::view_impl(args, original_function)
     })
 }

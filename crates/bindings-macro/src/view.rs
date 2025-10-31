@@ -1,56 +1,55 @@
-use heck::ToSnakeCase;
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::ext::IdentExt;
 use syn::parse::Parser;
 use syn::{FnArg, ItemFn};
 
 use crate::sym;
-use crate::util::{check_duplicate_msg, match_meta};
+use crate::util::{ident_to_litstr, match_meta};
 
 pub(crate) struct ViewArgs {
-    name: Ident,
     #[allow(unused)]
     public: bool,
 }
 
 impl ViewArgs {
-    /// Parse `#[view(name = ..., public)]` where both `name` and `public` are required.
-    pub(crate) fn parse(input: TokenStream, func_ident: &Ident) -> syn::Result<Self> {
-        let mut name = None;
-        let mut public = None;
+    /// Parse `#[view(public)]` where `public` is required.
+    pub(crate) fn parse(input: TokenStream) -> syn::Result<Self> {
+        if input.is_empty() {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "views must be declared as `#[view(public)]`; `public` is required",
+            ));
+        }
+        let mut public = false;
         syn::meta::parser(|meta| {
             match_meta!(match meta {
-                sym::name => {
-                    check_duplicate_msg(&name, &meta, "`name` already specified")?;
-                    name = Some(meta.value()?.parse()?);
-                }
                 sym::public => {
-                    check_duplicate_msg(&public, &meta, "`public` already specified")?;
-                    public = Some(());
+                    if public {
+                        return Err(syn::Error::new(
+                            Span::call_site(),
+                            "duplicate attribute argument: `public`",
+                        ));
+                    }
+                    public = true;
                 }
             });
             Ok(())
         })
         .parse2(input)?;
-        let name = name.ok_or_else(|| {
-            let view = func_ident.to_string().to_snake_case();
-            syn::Error::new(
+        if !public {
+            return Err(syn::Error::new(
                 Span::call_site(),
-                format_args!("must specify view name, e.g. `#[spacetimedb::view(name = {view})]"),
-            )
-        })?;
-        let () = public
-            .ok_or_else(|| syn::Error::new(Span::call_site(), "views must be `public`, e.g. `#[view(public)]`"))?;
-        Ok(Self { name, public: true })
+                "views must be declared as `#[view(public)]`; `public` is required",
+            ));
+        }
+        Ok(Self { public })
     }
 }
 
-pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
-    let vis = &original_function.vis;
+pub(crate) fn view_impl(_args: ViewArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
     let func_name = &original_function.sig.ident;
-    let view_ident = args.name;
-    let view_name = view_ident.unraw().to_string();
+    let view_name = ident_to_litstr(func_name);
+    let vis = &original_function.vis;
 
     for param in &original_function.sig.generics.params {
         let err = |msg| syn::Error::new_spanned(param, msg);
@@ -117,7 +116,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         }
     };
 
-    let register_describer_symbol = format!("__preinit__20_register_describer_{}", view_name);
+    let register_describer_symbol = format!("__preinit__20_register_describer_{}", view_name.value());
 
     let lt_params = &original_function.sig.generics;
     let lt_where_clause = &lt_params.where_clause;
