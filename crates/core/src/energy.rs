@@ -5,18 +5,18 @@ use spacetimedb_lib::{Hash, Identity};
 use crate::messages::control_db::Database;
 
 pub use spacetimedb_client_api_messages::energy::*;
-pub struct ReducerFingerprint<'a> {
+pub struct FunctionFingerprint<'a> {
     pub module_hash: Hash,
     pub module_identity: Identity,
     pub caller_identity: Identity,
-    pub reducer_name: &'a str,
+    pub function_name: &'a str,
 }
 
 pub trait EnergyMonitor: Send + Sync + 'static {
-    fn reducer_budget(&self, fingerprint: &ReducerFingerprint<'_>) -> ReducerBudget;
+    fn reducer_budget(&self, fingerprint: &FunctionFingerprint<'_>) -> FunctionBudget;
     fn record_reducer(
         &self,
-        fingerprint: &ReducerFingerprint<'_>,
+        fingerprint: &FunctionFingerprint<'_>,
         energy_used: EnergyQuanta,
         execution_duration: Duration,
     );
@@ -29,13 +29,13 @@ pub trait EnergyMonitor: Send + Sync + 'static {
 pub struct NullEnergyMonitor;
 
 impl EnergyMonitor for NullEnergyMonitor {
-    fn reducer_budget(&self, _fingerprint: &ReducerFingerprint<'_>) -> ReducerBudget {
-        ReducerBudget::DEFAULT_BUDGET
+    fn reducer_budget(&self, _fingerprint: &FunctionFingerprint<'_>) -> FunctionBudget {
+        FunctionBudget::DEFAULT_BUDGET
     }
 
     fn record_reducer(
         &self,
-        _fingerprint: &ReducerFingerprint<'_>,
+        _fingerprint: &FunctionFingerprint<'_>,
         _energy_used: EnergyQuanta,
         _execution_duration: Duration,
     ) {

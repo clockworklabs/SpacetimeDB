@@ -26,6 +26,7 @@ use crate::{
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
 use crate::{execution_context::Workload, system_tables::StViewRow};
+use bytes::Bytes;
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
@@ -116,7 +117,33 @@ impl ReadSet {
     }
 }
 
-pub type ViewReadSets = IntMap<ViewId, ReadSet>;
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct UniqueView {
+    identity: Option<Identity>,
+    view_id: ViewId,
+    //TODO: use arg_id from [`ST_VIEW_ARGS`]
+    args: Bytes,
+}
+
+impl UniqueView {
+    pub fn anonymous(view_id: ViewId, args: Bytes) -> Self {
+        Self {
+            identity: None,
+            view_id,
+            args,
+        }
+    }
+
+    pub fn with_identity(identity: Identity, view_id: ViewId, args: Bytes) -> Self {
+        Self {
+            identity: Some(identity),
+            view_id,
+            args,
+        }
+    }
+}
+
+pub type ViewReadSets = HashMap<UniqueView, ReadSet>;
 
 /// Represents a Mutable transaction. Holds locks for its duration
 ///
@@ -136,28 +163,28 @@ pub struct MutTxId {
     pub metrics: ExecutionMetrics,
 }
 
-static_assert_size!(MutTxId, 432);
+static_assert_size!(MutTxId, 448);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
-    pub fn record_table_scan(&mut self, view_id: Option<ViewId>, table_id: TableId) {
-        if let Some(view_id) = view_id {
-            self.read_sets.entry(view_id).or_default().insert_table_scan(table_id)
+    pub fn record_table_scan(&mut self, view: Option<UniqueView>, table_id: TableId) {
+        if let Some(view) = view {
+            self.read_sets.entry(view).or_default().insert_table_scan(table_id)
         }
     }
 
     /// Record that a view performs an index scan in this transaction's read set
     pub fn record_index_scan(
         &mut self,
-        view_id: Option<ViewId>,
+        view: Option<UniqueView>,
         table_id: TableId,
         index_id: IndexId,
         lower: Bound<AlgebraicValue>,
         upper: Bound<AlgebraicValue>,
     ) {
-        if let Some(view_id) = view_id {
+        if let Some(view) = view {
             self.read_sets
-                .entry(view_id)
+                .entry(view)
                 .or_default()
                 .insert_index_scan(table_id, index_id, lower, upper)
         }
@@ -444,13 +471,22 @@ impl MutTxId {
         })
     }
 
-    fn lookup_st_view(&self, view_id: ViewId) -> Result<StViewRow> {
+    pub fn lookup_st_view(&self, view_id: ViewId) -> Result<StViewRow> {
         let row = self
             .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewId, &view_id.into())?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_view, view_id.into()))?;
 
         StViewRow::try_from(row)
+    }
+
+    pub fn lookup_st_view_by_name(&self, view: &str) -> Result<StViewRow> {
+        let st_view_row = self
+            .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, &view.into())?
+            .next()
+            .unwrap();
+
+        StViewRow::try_from(st_view_row)
     }
 
     /// Insert a row into `st_view`, auto-increments and returns the [`ViewId`].
@@ -653,6 +689,14 @@ impl MutTxId {
         Ok(row.map(|row| row.read_col(StViewFields::ViewId).unwrap()))
     }
 
+    pub fn view_from_name(&self, view_name: &str) -> Result<Option<StViewRow>> {
+        let view_name = &view_name.into();
+        let row = self
+            .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, view_name)?
+            .next();
+        Ok(row.map(|row| row.try_into().expect("st_view row should be valid")))
+    }
+
     pub fn table_id_from_name(&self, table_name: &str) -> Result<Option<TableId>> {
         let table_name = &table_name.into();
         let row = self
@@ -685,6 +729,26 @@ impl MutTxId {
         let commit = (commit_table, commit_bs, idx_map);
 
         Ok((tx, commit))
+    }
+
+    /// Check if a memoized view exists for the given view name, args, and sender identity.
+    /// if not, [`RelationalDB::evaluate_view`] should be called to compute and store it.
+    fn has_memoized_view(&self, view_name: &str, args: Bytes, sender: Identity) -> Result<(bool, Bytes)> {
+        let (view_id, is_anonymous) = self
+            .view_from_name(view_name)?
+            .map(|view_row| (view_row.view_id, view_row.is_anonymous))
+            .ok_or_else(|| anyhow::anyhow!("view `{view_name}` not found"))?;
+
+        let unique_view = if is_anonymous {
+            UniqueView::anonymous(view_id, args.clone())
+        } else {
+            UniqueView::with_identity(sender, view_id, args.clone())
+        };
+
+        let has_memoized = self.read_sets.contains_key(&unique_view)
+            || self.committed_state_write_lock.has_memoized_view(&unique_view);
+
+        Ok((has_memoized, args))
     }
 }
 
@@ -1821,7 +1885,7 @@ impl MutTxId {
 
     /// Get the [`TableId`] for this view's backing table by probing `st_view`.
     /// Note, all views with at least one subscriber are materialized.
-    fn get_table_id_for_view(&self, view_id: ViewId) -> Result<Option<(TableId, bool)>> {
+    pub fn get_table_id_for_view(&self, view_id: ViewId) -> Result<Option<(TableId, bool)>> {
         Ok(self
             .st_view_row(view_id)?
             .and_then(|row| row.table_id.map(|id| (id, row.is_anonymous))))

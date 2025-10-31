@@ -1,6 +1,6 @@
 //! Helpers to allow deserializing data using a ReducerDef.
 
-use crate::def::{ProcedureDef, ReducerDef};
+use crate::def::{ProcedureDef, ReducerDef, ViewDef};
 use spacetimedb_lib::{
     sats::{self, de, impl_serialize, ser, ProductValue},
     ProductType,
@@ -8,7 +8,7 @@ use spacetimedb_lib::{
 
 /// Wrapper around a function def that allows deserializing to a [`ProductValue`] at the type of the def's parameter [`ProductType`].
 ///
-/// Sensible instantiations for `Def` are [`ProcedureDef`] and [`ReducerDef`].
+/// Sensible instantiations for `Def` are [`ProcedureDef`], [`ReducerDef`] and [`ViewDef`].
 pub struct ArgsSeed<'a, Def>(pub sats::WithTypespace<'a, Def>);
 
 // Manual impls of traits rather than derives,
@@ -36,6 +36,15 @@ impl FunctionDef for ReducerDef {
 }
 
 impl FunctionDef for ProcedureDef {
+    fn params(&self) -> &ProductType {
+        &self.params
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl FunctionDef for ViewDef {
     fn params(&self) -> &ProductType {
         &self.params
     }
