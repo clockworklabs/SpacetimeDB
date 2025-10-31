@@ -1,6 +1,7 @@
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef, TypeDef};
 
 mod code_indenter;
+pub mod cpp;
 pub mod csharp;
 pub mod rust;
 pub mod typescript;

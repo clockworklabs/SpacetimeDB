@@ -196,10 +196,11 @@ pub enum ModuleLanguage {
     Csharp,
     Rust,
     Javascript,
+    Cpp,
 }
 impl clap::ValueEnum for ModuleLanguage {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::Rust, Self::Javascript]
+        &[Self::Csharp, Self::Rust, Self::Javascript, Self::Cpp]
     }
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
@@ -215,6 +216,7 @@ impl clap::ValueEnum for ModuleLanguage {
                 "ecmascript",
                 "es",
             ])),
+            Self::Cpp => Some(clap::builder::PossibleValue::new("cpp").aliases(["c++", "cxx", "C++", "Cpp"])),
         }
     }
 }
@@ -232,6 +234,8 @@ pub fn detect_module_language(path_to_project: &Path) -> anyhow::Result<ModuleLa
         Ok(ModuleLanguage::Csharp)
     } else if path_to_project.join("package.json").exists() {
         Ok(ModuleLanguage::Javascript)
+    } else if path_to_project.join("CMakeLists.txt").exists() {
+        Ok(ModuleLanguage::Cpp)
     } else {
         anyhow::bail!("Could not detect the language of the module. Are you in a SpacetimeDB project directory?")
     }
