@@ -821,7 +821,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             let reducer = &sched.reducer;
             let scheduled_at_id = scheduled_at_column.index;
             let desc = quote!(spacetimedb::table::ScheduleDesc {
-                reducer_name: <#reducer as spacetimedb::rt::FnInfo>::NAME,
+                reducer_name: <#reducer as spacetimedb::rt::ReducerInfo>::NAME,
                 scheduled_at_column: #scheduled_at_id,
             });
 
