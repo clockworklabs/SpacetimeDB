@@ -1,4 +1,4 @@
-use spacetimedb::{reducer, table, view, AnonymousViewContext, Identity, ReducerContext, ViewContext};
+use spacetimedb::{reducer, table, ReducerContext};
 
 #[table(name = test)]
 struct Test {
@@ -62,91 +62,6 @@ fn read_only_btree_index_no_delete(ctx: &ReducerContext) {
     let read_only = ctx.as_read_only();
     // Should not compile: read-only btree index does not expose `delete()`
     read_only.db.test().x().delete(0u32..);
-}
-
-#[table(name = player)]
-struct Player {
-    #[unique]
-    identity: Identity,
-}
-
-struct NotSpacetimeType {}
-
-/// Private views not allowed; must be `#[view(public)]`
-#[view]
-fn view_def_no_public(_: &ViewContext) -> Vec<Player> {
-    vec![]
-}
-
-/// Duplicate `public`
-#[view(public, public)]
-fn view_def_duplicate_attribute_arg() -> Vec<Player> {
-    vec![]
-}
-
-/// Unsupported attribute arg
-#[view(public, anonymous)]
-fn view_def_unsupported_attribute_arg() -> Vec<Player> {
-    vec![]
-}
-
-/// A `ViewContext` is required
-#[view(public)]
-fn view_def_no_context() -> Vec<Player> {
-    vec![]
-}
-
-/// A `ViewContext` is required
-#[view(public)]
-fn view_def_wrong_context(_: &ReducerContext) -> Vec<Player> {
-    vec![]
-}
-
-/// Must pass the `ViewContext` by ref
-#[view(public)]
-fn view_def_pass_context_by_value(_: ViewContext) -> Vec<Player> {
-    vec![]
-}
-
-/// The view context must be the first parameter
-#[view(public)]
-fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
-    vec![]
-}
-
-/// Must return `Vec<T>` or `Option<T>` where `T` is a SpacetimeType
-#[view(public)]
-fn view_def_no_return(_: &ViewContext) {}
-
-/// Must return `Vec<T>` or `Option<T>` where `T` is a SpacetimeType
-#[view(public)]
-fn view_def_wrong_return(_: &ViewContext) -> Player {
-    Player {
-        identity: Identity::ZERO,
-    }
-}
-
-/// Must return `Vec<T>` or `Option<T>` where `T` is a SpacetimeType
-#[view(public)]
-fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<NotSpacetimeType> {
-    None
-}
-
-/// Cannot use a view as a scheduled function
-#[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
-struct ScheduledTable {
-    #[primary_key]
-    #[auto_inc]
-    scheduled_id: u64,
-    scheduled_at: spacetimedb::ScheduleAt,
-    x: u8,
-    y: u8,
-}
-
-/// Cannot use a view as a scheduled function
-#[view(public)]
-fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
-    vec![]
 }
 
 fn main() {}

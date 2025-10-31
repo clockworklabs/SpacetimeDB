@@ -37,8 +37,8 @@ error[E0277]: invalid reducer signature
 note: required by a bound in `register_reducer`
  --> src/rt.rs
   |
-  | pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
-  |                                                                                 ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+  | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
+  |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
 
 error[E0277]: the reducer argument `Test` does not implement `SpacetimeType`
  --> tests/ui/reducers.rs:6:40
@@ -98,8 +98,8 @@ error[E0277]: invalid reducer signature
 note: required by a bound in `register_reducer`
  --> src/rt.rs
   |
-  | pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
-  |                                                                                 ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+  | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
+  |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
 
 error[E0277]: `Test` is not a valid reducer return type
  --> tests/ui/reducers.rs:9:46
@@ -151,8 +151,8 @@ error[E0277]: invalid reducer signature
 note: required by a bound in `register_reducer`
   --> src/rt.rs
    |
-   | pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
-   |                                                                                 ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+   | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
+   |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
 
 error[E0277]: the first argument of a reducer must be `&ReducerContext`
   --> tests/ui/reducers.rs:23:20
@@ -202,8 +202,8 @@ error[E0277]: invalid reducer signature
 note: required by a bound in `register_reducer`
   --> src/rt.rs
    |
-   | pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
-   |                                                                                 ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+   | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
+   |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
 
 error[E0277]: the first argument of a reducer must be `&ReducerContext`
   --> tests/ui/reducers.rs:26:21
