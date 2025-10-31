@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   unity-testsuite:
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-runner-2
     # Cancel any previous testsuites running on the same PR and/or ref.
     concurrency:
       group: unity-test-${{ github.event.pull_request.number || github.ref }}
@@ -160,7 +160,7 @@ jobs:
           restore-keys: Unity-
 
       - name: Run Unity tests
-        uses: game-ci/unity-test-runner@v4
+        uses: game-ci/unity-test-runner-2@v4
         with:
           unityVersion: 2022.3.32f1  # Adjust Unity version to a valid tag
           projectPath: demo/Blackholio/client-unity  # Path to the Unity project subdirectory
