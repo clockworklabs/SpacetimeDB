@@ -69,7 +69,9 @@ spacetimedb.clientConnected((ctx) => {
 
 ## Example: Restricting auth providers
 
-Since users can use any valid token to connect to SpacetimeDB, their token may originate from any authentication provider. For example, they could send an OIDC compliant token from Github even though you only want to accept tokens from Google. It is best practice to check at least the issuer and audience of tokens when clients connect, so you can ensure that your data can only be accessed by users of your application.
+Since users can use any valid token to connect to SpacetimeDB, their token may originate from any authentication provider. For example, they could send an OIDC compliant token from GitHub even though you only want to accept tokens from Google. It often makes sense to restrict access to your module to users issued by your own issuer or specific issuers. It is best practice to check at least the issuer when clients connect, so you can ensure that your data can only be accessed by users of your application.
+
+Additionally, it's imperative that you check the `aud` claim to ensure the issuer intended your application to receive the token. This ensures that applications which send you the token, cannot repurpose tokens issued for use with another application.
 
 For example, we can restrict access to clients with SpacetimeAuth credentials.
 
