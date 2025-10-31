@@ -603,19 +603,19 @@ impl TableSchema {
     /// fn my_anonymous_view(ctx: &AnonymousViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
     /// ```
     ///
-    /// The above views are materialized with the following schemas:
+    /// The above views are materialized with the following schema:
     ///
     /// my_view:
     ///
-    /// | sender   | arg_id | a   | b   |
-    /// |----------|--------|-----|-----|
-    /// | Identity | 1      | u32 | u32 |
+    /// | sender         | arg_id | a   | b   |
+    /// |----------------|--------|-----|-----|
+    /// | (some = 0x...) | u64    | u32 | u32 |
     ///
     /// my_anonymous_view:
     ///
-    /// | arg_id | a   | b   |
-    /// |--------|-----|-----|
-    /// | 1      | u32 | u32 |
+    /// | sender      | arg_id | a   | b   |
+    /// |-------------|--------|-----|-----|
+    /// | (none = ()) | u64    | u32 | u32 |
     ///
     /// Note, `arg_id` is a foreign key into `st_view_arg`.
     pub fn from_view_def(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
@@ -631,17 +631,20 @@ impl TableSchema {
         let n = return_columns.len() + 2;
         let mut columns = Vec::with_capacity(n);
 
+        let sender_col_name = "sender";
+        let arg_id_col_name = "arg_id";
+
         columns.push(ColumnSchema {
             table_id: TableId::SENTINEL,
             col_pos: ColId(0),
-            col_name: "sender".into(),
+            col_name: sender_col_name.into(),
             col_type: AlgebraicType::option(AlgebraicType::identity()),
         });
 
         columns.push(ColumnSchema {
             table_id: TableId::SENTINEL,
             col_pos: ColId(1),
-            col_name: "arg_id".into(),
+            col_name: arg_id_col_name.into(),
             col_type: AlgebraicType::U64,
         });
 
@@ -654,6 +657,15 @@ impl TableSchema {
                 .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema }),
         );
 
+        let index_name = format!("{}_{}_{}_idx_btree", name, sender_col_name, arg_id_col_name);
+
+        let indexes = vec![IndexSchema {
+            index_id: IndexId::SENTINEL,
+            table_id: TableId::SENTINEL,
+            index_name: index_name.into_boxed_str(),
+            index_algorithm: IndexAlgorithm::BTree(col_list![0, 1].into()),
+        }];
+
         let table_access = if *is_public {
             StAccess::Public
         } else {
@@ -664,7 +676,7 @@ impl TableSchema {
             TableId::SENTINEL,
             (*name).clone().into(),
             columns,
-            vec![],
+            indexes,
             vec![],
             vec![],
             StTableType::User,
