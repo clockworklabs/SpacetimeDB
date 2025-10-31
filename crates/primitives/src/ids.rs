@@ -79,12 +79,6 @@ system_id! {
 auto_inc_system_id!(TableId);
 
 system_id! {
-    /// An identifier for a view, unique within a database.
-    pub struct ViewId(pub u32);
-}
-auto_inc_system_id!(ViewId);
-
-system_id! {
     /// An identifier for a sequence, unique within a database.
     pub struct SequenceId(pub u32);
 }
