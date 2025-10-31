@@ -335,7 +335,7 @@ fn get_full_path_within_manifest_dir(relative_path: &Path, manifest_dir: &Path) 
 /// `full_path` and `repo_root` should both be canonical paths, as by [`Path::canonicalize`].
 fn make_repo_root_relative(full_path: &Path, repo_root: &Path) -> PathBuf {
     full_path
-        .strip_prefix(&repo_root)
+        .strip_prefix(repo_root)
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|_| {
             panic!(
