@@ -1219,7 +1219,9 @@ impl JwtClaims {
     }
 
     fn extract_audience(&self) -> Vec<String> {
-        let aud = self.get_parsed().get("aud").unwrap();
+        let Some(aud) = self.get_parsed().get("aud") else {
+            return Vec::new();
+        };
         match aud {
             serde_json::Value::String(s) => vec![s.clone()],
             serde_json::Value::Array(arr) => arr.iter().filter_map(|v| v.as_str().map(String::from)).collect(),
