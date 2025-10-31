@@ -30,7 +30,6 @@ use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
-use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
@@ -69,55 +68,6 @@ use std::{
 
 type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
-/// Views track their read sets and update the [`CommittedState`] with them.
-/// The [`CommittedState`] maintains these read sets in order to determine when to re-evaluate a view.
-#[derive(Default)]
-pub struct ReadSet {
-    table_scans: IntSet<TableId>,
-    index_keys: IntMap<TableId, IntMap<IndexId, AlgebraicValue>>,
-}
-
-impl ReadSet {
-    /// Enumerate the tables that are scanned and tracked by this read set
-    pub fn tables_scanned(&self) -> impl Iterator<Item = &TableId> + '_ {
-        self.table_scans.iter()
-    }
-
-    /// Enumerate the single index keys that are tracked by this read set
-    pub fn index_keys_scanned(&self) -> impl Iterator<Item = (&TableId, &IndexId, &AlgebraicValue)> + '_ {
-        self.index_keys
-            .iter()
-            .flat_map(|(table_id, keys)| keys.iter().map(move |(index_id, key)| (table_id, index_id, key)))
-    }
-
-    /// Track a table scan in this read set
-    fn insert_table_scan(&mut self, table_id: TableId) {
-        self.table_scans.insert(table_id);
-    }
-
-    /// Track an index scan in this read set.
-    /// If we only read a single index key we record the key.
-    /// If we read a range, we treat it as though we scanned the entire table.
-    fn insert_index_scan(
-        &mut self,
-        table_id: TableId,
-        index_id: IndexId,
-        lower: Bound<AlgebraicValue>,
-        upper: Bound<AlgebraicValue>,
-    ) {
-        match (lower, upper) {
-            (Bound::Included(lower), Bound::Included(upper)) if lower == upper => {
-                self.index_keys.entry(table_id).or_default().insert(index_id, lower);
-            }
-            _ => {
-                self.table_scans.insert(table_id);
-            }
-        }
-    }
-}
-
-pub type ViewReadSets = IntMap<ViewId, ReadSet>;
-
 /// Represents a Mutable transaction. Holds locks for its duration
 ///
 /// The initialization of this struct is sensitive because improper
@@ -128,7 +78,6 @@ pub struct MutTxId {
     pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
-    pub(super) read_sets: ViewReadSets,
     // TODO(cloutiertyler): The below were made `pub` for the datastore split. We should
     // make these private again.
     pub timer: Instant,
@@ -136,33 +85,7 @@ pub struct MutTxId {
     pub metrics: ExecutionMetrics,
 }
 
-static_assert_size!(MutTxId, 432);
-
-impl MutTxId {
-    /// Record that a view performs a table scan in this transaction's read set
-    pub fn record_table_scan(&mut self, view_id: Option<ViewId>, table_id: TableId) {
-        if let Some(view_id) = view_id {
-            self.read_sets.entry(view_id).or_default().insert_table_scan(table_id)
-        }
-    }
-
-    /// Record that a view performs an index scan in this transaction's read set
-    pub fn record_index_scan(
-        &mut self,
-        view_id: Option<ViewId>,
-        table_id: TableId,
-        index_id: IndexId,
-        lower: Bound<AlgebraicValue>,
-        upper: Bound<AlgebraicValue>,
-    ) {
-        if let Some(view_id) = view_id {
-            self.read_sets
-                .entry(view_id)
-                .or_default()
-                .insert_index_scan(table_id, index_id, lower, upper)
-        }
-    }
-}
+static_assert_size!(MutTxId, 400);
 
 impl Datastore for MutTxId {
     type TableIter<'a>
@@ -1027,12 +950,7 @@ impl MutTxId {
         prefix_elems: ColId,
         rstart: &[u8],
         rend: &[u8],
-    ) -> Result<(
-        TableId,
-        Bound<AlgebraicValue>,
-        Bound<AlgebraicValue>,
-        IndexScanRanged<'a>,
-    )> {
+    ) -> Result<(TableId, IndexScanRanged<'a>)> {
         // Extract the table id, and commit/tx indices.
         let (table_id, commit_index, tx_index) = self
             .get_table_and_index(index_id)
@@ -1051,12 +969,9 @@ impl MutTxId {
         let tx_iter = tx_index.map(|i| i.seek_range(&bounds));
         let commit_iter = commit_index.seek_range(&bounds);
 
-        let (lower, upper) = bounds;
-
         let dt = self.tx_state.get_delete_table(table_id);
         let iter = combine_range_index_iters(dt, tx_iter, commit_iter);
-
-        Ok((table_id, lower, upper, iter))
+        Ok((table_id, iter))
     }
 
     /// Translate `index_id` to the table id, and commit/tx indices.
@@ -1571,9 +1486,7 @@ impl MutTxId {
     /// - `String`, the name of the reducer which ran during this transaction.
     pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
-        let tx_data = self
-            .committed_state_write_lock
-            .merge(self.tx_state, self.read_sets, &self.ctx);
+        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -1615,9 +1528,7 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
     pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
-        let tx_data = self
-            .committed_state_write_lock
-            .merge(self.tx_state, self.read_sets, &self.ctx);
+        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
