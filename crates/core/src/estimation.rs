@@ -1,7 +1,7 @@
 use crate::db::relational_db::Tx;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView as _;
 use spacetimedb_lib::query::Delta;
-use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, TableScan};
+use spacetimedb_physical_plan::plan::{CallView, HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, TableScan};
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr};
 
@@ -13,7 +13,7 @@ pub fn num_rows(tx: &Tx, expr: &QueryExpr) -> u64 {
 /// Use cardinality estimates to predict the total number of rows scanned by a query
 pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
     match plan {
-        PhysicalPlan::TableScan(..) | PhysicalPlan::IxScan(..) => row_estimate(tx, plan),
+        PhysicalPlan::TableScan(..) | PhysicalPlan::IxScan(..) | PhysicalPlan::CallView(..) => row_estimate(tx, plan),
         PhysicalPlan::Filter(input, _) => estimate_rows_scanned(tx, input).saturating_add(row_estimate(tx, input)),
         PhysicalPlan::NLJoin(lhs, rhs) => estimate_rows_scanned(tx, lhs)
             .saturating_add(estimate_rows_scanned(tx, rhs))
@@ -50,6 +50,7 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
     match plan {
         // Use a row limit as the estimate if present
         PhysicalPlan::TableScan(TableScan { limit: Some(n), .. }, _)
+        | PhysicalPlan::CallView(CallView { limit: Some(n), .. }, _)
         | PhysicalPlan::IxScan(IxScan { limit: Some(n), .. }, _) => *n,
         // Table scans return the number of rows in the table
         PhysicalPlan::TableScan(
@@ -60,9 +61,27 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
             },
             _,
         ) => tx.table_row_count(schema.table_id).unwrap_or_default(),
+        // A view returns the number of rows in its backing table
+        PhysicalPlan::CallView(
+            CallView {
+                schema,
+                limit: None,
+                delta: None,
+                ..
+            },
+            _,
+        ) => tx.table_row_count(schema.table_id).unwrap_or_default(),
         // We don't estimate the cardinality of delta scans currently
         PhysicalPlan::TableScan(
             TableScan {
+                limit: None,
+                delta: Some(Delta::Inserts | Delta::Deletes),
+                ..
+            },
+            _,
+        )
+        | PhysicalPlan::CallView(
+            CallView {
                 limit: None,
                 delta: Some(Delta::Inserts | Delta::Deletes),
                 ..

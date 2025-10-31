@@ -9,7 +9,7 @@ use crate::locking_tx_datastore::state_view::IterTx;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_primitives::{ColList, IndexId, TableId, ViewId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::table::{IndexScanRangeIter, TableScanIter};
@@ -37,6 +37,11 @@ impl Datastore for TxId {
     where
         Self: 'a;
 
+    type ViewIter<'a>
+        = TableScanIter<'a>
+    where
+        Self: 'a;
+
     type IndexIter<'a>
         = IndexScanRangeIter<'a>
     where
@@ -46,6 +51,10 @@ impl Datastore for TxId {
         self.committed_state_shared_lock
             .table_row_count(table_id)
             .unwrap_or_default()
+    }
+
+    fn call_view<'a>(&'a self, table_id: TableId, _view_id: ViewId) -> anyhow::Result<Self::ViewIter<'a>> {
+        self.table_scan(table_id)
     }
 
     fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {

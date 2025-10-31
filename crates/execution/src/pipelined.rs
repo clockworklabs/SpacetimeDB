@@ -8,10 +8,10 @@ use itertools::Either;
 use spacetimedb_expr::expr::AggType;
 use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
-    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan, ProjectPlan, Sarg, Semi,
-    TableScan, TupleField,
+    CallView, HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan, ProjectPlan, Sarg,
+    Semi, TableScan, TupleField,
 };
-use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
 use spacetimedb_sats::product;
 
 use crate::{Datastore, DeltaStore, Row, Tuple};
@@ -187,6 +187,7 @@ impl PipelinedProject {
 #[derive(Debug)]
 pub enum PipelinedExecutor {
     TableScan(PipelinedScan),
+    CallView(PipelinedView),
     IxScan(PipelinedIxScan),
     IxJoin(PipelinedIxJoin),
     IxDeltaScan(PipelinedIxDeltaScan),
@@ -202,6 +203,12 @@ impl From<PhysicalPlan> for PipelinedExecutor {
         match plan {
             PhysicalPlan::TableScan(TableScan { schema, limit, delta }, _) => Self::TableScan(PipelinedScan {
                 table: schema.table_id,
+                limit,
+                delta,
+            }),
+            PhysicalPlan::CallView(CallView { schema, limit, delta }, _) => Self::CallView(PipelinedView {
+                table_id: schema.table_id,
+                view_id: schema.view_id.unwrap(),
                 limit,
                 delta,
             }),
@@ -294,7 +301,7 @@ impl PipelinedExecutor {
                 lhs.visit(f);
                 rhs.visit(f);
             }
-            Self::TableScan(..) | Self::IxScan(..) | Self::IxDeltaScan(..) => {}
+            Self::TableScan(..) | Self::IxScan(..) | Self::CallView(..) | Self::IxDeltaScan(..) => {}
         }
     }
 
@@ -302,6 +309,7 @@ impl PipelinedExecutor {
     pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
         match self {
             Self::TableScan(scan) => scan.is_empty(tx),
+            Self::CallView(scan) => scan.is_empty(tx),
             Self::IxScan(scan) => scan.is_empty(tx),
             Self::IxDeltaScan(scan) => scan.is_empty(tx),
             Self::IxJoin(join) => join.is_empty(tx),
@@ -321,6 +329,7 @@ impl PipelinedExecutor {
     ) -> Result<()> {
         match self {
             Self::TableScan(scan) => scan.execute(tx, metrics, f),
+            Self::CallView(view) => view.execute(tx, metrics, f),
             Self::IxScan(scan) => scan.execute(tx, metrics, f),
             Self::IxDeltaScan(scan) => scan.execute(tx, metrics, f),
             Self::IxJoin(join) => join.execute(tx, metrics, f),
@@ -330,6 +339,79 @@ impl PipelinedExecutor {
             Self::Filter(filter) => filter.execute(tx, metrics, f),
             Self::Limit(limit) => limit.execute(tx, metrics, f),
         }
+    }
+}
+
+/// TODO
+#[derive(Debug)]
+pub struct PipelinedView {
+    pub view_id: ViewId,
+    pub table_id: TableId,
+    pub limit: Option<u64>,
+    pub delta: Option<Delta>,
+}
+
+impl PipelinedView {
+    /// Is this an empty delta table?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        match self.delta {
+            Some(Delta::Inserts) => !tx.has_inserts(self.table_id),
+            Some(Delta::Deletes) => !tx.has_deletes(self.table_id),
+            None => false,
+        }
+    }
+
+    pub fn execute<'a, Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &'a Tx,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+    ) -> Result<()> {
+        let call_view = || tx.call_view(self.table_id, self.view_id);
+        let call_view_with_limit = |limit| match limit {
+            None => call_view().map(Either::Left),
+            Some(n) => call_view().map(|iter| iter.take(n)).map(Either::Right),
+        };
+        // A delta table scan
+        let delta_scan = |inserts| tx.delta_scan(self.table_id, inserts);
+        // A delta table scan with optional row limit
+        let delta_limit_scan = |limit, inserts| match limit {
+            None => Either::Left(delta_scan(inserts)),
+            Some(n) => Either::Right(delta_scan(inserts).take(n)),
+        };
+        let mut n = 0;
+        let mut f = |t| {
+            n += 1;
+            f(t)
+        };
+        match self.delta {
+            None => {
+                for tuple in call_view_with_limit(self.limit.map(|n| n as usize))?
+                    .map(Row::Ptr)
+                    .map(Tuple::Row)
+                {
+                    f(tuple)?;
+                }
+            }
+            Some(Delta::Inserts) => {
+                for tuple in delta_limit_scan(self.limit.map(|n| n as usize), true)
+                    .map(Row::Ref)
+                    .map(Tuple::Row)
+                {
+                    f(tuple)?;
+                }
+            }
+            Some(Delta::Deletes) => {
+                for tuple in delta_limit_scan(self.limit.map(|n| n as usize), false)
+                    .map(Row::Ref)
+                    .map(Tuple::Row)
+                {
+                    f(tuple)?;
+                }
+            }
+        }
+        metrics.rows_scanned += n;
+        Ok(())
     }
 }
 

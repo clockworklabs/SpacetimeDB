@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
+use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
 use spacetimedb_sql_parser::{
     ast::{
         sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate},
@@ -39,7 +39,7 @@ pub enum DML {
 
 impl DML {
     /// Returns the schema of the table on which this mutation applies
-    pub fn table_schema(&self) -> &TableSchema {
+    pub fn table_schema(&self) -> &TableOrViewSchema {
         match self {
             Self::Insert(insert) => &insert.table,
             Self::Delete(delete) => &delete.table,
@@ -59,17 +59,17 @@ impl DML {
 }
 
 pub struct TableInsert {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub rows: Box<[ProductValue]>,
 }
 
 pub struct TableDelete {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub filter: Option<Expr>,
 }
 
 pub struct TableUpdate {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub columns: Box<[(ColId, AlgebraicValue)]>,
     pub filter: Option<Expr>,
 }

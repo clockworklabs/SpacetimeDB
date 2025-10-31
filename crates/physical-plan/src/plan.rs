@@ -10,7 +10,7 @@ use either::Either;
 use spacetimedb_expr::{expr::AggType, StatementSource};
 use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId};
-use spacetimedb_schema::schema::{IndexSchema, TableSchema};
+use spacetimedb_schema::schema::{IndexSchema, TableOrViewSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
 
@@ -199,6 +199,8 @@ pub struct TupleField {
 pub enum PhysicalPlan {
     /// Scan a table row by row, returning row ids
     TableScan(TableScan, Label),
+    /// TODO
+    CallView(CallView, Label),
     /// Fetch row ids from an index
     IxScan(IxScan, Label),
     /// An index join + projection
@@ -223,7 +225,7 @@ impl PhysicalPlan {
                 lhs.visit(f);
                 rhs.visit(f);
             }
-            Self::TableScan(..) | Self::IxScan(..) => {}
+            Self::TableScan(..) | Self::IxScan(..) | Self::CallView(..) => {}
         }
     }
 
@@ -238,7 +240,7 @@ impl PhysicalPlan {
                 lhs.visit_mut(f);
                 rhs.visit_mut(f);
             }
-            Self::TableScan(..) | Self::IxScan(..) => {}
+            Self::TableScan(..) | Self::IxScan(..) | Self::CallView(..) => {}
         }
     }
 
@@ -271,7 +273,7 @@ impl PhysicalPlan {
                 },
                 semi,
             ),
-            plan @ Self::TableScan(..) | plan @ Self::IxScan(..) => plan,
+            plan @ Self::TableScan(..) | plan @ Self::IxScan(..) | plan @ Self::CallView(..) => plan,
         }
     }
 
@@ -290,7 +292,7 @@ impl PhysicalPlan {
             plan.any(&|plan| ok(plan).is_some())
         };
         Ok(match self {
-            Self::TableScan(..) | Self::IxScan(..) => self,
+            Self::TableScan(..) | Self::IxScan(..) | Self::CallView(..) => self,
             Self::NLJoin(lhs, rhs) => {
                 if matches(&lhs) {
                     return Ok(Self::NLJoin(Box::new(lhs.map_if(f, ok)?), rhs));
@@ -830,7 +832,7 @@ impl PhysicalPlan {
     /// How many fields do the tuples returned by this plan have?
     fn nfields(&self) -> usize {
         match self {
-            Self::TableScan(..) | Self::IxScan(..) | Self::IxJoin(_, Semi::Rhs) => 1,
+            Self::TableScan(..) | Self::IxScan(..) | Self::CallView(..) | Self::IxJoin(_, Semi::Rhs) => 1,
             Self::Filter(input, _) => input.nfields(),
             Self::IxJoin(join, Semi::Lhs) => join.lhs.nfields(),
             Self::IxJoin(join, Semi::All) => join.lhs.nfields() + 1,
@@ -855,6 +857,7 @@ impl PhysicalPlan {
         fn find(plan: &PhysicalPlan, labels: &mut Vec<Label>) {
             match plan {
                 PhysicalPlan::TableScan(_, alias)
+                | PhysicalPlan::CallView(_, alias)
                 | PhysicalPlan::IxScan(_, alias)
                 | PhysicalPlan::IxJoin(IxJoin { rhs_label: alias, .. }, Semi::Rhs) => {
                     labels.push(*alias);
@@ -953,6 +956,17 @@ pub struct TableScan {
     /// The table on which this index is defined
     pub schema: Arc<TableSchema>,
     /// Limit the number of rows scanned
+    pub limit: Option<u64>,
+    /// Is this a delta table?
+    pub delta: Option<Delta>,
+}
+
+/// Invoke a procedural view
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallView {
+    /// The schema of the view
+    pub schema: Arc<TableOrViewSchema>,
+    /// Limit the number of rows returned from the view
     pub limit: Option<u64>,
     /// Is this a delta table?
     pub delta: Option<Delta>,
@@ -1209,7 +1223,7 @@ mod tests {
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
-        schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableSchema},
+        schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
     };
     use spacetimedb_sql_parser::ast::BinOp;
 
@@ -1221,7 +1235,7 @@ mod tests {
     use super::{PhysicalExpr, ProjectPlan, TableScan};
 
     struct SchemaViewer {
-        schemas: Vec<Arc<TableSchema>>,
+        schemas: Vec<Arc<TableOrViewSchema>>,
     }
 
     impl SchemaView for SchemaViewer {
@@ -1232,7 +1246,7 @@ mod tests {
                 .map(|schema| schema.table_id)
         }
 
-        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
             self.schemas.iter().find(|schema| schema.table_id == table_id).cloned()
         }
 
@@ -1248,8 +1262,8 @@ mod tests {
         indexes: &[&[usize]],
         unique: &[&[usize]],
         primary_key: Option<usize>,
-    ) -> TableSchema {
-        TableSchema::new(
+    ) -> TableOrViewSchema {
+        TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
             table_name.to_owned().into_boxed_str(),
             columns
@@ -1291,7 +1305,7 @@ mod tests {
             StAccess::Public,
             None,
             primary_key.map(ColId::from),
-        )
+        )))
     }
 
     /// A wrapper around [spacetimedb_expr::check::parse_and_type_sub] that takes a dummy [AuthCtx]

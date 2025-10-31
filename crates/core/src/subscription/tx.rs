@@ -9,7 +9,7 @@ use itertools::Either;
 use smallvec::SmallVec;
 use spacetimedb_execution::{Datastore, DeltaStore, Row};
 use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
-use spacetimedb_primitives::{IndexId, TableId};
+use spacetimedb_primitives::{IndexId, TableId, ViewId};
 use spacetimedb_table::table::{IndexScanRangeIter, TableScanIter};
 
 use spacetimedb_datastore::{
@@ -124,6 +124,11 @@ impl Datastore for DeltaTx<'_> {
     where
         Self: 'a;
 
+    type ViewIter<'a>
+        = TableScanIter<'a>
+    where
+        Self: 'a;
+
     type IndexIter<'a>
         = IndexScanRangeIter<'a>
     where
@@ -131,6 +136,10 @@ impl Datastore for DeltaTx<'_> {
 
     fn row_count(&self, table_id: TableId) -> u64 {
         self.tx.row_count(table_id)
+    }
+
+    fn call_view<'a>(&'a self, table_id: TableId, _view_id: ViewId) -> anyhow::Result<Self::ViewIter<'a>> {
+        self.tx.table_scan(table_id)
     }
 
     fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {

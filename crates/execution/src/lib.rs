@@ -11,7 +11,7 @@ use spacetimedb_lib::{
     AlgebraicValue, ProductValue,
 };
 use spacetimedb_physical_plan::plan::{ProjectField, TupleField};
-use spacetimedb_primitives::{IndexId, TableId};
+use spacetimedb_primitives::{IndexId, TableId, ViewId};
 use spacetimedb_table::{static_assert_size, table::RowRef};
 
 pub mod dml;
@@ -28,8 +28,16 @@ pub trait Datastore {
     where
         Self: 'a;
 
+    /// Iterator type for views
+    type ViewIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
+
     /// Returns the number of rows in this table
     fn row_count(&self, table_id: TableId) -> u64;
+
+    /// Calls a view or scans its backing table
+    fn call_view<'a>(&'a self, table_id: TableId, view_id: ViewId) -> Result<Self::ViewIter<'a>>;
 
     /// Scans and returns all of the rows in a table
     fn table_scan<'a>(&'a self, table_id: TableId) -> Result<Self::TableIter<'a>>;

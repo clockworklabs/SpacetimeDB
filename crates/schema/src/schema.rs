@@ -50,6 +50,52 @@ pub trait Schema: Sized {
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error>;
 }
 
+/// A wrapper around a [`TableSchema`] for views.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableOrViewSchema {
+    pub view_id: Option<ViewId>,
+
+    pub table_id: TableId,
+    pub table_name: Box<str>,
+    pub table_access: StAccess,
+
+    inner: Arc<TableSchema>,
+}
+
+impl From<Arc<TableSchema>> for TableOrViewSchema {
+    fn from(inner: Arc<TableSchema>) -> Self {
+        Self {
+            view_id: None,
+            table_id: inner.table_id,
+            table_name: inner.table_name.clone(),
+            table_access: inner.table_access,
+            inner,
+        }
+    }
+}
+
+impl TableOrViewSchema {
+    pub fn inner(&self) -> Arc<TableSchema> {
+        self.inner.clone()
+    }
+
+    /// Get the columns of the table. Only immutable access to the columns is provided.
+    /// The ordering of the columns is significant. Columns are frequently identified by `ColId`, that is, position in this list.
+    pub fn columns(&self) -> &[ColumnSchema] {
+        &self.inner.columns[2..]
+    }
+
+    /// Check if the `col_name` exist on this [`TableOrViewSchema`]
+    pub fn get_column_by_name(&self, col_name: &str) -> Option<&ColumnSchema> {
+        self.columns().iter().find(|x| &*x.col_name == col_name)
+    }
+
+    /// Get a reference to a column by its position (`pos`) in the table.
+    pub fn get_column(&self, pos: usize) -> Option<&ColumnSchema> {
+        self.columns().get(pos)
+    }
+}
+
 /// A data structure representing the schema of a database table.
 ///
 /// This struct holds information about the table, including its identifier,

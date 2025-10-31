@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::dml::{DeletePlan, MutationPlan, UpdatePlan};
 use crate::plan::{
-    HashJoin, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Semi, TableScan, TupleField,
+    CallView, HashJoin, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Semi, TableScan, TupleField,
 };
 
 use spacetimedb_expr::expr::{Expr, FieldProject, LeftDeepJoin, ProjectList, ProjectName, RelExpr, Relvar};
@@ -63,8 +63,20 @@ fn compile_field_project(var: &mut impl VarLabel, expr: FieldProject) -> TupleFi
 
 fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
     match ast {
+        RelExpr::RelVar(Relvar { schema, alias, delta }) if schema.view_id.is_some() => {
+            let label = var.label(alias.as_ref());
+            PhysicalPlan::CallView(
+                CallView {
+                    schema,
+                    limit: None,
+                    delta,
+                },
+                label,
+            )
+        }
         RelExpr::RelVar(Relvar { schema, alias, delta }) => {
             let label = var.label(alias.as_ref());
+            let schema = schema.inner();
             PhysicalPlan::TableScan(
                 TableScan {
                     schema,
@@ -92,12 +104,50 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
             },
             FieldProject { table: u, field: a, .. },
             FieldProject { table: v, field: b, .. },
+        ) if rhs_schema.view_id.is_some() => PhysicalPlan::HashJoin(
+            HashJoin {
+                lhs: Box::new(compile_rel_expr(var, *lhs)),
+                rhs: Box::new(PhysicalPlan::CallView(
+                    CallView {
+                        schema: rhs_schema,
+                        limit: None,
+                        delta,
+                    },
+                    var.label(&rhs_alias),
+                )),
+                lhs_field: TupleField {
+                    label: var.label(u.as_ref()),
+                    label_pos: None,
+                    field_pos: a,
+                },
+                rhs_field: TupleField {
+                    label: var.label(v.as_ref()),
+                    label_pos: None,
+                    field_pos: b,
+                },
+                unique: false,
+            },
+            Semi::All,
+        ),
+        RelExpr::EqJoin(
+            LeftDeepJoin {
+                lhs,
+                rhs:
+                    Relvar {
+                        schema: rhs_schema,
+                        alias: rhs_alias,
+                        delta,
+                        ..
+                    },
+            },
+            FieldProject { table: u, field: a, .. },
+            FieldProject { table: v, field: b, .. },
         ) => PhysicalPlan::HashJoin(
             HashJoin {
                 lhs: Box::new(compile_rel_expr(var, *lhs)),
                 rhs: Box::new(PhysicalPlan::TableScan(
                     TableScan {
-                        schema: rhs_schema,
+                        schema: rhs_schema.inner(),
                         limit: None,
                         delta,
                     },
@@ -126,11 +176,34 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                     delta,
                     ..
                 },
+        }) if rhs_schema.view_id.is_some() => {
+            let lhs = compile_rel_expr(var, *lhs);
+            let rhs = PhysicalPlan::CallView(
+                CallView {
+                    schema: rhs_schema,
+                    limit: None,
+                    delta,
+                },
+                var.label(&rhs_alias),
+            );
+            let lhs = Box::new(lhs);
+            let rhs = Box::new(rhs);
+            PhysicalPlan::NLJoin(lhs, rhs)
+        }
+        RelExpr::LeftDeepJoin(LeftDeepJoin {
+            lhs,
+            rhs:
+                Relvar {
+                    schema: rhs_schema,
+                    alias: rhs_alias,
+                    delta,
+                    ..
+                },
         }) => {
             let lhs = compile_rel_expr(var, *lhs);
             let rhs = PhysicalPlan::TableScan(
                 TableScan {
-                    schema: rhs_schema,
+                    schema: rhs_schema.inner(),
                     limit: None,
                     delta,
                 },

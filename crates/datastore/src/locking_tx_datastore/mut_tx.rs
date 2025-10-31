@@ -170,6 +170,11 @@ impl Datastore for MutTxId {
     where
         Self: 'a;
 
+    type ViewIter<'a>
+        = IterMutTx<'a>
+    where
+        Self: 'a;
+
     type IndexIter<'a>
         = IndexScanRanged<'a>
     where
@@ -177,6 +182,10 @@ impl Datastore for MutTxId {
 
     fn row_count(&self, table_id: TableId) -> u64 {
         self.table_row_count(table_id).unwrap_or_default()
+    }
+
+    fn call_view<'a>(&'a self, table_id: TableId, _view_id: ViewId) -> anyhow::Result<Self::ViewIter<'a>> {
+        Ok(self.iter(table_id)?)
     }
 
     fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {
