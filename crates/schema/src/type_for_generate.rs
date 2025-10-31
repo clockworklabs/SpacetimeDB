@@ -146,7 +146,7 @@ impl Index<&'_ AlgebraicTypeRef> for TypespaceForGenerate {
 }
 
 /// An algebraic type definition.
-#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
+#[derive(Debug, Clone, EnumAsInner)]
 pub enum AlgebraicTypeDef {
     /// A product type declaration.
     Product(ProductTypeDef),
@@ -237,7 +237,7 @@ pub struct SumTypeDef {
 }
 
 /// A sum type, all of whose variants contain ().
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct PlainEnumTypeDef {
     pub variants: Box<[Identifier]>,
 }

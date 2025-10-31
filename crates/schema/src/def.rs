@@ -35,7 +35,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm,
     RawIndexDefV9, RawMiscModuleExportV9, RawModuleDefV9, RawProcedureDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9,
     RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9, RawSql, RawTableDefV9, RawTypeDefV9,
-    RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
+    RawUniqueConstraintDataV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId};
@@ -109,12 +109,6 @@ pub struct ModuleDef {
     /// so that `__call_procedure__` receives stable integer IDs.
     procedures: IndexMap<Identifier, ProcedureDef>,
 
-    /// The views of the module definition.
-    ///
-    /// Like `reducers`, this uses [`IndexMap`] to preserve order
-    /// so that `__call_view__` receives stable integer IDs.
-    views: IndexMap<Identifier, ViewDef>,
-
     /// A map from lifecycle reducer kind to reducer id.
     lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
 
@@ -176,11 +170,6 @@ impl ModuleDef {
     /// The procedures of the module definition.
     pub fn procedures(&self) -> impl Iterator<Item = &ProcedureDef> {
         self.procedures.values()
-    }
-
-    /// The views of the module definition.
-    pub fn views(&self) -> impl Iterator<Item = &ViewDef> {
-        self.views.values()
     }
 
     /// The type definitions of the module definition.
@@ -375,7 +364,6 @@ impl From<ModuleDef> for RawModuleDefV9 {
     fn from(val: ModuleDef) -> Self {
         let ModuleDef {
             tables,
-            views,
             reducers,
             lifecycle_reducers: _,
             types,
@@ -394,8 +382,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             // TODO: Do we need to include default values here?
             misc_exports: procedures
                 .into_iter()
-                .map(|(_, def)| def.into())
-                .chain(views.into_iter().map(|(_, def)| def.into()))
+                .map(|(_, def)| RawMiscModuleExportV9::Procedure(def.into()))
                 .collect(),
             typespace,
             row_level_security: row_level_security_raw.into_iter().map(|(_, def)| def).collect(),
@@ -971,80 +958,6 @@ impl From<ScopedTypeName> for RawScopedTypeNameV9 {
     }
 }
 
-/// A view exported by the module.
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct ViewDef {
-    /// The name of the view. This must be unique within the module.
-    pub name: Identifier,
-
-    /// Is this a public or a private view?
-    /// Currently only public views are supported.
-    /// Private views may be supported in the future.
-    pub is_public: bool,
-
-    /// Is this view anonymous?
-    /// An anonymous view does not know who called it.
-    /// Specifically, it is a view that has an `AnonymousViewContext` as its first argument.
-    /// This type does not have access to the `Identity` of the caller.
-    pub is_anonymous: bool,
-
-    /// The parameters of the view.
-    ///
-    /// This `ProductType` need not be registered in the module's `Typespace`.
-    pub params: ProductType,
-
-    /// The parameters of the view, formatted for client codegen.
-    ///
-    /// This `ProductType` need not be registered in the module's `TypespaceForGenerate`.
-    pub params_for_generate: ProductTypeDef,
-
-    /// The return type of the view.
-    /// Either `T`, `Option<T>`, or `Vec<T>` where `T` is a [`ProductType`].
-    ///
-    /// Here `Option<T>` refers to [`AlgebraicType::option()`] and `Vec<T>` refers to [`AlgebraicType::array()`].
-    ///
-    /// `T` defines the columns of the view.
-    /// `T` will be registered in the module's `Typespace`.
-    pub return_type: AlgebraicType,
-
-    /// The return type of the view, formatted for client codegen.
-    pub return_type_for_generate: AlgebraicTypeUse,
-
-    /// The columns of this view.
-    /// The same information is stored in `return_type`.
-    /// This is just a more convenient-to-access format.
-    pub columns: Vec<ColumnDef>,
-}
-
-impl From<ViewDef> for RawViewDefV9 {
-    fn from(val: ViewDef) -> Self {
-        let ViewDef {
-            name,
-            is_anonymous,
-            is_public,
-            params,
-            params_for_generate: _,
-            return_type,
-            return_type_for_generate: _,
-            columns: _,
-        } = val;
-        RawViewDefV9 {
-            name: name.into(),
-            is_anonymous,
-            is_public,
-            params,
-            return_type,
-        }
-    }
-}
-
-impl From<ViewDef> for RawMiscModuleExportV9 {
-    fn from(def: ViewDef) -> Self {
-        Self::View(def.into())
-    }
-}
-
 /// A reducer exported by the module.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
@@ -1114,12 +1027,6 @@ impl From<ProcedureDef> for RawProcedureDefV9 {
             params: val.params,
             return_type: val.return_type,
         }
-    }
-}
-
-impl From<ProcedureDef> for RawMiscModuleExportV9 {
-    fn from(def: ProcedureDef) -> Self {
-        Self::Procedure(def.into())
     }
 }
 
@@ -1239,18 +1146,6 @@ impl ModuleDefLookup for ReducerDef {
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
         module_def.reducers.get(key)
-    }
-}
-
-impl ModuleDefLookup for ViewDef {
-    type Key<'a> = &'a Identifier;
-
-    fn key(&self) -> Self::Key<'_> {
-        &self.name
-    }
-
-    fn lookup<'a>(view_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        view_def.views.get(key)
     }
 }
 
