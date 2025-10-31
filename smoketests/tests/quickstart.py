@@ -301,6 +301,19 @@ Main();
             source_dir=(STDB_DIR / "crates/bindings-csharp/BSATN.Runtime").absolute(),
             build_subdir="bin/Release"
         )
+        # This one is only needed because the regression-tests subdir uses it
+        override_nuget_package(
+            project_dir=STDB_DIR/"sdks/csharp",
+            package="SpacetimeDB.Runtime",
+            source_dir=(STDB_DIR / "crates/bindings-csharp/Runtime").absolute(),
+            build_subdir="bin/Release"
+        )
+        override_nuget_package(
+            project_dir=path,
+            package="SpacetimeDB.BSATN.Runtime",
+            source_dir=(STDB_DIR / "crates/bindings-csharp/BSATN.Runtime").absolute(),
+            build_subdir="bin/Release"
+        )
         override_nuget_package(
             project_dir=path,
             package="SpacetimeDB.ClientSDK",
@@ -314,6 +327,12 @@ Main();
             project_dir=server_path,
             package="SpacetimeDB.Runtime",
             source_dir=(STDB_DIR / "crates/bindings-csharp/Runtime").absolute(),
+            build_subdir="bin/Release"
+        )
+        override_nuget_package(
+            project_dir=server_path,
+            package="SpacetimeDB.BSATN.Runtime",
+            source_dir=(STDB_DIR / "crates/bindings-csharp/BSATN.Runtime").absolute(),
             build_subdir="bin/Release"
         )
 
