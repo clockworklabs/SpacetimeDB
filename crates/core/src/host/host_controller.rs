@@ -29,7 +29,7 @@ use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability};
-use spacetimedb_lib::{hash_bytes, AlgebraicValue, Identity, Timestamp};
+use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_sats::hash::Hash;
@@ -168,13 +168,6 @@ impl From<&EventStatus> for ReducerOutcome {
             EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct ProcedureCallResult {
-    pub return_val: AlgebraicValue,
-    pub execution_duration: Duration,
-    pub start_timestamp: Timestamp,
 }
 
 impl HostController {

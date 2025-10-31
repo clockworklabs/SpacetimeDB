@@ -645,26 +645,6 @@ pub mod raw {
         pub fn get_jwt(connection_id_ptr: *const u8, bytes_source_id: *mut BytesSource) -> u16;
     }
 
-    #[link(wasm_import_module = "spacetime_10.3")]
-    extern "C" {
-        /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
-        ///
-        /// Returns immediately if `wake_at_micros_since_unix_epoch` is in the past.
-        ///
-        /// Upon resuming, returns the current timestamp as microseconds since the Unix epoch.
-        ///
-        /// Not particularly useful, except for testing SpacetimeDB internals related to suspending procedure execution.
-        /// # Traps
-        ///
-        /// Traps if:
-        ///
-        /// - The calling WASM instance is holding open a transaction.
-        /// - The calling WASM instance is not executing a procedure.
-        // TODO(procedure-sleep-until): remove this
-        #[cfg(feature = "unstable")]
-        pub fn procedure_sleep_until(wake_at_micros_since_unix_epoch: i64) -> i64;
-    }
-
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
@@ -1242,10 +1222,7 @@ impl Drop for RowIter {
 pub mod procedure {
     //! Side-effecting or asynchronous operations which only procedures are allowed to perform.
     #[inline]
-    #[cfg(feature = "unstable")]
-    pub fn sleep_until(wake_at_timestamp: i64) -> i64 {
-        // Safety: Just calling an `extern "C"` function.
-        // Nothing weird happening here.
-        unsafe { super::raw::procedure_sleep_until(wake_at_timestamp) }
+    pub fn sleep_until(_wake_at_timestamp: i64) -> i64 {
+        todo!("Add `procedure_sleep_until` host function")
     }
 }

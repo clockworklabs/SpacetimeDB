@@ -7,7 +7,7 @@ use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{call_call_reducer, call_describe_module, call_reducer_fun, resolve_sys_module, FnRet};
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
-use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
+use super::module_host::{CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::module_host::Instance;
@@ -200,7 +200,7 @@ impl JsInstanceEnv {
     fn start_reducer(&mut self, name: &str, ts: Timestamp) {
         self.reducer_start = Instant::now();
         name.clone_into(&mut self.reducer_name);
-        self.instance_env.start_funcall(ts);
+        self.instance_env.start_reducer(ts);
     }
 
     /// Returns the name of the most recent reducer to be run in this environment.
@@ -294,13 +294,6 @@ impl JsInstance {
         self.trapped = trapped;
 
         response
-    }
-
-    pub async fn call_procedure(
-        &mut self,
-        _params: CallProcedureParams,
-    ) -> Result<super::ProcedureCallResult, super::ProcedureCallError> {
-        todo!("JS/TS module procedure support")
     }
 }
 
