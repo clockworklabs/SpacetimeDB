@@ -22,7 +22,7 @@ STDB_DIR = TEST_DIR.parent
 exe_suffix = ".exe" if sys.platform == "win32" else ""
 SPACETIME_BIN = STDB_DIR / ("target/debug/spacetime" + exe_suffix)
 TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
-STDB_CONFIG = TEST_DIR / "config.toml"
+BASE_STDB_CONFIG_PATH = TEST_DIR / "config.toml"
 
 # the contents of files for the base smoketest project template
 TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/templates/basic-rust/server/src/lib.rs").read()
@@ -49,6 +49,9 @@ REMOTE_SERVER = False
 
 # default value can be overridden by `--compose-file` flag
 COMPOSE_FILE = "./docker-compose.yml"
+
+# this will be initialized by main()
+STDB_CONFIG = None
 
 # we need to late-bind the output stream to allow unittests to capture stdout/stderr.
 class CapturableHandler(logging.StreamHandler):
@@ -253,7 +256,7 @@ class Smoketest(unittest.TestCase):
 
     @classmethod
     def reset_config(cls):
-        shutil.copy(STDB_CONFIG, cls.config_path)
+        cls.config_path.write_text(STDB_CONFIG)
 
     def fingerprint(self):
         # Fetch the server's fingerprint; required for `identity list`.
