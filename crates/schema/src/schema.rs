@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::def::{
     ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
-    SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef, ViewParamDef,
+    SequenceDef, TableDef, UniqueConstraintData, ViewDef,
 };
 use crate::identifier::Identifier;
 
@@ -623,16 +623,15 @@ impl TableSchema {
             name,
             is_anonymous,
             is_public,
-            params: _,
+            params,
             params_for_generate: _,
             return_type: _,
             return_type_for_generate: _,
-            return_columns,
-            param_columns,
+            columns: cols,
         } = view_def;
 
-        let num_args = param_columns.len();
-        let num_cols = return_columns.len();
+        let num_args = params.elements.len();
+        let num_cols = cols.len();
         let n = num_args + num_cols + if *is_anonymous { 0 } else { 1 };
 
         let mut columns = Vec::with_capacity(n);
@@ -648,17 +647,20 @@ impl TableSchema {
 
         let n = columns.len();
 
-        let param_iter = param_columns
-            .iter()
-            .map(|def| ColumnSchema::from_view_param_def(module_def, def));
+        for (i, elem) in params.elements.iter().cloned().enumerate() {
+            columns.push(ColumnSchema {
+                table_id: TableId::SENTINEL,
+                col_pos: (n + i).into(),
+                col_name: elem.name.unwrap_or_else(|| format!("param_{i}").into_boxed_str()),
+                col_type: elem.algebraic_type,
+            });
+        }
 
-        let column_iter = return_columns
-            .iter()
-            .map(|def| ColumnSchema::from_view_column_def(module_def, def));
+        let n = columns.len();
 
         columns.extend(
-            param_iter
-                .chain(column_iter)
+            column_schemas_from_defs(module_def, cols, TableId::SENTINEL)
+                .into_iter()
                 .enumerate()
                 .map(|(i, schema)| ColumnSchema {
                     col_pos: (n + i).into(),
@@ -877,30 +879,6 @@ impl ColumnSchema {
             col_pos: pos.into(),
             col_name: name.into(),
             col_type: ty,
-        }
-    }
-
-    fn from_view_column_def(module_def: &ModuleDef, def: &ViewColumnDef) -> Self {
-        let col_type = WithTypespace::new(module_def.typespace(), &def.ty)
-            .resolve_refs()
-            .expect("validated module should have all types resolve");
-        ColumnSchema {
-            table_id: TableId::SENTINEL,
-            col_pos: def.col_id,
-            col_name: (*def.name).into(),
-            col_type,
-        }
-    }
-
-    fn from_view_param_def(module_def: &ModuleDef, def: &ViewParamDef) -> Self {
-        let col_type = WithTypespace::new(module_def.typespace(), &def.ty)
-            .resolve_refs()
-            .expect("validated module should have all types resolve");
-        ColumnSchema {
-            table_id: TableId::SENTINEL,
-            col_pos: def.col_id,
-            col_name: (*def.name).into(),
-            col_type,
         }
     }
 }

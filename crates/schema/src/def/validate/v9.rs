@@ -496,7 +496,7 @@ impl ModuleValidator<'_> {
             view_name: Cow::Borrowed(&name),
             position,
             arg_name,
-        })?;
+        });
 
         let return_type_for_generate = self.validate_for_type_use(
             &TypeLocation::ViewReturn {
@@ -505,14 +505,7 @@ impl ModuleValidator<'_> {
             &return_type,
         );
 
-        let mut view_in_progress = ViewValidator::new(
-            name.clone(),
-            product_type_ref,
-            product_type,
-            &params,
-            &params_for_generate,
-            self,
-        );
+        let mut view_in_progress = ViewValidator::new(name.clone(), product_type_ref, product_type, self);
 
         // Views have the same interface as tables and therefore must be registered in the global namespace.
         //
@@ -523,18 +516,12 @@ impl ModuleValidator<'_> {
         // See `check_function_names_are_unique`.
         let name = view_in_progress.add_to_global_namespace(name).and_then(identifier);
 
-        let n = product_type.elements.len();
-        let return_columns = (0..n)
-            .map(|id| view_in_progress.validate_view_column_def(id.into()))
+        let columns = (0..product_type.elements.len())
+            .map(|id| view_in_progress.validate_column_def(id.into()))
             .collect_all_errors();
 
-        let n = params.elements.len();
-        let param_columns = (0..n)
-            .map(|id| view_in_progress.validate_param_column_def(id.into()))
-            .collect_all_errors();
-
-        let (name, return_type_for_generate, return_columns, param_columns) =
-            (name, return_type_for_generate, return_columns, param_columns).combine_errors()?;
+        let (name, params_for_generate, return_type_for_generate, columns) =
+            (name, params_for_generate, return_type_for_generate, columns).combine_errors()?;
 
         Ok(ViewDef {
             name,
@@ -547,8 +534,7 @@ impl ModuleValidator<'_> {
             },
             return_type,
             return_type_for_generate,
-            return_columns,
-            param_columns,
+            columns,
         })
     }
 
@@ -696,8 +682,6 @@ impl ModuleValidator<'_> {
 /// 2. Insert view names into the global namespace.
 struct ViewValidator<'a, 'b> {
     inner: TableValidator<'a, 'b>,
-    params: &'a ProductType,
-    params_for_generate: &'a [(Identifier, AlgebraicTypeUse)],
 }
 
 impl<'a, 'b> ViewValidator<'a, 'b> {
@@ -705,8 +689,6 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
         raw_name: Box<str>,
         product_type_ref: AlgebraicTypeRef,
         product_type: &'a ProductType,
-        params: &'a ProductType,
-        params_for_generate: &'a [(Identifier, AlgebraicTypeUse)],
         module_validator: &'a mut ModuleValidator<'b>,
     ) -> Self {
         Self {
@@ -717,51 +699,11 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
                 module_validator,
                 has_sequence: Default::default(),
             },
-            params,
-            params_for_generate,
         }
     }
 
-    fn validate_param_column_def(&mut self, col_id: ColId) -> Result<ViewParamDef> {
-        let column = &self
-            .params
-            .elements
-            .get(col_id.idx())
-            .expect("enumerate is generating an out-of-range index...");
-
-        let (_, ty_for_generate) = self
-            .params_for_generate
-            .get(col_id.idx())
-            .expect("enumerate is generating an out-of-range index...");
-
-        let name: Result<Identifier> = identifier(
-            column
-                .name()
-                .map(|name| name.into())
-                .unwrap_or_else(|| format!("param_{}", col_id).into_boxed_str()),
-        );
-
-        // This error will be created multiple times if the view name is invalid,
-        // but we sort and deduplicate the error stream afterwards,
-        // so it isn't a huge deal.
-        //
-        // This is necessary because we require `ErrorStream` to be nonempty.
-        // We need to put something in there if the view name is invalid.
-        let view_name = identifier(self.inner.raw_name.clone());
-
-        let (name, view_name) = (name, view_name).combine_errors()?;
-
-        Ok(ViewParamDef {
-            name,
-            ty: column.algebraic_type.clone(),
-            ty_for_generate: ty_for_generate.clone(),
-            col_id,
-            view_name,
-        })
-    }
-
-    fn validate_view_column_def(&mut self, col_id: ColId) -> Result<ViewColumnDef> {
-        self.inner.validate_column_def(col_id).map(ViewColumnDef::from)
+    fn validate_column_def(&mut self, col_id: ColId) -> Result<ColumnDef> {
+        self.inner.validate_column_def(col_id)
     }
 
     fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Box<str>> {

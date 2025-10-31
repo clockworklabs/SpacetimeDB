@@ -1,7 +1,7 @@
 use crate::sum_value::SumTag;
 use crate::{i256, u256};
 use crate::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
-use spacetimedb_primitives::{ColId, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId};
+use spacetimedb_primitives::{ColId, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
 
 impl crate::Value for AlgebraicValue {
     type Type = AlgebraicType;
@@ -64,7 +64,6 @@ macro_rules! system_id {
     };
 }
 system_id!(TableId);
-system_id!(ViewId);
 system_id!(ColId);
 system_id!(SequenceId);
 system_id!(IndexId);

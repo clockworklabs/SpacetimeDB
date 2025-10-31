@@ -422,7 +422,7 @@ pub fn create_table_from_view_def(
     module_def: &ModuleDef,
     view_def: &ViewDef,
 ) -> anyhow::Result<()> {
-    stdb.create_view(tx, module_def, view_def)
+    stdb.create_view_table(tx, module_def, view_def)
         .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
     Ok(())
 }
