@@ -326,7 +326,6 @@ macro_rules! impl_read_column_via_from {
 
 impl_read_column_via_from! {
     u16 => spacetimedb_primitives::ColId;
-    u32 => spacetimedb_primitives::ViewId;
     u32 => spacetimedb_primitives::TableId;
     u32 => spacetimedb_primitives::IndexId;
     u32 => spacetimedb_primitives::ConstraintId;
