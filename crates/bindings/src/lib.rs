@@ -48,8 +48,6 @@ pub use table::{
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
 
-pub type ProcedureResult = Vec<u8>;
-
 pub use spacetimedb_bindings_macro::duration;
 
 /// Generates code for registering a row-level security rule.
@@ -543,7 +541,6 @@ pub use spacetimedb_bindings_macro::table;
 /// If an error occurs in the disconnect reducer,
 /// the client is still recorded as disconnected.
 ///
-// TODO(docs): Move these docs to be on `table`, rather than `reducer`. This will reduce duplication with procedure docs.
 /// # Scheduled reducers
 ///
 /// In addition to life cycle annotations, reducers can be made **scheduled**.
@@ -668,92 +665,6 @@ pub use spacetimedb_bindings_macro::table;
 /// [clients]: https://spacetimedb.com/docs/#client
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::reducer;
-
-/// Marks a function as a SpacetimeDB procedure.
-///
-/// A procedure is a function that runs within the database and can be invoked remotely by [clients],
-/// but unlike a [`reducer`], a  procedure is not automatically transactional.
-/// This allows procedures to perform certain side-effecting operations,
-/// but also means that module developers must be more careful not to corrupt the database state
-/// when execution aborts or operations fail.
-///
-/// When in doubt, prefer writing [`reducer`]s unless you need to perform an operation only available to procedures.
-///
-/// The first argument of a procedure is always `&mut ProcedureContext`.
-/// The [`ProcedureContext`] exposes information about the caller and allows side-effecting operations.
-///
-/// After this, a procedure can take any number of arguments.
-/// These arguments must implement the [`SpacetimeType`], [`Serialize`], and [`Deserialize`] traits.
-/// All of these traits can be derived at once by marking a type with `#[derive(SpacetimeType)]`.
-///
-/// A procedure may return any type that implements [`SpacetimeType`], [`Serialize`] and [`Deserialize`].
-/// Unlike [reducer]s, SpacetimeDB does not assign any special semantics to [`Result`] return values.
-///
-/// If a procedure returns successfully (as opposed to panicking), its return value will be sent to the calling client.
-/// If a procedure panics, its panic message will be sent to the calling client instead.
-/// Procedure arguments and return values are not otherwise broadcast to clients.
-///
-/// ```no_run
-/// # use spacetimedb::{procedure, SpacetimeType, ProcedureContext, Timestamp};
-/// #[procedure]
-/// fn return_value(ctx: &mut ProcedureContext, arg: MyArgument) -> MyReturnValue {
-///     MyReturnValue {
-///         a: format!("Hello, {}", ctx.sender),
-///         b: ctx.timestamp,
-///     }
-/// }
-///
-/// #[derive(SpacetimeType)]
-/// struct MyArgument {
-///     val: u32,
-/// }
-///
-/// #[derive(SpacetimeType)]
-/// struct MyReturnValue {
-///     a: String,
-///     b: Timestamp,
-/// }
-/// ```
-///
-/// # Blocking operations
-///
-/// Procedures are allowed to perform certain operations which take time.
-/// During the execution of these operations, the procedure's execution will be suspended,
-/// allowing other database operations to run in parallel.
-/// The simplest (and least useful) of these operators is [`ProcedureContext::sleep_until`].
-///
-/// Procedures must not hold open a transaction while performing a blocking operation.
-///
-/// ```no_run
-/// # use std::time::Duration;
-/// # use spacetimedb::{procedure, ProcedureContext};
-/// #[procedure]
-/// fn sleep_one_second(ctx: &mut ProcedureContext) {
-///     let prev_time = ctx.timestamp;
-///     let target = prev_time + Duration::from_secs(1);
-///     ctx.sleep_until(target);
-///     let new_time = ctx.timestamp;
-///     let actual_delta = new_time.duration_since(prev_time).unwrap();
-///     log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
-/// }
-/// ```
-// TODO(procedure-http): replace this example with an HTTP request.
-// TODO(procedure-transaction): document obtaining and using a transaction within a procedure.
-///
-/// # Scheduled procedures
-// TODO(docs): after moving scheduled reducer docs into table secion, link there.
-///
-/// Like [reducer]s, procedures can be made **scheduled**.
-/// This allows calling procedures at a particular time, or in a loop.
-/// It also allows reducers to enqueue procedure runs.
-///
-/// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
-/// when a database is under heavy load.
-///
-/// [clients]: https://spacetimedb.com/docs/#client
-// TODO(procedure-async): update docs and examples with `async`-ness.
-#[doc(inline)]
-pub use spacetimedb_bindings_macro::procedure;
 
 /// Marks a function as a spacetimedb view.
 ///
@@ -921,8 +832,11 @@ pub struct ReducerContext {
 
     /// The `ConnectionId` of the client that invoked the reducer.
     ///
-    /// Will be `None` for certain reducers invoked automatically by the host,
-    /// including `init` and scheduled reducers.
+    /// `None` if no `ConnectionId` was supplied to the `/database/call` HTTP endpoint,
+    /// or via the CLI's `spacetime call` subcommand.
+    ///
+    /// For automatic reducers, i.e. `init`, `client_connected`, `client_disconnected`, and scheduled reducers,
+    /// this will be the module's `ConnectionId`.
     pub connection_id: Option<ConnectionId>,
 
     /// Allows accessing the local database attached to a module.
@@ -1032,70 +946,6 @@ impl ReducerContext {
     }
 }
 
-/// The context that any procedure is provided with.
-///
-/// Each procedure must accept `&mut ProcedureContext` as its first argument.
-///
-/// Includes information about the client calling the procedure and the time of invocation,
-/// and exposes methods for running transactions and performing side-effecting operations.
-pub struct ProcedureContext {
-    /// The `Identity` of the client that invoked the procedure.
-    pub sender: Identity,
-
-    /// The time at which the procedure was started.
-    pub timestamp: Timestamp,
-
-    /// The `ConnectionId` of the client that invoked the procedure.
-    ///
-    /// Will be `None` for certain scheduled procedures.
-    pub connection_id: Option<ConnectionId>,
-    // TODO: Add rng?
-    // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
-    // as it could actually be seeded by OS randomness rather than a deterministic source.
-}
-
-impl ProcedureContext {
-    /// Read the current module's [`Identity`].
-    pub fn identity(&self) -> Identity {
-        // Hypothetically, we *could* read the module identity out of the system tables.
-        // However, this would be:
-        // - Onerous, because we have no tooling to inspect the system tables from module code.
-        // - Slow (at least relatively),
-        //   because it would involve multiple host calls which hit the datastore,
-        //   as compared to a single host call which does not.
-        // As such, we've just defined a host call
-        // which reads the module identity out of the `InstanceEnv`.
-        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
-    }
-
-    /// Suspend execution until approximately `Timestamp`.
-    ///
-    /// This will update `self.timestamp` to the new time after execution resumes.
-    ///
-    /// Actual time suspended may not be exactly equal to `duration`.
-    /// Callers should read `self.timestamp` after resuming to determine the new time.
-    ///
-    /// ```no_run
-    /// # use std::time::Duration;
-    /// # use spacetimedb::{procedure, ProcedureContext};
-    /// # #[procedure]
-    /// # fn sleep_one_second(ctx: &mut ProcedureContext) {
-    /// let prev_time = ctx.timestamp;
-    /// let target = prev_time + Duration::from_secs(1);
-    /// ctx.sleep_until(target);
-    /// let new_time = ctx.timestamp;
-    /// let actual_delta = new_time.duration_since(prev_time).unwrap();
-    /// log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
-    /// # }
-    /// ```
-    // TODO(procedure-async): mark this method `async`.
-    pub fn sleep_until(&mut self, timestamp: Timestamp) {
-        let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
-        let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
-        self.timestamp = new_time;
-    }
-}
-
 /// A handle on a database with a particular table schema.
 pub trait DbContext {
     /// A view into the tables of a database.
@@ -1121,10 +971,6 @@ impl DbContext for ReducerContext {
         &self.db
     }
 }
-
-// `ProcedureContext` is *not* a `DbContext`. We will add a `TxContext`
-// which can be obtained from `ProcedureContext::start_tx`,
-// and that will be a `DbContext`.
 
 /// Allows accessing the local database attached to the module.
 ///

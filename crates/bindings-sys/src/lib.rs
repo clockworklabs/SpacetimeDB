@@ -1218,11 +1218,3 @@ impl Drop for RowIter {
         }
     }
 }
-
-pub mod procedure {
-    //! Side-effecting or asynchronous operations which only procedures are allowed to perform.
-    #[inline]
-    pub fn sleep_until(_wake_at_timestamp: i64) -> i64 {
-        todo!("Add `procedure_sleep_until` host function")
-    }
-}
