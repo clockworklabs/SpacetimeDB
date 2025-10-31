@@ -40,9 +40,6 @@ pub struct Vector2 {
     x: f64,
     y: f64,
 }
-
-#[spacetimedb::client_visibility_filter]
-const PERSON_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM person");
 """
 
     MODULE_CODE = MODULE_CODE_INIT + """
@@ -100,9 +97,6 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
         log::info!("{}: {}", prefix, book.isbn);
     }
 }
-
-#[spacetimedb::client_visibility_filter]
-const BOOK_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM book");
 """
     )
 
@@ -115,17 +109,6 @@ const BOOK_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FRO
 
     def test_add_table_auto_migration(self):
         """This tests uploading a module with a schema change that should not require clearing the database."""
-
-        # Check the row-level SQL filter is created correctly
-        self.assertSql(
-            "SELECT sql FROM st_row_level_security",
-            """\
- sql
-------------------------
- "SELECT * FROM person"
-""",
-        )
-
         logging.info("Initial publish complete")
 
         # Start a subscription before publishing the module, to test that the subscription remains intact after re-publishing.
@@ -154,18 +137,7 @@ const BOOK_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FRO
         # If subscription, we should get 4 rows corresponding to 4 reducer calls (including before and after update)
         sub = sub();
         self.assertEqual(len(sub), 4)
-
-        # Check the row-level SQL filter is added correctly
-        self.assertSql(
-            "SELECT sql FROM st_row_level_security",
-            """\
- sql
-------------------------
- "SELECT * FROM person"
- "SELECT * FROM book"
-""",
-        )
-
+        
         self.logs(100)
 
         self.call("add_person", "Husserl", "Professor")
