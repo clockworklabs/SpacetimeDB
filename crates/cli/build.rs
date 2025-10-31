@@ -6,11 +6,49 @@ use std::process::Command;
 use toml::Value;
 
 fn main() {
-    let output = Command::new("git").args(["rev-parse", "HEAD"]).output().unwrap();
-    let git_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
+    let git_hash = find_git_hash();
     println!("cargo:rustc-env=GIT_HASH={git_hash}");
 
     generate_template_files();
+}
+
+fn nix_injected_commit_hash() -> Option<String> {
+    use std::env::VarError;
+    // Our flake.nix sets this environment variable to be our git commit hash during the build.
+    // This is important because git metadata is otherwise not available within the nix build sandbox,
+    // and we don't install the git command-line tool in our build.
+    match std::env::var("SPACETIMEDB_NIX_BUILD_GIT_COMMIT") {
+        Ok(commit_sha) => {
+            // Var is set, we're building under Nix.
+            Some(commit_sha)
+        }
+
+        Err(VarError::NotPresent) => {
+            // Var is not set, we're not in Nix.
+            None
+        }
+        Err(VarError::NotUnicode(gross)) => {
+            // Var is set but is invalid unicode, something is very wrong.
+            panic!("Injected commit hash is not valid unicode: {gross:?}")
+        }
+    }
+}
+
+fn is_nix_build() -> bool {
+    nix_injected_commit_hash().is_some()
+}
+
+fn find_git_hash() -> String {
+    nix_injected_commit_hash().unwrap_or_else(|| {
+        // When we're *not* building in Nix, we can assume that git metadata is still present in the filesystem,
+        // and that the git command-line tool is installed.
+        let output = Command::new("git").args(["rev-parse", "HEAD"]).output().unwrap();
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    })
+}
+
+fn get_manifest_dir() -> PathBuf {
+    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
 }
 
 // This method generates functions with data used in `spacetime init`:
@@ -20,7 +58,7 @@ fn main() {
 //                            templates list at crates/cli/templates/templates-list.json
 //   * `get_cursorrules` - returns contents of a cursorrules file
 fn generate_template_files() {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let manifest_dir = get_manifest_dir();
     let manifest_path = Path::new(&manifest_dir);
     let templates_json_path = manifest_path.join("templates/templates-list.json");
     let out_dir = std::env::var("OUT_DIR").unwrap();
@@ -121,7 +159,7 @@ fn generate_template_files() {
     write_if_changed(&dest_path, generated_code.as_bytes()).expect("Failed to write embedded_templates.rs");
 }
 
-fn generate_template_entry(code: &mut String, template_path: &Path, source: &str, manifest_dir: &str) {
+fn generate_template_entry(code: &mut String, template_path: &Path, source: &str, manifest_dir: &Path) {
     let (git_files, resolved_base) = get_git_tracked_files(template_path, manifest_dir);
 
     if git_files.is_empty() {
@@ -221,26 +259,103 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
     code.push_str("    }\n\n");
 }
 
-// Get a list of files tracked by git from a given directory
-fn get_git_tracked_files(path: &Path, manifest_dir: &str) -> (Vec<PathBuf>, PathBuf) {
-    let full_path = Path::new(manifest_dir).join(path);
+/// Get a list of files tracked by git from a given directory
+fn get_git_tracked_files(path: &Path, manifest_dir: &Path) -> (Vec<PathBuf>, PathBuf) {
+    if is_nix_build() {
+        // When building in Nix, we already know that there are no untracked files in our source tree,
+        // so we just list all of the files.
+        list_all_files(path, manifest_dir)
+    } else {
+        // When building outside of Nix, we invoke `git` to list all the tracked files.
+        get_git_tracked_files_via_cli(path, manifest_dir)
+    }
+}
+
+fn list_all_files(path: &Path, manifest_dir: &Path) -> (Vec<PathBuf>, PathBuf) {
+    let manifest_dir = manifest_dir.canonicalize().unwrap_or_else(|err| {
+        panic!(
+            "Failed to canonicalize manifest_dir path {}: {err:#?}",
+            manifest_dir.display()
+        )
+    });
+
+    let template_root_absolute = get_full_path_within_manifest_dir(path, &manifest_dir);
 
     let repo_root = get_repo_root();
-    let repo_canonical = repo_root.canonicalize().unwrap();
 
-    let canonical = full_path.canonicalize().unwrap_or_else(|e| {
+    let mut files = Vec::new();
+    ls_recursively(&template_root_absolute, &repo_root, &mut files);
+
+    (files, make_repo_root_relative(&template_root_absolute, &repo_root))
+}
+
+/// Get all the paths of files within `root_dir`,
+/// transform them into paths relative to `repo_root`,
+/// and insert them into `out`.
+fn ls_recursively(root_dir: &Path, repo_root: &Path, out: &mut Vec<PathBuf>) {
+    for dir_ent in std::fs::read_dir(root_dir).unwrap_or_else(|err| {
+        panic!(
+            "Failed to read_dir from template directory {}: {err:#?}",
+            root_dir.display()
+        )
+    }) {
+        let dir_ent = dir_ent.unwrap_or_else(|err| {
+            panic!(
+                "Got error during read_dir from template directory {}: {err:#?}",
+                root_dir.display(),
+            )
+        });
+        let file_path = dir_ent.path();
+        let file_type = dir_ent.file_type().unwrap_or_else(|err| {
+            panic!(
+                "Failed to get file_type for template file {}: {err:#?}",
+                file_path.display(),
+            )
+        });
+        if file_type.is_dir() {
+            ls_recursively(&file_path, repo_root, out);
+        } else {
+            out.push(make_repo_root_relative(&file_path, repo_root));
+        }
+    }
+}
+
+/// Treat `relative_path` as a relative path within `manifest_dir`
+/// and transform it into an absolute, canonical path.
+fn get_full_path_within_manifest_dir(relative_path: &Path, manifest_dir: &Path) -> PathBuf {
+    let full_path = manifest_dir.join(relative_path);
+
+    full_path.canonicalize().unwrap_or_else(|e| {
         panic!("Failed to canonicalize path {}: {}", full_path.display(), e);
-    });
-    let resolved_path = canonical
-        .strip_prefix(&repo_canonical)
+    })
+}
+
+/// Transform `full_path` into a relative path within `repo_root`.
+///
+/// `full_path` and `repo_root` should both be canonical paths, as by [`Path::canonicalize`].
+fn make_repo_root_relative(full_path: &Path, repo_root: &Path) -> PathBuf {
+    full_path
+        .strip_prefix(&repo_root)
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|_| {
             panic!(
                 "Path {} is outside repo root {}",
-                canonical.display(),
-                repo_canonical.display()
+                full_path.display(),
+                repo_root.display()
             )
-        });
+        })
+}
+
+fn get_git_tracked_files_via_cli(path: &Path, manifest_dir: &Path) -> (Vec<PathBuf>, PathBuf) {
+    let repo_root = get_repo_root();
+    let repo_root = repo_root.canonicalize().unwrap_or_else(|err| {
+        panic!(
+            "Failed to canonicalize repo_root path {}: {err:#?}",
+            repo_root.display(),
+        )
+    });
+
+    let resolved_path = make_repo_root_relative(&get_full_path_within_manifest_dir(path, manifest_dir), &repo_root);
 
     let output = Command::new("git")
         .args(["ls-files", resolved_path.to_str().unwrap()])
@@ -263,12 +378,17 @@ fn get_git_tracked_files(path: &Path, manifest_dir: &str) -> (Vec<PathBuf>, Path
 }
 
 fn get_repo_root() -> PathBuf {
-    let output = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .expect("Failed to get git repo root");
-    let path = String::from_utf8(output.stdout).unwrap().trim().to_string();
-    PathBuf::from(path)
+    let manifest_dir = get_manifest_dir();
+    // Cargo doesn't expose a way to get the workspace root, AFAICT (pgoldman 2025-10-31).
+    // We don't want to query git metadata for this, as that will break in Nix builds.
+    // We happen to know our own directory structure, so we can just walk the tree to get to the root.
+    let repo_root = manifest_dir.join("..").join("..");
+    repo_root.canonicalize().unwrap_or_else(|err| {
+        panic!(
+            "Failed to canonicalize repo_root path {}: {err:#?}",
+            repo_root.display()
+        )
+    })
 }
 
 fn extract_workspace_metadata(path: &Path) -> io::Result<(String, BTreeMap<String, String>)> {
