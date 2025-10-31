@@ -1232,11 +1232,6 @@ impl TryFrom<RowRef<'_>> for StVarRow {
 pub struct StScheduledRow {
     pub(crate) schedule_id: ScheduleId,
     pub(crate) table_id: TableId,
-    /// The name of the reducer or procedure which will run when this table's rows reach their execution time.
-    ///
-    /// Note that, despite the column name, this may refer to either a reducer or a procedure.
-    /// We cannot change the schema of existing system tables,
-    /// so we are unable to rename this column.
     pub(crate) reducer_name: Box<str>,
     pub(crate) schedule_name: Box<str>,
     pub(crate) at_column: ColId,
@@ -1259,7 +1254,7 @@ impl From<StScheduledRow> for ScheduleSchema {
     fn from(row: StScheduledRow) -> Self {
         Self {
             table_id: row.table_id,
-            function_name: row.reducer_name,
+            reducer_name: row.reducer_name,
             schedule_id: row.schedule_id,
             schedule_name: row.schedule_name,
             at_column: row.at_column,

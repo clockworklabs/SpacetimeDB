@@ -8,7 +8,6 @@ use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ord
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
 use spacetimedb_sats::{bsatn::de::Deserializer, de::DeserializeSeed, WithTypespace};
-use std::borrow::Cow;
 
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
@@ -50,33 +49,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
                 .validate_reducer_def(reducer, ReducerId(idx as u32))
                 .map(|reducer_def| (reducer_def.name.clone(), reducer_def))
         })
-        // Collect into a `Vec` first to preserve duplicate names.
-        // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
-        .collect_all_errors::<Vec<_>>();
-
-    let (procedures, non_procedure_misc_exports) =
-        misc_exports
-            .into_iter()
-            .partition::<Vec<RawMiscModuleExportV9>, _>(|misc_export| {
-                matches!(misc_export, RawMiscModuleExportV9::Procedure(_))
-            });
-
-    let procedures = procedures
-        .into_iter()
-        .map(|procedure| {
-            let RawMiscModuleExportV9::Procedure(procedure) = procedure else {
-                unreachable!("Already partitioned procedures separate from other `RawMiscModuleExportV9` variants");
-            };
-            procedure
-        })
-        .map(|procedure| {
-            validator
-                .validate_procedure_def(procedure)
-                .map(|procedure_def| (procedure_def.name.clone(), procedure_def))
-        })
-        // Collect into a `Vec` first to preserve duplicate names.
-        // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
-        .collect_all_errors::<Vec<_>>();
+        .collect_all_errors();
 
     let tables = tables
         .into_iter()
@@ -103,18 +76,15 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         })
         .collect_all_errors::<HashMap<_, _>>();
 
-    let tables_types_reducers_procedures =
-        (tables, types, reducers, procedures)
-            .combine_errors()
-            .and_then(|(mut tables, types, reducers, procedures)| {
-                let ((reducers, procedures), ()) = (
-                    check_function_names_are_unique(reducers, procedures),
-                    check_non_procedure_misc_exports(non_procedure_misc_exports, &validator, &mut tables),
-                )
-                    .combine_errors()?;
-                check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
-                Ok((tables, types, reducers, procedures))
-            });
+    let tables_types_reducers = (tables, types, reducers)
+        .combine_errors()
+        .and_then(|(mut tables, types, reducers)| {
+            let sched_exists = check_scheduled_reducers_exist(&tables, &reducers);
+            let default_values_work = proccess_misc_exports(misc_exports, &validator, &mut tables);
+            (sched_exists, default_values_work).combine_errors()?;
+
+            Ok((tables, types, reducers))
+        });
 
     let ModuleValidator {
         stored_in_table_def,
@@ -123,8 +93,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         ..
     } = validator;
 
-    let (tables, types, reducers, procedures) =
-        (tables_types_reducers_procedures).map_err(|errors| errors.sort_deduplicate())?;
+    let (tables, types, reducers) = (tables_types_reducers).map_err(|errors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -138,7 +107,6 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         refmap,
         row_level_security_raw,
         lifecycle_reducers,
-        procedures,
     })
 }
 
@@ -318,19 +286,26 @@ impl ModuleValidator<'_> {
         })
     }
 
-    fn params_for_generate<'a>(
-        &mut self,
-        params: &'a ProductType,
-        make_type_location: impl Fn(usize, Option<Cow<'a, str>>) -> TypeLocation<'a>,
-    ) -> Result<Box<[(Identifier, AlgebraicTypeUse)]>> {
-        params
+    /// Validate a reducer definition.
+    fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV9, reducer_id: ReducerId) -> Result<ReducerDef> {
+        let RawReducerDefV9 {
+            name,
+            params,
+            lifecycle,
+        } = reducer_def;
+
+        let params_for_generate: Result<_> = params
             .elements
             .iter()
             .enumerate()
             .map(|(position, param)| {
                 // Note: this does not allocate, since `TypeLocation` is defined using `Cow`.
                 // We only allocate if an error is returned.
-                let location = make_type_location(position, param.name().map(Into::into));
+                let location = TypeLocation::ReducerArg {
+                    reducer_name: (&*name).into(),
+                    position,
+                    arg_name: param.name().map(Into::into),
+                };
                 let param_name = param
                     .name()
                     .ok_or_else(|| {
@@ -344,27 +319,10 @@ impl ModuleValidator<'_> {
                 let ty_use = self.validate_for_type_use(&location, &param.algebraic_type);
                 (param_name, ty_use).combine_errors()
             })
-            .collect_all_errors()
-    }
+            .collect_all_errors();
 
-    /// Validate a reducer definition.
-    fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV9, reducer_id: ReducerId) -> Result<ReducerDef> {
-        let RawReducerDefV9 {
-            name,
-            params,
-            lifecycle,
-        } = reducer_def;
-
-        let params_for_generate: Result<_> =
-            self.params_for_generate(&params, |position, arg_name| TypeLocation::ReducerArg {
-                reducer_name: (&*name).into(),
-                position,
-                arg_name,
-            });
-
-        // Reducers share the "function namespace" with procedures.
-        // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
-        let name = identifier(name.clone());
+        // reducers don't live in the global namespace.
+        let name = identifier(name);
 
         let lifecycle = lifecycle
             .map(|lifecycle| match &mut self.lifecycle_reducers[lifecycle] {
@@ -375,7 +333,9 @@ impl ModuleValidator<'_> {
                 Some(_) => Err(ValidationError::DuplicateLifecycle { lifecycle }.into()),
             })
             .transpose();
+
         let (name, params_for_generate, lifecycle) = (name, params_for_generate, lifecycle).combine_errors()?;
+
         Ok(ReducerDef {
             name,
             params: params.clone(),
@@ -384,45 +344,6 @@ impl ModuleValidator<'_> {
                 recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
             },
             lifecycle,
-        })
-    }
-
-    fn validate_procedure_def(&mut self, procedure_def: RawProcedureDefV9) -> Result<ProcedureDef> {
-        let RawProcedureDefV9 {
-            name,
-            params,
-            return_type,
-        } = procedure_def;
-
-        let params_for_generate = self.params_for_generate(&params, |position, arg_name| TypeLocation::ProcedureArg {
-            procedure_name: Cow::Borrowed(&name),
-            position,
-            arg_name,
-        });
-
-        let return_type_for_generate = self.validate_for_type_use(
-            &TypeLocation::ProcedureReturn {
-                procedure_name: Cow::Borrowed(&name),
-            },
-            &return_type,
-        );
-
-        // Procedures share the "function namespace" with reducers.
-        // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
-        let name = identifier(name);
-
-        let (name, params_for_generate, return_type_for_generate) =
-            (name, params_for_generate, return_type_for_generate).combine_errors()?;
-
-        Ok(ProcedureDef {
-            name,
-            params,
-            params_for_generate: ProductTypeDef {
-                elements: params_for_generate,
-                recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
-            },
-            return_type,
-            return_type_for_generate,
         })
     }
 
@@ -796,8 +717,7 @@ impl TableValidator<'_, '_> {
     /// Validate a schedule definition.
     fn validate_schedule_def(&mut self, schedule: RawScheduleDefV9, primary_key: Option<ColId>) -> Result<ScheduleDef> {
         let RawScheduleDefV9 {
-            // Despite the field name, a `RawScheduleDefV9` may refer to either a reducer or a function.
-            reducer_name: function_name,
+            reducer_name,
             scheduled_at_column,
             name,
         } = schedule;
@@ -829,20 +749,15 @@ impl TableValidator<'_, '_> {
         });
 
         let name = self.add_to_global_namespace(name);
-        let function_name = identifier(function_name);
+        let reducer_name = identifier(reducer_name);
 
-        let (name, (at_column, id_column), function_name) = (name, at_id, function_name).combine_errors()?;
+        let (name, (at_column, id_column), reducer_name) = (name, at_id, reducer_name).combine_errors()?;
 
         Ok(ScheduleDef {
             name,
             at_column,
             id_column,
-            function_name,
-
-            // Fill this in as a placeholder now.
-            // It will be populated with the correct `FunctionKind` later,
-            // in `check_scheduled_functions_exist`.
-            function_kind: FunctionKind::Unknown,
+            reducer_name,
         })
     }
 
@@ -982,44 +897,32 @@ fn identifier(name: Box<str>) -> Result<Identifier> {
     Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
 }
 
-/// Check that every [`ScheduleDef`]'s `function_name` refers to a real reducer or procedure
-/// and that the function's arguments are appropriate for the table,
-/// then record the scheduled function's [`FunctionKind`] in the [`ScheduleDef`].
-fn check_scheduled_functions_exist(
-    tables: &mut IdentifierMap<TableDef>,
+fn check_scheduled_reducers_exist(
+    tables: &IdentifierMap<TableDef>,
     reducers: &IndexMap<Identifier, ReducerDef>,
-    procedures: &IndexMap<Identifier, ProcedureDef>,
 ) -> Result<()> {
-    let validate_params =
-        |params_from_function: &ProductType, table_row_type_ref: AlgebraicTypeRef, function_name: &str| {
-            if params_from_function.elements.len() == 1
-                && params_from_function.elements[0].algebraic_type == table_row_type_ref.into()
-            {
-                Ok(())
-            } else {
-                Err(ValidationError::IncorrectScheduledFunctionParams {
-                    function_name: function_name.into(),
-                    function_kind: FunctionKind::Reducer,
-                    expected: AlgebraicType::product([AlgebraicType::Ref(table_row_type_ref)]).into(),
-                    actual: params_from_function.clone().into(),
-                })
-            }
-        };
-
     tables
-        .values_mut()
+        .values()
         .map(|table| -> Result<()> {
-            if let Some(schedule) = &mut table.schedule {
-                if let Some(reducer) = reducers.get(&schedule.function_name) {
-                    schedule.function_kind = FunctionKind::Reducer;
-                    validate_params(&reducer.params, table.product_type_ref, &reducer.name).map_err(Into::into)
-                } else if let Some(procedure) = procedures.get(&schedule.function_name) {
-                    schedule.function_kind = FunctionKind::Procedure;
-                    validate_params(&procedure.params, table.product_type_ref, &procedure.name).map_err(Into::into)
+            if let Some(schedule) = &table.schedule {
+                let reducer = reducers.get(&schedule.reducer_name);
+                if let Some(reducer) = reducer {
+                    if reducer.params.elements.len() == 1
+                        && reducer.params.elements[0].algebraic_type == table.product_type_ref.into()
+                    {
+                        Ok(())
+                    } else {
+                        Err(ValidationError::IncorrectScheduledReducerParams {
+                            reducer: (&*schedule.reducer_name).into(),
+                            expected: AlgebraicType::product([AlgebraicType::Ref(table.product_type_ref)]).into(),
+                            actual: reducer.params.clone().into(),
+                        }
+                        .into())
+                    }
                 } else {
-                    Err(ValidationError::MissingScheduledFunction {
+                    Err(ValidationError::MissingScheduledReducer {
                         schedule: schedule.name.clone(),
-                        function: schedule.function_name.clone(),
+                        reducer: schedule.reducer_name.clone(),
                     }
                     .into())
                 }
@@ -1030,39 +933,7 @@ fn check_scheduled_functions_exist(
         .collect_all_errors()
 }
 
-/// Check that all function (reducer and procedure) names are unique,
-/// then re-organize the reducers and procedures into [`IndexMap`]s
-/// for storage in the [`ModuleDef`].
-fn check_function_names_are_unique(
-    reducers: Vec<(Identifier, ReducerDef)>,
-    procedures: Vec<(Identifier, ProcedureDef)>,
-) -> Result<(IndexMap<Identifier, ReducerDef>, IndexMap<Identifier, ProcedureDef>)> {
-    let mut errors = vec![];
-
-    let mut reducers_map = IndexMap::with_capacity(reducers.len());
-
-    for (name, def) in reducers {
-        if reducers_map.contains_key(&name) {
-            errors.push(ValidationError::DuplicateFunctionName { name });
-        } else {
-            reducers_map.insert(name, def);
-        }
-    }
-
-    let mut procedures_map = IndexMap::with_capacity(procedures.len());
-
-    for (name, def) in procedures {
-        if reducers_map.contains_key(&name) || procedures_map.contains_key(&name) {
-            errors.push(ValidationError::DuplicateFunctionName { name });
-        } else {
-            procedures_map.insert(name, def);
-        }
-    }
-
-    ErrorStream::add_extra_errors(Ok((reducers_map, procedures_map)), errors)
-}
-
-fn check_non_procedure_misc_exports(
+fn proccess_misc_exports(
     misc_exports: Vec<RawMiscModuleExportV9>,
     validator: &ModuleValidator,
     tables: &mut IdentifierMap<TableDef>,
@@ -1071,9 +942,6 @@ fn check_non_procedure_misc_exports(
         .into_iter()
         .map(|export| match export {
             RawMiscModuleExportV9::ColumnDefaultValue(cdv) => process_column_default_value(&cdv, validator, tables),
-            RawMiscModuleExportV9::Procedure(_proc) => {
-                unreachable!("Procedure defs should already have been sorted out of `misc_exports`")
-            }
             _ => unimplemented!("unknown misc export"),
         })
         .collect_all_errors::<()>()
@@ -1125,8 +993,7 @@ mod tests {
     };
     use crate::def::{validate::Result, ModuleDef};
     use crate::def::{
-        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, FunctionKind, IndexDef, SequenceDef,
-        UniqueConstraintData,
+        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, IndexDef, SequenceDef, UniqueConstraintData,
     };
     use crate::error::*;
     use crate::type_for_generate::ClientCodegenError;
@@ -1343,12 +1210,8 @@ mod tests {
         assert_eq!(delivery_def.columns[2].ty, AlgebraicType::U64);
         assert_eq!(delivery_def.schedule.as_ref().unwrap().at_column, 1.into());
         assert_eq!(
-            &delivery_def.schedule.as_ref().unwrap().function_name[..],
+            &delivery_def.schedule.as_ref().unwrap().reducer_name[..],
             "check_deliveries"
-        );
-        assert_eq!(
-            delivery_def.schedule.as_ref().unwrap().function_kind,
-            FunctionKind::Reducer
         );
         assert_eq!(delivery_def.primary_key, Some(ColId(2)));
 
@@ -1797,9 +1660,9 @@ mod tests {
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::MissingScheduledFunction { schedule, function } => {
+        expect_error_matching!(result, ValidationError::MissingScheduledReducer { schedule, reducer } => {
             &schedule[..] == "Deliveries_sched" &&
-                function == &expect_identifier("check_deliveries")
+            reducer == &expect_identifier("check_deliveries")
         });
     }
 
@@ -1825,11 +1688,10 @@ mod tests {
         builder.add_reducer("check_deliveries", ProductType::from([("a", AlgebraicType::U64)]), None);
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::IncorrectScheduledFunctionParams { function_name, function_kind, expected, actual } => {
-            &function_name[..] == "check_deliveries" &&
-                *function_kind == FunctionKind::Reducer &&
-                expected.0 == AlgebraicType::product([AlgebraicType::Ref(deliveries_product_type)]) &&
-                actual.0 == ProductType::from([("a", AlgebraicType::U64)]).into()
+        expect_error_matching!(result, ValidationError::IncorrectScheduledReducerParams { reducer, expected, actual } => {
+            &reducer[..] == "check_deliveries" &&
+            expected.0 == AlgebraicType::product([AlgebraicType::Ref(deliveries_product_type)]) &&
+            actual.0 == ProductType::from([("a", AlgebraicType::U64)]).into()
         });
     }
 
@@ -1874,47 +1736,5 @@ mod tests {
         assert!(def.lookup::<ConstraintDef>("wacky.constraint()").is_some());
         assert!(def.lookup::<IndexDef>("wacky.index()").is_some());
         assert!(def.lookup::<SequenceDef>("wacky.sequence()").is_some());
-    }
-
-    #[test]
-    fn duplicate_reducer_names() {
-        let mut builder = RawModuleDefV9Builder::new();
-
-        builder.add_reducer("foo", [("i", AlgebraicType::I32)].into(), None);
-        builder.add_reducer("foo", [("name", AlgebraicType::String)].into(), None);
-
-        let result: Result<ModuleDef> = builder.finish().try_into();
-
-        expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
-            &name[..] == "foo"
-        });
-    }
-
-    #[test]
-    fn duplicate_procedure_names() {
-        let mut builder = RawModuleDefV9Builder::new();
-
-        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit());
-        builder.add_procedure("foo", [("name", AlgebraicType::String)].into(), AlgebraicType::unit());
-
-        let result: Result<ModuleDef> = builder.finish().try_into();
-
-        expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
-            &name[..] == "foo"
-        });
-    }
-
-    #[test]
-    fn duplicate_procedure_and_reducer_name() {
-        let mut builder = RawModuleDefV9Builder::new();
-
-        builder.add_reducer("foo", [("i", AlgebraicType::I32)].into(), None);
-        builder.add_procedure("foo", [("i", AlgebraicType::I32)].into(), AlgebraicType::unit());
-
-        let result: Result<ModuleDef> = builder.finish().try_into();
-
-        expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
-            &name[..] == "foo"
-        });
     }
 }
