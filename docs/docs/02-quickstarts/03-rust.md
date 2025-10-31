@@ -41,35 +41,29 @@ If you're on Windows, go [here](https://learn.microsoft.com/en-us/windows/dev-en
 
 ## Project structure
 
-Create and enter a directory `quickstart-chat`:
+Let's start by running `spacetime init` to initialize our project's directory structure:
 
 ```bash
-mkdir quickstart-chat
-cd quickstart-chat
+spacetime init --lang rust quickstart-chat
 ```
 
-Now create `server`, our module, which runs in the database:
-
-```bash
-spacetime init --lang rust server
-```
+`spacetime init` will ask you for a project path in which to put your project. By default this will be `./quickstart-chat`. This basic project will have a few helper files like Cursor rules for SpacetimeDB and a `spacetimedb` directory which is where your SpacetimeDB module code will go.
 
 ## How to Compile
 
 > [!IMPORTANT]
-> You cannot use the traditional `cargo build` to build SpacetimeDB server modules. Keep this in mind when using an IDE that assumes using _cargo_ for building.
-> Above, we just initialized a SpacetimeDB server module at `./server`:
+> While it is possible to use the traditional `cargo build` to build SpacetimeDB server modules, `spacetime build` makes this process easier. Keep this in mind when using an IDE that assumes using _cargo_ for building.
 
 ```bash
-cd server
+cd spacetimedb 
 spacetime build
 ```
 
 ## Declare imports
 
-`spacetime init` should have pre-populated `server/src/lib.rs` with a trivial module. Clear it out so we can write a new, simple module: a bare-bones chat server.
+`spacetime init` should have pre-populated `spacetimedb/src/lib.rs` with a trivial module. Clear it out so we can write a new, simple module: a bare-bones chat server.
 
-To the top of `server/src/lib.rs`, add some imports we'll be using:
+To the top of `spacetimedb/src/lib.rs`, add some imports we'll be using:
 
 ```rust
 use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
@@ -90,7 +84,7 @@ To get our chat server running, we'll need to store two kinds of data: informati
 
 For each `User`, we'll store their `Identity`, an optional name they can set to identify themselves to other users, and whether they're online or not. We'll designate the `Identity` as our primary key, which enforces that it must be unique, indexes it for faster lookup, and allows clients to track updates.
 
-To `server/src/lib.rs`, add the definition of the table `User`:
+To `spacetimedb/src/lib.rs`, add the definition of the table `User`:
 
 ```rust
 #[table(name = user, public)]
@@ -104,7 +98,7 @@ pub struct User {
 
 For each `Message`, we'll store the `Identity` of the user who sent it, the `Timestamp` when it was sent, and the text of the message.
 
-To `server/src/lib.rs`, add the definition of the table `Message`:
+To `spacetimedb/src/lib.rs`, add the definition of the table `Message`:
 
 ```rust
 #[table(name = message, public)]
@@ -123,7 +117,7 @@ Each reducer must accept as its first argument a `ReducerContext`, which include
 
 It's also possible to call `set_name` via the SpacetimeDB CLI's `spacetime call` command without a connection, in which case no `User` record will exist for the caller. We'll return an error in this case, but you could alter the reducer to insert a `User` row for the module owner. You'll have to decide whether the module owner is always online or always offline, though.
 
-To `server/src/lib.rs`, add:
+To `spacetimedb/src/lib.rs`, add:
 
 ```rust
 #[reducer]
@@ -147,7 +141,7 @@ For now, we'll just do a bare minimum of validation, rejecting the empty name. Y
 - Rejecting or truncating long names.
 - Rejecting duplicate names.
 
-To `server/src/lib.rs`, add:
+To `spacetimedb/src/lib.rs`, add:
 
 ```rust
 /// Takes a name and checks if it's acceptable as a user's name.
@@ -164,7 +158,7 @@ fn validate_name(name: String) -> Result<String, String> {
 
 We define a reducer `send_message`, which clients will call to send messages. It will validate the message's text, then insert a new `Message` record using `ctx.db.message().insert(..)`, with the `sender` identity and `sent` timestamp taken from the `ReducerContext`. Because the `Message` table does not have any columns with a unique constraint, `ctx.db.message().insert()` is infallible and does not return a `Result`.
 
-To `server/src/lib.rs`, add:
+To `spacetimedb/src/lib.rs`, add:
 
 ```rust
 #[reducer]
@@ -183,7 +177,7 @@ pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
 
 We'll want to validate messages' texts in much the same way we validate users' chosen names. As above, we'll do the bare minimum, rejecting only empty messages.
 
-To `server/src/lib.rs`, add:
+To `spacetimedb/src/lib.rs`, add:
 
 ```rust
 /// Takes a message's text and checks if it's acceptable to send.
@@ -207,11 +201,11 @@ Whenever a client connects, the database will run a special reducer, annotated w
 
 We'll use `ctx.db.user().identity().find(ctx.sender)` to look up a `User` row for `ctx.sender`, if one exists. If we find one, we'll use `ctx.db.user().identity().update(..)` to overwrite it with a row that has `online: true`. If not, we'll use `ctx.db.user().insert(..)` to insert a new row for our new user. All three of these methods are generated by the `#[table(..)]` macro, with rows and behavior based on the row attributes. `ctx.db.user().find(..)` returns an `Option<User>`, because of the unique constraint from the `#[primary_key]` attribute. This means there will be either zero or one matching rows. If we used `try_insert` here it would return a `Result<(), UniqueConstraintViolation>` because of the same unique constraint. However, because we're already checking if there is a user with the given sender identity we know that inserting into this table will not fail. Therefore, we use `insert`, which automatically unwraps the result, simplifying the code. If we want to overwrite a `User` row, we need to do so explicitly using `ctx.db.user().identity().update(..)`.
 
-To `server/src/lib.rs`, add the definition of the connect reducer:
+To `spacetimedb/src/lib.rs`, add the definition of the connect reducer:
 
 ```rust
 #[reducer(client_connected)]
-// Called when a client connects to a SpacetimeDB database server
+// Called when a client connects to a SpacetimeDB database 
 pub fn client_connected(ctx: &ReducerContext) {
     if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
         // If this is a returning user, i.e. we already have a `User` with this `Identity`,
@@ -233,7 +227,7 @@ Similarly, whenever a client disconnects, the database will run the `#[reducer(c
 
 ```rust
 #[reducer(client_disconnected)]
-// Called when a client disconnects from SpacetimeDB database server
+// Called when a client disconnects from SpacetimeDB database 
 pub fn identity_disconnected(ctx: &ReducerContext) {
     if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
         ctx.db.user().identity().update(User { online: false, ..user });
@@ -256,7 +250,7 @@ And that's all of our module code! We'll run `spacetime publish` to compile our 
 From the `quickstart-chat` directory, run in another tab:
 
 ```bash
-spacetime publish --project-path server quickstart-chat
+spacetime publish --server local --project-path spacetimedb quickstart-chat
 ```
 
 ## Call Reducers
@@ -264,13 +258,13 @@ spacetime publish --project-path server quickstart-chat
 You can use the CLI (command line interface) to run reducers. The arguments to the reducer are passed in JSON format.
 
 ```bash
-spacetime call quickstart-chat send_message "Hello, World!"
+spacetime call --server local quickstart-chat send_message "Hello, World!"
 ```
 
 Once we've called our `send_message` reducer, we can check to make sure it ran by running the `logs` command.
 
 ```bash
-spacetime logs quickstart-chat
+spacetime logs --server local quickstart-chat
 ```
 
 You should now see the output that your module printed in the database.
@@ -287,7 +281,7 @@ You should now see the output that your module printed in the database.
 SpacetimeDB supports a subset of the SQL syntax so that you can easily query the data of your database. We can run a query using the `sql` command.
 
 ```bash
-spacetime sql quickstart-chat "SELECT * FROM message"
+spacetime sql --server local quickstart-chat "SELECT * FROM message"
 ```
 
 ```bash

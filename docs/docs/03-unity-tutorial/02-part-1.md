@@ -3,6 +3,11 @@ title: 1 - Setup
 slug: /tutorials/unity/part-1
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Setup
+
 ![Unity Tutorial Hero Image](/images/unity/part-1-hero-image.png)
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
@@ -10,22 +15,6 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 > A completed version of the game we'll create in this tutorial is available at:
 >
 > [https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio)
-
-## Prepare Project Structure
-
-This project is separated into two subdirectories;
-
-1. Server (module) code
-2. Client code
-
-First, we'll create a project root directory (you can choose the name):
-
-```bash
-mkdir blackholio
-cd blackholio
-```
-
-We'll start by populating the client directory.
 
 ## Setting up the Tutorial Unity Project
 
@@ -40,12 +29,10 @@ Open Unity and create a new project by selecting "New" from the Unity Hub or goi
 ![Unity Hub New Project](/images/unity/part-1-unity-hub-new-project.jpg)
 
 :::warning
-
-**Choose the `Universal 2D`** template to select a template which uses the Unity Universal Render Pipeline.
-
+**Make sure to choose the `Universal 2D` template for your new project.**
 :::
 
-For `Project Name` use `client-unity`. For Project Location make sure that you use your `blackholio` directory. This is the directory that we created in a previous step.
+For `Project Name` use `blackholio`. For `Project Location` select a directory that you can navigate to via the CLI because we will need to do so in part 2.
 
 ![Universal 2D Template](/images/unity/part-1-universal-2d-template.png)
 

@@ -6,36 +6,61 @@ slug: /tutorials/unreal/part-2
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unreal Tutorial - Part 2 - Connecting to SpacetimeDB
+# Connecting to SpacetimeDB
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
 This progressive tutorial is continued from [part 1](/docs/tutorials/unreal/part-1).
 
+## Project Structure
+
+Now that we have our client project setup we can configure the module directory. Regardless of what language you choose, your module will always go into a `spacetimedb` directory within your client directory like this:
+
+```
+blackholio/                      # Unreal project root
+├── Binaries/
+├── blackholio.sln
+├── blackholio.uproject
+├── Config/
+├── Content/
+├── Plugins/
+│   └── SpacetimeDbSdk/          # This is where the SpacetimeDB Unreal SDK lives
+├── ... rest of Unreal files
+└── spacetimedb/                 # This is where the server module lives
+```
+
 ## Create a Server Module
+
+:::note
+Ensure you have SpacetimeDB version >=1.4.0 installed to enable Unreal Engine code generation support. You can use `spacetime --version` to check your version and you can use `spacetime version upgrade` to install the latest version.
+:::
 
 If you have not already installed the `spacetime` CLI, check out our [Getting Started](/getting-started) guide for instructions on how to install.
 
-In your `blackholio` directory, run the following command to initialize the SpacetimeDB server module project with your desired language:
+In the same directory that contains your `blackholio` project, run the following command to initialize the SpacetimeDB server module project with your desired language:
+
+:::warning
+The `blackholio` directory specified here is the same `blackholio` directory you created during part 1.
+:::
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
 Run the following command to initialize the SpacetimeDB server module project with Rust as the language:
 
 ```bash
-spacetime init --lang=rust server-rust
+spacetime init --lang rust --server-only blackholio
 ```
 
-This command creates a new folder named `server-rust` alongside your Unreal project `client_unreal` directory and sets up the SpacetimeDB server project with Rust as the programming language.
+This command creates a new folder named `blackholio` inside of your Unreal project `blackholio` directory and sets up the SpacetimeDB server project with Rust as the programming language.
 </TabItem>
 <TabItem value="csharp" label="C#">
 Run the following command to initialize the SpacetimeDB server module project with C# as the language:
 
 ```bash
-spacetime init --lang=csharp server-csharp
+spacetime init --lang csharp --server-only blackholio
 ```
 
-This command creates a new folder named `server-csharp` alongside your Unreal project `client-unreal` directory and sets up the SpacetimeDB server project with C# as the programming language.
+This command creates a new folder named `blackholio` inside of your Unreal project `blackholio` directory and sets up the SpacetimeDB server project with C# as the programming language.
 </TabItem>
 </Tabs>
 
@@ -43,14 +68,14 @@ This command creates a new folder named `server-csharp` alongside your Unreal pr
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
-In this section we'll be making some edits to the file `server-rust/src/lib.rs`. We recommend you open up this file in an IDE like VSCode or RustRover.
+In this section we'll be making some edits to the file `blackholio/spacetimedb/src/lib.rs`. We recommend you open up this file in an IDE like VSCode or RustRover.
 
-**Important: Open the `server-rust/src/lib.rs` file and delete its contents. We will be writing it from scratch here.**
+**Important: Open the `blackholio/spacetimedb/src/lib.rs` file and delete its contents. We will be writing it from scratch here.**
 </TabItem>
 <TabItem value="csharp" label="C#">
-In this section we'll be making some edits to the file `server-csharp/Lib.cs`. We recommend you open up this file in an IDE like VSCode or Rider.
+In this section we'll be making some edits to the file `blackholio/spacetimedb/Lib.cs`. We recommend you open up this file in an IDE like VSCode or Rider.
 
-**Important: Open the `server-csharp/Lib.cs` file and delete its contents. We will be writing it from scratch here.**
+**Important: Open the `blackholio/spacetimedb/Lib.cs` file and delete its contents. We will be writing it from scratch here.**
 </TabItem>
 </Tabs>
 
@@ -95,8 +120,8 @@ Let's start by defining the `Config` table. This is a simple table which will st
 #[spacetimedb::table(name = config, public)]
 pub struct Config {
     #[primary_key]
-    pub id: u32,
-    pub world_size: u64,
+    pub id: i32,
+    pub world_size: i64,
 }
 ```
 
@@ -118,8 +143,8 @@ Let's start by defining the `Config` table. This is a simple table which will st
 public partial struct Config
 {
     [PrimaryKey]
-    public uint id;
-    public ulong world_size;
+    public int id;
+    public long world_size;
 }
 ```
 
@@ -173,17 +198,17 @@ pub struct Entity {
     // this value should be determined by SpacetimeDB on insert.
     #[auto_inc]
     #[primary_key]
-    pub entity_id: u32,
+    pub entity_id: i32,
     pub position: DbVector2,
-    pub mass: u32,
+    pub mass: i32,
 }
 
 #[spacetimedb::table(name = circle, public)]
 pub struct Circle {
     #[primary_key]
-    pub entity_id: u32,
+    pub entity_id: i32,
     #[index(btree)]
-    pub player_id: u32,
+    pub player_id: i32,
     pub direction: DbVector2,
     pub speed: f32,
     pub last_split_time: Timestamp,
@@ -192,7 +217,7 @@ pub struct Circle {
 #[spacetimedb::table(name = food, public)]
 pub struct Food {
     #[primary_key]
-    pub entity_id: u32,
+    pub entity_id: i32,
 }
 ```
 
@@ -225,18 +250,18 @@ Let's create a few tables to represent entities in our game by adding the follow
 public partial struct Entity
 {
  [PrimaryKey, AutoInc]
- public uint entity_id;
+ public int entity_id;
  public DbVector2 position;
- public uint mass;
+ public int mass;
 }
 
 [Table(Name = "circle", Public = true)]
 public partial struct Circle
 {
     [PrimaryKey]
-    public uint entity_id;
+    public int entity_id;
     [SpacetimeDB.Index.BTree]
-    public uint player_id;
+    public int player_id;
     public DbVector2 direction;
     public float speed;
     public SpacetimeDB.Timestamp last_split_time;
@@ -246,7 +271,7 @@ public partial struct Circle
 public partial struct Food
 {
  [PrimaryKey]
- public uint entity_id;
+ public int entity_id;
 }
 ```
 
@@ -276,7 +301,7 @@ pub struct Player {
     identity: Identity,
     #[unique]
     #[auto_inc]
-    player_id: u32,
+    player_id: i32,
     name: String,
 }
 ```
@@ -292,7 +317,7 @@ public partial struct Player
  [PrimaryKey]
  public Identity identity;
  [Unique, AutoInc]
- public uint player_id;
+ public int player_id;
  public string name;
 }
 ```
@@ -362,14 +387,7 @@ This following log output indicates that SpacetimeDB is successfully running on 
 Starting SpacetimeDB listening on 127.0.0.1:3000
 ```
 
-<Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/server-rust` directory.
-</TabItem>
-<TabItem value="csharp" label="C#">
-Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/server-csharp` directory.
-</TabItem>
-</Tabs>
+Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/spacetimedb` directory.
 
 If you are not already logged in to the `spacetime` CLI, run the `spacetime login` command to log in to your SpacetimeDB website account. Once you are logged in, run `spacetime publish --server local blackholio`. This will publish our Blackholio server logic to SpacetimeDB.
 
@@ -388,7 +406,7 @@ Created new database with name: blackholio, identity: c200d2c69b4524292b91822afa
 <TabItem value="rust" label="Rust">
 
 ```sh
-spacetime call blackholio debug
+spacetime call --server local blackholio debug
 ```
 
 </TabItem>
@@ -396,7 +414,7 @@ spacetime call blackholio debug
 Next, use the `spacetime` command to call our newly defined `Debug` reducer:
 
 ```sh
-spacetime call blackholio Debug
+spacetime call --server local blackholio Debug
 ```
 
 </TabItem>
@@ -405,7 +423,7 @@ spacetime call blackholio Debug
 If the call completed successfully, that command will have no output, but we can see the debug logs by running:
 
 ```sh
-spacetime logs blackholio
+spacetime logs --server local blackholio
 ```
 
 You should see something like the following output:
@@ -438,7 +456,7 @@ The `client_connected` argument to the `spacetimedb::reducer` macro indicates to
 
 > SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
 >
-> - `init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
+> - `init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish --server local <name> --delete-data`.
 > - `client_connected` - Called when a user connects to the SpacetimeDB database. Their identity can be found in the `sender` value of the `ReducerContext`.
 > - `client_disconnected` - Called when a user disconnects from the SpacetimeDB database.
 
@@ -458,7 +476,7 @@ The `ReducerKind.ClientConnected` argument to the `SpacetimeDB.Reducer` attribut
 
 > SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
 >
-> - `ReducerKind.Init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
+> - `ReducerKind.Init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish --server local <name> --delete-data`.
 > - `ReducerKind.ClientConnected` - Called when a user connects to the SpacetimeDB database. Their identity can be found in the `Sender` value of the `ReducerContext`.
 > - `ReducerKind.ClientDisconnected` - Called when a user disconnects from the SpacetimeDB database.
 
@@ -477,21 +495,21 @@ The `spacetime` CLI has built in functionality to let us generate Unreal C++ typ
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
-Let's generate our types for our module. In the `blackholio/server-rust` directory run the following command:
+Let's generate our types for our module. In the `blackholio/spacetimedb` directory run the following command:
 </TabItem>
 <TabItem value="csharp" label="C#">
-Let's generate our types for our module. In the `blackholio/server-csharp` directory run the following command:
+Let's generate our types for our module. In the `blackholio/spacetimedb` directory run the following command:
 </TabItem>
 </Tabs>
 
 ```sh
-spacetime generate --lang unrealcpp --uproject-dir ../client_unreal --project-path ./ --module-name client_unreal
+spacetime generate --lang unrealcpp --uproject-dir ../../blackholio --project-path ./ --module-name blackholio
 ```
 
-This will generate a set of files in the `client_unreal/Source/client_unreal/Private/ModuleBindings` and `client_unreal/Source/client_unreal/Public/ModuleBindings` directories which contain the code generated types and reducer functions that are defined in your module, but usable on the client.
+This will generate a set of files in the `blackholio/Source/blackholio/Private/ModuleBindings` and `blackholio/Source/blackholio/Public/ModuleBindings` directories which contain the code generated types and reducer functions that are defined in your module, but usable on the client.
 
 :::note
-`--uproject-dir` is straightforward as the path to the .uproject file. `--module-name` is the name of the Unreal module which in most projects is the name of the project, in this case `client_unreal`.
+`--uproject-dir` is straightforward as the path to the .uproject file. `--module-name` is the name of the Unreal module which in most projects is the name of the project, in this case `blackholio`.
 :::
 
 ```
@@ -514,11 +532,11 @@ This will generate a set of files in the `client_unreal/Source/client_unreal/Pri
 └── SpacetimeDBClient.g.h
 ```
 
-This will also generate a file in the `client_unreal/Source/client_unreal/Private/ModuleBindings/SpacetimeDBClient.g.h` directory with a type aware `UDbConnection` class. We will use this class to connect to your database from Unreal.
+This will also generate a file in the `blackholio/Source/blackholio/Private/ModuleBindings/SpacetimeDBClient.g.h` directory with a type aware `UDbConnection` class. We will use this class to connect to your database from Unreal.
 
 ### Connecting to the Database
 
-Update `client_unreal.Build.cs` to include the `SpacetimeDbSdk`. Add `SpacetimeDbSdk` and `Paper2D` to `PublicDependencyModuleNames`, and confirm that `PrivateDependencyModuleNames` includes the following modules for current and future needs:
+Update `blackholio.Build.cs` to include the `SpacetimeDbSdk`. Add `SpacetimeDbSdk` and `Paper2D` to `PublicDependencyModuleNames`, and confirm that `PrivateDependencyModuleNames` includes the following modules for current and future needs:
 
 ```cpp
         PublicDependencyModuleNames.AddRange(new string[]
@@ -540,6 +558,8 @@ Update `client_unreal.Build.cs` to include the `SpacetimeDbSdk`. Add `SpacetimeD
         });
 ```
 
+<Tabs groupId="client-language" defaultValue="cpp">
+<TabItem value="cpp" label="C++">
 Update `GameManager.h` as follows to set up the Unreal client connection to the server:
 
 ```cpp
@@ -707,6 +727,90 @@ void AGameManager::HandleSubscriptionApplied(FSubscriptionEventContext& Context)
 Here we configure the connection to the database, by passing it some callbacks in addition to providing the `SERVER_URI` and `MODULE_NAME` to the connection. When the client connects, the SpacetimeDB SDK will call the `HandleConnect` method, allowing us to start up the game.
 
 In our `HandleConnect` callback we build a subscription and are calling `Subscribe` and subscribing to all data in the database. This will cause SpacetimeDB to synchronize the state of all your tables with your Unreal client's SpacetimeDB SDK's "client cache". You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/sql) enumerates the operations that are accepted in our SQL syntax.
+</TabItem>
+<TabItem value="blueprint" label="Blueprint">
+
+:::note
+Close down, rebuild, and relaunch the project to update the plugin and generated code references.
+:::
+
+To start off edit `BP_GameMode` to provide easy access to the `BP_GameManager`.
+
+Open `BP_GameMode` and update to the following:
+
+1. Add a **Variable**
+    - Change **Variable Name** to `GameManager`
+    - Change **Variable Type** to **BP Game Manager > Object Reference**
+
+![Add Variable](/images/unreal/part-2-01-blueprint-variable.png)
+
+2. Add a **Function** named `GetGameManager` and set up as below:
+
+![Add GetGameManager](/images/unreal/part-2-02-blueprint-getmanager.png)
+
+- Add **Output** as `GameManager` with **BP Game Manager > Object Reference** as the type.
+
+3. Add a **Function** named `SetGameManager` and set up as below:
+
+![Add SetGameManager](/images/unreal/part-2-02-blueprint-setmanager.png)
+
+- Add **Input** as `GameManager` with **BP Game Manager > Object Reference** as the type.
+
+---
+
+Next, open and update `BP_GameManager` to add the following **Variables**:
+
+1. Add `ServerUri`
+    - Change **Variable Type** to **String**
+    - Check **Instance Editable**
+    - Change **Category** to `Connection`
+    - Change **Default Value** to `127.0.0.1:3000`
+2. Add `ModuleName`
+    - Change **Variable Type** to **String**
+    - Check **Instance Editable**
+    - Change **Category** to `Connection`
+    - Change **Default Value** to `blackholio`
+3. Add `TokenFilePath`
+    - Change **Variable Type** to **String**
+    - Check **Instance Editable**
+    - Change **Category** to `Connection`
+    - Change **Default Value** to `.spacetime_blackholio`
+4. Add `LocalIdentity`
+    - Change **Variable Type** to **Spacetime DBIdentity**
+    - Change **Category** to `Connection`
+5. Add `Conn`
+    - Change **Variable Type** to **Db Connection > Object Reference**
+    - Check **Instance Editable**
+    - Change **Category** to `Connection`
+6. Add `Token`
+    - Change **Variable Type** to **String**
+    - Change **Category** to `Connection`
+
+![Add GameManager Variables](/images/unreal/part-2-03-blueprint-add-variables.png)
+
+Continue with `BP_GameManager` to add the logic, starting with **Event BeginPlay**:
+![Start BeginPlay](/images/unreal/part-2-04-blueprint-begin-play.png)
+
+Add **Function** named `BuildConnection`:
+![Start BuildConnection](/images/unreal/part-2-05-blueprint-buildconnection-1.png)
+![End BuildConnection](/images/unreal/part-2-05-blueprint-buildconnection-2.png)
+
+> **Note:** Dragging off the **Event** pin will provide **Event Dispatchers -> Create Event** then set **Select Function..** to **Create a matching event** to generate the events on the **EventGraph** that we'll fill in soon. The naming scheme we're using in this tutorial is `<CallbackName>_Event`, eg. `OnConnect_Event`.
+
+Now attach `BuildConnection` to the end of **Event BeginPlay**:
+![Add BuildConnection](/images/unreal/part-2-06-blueprint-add-build.png)
+
+Update the **Event EndPlay** and **Event Tick** to the following:
+![Update Events](/images/unreal/part-2-07-blueprint-endplay-tick.png)
+
+Update the **OnConnect_Event**:
+![Update OnConnect](/images/unreal/part-2-08-blueprint-onconnect.png)
+
+Here we configure the connection to the database, by passing it some callbacks in addition to providing the `SERVER_URI` and `MODULE_NAME` to the connection. When the client connects, the SpacetimeDB SDK will call the `OnConnect_Event` method, allowing us to start up the game.
+
+In our `OnConnect_Event` callback we build a subscription and are calling `Subscribe` and subscribing to all data in the database. This will cause SpacetimeDB to synchronize the state of all your tables with your Unreal client's SpacetimeDB SDK's "client cache". You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/docs/sql) enumerates the operations that are accepted in our SQL syntax.
+</TabItem>
+</Tabs>
 
 ---
 
@@ -732,7 +836,7 @@ Subscription applied indicates that the SpacetimeDB SDK has evaluated your subsc
 We can also see that the server has logged the connection as well.
 
 ```sh
-spacetime logs blackholio
+spacetime logs --server local blackholio
 ...
 2025-01-10T03:51:02.078700Z DEBUG: src/lib.rs:63: c200fb5be9524bfb8289c351516a1d9ea800f70a17a9a6937f11c0ed3854087d just connected.
 ```

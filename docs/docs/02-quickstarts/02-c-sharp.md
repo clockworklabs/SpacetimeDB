@@ -44,36 +44,31 @@ dotnet workload install wasi-experimental
 
 ## Project structure
 
-Create and enter a directory `quickstart-chat`:
+Let's start by running `spacetime init` to initialize our project's directory structure:
 
 ```bash
-mkdir quickstart-chat
-cd quickstart-chat
+spacetime init --lang csharp quickstart-chat
 ```
 
-Now create `server`, our module, which runs in the database:
-
-```bash
-spacetime init --lang csharp server
-```
+`spacetime init` will ask you for a project path in which to put your project. By default this will be `./quickstart-chat`. This basic project will have a few helper files like Cursor rules for SpacetimeDB and a `spacetimedb` directory which is where your SpacetimeDB module code will go.
 
 ## Declare imports
 
 `spacetime init` generated a few files:
 
-1. Open `server/StdbModule.csproj` to generate a .sln file for intellisense/validation support.
-2. Open `server/Lib.cs`, a trivial module.
+1. Open `spacetimedb/StdbModule.csproj` to generate a .sln file for intellisense/validation support.
+2. Open `spacetimedb/Lib.cs`, a trivial module.
 3. Clear it out, so we can write a new module that's still pretty simple: a bare-bones chat server.
 
 To start, we'll need to add `SpacetimeDB` to our using statements. This will give us access to everything we need to author our SpacetimeDB server module.
 
-To the top of `server/Lib.cs`, add some imports we'll be using:
+To the top of `spacetimedb/Lib.cs`, add some imports we'll be using:
 
 ```csharp
 using SpacetimeDB;
 ```
 
-We also need to create our static module class which all of the module code will live in. In `server/Lib.cs`, add:
+We also need to create our static module class which all of the module code will live in. In `spacetimedb/Lib.cs`, add:
 
 ```csharp
 public static partial class Module
@@ -87,7 +82,7 @@ To get our chat server running, we'll need to store two kinds of data: informati
 
 For each `User`, we'll store their `Identity`, an optional name they can set to identify themselves to other users, and whether they're online or not. We'll designate the `Identity` as our primary key, which enforces that it must be unique, indexes it for faster lookup, and allows clients to track updates.
 
-In `server/Lib.cs`, add the definition of the table `User` to the `Module` class:
+In `spacetimedb/Lib.cs`, add the definition of the table `User` to the `Module` class:
 
 ```csharp
 [Table(Name = "user", Public = true)]
@@ -102,7 +97,7 @@ public partial class User
 
 For each `Message`, we'll store the `Identity` of the user who sent it, the `Timestamp` when it was sent, and the text of the message.
 
-In `server/Lib.cs`, add the definition of the table `Message` to the `Module` class:
+In `spacetimedb/Lib.cs`, add the definition of the table `Message` to the `Module` class:
 
 ```csharp
 [Table(Name = "message", Public = true)]
@@ -122,7 +117,7 @@ Each reducer must accept as its first argument a `ReducerContext`, which include
 
 It's also possible to call `SetName` via the SpacetimeDB CLI's `spacetime call` command without a connection, in which case no `User` record will exist for the caller. We'll return an error in this case, but you could alter the reducer to insert a `User` row for the module owner. You'll have to decide whether the module owner is always online or always offline, though.
 
-In `server/Lib.cs`, add to the `Module` class:
+In `spacetimedb/Lib.cs`, add to the `Module` class:
 
 ```csharp
 [Reducer]
@@ -146,7 +141,7 @@ For now, we'll just do a bare minimum of validation, rejecting the empty name. Y
 - Rejecting or truncating long names.
 - Rejecting duplicate names.
 
-In `server/Lib.cs`, add to the `Module` class:
+In `spacetimedb/Lib.cs`, add to the `Module` class:
 
 ```csharp
 /// Takes a name and checks if it's acceptable as a user's name.
@@ -164,7 +159,7 @@ private static string ValidateName(string name)
 
 We define a reducer `SendMessage`, which clients will call to send messages. It will validate the message's text, then insert a new `Message` record using `Message.Insert`, with the `Sender` identity and `Time` timestamp taken from the `ReducerContext`.
 
-In `server/Lib.cs`, add to the `Module` class:
+In `spacetimedb/Lib.cs`, add to the `Module` class:
 
 ```csharp
 [Reducer]
@@ -185,7 +180,7 @@ public static void SendMessage(ReducerContext ctx, string text)
 
 We'll want to validate messages' texts in much the same way we validate users' chosen names. As above, we'll do the bare minimum, rejecting only empty messages.
 
-In `server/Lib.cs`, add to the `Module` class:
+In `spacetimedb/Lib.cs`, add to the `Module` class:
 
 ```csharp
 /// Takes a message's text and checks if it's acceptable to send.
@@ -210,7 +205,7 @@ In C# modules, you can register for `Connect` and `Disconnect` events by using a
 
 We'll use `reducerContext.Db.User.Identity.Find` to look up a `User` row for `ctx.Sender`, if one exists. If we find one, we'll use `reducerContext.Db.User.Identity.Update` to overwrite it with a row that has `Online: true`. If not, we'll use `User.Insert` to insert a new row for our new user. All three of these methods are generated by the `[SpacetimeDB.Table]` attribute, with rows and behavior based on the row attributes. `User.Identity.Find` returns a nullable `User`, because the unique constraint from the `[PrimaryKey]` attribute means there will be either zero or one matching rows. `Insert` will throw an exception if the insert violates this constraint; if we want to overwrite a `User` row, we need to do so explicitly using `User.Identity.Update`.
 
-In `server/Lib.cs`, add the definition of the connect reducer to the `Module` class:
+In `spacetimedb/Lib.cs`, add the definition of the connect reducer to the `Module` class:
 
 ```csharp
 [Reducer(ReducerKind.ClientConnected)]
@@ -274,7 +269,7 @@ And that's all of our module code! We'll run `spacetime publish` to compile our 
 From the `quickstart-chat` directory, run:
 
 ```bash
-spacetime publish --project-path server quickstart-chat
+spacetime publish --server local --project-path spacetimedb quickstart-chat
 ```
 
 Note: If the WebAssembly optimizer `wasm-opt` is installed, `spacetime publish` will automatically optimize the Web Assembly output of the published module. Instruction for installing the `wasm-opt` binary can be found in [Rust's wasm-opt documentation](https://docs.rs/wasm-opt/latest/wasm_opt/).
@@ -284,13 +279,13 @@ Note: If the WebAssembly optimizer `wasm-opt` is installed, `spacetime publish` 
 You can use the CLI (command line interface) to run reducers. The arguments to the reducer are passed in JSON format.
 
 ```bash
-spacetime call quickstart-chat SendMessage "Hello, World!"
+spacetime call --server local quickstart-chat SendMessage "Hello, World!"
 ```
 
 Once we've called our `SendMessage` reducer, we can check to make sure it ran by running the `logs` command.
 
 ```bash
-spacetime logs quickstart-chat
+spacetime logs --server local quickstart-chat
 ```
 
 You should now see the output that your module printed in the database.
@@ -304,7 +299,7 @@ info: Hello, World!
 SpacetimeDB supports a subset of the SQL syntax so that you can easily query the data of your database. We can run a query using the `sql` command.
 
 ```bash
-spacetime sql quickstart-chat "SELECT * FROM message"
+spacetime sql --server local quickstart-chat "SELECT * FROM message"
 ```
 
 ```bash

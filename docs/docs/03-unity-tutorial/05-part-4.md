@@ -6,7 +6,7 @@ slug: /tutorials/unity/part-4
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unity Tutorial - Part 4 - Moving and Colliding
+# Moving and Colliding
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
@@ -238,9 +238,9 @@ pub struct MoveAllPlayersTimer {
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
-const START_PLAYER_SPEED: u32 = 10;
+const START_PLAYER_SPEED: i32 = 10;
 
-fn mass_to_max_move_speed(mass: u32) -> f32 {
+fn mass_to_max_move_speed(mass: i32) -> f32 {
     2.0 * START_PLAYER_SPEED as f32 / (1.0 + (mass as f32 / START_PLAYER_MASS as f32).sqrt())
 }
 
@@ -289,9 +289,9 @@ public partial struct MoveAllPlayersTimer
     public ScheduleAt scheduled_at;
 }
 
-const uint START_PLAYER_SPEED = 10;
+const int START_PLAYER_SPEED = 10;
 
-public static float MassToMaxMoveSpeed(uint mass) => 2f * START_PLAYER_SPEED / (1f + MathF.Sqrt((float)mass / START_PLAYER_MASS));
+public static float MassToMaxMoveSpeed(int mass) => 2f * START_PLAYER_SPEED / (1f + MathF.Sqrt((float)mass / START_PLAYER_MASS));
 
 [Reducer]
 public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
@@ -363,7 +363,7 @@ spacetime publish --server local blackholio --delete-data
 Regenerate your server bindings with:
 
 ```sh
-spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen
+spacetime generate --lang csharp --out-dir ../Assets/module_bindings
 ```
 
 ### Moving on the Client
@@ -604,7 +604,7 @@ Notice that the food automatically respawns as you vaccuum them up. This is beca
 
 ## Connecting to Maincloud
 
-- Publish to Maincloud `spacetime publish -s maincloud <your database name> --delete-data`
+- Publish to Maincloud `spacetime publish --server maincloud <your database name> --delete-data`
   - `<your database name>` This name should be unique and cannot contain any special characters other than internal hyphens (`-`).
 - Update the URL in the Unity project to: `https://maincloud.spacetimedb.com`
 - Update the module name in the Unity project to `<your database name>`.
@@ -626,7 +626,7 @@ private void Start()
 }
 ```
 
-To delete your Maincloud database, you can run: `spacetime delete -s maincloud <your database name>`
+To delete your Maincloud database, you can run: `spacetime delete --server maincloud <your database name>`
 
 # Conclusion
 

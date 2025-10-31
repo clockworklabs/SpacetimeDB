@@ -165,12 +165,43 @@ impl MutTxId {
 }
 
 impl Datastore for MutTxId {
-    fn blob_store(&self) -> &dyn BlobStore {
-        &self.committed_state_write_lock.blob_store
+    type TableIter<'a>
+        = IterMutTx<'a>
+    where
+        Self: 'a;
+
+    type IndexIter<'a>
+        = IndexScanRanged<'a>
+    where
+        Self: 'a;
+
+    fn row_count(&self, table_id: TableId) -> u64 {
+        self.table_row_count(table_id).unwrap_or_default()
     }
 
-    fn table(&self, table_id: TableId) -> Option<&Table> {
-        self.committed_state_write_lock.get_table(table_id)
+    fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {
+        Ok(self.iter(table_id)?)
+    }
+
+    fn index_scan<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> anyhow::Result<Self::IndexIter<'a>> {
+        // Extract the table id, and commit/tx indices.
+        let (_, commit_index, tx_index) = self
+            .get_table_and_index(index_id)
+            .ok_or_else(|| IndexError::NotFound(index_id))?;
+
+        // Get an index seek iterator for the tx and committed state.
+        let tx_iter = tx_index.map(|i| i.seek_range(range));
+        let commit_iter = commit_index.seek_range(range);
+
+        let dt = self.tx_state.get_delete_table(table_id);
+        let iter = combine_range_index_iters(dt, tx_iter, commit_iter);
+
+        Ok(iter)
     }
 }
 

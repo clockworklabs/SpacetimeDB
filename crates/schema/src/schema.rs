@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::def::{
     ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
-    SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef, ViewParamDef,
+    SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
 };
 use crate::identifier::Identifier;
 
@@ -603,68 +603,68 @@ impl TableSchema {
     /// fn my_anonymous_view(ctx: &AnonymousViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
     /// ```
     ///
-    /// The above views are materialized with the following schemas:
+    /// The above views are materialized with the following schema:
     ///
     /// my_view:
     ///
-    /// | sender   | x   | y   | a   | b   |
-    /// |----------|-----|-----|-----|-----|
-    /// | Identity | u32 | u32 | u32 | u32 |
+    /// | sender         | arg_id | a   | b   |
+    /// |----------------|--------|-----|-----|
+    /// | (some = 0x...) | u64    | u32 | u32 |
     ///
     /// my_anonymous_view:
     ///
-    /// | x   | y   | a   | b   |
-    /// |-----|-----|-----|-----|
-    /// | u32 | u32 | u32 | u32 |
+    /// | sender      | arg_id | a   | b   |
+    /// |-------------|--------|-----|-----|
+    /// | (none = ()) | u64    | u32 | u32 |
+    ///
+    /// Note, `arg_id` is a foreign key into `st_view_arg`.
     pub fn from_view_def(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
         module_def.expect_contains(view_def);
 
         let ViewDef {
             name,
-            is_anonymous,
             is_public,
-            params: _,
-            params_for_generate: _,
-            return_type: _,
-            return_type_for_generate: _,
             return_columns,
-            param_columns,
+            ..
         } = view_def;
 
-        let num_args = param_columns.len();
-        let num_cols = return_columns.len();
-        let n = num_args + num_cols + if *is_anonymous { 0 } else { 1 };
-
+        let n = return_columns.len() + 2;
         let mut columns = Vec::with_capacity(n);
 
-        if !is_anonymous {
-            columns.push(ColumnSchema {
-                table_id: TableId::SENTINEL,
-                col_pos: ColId(0),
-                col_name: "sender".into(),
-                col_type: AlgebraicType::identity(),
-            });
-        }
+        let sender_col_name = "sender";
+        let arg_id_col_name = "arg_id";
 
-        let n = columns.len();
+        columns.push(ColumnSchema {
+            table_id: TableId::SENTINEL,
+            col_pos: ColId(0),
+            col_name: sender_col_name.into(),
+            col_type: AlgebraicType::option(AlgebraicType::identity()),
+        });
 
-        let param_iter = param_columns
-            .iter()
-            .map(|def| ColumnSchema::from_view_param_def(module_def, def));
-
-        let column_iter = return_columns
-            .iter()
-            .map(|def| ColumnSchema::from_view_column_def(module_def, def));
+        columns.push(ColumnSchema {
+            table_id: TableId::SENTINEL,
+            col_pos: ColId(1),
+            col_name: arg_id_col_name.into(),
+            col_type: AlgebraicType::U64,
+        });
 
         columns.extend(
-            param_iter
-                .chain(column_iter)
+            return_columns
+                .iter()
+                .map(|def| ColumnSchema::from_view_column_def(module_def, def))
                 .enumerate()
-                .map(|(i, schema)| ColumnSchema {
-                    col_pos: (n + i).into(),
-                    ..schema
-                }),
+                .map(|(i, schema)| (ColId::from(i + 2), schema))
+                .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema }),
         );
+
+        let index_name = format!("{}_{}_{}_idx_btree", name, sender_col_name, arg_id_col_name);
+
+        let indexes = vec![IndexSchema {
+            index_id: IndexId::SENTINEL,
+            table_id: TableId::SENTINEL,
+            index_name: index_name.into_boxed_str(),
+            index_algorithm: IndexAlgorithm::BTree(col_list![0, 1].into()),
+        }];
 
         let table_access = if *is_public {
             StAccess::Public
@@ -676,7 +676,7 @@ impl TableSchema {
             TableId::SENTINEL,
             (*name).clone().into(),
             columns,
-            vec![],
+            indexes,
             vec![],
             vec![],
             StTableType::User,
@@ -881,18 +881,6 @@ impl ColumnSchema {
     }
 
     fn from_view_column_def(module_def: &ModuleDef, def: &ViewColumnDef) -> Self {
-        let col_type = WithTypespace::new(module_def.typespace(), &def.ty)
-            .resolve_refs()
-            .expect("validated module should have all types resolve");
-        ColumnSchema {
-            table_id: TableId::SENTINEL,
-            col_pos: def.col_id,
-            col_name: (*def.name).into(),
-            col_type,
-        }
-    }
-
-    fn from_view_param_def(module_def: &ModuleDef, def: &ViewParamDef) -> Self {
         let col_type = WithTypespace::new(module_def.typespace(), &def.ty)
             .resolve_refs()
             .expect("validated module should have all types resolve");

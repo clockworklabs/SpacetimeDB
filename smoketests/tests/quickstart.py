@@ -121,7 +121,6 @@ class BaseQuickstart(Smoketest):
     def _publish(self) -> Path:
         base_path = Path(self.enterClassContext(tempfile.TemporaryDirectory()))
         server_path = base_path / "server"
-        self.project_path = server_path
 
         self.generate_server(server_path)
         self.publish_module(f"quickstart-chat-{self.lang}", capture_stderr=True, clear=True)
@@ -130,12 +129,21 @@ class BaseQuickstart(Smoketest):
     def generate_server(self, server_path: Path):
         """Generate the server code from the quickstart documentation."""
         logging.info(f"Generating server code {self.lang}: {server_path}...")
-        self.spacetime("init", "--lang", self.lang, server_path, capture_stderr=True)
-        shutil.copy2(STDB_DIR / "rust-toolchain.toml", server_path)
-        # Replay the quickstart guide steps
-        _write_file(server_path / self.server_file, _parse_quickstart(self.server_doc, self.lang))
-        self.server_postprocess(server_path)
-        self.spacetime("build", "-d", "-p", server_path, capture_stderr=True)
+        self.spacetime(
+            "init",
+            "--non-interactive",
+            "--lang",
+            self.lang,
+            "--project-path",
+            server_path,
+            "spacetimedb-project",
+            capture_stderr=True,
+        )
+        self.project_path = server_path / "spacetimedb"
+        shutil.copy2(STDB_DIR / "rust-toolchain.toml", self.project_path)
+        _write_file(self.project_path / self.server_file, _parse_quickstart(self.server_doc, self.lang))
+        self.server_postprocess(self.project_path)
+        self.spacetime("build", "-d", "-p", self.project_path, capture_stderr=True)
 
     def server_postprocess(self, server_path: Path):
         """Optional per-language hook."""
