@@ -51,7 +51,7 @@ REMOTE_SERVER = False
 COMPOSE_FILE = "./docker-compose.yml"
 
 # this will be initialized by main()
-STDB_CONFIG = None
+STDB_CONFIG = ''
 
 # we need to late-bind the output stream to allow unittests to capture stdout/stderr.
 class CapturableHandler(logging.StreamHandler):
