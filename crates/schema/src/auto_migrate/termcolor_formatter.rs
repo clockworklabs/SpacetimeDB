@@ -5,8 +5,6 @@ use spacetimedb_lib::{db::raw_def::v9::TableAccess, AlgebraicType};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use termcolor::{Buffer, Color, ColorChoice, ColorSpec, WriteColor};
 
-use crate::auto_migrate::formatter::ViewInfo;
-
 use super::formatter::{
     AccessChangeInfo, Action, ColumnChange, ColumnChanges, ConstraintInfo, IndexInfo, MigrationFormatter, NewColumns,
     RlsInfo, ScheduleInfo, SequenceInfo, TableInfo,
@@ -222,48 +220,6 @@ impl MigrationFormatter for TermColorFormatter {
             self.write_colored_line("Schedule:", Some(self.colors.section_header), true)?;
             self.indent();
             self.write_bullet(&format!("Calls {}: {}", s.function_kind, s.function_name))?;
-            self.dedent();
-        }
-
-        self.dedent();
-        self.write_line("")
-    }
-
-    fn format_view(&mut self, view: &ViewInfo, action: Action) -> io::Result<()> {
-        self.write_indent()?;
-        self.buffer.write_all("▸ ".to_string().as_bytes())?;
-        self.write_action_prefix(&action)?;
-        self.buffer.write_all(if view.is_anonymous {
-            b" anonymous view: "
-        } else {
-            b" view: "
-        })?;
-        self.write_colored(&view.name, Some(self.colors.table_name), true)?;
-        self.buffer.write_all(b"\n")?;
-
-        self.indent();
-
-        if !view.params.is_empty() {
-            self.write_colored_line("Parameters:", Some(self.colors.section_header), true)?;
-            self.indent();
-            for col in &view.params {
-                self.write_indent()?;
-                self.buffer.write_all(format!("• {}: ", col.name).as_bytes())?;
-                self.write_type_name(&col.type_name)?;
-                self.buffer.write_all(b"\n")?;
-            }
-            self.dedent();
-        }
-
-        if !view.columns.is_empty() {
-            self.write_colored_line("Columns:", Some(self.colors.section_header), true)?;
-            self.indent();
-            for col in &view.columns {
-                self.write_indent()?;
-                self.buffer.write_all(format!("• {}: ", col.name).as_bytes())?;
-                self.write_type_name(&col.type_name)?;
-                self.buffer.write_all(b"\n")?;
-            }
             self.dedent();
         }
 

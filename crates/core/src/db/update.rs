@@ -7,7 +7,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
-use spacetimedb_schema::def::{TableDef, ViewDef};
+use spacetimedb_schema::def::TableDef;
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
 
 /// The logger used for by [`update_database`] and friends.
@@ -136,17 +136,6 @@ fn auto_migrate_database(
                 log!(logger, "Creating table `{table_name}`");
 
                 stdb.create_table(tx, table_schema)?;
-            }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddView(view_name) => {
-                let view_def: &ViewDef = plan.new.expect_lookup(view_name);
-                stdb.create_view(tx, plan.new, view_def)?;
-            }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveView(view_name) => {
-                let view_id = stdb.view_id_from_name_mut(tx, view_name)?.unwrap();
-                stdb.drop_view(tx, view_id)?;
-            }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::UpdateView(_) => {
-                unimplemented!("Recompute view and update its backing table")
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddIndex(index_name) => {
                 let table_def = plan.new.stored_in_table_def(index_name).unwrap();

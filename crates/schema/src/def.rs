@@ -240,12 +240,6 @@ impl ModuleDef {
         self.tables.get(name)
     }
 
-    /// Convenience method to look up a view, possibly by a string.
-    pub fn view<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ViewDef> {
-        // If the string IS a valid identifier, we can just look it up.
-        self.views.get(name)
-    }
-
     /// Convenience method to look up a reducer, possibly by a string.
     pub fn reducer<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ReducerDef> {
         // If the string IS a valid identifier, we can just look it up.
@@ -719,67 +713,6 @@ pub struct ColumnDef {
     pub default_value: Option<AlgebraicValue>,
 }
 
-/// A struct representing a validated view column
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct ViewColumnDef {
-    /// The name of the column.
-    pub name: Identifier,
-
-    /// The position of this column in the view's return type.
-    pub col_id: ColId,
-
-    /// The type of this column.
-    pub ty: AlgebraicType,
-
-    /// The type of the column, formatted for client code generation.
-    pub ty_for_generate: AlgebraicTypeUse,
-
-    /// The view this def is stored in.
-    pub view_name: Identifier,
-}
-
-impl From<ColumnDef> for ViewColumnDef {
-    fn from(
-        ColumnDef {
-            name,
-            col_id,
-            ty,
-            ty_for_generate,
-            table_name: view_name,
-            ..
-        }: ColumnDef,
-    ) -> Self {
-        Self {
-            name,
-            col_id,
-            ty,
-            ty_for_generate,
-            view_name,
-        }
-    }
-}
-
-/// A struct representing a validated view parameter
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct ViewParamDef {
-    /// The name of the parameter.
-    pub name: Identifier,
-
-    /// The position of this parameter in the view's parameter list.
-    pub col_id: ColId,
-
-    /// The type of this parameter.
-    pub ty: AlgebraicType,
-
-    /// The type of the parameter, formatted for client code generation.
-    pub ty_for_generate: AlgebraicTypeUse,
-
-    /// The view this def is stored in.
-    pub view_name: Identifier,
-}
-
 /// A constraint definition attached to a table.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ConstraintDef {
@@ -1078,27 +1011,10 @@ pub struct ViewDef {
     /// The return type of the view, formatted for client codegen.
     pub return_type_for_generate: AlgebraicTypeUse,
 
-    /// The return columns of this view.
+    /// The columns of this view.
     /// The same information is stored in `return_type`.
     /// This is just a more convenient-to-access format.
-    pub return_columns: Vec<ViewColumnDef>,
-
-    /// The columns that track the arguments of this view.
-    /// The same information is stored in `params`.
-    /// This is just a more convenient-to-access format.
-    pub param_columns: Vec<ViewParamDef>,
-}
-
-impl ViewDef {
-    /// Get a column by the column's name.
-    pub fn get_column_by_name(&self, name: &Identifier) -> Option<&ViewColumnDef> {
-        self.return_columns.iter().find(|c| &c.name == name)
-    }
-
-    /// Get a parameter by the parameter's name.
-    pub fn get_param_by_name(&self, name: &Identifier) -> Option<&ViewParamDef> {
-        self.param_columns.iter().find(|c| &c.name == name)
-    }
+    pub columns: Vec<ColumnDef>,
 }
 
 impl From<ViewDef> for RawViewDefV9 {
@@ -1111,8 +1027,7 @@ impl From<ViewDef> for RawViewDefV9 {
             params_for_generate: _,
             return_type,
             return_type_for_generate: _,
-            return_columns: _,
-            param_columns: _,
+            columns: _,
         } = val;
         RawViewDefV9 {
             name: name.into(),
@@ -1259,40 +1174,6 @@ impl ModuleDefLookup for ColumnDef {
             .tables
             .get(table_name)
             .and_then(|table| table.get_column_by_name(name))
-    }
-}
-
-impl ModuleDefLookup for ViewColumnDef {
-    // We don't use `ColId` here because we want this to be portable
-    // across migrations.
-    type Key<'a> = (&'a Identifier, &'a Identifier);
-
-    fn key(&self) -> Self::Key<'_> {
-        (&self.view_name, &self.name)
-    }
-
-    fn lookup<'a>(module_def: &'a ModuleDef, (view_name, name): Self::Key<'_>) -> Option<&'a Self> {
-        module_def
-            .views
-            .get(view_name)
-            .and_then(|view| view.get_column_by_name(name))
-    }
-}
-
-impl ModuleDefLookup for ViewParamDef {
-    // We don't use `ColId` here because we want this to be portable
-    // across migrations.
-    type Key<'a> = (&'a Identifier, &'a Identifier);
-
-    fn key(&self) -> Self::Key<'_> {
-        (&self.view_name, &self.name)
-    }
-
-    fn lookup<'a>(module_def: &'a ModuleDef, (view_name, name): Self::Key<'_>) -> Option<&'a Self> {
-        module_def
-            .views
-            .get(view_name)
-            .and_then(|view| view.get_param_by_name(name))
     }
 }
 
