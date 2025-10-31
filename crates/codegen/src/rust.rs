@@ -343,26 +343,11 @@ pub(super) fn parse_table_update(
 
         let callback_id = reducer_callback_id_name(&reducer.name);
 
-        // The reducer arguments as `ident: ty, ident: ty, ident: ty,`,
-        // like an argument list.
-        let mut arglist = String::new();
-        write_arglist_no_delimiters(module, &mut arglist, &reducer.params_for_generate.elements, None).unwrap();
-
-        // The reducer argument types as `&ty, &ty, &ty`,
-        // for use as the params in a `FnMut` closure type.
-        let mut arg_types_ref_list = String::new();
-        // The reducer argument names as `ident, ident, ident`,
-        // for passing to function call and struct literal expressions.
-        let mut arg_names_list = String::new();
-        for (arg_ident, arg_ty) in &reducer.params_for_generate.elements[..] {
-            arg_types_ref_list += "&";
-            write_type(module, &mut arg_types_ref_list, arg_ty).unwrap();
-            arg_types_ref_list += ", ";
-
-            let arg_name = arg_ident.deref().to_case(Case::Snake);
-            arg_names_list += &arg_name;
-            arg_names_list += ", ";
-        }
+        let FormattedArglist {
+            arglist_no_delimiters,
+            arg_type_refs,
+            arg_names,
+        } = FormattedArglist::for_arguments(module, &reducer.params_for_generate.elements);
 
         write!(out, "impl From<{args_type}> for super::Reducer ");
         out.delimited_block(
@@ -417,7 +402,7 @@ pub trait {func_name} {{
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_{func_name}`] callbacks.
-    fn {func_name}(&self, {arglist}) -> __sdk::Result<()>;
+    fn {func_name}(&self, {arglist_no_delimiters}) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `{reducer_name}`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -425,19 +410,19 @@ pub trait {func_name} {{
     ///
     /// The returned [`{callback_id}`] can be passed to [`Self::remove_on_{func_name}`]
     /// to cancel the callback.
-    fn on_{func_name}(&self, callback: impl FnMut(&super::ReducerEventContext, {arg_types_ref_list}) + Send + 'static) -> {callback_id};
+    fn on_{func_name}(&self, callback: impl FnMut(&super::ReducerEventContext, {arg_type_refs}) + Send + 'static) -> {callback_id};
     /// Cancel a callback previously registered by [`Self::on_{func_name}`],
     /// causing it not to run in the future.
     fn remove_on_{func_name}(&self, callback: {callback_id});
 }}
 
 impl {func_name} for super::RemoteReducers {{
-    fn {func_name}(&self, {arglist}) -> __sdk::Result<()> {{
-        self.imp.call_reducer({reducer_name:?}, {args_type} {{ {arg_names_list} }})
+    fn {func_name}(&self, {arglist_no_delimiters}) -> __sdk::Result<()> {{
+        self.imp.call_reducer({reducer_name:?}, {args_type} {{ {arg_names} }})
     }}
     fn on_{func_name}(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, {arg_types_ref_list}) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, {arg_type_refs}) + Send + 'static,
     ) -> {callback_id} {{
         {callback_id}(self.imp.on_reducer(
             {reducer_name:?},
@@ -445,13 +430,13 @@ impl {func_name} for super::RemoteReducers {{
                 let super::ReducerEventContext {{
                     event: __sdk::ReducerEvent {{
                         reducer: super::Reducer::{enum_variant_name} {{
-                            {arg_names_list}
+                            {arg_names}
                         }},
                         ..
                     }},
                     ..
                 }} = ctx else {{ unreachable!() }};
-                callback(ctx, {arg_names_list})
+                callback(ctx, {arg_names})
             }}),
         ))
     }}
@@ -524,26 +509,11 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
 
         out.newline();
 
-        // The arguments as `ident: ty, ident: ty, ident: ty,`,
-        // like an argument list.
-        let mut arglist = String::new();
-        write_arglist_no_delimiters(module, &mut arglist, &procedure.params_for_generate.elements, None).unwrap();
-
-        // The argument types as `&ty, &ty, &ty`,
-        // for use as the params in a `FnMut` closure type.
-        let mut arg_types_ref_list = String::new();
-        // The argument names as `ident, ident, ident`,
-        // for passing to function call and struct literal expressions.
-        let mut arg_names_list = String::new();
-        for (arg_ident, arg_ty) in &procedure.params_for_generate.elements[..] {
-            arg_types_ref_list += "&";
-            write_type(module, &mut arg_types_ref_list, arg_ty).unwrap();
-            arg_types_ref_list += ", ";
-
-            let arg_name = arg_ident.deref().to_case(Case::Snake);
-            arg_names_list += &arg_name;
-            arg_names_list += ", ";
-        }
+        let FormattedArglist {
+            arglist_no_delimiters,
+            arg_names,
+            ..
+        } = FormattedArglist::for_arguments(module, &procedure.params_for_generate.elements);
 
         writeln!(
             out,
@@ -557,13 +527,13 @@ impl __sdk::InModule for {args_type} {{
 ///
 /// Implemented for [`super::RemoteProcedures`].
 pub trait {func_name} {{
-    fn {func_name}(&self, {arglist}) {{
-        self.{func_name_with_callback}({arg_names_list} |_, _| {{}});
+    fn {func_name}(&self, {arglist_no_delimiters}) {{
+        self.{func_name_with_callback}({arg_names} |_, _| {{}});
     }}
 
     fn {func_name_with_callback}(
         &self,
-        {arglist}
+        {arglist_no_delimiters}
         __callback: impl FnOnce(&super::ProcedureEventContext, Result<{res_ty_name}, __sdk::InternalError>) + Send + 'static,
     );
 }}
@@ -571,12 +541,12 @@ pub trait {func_name} {{
 impl {func_name} for super::RemoteProcedures {{
     fn {func_name_with_callback}(
         &self,
-        {arglist}
+        {arglist_no_delimiters}
         __callback: impl FnOnce(&super::ProcedureEventContext, Result<{res_ty_name}, __sdk::InternalError>) + Send + 'static,
     ) {{
         self.imp.invoke_procedure_with_callback::<_, {res_ty_name}>(
             {procedure_name:?},
-            {args_type} {{ {arg_names_list} }},
+            {args_type} {{ {arg_names} }},
             __callback,
         );
     }}
@@ -689,6 +659,51 @@ pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     let mut s = String::new();
     write_type(module, &mut s, ty).unwrap();
     s
+}
+
+/// Arguments to a reducer or procedure pretty-printed in various ways that are convenient to compute together.
+struct FormattedArglist {
+    /// The arguments as `ident: ty, ident: ty, ident: ty,`,
+    /// like an argument list.
+    ///
+    /// Always carries a trailing comma, unless it's zero elements.
+    arglist_no_delimiters: String,
+    /// The argument types as `&ty, &ty, &ty,`,
+    /// for use as the params in a function/closure type.
+    ///
+    /// Always carries a trailing comma, unless it's zero elements.
+    arg_type_refs: String,
+    /// The argument names as `ident, ident, ident,`,
+    /// for passing to function call and struct literal expressions.
+    ///
+    /// Always carries a trailing comma, unless it's zero elements.
+    arg_names: String,
+}
+
+impl FormattedArglist {
+    fn for_arguments(module: &ModuleDef, params: &[(Identifier, AlgebraicTypeUse)]) -> Self {
+        let mut arglist_no_delimiters = String::new();
+        write_arglist_no_delimiters(module, &mut arglist_no_delimiters, params, None)
+            .expect("Writing to a String failed... huh?");
+
+        let mut arg_type_refs = String::new();
+        let mut arg_names = String::new();
+        for (arg_ident, arg_ty) in params {
+            arg_type_refs += "&";
+            write_type(module, &mut arg_type_refs, arg_ty).expect("Writing to a String failed... huh?");
+            arg_type_refs += ", ";
+
+            let arg_name = arg_ident.deref().to_case(Case::Snake);
+            arg_names += &arg_name;
+            arg_names += ", ";
+        }
+
+        Self {
+            arglist_no_delimiters,
+            arg_type_refs,
+            arg_names,
+        }
+    }
 }
 
 const ALLOW_LINTS: &str = "#![allow(unused, clippy::all)]";

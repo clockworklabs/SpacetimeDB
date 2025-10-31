@@ -370,6 +370,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 let msg = ws::ClientMessage::CallReducer(ws::CallReducer {
                     reducer: reducer.into(),
                     args: args_bsatn.into(),
+                    // We could call `next_request_id` to get a unique ID to include here,
+                    // but we don't have any use for such an ID, so we don't bother.
                     request_id: 0,
                     flags,
                 });
@@ -380,6 +382,35 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .ok_or(crate::Error::Disconnected)?
                     .unbounded_send(msg)
                     .expect("Unable to send reducer call message: WS sender loop has dropped its recv channel");
+            }
+
+            // Invoke a procedure: stash its callback, then send the `CallProcedure` WS message.
+            PendingMutation::InvokeProcedureWithCallback {
+                procedure,
+                args,
+                callback,
+            } => {
+                // We need to include a request_id in the message so that we can find the callback once it completes.
+                let request_id = next_request_id();
+                self.inner
+                    .lock()
+                    .unwrap()
+                    .procedure_callbacks
+                    .insert(request_id, callback);
+
+                let msg = ws::ClientMessage::CallProcedure(ws::CallProcedure {
+                    procedure: procedure.into(),
+                    args: args.into(),
+                    request_id,
+                    flags: ws::CallProcedureFlags::Default,
+                });
+                self.send_chan
+                    .lock()
+                    .unwrap()
+                    .as_mut()
+                    .ok_or(crate::Error::Disconnected)?
+                    .unbounded_send(msg)
+                    .expect("Unable to send procedure call message: WS sender loop has dropped its recv channel");
             }
 
             // Disconnect: close the connection.
@@ -479,32 +510,6 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .unwrap()
                     .call_reducer_flags
                     .set_flags(reducer_name, flags);
-            }
-            PendingMutation::InvokeProcedureWithCallback {
-                procedure,
-                args,
-                callback,
-            } => {
-                let request_id = next_request_id();
-                self.inner
-                    .lock()
-                    .unwrap()
-                    .procedure_callbacks
-                    .insert(request_id, callback);
-
-                let msg = ws::ClientMessage::CallProcedure(ws::CallProcedure {
-                    procedure: procedure.into(),
-                    args: args.into(),
-                    request_id,
-                    flags: ws::CallProcedureFlags::Default,
-                });
-                self.send_chan
-                    .lock()
-                    .unwrap()
-                    .as_mut()
-                    .ok_or(crate::Error::Disconnected)?
-                    .unbounded_send(msg)
-                    .expect("Unable to send procedure call message: WS sender loop has dropped its recv channel");
             }
         };
         Ok(())
