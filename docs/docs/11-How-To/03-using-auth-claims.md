@@ -13,7 +13,7 @@ Within a SpacetimeDB reducer, you can access the auth claims from a client's tok
 
 ## Accessing Common Claims: Subject and Issuer
 
-The subject (`sub`) and issuer (`iss`) are the most commonly accessed claims in a JWT. The subject usually represents the user's unique identifier, while the issuer indicates which authentication provider issued the token. These are required claims, which are used to compute each user's `Identity`. Because these are so commonly used, there are helper functions to get them.
+The subject (`sub`) and issuer (`iss`) are the most commonly accessed claims in a JWT. The issuer indicates which authentication provider issued the token, and the subject represents the unique identifier assigned to the user by the issuer. These are required claims, which are used to compute each user's `Identity`. Because these are so commonly used, there are helper functions to get them.
 
 <Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="rust" label="Rust">
