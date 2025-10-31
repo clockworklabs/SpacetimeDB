@@ -12,7 +12,7 @@ use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
-use crate::host::{FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError, ReducerCallResult};
+use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::messages::websocket::Subscribe;
 use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
@@ -809,7 +809,7 @@ impl ClientConnection {
     pub async fn call_reducer(
         &self,
         reducer: &str,
-        args: FunctionArgs,
+        args: ReducerArgs,
         request_id: RequestId,
         timer: Instant,
         flags: CallReducerFlags,

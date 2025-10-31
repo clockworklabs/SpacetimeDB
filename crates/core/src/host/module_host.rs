@@ -1,6 +1,4 @@
-use super::{
-    ArgsTuple, FunctionArgs, InvalidReducerArguments, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
-};
+use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
 use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
@@ -9,7 +7,6 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
-use crate::host::InvalidFunctionArguments;
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -50,7 +47,7 @@ use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::deserialize::ArgsSeed;
+use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
@@ -887,7 +884,7 @@ impl ModuleHost {
                     None,
                     reducer_id,
                     reducer_def,
-                    FunctionArgs::Nullary,
+                    ReducerArgs::Nullary,
                     inst,
                 )?;
 
@@ -982,10 +979,10 @@ impl ModuleHost {
                 log::error!(
                     "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {err}"
                 );
-                InvalidReducerArguments(InvalidFunctionArguments {
+                InvalidReducerArguments {
                     err: err.into(),
-                    function_name: reducer_name.into(),
-                })
+                    reducer: reducer_name.into(),
+                }
                 .into()
             })
         };
@@ -1014,7 +1011,7 @@ impl ModuleHost {
                 None,
                 reducer_id,
                 reducer_def,
-                FunctionArgs::Nullary,
+                ReducerArgs::Nullary,
                 inst,
             );
 
@@ -1100,10 +1097,10 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
-        args: FunctionArgs,
+        args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
+        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
+        let args = args.into_tuple(reducer_seed)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(self
@@ -1134,11 +1131,11 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
-        args: FunctionArgs,
+        args: ReducerArgs,
         module_instance: &mut Instance,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
+        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
+        let args = args.into_tuple(reducer_seed)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(module_instance.call_reducer(
@@ -1164,7 +1161,7 @@ impl ModuleHost {
         request_id: Option<RequestId>,
         timer: Option<Instant>,
         reducer_name: &str,
-        args: FunctionArgs,
+        args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = async {
             let (reducer_id, reducer_def) = self
@@ -1243,12 +1240,10 @@ impl ModuleHost {
                     Ok(inst.call_reducer(Some(tx), params))
                 }
                 Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
-                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments(
-                    InvalidFunctionArguments {
-                        err,
-                        function_name: REDUCER.into(),
-                    },
-                ))),
+                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments {
+                    err,
+                    reducer: REDUCER.into(),
+                })),
             }
         })
         .await?
