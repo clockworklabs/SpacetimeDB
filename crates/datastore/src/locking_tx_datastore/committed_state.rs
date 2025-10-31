@@ -6,10 +6,7 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
-use crate::system_tables::{
-    ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
-    ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX,
-};
+use crate::system_tables::{ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, IndexError, TableError},
@@ -255,10 +252,6 @@ impl CommittedState {
             ST_CONNECTION_CREDENTIALS_ID,
             schemas[ST_CONNECTION_CREDENTIALS_IDX].clone(),
         );
-
-        self.create_table(ST_VIEW_ID, schemas[ST_VIEW_IDX].clone());
-        self.create_table(ST_VIEW_PARAM_ID, schemas[ST_VIEW_PARAM_IDX].clone());
-        self.create_table(ST_VIEW_COLUMN_ID, schemas[ST_VIEW_COLUMN_IDX].clone());
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
