@@ -47,7 +47,8 @@ const config: Config = {
   favicon: 'https://spacetimedb.com/favicon-32x32.png',
 
   url: 'https://spacetimedb.com',
-  baseUrl: '/docs/',
+  // this means the site is served at https://spacetimedb.com/docs/
+  baseUrl: '/docs/', 
 
   onBrokenLinks: 'throw',
   onBrokenAnchors: 'throw',
@@ -198,6 +199,7 @@ const config: Config = {
       },
     ],
   ],
+
 };
 
 export default config;
