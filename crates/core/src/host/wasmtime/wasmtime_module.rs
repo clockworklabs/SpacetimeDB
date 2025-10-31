@@ -2,13 +2,15 @@ use self::module_host_actor::ReducerOp;
 
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::{Mem, WasmtimeFuel, EPOCH_TICKS_PER_SECOND};
-use crate::energy::ReducerBudget;
+use crate::energy::FunctionBudget;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_common::run_describer;
-use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
+use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, DescribeError, InitializationError, ViewOp};
 use crate::host::wasm_common::*;
+use crate::host::wasmtime::wasm_instance_env::FuncCallType;
 use crate::util::string_from_utf8_lossy_owned;
 use futures_util::FutureExt;
+use spacetimedb_datastore::locking_tx_datastore::UniqueView;
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use wasmtime::{
@@ -40,7 +42,7 @@ impl WasmtimeModule {
         WasmtimeModule { module }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 3);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 4);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         const { assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION) };
@@ -95,6 +97,14 @@ fn handle_error_sink_code(code: i32, error: Vec<u8>) -> Result<(), Box<str>> {
     }
 }
 
+fn handle_result_sink_code(code: i32, result: Vec<u8>) -> Result<Vec<u8>, Box<str>> {
+    match code {
+        0 => Ok(result),
+        CALL_FAILURE => Err(string_from_utf8_lossy_owned(result).into()),
+        _ => Err("unknown return code".into()),
+    }
+}
+
 const CALL_FAILURE: i32 = HOST_CALL_FAILURE.get() as i32;
 
 /// Invoke `typed_func` and assert that it doesn't yield.
@@ -142,7 +152,7 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         });
 
         // Note: this budget is just for initializers
-        set_store_fuel(&mut store, ReducerBudget::DEFAULT_BUDGET.into());
+        set_store_fuel(&mut store, FunctionBudget::DEFAULT_BUDGET.into());
         store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
 
         for preinit in &func_names.preinits {
@@ -173,11 +183,21 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
 
         let call_procedure = get_call_procedure(&mut store, &instance);
 
+        let call_view = instance
+            .get_typed_func(&mut store, CALL_VIEW_DUNDER)
+            .expect("no call_view");
+
+        let call_view_anon = instance
+            .get_typed_func(&mut store, CALL_VIEW_ANON_DUNDER)
+            .expect("no call_view_anon");
+
         Ok(WasmtimeInstance {
             store,
             instance,
             call_reducer,
             call_procedure,
+            call_view,
+            call_view_anon,
         })
     }
 }
@@ -210,36 +230,77 @@ fn get_call_procedure(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -
     )
 }
 
-type CallReducerType = TypedFunc<
-    (
-        // Reducer ID,
-        u32,
-        // Sender `Identity`
-        u64,
-        u64,
-        u64,
-        u64,
-        // Sender `ConnectionId`, or 0 for none.
-        u64,
-        u64,
-        // Start timestamp.
-        u64,
-        // Args byte source.
-        u32,
-        // Errors byte sink.
-        u32,
-    ),
-    // Errno.
-    i32,
->;
 // `__call_procedure__` takes the same arguments as `__call_reducer__`.
 type CallProcedureType = CallReducerType;
+
+/// The function signature of `__call_reducer__`
+type CallReducerType = TypedFunc<
+    (
+        // ReducerId
+        u32,
+        // sender_0
+        u64,
+        // sender_1
+        u64,
+        // sender_2
+        u64,
+        // sender_3
+        u64,
+        // connection_id_0
+        u64,
+        // connection_id_1
+        u64,
+        // timestamp
+        u64,
+        // byte source id for args
+        u32,
+        // byte sink id for return
+        u32,
+    ),
+    i32,
+>;
+
+/// The function signature of `__call_view__`
+type CallViewType = TypedFunc<
+    (
+        // ViewId
+        u32,
+        // sender_0
+        u64,
+        // sender_1
+        u64,
+        // sender_2
+        u64,
+        // sender_3
+        u64,
+        // byte source id for args
+        u32,
+        // byte sink id for return
+        u32,
+    ),
+    i32,
+>;
+
+/// The function signature of `__call_view_anon__`
+type CallViewAnonType = TypedFunc<
+    (
+        // ViewId
+        u32,
+        // byte source id for args
+        u32,
+        // byte sink id for return
+        u32,
+    ),
+    i32,
+>;
 
 pub struct WasmtimeInstance {
     store: Store<WasmInstanceEnv>,
     instance: Instance,
     call_reducer: CallReducerType,
     call_procedure: Option<CallProcedureType>,
+    call_view: CallViewType,
+    call_view_anon: CallViewAnonType,
 }
 
 #[async_trait::async_trait]
@@ -269,7 +330,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> module_host_actor::ExecuteResult {
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> module_host_actor::ExecuteResult {
         let store = &mut self.store;
 
         prepare_store_for_call(store, budget);
@@ -281,7 +342,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
-        let (args_source, errors_sink) = store.data_mut().start_funcall(op.name, args_bytes, op.timestamp);
+        let (args_source, errors_sink) =
+            store
+                .data_mut()
+                .start_funcall(op.name, args_bytes, op.timestamp, FuncCallType::Reducer);
 
         let call_result = call_sync_typed_func(
             &self.call_reducer,
@@ -309,11 +373,106 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         // Compute fuel and heap usage.
         let remaining_fuel = get_store_fuel(store);
-        let remaining: ReducerBudget = remaining_fuel.into();
+        let remaining: FunctionBudget = remaining_fuel.into();
         let energy = module_host_actor::EnergyStats { budget, remaining };
         let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
         module_host_actor::ExecuteResult {
+            energy,
+            timings,
+            memory_allocation,
+            call_result,
+        }
+    }
+
+    fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> module_host_actor::ViewExecuteResult {
+        let store = &mut self.store;
+        prepare_store_for_call(store, budget);
+
+        let view = UniqueView::with_identity(*op.caller_identity, op.id, op.args.get_bsatn().clone());
+
+        // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
+        let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(*op.caller_identity);
+        // Prepare arguments to the reducer + the error sink & start timings.
+        let args_bytes = op.args.get_bsatn().clone();
+
+        let (args_source, errors_sink) =
+            store
+                .data_mut()
+                .start_funcall(op.name, args_bytes, op.timestamp, FuncCallType::View(view));
+
+        let call_result = call_sync_typed_func(
+            &self.call_view,
+            &mut *store,
+            (
+                op.id.0,
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                args_source.0,
+                errors_sink,
+            ),
+        );
+
+        // Signal that this reducer call is finished. This gets us the timings
+        // associated to our reducer call, and clears all of the instance state
+        // associated to the call.
+        let (timings, result_bytes) = store.data_mut().finish_funcall();
+
+        let call_result = call_result
+            .and_then(|code| handle_result_sink_code(code, result_bytes).map_err(|e| anyhow::anyhow!(e)))
+            .map(|r| r.into());
+
+        // Compute fuel and heap usage.
+        let remaining_fuel = get_store_fuel(store);
+        let remaining: FunctionBudget = remaining_fuel.into();
+        let energy = module_host_actor::EnergyStats { budget, remaining };
+        let memory_allocation = store.data().get_mem().memory.data_size(&store);
+
+        module_host_actor::ViewExecuteResult {
+            energy,
+            timings,
+            memory_allocation,
+            call_result,
+        }
+    }
+
+    fn call_view_anon(
+        &mut self,
+        op: AnonymousViewOp<'_>,
+        budget: FunctionBudget,
+    ) -> module_host_actor::ViewExecuteResult {
+        let store = &mut self.store;
+        prepare_store_for_call(store, budget);
+
+        let view = UniqueView::anonymous(op.id, op.args.get_bsatn().clone());
+        // Prepare arguments to the reducer + the error sink & start timings.
+        let args_bytes = op.args.get_bsatn().clone();
+
+        let (args_source, errors_sink) =
+            store
+                .data_mut()
+                .start_funcall(op.name, args_bytes, op.timestamp, FuncCallType::View(view));
+
+        let call_result =
+            call_sync_typed_func(&self.call_view_anon, &mut *store, (op.id.0, args_source.0, errors_sink));
+
+        // Signal that this reducer call is finished. This gets us the timings
+        // associated to our reducer call, and clears all of the instance state
+        // associated to the call.
+        let (timings, result_bytes) = store.data_mut().finish_funcall();
+
+        let call_result = call_result
+            .and_then(|code| handle_result_sink_code(code, result_bytes).map_err(|e| anyhow::anyhow!(e)))
+            .map(|r| r.into());
+        // Compute fuel and heap usage.
+        let remaining_fuel = get_store_fuel(store);
+        let remaining: FunctionBudget = remaining_fuel.into();
+        let energy = module_host_actor::EnergyStats { budget, remaining };
+        let memory_allocation = store.data().get_mem().memory.data_size(&store);
+
+        module_host_actor::ViewExecuteResult {
             energy,
             timings,
             memory_allocation,
@@ -329,7 +488,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     async fn call_procedure(
         &mut self,
         op: module_host_actor::ProcedureOp,
-        budget: ReducerBudget,
+        budget: FunctionBudget,
     ) -> module_host_actor::ProcedureExecuteResult {
         let store = &mut self.store;
         prepare_store_for_call(store, budget);
@@ -339,7 +498,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let [conn_id_0, conn_id_1] = prepare_connection_id_for_call(op.caller_connection_id);
 
         // Prepare arguments to the reducer + the error sink & start timings.
-        let (args_source, result_sink) = store.data_mut().start_funcall(&op.name, op.arg_bytes, op.timestamp);
+        let (args_source, result_sink) =
+            store
+                .data_mut()
+                .start_funcall(&op.name, op.arg_bytes, op.timestamp, FuncCallType::Procedure);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             return module_host_actor::ProcedureExecuteResult {
@@ -383,7 +545,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         });
 
         let remaining_fuel = get_store_fuel(store);
-        let remaining = ReducerBudget::from(remaining_fuel);
+        let remaining = FunctionBudget::from(remaining_fuel);
 
         let energy = module_host_actor::EnergyStats { budget, remaining };
         let memory_allocation = get_memory_size(store);
@@ -405,8 +567,8 @@ fn get_store_fuel(store: &impl AsContext) -> WasmtimeFuel {
     WasmtimeFuel(store.as_context().get_fuel().unwrap())
 }
 
-fn prepare_store_for_call(store: &mut Store<WasmInstanceEnv>, budget: ReducerBudget) {
-    // note that ReducerBudget being a u64 is load-bearing here - although we convert budget right back into
+fn prepare_store_for_call(store: &mut Store<WasmInstanceEnv>, budget: FunctionBudget) {
+    // note that FunctionBudget being a u64 is load-bearing here - although we convert budget right back into
     // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
     // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
     set_store_fuel(store, budget.into());
@@ -458,7 +620,7 @@ mod tests {
             &wasmtime::Engine::new(wasmtime::Config::new().consume_fuel(true)).unwrap(),
             (),
         );
-        let budget = ReducerBudget::DEFAULT_BUDGET;
+        let budget = FunctionBudget::DEFAULT_BUDGET;
         set_store_fuel(&mut store, budget.into());
         store.set_fuel(store.get_fuel().unwrap() - 10).unwrap();
         let remaining: EnergyQuanta = get_store_fuel(&store).into();
