@@ -35,7 +35,7 @@ use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
+use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{
     algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, AlgebraicValue, ProductValue,
 };
@@ -512,10 +512,6 @@ impl MutTxDatastore for Locking {
         tx.rename_table(table_id, new_name)
     }
 
-    fn view_id_from_name_mut_tx(&self, tx: &Self::MutTx, view_name: &str) -> Result<Option<ViewId>> {
-        tx.view_id_from_name(view_name)
-    }
-
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>> {
         tx.table_id_from_name(table_name)
     }
@@ -926,7 +922,6 @@ impl MutTx for Locking {
             sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
-            read_sets: <_>::default(),
             timer,
             ctx,
             metrics,
@@ -1252,13 +1247,11 @@ mod tests {
     use crate::system_tables::{
         system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
         StConstraintRow, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields,
-        StSequenceFields, StSequenceRow, StTableRow, StVarFields, StViewArgFields, StViewFields, ST_CLIENT_NAME,
-        ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID,
-        ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE,
-        ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID,
-        ST_SEQUENCE_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID, ST_VIEW_ARG_NAME, ST_VIEW_CLIENT_ID,
-        ST_VIEW_CLIENT_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
-        ST_VIEW_PARAM_NAME,
+        StSequenceFields, StSequenceRow, StTableRow, StVarFields, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME,
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
+        ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
+        ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
+        ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
     };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
@@ -1272,7 +1265,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
-    use spacetimedb_primitives::{col_list, ColId, ScheduleId, ViewId};
+    use spacetimedb_primitives::{col_list, ColId, ScheduleId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::ToBsatn;
     use spacetimedb_sats::layout::RowTypeLayout;
@@ -1711,12 +1704,6 @@ mod tests {
             TableRow { id: ST_SCHEDULED_ID.into(), name: ST_SCHEDULED_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StScheduledFields::ScheduleId.into()) },
             TableRow { id: ST_ROW_LEVEL_SECURITY_ID.into(), name: ST_ROW_LEVEL_SECURITY_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StRowLevelSecurityFields::Sql.into()) },
             TableRow { id: ST_CONNECTION_CREDENTIALS_ID.into(), name: ST_CONNECTION_CREDENTIALS_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(StConnectionCredentialsFields::ConnectionId.into()) },
-            TableRow { id: ST_VIEW_ID.into(), name: ST_VIEW_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StViewFields::ViewId.into()) },
-            TableRow { id: ST_VIEW_PARAM_ID.into(), name: ST_VIEW_PARAM_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
-            TableRow { id: ST_VIEW_COLUMN_ID.into(), name: ST_VIEW_COLUMN_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
-            TableRow { id: ST_VIEW_CLIENT_ID.into(), name: ST_VIEW_CLIENT_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
-            TableRow { id: ST_VIEW_ARG_ID.into(), name: ST_VIEW_ARG_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StViewArgFields::Id.into()) },
-
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
@@ -1775,30 +1762,6 @@ mod tests {
 
             ColRow { table: ST_CONNECTION_CREDENTIALS_ID.into(), pos: 0, name: "connection_id", ty: AlgebraicType::U128 },
             ColRow { table: ST_CONNECTION_CREDENTIALS_ID.into(), pos: 1, name: "jwt_payload", ty: AlgebraicType::String },
-
-            ColRow { table: ST_VIEW_ID.into(), pos: 0, name: "view_id", ty: ViewId::get_type() },
-            ColRow { table: ST_VIEW_ID.into(), pos: 1, name: "view_name", ty: AlgebraicType::String },
-            ColRow { table: ST_VIEW_ID.into(), pos: 2, name: "table_id", ty: AlgebraicType::option(TableId::get_type()) },
-            ColRow { table: ST_VIEW_ID.into(), pos: 3, name: "is_public", ty: AlgebraicType::Bool },
-            ColRow { table: ST_VIEW_ID.into(), pos: 4, name: "is_anonymous", ty: AlgebraicType::Bool },
-
-            ColRow { table: ST_VIEW_PARAM_ID.into(), pos: 0, name: "view_id", ty: ViewId::get_type() },
-            ColRow { table: ST_VIEW_PARAM_ID.into(), pos: 1, name: "param_pos", ty: ColId::get_type() },
-            ColRow { table: ST_VIEW_PARAM_ID.into(), pos: 2, name: "param_name", ty: AlgebraicType::String },
-            ColRow { table: ST_VIEW_PARAM_ID.into(), pos: 3, name: "param_type", ty: AlgebraicType::bytes() },
-
-            ColRow { table: ST_VIEW_COLUMN_ID.into(), pos: 0, name: "view_id", ty: ViewId::get_type() },
-            ColRow { table: ST_VIEW_COLUMN_ID.into(), pos: 1, name: "col_pos", ty: ColId::get_type() },
-            ColRow { table: ST_VIEW_COLUMN_ID.into(), pos: 2, name: "col_name", ty: AlgebraicType::String },
-            ColRow { table: ST_VIEW_COLUMN_ID.into(), pos: 3, name: "col_type", ty: AlgebraicType::bytes() },
-
-            ColRow { table: ST_VIEW_CLIENT_ID.into(), pos: 0, name: "view_id", ty: ViewId::get_type() },
-            ColRow { table: ST_VIEW_CLIENT_ID.into(), pos: 1, name: "arg_id", ty: AlgebraicType::U64 },
-            ColRow { table: ST_VIEW_CLIENT_ID.into(), pos: 2, name: "identity", ty: AlgebraicType::U256 },
-            ColRow { table: ST_VIEW_CLIENT_ID.into(), pos: 3, name: "connection_id", ty: AlgebraicType::U128 },
-
-            ColRow { table: ST_VIEW_ARG_ID.into(), pos: 0, name: "id", ty: AlgebraicType::U64 },
-            ColRow { table: ST_VIEW_ARG_ID.into(), pos: 1, name: "bytes", ty: AlgebraicType::bytes() },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1815,14 +1778,6 @@ mod tests {
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
             IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
             IndexRow { id: 13, table: ST_CONNECTION_CREDENTIALS_ID.into(), col: col(0), name: "st_connection_credentials_connection_id_idx_btree", },
-            IndexRow { id: 14, table: ST_VIEW_ID.into(), col: col(0), name: "st_view_view_id_idx_btree", },
-            IndexRow { id: 15, table: ST_VIEW_ID.into(), col: col(1), name: "st_view_view_name_idx_btree", },
-            IndexRow { id: 16, table: ST_VIEW_PARAM_ID.into(), col: col_list![0, 1], name: "st_view_param_view_id_param_pos_idx_btree", },
-            IndexRow { id: 17, table: ST_VIEW_COLUMN_ID.into(), col: col_list![0, 1], name: "st_view_column_view_id_col_pos_idx_btree", },
-            IndexRow { id: 18, table: ST_VIEW_CLIENT_ID.into(), col: col_list![0, 1], name: "st_view_client_view_id_arg_id_idx_btree", },
-            IndexRow { id: 19, table: ST_VIEW_CLIENT_ID.into(), col: col_list![2, 3], name: "st_view_client_identity_connection_id_idx_btree", },
-            IndexRow { id: 20, table: ST_VIEW_ARG_ID.into(), col: col(0), name: "st_view_arg_id_idx_btree", },
-            IndexRow { id: 21, table: ST_VIEW_ARG_ID.into(), col: col(1), name: "st_view_arg_bytes_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1833,8 +1788,6 @@ mod tests {
                 SequenceRow { id: 2, table: ST_INDEX_ID.into(), col_pos: 0, name: "st_index_index_id_seq", start },
                 SequenceRow { id: 3, table: ST_CONSTRAINT_ID.into(), col_pos: 0, name: "st_constraint_constraint_id_seq", start },
                 SequenceRow { id: 4, table: ST_SCHEDULED_ID.into(), col_pos: 0, name: "st_scheduled_schedule_id_seq", start },
-                SequenceRow { id: 6, table: ST_VIEW_ID.into(), col_pos: 0, name: "st_view_view_id_seq", start },
-                SequenceRow { id: 7, table: ST_VIEW_ARG_ID.into(), col_pos: 0, name: "st_view_arg_id_seq", start },
             ],
             |row| StSequenceRow {
                 allocated: start - 1,
@@ -1855,13 +1808,7 @@ mod tests {
             ConstraintRow { constraint_id: 10, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(1), constraint_name: "st_scheduled_table_id_key", },
             ConstraintRow { constraint_id: 11, table_id: ST_ROW_LEVEL_SECURITY_ID.into(), unique_columns: col(1), constraint_name: "st_row_level_security_sql_key", },
             ConstraintRow { constraint_id: 12, table_id: ST_CONNECTION_CREDENTIALS_ID.into(), unique_columns: col(0), constraint_name: "st_connection_credentials_connection_id_key", },
-            ConstraintRow { constraint_id: 13, table_id: ST_VIEW_ID.into(), unique_columns: col(0), constraint_name: "st_view_view_id_key", },
-            ConstraintRow { constraint_id: 14, table_id: ST_VIEW_ID.into(), unique_columns: col(1), constraint_name: "st_view_view_name_key", },
-            ConstraintRow { constraint_id: 15, table_id: ST_VIEW_PARAM_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_view_param_view_id_param_pos_key", },
-            ConstraintRow { constraint_id: 16, table_id: ST_VIEW_COLUMN_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_view_column_view_id_col_pos_key", },
-            ConstraintRow { constraint_id: 17, table_id: ST_VIEW_ARG_ID.into(), unique_columns: col(0), constraint_name: "st_view_arg_id_key", },
-            ConstraintRow { constraint_id: 18, table_id: ST_VIEW_ARG_ID.into(), unique_columns: col(1), constraint_name: "st_view_arg_bytes_key", },
-            ]));
+        ]));
 
         // Verify we get back the tables correctly with the proper ids...
         let cols = query.scan_st_columns()?;
@@ -2277,14 +2224,6 @@ mod tests {
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
             IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
             IndexRow { id: 13, table: ST_CONNECTION_CREDENTIALS_ID.into(), col: col(0), name: "st_connection_credentials_connection_id_idx_btree", },
-            IndexRow { id: 14, table: ST_VIEW_ID.into(), col: col(0), name: "st_view_view_id_idx_btree", },
-            IndexRow { id: 15, table: ST_VIEW_ID.into(), col: col(1), name: "st_view_view_name_idx_btree", },
-            IndexRow { id: 16, table: ST_VIEW_PARAM_ID.into(), col: col_list![0, 1], name: "st_view_param_view_id_param_pos_idx_btree", },
-            IndexRow { id: 17, table: ST_VIEW_COLUMN_ID.into(), col: col_list![0, 1], name: "st_view_column_view_id_col_pos_idx_btree", },
-            IndexRow { id: 18, table: ST_VIEW_CLIENT_ID.into(), col: col_list![0, 1], name: "st_view_client_view_id_arg_id_idx_btree", },
-            IndexRow { id: 19, table: ST_VIEW_CLIENT_ID.into(), col: col_list![2, 3], name: "st_view_client_identity_connection_id_idx_btree", },
-            IndexRow { id: 20, table: ST_VIEW_ARG_ID.into(), col: col(0), name: "st_view_arg_id_idx_btree", },
-            IndexRow { id: 21, table: ST_VIEW_ARG_ID.into(), col: col(1), name: "st_view_arg_bytes_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -3375,7 +3314,7 @@ mod tests {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
             schedule_name: "schedule".into(),
-            function_name: "reducer".into(),
+            reducer_name: "reducer".into(),
             at_column: 1.into(),
         };
         let sum_ty = AlgebraicType::sum([("foo", AlgebraicType::Bool), ("bar", AlgebraicType::U16)]);

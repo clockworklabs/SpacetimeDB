@@ -65,17 +65,6 @@ pub const ST_ROW_LEVEL_SECURITY_ID: TableId = TableId(10);
 /// The static ID of the table that stores the credentials for each connection.
 pub const ST_CONNECTION_CREDENTIALS_ID: TableId = TableId(11);
 
-/// The static ID of the table that tracks views
-pub const ST_VIEW_ID: TableId = TableId(12);
-/// The static ID of the table that tracks view parameters
-pub const ST_VIEW_PARAM_ID: TableId = TableId(13);
-/// The static ID of the table that tracks view columns
-pub const ST_VIEW_COLUMN_ID: TableId = TableId(14);
-/// The static ID of the table that tracks the clients subscribed to each view
-pub const ST_VIEW_CLIENT_ID: TableId = TableId(15);
-/// The static ID of the table that tracks view arguments
-pub const ST_VIEW_ARG_ID: TableId = TableId(16);
-
 pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
 pub const ST_COLUMN_NAME: &str = "st_column";
@@ -87,11 +76,6 @@ pub(crate) const ST_CLIENT_NAME: &str = "st_client";
 pub(crate) const ST_SCHEDULED_NAME: &str = "st_scheduled";
 pub(crate) const ST_VAR_NAME: &str = "st_var";
 pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
-pub(crate) const ST_VIEW_NAME: &str = "st_view";
-pub(crate) const ST_VIEW_PARAM_NAME: &str = "st_view_param";
-pub(crate) const ST_VIEW_COLUMN_NAME: &str = "st_view_column";
-pub(crate) const ST_VIEW_CLIENT_NAME: &str = "st_view_client";
-pub(crate) const ST_VIEW_ARG_NAME: &str = "st_view_arg";
 /// Reserved range of sequence values used for system tables.
 ///
 /// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE`.
@@ -113,7 +97,6 @@ pub const ST_RESERVED_SEQUENCE_RANGE: u32 = 4096;
 #[derive(Debug, Display)]
 pub enum SystemTable {
     st_table,
-    st_view,
     st_column,
     st_sequence,
     st_index,
@@ -121,7 +104,7 @@ pub enum SystemTable {
     st_row_level_security,
 }
 
-pub fn system_tables() -> [TableSchema; 16] {
+pub fn system_tables() -> [TableSchema; 11] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -135,11 +118,6 @@ pub fn system_tables() -> [TableSchema; 16] {
         st_row_level_security_schema(),
         st_sequence_schema(),
         st_connection_credential_schema(),
-        st_view_schema(),
-        st_view_param_schema(),
-        st_view_column_schema(),
-        st_view_client_schema(),
-        st_view_arg_schema(),
     ]
 }
 
@@ -179,11 +157,6 @@ pub(crate) const ST_SCHEDULED_IDX: usize = 7;
 pub(crate) const ST_ROW_LEVEL_SECURITY_IDX: usize = 8;
 pub(crate) const ST_SEQUENCE_IDX: usize = 9;
 pub(crate) const ST_CONNECTION_CREDENTIALS_IDX: usize = 10;
-pub(crate) const ST_VIEW_IDX: usize = 11;
-pub(crate) const ST_VIEW_PARAM_IDX: usize = 12;
-pub(crate) const ST_VIEW_COLUMN_IDX: usize = 13;
-pub(crate) const ST_VIEW_CLIENT_IDX: usize = 14;
-pub(crate) const ST_VIEW_ARG_IDX: usize = 15;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -228,45 +201,11 @@ st_fields_enum!(enum StTableFields {
     "table_primary_key", PrimaryKey = 4,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
-st_fields_enum!(enum StViewFields {
-    "view_id", ViewId = 0,
-    "view_name", ViewName = 1,
-    "table_id", TableId = 2,
-    "is_public", IsPublic = 3,
-    "is_anonymous", IsAnonymous = 4,
-});
-// WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StColumnFields {
     "table_id", TableId = 0,
     "col_pos", ColPos = 1,
     "col_name", ColName = 2,
     "col_type", ColType = 3,
-});
-// WARNING: For a stable schema, don't change the field names and discriminants.
-st_fields_enum!(enum StViewColumnFields {
-    "view_id", ViewId = 0,
-    "col_pos", ColPos = 1,
-    "col_name", ColName = 2,
-    "col_type", ColType = 3,
-});
-// WARNING: For a stable schema, don't change the field names and discriminants.
-st_fields_enum!(enum StViewClientFields {
-    "view_id", ViewId = 0,
-    "arg_id", ArgId = 1,
-    "identity", Identity = 2,
-    "connection_id", ConnectionId = 3,
-});
-// WARNING: For a stable schema, don't change the field names and discriminants.
-st_fields_enum!(enum StViewArgFields {
-    "id", Id = 0,
-    "bytes", Bytes = 1,
-});
-// WARNING: For a stable schema, don't change the field names and discriminants.
-st_fields_enum!(enum StViewParamFields {
-    "view_id", ViewId = 0,
-    "param_pos", ParamPos = 1,
-    "param_name", ParamName = 2,
-    "param_type", ParamType = 3,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StIndexFields {
@@ -365,15 +304,6 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(StTableFields::TableName)
         .with_index_no_accessor_name(btree(StTableFields::TableName));
 
-    let st_view_type = builder.add_type::<StViewRow>();
-    builder
-        .build_table(ST_VIEW_NAME, *st_view_type.as_ref().expect("should be ref"))
-        .with_type(TableType::System)
-        .with_auto_inc_primary_key(StViewFields::ViewId)
-        .with_index_no_accessor_name(btree(StViewFields::ViewId))
-        .with_unique_constraint(StViewFields::ViewName)
-        .with_index_no_accessor_name(btree(StViewFields::ViewName));
-
     let st_raw_column_type = builder.add_type::<StColumnRow>();
     let st_col_row_unique_cols = [StColumnFields::TableId.col_id(), StColumnFields::ColPos.col_id()];
     builder
@@ -381,41 +311,6 @@ fn system_module_def() -> ModuleDef {
         .with_type(TableType::System)
         .with_unique_constraint(st_col_row_unique_cols)
         .with_index_no_accessor_name(btree(st_col_row_unique_cols));
-
-    let st_view_col_type = builder.add_type::<StViewColumnRow>();
-    let st_view_col_unique_cols = [StViewColumnFields::ViewId.col_id(), StViewColumnFields::ColPos.col_id()];
-    builder
-        .build_table(ST_VIEW_COLUMN_NAME, *st_view_col_type.as_ref().expect("should be ref"))
-        .with_type(TableType::System)
-        .with_unique_constraint(st_view_col_unique_cols)
-        .with_index_no_accessor_name(btree(st_view_col_unique_cols));
-
-    let st_view_param_type = builder.add_type::<StViewParamRow>();
-    let st_view_param_unique_cols = [StViewParamFields::ViewId.col_id(), StViewParamFields::ParamPos.col_id()];
-    builder
-        .build_table(ST_VIEW_PARAM_NAME, *st_view_param_type.as_ref().expect("should be ref"))
-        .with_type(TableType::System)
-        .with_unique_constraint(st_view_param_unique_cols)
-        .with_index_no_accessor_name(btree(st_view_param_unique_cols));
-
-    let st_view_client_type = builder.add_type::<StViewClientRow>();
-    builder
-        .build_table(
-            ST_VIEW_CLIENT_NAME,
-            *st_view_client_type.as_ref().expect("should be ref"),
-        )
-        .with_type(TableType::System)
-        .with_index_no_accessor_name(btree([StViewClientFields::ViewId, StViewClientFields::ArgId]))
-        .with_index_no_accessor_name(btree([StViewClientFields::Identity, StViewClientFields::ConnectionId]));
-
-    let st_view_arg_type = builder.add_type::<StViewArgRow>();
-    builder
-        .build_table(ST_VIEW_ARG_NAME, *st_view_arg_type.as_ref().expect("should be ref"))
-        .with_type(TableType::System)
-        .with_auto_inc_primary_key(StViewArgFields::Id)
-        .with_index_no_accessor_name(btree(StViewArgFields::Id))
-        .with_unique_constraint(StViewArgFields::Bytes)
-        .with_index_no_accessor_name(btree(StViewArgFields::Bytes));
 
     let st_index_type = builder.add_type::<StIndexRow>();
     builder
@@ -513,11 +408,6 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StVarFields>(&result, ST_VAR_NAME);
     validate_system_table::<StScheduledFields>(&result, ST_SCHEDULED_NAME);
     validate_system_table::<StConnectionCredentialsFields>(&result, ST_CONNECTION_CREDENTIALS_NAME);
-    validate_system_table::<StViewFields>(&result, ST_VIEW_NAME);
-    validate_system_table::<StViewParamFields>(&result, ST_VIEW_PARAM_NAME);
-    validate_system_table::<StViewColumnFields>(&result, ST_VIEW_COLUMN_NAME);
-    validate_system_table::<StViewClientFields>(&result, ST_VIEW_CLIENT_NAME);
-    validate_system_table::<StViewArgFields>(&result, ST_VIEW_ARG_NAME);
 
     result
 }
@@ -553,12 +443,6 @@ lazy_static::lazy_static! {
         m.insert("st_scheduled_table_id_key", ConstraintId(10));
         m.insert("st_row_level_security_sql_key", ConstraintId(11));
         m.insert("st_connection_credentials_connection_id_key", ConstraintId(12));
-        m.insert("st_view_view_id_key", ConstraintId(13));
-        m.insert("st_view_view_name_key", ConstraintId(14));
-        m.insert("st_view_param_view_id_param_pos_key", ConstraintId(15));
-        m.insert("st_view_column_view_id_col_pos_key", ConstraintId(16));
-        m.insert("st_view_arg_id_key", ConstraintId(17));
-        m.insert("st_view_arg_bytes_key", ConstraintId(18));
         m
     };
 }
@@ -581,14 +465,6 @@ lazy_static::lazy_static! {
         m.insert("st_row_level_security_table_id_idx_btree", IndexId(11));
         m.insert("st_row_level_security_sql_idx_btree", IndexId(12));
         m.insert("st_connection_credentials_connection_id_idx_btree", IndexId(13));
-        m.insert("st_view_view_id_idx_btree", IndexId(14));
-        m.insert("st_view_view_name_idx_btree", IndexId(15));
-        m.insert("st_view_param_view_id_param_pos_idx_btree", IndexId(16));
-        m.insert("st_view_column_view_id_col_pos_idx_btree", IndexId(17));
-        m.insert("st_view_client_view_id_arg_id_idx_btree", IndexId(18));
-        m.insert("st_view_client_identity_connection_id_idx_btree", IndexId(19));
-        m.insert("st_view_arg_id_idx_btree", IndexId(20));
-        m.insert("st_view_arg_bytes_idx_btree", IndexId(21));
         m
     };
 }
@@ -603,8 +479,6 @@ lazy_static::lazy_static! {
         m.insert("st_constraint_constraint_id_seq", SequenceId(3));
         m.insert("st_scheduled_schedule_id_seq", SequenceId(4));
         m.insert("st_sequence_sequence_id_seq", SequenceId(5));
-        m.insert("st_view_view_id_seq", SequenceId(6));
-        m.insert("st_view_arg_id_seq", SequenceId(7));
         m
     };
 }
@@ -705,26 +579,6 @@ pub fn st_var_schema() -> TableSchema {
     st_schema(ST_VAR_NAME, ST_VAR_ID)
 }
 
-pub fn st_view_schema() -> TableSchema {
-    st_schema(ST_VIEW_NAME, ST_VIEW_ID)
-}
-
-pub fn st_view_param_schema() -> TableSchema {
-    st_schema(ST_VIEW_PARAM_NAME, ST_VIEW_PARAM_ID)
-}
-
-pub fn st_view_column_schema() -> TableSchema {
-    st_schema(ST_VIEW_COLUMN_NAME, ST_VIEW_COLUMN_ID)
-}
-
-pub fn st_view_client_schema() -> TableSchema {
-    st_schema(ST_VIEW_CLIENT_NAME, ST_VIEW_CLIENT_ID)
-}
-
-pub fn st_view_arg_schema() -> TableSchema {
-    st_schema(ST_VIEW_ARG_NAME, ST_VIEW_ARG_ID)
-}
-
 /// If `table_id` refers to a known system table, return its schema.
 ///
 /// Used when restoring from a snapshot; system tables are reinstantiated with this schema,
@@ -744,11 +598,6 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_CONNECTION_CREDENTIALS_ID => Some(st_connection_credential_schema()),
         ST_VAR_ID => Some(st_var_schema()),
         ST_SCHEDULED_ID => Some(st_scheduled_schema()),
-        ST_VIEW_ID => Some(st_view_schema()),
-        ST_VIEW_PARAM_ID => Some(st_view_param_schema()),
-        ST_VIEW_COLUMN_ID => Some(st_view_column_schema()),
-        ST_VIEW_CLIENT_ID => Some(st_view_client_schema()),
-        ST_VIEW_ARG_ID => Some(st_view_arg_schema()),
         _ => None,
     }
 }
@@ -781,39 +630,6 @@ impl TryFrom<RowRef<'_>> for StTableRow {
 impl From<StTableRow> for ProductValue {
     fn from(x: StTableRow) -> Self {
         to_product_value(&x)
-    }
-}
-
-/// System Table [ST_VIEW_NAME]
-///
-/// | view_id | view_name | table_id | is_public | is_anonymous |
-/// |---------|-----------|----------|-----------|--------------|
-/// | 1       | "player"  | 4        | true      | true         |
-#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
-#[sats(crate = spacetimedb_lib)]
-pub struct StViewRow {
-    /// An auto-inc id for each view
-    pub view_id: ViewId,
-    /// The name of the view function as defined in the module
-    pub view_name: Box<str>,
-    /// The [`TableId`] for this view if materialized.
-    /// Currently all views are materialized and therefore are assigned a [`TableId`] by default.
-    pub table_id: Option<TableId>,
-    /// Is this a public or a private view?
-    /// Currently only public views are supported.
-    /// Private views may be supported in the future.
-    pub is_public: bool,
-    /// Is this view anonymous?
-    /// An anonymous view does not know who called it.
-    /// Specifically, it is a view that has an `AnonymousViewContext` as its first argument.
-    /// This type does not have access to the [`Identity`] of the caller.
-    pub is_anonymous: bool,
-}
-
-impl TryFrom<RowRef<'_>> for StViewRow {
-    type Error = DatastoreError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
-        read_via_bsatn(row)
     }
 }
 
@@ -891,62 +707,6 @@ impl From<ColumnSchema> for StColumnRow {
             col_type: column.col_type.into(),
         }
     }
-}
-
-/// System Table [ST_VIEW_COLUMN_NAME]
-///
-/// | view_id | col_pos | col_name | col_type           |
-/// |---------|---------|----------|--------------------|
-/// | 1       | 0       | "x"      | AlgebraicType::U32 |
-#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
-#[sats(crate = spacetimedb_lib)]
-pub struct StViewColumnRow {
-    /// A foreign key referencing [`ST_VIEW_NAME`].
-    pub view_id: ViewId,
-    pub col_pos: ColId,
-    pub col_name: Box<str>,
-    pub col_type: AlgebraicTypeViaBytes,
-}
-
-/// System Table [ST_VIEW_PARAM_NAME]
-///
-/// | view_id | param_pos | param_name | param_type            |
-/// |---------|-----------|------------|-----------------------|
-/// | 1       | 0         | "y"        | AlgebraicType::U32    |
-#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
-#[sats(crate = spacetimedb_lib)]
-pub struct StViewParamRow {
-    /// A foreign key referencing [`ST_VIEW_NAME`].
-    pub view_id: ViewId,
-    pub param_pos: ColId,
-    pub param_name: Box<str>,
-    pub param_type: AlgebraicTypeViaBytes,
-}
-
-/// System table [ST_VIEW_CLIENT_NAME]
-///
-/// | view_id | arg_id | identity | connection_id |
-/// |---------|--------|----------|---------------|
-/// | 1       | 2      | 0x...    | 0x...         |
-#[derive(Debug, Clone, Eq, PartialEq, SpacetimeType)]
-#[sats(crate = spacetimedb_lib)]
-pub struct StViewClientRow {
-    pub view_id: ViewId,
-    pub arg_id: u64,
-    pub identity: IdentityViaU256,
-    pub connection_id: ConnectionIdViaU128,
-}
-
-/// System table [ST_VIEW_ARG_NAME]
-///
-/// | id | bytes   |
-/// |----|---------|
-/// | 1  | <bytes> |
-#[derive(Debug, Clone, Eq, PartialEq, SpacetimeType)]
-#[sats(crate = spacetimedb_lib)]
-pub struct StViewArgRow {
-    pub id: u64,
-    pub bytes: Box<[u8]>,
 }
 
 /// System Table [ST_INDEX_NAME]
@@ -1472,11 +1232,6 @@ impl TryFrom<RowRef<'_>> for StVarRow {
 pub struct StScheduledRow {
     pub(crate) schedule_id: ScheduleId,
     pub(crate) table_id: TableId,
-    /// The name of the reducer or procedure which will run when this table's rows reach their execution time.
-    ///
-    /// Note that, despite the column name, this may refer to either a reducer or a procedure.
-    /// We cannot change the schema of existing system tables,
-    /// so we are unable to rename this column.
     pub(crate) reducer_name: Box<str>,
     pub(crate) schedule_name: Box<str>,
     pub(crate) at_column: ColId,
@@ -1499,7 +1254,7 @@ impl From<StScheduledRow> for ScheduleSchema {
     fn from(row: StScheduledRow) -> Self {
         Self {
             table_id: row.table_id,
-            function_name: row.reducer_name,
+            reducer_name: row.reducer_name,
             schedule_id: row.schedule_id,
             schedule_name: row.schedule_name,
             at_column: row.at_column,

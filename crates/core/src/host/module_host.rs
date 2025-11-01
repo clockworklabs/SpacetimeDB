@@ -1,7 +1,4 @@
-use super::{
-    ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ProcedureCallResult,
-    ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
-};
+use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
 use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
@@ -10,7 +7,6 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
-use crate::host::InvalidFunctionArguments;
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -47,17 +43,16 @@ use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_primitives::{ProcedureId, TableId};
+use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::deserialize::ArgsSeed;
-use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
+use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
+use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
 use std::collections::VecDeque;
 use std::fmt;
-use std::future::Future;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -402,13 +397,6 @@ impl Instance {
             Instance::Js(inst) => inst.call_reducer(tx, params),
         }
     }
-
-    async fn call_procedure(&mut self, params: CallProcedureParams) -> Result<ProcedureCallResult, ProcedureCallError> {
-        match self {
-            Instance::Wasm(inst) => inst.call_procedure(params).await,
-            Instance::Js(inst) => inst.call_procedure(params).await,
-        }
-    }
 }
 
 /// Creates the table for `table_def` in `stdb`.
@@ -421,18 +409,6 @@ pub fn create_table_from_def(
     let schema = TableSchema::from_module_def(module_def, table_def, (), TableId::SENTINEL);
     stdb.create_table(tx, schema)
         .with_context(|| format!("failed to create table {}", &table_def.name))?;
-    Ok(())
-}
-
-/// Creates the table for `view_def` in `stdb`.
-pub fn create_table_from_view_def(
-    stdb: &RelationalDB,
-    tx: &mut MutTxId,
-    module_def: &ModuleDef,
-    view_def: &ViewDef,
-) -> anyhow::Result<()> {
-    stdb.create_view(tx, module_def, view_def)
-        .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
     Ok(())
 }
 
@@ -459,15 +435,6 @@ fn init_database(
                 logger.info(&format!("Creating table `{}`", &def.name));
                 create_table_from_def(stdb, tx, module_def, def)?;
             }
-
-            let mut view_defs: Vec<_> = module_def.views().collect();
-            view_defs.sort_by(|a, b| a.name.cmp(&b.name));
-
-            for def in view_defs {
-                logger.info(&format!("Creating table for view `{}`", &def.name));
-                create_table_from_view_def(stdb, tx, module_def, def)?;
-            }
-
             // Insert the late-bound row-level security expressions.
             for rls in module_def.row_level_security() {
                 logger.info(&format!("Creating row level security `{}`", rls.sql));
@@ -525,15 +492,6 @@ pub struct CallReducerParams {
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
     pub reducer_id: ReducerId,
-    pub args: ArgsTuple,
-}
-
-pub struct CallProcedureParams {
-    pub timestamp: Timestamp,
-    pub caller_identity: Identity,
-    pub caller_connection_id: ConnectionId,
-    pub timer: Option<Instant>,
-    pub procedure_id: ProcedureId,
     pub args: ArgsTuple,
 }
 
@@ -691,20 +649,6 @@ pub enum ReducerCallError {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum ProcedureCallError {
-    #[error(transparent)]
-    Args(#[from] InvalidProcedureArguments),
-    #[error(transparent)]
-    NoSuchModule(#[from] NoSuchModule),
-    #[error("No such procedure")]
-    NoSuchProcedure,
-    #[error("Procedure terminated due to insufficient budget")]
-    OutOfEnergy,
-    #[error("The module instance encountered a fatal error: {0}")]
-    InternalError(String),
-}
-
-#[derive(thiserror::Error, Debug)]
 pub enum InitDatabaseError {
     #[error(transparent)]
     Args(#[from] InvalidReducerArguments),
@@ -826,37 +770,6 @@ impl ModuleHost {
         })
     }
 
-    async fn call_async_with_instance<Fun, Fut, R>(&self, label: &str, f: Fun) -> Result<R, NoSuchModule>
-    where
-        Fun: (FnOnce(Instance) -> Fut) + Send + 'static,
-        Fut: Future<Output = (R, Instance)> + Send + 'static,
-        R: Send + 'static,
-    {
-        self.guard_closed()?;
-        let timer_guard = self.start_call_timer(label);
-
-        scopeguard::defer_on_unwind!({
-            log::warn!("procedure {label} panicked");
-            (self.on_panic)();
-        });
-
-        // TODO: should we be calling and/or `await`-ing `get_instance` within the below `run_job`?
-        // Unclear how much overhead this call can have.
-        let instance = self.instance_manager.lock().await.get_instance().await;
-
-        let (res, instance) = self
-            .executor
-            .run_job(async move {
-                drop(timer_guard);
-                f(instance).await
-            })
-            .await;
-
-        self.instance_manager.lock().await.return_instance(instance);
-
-        Ok(res)
-    }
-
     /// Run a function on the JobThread for this module which has access to the module instance.
     async fn call<F, R>(&self, label: &str, f: F) -> Result<R, NoSuchModule>
     where
@@ -971,7 +884,7 @@ impl ModuleHost {
                     None,
                     reducer_id,
                     reducer_def,
-                    FunctionArgs::Nullary,
+                    ReducerArgs::Nullary,
                     inst,
                 )?;
 
@@ -1066,10 +979,10 @@ impl ModuleHost {
                 log::error!(
                     "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {err}"
                 );
-                InvalidReducerArguments(InvalidFunctionArguments {
+                InvalidReducerArguments {
                     err: err.into(),
-                    function_name: reducer_name.into(),
-                })
+                    reducer: reducer_name.into(),
+                }
                 .into()
             })
         };
@@ -1098,7 +1011,7 @@ impl ModuleHost {
                 None,
                 reducer_id,
                 reducer_def,
-                FunctionArgs::Nullary,
+                ReducerArgs::Nullary,
                 inst,
             );
 
@@ -1184,10 +1097,10 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
-        args: FunctionArgs,
+        args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
+        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
+        let args = args.into_tuple(reducer_seed)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(self
@@ -1218,11 +1131,11 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_id: ReducerId,
         reducer_def: &ReducerDef,
-        args: FunctionArgs,
+        args: ReducerArgs,
         module_instance: &mut Instance,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
+        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
+        let args = args.into_tuple(reducer_seed)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         Ok(module_instance.call_reducer(
@@ -1248,7 +1161,7 @@ impl ModuleHost {
         request_id: Option<RequestId>,
         timer: Option<Instant>,
         reducer_name: &str,
-        args: FunctionArgs,
+        args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = async {
             let (reducer_id, reducer_def) = self
@@ -1274,8 +1187,13 @@ impl ModuleHost {
         .await;
 
         let log_message = match &res {
-            Err(ReducerCallError::NoSuchReducer) => Some(no_such_function_log_message("reducer", reducer_name)),
-            Err(ReducerCallError::Args(_)) => Some(args_error_log_message("reducer", reducer_name)),
+            Err(ReducerCallError::NoSuchReducer) => Some(format!(
+                "External attempt to call nonexistent reducer \"{reducer_name}\" failed. Have you run `spacetime generate` recently?"
+            )),
+            Err(ReducerCallError::Args(_)) => Some(format!(
+                "External attempt to call reducer \"{reducer_name}\" failed, invalid arguments.\n\
+                 This is likely due to a mismatched client schema, have you run `spacetime generate` recently?",
+            )),
             _ => None,
         };
         if let Some(log_message) = log_message {
@@ -1283,74 +1201,6 @@ impl ModuleHost {
         }
 
         res
-    }
-
-    pub async fn call_procedure(
-        &self,
-        caller_identity: Identity,
-        caller_connection_id: Option<ConnectionId>,
-        timer: Option<Instant>,
-        procedure_name: &str,
-        args: FunctionArgs,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
-        let res = async {
-            let (procedure_id, procedure_def) = self
-                .info
-                .module_def
-                .procedure_full(procedure_name)
-                .ok_or(ProcedureCallError::NoSuchProcedure)?;
-            self.call_procedure_inner(
-                caller_identity,
-                caller_connection_id,
-                timer,
-                procedure_id,
-                procedure_def,
-                args,
-            )
-            .await
-        }
-        .await;
-
-        let log_message = match &res {
-            Err(ProcedureCallError::NoSuchProcedure) => Some(no_such_function_log_message("procedure", procedure_name)),
-            Err(ProcedureCallError::Args(_)) => Some(args_error_log_message("procedure", procedure_name)),
-            _ => None,
-        };
-
-        if let Some(log_message) = log_message {
-            self.inject_logs(LogLevel::Error, procedure_name, &log_message)
-        }
-
-        res
-    }
-
-    async fn call_procedure_inner(
-        &self,
-        caller_identity: Identity,
-        caller_connection_id: Option<ConnectionId>,
-        timer: Option<Instant>,
-        procedure_id: ProcedureId,
-        procedure_def: &ProcedureDef,
-        args: FunctionArgs,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
-        let procedure_seed = ArgsSeed(self.info.module_def.typespace().with_type(procedure_def));
-        let args = args.into_tuple(procedure_seed).map_err(InvalidProcedureArguments)?;
-        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
-
-        self.call_async_with_instance(&procedure_def.name, async move |mut inst| {
-            let res = inst
-                .call_procedure(CallProcedureParams {
-                    timestamp: Timestamp::now(),
-                    caller_identity,
-                    caller_connection_id,
-                    timer,
-                    procedure_id,
-                    args,
-                })
-                .await;
-            (res, inst)
-        })
-        .await?
     }
 
     // Scheduled reducers require a different function here to call their reducer
@@ -1390,12 +1240,10 @@ impl ModuleHost {
                     Ok(inst.call_reducer(Some(tx), params))
                 }
                 Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
-                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments(
-                    InvalidFunctionArguments {
-                        err,
-                        function_name: REDUCER.into(),
-                    },
-                ))),
+                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments {
+                    err,
+                    reducer: REDUCER.into(),
+                })),
             }
         })
         .await?
@@ -1438,11 +1286,11 @@ impl ModuleHost {
         self.module.scheduler().closed().await;
     }
 
-    pub fn inject_logs(&self, log_level: LogLevel, function_name: &str, message: &str) {
+    pub fn inject_logs(&self, log_level: LogLevel, reducer_name: &str, message: &str) {
         self.replica_ctx().logger.write(
             log_level,
             &Record {
-                function: Some(function_name),
+                function: Some(reducer_name),
                 ..Record::injected(message)
             },
             &(),
@@ -1617,15 +1465,4 @@ impl WeakModuleHost {
             closed,
         })
     }
-}
-
-fn no_such_function_log_message(function_kind: &str, function_name: &str) -> String {
-    format!("External attempt to call nonexistent {function_kind} \"{function_name}\" failed. Have you run `spacetime generate` recently?")
-}
-
-fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
-    format!(
-        "External attempt to call {function_kind} \"{function_name}\" failed, invalid arguments.\n\
-         This is likely due to a mismatched client schema, have you run `spacetime generate` recently?"
-    )
 }

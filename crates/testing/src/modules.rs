@@ -19,7 +19,7 @@ use tokio::runtime::{Builder, Runtime};
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::host::FunctionArgs;
+use spacetimedb::host::ReducerArgs;
 use spacetimedb::messages::websocket::CallReducerFlags;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_lib::{bsatn, sats};
@@ -55,7 +55,7 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
-    async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
+    async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> anyhow::Result<()> {
         let result = self
             .client
             .call_reducer(reducer, args, 0, Instant::now(), CallReducerFlags::FullUpdate)
@@ -72,12 +72,12 @@ impl ModuleHandle {
 
     pub async fn call_reducer_json(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
         let args = serde_json::to_string(&args).unwrap();
-        self.call_reducer(reducer, FunctionArgs::Json(args.into())).await
+        self.call_reducer(reducer, ReducerArgs::Json(args.into())).await
     }
 
     pub async fn call_reducer_binary(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
         let args = bsatn::to_vec(&args).unwrap();
-        self.call_reducer(reducer, FunctionArgs::Bsatn(args.into())).await
+        self.call_reducer(reducer, ReducerArgs::Bsatn(args.into())).await
     }
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {

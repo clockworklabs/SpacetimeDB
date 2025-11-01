@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::def::{
     ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
-    SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
+    SequenceDef, TableDef, UniqueConstraintData,
 };
 use crate::identifier::Identifier;
 
@@ -587,106 +587,6 @@ pub fn column_schemas_from_defs(module_def: &ModuleDef, columns: &[ColumnDef], t
         .collect()
 }
 
-impl TableSchema {
-    /// Every view is materialized by default. For example:
-    /// ```rust,ignore
-    /// #[table]
-    /// pub struct MyTable {
-    ///     a: u32,
-    ///     b: u32,
-    /// }
-    ///
-    /// #[view(name = my_view, public)]
-    /// fn my_view(ctx: &ViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
-    ///
-    /// #[view(name = my_anonymous_view, public)]
-    /// fn my_anonymous_view(ctx: &AnonymousViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
-    /// ```
-    ///
-    /// The above views are materialized with the following schema:
-    ///
-    /// my_view:
-    ///
-    /// | sender         | arg_id | a   | b   |
-    /// |----------------|--------|-----|-----|
-    /// | (some = 0x...) | u64    | u32 | u32 |
-    ///
-    /// my_anonymous_view:
-    ///
-    /// | sender      | arg_id | a   | b   |
-    /// |-------------|--------|-----|-----|
-    /// | (none = ()) | u64    | u32 | u32 |
-    ///
-    /// Note, `arg_id` is a foreign key into `st_view_arg`.
-    pub fn from_view_def(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
-        module_def.expect_contains(view_def);
-
-        let ViewDef {
-            name,
-            is_public,
-            return_columns,
-            ..
-        } = view_def;
-
-        let n = return_columns.len() + 2;
-        let mut columns = Vec::with_capacity(n);
-
-        let sender_col_name = "sender";
-        let arg_id_col_name = "arg_id";
-
-        columns.push(ColumnSchema {
-            table_id: TableId::SENTINEL,
-            col_pos: ColId(0),
-            col_name: sender_col_name.into(),
-            col_type: AlgebraicType::option(AlgebraicType::identity()),
-        });
-
-        columns.push(ColumnSchema {
-            table_id: TableId::SENTINEL,
-            col_pos: ColId(1),
-            col_name: arg_id_col_name.into(),
-            col_type: AlgebraicType::U64,
-        });
-
-        columns.extend(
-            return_columns
-                .iter()
-                .map(|def| ColumnSchema::from_view_column_def(module_def, def))
-                .enumerate()
-                .map(|(i, schema)| (ColId::from(i + 2), schema))
-                .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema }),
-        );
-
-        let index_name = format!("{}_{}_{}_idx_btree", name, sender_col_name, arg_id_col_name);
-
-        let indexes = vec![IndexSchema {
-            index_id: IndexId::SENTINEL,
-            table_id: TableId::SENTINEL,
-            index_name: index_name.into_boxed_str(),
-            index_algorithm: IndexAlgorithm::BTree(col_list![0, 1].into()),
-        }];
-
-        let table_access = if *is_public {
-            StAccess::Public
-        } else {
-            StAccess::Private
-        };
-
-        TableSchema::new(
-            TableId::SENTINEL,
-            (*name).clone().into(),
-            columns,
-            indexes,
-            vec![],
-            vec![],
-            StTableType::User,
-            table_access,
-            None,
-            None,
-        )
-    }
-}
-
 impl Schema for TableSchema {
     type Def = TableDef;
     type Id = TableId;
@@ -879,18 +779,6 @@ impl ColumnSchema {
             col_type: ty,
         }
     }
-
-    fn from_view_column_def(module_def: &ModuleDef, def: &ViewColumnDef) -> Self {
-        let col_type = WithTypespace::new(module_def.typespace(), &def.ty)
-            .resolve_refs()
-            .expect("validated module should have all types resolve");
-        ColumnSchema {
-            table_id: TableId::SENTINEL,
-            col_pos: def.col_id,
-            col_name: (*def.name).into(),
-            col_type,
-        }
-    }
 }
 
 impl Schema for ColumnSchema {
@@ -1034,20 +922,20 @@ pub struct ScheduleSchema {
     /// The name of the schedule.
     pub schedule_name: Box<str>,
 
-    /// The name of the reducer or procedure to call.
-    pub function_name: Box<str>,
+    /// The name of the reducer to call.
+    pub reducer_name: Box<str>,
 
     /// The column containing the `ScheduleAt` enum.
     pub at_column: ColId,
 }
 
 impl ScheduleSchema {
-    pub fn for_test(name: impl Into<Box<str>>, function: impl Into<Box<str>>, at: impl Into<ColId>) -> Self {
+    pub fn for_test(name: impl Into<Box<str>>, reducer: impl Into<Box<str>>, at: impl Into<ColId>) -> Self {
         Self {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
             schedule_name: name.into(),
-            function_name: function.into(),
+            reducer_name: reducer.into(),
             at_column: at.into(),
         }
     }
@@ -1067,7 +955,7 @@ impl Schema for ScheduleSchema {
             table_id: parent_id,
             schedule_id: id,
             schedule_name: (*def.name).into(),
-            function_name: (*def.function_name).into(),
+            reducer_name: (*def.reducer_name).into(),
             at_column: def.at_column,
             // Ignore def.at_column and id_column. Those are recovered at runtime.
         }
@@ -1076,9 +964,9 @@ impl Schema for ScheduleSchema {
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.schedule_name[..], &def.name[..], "Schedule name mismatch");
         ensure_eq!(
-            &self.function_name[..],
-            &def.function_name[..],
-            "Schedule function name mismatch"
+            &self.reducer_name[..],
+            &def.reducer_name[..],
+            "Schedule reducer name mismatch"
         );
         Ok(())
     }

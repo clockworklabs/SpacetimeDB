@@ -42,11 +42,6 @@ spacetimedb
 │   ├── spacetimedb_primitives
 │   │   ├── bitflags
 │   │   ├── either
-│   │   ├── enum_as_inner
-│   │   │   ├── heck
-│   │   │   ├── proc_macro2 (*)
-│   │   │   ├── quote (*)
-│   │   │   └── syn (*)
 │   │   ├── itertools
 │   │   │   └── either
 │   │   └── nohash_hasher
@@ -55,7 +50,6 @@ spacetimedb
 │   └── spacetimedb_primitives
 │       ├── bitflags
 │       ├── either
-│       ├── enum_as_inner (*)
 │       ├── itertools
 │       │   └── either
 │       └── nohash_hasher
@@ -76,7 +70,11 @@ spacetimedb
 │   │       [build-dependencies]
 │   │       └── autocfg
 │   ├── derive_more (*)
-│   ├── enum_as_inner (*)
+│   ├── enum_as_inner
+│   │   ├── heck
+│   │   ├── proc_macro2 (*)
+│   │   ├── quote (*)
+│   │   └── syn (*)
 │   ├── hex
 │   ├── itertools (*)
 │   ├── spacetimedb_bindings_macro (*)
