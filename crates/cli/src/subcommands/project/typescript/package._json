@@ -10,6 +10,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "spacetimedb": "1.6.*"
+    "spacetimedb": "1.7.*"
   }
 }
