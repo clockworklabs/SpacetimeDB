@@ -937,6 +937,20 @@ pub struct StViewClientRow {
     pub connection_id: ConnectionIdViaU128,
 }
 
+impl TryFrom<RowRef<'_>> for StViewClientRow {
+    type Error = DatastoreError;
+
+    fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<StViewClientRow> for (Identity, ConnectionId) {
+    fn from(value: StViewClientRow) -> Self {
+        (value.identity.0, value.connection_id.0)
+    }
+}
+
 /// System table [ST_VIEW_ARG_NAME]
 ///
 /// | id | bytes   |
@@ -1238,6 +1252,12 @@ impl From<Identity> for IdentityViaU256 {
     }
 }
 
+impl From<IdentityViaU256> for AlgebraicValue {
+    fn from(val: IdentityViaU256) -> Self {
+        AlgebraicValue::U256(val.0.to_u256().into())
+    }
+}
+
 /// System table [ST_MODULE_NAME]
 /// This table holds exactly one row, describing the latest version of the
 /// SpacetimeDB module associated with the database:
@@ -1345,6 +1365,12 @@ impl TryFrom<RowRef<'_>> for StClientRow {
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
         read_via_bsatn(row)
+    }
+}
+
+impl From<StClientRow> for (Identity, ConnectionId) {
+    fn from(value: StClientRow) -> Self {
+        (value.identity.0, value.connection_id.0)
     }
 }
 

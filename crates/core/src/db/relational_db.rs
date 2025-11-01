@@ -18,7 +18,7 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
-use spacetimedb_datastore::system_tables::{system_tables, StModuleRow};
+use spacetimedb_datastore::system_tables::{system_tables, StModuleRow, StViewRow, ST_VIEW_ID};
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
@@ -1401,6 +1401,20 @@ impl RelationalDB {
     pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<usize, DBError> {
         let rows_deleted = tx.clear_table(table_id)?;
         Ok(rows_deleted)
+    }
+
+    /// Clear all rows from all view tables without dropping them.
+    pub fn clear_all_views(&self, tx: &mut MutTx) -> Result<(), DBError> {
+        for table_id in tx
+            .iter(ST_VIEW_ID)?
+            .map(StViewRow::try_from)
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter_map(|row| row.table_id)
+        {
+            tx.clear_table(table_id)?;
+        }
+        Ok(())
     }
 
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {

@@ -101,7 +101,8 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     };
 
     module
-        .call_identity_disconnected(caller_identity, connection_id)
+        // We don't clear views after reducer calls
+        .call_identity_disconnected(caller_identity, connection_id, false)
         .await
         .map_err(client_disconnected_error_to_response)?;
 
@@ -274,7 +275,8 @@ async fn procedure<S: ControlStateDelegate + NodeDelegate>(
     };
 
     module
-        .call_identity_disconnected(caller_identity, connection_id)
+        // We don't clear views after procedure calls
+        .call_identity_disconnected(caller_identity, connection_id, false)
         .await
         .map_err(client_disconnected_error_to_response)?;
 
