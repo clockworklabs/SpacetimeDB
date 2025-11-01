@@ -12,8 +12,8 @@ use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::version;
 use spacetimedb_lib::{db::raw_def::v9::Lifecycle, sats::AlgebraicTypeRef};
 use spacetimedb_primitives::ColList;
-use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::ProductTypeDef;
+use spacetimedb_schema::{def::ProcedureDef, schema::TableSchema};
 use spacetimedb_schema::{
     def::{IndexDef, TableDef, TypeDef},
     type_for_generate::TypespaceForGenerate,
@@ -96,6 +96,13 @@ pub(super) fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &Reducer
     module
         .reducers()
         .filter(|reducer| reducer.lifecycle != Some(Lifecycle::Init))
+}
+
+/// Iterate over all the [`ProcedureDef`]s defined by the module, in alphabetical order by name.
+///
+/// Sorting is necessary to have deterministic reproducible codegen.
+pub(super) fn iter_procedures(module: &ModuleDef) -> impl Iterator<Item = &ProcedureDef> {
+    module.procedures().sorted_by_key(|procedure| &procedure.name)
 }
 
 /// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.

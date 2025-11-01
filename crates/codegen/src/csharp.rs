@@ -707,6 +707,18 @@ impl Lang for Csharp<'_> {
         }
     }
 
+    fn generate_procedure_file(
+        &self,
+        _module: &ModuleDef,
+        procedure: &spacetimedb_schema::def::ProcedureDef,
+    ) -> OutputFile {
+        // TODO(procedure-csharp-client): implement this
+        OutputFile {
+            filename: format!("Procedures/{}.g.cs", procedure.name.deref().to_case(Case::Pascal)),
+            code: "".to_string(),
+        }
+    }
+
     fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
         let mut output = CsharpAutogen::new(
             self.namespace,

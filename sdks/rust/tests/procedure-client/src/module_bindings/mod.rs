@@ -6,23 +6,21 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-pub mod connected_table;
-pub mod connected_type;
-pub mod disconnected_table;
-pub mod disconnected_type;
-pub mod identity_connected_reducer;
-pub mod identity_disconnected_reducer;
+pub mod return_enum_a_procedure;
+pub mod return_enum_b_procedure;
+pub mod return_enum_type;
+pub mod return_primitive_procedure;
+pub mod return_struct_procedure;
+pub mod return_struct_type;
+pub mod will_panic_procedure;
 
-pub use connected_table::*;
-pub use connected_type::Connected;
-pub use disconnected_table::*;
-pub use disconnected_type::Disconnected;
-pub use identity_connected_reducer::{
-    identity_connected, set_flags_for_identity_connected, IdentityConnectedCallbackId,
-};
-pub use identity_disconnected_reducer::{
-    identity_disconnected, set_flags_for_identity_disconnected, IdentityDisconnectedCallbackId,
-};
+pub use return_enum_a_procedure::return_enum_a;
+pub use return_enum_b_procedure::return_enum_b;
+pub use return_enum_type::ReturnEnum;
+pub use return_primitive_procedure::return_primitive;
+pub use return_struct_procedure::return_struct;
+pub use return_struct_type::ReturnStruct;
+pub use will_panic_procedure::will_panic;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -31,10 +29,7 @@ pub use identity_disconnected_reducer::{
 /// Contained within a [`__sdk::ReducerEvent`] in [`EventContext`]s for reducer events
 /// to indicate which reducer caused the event.
 
-pub enum Reducer {
-    IdentityConnected,
-    IdentityDisconnected,
-}
+pub enum Reducer {}
 
 impl __sdk::InModule for Reducer {
     type Module = RemoteModule;
@@ -43,8 +38,6 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-            Reducer::IdentityConnected => "identity_connected",
-            Reducer::IdentityDisconnected => "identity_disconnected",
             _ => unreachable!(),
         }
     }
@@ -53,17 +46,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __sdk::Error;
     fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {
         match &value.reducer_name[..] {
-            "identity_connected" => Ok(
-                __sdk::parse_reducer_args::<identity_connected_reducer::IdentityConnectedArgs>(
-                    "identity_connected",
-                    &value.args,
-                )?
-                .into(),
-            ),
-            "identity_disconnected" => Ok(__sdk::parse_reducer_args::<
-                identity_disconnected_reducer::IdentityDisconnectedArgs,
-            >("identity_disconnected", &value.args)?
-            .into()),
             unknown => Err(__sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo").into()),
         }
     }
@@ -72,10 +54,7 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 #[derive(Default)]
 #[allow(non_snake_case)]
 #[doc(hidden)]
-pub struct DbUpdate {
-    connected: __sdk::TableUpdate<Connected>,
-    disconnected: __sdk::TableUpdate<Disconnected>,
-}
+pub struct DbUpdate {}
 
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
     type Error = __sdk::Error;
@@ -83,13 +62,6 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
-                "connected" => db_update
-                    .connected
-                    .append(connected_table::parse_table_update(table_update)?),
-                "disconnected" => db_update
-                    .disconnected
-                    .append(disconnected_table::parse_table_update(table_update)?),
-
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
                 }
@@ -107,9 +79,6 @@ impl __sdk::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
-        diff.connected = cache.apply_diff_to_table::<Connected>("connected", &self.connected);
-        diff.disconnected = cache.apply_diff_to_table::<Disconnected>("disconnected", &self.disconnected);
-
         diff
     }
 }
@@ -118,8 +87,6 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
-    connected: __sdk::TableAppliedDiff<'r, Connected>,
-    disconnected: __sdk::TableAppliedDiff<'r, Disconnected>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -128,10 +95,7 @@ impl __sdk::InModule for AppliedDiff<'_> {
 }
 
 impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
-    fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
-        callbacks.invoke_table_row_callbacks::<Connected>("connected", &self.connected, event);
-        callbacks.invoke_table_row_callbacks::<Disconnected>("disconnected", &self.disconnected, event);
-    }
+    fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {}
 }
 
 #[doc(hidden)]
@@ -849,8 +813,5 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type AppliedDiff<'r> = AppliedDiff<'r>;
     type SubscriptionHandle = SubscriptionHandle;
 
-    fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
-        connected_table::register_table(client_cache);
-        disconnected_table::register_table(client_cache);
-    }
+    fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {}
 }
