@@ -6,7 +6,7 @@ import tempfile
 import xmltodict
 
 import smoketests
-from .. import Smoketest, STDB_DIR, run_cmd, TEMPLATE_CARGO_TOML
+from .. import Smoketest, STDB_DIR, run_cmd, TEMPLATE_CARGO_TOML, TYPESCRIPT_BINDINGS_PATH, build_typescript_sdk, pnpm
 
 
 def _write_file(path: Path, content: str):
@@ -19,12 +19,13 @@ def _append_to_file(path: Path, content: str):
         f.write(content)
 
 
-def _parse_quickstart(doc_path: Path, language: str) -> str:
+def _parse_quickstart(doc_path: Path, language: str, module_name: str) -> str:
     """Extract code blocks from `quickstart.md` docs.
     This will replicate the steps in the quickstart guide, so if it fails the quickstart guide is broken.
     """
     content = Path(doc_path).read_text()
-    blocks = re.findall(rf"```{language}\n(.*?)\n```", content, re.DOTALL)
+    codeblock_lang = "ts" if language == "typescript" else language
+    blocks = re.findall(rf"```{codeblock_lang}\n(.*?)\n```", content, re.DOTALL)
 
     end = ""
     if language == "csharp":
@@ -42,7 +43,7 @@ def _parse_quickstart(doc_path: Path, language: str) -> str:
             filtered_blocks.append(block)
         blocks = filtered_blocks
     # So we could have a different db for each language
-    return "\n".join(blocks).replace("quickstart-chat", f"quickstart-chat-{language}") + end
+    return "\n".join(blocks).replace("quickstart-chat", module_name) + end
 
 def load_nuget_config(p: Path):
     if p.exists():
@@ -101,6 +102,8 @@ class BaseQuickstart(Smoketest):
     MODULE_CODE = ""
 
     lang = None
+    client_lang = None
+    codeblock_langs = None
     server_doc = None
     client_doc = None
     server_file = None
@@ -118,12 +121,16 @@ class BaseQuickstart(Smoketest):
     def sdk_setup(self, path: Path):
         raise NotImplementedError
 
+    @property
+    def _module_name(self):
+        return f"quickstart-chat-{self.lang}"
+
     def _publish(self) -> Path:
         base_path = Path(self.enterClassContext(tempfile.TemporaryDirectory()))
         server_path = base_path / "server"
 
         self.generate_server(server_path)
-        self.publish_module(f"quickstart-chat-{self.lang}", capture_stderr=True, clear=True)
+        self.publish_module(self._module_name, capture_stderr=True, clear=True)
         return base_path / "client"
 
     def generate_server(self, server_path: Path):
@@ -141,7 +148,7 @@ class BaseQuickstart(Smoketest):
         )
         self.project_path = server_path / "spacetimedb"
         shutil.copy2(STDB_DIR / "rust-toolchain.toml", self.project_path)
-        _write_file(self.project_path / self.server_file, _parse_quickstart(self.server_doc, self.lang))
+        _write_file(self.project_path / self.server_file, _parse_quickstart(self.server_doc, self.lang, self._module_name))
         self.server_postprocess(self.project_path)
         self.spacetime("build", "-d", "-p", self.project_path, capture_stderr=True)
 
@@ -163,13 +170,14 @@ class BaseQuickstart(Smoketest):
 
         run_cmd(*self.build_cmd, cwd=client_path, capture_stderr=True)
 
+        client_lang = self.client_lang or self.lang
         self.spacetime(
-            "generate", "--lang", self.lang,
+            "generate", "--lang", client_lang,
             "--out-dir", client_path / self.module_bindings,
             "--project-path", self.project_path, capture_stderr=True
         )
         # Replay the quickstart guide steps
-        main = _parse_quickstart(self.client_doc, self.lang)
+        main = _parse_quickstart(self.client_doc, client_lang, self._module_name)
         for src, dst in self.replacements.items():
             main = main.replace(src, dst)
         main += "\n" + self.extra_code
@@ -340,4 +348,21 @@ Main();
         """Run the C# quickstart guides for server and client."""
         if not smoketests.HAVE_DOTNET:
             self.skipTest("C# SDK requires .NET to be installed.")
+        self._test_quickstart()
+
+# We use the Rust client for testing the TypeScript server quickstart because
+# the TypeScript client quickstart is a React app, which is difficult to
+# smoketest.
+class TypeScript(Rust):
+    lang = "typescript"
+    client_lang = "rust"
+    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/05-typescript-quickstart.md"
+    server_file = "src/index.ts"
+
+    def server_postprocess(self, server_path: Path):
+        build_typescript_sdk()
+        pnpm("install", TYPESCRIPT_BINDINGS_PATH, cwd=server_path)
+
+    def test_quickstart(self):
+        """Run the TypeScript quickstart guides for server."""
         self._test_quickstart()
