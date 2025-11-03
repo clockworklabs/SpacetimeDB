@@ -4,12 +4,14 @@ import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
 import type { ConnectionId } from '../lib/connection_id';
 import type { Identity } from '../lib/identity';
 import type { Timestamp } from '../lib/timestamp';
+import type { UntypedReducersDef } from '../sdk/reducers';
+import type { DbView } from './db_view';
 import { MODULE_DEF, type UntypedSchemaDef } from './schema';
-import type { Table } from './table';
 import type {
   InferTypeOfRow,
   RowBuilder,
   RowObj,
+  StringBuilder,
   TypeBuilder,
 } from './type_builders';
 
@@ -57,13 +59,6 @@ export type Reducer<
   ctx: ReducerCtx<S>,
   payload: ParamsAsObject<Params>
 ) => void | { tag: 'ok' } | { tag: 'err'; value: string };
-
-/**
- * A type representing the database view, mapping table names to their corresponding Table handles.
- */
-export type DbView<SchemaDef extends UntypedSchemaDef> = {
-  readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: Table<Tbl>;
-};
 
 /**
  * Authentication information for the caller of a reducer.
@@ -133,8 +128,9 @@ export function pushReducer(
   fn: Reducer<any, any>,
   lifecycle?: RawReducerDefV9['lifecycle']
 ): void {
-  if (existingReducers.has(name))
+  if (existingReducers.has(name)) {
     throw new TypeError(`There is already a reducer with the name '${name}'`);
+  }
   existingReducers.add(name);
 
   const paramType: ProductType = {
@@ -263,3 +259,111 @@ export function clientDisconnected<
 >(name: string, params: Params, fn: Reducer<S, Params>): void {
   pushReducer(name, params, fn, Lifecycle.OnDisconnect);
 }
+
+/**
+ * Represents a handle to a database reducer, including its name and argument type.
+ */
+export type ReducerSchema<
+  ReducerName extends string,
+  Params extends ParamsObj,
+> = {
+  /**
+   * The name of the reducer.
+   */
+  readonly reducerName: ReducerName;
+
+  /**
+   * The type of the parameters object expected by the reducer.
+   */
+  readonly paramsType: Params;
+
+  /**
+   * 
+   */
+  readonly paramsSpacetimeType: ProductType;
+
+  /**
+   * The {@link RawReducerDefV9} of the configured reducer.
+   */
+  readonly reducerDef: RawReducerDefV9;
+};
+
+class Reducers<ReducersDef extends UntypedReducersDef> {
+  /**
+   * Phantom type to track the reducers definition 
+   */
+  reducersType!: ReducersDef;
+}
+
+/**
+ * Helper type to convert an array of TableSchema into a schema definition
+ */
+type ReducersToSchema<T extends readonly ReducerSchema<any, any>[]> = {
+  reducers: {
+    /** @type {UntypedReducerDef} */
+    readonly [i in keyof T]: {
+      name: T[i]['reducerName'];
+      params: T[i]['paramsType'];
+      paramsSpacetimeType: T[i]['paramsSpacetimeType'];
+    };
+  };
+};
+
+/**
+ * Creates a schema from table definitions
+ * @param handles - Array of table handles created by table() function
+ * @returns ColumnBuilder representing the complete database schema
+ * @example
+ * ```ts
+ * const s = schema(
+ *   table({ name: 'user' }, userType),
+ *   table({ name: 'post' }, postType)
+ * );
+ * ```
+ */
+export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
+  ...handles: H
+): Reducers<ReducersToSchema<H>>;
+
+/**
+ * Creates a schema from table definitions (array overload)
+ * @param handles - Array of table handles created by table() function
+ * @returns ColumnBuilder representing the complete database schema
+ */
+export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
+  handles: H
+): Reducers<ReducersToSchema<H>>;
+
+export function reducers(
+  ...args:
+    | [readonly ReducerSchema<any, any>[]]
+    | readonly ReducerSchema<any, any>[]
+): Reducers<UntypedReducersDef> {
+  return new Reducers();
+}
+
+export function reducerSchema<
+  ReducerName extends string,
+  Params extends ParamsObj,
+>(
+  name: ReducerName,
+  params: Params
+): ReducerSchema<ReducerName, Params> {
+  const paramType: ProductType = {
+    elements: Object.entries(params).map(([n, c]) => ({
+      name: n,
+      algebraicType: c.algebraicType,
+    })),
+  };
+  return {
+    reducerName: name,
+    paramsType: params,
+    paramsSpacetimeType: paramType,
+    reducerDef: {
+      name,
+      params: paramType,
+      lifecycle: undefined,
+    },
+  };
+} 
+

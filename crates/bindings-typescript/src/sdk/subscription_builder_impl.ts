@@ -1,23 +1,24 @@
+import type { UntypedSchemaDef } from '../server/schema';
 import type { DbConnectionImpl } from './db_connection_impl';
 import type {
   ErrorContextInterface,
   SubscriptionEventContextInterface,
 } from './event_context';
 import { EventEmitter } from './event_emitter';
+import type { UntypedReducersDef } from './reducers';
 
 export class SubscriptionBuilderImpl<
-  DBView = any,
-  Reducers = any,
-  SetReducerFlags = any,
+  SchemaDef extends UntypedSchemaDef,
+  Reducers extends UntypedReducersDef,
 > {
   #onApplied?: (
-    ctx: SubscriptionEventContextInterface<DBView, Reducers, SetReducerFlags>
+    ctx: SubscriptionEventContextInterface<SchemaDef, Reducers>
   ) => void = undefined;
   #onError?: (
-    ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>
+    ctx: ErrorContextInterface<SchemaDef, Reducers>
   ) => void = undefined;
   constructor(
-    private db: DbConnectionImpl<DBView, Reducers, SetReducerFlags>
+    private db: DbConnectionImpl<SchemaDef, Reducers>
   ) {}
 
   /**
@@ -37,9 +38,9 @@ export class SubscriptionBuilderImpl<
    */
   onApplied(
     cb: (
-      ctx: SubscriptionEventContextInterface<DBView, Reducers, SetReducerFlags>
+      ctx: SubscriptionEventContextInterface<SchemaDef, Reducers>
     ) => void
-  ): SubscriptionBuilderImpl<DBView, Reducers, SetReducerFlags> {
+  ): SubscriptionBuilderImpl<SchemaDef, Reducers> {
     this.#onApplied = cb;
     return this;
   }
@@ -65,8 +66,8 @@ export class SubscriptionBuilderImpl<
    * @returns The current `SubscriptionBuilder` instance.
    */
   onError(
-    cb: (ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>) => void
-  ): SubscriptionBuilderImpl<DBView, Reducers, SetReducerFlags> {
+    cb: (ctx: ErrorContextInterface<SchemaDef, Reducers>) => void
+  ): SubscriptionBuilderImpl<SchemaDef, Reducers> {
     this.#onError = cb;
     return this;
   }
@@ -89,7 +90,7 @@ export class SubscriptionBuilderImpl<
    */
   subscribe(
     query_sql: string | string[]
-  ): SubscriptionHandleImpl<DBView, Reducers, SetReducerFlags> {
+  ): SubscriptionHandleImpl<SchemaDef, Reducers> {
     const queries = Array.isArray(query_sql) ? query_sql : [query_sql];
     if (queries.length === 0) {
       throw new Error('Subscriptions must have at least one query');
@@ -126,17 +127,16 @@ export class SubscriptionBuilderImpl<
 
 export type SubscribeEvent = 'applied' | 'error' | 'end';
 
-export class SubscriptionManager {
+export class SubscriptionManager<SchemaDef extends UntypedSchemaDef, Reducers extends UntypedReducersDef> {
   subscriptions: Map<
     number,
-    { handle: SubscriptionHandleImpl; emitter: EventEmitter<SubscribeEvent> }
+    { handle: SubscriptionHandleImpl<SchemaDef, Reducers>; emitter: EventEmitter<SubscribeEvent> }
   > = new Map();
 }
 
 export class SubscriptionHandleImpl<
-  DBView = any,
-  Reducers = any,
-  SetReducerFlags = any,
+  SchemaDef extends UntypedSchemaDef,
+  Reducers extends UntypedReducersDef,
 > {
   #queryId: number;
   #unsubscribeCalled: boolean = false;
@@ -146,13 +146,13 @@ export class SubscriptionHandleImpl<
     new EventEmitter();
 
   constructor(
-    private db: DbConnectionImpl<DBView, Reducers, SetReducerFlags>,
+    private db: DbConnectionImpl<SchemaDef, Reducers>,
     querySql: string[],
     onApplied?: (
-      ctx: SubscriptionEventContextInterface<DBView, Reducers, SetReducerFlags>
+      ctx: SubscriptionEventContextInterface<SchemaDef, Reducers>
     ) => void,
     onError?: (
-      ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>,
+      ctx: ErrorContextInterface<SchemaDef, Reducers>,
       error: Error
     ) => void
   ) {
@@ -160,9 +160,8 @@ export class SubscriptionHandleImpl<
       'applied',
       (
         ctx: SubscriptionEventContextInterface<
-          DBView,
-          Reducers,
-          SetReducerFlags
+          SchemaDef,
+          Reducers
         >
       ) => {
         this.#activeState = true;
@@ -174,7 +173,7 @@ export class SubscriptionHandleImpl<
     this.#emitter.on(
       'error',
       (
-        ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>,
+        ctx: ErrorContextInterface<SchemaDef, Reducers>,
         error: Error
       ) => {
         this.#activeState = false;
@@ -202,9 +201,8 @@ export class SubscriptionHandleImpl<
       'end',
       (
         _ctx: SubscriptionEventContextInterface<
-          DBView,
-          Reducers,
-          SetReducerFlags
+          SchemaDef,
+          Reducers
         >
       ) => {
         this.#endedState = true;
@@ -225,7 +223,7 @@ export class SubscriptionHandleImpl<
    */
   unsubscribeThen(
     onEnd: (
-      ctx: SubscriptionEventContextInterface<DBView, Reducers, SetReducerFlags>
+      ctx: SubscriptionEventContextInterface<SchemaDef, Reducers>
     ) => void
   ): void {
     if (this.#endedState) {
@@ -240,9 +238,8 @@ export class SubscriptionHandleImpl<
       'end',
       (
         ctx: SubscriptionEventContextInterface<
-          DBView,
-          Reducers,
-          SetReducerFlags
+          SchemaDef,
+          Reducers
         >
       ) => {
         this.#endedState = true;

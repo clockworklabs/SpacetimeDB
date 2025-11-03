@@ -76,11 +76,11 @@ export class CounterTableHandle<TableName extends string>
    * Get a handle on the `id` unique index on the table `counter`.
    */
   id = {
-    // Find the subscribed row whose `id` column value is equal to `col_val`,
+    // Find the subscribed row whose `id` column value is equal to `colVal`,
     // if such a row is present in the client cache.
-    find: (col_val: number): Counter | undefined => {
+    find: (colVal: number): Counter | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.id, col_val)) {
+        if (__deepEqual(row.id, colVal)) {
           return row;
         }
       }

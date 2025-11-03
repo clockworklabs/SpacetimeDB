@@ -47,7 +47,7 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * like `ctx.db.user.on_insert(...)`.
  */
 export class UserTableHandle<TableName extends string>
-  implements __TableHandle<TableName>
+  extends ClientTable<TableName>
 {
   // phantom type to track the table name
   readonly tableName!: TableName;
@@ -76,11 +76,11 @@ export class UserTableHandle<TableName extends string>
    * Get a handle on the `identity` unique index on the table `user`.
    */
   identity = {
-    // Find the subscribed row whose `identity` column value is equal to `col_val`,
+    // Find the subscribed row whose `identity` column value is equal to `colVal`,
     // if such a row is present in the client cache.
-    find: (col_val: __Identity): User | undefined => {
+    find: (colVal: __Identity): User | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.identity, col_val)) {
+        if (__deepEqual(row.identity, colVal)) {
           return row;
         }
       }

@@ -1,12 +1,72 @@
-export type TableHandle<TableName extends string> = {
-  /** Phantom table name */
-  readonly tableName?: TableName;
+import type { ReadonlyIndexes } from "../server/indexes";
+import type { UntypedSchemaDef } from "../server/schema";
+import type { ReadonlyTableMethods, RowType, TableIndexes, UntypedTableDef } from "../server/table";
+import type { Prettify } from "../server/type_util";
+import type { EventContextInterface } from "./event_context";
+import type { UntypedReducersDef } from "./reducers";
+
+export type ClientTableMethods<
+  SchemaDef extends UntypedSchemaDef,
+  Reducers extends UntypedReducersDef,
+  TableDef extends UntypedTableDef,
+> = {
+  /**
+   * Registers a callback to be invoked when a row is inserted into the table.
+   */
+  onInsert(cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void): void;
+
+  /**
+   *  Removes a previously registered insert event listener. 
+   * @param cb The callback to remove from the insert event listeners.
+   */
+  removeOnInsert(cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void): void;
+
+  /**
+   * Registers a callback to be invoked when a row is deleted from the table.
+   */
+  onDelete(cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void): void;
+
+  /**
+   * Removes a previously registered delete event listener.
+   * @param cb The callback to remove from the delete event listeners.
+   */
+  removeOnDelete(cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void): void;
 };
 
-export type TableNamesFromDb<Db> = Db extends object
-  ? {
-      [K in keyof Db]: Db[K] extends TableHandle<infer TableName>
-        ? TableName
-        : never;
-    }[keyof Db]
-  : never;
+/**
+ * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
+ *
+ * - Row: row shape
+ * - UCV: unique-constraint violation error type (never if none)
+ * - AIO: auto-increment overflow error type (never if none)
+ */
+export type ClientTable<
+  SchemaDef extends UntypedSchemaDef,
+  Reducers extends UntypedReducersDef,
+  TableDef extends UntypedTableDef
+> = Prettify<
+  ClientTableCore<SchemaDef, Reducers, TableDef> &
+  ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
+>;
+
+/**
+ * Core methods of ClientTable, without the indexes mixed in.
+ * Includes only staticly known methods.
+ */
+export type ClientTableCore<
+  SchemaDef extends UntypedSchemaDef,
+  Reducers extends UntypedReducersDef,
+  TableDef extends UntypedTableDef,
+> =
+  ReadonlyTableMethods<TableDef> &
+  ClientTableMethods<SchemaDef, Reducers, TableDef>;
+
+/**
+ * Client database view, mapping table names to their corresponding ClientTable handles.
+ */
+export type ClientDbView<
+  SchemaDef extends UntypedSchemaDef,
+  Reducers extends UntypedReducersDef,
+> = {
+  readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: ClientTable<SchemaDef, Reducers, Tbl>;
+};

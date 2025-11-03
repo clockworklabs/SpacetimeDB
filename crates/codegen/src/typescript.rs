@@ -167,7 +167,7 @@ impl Lang for TypeScript {
  * but to directly chain method calls,
  * like `ctx.db.{accessor_method}.on_insert(...)`.
  */
-export class {table_handle}<TableName extends string> implements __TableHandle<TableName> {{
+export class {table_handle}<TableName extends string> extends __TableCache<TableName> {{
 "
         );
         out.indent(1);
@@ -373,11 +373,11 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
                 // version of the SDK.
                 //
                 // Eventually we can remove this and only generate use the `primaryKeyInfo` field.
-                writeln!(out, "primaryKey: \"{}\",", pk.col_name.to_string().to_case(Case::Camel));
+                writeln!(out, "primaryKey: \"{}\" as const,", pk.col_name.to_string().to_case(Case::Camel));
 
                 writeln!(out, "primaryKeyInfo: {{");
                 out.indent(1);
-                writeln!(out, "colName: \"{}\",", pk.col_name.to_string().to_case(Case::Camel));
+                writeln!(out, "colName: \"{}\" as const,", pk.col_name.to_string().to_case(Case::Camel));
                 writeln!(
                     out,
                     "colType: ({row_type}.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product).value.elements[{}].algebraicType,",
@@ -396,7 +396,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         for reducer in iter_reducers(module) {
             writeln!(out, "{}: {{", reducer.name);
             out.indent(1);
-            writeln!(out, "reducerName: \"{}\",", reducer.name);
+            writeln!(out, "reducerName: \"{}\" as const,", reducer.name);
             writeln!(
                 out,
                 "argsType: {args_type}.getTypeScriptAlgebraicType(),",
@@ -409,7 +409,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         writeln!(out, "}},");
         writeln!(out, "versionInfo: {{");
         out.indent(1);
-        writeln!(out, "cliVersion: \"{}\",", spacetimedb_lib_version());
+        writeln!(out, "cliVersion: \"{}\" as const,", spacetimedb_lib_version());
         out.dedent(1);
         writeln!(out, "}},");
         writeln!(
@@ -438,7 +438,7 @@ setReducerFlagsConstructor: () => {{
 }}"
         );
         out.dedent(1);
-        writeln!(out, "}}");
+        writeln!(out, "}} satisfies __RemoteModule;");
 
         // Define `type Reducer` enum.
         writeln!(out);
@@ -693,6 +693,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "type CallReducerFlags as __CallReducerFlags",
         "type EventContextInterface as __EventContextInterface",
         "type ReducerEventContextInterface as __ReducerEventContextInterface",
+        "type RemoteModule as __RemoteModule",
         "type SubscriptionEventContextInterface as __SubscriptionEventContextInterface",
         "type ErrorContextInterface as __ErrorContextInterface",
         "SubscriptionBuilderImpl as __SubscriptionBuilderImpl",

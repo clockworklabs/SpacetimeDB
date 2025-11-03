@@ -22,6 +22,7 @@ import {
   type AlgebraicTypeVariants,
 } from '../lib/algebraic_type';
 import type RawScopedTypeNameV9 from '../lib/autogen/raw_scoped_type_name_v_9_type';
+import type { CamelCase } from './type_util';
 
 /**
  * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
@@ -86,7 +87,9 @@ type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
     /** @type {UntypedTableDef} */
     readonly [i in keyof T]: {
       name: T[i]['tableName'];
+      accessorName: CamelCase<T[i]['tableName']>;
       columns: T[i]['rowType']['row'];
+      rowType: T[i]['rowSpacetimeType'];
       indexes: T[i]['idxs'];
     };
   };
@@ -315,22 +318,6 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
 ): Schema<TablesToSchema<H>>;
 
 /**
- * Creates a schema from table definitions
- * @param handles - Array of table handles created by table() function
- * @returns ColumnBuilder representing the complete database schema
- * @example
- * ```ts
- * const s = schema(
- *   table({ name: 'user' }, userType),
- *   table({ name: 'post' }, postType)
- * );
- * ```
- */
-export function schema<const H extends readonly TableSchema<any, any, any>[]>(
-  ...handles: H
-): Schema<TablesToSchema<H>>;
-
-/**
  * Creates a schema from table definitions (array overload)
  * @param handles - Array of table handles created by table() function
  * @returns ColumnBuilder representing the complete database schema
@@ -351,13 +338,12 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
  * );
  * ```
  */
-export function schema(
+export function schema<const H extends readonly TableSchema<any, any, any>[]>(
   ...args:
-    | [readonly TableSchema<any, any, any>[]]
-    | readonly TableSchema<any, any, any>[]
-): Schema<UntypedSchemaDef> {
-  const handles: readonly TableSchema<any, any, any>[] =
-    args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+    | [H]
+    | H 
+): Schema<TablesToSchema<H>> {
+  const handles = (args.length === 1 && Array.isArray(args[0]) ? args[0] : args) as H;
 
   const tableDefs = handles.map(h => h.tableDef);
 

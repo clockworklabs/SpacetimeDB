@@ -1,4 +1,4 @@
-import { ConnectionId } from '../';
+import { ConnectionId, ProductType } from '../';
 import {
   AlgebraicType,
   type AlgebraicTypeVariants,
@@ -22,6 +22,7 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
+  type UntypedEventContext,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import { decompress } from './decompress.ts';
@@ -33,7 +34,7 @@ import type {
   UnsubscribeAppliedMessage,
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
-import type RemoteModule from './spacetime_module.ts';
+import { type RemoteModule, type RemoteModule2 } from './spacetime_module.ts';
 import {
   TableCache,
   type Operation,
@@ -49,8 +50,13 @@ import {
   type SubscribeEvent,
 } from './subscription_builder_impl.ts';
 import { stdbLogger } from './logger.ts';
-import { type ReducerRuntimeTypeInfo } from './spacetime_module.ts';
 import { fromByteArray } from 'base64-js';
+import type { ReducersView, SetReducerFlags, UntypedReducersDef } from './reducers.ts';
+import type { UntypedSchemaDef } from '../server/schema.ts';
+import type { DbView } from '../server/db_view.ts';
+import type { RowType, UntypedTableDef } from '../server/table.ts';
+import type { CamelCase } from '../server/type_util.ts';
+import { toCamelCase } from '../server/runtime.ts';
 
 export { DbConnectionBuilder, SubscriptionBuilderImpl, TableCache, type Event };
 
@@ -66,12 +72,13 @@ export type {
 export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
 export type CallReducerFlags = 'FullUpdate' | 'NoSuccessNotify';
 
-type ReducerEventCallback<ReducerArgs extends any[] = any[]> = (
-  ctx: ReducerEventContextInterface,
+type ReducerEventCallback<SchemaDef extends UntypedSchemaDef, Reducers extends UntypedReducersDef, ReducerArgs extends any[] = any[]> = (
+  ctx: ReducerEventContextInterface<SchemaDef, Reducers>,
   ...args: ReducerArgs
 ) => void;
-type SubscriptionEventCallback = (
-  ctx: SubscriptionEventContextInterface
+
+type SubscriptionEventCallback<SchemaDef extends UntypedSchemaDef, Reducers extends UntypedReducersDef> = (
+  ctx: SubscriptionEventContextInterface<SchemaDef, Reducers>,
 ) => void;
 
 function callReducerFlagsToNumber(flags: CallReducerFlags): number {
@@ -83,25 +90,23 @@ function callReducerFlagsToNumber(flags: CallReducerFlags): number {
   }
 }
 
-type DbConnectionConfig = {
+export type DbConnectionConfig<SchemaDef extends UntypedSchemaDef, Reducers extends UntypedReducersDef> = {
   uri: URL;
   nameOrAddress: string;
   identity?: Identity;
   token?: string;
   emitter: EventEmitter<ConnectionEvent>;
-  remoteModule: RemoteModule;
   createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
   compression: 'gzip' | 'none';
   lightMode: boolean;
   confirmedReads?: boolean;
+  remoteModule: RemoteModule2<SchemaDef, Reducers>;
 };
 
 export class DbConnectionImpl<
-  DBView = any,
-  Reducers = any,
-  SetReducerFlags = any,
-> implements DbContext<DBView, Reducers>
-{
+  SchemaDef extends UntypedSchemaDef,
+  ReducersDef extends UntypedReducersDef,
+> implements DbContext<SchemaDef, ReducersDef> {
   /**
    * Whether or not the connection is active.
    */
@@ -121,20 +126,20 @@ export class DbConnectionImpl<
    * The accessor field to access the tables in the database and associated
    * callback functions.
    */
-  db: DBView;
+  db: DbView<SchemaDef>;
 
   /**
    * The accessor field to access the reducers in the database and associated
    * callback functions.
    */
-  reducers: Reducers;
+  reducers: ReducersView<ReducersDef>;
 
   /**
    * The accessor field to access functions related to setting flags on
    * reducers regarding how the server should handle the reducer call and
    * the events that it sends back to the client.
    */
-  setReducerFlags: SetReducerFlags;
+  setReducerFlags: SetReducerFlags<ReducersDef>;
 
   /**
    * The `ConnectionId` of the connection to to the database.
@@ -144,18 +149,19 @@ export class DbConnectionImpl<
   // These fields are meant to be strictly private.
   #queryId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
-  #reducerEmitter: EventEmitter<string, ReducerEventCallback> =
+  #reducerEmitter: EventEmitter<string, ReducerEventCallback<SchemaDef, ReducersDef>> =
     new EventEmitter();
-  #onApplied?: SubscriptionEventCallback;
-  #remoteModule: RemoteModule;
+  #onApplied?: SubscriptionEventCallback<SchemaDef, ReducersDef>;
   #messageQueue = Promise.resolve();
-  #subscriptionManager = new SubscriptionManager();
+  #subscriptionManager = new SubscriptionManager<SchemaDef, ReducersDef>();
+  #remoteModule: RemoteModule2<SchemaDef, ReducersDef>;
+  #callReducerFlags = new Map<string, CallReducerFlags>();
 
   // These fields are not part of the public API, but in a pinch you
   // could use JavaScript to access them by bypassing TypeScript's
   // private fields.
   // We use them in testing.
-  private clientCache: ClientCache;
+  private clientCache: ClientCache<SchemaDef, ReducersDef>;
   private ws?: WebsocketDecompressAdapter | WebsocketTestAdapter;
   private wsPromise: Promise<
     WebsocketDecompressAdapter | WebsocketTestAdapter | undefined
@@ -172,7 +178,7 @@ export class DbConnectionImpl<
     compression,
     lightMode,
     confirmedReads,
-  }: DbConnectionConfig) {
+  }: DbConnectionConfig<SchemaDef, ReducersDef>) {
     stdbLogger('info', 'Connecting to SpacetimeDB WS...');
 
     // We use .toString() here because some versions of React Native contain a bug where the URL constructor
@@ -192,13 +198,10 @@ export class DbConnectionImpl<
     const connectionId = this.connectionId.toHexString();
     url.searchParams.set('connection_id', connectionId);
 
-    this.clientCache = new ClientCache();
-    this.db = this.#remoteModule.dbViewConstructor(this);
-    this.setReducerFlags = this.#remoteModule.setReducerFlagsConstructor();
-    this.reducers = this.#remoteModule.reducersConstructor(
-      this,
-      this.setReducerFlags
-    );
+    this.clientCache = new ClientCache<SchemaDef, ReducersDef>();
+    this.db = this.#makeDbView(remoteModule.tables);
+    this.reducers = this.#makeReducers(remoteModule.reducers);
+    this.setReducerFlags = this.#makeSetReducerFlags(remoteModule.reducers);
 
     this.wsPromise = createWSFn({
       url,
@@ -236,6 +239,74 @@ export class DbConnectionImpl<
     return queryId;
   };
 
+  #makeDbView(def: SchemaDef): DbView<SchemaDef> {
+    const view = Object.create(null) as DbView<SchemaDef>;
+
+    for (const tbl of def.tables) {
+      // DbView uses this name verbatim
+      const key = tbl.accessorName; 
+      Object.defineProperty(view, key, {
+        enumerable: true,
+        configurable: false,
+        get: () => {
+          return this.clientCache.getOrCreateTable(tbl);
+        },
+      });
+    }
+
+    return view;
+  }
+
+  #makeReducers(def: ReducersDef): ReducersView<ReducersDef> {
+    const out: Record<string, unknown> = {};
+
+    for (const reducer of def.reducers) {
+      const key = toCamelCase(reducer.name);
+
+      (out as any)[key] = (params: typeof reducer.params) => {
+        const flags = this.#callReducerFlags.get(reducer.name) ?? 'FullUpdate';
+        this.callReducerWithParams(
+          reducer.name,
+          reducer.paramsSpacetimeType,
+          params,
+          flags
+        );
+      };
+    }
+
+    return out as ReducersView<ReducersDef>;
+  }
+
+  #makeSetReducerFlags(defs: ReducersDef): SetReducerFlags<ReducersDef> {
+    const out = Object.create(null) as SetReducerFlags<ReducersDef>;
+    for (const r of defs.reducers) {
+      const key = toCamelCase(r.name);
+      Object.defineProperty(out, key, {
+        enumerable: true,
+        configurable: false,
+        value: (flags: CallReducerFlags) => {
+          this.#callReducerFlags.set(r.name, flags);
+        },
+      });
+    }
+    return out;
+  }
+
+  #makeEventContext(
+    event: Event<ReducersDef['reducers'][number]>
+  ): EventContextInterface<SchemaDef, ReducersDef> {
+    // Bind methods to preserve `this` (#private fields safe)
+    return {
+      db: this.db,
+      reducers: this.reducers,
+      setReducerFlags: this.setReducerFlags,
+      isActive: this.isActive,
+      subscriptionBuilder: this.subscriptionBuilder.bind(this),
+      disconnect: this.disconnect.bind(this),
+      event,
+    };
+  }
+
   // NOTE: This is very important!!! This is the actual function that
   // gets called when you call `connection.subscriptionBuilder()`.
   // The `subscriptionBuilder` function which is generated, just shadows
@@ -243,13 +314,13 @@ export class DbConnectionImpl<
   // Do not remove this function, or shoot yourself in the foot please.
   // It's not clear what would be a better way to do this at this exact
   // moment.
-  subscriptionBuilder = (): SubscriptionBuilderImpl => {
+  subscriptionBuilder = (): SubscriptionBuilderImpl<SchemaDef, ReducersDef> => {
     return new SubscriptionBuilderImpl(this);
   };
 
   registerSubscription(
-    handle: SubscriptionHandleImpl<DBView, Reducers, SetReducerFlags>,
-    handleEmitter: EventEmitter<SubscribeEvent, SubscriptionEventCallback>,
+    handle: SubscriptionHandleImpl<SchemaDef, ReducersDef>,
+    handleEmitter: EventEmitter<SubscribeEvent, SubscriptionEventCallback<SchemaDef, ReducersDef>>,
     querySql: string[]
   ): number {
     const queryId = this.#getNextQueryId();
@@ -292,16 +363,21 @@ export class DbConnectionImpl<
       const buffer = rowList.rowsData;
       const reader = new BinaryReader(buffer);
       const rows: Operation[] = [];
-      const rowType = this.#remoteModule.tables[tableName]!.rowType;
-      const primaryKeyInfo =
-        this.#remoteModule.tables[tableName]!.primaryKeyInfo;
+
+      // TODO: performance
+      const table = this.#remoteModule.tables.tables.find(t => t.name === tableName);
+      const rowType = table!.rowType;
+      const columnsArray = Object.entries(table!.columns);
+      const primaryKeyColumnEntry = columnsArray.find(col => col[1].columnMetadata.isPrimaryKey);
       while (reader.remaining > 0) {
-        const row = AlgebraicType.deserializeValue(reader, rowType);
+        const row = ProductType.deserializeValue(reader, rowType);
         let rowId: ComparablePrimitive | undefined = undefined;
-        if (primaryKeyInfo !== undefined) {
+        if (primaryKeyColumnEntry !== undefined) {
+          const primaryKeyColName = primaryKeyColumnEntry[0];
+          const primaryKeyColType = primaryKeyColumnEntry[1].typeBuilder.algebraicType;
           rowId = AlgebraicType.intoMapKey(
-            primaryKeyInfo.colType,
-            row[primaryKeyInfo.colName]
+            primaryKeyColType,
+            row[primaryKeyColName]
           );
         } else {
           // Get a view of the bytes for this row.
@@ -322,7 +398,7 @@ export class DbConnectionImpl<
 
     const parseTableUpdate = async (
       rawTableUpdate: RawTableUpdate
-    ): Promise<CacheTableUpdate> => {
+    ): Promise<CacheTableUpdate<UntypedTableDef>> => {
       const tableName = rawTableUpdate.tableName;
       let operations: Operation[] = [];
       for (const update of rawTableUpdate.updates) {
@@ -354,8 +430,8 @@ export class DbConnectionImpl<
 
     const parseDatabaseUpdate = async (
       dbUpdate: DatabaseUpdate
-    ): Promise<CacheTableUpdate[]> => {
-      const tableUpdates: CacheTableUpdate[] = [];
+    ): Promise<CacheTableUpdate<UntypedTableDef>[]> => {
+      const tableUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
       for (const rawTableUpdate of dbUpdate.tables) {
         tableUpdates.push(await parseTableUpdate(rawTableUpdate));
       }
@@ -393,7 +469,7 @@ export class DbConnectionImpl<
         const args = txUpdate.reducerCall.args;
         const energyQuantaUsed = txUpdate.energyQuantaUsed;
 
-        let tableUpdates: CacheTableUpdate[] = [];
+        let tableUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
         let errMessage = '';
         switch (txUpdate.status.tag) {
           case 'Committed':
@@ -418,9 +494,9 @@ export class DbConnectionImpl<
 
         let reducerInfo:
           | {
-              reducerName: string;
-              args: Uint8Array;
-            }
+            reducerName: string;
+            args: Uint8Array;
+          }
           | undefined;
         if (reducerName !== '') {
           reducerInfo = {
@@ -516,15 +592,16 @@ export class DbConnectionImpl<
   }
 
   #applyTableUpdates(
-    tableUpdates: CacheTableUpdate[],
-    eventContext: EventContextInterface
+    tableUpdates: CacheTableUpdate<UntypedTableDef>[],
+    eventContext: EventContextInterface<SchemaDef, ReducersDef>
   ): PendingCallback[] {
     const pendingCallbacks: PendingCallback[] = [];
     for (const tableUpdate of tableUpdates) {
       // Get table information for the table being updated
       const tableName = tableUpdate.tableName;
-      const tableTypeInfo = this.#remoteModule.tables[tableName]!;
-      const table = this.clientCache.getOrCreateTable(tableTypeInfo);
+      // TODO: performance
+      const tableDef = this.#remoteModule.tables.tables.find(t => t.name === tableName)!;
+      const table = this.clientCache.getOrCreateTable(tableDef);
       const newCallbacks = table.applyOperations(
         tableUpdate.operations,
         eventContext
@@ -545,11 +622,7 @@ export class DbConnectionImpl<
     switch (message.tag) {
       case 'InitialSubscription': {
         const event: Event<never> = { tag: 'SubscribeApplied' };
-
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event);
         // Remove the event from the subscription event context
         // It is not a field in the type narrowed SubscriptionEventContext
         const { event: _, ...subscriptionEventContext } = eventContext;
@@ -568,10 +641,7 @@ export class DbConnectionImpl<
       }
       case 'TransactionUpdateLight': {
         const event: Event<never> = { tag: 'UnknownTransaction' };
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event);
         const callbacks = this.#applyTableUpdates(
           message.tableUpdates,
           eventContext
@@ -585,17 +655,16 @@ export class DbConnectionImpl<
         let reducerInfo = message.reducerInfo;
         let unknownTransaction = false;
         let reducerArgs: any | undefined;
-        let reducerTypeInfo: ReducerRuntimeTypeInfo | undefined;
+        const reducer = this.#remoteModule.reducers.reducers.find(t => t.name === reducerInfo!.reducerName)!;
         if (!reducerInfo) {
           unknownTransaction = true;
         } else {
-          reducerTypeInfo =
-            this.#remoteModule.reducers[reducerInfo.reducerName];
+          // TODO: performance
           try {
             const reader = new BinaryReader(reducerInfo.args as Uint8Array);
-            reducerArgs = AlgebraicType.deserializeValue(
+            reducerArgs = ProductType.deserializeValue(
               reader,
-              reducerTypeInfo.argsType
+              reducer?.paramsSpacetimeType
             );
           } catch {
             // This should only be printed in development, since it's
@@ -608,10 +677,7 @@ export class DbConnectionImpl<
 
         if (unknownTransaction) {
           const event: Event<never> = { tag: 'UnknownTransaction' };
-          const eventContext = this.#remoteModule.eventContextConstructor(
-            this,
-            event
-          );
+          const eventContext = this.#makeEventContext(event);
           const callbacks = this.#applyTableUpdates(
             message.tableUpdates,
             eventContext
@@ -626,7 +692,6 @@ export class DbConnectionImpl<
         // At this point, we know that `reducerInfo` is not null because
         // we return if `unknownTransaction` is true.
         reducerInfo = reducerInfo!;
-        reducerTypeInfo = reducerTypeInfo!;
 
         // Thus this must be a reducer event create it and emit it.
         const reducerEvent = {
@@ -637,17 +702,16 @@ export class DbConnectionImpl<
           energyConsumed: message.energyConsumed,
           reducer: {
             name: reducerInfo.reducerName,
-            args: reducerArgs,
+            // TODO(cloutiertyler): rename back to args to maintain API compatibility
+            params: reducerArgs,
+            paramsSpacetimeType: reducer.paramsSpacetimeType,
           },
         };
         const event: Event<typeof reducerEvent.reducer> = {
           tag: 'Reducer',
           value: reducerEvent,
         };
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event); 
         const reducerEventContext = {
           ...eventContext,
           event: reducerEvent,
@@ -660,8 +724,8 @@ export class DbConnectionImpl<
 
         const argsArray: any[] = [];
         (
-          reducerTypeInfo.argsType as AlgebraicTypeVariants.Product
-        ).value.elements.forEach(element => {
+          reducer.paramsSpacetimeType
+        ).elements.forEach(element => {
           argsArray.push(reducerArgs[element.name!]);
         });
         this.#reducerEmitter.emit(
@@ -696,10 +760,7 @@ export class DbConnectionImpl<
           break;
         }
         const event: Event<never> = { tag: 'SubscribeApplied' };
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event);
         const { event: _, ...subscriptionEventContext } = eventContext;
         const callbacks = this.#applyTableUpdates(
           message.tableUpdates,
@@ -724,10 +785,7 @@ export class DbConnectionImpl<
           break;
         }
         const event: Event<never> = { tag: 'UnsubscribeApplied' };
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event);
         const { event: _, ...subscriptionEventContext } = eventContext;
         const callbacks = this.#applyTableUpdates(
           message.tableUpdates,
@@ -743,10 +801,7 @@ export class DbConnectionImpl<
       case 'SubscriptionError': {
         const error = Error(message.error);
         const event: Event<never> = { tag: 'Error', value: error };
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event);
         const errorContext = {
           ...eventContext,
           event: error,
@@ -808,6 +863,23 @@ export class DbConnectionImpl<
   }
 
   /**
+   * Call a reducer on your SpacetimeDB module with typed arguments.
+   * @param reducerSchema The schema of the reducer to call
+   * @param callReducerFlags The flags for the reducer call
+   * @param params The arguments to pass to the reducer 
+   */
+  callReducerWithParams(reducerName: string, paramsType: ProductType, params: object, flags: CallReducerFlags) {
+    let writer = new BinaryWriter(1024);
+    ProductType.serializeValue(writer, paramsType, params);
+    let argsBuffer = writer.getBuffer();
+    this.callReducer(
+      reducerName,
+      argsBuffer,
+      flags
+    );
+  }
+
+  /**
    * Close the current connection.
    *
    * @example
@@ -827,63 +899,63 @@ export class DbConnectionImpl<
 
   private on(
     eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
   ): void {
     this.#emitter.on(eventName, callback);
   }
 
   private off(
     eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
   ): void {
     this.#emitter.off(eventName, callback);
   }
 
   private onConnect(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
   ): void {
     this.#emitter.on('connect', callback);
   }
 
   private onDisconnect(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
   ): void {
     this.#emitter.on('disconnect', callback);
   }
 
   private onConnectError(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
   ): void {
     this.#emitter.on('connectError', callback);
   }
 
-  private removeOnConnect(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+  removeOnConnect(
+    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
   ): void {
     this.#emitter.off('connect', callback);
   }
 
-  private removeOnDisconnect(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+  removeOnDisconnect(
+    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
   ): void {
     this.#emitter.off('disconnect', callback);
   }
 
-  private removeOnConnectError(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+  removeOnConnectError(
+    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
   ): void {
     this.#emitter.off('connectError', callback);
   }
 
   // Note: This is required to be public because it needs to be
   // called from the `RemoteReducers` class.
-  onReducer(reducerName: string, callback: ReducerEventCallback): void {
+  onReducer(reducerName: string, callback: ReducerEventCallback<SchemaDef, ReducersDef>): void {
     this.#reducerEmitter.on(reducerName, callback);
   }
 
   // Note: This is required to be public because it needs to be
   // called from the `RemoteReducers` class.
-  offReducer(reducerName: string, callback: ReducerEventCallback): void {
+  offReducer(reducerName: string, callback: ReducerEventCallback<SchemaDef, ReducersDef>): void {
     this.#reducerEmitter.off(reducerName, callback);
   }
 }

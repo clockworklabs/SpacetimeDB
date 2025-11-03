@@ -32,3 +32,15 @@ export type Values<T> = T[keyof T];
  * A helper type to collapse a tuple into a single type if it has only one element.
  */
 export type CollapseTuple<A extends any[]> = A extends [infer T] ? T : A;
+
+type CamelCaseImpl<S extends string> =
+  S extends `${infer Head}_${infer Tail}` ? `${Head}${Capitalize<CamelCaseImpl<Tail>>}` :
+  S extends `${infer Head}-${infer Tail}` ? `${Head}${Capitalize<CamelCaseImpl<Tail>>}` :
+  S;
+
+/**
+ * Convert "Some_identifier-name" -> "someIdentifierName"
+ * - No spaces; allowed separators: "_" and "-"
+ * - Normalizes the *first* character to lowercase (e.g. "User_Name" -> "userName")
+ */
+export type CamelCase<S extends string> = Uncapitalize<CamelCaseImpl<S>>;

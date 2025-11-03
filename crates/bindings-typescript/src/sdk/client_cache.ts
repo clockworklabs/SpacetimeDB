@@ -1,47 +1,100 @@
-import type { TableRuntimeTypeInfo } from './spacetime_module.ts';
+import type { UntypedSchemaDef } from '../server/schema.ts';
+import type { UntypedTableDef } from '../server/table.ts';
+import type { UntypedReducersDef } from './reducers.ts';
 import { TableCache } from './table_cache.ts';
 
-export class ClientCache {
+type TableName<SchemaDef> =
+  [SchemaDef] extends [UntypedSchemaDef] ? SchemaDef['tables'][number]['name'] : string;
+
+export type TableDefForTableName<SchemaDef, N> =
+  [SchemaDef] extends [UntypedSchemaDef]
+    ? Extract<SchemaDef['tables'][number], { name: N }>
+    : UntypedTableDef;
+
+type TableCacheForTableName<
+  SchemaDef extends UntypedSchemaDef,
+  Reducers extends UntypedReducersDef,
+  N
+> = TableCache<SchemaDef, Reducers, TableDefForTableName<SchemaDef, N>>;
+
+/**
+ * This is a helper class that provides a mapping from table names to their corresponding TableCache instances
+ * while preserving the correspondence between the key and value type.
+ */
+class TableMap<SchemaDef extends UntypedSchemaDef, Reducers extends UntypedReducersDef> {
+  private readonly map: Map<string, TableCacheForTableName<SchemaDef, Reducers, TableName<SchemaDef>>> = new Map();
+
+  get<K extends TableName<SchemaDef>>(key: K): TableCacheForTableName<SchemaDef, Reducers, K> | undefined {
+    // Cast required: a Map<string, Union> can't refine the union to the exact K-specific member on get<K>(key: K).
+    return this.map.get(key) as TableCacheForTableName<SchemaDef, Reducers, K> | undefined;
+  }
+
+  set<K extends TableName<SchemaDef>>(key: K, value: TableCacheForTableName<SchemaDef, Reducers, K>): this {
+    this.map.set(key, value);
+    return this;
+  }
+
+  has(key: TableName<SchemaDef>): boolean {
+    return this.map.has(key);
+  }
+
+  delete(key: TableName<SchemaDef>): boolean {
+    return this.map.delete(key);
+  }
+
+  // optional: iteration stays broadly typed (cannot express per-key relation here)
+  keys(): IterableIterator<string> { return this.map.keys(); }
+  values(): IterableIterator<TableCacheForTableName<SchemaDef, Reducers, TableName<SchemaDef>>> { return this.map.values(); }
+  entries(): IterableIterator<[string, TableCacheForTableName<SchemaDef, Reducers, TableName<SchemaDef>>]> { return this.map.entries(); }
+  [Symbol.iterator]() { return this.entries(); }
+}
+
+/**
+ * ClientCache maintains a cache of TableCache instances for each table in the database.
+ * It provides methods to get or create TableCache instances by table name,
+ * ensuring type safety based on the provided SchemaDef.
+ */
+export class ClientCache<SchemaDef extends UntypedSchemaDef, Reducers extends UntypedReducersDef> {
   /**
    * The tables in the database.
    */
-  tables: Map<string, TableCache<any>>;
-
-  constructor() {
-    this.tables = new Map();
-  }
+  readonly tables = new TableMap<SchemaDef, Reducers>();
 
   /**
    * Returns the table with the given name.
-   * @param name The name of the table.
-   * @returns The table
+   * - If SchemaDef is a concrete schema, `name` is constrained to known table names,
+   *   and the return type matches that table.
+   * - If SchemaDef is undefined, `name` is string and the return type is untyped.
    */
-  getTable<RowType extends Record<string, any>>(
-    name: string
-  ): TableCache<RowType> {
+  getTable<N extends TableName<SchemaDef>>(name: N): TableCacheForTableName<SchemaDef, Reducers, N> {
     const table = this.tables.get(name);
-
-    // ! This should not happen as the table should be available but an exception is thrown just in case.
     if (!table) {
       console.error(
         'The table has not been registered for this client. Please register the table before using it. If you have registered global tables using the SpacetimeDBClient.registerTables() or `registerTable()` method, please make sure that is executed first!'
       );
-      throw new Error(`Table ${name} does not exist`);
+      throw new Error(`Table ${String(name)} does not exist`);
     }
-
     return table;
   }
 
-  getOrCreateTable<RowType extends Record<string, any>>(
-    tableTypeInfo: TableRuntimeTypeInfo
-  ): TableCache<RowType> {
-    let table: TableCache<RowType>;
-    if (!this.tables.has(tableTypeInfo.tableName)) {
-      table = new TableCache<RowType>(tableTypeInfo);
-      this.tables.set(tableTypeInfo.tableName, table);
-    } else {
-      table = this.tables.get(tableTypeInfo.tableName)!;
+  /**
+   * Returns the table with the given name, creating it if needed.
+   * - Typed mode: `tableTypeInfo.tableName` is constrained to known names and
+   *   the return type matches that table.
+   * - Untyped mode: accepts any string and returns an untyped TableCache.
+   */
+  getOrCreateTable<N extends TableName<SchemaDef>>(
+    tableDef: TableDefForTableName<SchemaDef, N>
+  ): TableCacheForTableName<SchemaDef, Reducers, N> {
+    const name = tableDef.name as N;
+
+    let table = this.tables.get(name);
+    if (table) {
+      return table;
     }
-    return table;
+
+    const newTable = new TableCache<SchemaDef, Reducers, TableDefForTableName<SchemaDef, N>>(tableDef);
+    this.tables.set(name, newTable);
+    return newTable;
   }
 }

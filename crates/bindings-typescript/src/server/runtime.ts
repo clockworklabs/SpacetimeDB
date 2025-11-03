@@ -18,7 +18,6 @@ import {
 } from './indexes';
 import { type RowType, type Table, type TableMethods } from './table';
 import {
-  type DbView,
   type ReducerCtx,
   REDUCERS,
   type JwtClaims,
@@ -29,8 +28,19 @@ import { MODULE_DEF } from './schema';
 
 import * as _syscalls from 'spacetime:sys@1.0';
 import type { u16, u32, ModuleHooks } from 'spacetime:sys@1.0';
+import type { DbView } from './db_view';
+import type { CamelCase } from './type_util';
 
 const { freeze } = Object;
+
+/**
+ * Type safe conversion from a string like "some_identifier-name" to "someIdentifierName".
+ * @param str The string to convert
+ * @returns The converted string
+ */
+export function toCamelCase<T extends string>(str: T): CamelCase<T> {
+  return str.replace(/[-_]+(\w)/g, (_, c) => c.toUpperCase()) as CamelCase<T>;
+}
 
 const sys: typeof _syscalls = freeze(
   Object.fromEntries(
@@ -218,12 +228,12 @@ function getDbView() {
   return DB_VIEW;
 }
 
-function makeDbView(module_def: RawModuleDefV9): DbView<any> {
+function makeDbView(moduleDef: RawModuleDefV9): DbView<any> {
   return freeze(
     Object.fromEntries(
-      module_def.tables.map(table => [
-        table.name,
-        makeTableView(module_def.typespace, table),
+      moduleDef.tables.map(table => [
+        toCamelCase(table.name),
+        makeTableView(moduleDef.typespace, table),
       ])
     )
   );
@@ -232,7 +242,9 @@ function makeDbView(module_def: RawModuleDefV9): DbView<any> {
 function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
   const table_id = sys.table_id_from_name(table.name);
   const rowType = typespace.types[table.productTypeRef];
-  if (rowType.tag !== 'Product') throw 'impossible';
+  if (rowType.tag !== 'Product') {
+    throw 'impossible';
+  }
 
   const baseSize = bsatnBaseSize(typespace, rowType);
 
@@ -339,19 +351,19 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
 
     let index: Index<any, any>;
     if (isUnique) {
-      const serializeBound = (col_val: any[]): IndexScanArgs => {
-        if (col_val.length !== numColumns)
+      const serializeBound = (colVal: any[]): IndexScanArgs => {
+        if (colVal.length !== numColumns)
           throw new TypeError('wrong number of elements');
 
         const writer = new BinaryWriter(baseSize + 1);
         const prefix_elems = numColumns - 1;
-        serializePrefix(writer, col_val, prefix_elems);
+        serializePrefix(writer, colVal, prefix_elems);
         const rstartOffset = writer.offset;
         writer.writeU8(0);
         AlgebraicType.serializeValue(
           writer,
           indexType.value.elements[numColumns - 1].algebraicType,
-          col_val[numColumns - 1],
+          colVal[numColumns - 1],
           typespace
         );
         const buffer = writer.getBuffer();
@@ -360,9 +372,9 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
         return [prefix, prefix_elems, rstart, rstart];
       };
       index = {
-        find: (col_val: IndexVal<any, any>): RowType<any> | null => {
-          if (numColumns === 1) col_val = [col_val];
-          const args = serializeBound(col_val);
+        find: (colVal: IndexVal<any, any>): RowType<any> | null => {
+          if (numColumns === 1) colVal = [colVal];
+          const args = serializeBound(colVal);
           const iter = new TableIterator(
             sys.datastore_index_scan_range_bsatn(index_id, ...args),
             rowType
@@ -375,9 +387,9 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
             );
           return value;
         },
-        delete: (col_val: IndexVal<any, any>): boolean => {
-          if (numColumns === 1) col_val = [col_val];
-          const args = serializeBound(col_val);
+        delete: (colVal: IndexVal<any, any>): boolean => {
+          if (numColumns === 1) colVal = [colVal];
+          const args = serializeBound(colVal);
           const num = sys.datastore_delete_by_index_scan_range_bsatn(
             index_id,
             ...args

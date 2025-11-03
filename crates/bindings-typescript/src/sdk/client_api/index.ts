@@ -112,7 +112,7 @@ const REMOTE_MODULE = {
   // SDK, but if in the future we wanted to create a class this would be
   // necessary because classes have methods, so we'll keep it.
   eventContextConstructor: (
-    imp: __DbConnectionImpl,
+    imp: __DbConnectionImpl<RemoteTables,
     event: __Event<Reducer>
   ) => {
     return {

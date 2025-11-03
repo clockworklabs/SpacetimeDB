@@ -57,16 +57,58 @@ export type Index<
   : RangedIndex<TableDef, I>;
 
 /**
+ * A type representing a collection of read-only indexes defined on a table.
+ */
+export type ReadonlyIndexes<
+  TableDef extends UntypedTableDef,
+  I extends Record<string, UntypedIndex<keyof TableDef['columns'] & string>>,
+> = {
+  [k in keyof I]: ReadonlyIndex<TableDef, I[k]>;
+};
+
+/**
+ * A type representing a read-only database index, which can be either unique or ranged.
+ * This type only exposes read-only operations.
+ */
+export type ReadonlyIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = I['unique'] extends true
+  ? ReadonlyUniqueIndex<TableDef, I>
+  : ReadonlyRangedIndex<TableDef, I>;
+
+/**
+ * A type representing a read-only unique index on a database table.
+ */
+export type ReadonlyUniqueIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = {
+  find(colVal: IndexVal<TableDef, I>): RowType<TableDef> | null;
+};
+
+/**
  * A type representing a unique index on a database table.
  * Unique indexes enforce that the indexed columns contain unique values.
  */
 export type UniqueIndex<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = ReadonlyUniqueIndex<TableDef, I> & {
+  delete(colVal: IndexVal<TableDef, I>): boolean;
+  update(colVal: RowType<TableDef>): RowType<TableDef>;
+};
+
+/**
+ * A type representing a read-only ranged index on a database table. 
+ */
+export type ReadonlyRangedIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
 > = {
-  find(col_val: IndexVal<TableDef, I>): RowType<TableDef> | null;
-  delete(col_val: IndexVal<TableDef, I>): boolean;
-  update(col_val: RowType<TableDef>): RowType<TableDef>;
+  filter(
+    range: IndexScanRangeBounds<TableDef, I>
+  ): IterableIterator<RowType<TableDef>>;
 };
 
 /**
@@ -76,10 +118,7 @@ export type UniqueIndex<
 export type RangedIndex<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> = {
-  filter(
-    range: IndexScanRangeBounds<TableDef, I>
-  ): IterableIterator<RowType<TableDef>>;
+> = ReadonlyRangedIndex<TableDef, I> & {
   delete(range: IndexScanRangeBounds<TableDef, I>): number;
 };
 

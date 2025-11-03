@@ -27,7 +27,10 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
+  type ClientTable as __ClientTable,
+  type RemoteModule as __RemoteModule,
+  type SetReducerFlags as __SetReducerFlags,
+  DbConnectionConfig,
 } from '../../../src/index';
 
 // Import and reexport all reducer arg types
@@ -50,196 +53,312 @@ export { Point };
 import { UnindexedPlayer } from './unindexed_player_type.ts';
 export { UnindexedPlayer };
 import { User } from './user_type.ts';
+import { schema } from '../../../src/server/schema.ts';
+import t from '../../../src/server/type_builders.ts';
+import { table } from '../../../src/server/table.ts';
+import { reducerSchema, reducers } from '../../../src/server/reducers.ts';
+import { RemoteModule2 } from '../../../src/sdk/spacetime_module.ts';
 export { User };
 
+const pointType = t.object('Point', {
+  x: t.number(),
+  y: t.number(),
+});
+
+const tablesSchema = schema(
+  table({ name: 'player', }, t.row({
+    ownerId: t.string(),
+    name: t.string(),
+    location: pointType,
+  })),
+  table({ name: 'unindexed_player', }, t.row({
+    ownerId: t.string(),
+    name: t.string(),
+    location: pointType,
+  })),
+  table({ name: 'user', primaryKey: 'identity', }, t.row({
+    identity: t.string(),
+    name: t.string(),
+  })),
+);
+
+const reducersSchema = reducers(
+  reducerSchema('create_player', {
+    name: t.string(),
+    location: pointType,
+  }),
+  reducerSchema('foo_bar', {
+    name: t.string(),
+    location: pointType,
+  }),
+);
+
 const REMOTE_MODULE = {
-  tables: {
-    player: {
-      tableName: 'player' as const,
-      rowType: Player.getTypeScriptAlgebraicType(),
-      primaryKey: 'ownerId',
-      primaryKeyInfo: {
-        colName: 'ownerId',
-        colType: (
-          Player.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product
-        ).value.elements[0].algebraicType,
-      },
-    },
-    unindexed_player: {
-      tableName: 'unindexed_player' as const,
-      rowType: UnindexedPlayer.getTypeScriptAlgebraicType(),
-    },
-    user: {
-      tableName: 'user' as const,
-      rowType: User.getTypeScriptAlgebraicType(),
-      primaryKey: 'identity',
-      primaryKeyInfo: {
-        colName: 'identity',
-        colType: (
-          User.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product
-        ).value.elements[0].algebraicType,
-      },
-    },
-  },
-  reducers: {
-    create_player: {
-      reducerName: 'create_player',
-      argsType: CreatePlayer.getTypeScriptAlgebraicType(),
-    },
-  },
   versionInfo: {
-    cliVersion: '1.5.0',
+    cliVersion: '1.6.0' as const,
   },
-  // Constructors which are used by the DbConnectionImpl to
-  // extract type information from the generated RemoteModule.
-  //
-  // NOTE: This is not strictly necessary for `eventContextConstructor` because
-  // all we do is build a TypeScript object which we could have done inside the
-  // SDK, but if in the future we wanted to create a class this would be
-  // necessary because classes have methods, so we'll keep it.
-  eventContextConstructor: (
-    imp: __DbConnectionImpl,
-    event: __Event<Reducer>
-  ) => {
-    return {
-      ...(imp as DbConnection),
-      event,
-    };
-  },
-  dbViewConstructor: (imp: __DbConnectionImpl) => {
-    return new RemoteTables(imp);
-  },
-  reducersConstructor: (
-    imp: __DbConnectionImpl,
-    setReducerFlags: SetReducerFlags
-  ) => {
-    return new RemoteReducers(imp, setReducerFlags);
-  },
-  setReducerFlagsConstructor: () => {
-    return new SetReducerFlags();
-  },
-};
+  tables: tablesSchema.schemaType,
+  reducers: reducersSchema.reducersType,
+} satisfies RemoteModule2<
+  typeof tablesSchema.schemaType,
+  typeof reducersSchema.reducersType
+>;
 
-// A type representing all the possible variants of a reducer.
-export type Reducer = never | { name: 'CreatePlayer'; args: CreatePlayer };
+export type EventContext = __EventContextInterface<
+  typeof tablesSchema.schemaType,
+  typeof reducersSchema.reducersType
+>;
 
-export class RemoteReducers {
-  constructor(
-    private connection: __DbConnectionImpl,
-    private setCallReducerFlags: SetReducerFlags
-  ) {}
+export type ReducerEventContext = __ReducerEventContextInterface<
+  typeof tablesSchema.schemaType,
+  typeof reducersSchema.reducersType
+>;
 
-  createPlayer(name: string, location: Point) {
-    const __args = { name, location };
-    let __writer = new __BinaryWriter(1024);
-    CreatePlayer.serialize(__writer, __args);
-    let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer(
-      'create_player',
-      __argsBuffer,
-      this.setCallReducerFlags.createPlayerFlags
-    );
-  }
+export type SubscriptionEventContext = __SubscriptionEventContextInterface<
+  typeof tablesSchema.schemaType,
+  typeof reducersSchema.reducersType
+>;
 
-  onCreatePlayer(
-    callback: (ctx: ReducerEventContext, name: string, location: Point) => void
-  ) {
-    this.connection.onReducer('create_player', callback);
-  }
-
-  removeOnCreatePlayer(
-    callback: (ctx: ReducerEventContext, name: string, location: Point) => void
-  ) {
-    this.connection.offReducer('create_player', callback);
-  }
-}
-
-export class SetReducerFlags {
-  createPlayerFlags: __CallReducerFlags = 'FullUpdate';
-  createPlayer(flags: __CallReducerFlags) {
-    this.createPlayerFlags = flags;
-  }
-}
-
-export class RemoteTables {
-  constructor(private connection: __DbConnectionImpl) {}
-
-  get player(): PlayerTableHandle<'player'> {
-    // clientCache is a private property
-    return new PlayerTableHandle(
-      (
-        this.connection as unknown as { clientCache: __ClientCache }
-      ).clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.player)
-    );
-  }
-
-  get unindexedPlayer(): UnindexedPlayerTableHandle<'unindexed_player'> {
-    // clientCache is a private property
-    return new UnindexedPlayerTableHandle(
-      (
-        this.connection as unknown as { clientCache: __ClientCache }
-      ).clientCache.getOrCreateTable<UnindexedPlayer>(
-        REMOTE_MODULE.tables.unindexed_player
-      )
-    );
-  }
-
-  get user(): UserTableHandle<'user'> {
-    // clientCache is a private property
-    return new UserTableHandle(
-      (
-        this.connection as unknown as { clientCache: __ClientCache }
-      ).clientCache.getOrCreateTable<User>(REMOTE_MODULE.tables.user)
-    );
-  }
-}
+export type ErrorContext = __ErrorContextInterface<
+  typeof tablesSchema.schemaType,
+  typeof reducersSchema.reducersType
+>;
 
 export class SubscriptionBuilder extends __SubscriptionBuilderImpl<
-  RemoteTables,
-  RemoteReducers,
-  SetReducerFlags
+  typeof tablesSchema.schemaType,
+  typeof reducersSchema.reducersType
 > {}
 
-export class DbConnection extends __DbConnectionImpl<
-  RemoteTables,
-  RemoteReducers,
-  SetReducerFlags
-> {
-  static builder = (): __DbConnectionBuilder<
-    DbConnection,
-    ErrorContext,
-    SubscriptionEventContext
-  > => {
-    return new __DbConnectionBuilder<
-      DbConnection,
-      ErrorContext,
-      SubscriptionEventContext
-    >(REMOTE_MODULE, (imp: __DbConnectionImpl) => imp as DbConnection);
+export class DbConnectionBuilder extends __DbConnectionBuilder<
+  typeof tablesSchema.schemaType,
+  typeof reducersSchema.reducersType,
+  DbConnection
+> {};
+
+export class DbConnection extends __DbConnectionImpl<typeof tablesSchema.schemaType, typeof reducersSchema.reducersType> {
+  static builder = (): DbConnectionBuilder => {
+    return new DbConnectionBuilder(REMOTE_MODULE, (config: DbConnectionConfig<typeof tablesSchema.schemaType, typeof reducersSchema.reducersType>) => new DbConnection(config));
   };
   subscriptionBuilder = (): SubscriptionBuilder => {
     return new SubscriptionBuilder(this);
   };
 }
 
-export type EventContext = __EventContextInterface<
-  RemoteTables,
-  RemoteReducers,
-  SetReducerFlags,
-  Reducer
->;
-export type ReducerEventContext = __ReducerEventContextInterface<
-  RemoteTables,
-  RemoteReducers,
-  SetReducerFlags,
-  Reducer
->;
-export type SubscriptionEventContext = __SubscriptionEventContextInterface<
-  RemoteTables,
-  RemoteReducers,
-  SetReducerFlags
->;
-export type ErrorContext = __ErrorContextInterface<
-  RemoteTables,
-  RemoteReducers,
-  SetReducerFlags
->;
+
+// // --- factory returning a well-typed object ---
+// function makeReducersObj<R extends UntypedReducersDef>(
+//   r: { reducersType: R },
+//   call: (name: string, spacetime: R['reducers'][number]['paramsSpacetimeType'], params: R['reducers'][number]['params']) => void
+// ): Readonly<ReducersFrom<R>> {
+//   const obj: Record<string, any> = {};
+//   for (const red of Object.values(r.reducersType.reducers)) {
+//     const key = toCamelCase(red.name as string);
+//     obj[key] = (params: any) => call(red.name as string, red.paramsSpacetimeType, params);
+//   }
+//   return Object.freeze(obj) as Readonly<ReducersFrom<R>>;
+// }
+
+// const reducersObj: UntypedReducers = {}
+// for (const reducer of Object.values(reducersSchema.reducersType.reducers)) {
+//   reducersObj[toCamelCase(reducer.name)] = function<Args extends any[]>(...args: Args) {
+//     this.#connection.callReducerWithParams(
+//       reducersSchema.reducersType.reducers[0].name,
+//       reducersSchema.reducersType.reducers[0].paramsSpacetimeType,
+//       args,
+//       "FullUpdate",
+//     );
+//   };
+// }
+// Object.freeze(reducersObj);
+
+// export class RemoteReducers implements UntypedReducersDef {
+//   [key: string]: (...args: any[]) => void;
+
+//   #connection: __DbConnectionImpl<typeof spacetimedb.schemaType, typeof r.reducersType>;
+//   #setCallReducerFlags: SetReducerFlags;
+
+//   constructor(
+//     connection: __DbConnectionImpl<typeof spacetimedb.schemaType, typeof r.reducersType>,
+//     setCallReducerFlags: SetReducerFlags
+//   ) {
+//     this.#connection = connection;
+//     this.#setCallReducerFlags = setCallReducerFlags;
+//   }
+
+//   createPlayer(name: string, location: Point) {
+//     this.#connection.callReducerWithParams(
+//       r.reducersType.reducers[0].name,
+//       r.reducersType.reducers[0].paramsSpacetimeType,
+//       [name, location],
+//       this.#setCallReducerFlags.createPlayerFlags,
+//     );
+//   }
+
+//   // onCreatePlayer(
+//   //   callback: (ctx: ReducerEventContext, name: string, location: Point) => void
+//   // ) {
+//   //   this.#connection.onReducer('create_player', callback);
+//   // }
+
+//   // removeOnCreatePlayer(
+//   //   callback: (ctx: ReducerEventContext, name: string, location: Point) => void
+//   // ) {
+//   //   this.#connection.offReducer('create_player', callback);
+//   // }
+// }
+
+// export class SetReducerFlags implements __SetReducerFlags<RemoteReducers> {
+//   createPlayerFlags: __CallReducerFlags = 'FullUpdate';
+//   createPlayer(flags: __CallReducerFlags) {
+//     this.createPlayerFlags = flags;
+//   }
+// }
+
+// export class RemoteTables implements ClientDbView<typeof spacetimedb.schemaType> {
+//   constructor(private connection: __DbConnectionImpl<typeof spacetimedb.schemaType, RemoteReducers>) {}
+
+//   get player(): PlayerTableHandle<typeof spacetimedb.schemaType, typeof r.reducersType> {
+//     // clientCache is a private property
+//     return new PlayerTableHandle(
+//       (
+//         this.connection as unknown as { clientCache: __ClientCache }
+//       ).clientCache.getOrCreateTable<"player">(spacetimedb.tablesDef.tables[0])
+//     );
+//   }
+
+//   get unindexedPlayer(): UnindexedPlayerTableHandle<'unindexed_player'> {
+//     // clientCache is a private property
+//     return new UnindexedPlayerTableHandle(
+//       (
+//         this.connection as unknown as { clientCache: __ClientCache }
+//       ).clientCache.getOrCreateTable<"unindexed_player">(
+//         REMOTE_MODULE.tables.unindexed_player
+//       )
+//     );
+//   }
+
+//   get user(): UserTableHandle<'user'> {
+//     // clientCache is a private property
+//     return new UserTableHandle(
+//       (
+//         this.connection as unknown as { clientCache: __ClientCache }
+//       ).clientCache.getOrCreateTable<"user">(REMOTE_MODULE.tables.user)
+//     );
+//   }
+// }
+
+// export class SubscriptionBuilder extends __SubscriptionBuilderImpl<
+//   SchemaDef,
+//   RemoteReducers
+// > {}
+
+// export class DbConnection extends __DbConnectionImpl<
+//   SchemaDef,
+//   RemoteReducers,
+// > {
+//   static builder = (): __DbConnectionBuilder<
+//     DbConnection,
+//     ErrorContext,
+//     SubscriptionEventContext
+//   > => {
+//     return new __DbConnectionBuilder<
+//       DbConnection,
+//       ErrorContext,
+//       SubscriptionEventContext
+//     >(REMOTE_MODULE, (imp: __DbConnectionImpl) => imp as DbConnection);
+//   };
+//   subscriptionBuilder = (): SubscriptionBuilder => {
+//     return new SubscriptionBuilder(this);
+//   };
+// }
+
+// export type EventContext = __EventContextInterface<
+//   RemoteTables,
+//   RemoteReducers,
+//   SetReducerFlags,
+//   Reducer
+// >;
+// export type ReducerEventContext = __ReducerEventContextInterface<
+//   RemoteTables,
+//   RemoteReducers,
+//   SetReducerFlags,
+//   Reducer
+// >;
+// export type SubscriptionEventContext = __SubscriptionEventContextInterface<
+//   RemoteTables,
+//   RemoteReducers,
+//   SetReducerFlags
+// >;
+// export type ErrorContext = __ErrorContextInterface<
+//   RemoteTables,
+//   RemoteReducers,
+//   SetReducerFlags
+// >;
+
+// const REMOTE_MODULE = {
+//   tables: {
+//     player: {
+//       name: 'player' as const,
+//       rowType: Player.getTypeScriptAlgebraicType(),
+//       primaryKey: 'ownerId',
+//       primaryKeyInfo: {
+//         colName: 'ownerId',
+//         colType: (
+//           Player.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product
+//         ).value.elements[0].algebraicType,
+//       },
+//     },
+//     unindexed_player: {
+//       tableName: 'unindexed_player' as const,
+//       rowType: UnindexedPlayer.getTypeScriptAlgebraicType(),
+//     },
+//     user: {
+//       tableName: 'user' as const,
+//       rowType: User.getTypeScriptAlgebraicType(),
+//       primaryKey: 'identity',
+//       primaryKeyInfo: {
+//         colName: 'identity',
+//         colType: (
+//           User.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product
+//         ).value.elements[0].algebraicType,
+//       },
+//     },
+//   },
+//   reducers: {
+//     create_player: {
+//       reducerName: 'create_player',
+//       argsType: CreatePlayer.getTypeScriptAlgebraicType(),
+//     },
+//   },
+//   versionInfo: {
+//     cliVersion: '1.5.0',
+//   },
+//   // Constructors which are used by the DbConnectionImpl to
+//   // extract type information from the generated RemoteModule.
+//   //
+//   // NOTE: This is not strictly necessary for `eventContextConstructor` because
+//   // all we do is build a TypeScript object which we could have done inside the
+//   // SDK, but if in the future we wanted to create a class this would be
+//   // necessary because classes have methods, so we'll keep it.
+//   eventContextConstructor: (
+//     imp: __DbConnectionImpl<SchemaDef, RemoteReducers>,
+//     event: __Event<Reducer>
+//   ) => {
+//     return {
+//       ...(imp as DbConnection),
+//       event,
+//     };
+//   },
+//   dbViewConstructor: (imp: __DbConnectionImpl<SchemaDef, RemoteReducers>) => {
+//     return new RemoteTables(imp);
+//   },
+//   reducersConstructor: (
+//     imp: __DbConnectionImpl<SchemaDef, RemoteReducers>,
+//     setReducerFlags: SetReducerFlags
+//   ) => {
+//     return new RemoteReducers(imp, setReducerFlags);
+//   },
+//   setReducerFlagsConstructor: () => {
+//     return new SetReducerFlags();
+//   },
+// } satisfies __RemoteModule<SchemaDef, RemoteReducers>;

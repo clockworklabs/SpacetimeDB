@@ -61,9 +61,9 @@ const REMOTE_MODULE = {
     user: {
       tableName: 'user' as const,
       rowType: User.getTypeScriptAlgebraicType(),
-      primaryKey: 'identity',
+      primaryKey: 'identity' as const,
       primaryKeyInfo: {
-        colName: 'identity',
+        colName: 'identity' as const,
         colType: (
           User.getTypeScriptAlgebraicType() as __AlgebraicTypeVariants.Product
         ).value.elements[0].algebraicType,
@@ -119,7 +119,7 @@ const REMOTE_MODULE = {
   setReducerFlagsConstructor: () => {
     return new SetReducerFlags();
   },
-};
+} satisfies RemoteModule;
 
 // A type representing all the possible variants of a reducer.
 export type Reducer =

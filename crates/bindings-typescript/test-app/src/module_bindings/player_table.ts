@@ -25,7 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
+  type ClientTable as __ClientTable,
 } from '../../../src/index';
 import { Player } from './player_type';
 import { Point } from './point_type';
@@ -51,7 +51,7 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * like `ctx.db.player.on_insert(...)`.
  */
 export class PlayerTableHandle<TableName extends string>
-  implements __TableHandle<TableName>
+  implements __ClientTable<TableName>
 {
   // phantom type to track the table name
   readonly tableName!: TableName;
@@ -80,11 +80,11 @@ export class PlayerTableHandle<TableName extends string>
    * Get a handle on the `ownerId` unique index on the table `player`.
    */
   ownerId = {
-    // Find the subscribed row whose `ownerId` column value is equal to `col_val`,
+    // Find the subscribed row whose `ownerId` column value is equal to `colVal`,
     // if such a row is present in the client cache.
-    find: (col_val: string): Player | undefined => {
+    find: (colVal: string): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.ownerId, col_val)) {
+        if (__deepEqual(row.ownerId, colVal)) {
           return row;
         }
       }

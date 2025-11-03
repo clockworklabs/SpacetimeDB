@@ -3,7 +3,11 @@ import type { TableRuntimeTypeInfo } from './spacetime_module.ts';
 
 import { stdbLogger } from './logger.ts';
 import type { ComparablePrimitive } from '../';
-import type { EventContextInterface } from './index.ts';
+import type { EventContextInterface, ClientTable } from './index.ts';
+import type { RowType, Table, UntypedTableDef } from '../server/table.ts';
+import type { UntypedSchemaDef } from '../server/schema.ts';
+import type { UntypedReducersDef } from './reducers.ts';
+import type { ClientTableCore } from './table_handle.ts';
 
 export type Operation<
   RowType extends Record<string, any> = Record<string, any>,
@@ -16,10 +20,10 @@ export type Operation<
 };
 
 export type TableUpdate<
-  RowType extends Record<string, any> = Record<string, any>,
+  TableDef extends UntypedTableDef,
 > = {
   tableName: string;
-  operations: Operation<RowType>[];
+  operations: Operation<RowType<TableDef>>[];
 };
 
 export type PendingCallback = {
@@ -31,10 +35,12 @@ export type PendingCallback = {
  * Builder to generate calls to query a `table` in the database
  */
 export class TableCache<
-  RowType extends Record<string, any> = Record<string, any>,
-> {
-  private rows: Map<ComparablePrimitive, [RowType, number]>;
-  private tableTypeInfo: TableRuntimeTypeInfo;
+  SchemaDef extends UntypedSchemaDef,
+  Reducers extends UntypedReducersDef,
+  TableDef extends UntypedTableDef,
+> implements ClientTableCore<SchemaDef, Reducers, TableDef> {
+  private rows: Map<ComparablePrimitive, [RowType<TableDef>, number]>;
+  private tableDef: TableDef;
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
 
   /**
@@ -43,8 +49,8 @@ export class TableCache<
    * @param primaryKey column name designated as `#[primarykey]`
    * @param entityClass the entityClass
    */
-  constructor(tableTypeInfo: TableRuntimeTypeInfo) {
-    this.tableTypeInfo = tableTypeInfo;
+  constructor(tableDef: TableDef) {
+    this.tableDef = tableDef;
     this.rows = new Map();
     this.emitter = new EventEmitter();
   }
@@ -52,30 +58,45 @@ export class TableCache<
   /**
    * @returns number of rows in the table
    */
-  count(): number {
-    return this.rows.size;
+  count(): bigint {
+    return BigInt(this.rows.size);
   }
 
   /**
    * @returns The values of the rows in the table
    */
-  iter(): RowType[] {
-    return Array.from(this.rows.values()).map(([row]) => row);
+  iter(): IterableIterator<RowType<TableDef>> {
+    function* generator(rows: Map<ComparablePrimitive, [RowType<TableDef>, number]>): IterableIterator<RowType<TableDef>> {
+      for (const [row] of rows.values()) {
+        yield row;
+      }
+    }
+    return generator(this.rows);
+  }
+
+  /**
+   * Allows iteration over the rows in the table 
+   * @returns An iterator over the rows in the table
+   */
+  [Symbol.iterator](): IterableIterator<RowType<TableDef>> {
+    return this.iter();
   }
 
   applyOperations = (
-    operations: Operation<RowType>[],
-    ctx: EventContextInterface
+    operations: Operation<RowType<TableDef>>[],
+    ctx: EventContextInterface<SchemaDef, Reducers>
   ): PendingCallback[] => {
     const pendingCallbacks: PendingCallback[] = [];
-    if (this.tableTypeInfo.primaryKeyInfo !== undefined) {
+    // TODO: performance
+    const hasPrimaryKey = Object.values(this.tableDef.columns).some(col => col.columnMetadata.isPrimaryKey === true); 
+    if (hasPrimaryKey) {
       const insertMap = new Map<
         ComparablePrimitive,
-        [Operation<RowType>, number]
+        [Operation<RowType<TableDef>>, number]
       >();
       const deleteMap = new Map<
         ComparablePrimitive,
-        [Operation<RowType>, number]
+        [Operation<RowType<TableDef>>, number]
       >();
       for (const op of operations) {
         if (op.type === 'insert') {
@@ -136,9 +157,9 @@ export class TableCache<
   };
 
   update = (
-    ctx: EventContextInterface,
+    ctx: EventContextInterface<SchemaDef, Reducers>,
     rowId: ComparablePrimitive,
-    newRow: RowType,
+    newRow: RowType<TableDef>,
     refCountDelta: number = 0
   ): PendingCallback | undefined => {
     const existingEntry = this.rows.get(rowId);
@@ -146,7 +167,7 @@ export class TableCache<
       // TODO: this should throw an error and kill the connection.
       stdbLogger(
         'error',
-        `Updating a row that was not present in the cache. Table: ${this.tableTypeInfo.tableName}, RowId: ${rowId}`
+        `Updating a row that was not present in the cache. Table: ${this.tableDef.name}, RowId: ${rowId}`
       );
       return undefined;
     }
@@ -155,7 +176,7 @@ export class TableCache<
     if (previousCount + refCountDelta <= 0) {
       stdbLogger(
         'error',
-        `Negative reference count for in table ${this.tableTypeInfo.tableName} row ${rowId} (${previousCount} + ${refCountDelta})`
+        `Negative reference count for in table ${this.tableDef.name} row ${rowId} (${previousCount} + ${refCountDelta})`
       );
       return undefined;
     }
@@ -164,11 +185,11 @@ export class TableCache<
     if (previousCount === 0) {
       stdbLogger(
         'error',
-        `Updating a row id in table ${this.tableTypeInfo.tableName} which was not present in the cache (rowId: ${rowId})`
+        `Updating a row id in table ${this.tableDef.name} which was not present in the cache (rowId: ${rowId})`
       );
       return {
         type: 'insert',
-        table: this.tableTypeInfo.tableName,
+        table: this.tableDef.name,
         cb: () => {
           this.emitter.emit('insert', ctx, newRow);
         },
@@ -176,7 +197,7 @@ export class TableCache<
     }
     return {
       type: 'update',
-      table: this.tableTypeInfo.tableName,
+      table: this.tableDef.name,
       cb: () => {
         this.emitter.emit('update', ctx, oldRow, newRow);
       },
@@ -184,8 +205,8 @@ export class TableCache<
   };
 
   insert = (
-    ctx: EventContextInterface,
-    operation: Operation<RowType>,
+    ctx: EventContextInterface<SchemaDef, Reducers>,
+    operation: Operation<RowType<TableDef>>,
     count: number = 1
   ): PendingCallback | undefined => {
     const [_, previousCount] = this.rows.get(operation.rowId) || [
@@ -196,7 +217,7 @@ export class TableCache<
     if (previousCount === 0) {
       return {
         type: 'insert',
-        table: this.tableTypeInfo.tableName,
+        table: this.tableDef.name,
         cb: () => {
           this.emitter.emit('insert', ctx, operation.row);
         },
@@ -207,8 +228,8 @@ export class TableCache<
   };
 
   delete = (
-    ctx: EventContextInterface,
-    operation: Operation<RowType>,
+    ctx: EventContextInterface<SchemaDef, Reducers>,
+    operation: Operation<RowType<TableDef>>,
     count: number = 1
   ): PendingCallback | undefined => {
     const [_, previousCount] = this.rows.get(operation.rowId) || [
@@ -226,7 +247,7 @@ export class TableCache<
       this.rows.delete(operation.rowId);
       return {
         type: 'delete',
-        table: this.tableTypeInfo.tableName,
+        table: this.tableDef.name,
         cb: () => {
           this.emitter.emit('delete', ctx, operation.row);
         },
@@ -240,7 +261,7 @@ export class TableCache<
    * Register a callback for when a row is newly inserted into the database.
    *
    * ```ts
-   * User.onInsert((user, reducerEvent) => {
+   * ctx.db.user.onInsert((reducerEvent, user) => {
    *   if (reducerEvent) {
    *      console.log("New user on reducer", reducerEvent, user);
    *   } else {
@@ -251,8 +272,8 @@ export class TableCache<
    *
    * @param cb Callback to be called when a new row is inserted
    */
-  onInsert = <EventContext>(
-    cb: (ctx: EventContext, row: RowType) => void
+  onInsert = (
+    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.on('insert', cb);
   };
@@ -261,7 +282,7 @@ export class TableCache<
    * Register a callback for when a row is deleted from the database.
    *
    * ```ts
-   * User.onDelete((user, reducerEvent) => {
+   * ctx.db.user.onDelete((reducerEvent, user) => {
    *   if (reducerEvent) {
    *      console.log("Deleted user on reducer", reducerEvent, user);
    *   } else {
@@ -272,8 +293,8 @@ export class TableCache<
    *
    * @param cb Callback to be called when a new row is inserted
    */
-  onDelete = <EventContext>(
-    cb: (ctx: EventContext, row: RowType) => void
+  onDelete = (
+    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.on('delete', cb);
   };
@@ -282,7 +303,7 @@ export class TableCache<
    * Register a callback for when a row is updated into the database.
    *
    * ```ts
-   * User.onInsert((user, reducerEvent) => {
+   * ctx.db.user.onInsert((reducerEvent, oldUser, user) => {
    *   if (reducerEvent) {
    *      console.log("Updated user on reducer", reducerEvent, user);
    *   } else {
@@ -293,8 +314,8 @@ export class TableCache<
    *
    * @param cb Callback to be called when a new row is inserted
    */
-  onUpdate = <EventContext>(
-    cb: (ctx: EventContext, oldRow: RowType, row: RowType) => void
+  onUpdate = (
+    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, oldRow: RowType<TableDef>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.on('update', cb);
   };
@@ -304,8 +325,8 @@ export class TableCache<
    *
    * @param cb Callback to be removed
    */
-  removeOnInsert = <EventContext>(
-    cb: (ctx: EventContext, row: RowType) => void
+  removeOnInsert = (
+    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.off('insert', cb);
   };
@@ -315,8 +336,8 @@ export class TableCache<
    *
    * @param cb Callback to be removed
    */
-  removeOnDelete = <EventContext>(
-    cb: (ctx: EventContext, row: RowType) => void
+  removeOnDelete = (
+    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.off('delete', cb);
   };
@@ -326,8 +347,8 @@ export class TableCache<
    *
    * @param cb Callback to be removed
    */
-  removeOnUpdate = <EventContext>(
-    cb: (ctx: EventContext, oldRow: RowType, row: RowType) => void
+  removeOnUpdate = (
+    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, oldRow: RowType<TableDef>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.off('update', cb);
   };

@@ -1,9 +1,11 @@
 import { DbConnection, Player } from './module_bindings';
 import { useEffect } from 'react';
 import './App.css';
-import { useSpacetimeDB, useTable } from '../../src/react';
+import { useReducer, useSpacetimeDB, useTable } from '../../src/react';
 
 function App() {
+  const x = useReducer;
+  const createPlayer = useReducer<DbConnection>('createPlayer');
   const connection = useSpacetimeDB<DbConnection>();
   const players = useTable<DbConnection, Player>('player', {
     onInsert: player => {

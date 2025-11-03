@@ -1,17 +1,19 @@
 import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
-import type { Identity } from '../';
-import type RemoteModule from './spacetime_module';
+import type { DbConnectionConfig, ErrorContextInterface, Identity, SubscriptionEventContextInterface } from '../';
+import { type RemoteModule, type RemoteModule2 } from './spacetime_module';
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
+import type { UntypedSchemaDef } from '../server/schema';
+import type { UntypedReducersDef } from './reducers';
 
 /**
  * The database client connection to a SpacetimeDB server.
  */
 export class DbConnectionBuilder<
-  DbConnection,
-  ErrorContext,
-  _SubscriptionEventContext,
+  SchemaDef extends UntypedSchemaDef,
+  Reducers extends UntypedReducersDef,
+  DbConnection extends DbConnectionImpl<SchemaDef, Reducers>,
 > {
   #uri?: URL;
   #nameOrAddress?: string;
@@ -32,8 +34,8 @@ export class DbConnectionBuilder<
    * @param dbConnectionConstructor The constructor to use to create a new `DbConnection`.
    */
   constructor(
-    private remoteModule: RemoteModule,
-    private dbConnectionConstructor: (imp: DbConnectionImpl) => DbConnection
+    private remoteModule: RemoteModule2<SchemaDef, Reducers>,
+    private dbConnectionCtor: (config: DbConnectionConfig<SchemaDef, Reducers>) => DbConnection
   ) {
     this.#createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
   }
@@ -179,7 +181,7 @@ export class DbConnectionBuilder<
    * });
    * ```
    */
-  onConnectError(callback: (ctx: ErrorContext, error: Error) => void): this {
+  onConnectError(callback: (ctx: ErrorContextInterface<SchemaDef, Reducers>, error: Error) => void): this {
     this.#emitter.on('connectError', callback);
     return this;
   }
@@ -211,7 +213,7 @@ export class DbConnectionBuilder<
    * @throws {Error} Throws an error if called multiple times on the same `DbConnectionBuilder`.
    */
   onDisconnect(
-    callback: (ctx: ErrorContext, error?: Error | undefined) => void
+    callback: (ctx: ErrorContextInterface<SchemaDef, Reducers>, error?: Error | undefined) => void
   ): this {
     this.#emitter.on('disconnect', callback);
     return this;
@@ -231,7 +233,7 @@ export class DbConnectionBuilder<
    * DbConnection.builder().withUri(host).withModuleName(name_or_address).withToken(auth_token).build();
    * ```
    */
-  build(): DbConnection {
+  build(): DbConnectionImpl<SchemaDef, Reducers> {
     if (!this.#uri) {
       throw new Error('URI is required to connect to SpacetimeDB');
     }
@@ -245,19 +247,17 @@ export class DbConnectionBuilder<
     // Ideally, it would be a compile time error, but I'm not sure how to accomplish that.
     ensureMinimumVersionOrThrow(this.remoteModule.versionInfo?.cliVersion);
 
-    return this.dbConnectionConstructor(
-      new DbConnectionImpl({
-        uri: this.#uri,
-        nameOrAddress: this.#nameOrAddress,
-        identity: this.#identity,
-        token: this.#token,
-        emitter: this.#emitter,
-        compression: this.#compression,
-        lightMode: this.#lightMode,
-        confirmedReads: this.#confirmedReads,
-        createWSFn: this.#createWSFn,
-        remoteModule: this.remoteModule,
-      })
-    );
+    return this.dbConnectionCtor({
+      uri: this.#uri,
+      nameOrAddress: this.#nameOrAddress,
+      identity: this.#identity,
+      token: this.#token,
+      emitter: this.#emitter,
+      compression: this.#compression,
+      lightMode: this.#lightMode,
+      confirmedReads: this.#confirmedReads,
+      createWSFn: this.#createWSFn,
+      remoteModule: this.remoteModule,
+    })
   }
 }

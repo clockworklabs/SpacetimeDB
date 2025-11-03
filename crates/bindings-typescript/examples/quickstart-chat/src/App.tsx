@@ -16,8 +16,9 @@ function App() {
   const [settingName, setSettingName] = useState(false);
   const [systemMessages, setSystemMessages] = useState([] as Message[]);
   const [newMessage, setNewMessage] = useState('');
-
   const conn = useSpacetimeDB<DbConnection>();
+
+  conn.setReducerFlags()
   const { identity, isActive: connected } = conn;
 
   // Subscribe to all messages in the chat

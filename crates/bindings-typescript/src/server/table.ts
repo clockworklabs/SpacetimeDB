@@ -1,11 +1,11 @@
-import { AlgebraicType } from '../lib/algebraic_type';
+import { AlgebraicType, ProductType } from '../lib/algebraic_type';
 import type RawConstraintDefV9 from '../lib/autogen/raw_constraint_def_v_9_type';
 import RawIndexAlgorithm from '../lib/autogen/raw_index_algorithm_type';
 import type RawIndexDefV9 from '../lib/autogen/raw_index_def_v_9_type';
 import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type { AllUnique } from './constraints';
-import type { ColumnIndex, IndexColumns, Indexes, IndexOpts } from './indexes';
+import type { ColumnIndex, IndexColumns, Indexes, IndexOpts, ReadonlyIndexes } from './indexes';
 import { MODULE_DEF, splitName } from './schema';
 import {
   RowBuilder,
@@ -53,7 +53,9 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
  */
 export type UntypedTableDef = {
   name: string;
+  accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
+  rowType: ProductType;
   indexes: IndexOpts<any>[];
 };
 
@@ -108,17 +110,30 @@ export type Table<TableDef extends UntypedTableDef> = Prettify<
   TableMethods<TableDef> & Indexes<TableDef, TableIndexes<TableDef>>
 >;
 
-/**
- * A type representing the methods available on a table.
- */
-export type TableMethods<TableDef extends UntypedTableDef> = {
+export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
+  ReadonlyTableMethods<TableDef> &
+    ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
+>;
+
+export type ReadonlyTableMethods<TableDef extends UntypedTableDef> = {
   /** Returns the number of rows in the TX state. */
   count(): bigint;
 
-  /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
+  /**
+   * Insert and return the inserted row (auto-increment fields filled).
+   *
+   * May throw on error:
+   * * If there are any unique or primary key columns in this table, may throw {@link UniqueAlreadyExists}.
+   * * If there are any auto-incrementing columns in this table, may throw {@link AutoIncOverflow}.
+   * */
   iter(): IterableIterator<RowType<TableDef>>;
   [Symbol.iterator](): IterableIterator<RowType<TableDef>>;
+};
 
+/**
+ * A type representing the methods available on a table.
+ */
+export type TableMethods<TableDef extends UntypedTableDef> = ReadonlyTableMethods<TableDef> & {
   /**
    * Insert and return the inserted row (auto-increment fields filled).
    *
@@ -148,9 +163,9 @@ export type TableSchema<
   readonly tableName: TableName;
 
   /**
-   * The {@link AlgebraicType} representing the structure of a row in the table.
+   * The {@link ProductType} representing the structure of a row in the table.
    */
-  readonly rowSpacetimeType: AlgebraicType;
+  readonly rowSpacetimeType: ProductType;
 
   /**
    * The {@link RawTableDefV9} of the configured table
@@ -319,11 +334,11 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     });
   }
 
-  const productType = AlgebraicType.Product({
+  const productType = {
     elements: row.resolveType().value.elements.map(elem => {
       return { name: elem.name, algebraicType: elem.algebraicType };
     }),
-  });
+  };
 
   return {
     rowType: row as RowBuilder<CoerceRow<Row>>,

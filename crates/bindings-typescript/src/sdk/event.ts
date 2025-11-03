@@ -1,6 +1,7 @@
-import type { ReducerEvent, ReducerInfoType } from './reducer_event';
+import type { ReducerEvent } from './reducer_event';
+import type { UntypedReducerDef } from './reducers';
 
-export type Event<Reducer extends ReducerInfoType> =
+export type Event<Reducer extends UntypedReducerDef> =
   | { tag: 'Reducer'; value: ReducerEvent<Reducer> }
   | { tag: 'SubscribeApplied' }
   | { tag: 'UnsubscribeApplied' }

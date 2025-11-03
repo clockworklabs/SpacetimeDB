@@ -8,6 +8,7 @@ import {
 import { useSpacetimeDB } from './useSpacetimeDB';
 import { DbConnectionImpl, TableCache } from '../sdk/db_connection_impl';
 import type { TableNamesFromDb } from '../sdk/table_handle';
+import type { ConnectionState } from './connection_state';
 
 export interface UseQueryCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
@@ -292,9 +293,9 @@ export function useTable<
       | undefined;
   }
   const [subscribeApplied, setSubscribeApplied] = useState(false);
-  let spacetime: DbConnection | undefined;
+  let connectionState: ConnectionState<DbConnection> | undefined;
   try {
-    spacetime = useSpacetimeDB<DbConnection>();
+    connectionState = useSpacetimeDB<DbConnection>();
   } catch {
     throw new Error(
       'Could not find SpacetimeDB client! Did you forget to add a ' +
@@ -302,7 +303,6 @@ export function useTable<
         'under a `SpacetimeDBProvider` component.'
     );
   }
-  const client = spacetime;
 
   const query =
     `SELECT * FROM ${tableName}` +
@@ -314,8 +314,12 @@ export function useTable<
   const whereKey = whereClause ? toString(whereClause) : '';
 
   const computeSnapshot = useCallback((): Snapshot<RowType> => {
-    const table = client.db[
-      tableName as keyof typeof client.db
+    const connection = connectionState.getConnection();
+    if (!connection) {
+      return { rows: [], state: 'loading' };
+    }
+    const table = connection.db[
+      tableName as keyof typeof connection.db
     ] as unknown as TableCache<RowType>;
     const result: readonly RowType[] = whereClause
       ? table.iter().filter(row => evaluate(whereClause, row))
@@ -325,11 +329,12 @@ export function useTable<
       state: subscribeApplied ? 'ready' : 'loading',
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, tableName, whereKey, subscribeApplied]);
+  }, [connectionState, tableName, whereKey, subscribeApplied]);
 
   useEffect(() => {
-    if (client.isActive) {
-      const cancel = client
+    const connection = connectionState.getConnection()!;
+    if (connectionState.isActive && connection) {
+      const cancel = connection 
         .subscriptionBuilder()
         .onApplied(() => {
           setSubscribeApplied(true);
@@ -339,7 +344,7 @@ export function useTable<
         cancel.unsubscribe();
       };
     }
-  }, [query, client.isActive, client]);
+  }, [query, connectionState.isActive, connectionState]);
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
@@ -400,8 +405,13 @@ export function useTable<
         }
       };
 
-      const table = client.db[
-        tableName as keyof typeof client.db
+      const connection = connectionState.getConnection();
+      if (!connection) {
+        return () => {};
+      }
+
+      const table = connection.db[
+        tableName as keyof typeof connection.db
       ] as unknown as TableCache<RowType>;
       table.onInsert(onInsert);
       table.onDelete(onDelete);
@@ -415,7 +425,7 @@ export function useTable<
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      client,
+      connectionState,
       tableName,
       whereKey,
       callbacks?.onDelete,
