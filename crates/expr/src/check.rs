@@ -7,7 +7,7 @@ use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::TableId;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
     ast::{sub::SqlSelect, SqlFrom, SqlIdent, SqlJoin},
@@ -26,19 +26,19 @@ pub type TypingResult<T> = core::result::Result<T, TypingError>;
 /// A view of the database schema
 pub trait SchemaView {
     fn table_id(&self, name: &str) -> Option<TableId>;
-    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>>;
+    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>>;
     fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>>;
 
-    fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
+    fn schema(&self, name: &str) -> Option<Arc<TableOrViewSchema>> {
         self.table_id(name).and_then(|table_id| self.schema_for_table(table_id))
     }
 }
 
 #[derive(Default)]
-pub struct Relvars(HashMap<Box<str>, Arc<TableSchema>>);
+pub struct Relvars(HashMap<Box<str>, Arc<TableOrViewSchema>>);
 
 impl Deref for Relvars {
-    type Target = HashMap<Box<str>, Arc<TableSchema>>;
+    type Target = HashMap<Box<str>, Arc<TableOrViewSchema>>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -116,7 +116,7 @@ pub trait TypeChecker {
         }
     }
 
-    fn type_relvar(tx: &impl SchemaView, name: &str) -> TypingResult<Arc<TableSchema>> {
+    fn type_relvar(tx: &impl SchemaView, name: &str) -> TypingResult<Arc<TableOrViewSchema>> {
         tx.schema(name)
             .ok_or_else(|| Unresolved::table(name))
             .map_err(TypingError::from)
@@ -176,20 +176,30 @@ fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
 }
 
 pub mod test_utils {
-    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, ProductType};
+    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, AlgebraicType, ProductType};
     use spacetimedb_primitives::TableId;
     use spacetimedb_schema::{
         def::ModuleDef,
-        schema::{Schema, TableSchema},
+        schema::{Schema, TableOrViewSchema, TableSchema},
     };
     use std::sync::Arc;
 
     use super::SchemaView;
 
-    pub fn build_module_def(types: Vec<(&str, ProductType)>) -> ModuleDef {
+    pub fn build_module_def(types: Vec<(&str, ProductType)>, views: Vec<(&str, ProductType)>) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
         for (name, ty) in types {
             builder.build_table_with_new_type(name, ty, true);
+        }
+        for (name, ty) in views {
+            let type_ref = builder.add_algebraic_type([], name, AlgebraicType::from(ty), true);
+            builder.add_view(
+                name,
+                true,
+                true,
+                ProductType::unit(),
+                AlgebraicType::option(AlgebraicType::Ref(type_ref)),
+            );
         }
         builder.finish().try_into().expect("failed to generate module def")
     }
@@ -201,20 +211,30 @@ pub mod test_utils {
             match name {
                 "t" => Some(TableId(0)),
                 "s" => Some(TableId(1)),
+                "v" => Some(TableId(2)),
                 _ => None,
             }
         }
 
-        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
             match table_id.idx() {
                 0 => Some((TableId(0), "t")),
                 1 => Some((TableId(1), "s")),
+                2 => Some((TableId(2), "v")),
                 _ => None,
             }
             .and_then(|(table_id, name)| {
                 self.0
                     .table(name)
                     .map(|def| Arc::new(TableSchema::from_module_def(&self.0, def, (), table_id)))
+                    .map(TableOrViewSchema::from)
+                    .or_else(|| {
+                        self.0
+                            .view(name)
+                            .map(|def| Arc::new(TableSchema::from_view_def_for_datastore(&self.0, def)))
+                            .map(TableOrViewSchema::for_view)
+                    })
+                    .map(Arc::new)
             })
         }
 
@@ -236,40 +256,43 @@ mod tests {
     use super::{SchemaView, TypingResult};
 
     fn module_def() -> ModuleDef {
-        build_module_def(vec![
-            (
-                "t",
-                ProductType::from([
-                    ("ts", AlgebraicType::timestamp()),
-                    ("i8", AlgebraicType::I8),
-                    ("u8", AlgebraicType::U8),
-                    ("i16", AlgebraicType::I16),
-                    ("u16", AlgebraicType::U16),
-                    ("i32", AlgebraicType::I32),
-                    ("u32", AlgebraicType::U32),
-                    ("i64", AlgebraicType::I64),
-                    ("u64", AlgebraicType::U64),
-                    ("int", AlgebraicType::U32),
-                    ("f32", AlgebraicType::F32),
-                    ("f64", AlgebraicType::F64),
-                    ("i128", AlgebraicType::I128),
-                    ("u128", AlgebraicType::U128),
-                    ("i256", AlgebraicType::I256),
-                    ("u256", AlgebraicType::U256),
-                    ("str", AlgebraicType::String),
-                    ("arr", AlgebraicType::array(AlgebraicType::String)),
-                ]),
-            ),
-            (
-                "s",
-                ProductType::from([
-                    ("id", AlgebraicType::identity()),
-                    ("u32", AlgebraicType::U32),
-                    ("arr", AlgebraicType::array(AlgebraicType::String)),
-                    ("bytes", AlgebraicType::bytes()),
-                ]),
-            ),
-        ])
+        build_module_def(
+            vec![
+                (
+                    "t",
+                    ProductType::from([
+                        ("ts", AlgebraicType::timestamp()),
+                        ("i8", AlgebraicType::I8),
+                        ("u8", AlgebraicType::U8),
+                        ("i16", AlgebraicType::I16),
+                        ("u16", AlgebraicType::U16),
+                        ("i32", AlgebraicType::I32),
+                        ("u32", AlgebraicType::U32),
+                        ("i64", AlgebraicType::I64),
+                        ("u64", AlgebraicType::U64),
+                        ("int", AlgebraicType::U32),
+                        ("f32", AlgebraicType::F32),
+                        ("f64", AlgebraicType::F64),
+                        ("i128", AlgebraicType::I128),
+                        ("u128", AlgebraicType::U128),
+                        ("i256", AlgebraicType::I256),
+                        ("u256", AlgebraicType::U256),
+                        ("str", AlgebraicType::String),
+                        ("arr", AlgebraicType::array(AlgebraicType::String)),
+                    ]),
+                ),
+                (
+                    "s",
+                    ProductType::from([
+                        ("id", AlgebraicType::identity()),
+                        ("u32", AlgebraicType::U32),
+                        ("arr", AlgebraicType::array(AlgebraicType::String)),
+                        ("bytes", AlgebraicType::bytes()),
+                    ]),
+                ),
+            ],
+            vec![],
+        )
     }
 
     /// A wrapper around [super::parse_and_type_sub] that takes a dummy [AuthCtx]

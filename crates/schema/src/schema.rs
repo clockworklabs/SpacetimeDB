@@ -50,6 +50,71 @@ pub trait Schema: Sized {
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error>;
 }
 
+/// A wrapper around a [`TableSchema`] for views.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableOrViewSchema {
+    pub table_id: TableId,
+    pub table_name: Box<str>,
+    pub table_access: StAccess,
+    inner: Arc<TableSchema>,
+    is_view: bool,
+}
+
+impl From<Arc<TableSchema>> for TableOrViewSchema {
+    fn from(inner: Arc<TableSchema>) -> Self {
+        Self {
+            table_id: inner.table_id,
+            table_name: inner.table_name.clone(),
+            table_access: inner.table_access,
+            is_view: false,
+            inner,
+        }
+    }
+}
+
+impl TableOrViewSchema {
+    /// Creates a [`TableSchema`] for a view
+    pub fn for_view(inner: Arc<TableSchema>) -> Self {
+        Self {
+            table_id: inner.table_id,
+            table_name: inner.table_name.clone(),
+            table_access: inner.table_access,
+            is_view: true,
+            inner,
+        }
+    }
+
+    /// Is this schema that of a view?
+    pub fn is_view(&self) -> bool {
+        self.is_view
+    }
+
+    /// Returns the [`TableSchema`] of the underlying datastore table.
+    /// For views, this schema will include the internal `sender` and `arg_id` columns.
+    pub fn inner(&self) -> Arc<TableSchema> {
+        self.inner.clone()
+    }
+
+    /// Returns the public columns of this table.
+    ///
+    /// The [`ColId`]s in this list do not necessarily correspond to their position in this list.
+    /// Rather they correspond to the position of the column in the physical datastore table.
+    /// This is important since this method may not return all columns recorded in the datastore.
+    /// For views in particular it will not include the internal `sender` and `arg_id` columns.
+    /// Hence columns in this list should be looked up by their [`ColId`] - not their position.
+    pub fn public_columns(&self) -> &[ColumnSchema] {
+        if self.is_view {
+            return &self.inner.columns[2..];
+        }
+        &self.inner.columns
+    }
+
+    /// Check if the `col_name` exist on this [`TableOrViewSchema`]
+    pub fn get_column_by_name(&self, col_name: &str) -> Option<&ColumnSchema> {
+        self.public_columns().iter().find(|x| &*x.col_name == col_name)
+    }
+}
+
 /// A data structure representing the schema of a database table.
 ///
 /// This struct holds information about the table, including its identifier,
