@@ -535,9 +535,7 @@ export class DbConnectionImpl<
         const parsedTableUpdates = await parseDatabaseUpdate(
           message.value.update
         );
-        const subscribeAppliedMessage: SubscribeAppliedMessage<
-          Record<string, any>
-        > = {
+        const subscribeAppliedMessage: SubscribeAppliedMessage = {
           tag: 'SubscribeApplied',
           queryId: message.value.queryId.id,
           tableUpdates: parsedTableUpdates,
@@ -549,9 +547,7 @@ export class DbConnectionImpl<
         const parsedTableUpdates = await parseDatabaseUpdate(
           message.value.update
         );
-        const unsubscribeAppliedMessage: UnsubscribeAppliedMessage<
-          Record<string, any>
-        > = {
+        const unsubscribeAppliedMessage: UnsubscribeAppliedMessage = {
           tag: 'UnsubscribeApplied',
           queryId: message.value.queryId.id,
           tableUpdates: parsedTableUpdates,

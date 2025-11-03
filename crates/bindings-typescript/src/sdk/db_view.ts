@@ -1,5 +1,5 @@
 import type { UntypedRemoteModule } from "./spacetime_module";
-import type { ClientTable } from "./table_handle";
+import type { ClientTable } from "./client_table";
 
 /**
  * A type representing a client-side database view, mapping table names to their corresponding client Table handles.

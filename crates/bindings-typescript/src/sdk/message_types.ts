@@ -3,15 +3,16 @@ import type { UpdateStatus } from './client_api/index.ts';
 import { Identity } from '../';
 import type { TableUpdate } from './table_cache.ts';
 import { Timestamp } from '../';
+import type { RowType, Table, UntypedTableDef } from '../lib/table.ts';
 
-export type InitialSubscriptionMessage<RowType extends Record<string, any>> = {
+export type InitialSubscriptionMessage = {
   tag: 'InitialSubscription';
-  tableUpdates: TableUpdate<RowType>[];
+  tableUpdates: TableUpdate<UntypedTableDef>[];
 };
 
-export type TransactionUpdateMessage<RowType extends Record<string, any>> = {
+export type TransactionUpdateMessage = {
   tag: 'TransactionUpdate';
-  tableUpdates: TableUpdate<RowType>[];
+  tableUpdates: TableUpdate<UntypedTableDef>[];
   identity: Identity;
   connectionId: ConnectionId | null;
   reducerInfo?: {
@@ -24,10 +25,10 @@ export type TransactionUpdateMessage<RowType extends Record<string, any>> = {
   energyConsumed: bigint;
 };
 
-export type TransactionUpdateLightMessage<RowType extends Record<string, any>> =
+export type TransactionUpdateLightMessage =
   {
     tag: 'TransactionUpdateLight';
-    tableUpdates: TableUpdate<RowType>[];
+    tableUpdates: TableUpdate<UntypedTableDef>[];
   };
 
 export type IdentityTokenMessage = {
@@ -37,16 +38,16 @@ export type IdentityTokenMessage = {
   connectionId: ConnectionId;
 };
 
-export type SubscribeAppliedMessage<RowType extends Record<string, any>> = {
+export type SubscribeAppliedMessage = {
   tag: 'SubscribeApplied';
   queryId: number;
-  tableUpdates: TableUpdate<RowType>[];
+  tableUpdates: TableUpdate<UntypedTableDef>[];
 };
 
-export type UnsubscribeAppliedMessage<RowType extends Record<string, any>> = {
+export type UnsubscribeAppliedMessage = {
   tag: 'UnsubscribeApplied';
   queryId: number;
-  tableUpdates: TableUpdate<RowType>[];
+  tableUpdates: TableUpdate<UntypedTableDef>[];
 };
 
 export type SubscriptionError = {
@@ -55,12 +56,11 @@ export type SubscriptionError = {
   error: string;
 };
 
-export type Message<RowType extends Record<string, any> = Record<string, any>> =
-
-    | InitialSubscriptionMessage<RowType>
-    | TransactionUpdateMessage<RowType>
-    | TransactionUpdateLightMessage<RowType>
+export type Message =
+    | InitialSubscriptionMessage
+    | TransactionUpdateMessage
+    | TransactionUpdateLightMessage
     | IdentityTokenMessage
-    | SubscribeAppliedMessage<RowType>
-    | UnsubscribeAppliedMessage<RowType>
+    | SubscribeAppliedMessage
+    | UnsubscribeAppliedMessage
     | SubscriptionError;

@@ -53,7 +53,7 @@ export { Point };
 import { UnindexedPlayer } from './unindexed_player_type.ts';
 export { UnindexedPlayer };
 import { User } from './user_type.ts';
-import { schema } from '../../../src/server/schema.ts';
+import { schema } from '../../../src/lib/schema.ts';
 import t from '../../../src/lib/type_builders.ts';
 import { table } from '../../../src/lib/table.ts';
 import { reducerSchema, reducers } from '../../../src/lib/reducers.ts';

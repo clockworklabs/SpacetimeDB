@@ -7,7 +7,7 @@ import {
 } from 'react';
 import { useSpacetimeDB } from './useSpacetimeDB';
 import { DbConnectionImpl, TableCache } from '../sdk/db_connection_impl';
-import type { TableNamesFromDb } from '../sdk/table_handle';
+import type { TableNamesFromDb } from '../sdk/client_table';
 import type { ConnectionState } from './connection_state';
 import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 
