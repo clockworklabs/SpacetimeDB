@@ -60,10 +60,10 @@ public:
 	}
 
 	UFUNCTION()
-	AEntity* GetEntity(uint32 EntityId) const;
+	AEntity* GetEntity(int32 EntityId) const;
 
 	UFUNCTION()
-	TMap<uint32, TWeakObjectPtr<APlayerPawn>> GetPlayerMap() const { return PlayerMap; };
+	TMap<int32, TWeakObjectPtr<APlayerPawn>> GetPlayerMap() const { return PlayerMap; };
 	
 protected:
 	virtual void BeginPlay() override;
@@ -84,7 +84,7 @@ private:
 
 	/* Border */
 	UFUNCTION()
-	void SetupArena(uint64 WorldSizeMeters);
+	void SetupArena(int64 WorldSizeMeters);
 	UFUNCTION()
 	void CreateBorderCube(const FVector2f Position, const FVector2f Size) const;
 	
@@ -102,9 +102,9 @@ private:
 
 	/* Data Bindings */
 	UPROPERTY()
-	TMap<uint32, TWeakObjectPtr<AEntity>> EntityMap;
+	TMap<int32, TWeakObjectPtr<AEntity>> EntityMap;
 	UPROPERTY()
-	TMap<uint32, TWeakObjectPtr<APlayerPawn>> PlayerMap;
+	TMap<int32, TWeakObjectPtr<APlayerPawn>> PlayerMap;
 	
 	APlayerPawn* SpawnOrGetPlayer(const FPlayerType& PlayerRow);
 	ACircle* SpawnCircle(const FCircleType& CircleRow);

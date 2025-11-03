@@ -2,6 +2,7 @@
 
 mod module_bindings;
 use module_bindings::*;
+use std::env;
 
 use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
 
@@ -26,14 +27,14 @@ fn main() {
 
 // ## Connect to the database
 
-/// The URI of the SpacetimeDB instance hosting our chat module.
-const HOST: &str = "http://localhost:3000";
-
-/// The module name we chose when we published our module.
-const DB_NAME: &str = "quickstart-chat";
-
 /// Load credentials from a file and connect to the database.
 fn connect_to_db() -> DbConnection {
+    // The URI of the SpacetimeDB instance hosting our chat module.
+    let host: String = env::var("SPACETIMEDB_HOST").unwrap_or("http://localhost:3000".to_string());
+
+    // The module name we chose when we published our module.
+    let db_name: String = env::var("SPACETIMEDB_DB_NAME").unwrap_or("quickstart-chat".to_string());
+
     DbConnection::builder()
         // Register our `on_connect` callback, which will save our auth token.
         .on_connect(on_connected)
@@ -46,9 +47,9 @@ fn connect_to_db() -> DbConnection {
         // so we can re-authenticate as the same `Identity`.
         .with_token(creds_store().load().expect("Error loading credentials"))
         // Set the database name we chose when we called `spacetime publish`.
-        .with_module_name(DB_NAME)
+        .with_module_name(db_name)
         // Set the URI of the SpacetimeDB host that's running our database.
-        .with_uri(HOST)
+        .with_uri(host)
         // Finalize configuration and connect!
         .build()
         .expect("Failed to connect")

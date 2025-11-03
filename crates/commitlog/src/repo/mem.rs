@@ -1,6 +1,6 @@
 use std::{
     collections::{btree_map, BTreeMap},
-    io,
+    fmt, io,
     sync::{Arc, RwLock, RwLockWriteGuard},
 };
 
@@ -210,6 +210,12 @@ pub struct Memory(SharedLock<BTreeMap<u64, SharedBytes>>);
 impl Memory {
     pub fn new() -> Self {
         Self::default()
+    }
+}
+
+impl fmt::Display for Memory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("<memory>")
     }
 }
 

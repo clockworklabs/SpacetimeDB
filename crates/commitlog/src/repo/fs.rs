@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs::{self, File};
 use std::io;
 use std::sync::Arc;
@@ -76,6 +77,12 @@ impl Fs {
     }
 }
 
+impl fmt::Display for Fs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.root.display())
+    }
+}
+
 impl SegmentLen for File {}
 
 impl FileLike for NamedTempFile {
@@ -101,11 +108,18 @@ impl Repo for Fs {
             .or_else(|e| {
                 if e.kind() == io::ErrorKind::AlreadyExists {
                     debug!("segment {offset} already exists");
+                    // If the segment is completely empty, we can resume writing.
                     let file = self.open_segment_writer(offset)?;
                     if file.metadata()?.len() == 0 {
                         debug!("segment {offset} is empty");
                         return Ok(file);
                     }
+
+                    // Otherwise, provide some context.
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        format!("repo {}: segment {} already exists and is non-empty", self, offset),
+                    ));
                 }
 
                 Err(e)
@@ -131,7 +145,10 @@ impl Repo for Fs {
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
         let _ = self.remove_offset_index(offset).map_err(|e| {
-            warn!("failed to remove offset index for segment {offset}, error: {e}");
+            warn!(
+                "repo {}: failed to remove offset index for segment {}: {}",
+                self, offset, e
+            );
         });
         fs::remove_file(self.segment_path(offset))
     }

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SpacetimeDB.ClientSDK" Version="1.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="spacetimedb/**" />
+  </ItemGroup>
+
+</Project>

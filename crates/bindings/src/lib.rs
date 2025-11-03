@@ -1,6 +1,10 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
+use core::cell::{LazyCell, OnceCell, RefCell};
+use core::ops::Deref;
+use spacetimedb_lib::bsatn;
+
 #[cfg(feature = "unstable")]
 mod client_visibility_filter;
 pub mod log_stopwatch;
@@ -12,16 +16,11 @@ pub mod rt;
 #[doc(hidden)]
 pub mod table;
 
+#[cfg(feature = "unstable")]
+pub use client_visibility_filter::Filter;
 pub use log;
 #[cfg(feature = "rand")]
 pub use rand08 as rand;
-use spacetimedb_lib::bsatn;
-use std::cell::LazyCell;
-use std::cell::{OnceCell, RefCell};
-use std::ops::Deref;
-
-#[cfg(feature = "unstable")]
-pub use client_visibility_filter::Filter;
 #[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
@@ -721,24 +720,9 @@ pub use spacetimedb_bindings_macro::reducer;
 /// Procedures are allowed to perform certain operations which take time.
 /// During the execution of these operations, the procedure's execution will be suspended,
 /// allowing other database operations to run in parallel.
-/// The simplest (and least useful) of these operators is [`ProcedureContext::sleep_until`].
 ///
 /// Procedures must not hold open a transaction while performing a blocking operation.
-///
-/// ```no_run
-/// # use std::time::Duration;
-/// # use spacetimedb::{procedure, ProcedureContext};
-/// #[procedure]
-/// fn sleep_one_second(ctx: &mut ProcedureContext) {
-///     let prev_time = ctx.timestamp;
-///     let target = prev_time + Duration::from_secs(1);
-///     ctx.sleep_until(target);
-///     let new_time = ctx.timestamp;
-///     let actual_delta = new_time.duration_since(prev_time).unwrap();
-///     log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
-/// }
-/// ```
-// TODO(procedure-http): replace this example with an HTTP request.
+// TODO(procedure-http): add example with an HTTP request.
 // TODO(procedure-transaction): document obtaining and using a transaction within a procedure.
 ///
 /// # Scheduled procedures
@@ -1089,7 +1073,8 @@ impl ProcedureContext {
     /// log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
     /// # }
     /// ```
-    // TODO(procedure-async): mark this method `async`.
+    // TODO(procedure-sleep-until): remove this method
+    #[cfg(feature = "unstable")]
     pub fn sleep_until(&mut self, timestamp: Timestamp) {
         let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
         let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
@@ -1135,6 +1120,9 @@ impl DbContext for ReducerContext {
 #[non_exhaustive]
 pub struct Local {}
 
+/// The [JWT] of an [`AuthCtx`].
+///
+/// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
 #[non_exhaustive]
 pub struct JwtClaims {
     payload: String,
@@ -1145,7 +1133,8 @@ pub struct JwtClaims {
 /// Authentication information for the caller of a reducer.
 pub struct AuthCtx {
     is_internal: bool,
-    // NOTE(jsdt): cannot directly use a LazyLock without making this struct generic.
+    // NOTE(jsdt): cannot directly use a `LazyCell` without making this struct generic,
+    // which would cause `ReducerContext` to become generic as well.
     jwt: Box<dyn Deref<Target = Option<JwtClaims>>>,
 }
 
@@ -1157,19 +1146,25 @@ impl AuthCtx {
         }
     }
 
-    /// Create an [`AuthCtx`] for an internal call, with no JWT.
+    /// Creates an [`AuthCtx`] for an internal call, with no [JWT].
     /// This represents a scheduled reducer.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn internal() -> AuthCtx {
         Self::new(true, || None)
     }
 
-    /// Creates an [`AuthCtx`] using the json claims from a JWT.
+    /// Creates an [`AuthCtx`] using the json claims from a [JWT].
     /// This can be used to write unit tests.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {
         Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
     }
 
-    /// Creates an [`AuthCtx`] that reads the JWT for the given connection id.
+    /// Creates an [`AuthCtx`] that reads the [JWT] for the given connection id.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
         Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
     }
@@ -1179,13 +1174,17 @@ impl AuthCtx {
         self.is_internal
     }
 
-    /// Check if there is a JWT without loading it.
-    /// If [`AuthCtx::is_internal`] is true, this will return false.
+    /// Checks if there is a [JWT] without loading it.
+    /// If [`AuthCtx::is_internal`] returns true, this will return false.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn has_jwt(&self) -> bool {
         self.jwt.is_some()
     }
 
-    /// Load the jwt.
+    /// Loads the [JWT].
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn jwt(&self) -> Option<&JwtClaims> {
         self.jwt.as_ref().deref().as_ref()
     }
@@ -1220,7 +1219,9 @@ impl JwtClaims {
     }
 
     fn extract_audience(&self) -> Vec<String> {
-        let aud = self.get_parsed().get("aud").unwrap();
+        let Some(aud) = self.get_parsed().get("aud") else {
+            return Vec::new();
+        };
         match aud {
             serde_json::Value::String(s) => vec![s.clone()],
             serde_json::Value::Array(arr) => arr.iter().filter_map(|v| v.as_str().map(String::from)).collect(),
@@ -1240,6 +1241,9 @@ impl JwtClaims {
     }
 
     /// Get the whole JWT payload as a json string.
+    ///
+    /// This method is intended for parsing custom claims,
+    /// beyond the methods offered by [`JwtClaims`].
     pub fn raw_payload(&self) -> &str {
         &self.payload
     }

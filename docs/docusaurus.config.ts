@@ -32,7 +32,7 @@ shikiTheme.colors!['editor.background'] =
 
 const inkeepConfig: Partial<InkeepConfig> = {
   baseSettings: {
-    apiKey: 'fe642f176d62fd867d93c0934f3a7c2336097bcef5f43e92',
+    apiKey: '13504c49fb56b7c09a5ea0bcd68c2b55857661be4d6d311b',
     organizationDisplayName: 'SpacetimeDB',
     primaryBrandColor: '#4cf490',
     colorMode: {
@@ -93,6 +93,7 @@ const config: Config = {
       'classic',
       {
         docs: {
+          editUrl: "https://github.com/clockworklabs/SpacetimeDB/edit/master/docs/",
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           sidebarCollapsed: false,

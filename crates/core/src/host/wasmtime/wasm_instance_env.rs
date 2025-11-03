@@ -11,6 +11,7 @@ use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
+use std::future::Future;
 use std::num::NonZeroU32;
 use std::time::Instant;
 use wasmtime::{AsContext, Caller, StoreContextMut};
@@ -102,8 +103,8 @@ pub(super) struct WasmInstanceEnv {
     /// Track time spent in module-defined spans.
     timing_spans: TimingSpanSet,
 
-    /// The point in time the last reducer call started at.
-    reducer_start: Instant,
+    /// The point in time the last, or current, reducer or procedure call started at.
+    funcall_start: Instant,
 
     /// Track time spent in all wasm instance env calls (aka syscall time).
     ///
@@ -111,8 +112,8 @@ pub(super) struct WasmInstanceEnv {
     /// to this tracker.
     call_times: CallTimes,
 
-    /// The last, including current, reducer to be executed by this environment.
-    reducer_name: String,
+    /// The name of the last, including current, reducer or procedure to be executed by this environment.
+    funcall_name: String,
 
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
@@ -129,7 +130,7 @@ type RtResult<T> = anyhow::Result<T>;
 impl WasmInstanceEnv {
     /// Create a new `WasmEnstanceEnv` from the given `InstanceEnv`.
     pub fn new(instance_env: InstanceEnv) -> Self {
-        let reducer_start = Instant::now();
+        let funcall_start = Instant::now();
         Self {
             instance_env,
             mem: None,
@@ -138,9 +139,9 @@ impl WasmInstanceEnv {
             standard_bytes_sink: None,
             iters: Default::default(),
             timing_spans: Default::default(),
-            reducer_start,
+            funcall_start,
             call_times: CallTimes::new(),
-            reducer_name: String::from("<initializing>"),
+            funcall_name: String::from("<initializing>"),
             chunk_pool: <_>::default(),
         }
     }
@@ -219,48 +220,54 @@ impl WasmInstanceEnv {
         self.standard_bytes_sink.take().unwrap_or_default()
     }
 
-    /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
+    /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is beginning.
     ///
-    /// Returns the handle used by reducers to read from `args`
-    /// as well as the handle used to write the error message, if any.
-    pub fn start_reducer(&mut self, name: &str, args: bytes::Bytes, ts: Timestamp) -> (BytesSourceId, u32) {
+    /// Returns the handle used by reducers and procedures to read from `args`
+    /// as well as the handle used to write the reducer error message or procedure return value.
+    pub fn start_funcall(&mut self, name: &str, args: bytes::Bytes, ts: Timestamp) -> (BytesSourceId, u32) {
+        // Create the output sink.
+        // Reducers which fail will write their error message here.
+        // Procedures will write their result here.
         let errors = self.setup_standard_bytes_sink();
 
         let args = self.create_bytes_source(args).unwrap();
 
-        self.reducer_start = Instant::now();
-        name.clone_into(&mut self.reducer_name);
-        self.instance_env.start_reducer(ts);
+        self.funcall_start = Instant::now();
+        name.clone_into(&mut self.funcall_name);
+        self.instance_env.start_funcall(ts);
 
         (args, errors)
     }
 
-    /// Returns the name of the most recent reducer to be run in this environment.
-    pub fn reducer_name(&self) -> &str {
-        &self.reducer_name
+    /// Returns the name of the most recent reducer or procedure to be run in this environment.
+    pub fn funcall_name(&self) -> &str {
+        &self.funcall_name
     }
 
-    /// Returns the name of the most recent reducer to be run in this environment,
-    /// or `None` if no reducer is actively being invoked.
+    /// Returns the name of the most recent reducer or procedure to be run in this environment,
+    /// or `None` if no reducer or procedure is actively being invoked.
     fn log_record_function(&self) -> Option<&str> {
-        let function = self.reducer_name();
+        let function = self.funcall_name();
         (!function.is_empty()).then_some(function)
     }
 
-    /// Returns the name of the most recent reducer to be run in this environment.
-    pub fn reducer_start(&self) -> Instant {
-        self.reducer_start
+    /// Returns the start time of the most recent reducer or procedure to be run in this environment.
+    pub fn funcall_start(&self) -> Instant {
+        self.funcall_start
     }
 
-    /// Signal to this `WasmInstanceEnv` that a reducer call is over.
-    /// This resets all of the state associated to a single reducer call,
-    /// and returns instrumentation records.
-    pub fn finish_reducer(&mut self) -> (ExecutionTimings, Vec<u8>) {
+    /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is over.
+    ///
+    /// Returns time measurements which can be recorded as metrics,
+    /// and the errors written by the WASM code to the standard error sink.
+    ///
+    /// This resets the call times and clears the arguments source and error sink.
+    pub fn finish_funcall(&mut self) -> (ExecutionTimings, Vec<u8>) {
         // For the moment,
         // we only explicitly clear the source/sink buffers and the "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
 
-        let total_duration = self.reducer_start.elapsed();
+        let total_duration = self.funcall_start.elapsed();
 
         // Taking the call times record also resets timings to 0s for the next call.
         let wasm_instance_env_call_times = self.call_times.take();
@@ -1256,8 +1263,7 @@ impl WasmInstanceEnv {
             let function = env.log_record_function();
 
             let record = Record {
-                // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start)
-                ts: chrono::Utc::now(),
+                ts: InstanceEnv::now_for_logging(),
                 target: target.as_deref(),
                 filename: filename.as_deref(),
                 line_number,
@@ -1366,6 +1372,53 @@ impl WasmInstanceEnv {
             // as it gets a `&mut [u8]` from WASM memory and does `copy_from_slice` with it.
             identity.write_to(mem, out_ptr)?;
             Ok(())
+        })
+    }
+
+    /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
+    ///
+    /// Returns immediately if `wake_at_micros_since_unix_epoch` is in the past.
+    ///
+    /// Upon resuming, returns the current timestamp as microseconds since the Unix epoch.
+    ///
+    /// Not particularly useful, except for testing SpacetimeDB internals related to suspending procedure execution.
+    ///
+    /// In our public module-facing interfaces, this function is marked as unstable.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - The calling WASM instance is holding open a transaction.
+    /// - The calling WASM instance is not executing a procedure.
+    // TODO(procedure-sleep-until): remove this
+    pub fn procedure_sleep_until<'caller>(
+        mut caller: Caller<'caller, Self>,
+        (wake_at_micros_since_unix_epoch,): (i64,),
+    ) -> Box<dyn Future<Output = i64> + Send + 'caller> {
+        Box::new(async move {
+            use std::time::SystemTime;
+            let span_start = span::CallSpanStart::new(AbiCall::ProcedureSleepUntil);
+
+            let get_current_time = || Timestamp::now().to_micros_since_unix_epoch();
+
+            if wake_at_micros_since_unix_epoch < 0 {
+                return get_current_time();
+            }
+
+            let wake_at = Timestamp::from_micros_since_unix_epoch(wake_at_micros_since_unix_epoch);
+            let Ok(duration) = SystemTime::from(wake_at).duration_since(SystemTime::now()) else {
+                return get_current_time();
+            };
+
+            tokio::time::sleep(duration).await;
+
+            let res = get_current_time();
+
+            let span = span_start.end();
+            span::record_span(&mut caller.data_mut().call_times, span);
+
+            res
         })
     }
 }
