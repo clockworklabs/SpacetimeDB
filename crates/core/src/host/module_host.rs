@@ -1463,7 +1463,7 @@ impl ModuleHost {
 
     pub async fn call_view(
         &self,
-        mut tx: MutTxId,
+        tx: MutTxId,
         view_name: &str,
         args: FunctionArgs,
         caller_identity: Identity,
@@ -1477,15 +1477,6 @@ impl ModuleHost {
 
         let view_seed = ArgsSeed(self.info.module_def.typespace().with_type(view_def));
         let args = args.into_tuple(view_seed).map_err(InvalidViewArguments)?;
-
-        match tx.ctx.workload() {
-            WorkloadType::Subscribe => {
-                // New subscription, update st_view_client table.
-                let connection_id = caller_connection_id.ok_or(ViewCallError::MissingClientConnection)?;
-                tx.insert_st_view_client(view_name, args.get_bsatn(), caller_identity, connection_id)?;
-            }
-            _ => {}
-        }
 
         let res = self
             .call_view_inner(

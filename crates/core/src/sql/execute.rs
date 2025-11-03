@@ -204,7 +204,7 @@ pub async fn run(
 
     for (view_name, args) in stmt.views() {
         let (is_memoized, args) = tx
-            .has_memoized_view(view_name, args, caller_identity)
+            .is_materialized(view_name, args, caller_identity)
             .map_err(|e| DBError::Other(anyhow!("Failed to check memoized view: {e}")))?;
 
         // Skip if already memoized

@@ -742,12 +742,12 @@ impl MutTxId {
 
     /// Checks whether a memoized view exists for the given view name, arguments, and sender identity.
     ///
-    /// If no memoized result is found, [`RelationalDB::evaluate_view`] should be called to compute and store it.
+    /// If view is not materialized, [`RelationalDB::evaluate_view`] should be called to compute and store it.
     ///
     /// - `view_name`: The name of the view to look up.
     /// - `args`: The serialized (bastn-encoded) arguments for the view.
     /// - `sender`: The identity of the sender requesting the view.
-    pub fn has_memoized_view(&self, view_name: &str, args: Bytes, sender: Identity) -> Result<(bool, Bytes)> {
+    pub fn is_materialized(&self, view_name: &str, args: Bytes, sender: Identity) -> Result<(bool, Bytes)> {
         let (view_id, is_anonymous) = self
             .view_from_name(view_name)?
             .map(|view_row| (view_row.view_id, view_row.is_anonymous))
@@ -759,10 +759,10 @@ impl MutTxId {
             UniqueView::with_identity(sender, view_id, args)
         };
 
-        let has_memoized = self.read_sets.contains_key(&unique_view)
-            || self.committed_state_write_lock.has_memoized_view(&unique_view);
+        let is_materialized =
+            self.read_sets.contains_key(&unique_view) || self.committed_state_write_lock.is_materialized(&unique_view);
 
-        Ok((has_memoized, unique_view.into_args()))
+        Ok((is_materialized, unique_view.into_args()))
     }
 }
 
@@ -1910,8 +1910,8 @@ impl MutTxId {
         let row = &StViewClientRow {
             view_id,
             arg_id,
-            identity: IdentityViaU256(sender).into(),
-            connection_id: ConnectionIdViaU128(connection_id).into(),
+            identity: IdentityViaU256(sender),
+            connection_id: ConnectionIdViaU128(connection_id),
         };
         self.insert_via_serialize_bsatn(ST_VIEW_CLIENT_ID, row)?;
 

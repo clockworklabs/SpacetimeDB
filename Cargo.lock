@@ -7517,6 +7517,7 @@ version = "1.6.0"
 dependencies = [
  "anyhow",
  "bigdecimal",
+ "bytes",
  "derive_more 0.99.20",
  "ethnum",
  "pretty_assertions",

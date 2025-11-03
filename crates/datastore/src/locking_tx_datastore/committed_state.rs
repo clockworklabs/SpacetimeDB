@@ -98,7 +98,7 @@ impl CommittedReadSets {
 
     /// Returns true if the given view exists in any read set.
     /// This is used to determine whether a view needs to be re-evaluated.
-    fn has_memoized_view(&self, view: &UniqueView) -> bool {
+    fn is_materialized(&self, view: &UniqueView) -> bool {
         self.tables.values().any(|views| views.contains(view))
             || self.index_keys.values().any(|col_map| {
                 col_map
@@ -1061,8 +1061,8 @@ impl CommittedState {
             .set(self.blob_store.bytes_used_by_blobs() as _);
     }
 
-    pub(super) fn has_memoized_view(&self, view: &UniqueView) -> bool {
-        self.read_sets.has_memoized_view(view)
+    pub(super) fn is_materialized(&self, view: &UniqueView) -> bool {
+        self.read_sets.is_materialized(view)
     }
 }
 
