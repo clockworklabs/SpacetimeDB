@@ -27,7 +27,6 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability};
 use spacetimedb_lib::{hash_bytes, AlgebraicValue, Identity, Timestamp};
@@ -185,13 +184,6 @@ impl From<EventStatus> for ViewOutcome {
             EventStatus::OutOfEnergy => ViewOutcome::BudgetExceeded,
         }
     }
-}
-
-pub struct ViewCallResult {
-    pub outcome: ViewOutcome,
-    pub tx: MutTxId,
-    pub energy_used: EnergyQuanta,
-    pub execution_duration: Duration,
 }
 
 #[derive(Clone, Debug)]
@@ -893,8 +885,10 @@ impl Host {
         scheduler_starter.start(&module_host)?;
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
 
+        let module = watch::Sender::new(module_host);
+        replica_ctx.subscriptions.init(module.subscribe());
         Ok(Host {
-            module: watch::Sender::new(module_host),
+            module,
             replica_ctx,
             scheduler,
             disk_metrics_recorder_task,

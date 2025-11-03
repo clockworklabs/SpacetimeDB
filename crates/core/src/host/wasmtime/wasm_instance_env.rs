@@ -10,12 +10,12 @@ use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::UniqueView;
-use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
+use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::time::Instant;
-use wasmtime::{AsContext, Caller, FuncType, StoreContextMut};
+use wasmtime::{AsContext, Caller, StoreContextMut};
 
 /// A stream of bytes which the WASM module can read from
 /// using [`WasmInstanceEnv::bytes_source_read`].

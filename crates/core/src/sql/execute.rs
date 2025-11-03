@@ -7,7 +7,7 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::ArgsTuple;
+use crate::host::{ArgsTuple, ModuleHost};
 use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
@@ -20,8 +20,8 @@ use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
+use spacetimedb_lib::{Identity, Timestamp};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
 use spacetimedb_schema::relation::FieldName;
 use spacetimedb_vm::eval::run_ast;
@@ -186,20 +186,49 @@ pub struct SqlResult {
 }
 
 /// Run the `SQL` string using the `auth` credentials
-pub fn run(
+pub async fn run(
     db: &RelationalDB,
     sql_text: &str,
     auth: AuthCtx,
-    subs: Option<&ModuleSubscriptions>,
+    module: Option<&ModuleHost>,
+    caller_identity: Identity,
     head: &mut Vec<(Box<str>, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
-    let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
+    let (mut tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
         compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth)
     })?;
 
     let mut metrics = ExecutionMetrics::default();
+
+    for (view_name, args) in stmt.views() {
+        let (is_memoized, args) = tx
+            .is_materialized(view_name, args, caller_identity)
+            .map_err(|e| DBError::Other(anyhow!("Failed to check memoized view: {e}")))?;
+
+        // Skip if already memoized
+        if is_memoized {
+            continue;
+        }
+
+        let module = module
+            .as_ref()
+            .ok_or_else(|| anyhow!("Cannot execute view `{view_name}` without module context"))?;
+
+        let res = module
+            .call_view(
+                tx,
+                view_name,
+                crate::host::FunctionArgs::Bsatn(args),
+                caller_identity,
+                None,
+            )
+            .await
+            .map_err(|e| DBError::Other(anyhow!("Failed to execute view `{view_name}`: {e}")))?;
+
+        tx = res.tx;
+    }
 
     match stmt {
         Statement::Select(stmt) => {
@@ -260,7 +289,7 @@ pub fn run(
             tx.metrics.merge(metrics);
 
             // Commit the tx if there are no deltas to process
-            if subs.is_none() {
+            if module.is_none() {
                 let metrics = tx.metrics;
                 return db.commit_tx(tx).map(|tx_opt| {
                     let (tx_offset, tx_data, tx_metrics, reducer) = tx_opt.unwrap();
@@ -281,8 +310,10 @@ pub fn run(
             // Note, we get the delta by downgrading the tx.
             // Hence we just pass a default `DatabaseUpdate` here.
             // It will ultimately be replaced with the correct one.
-            match subs
+            match module
                 .unwrap()
+                .info
+                .subscriptions
                 .commit_and_broadcast_event(
                     None,
                     ModuleEvent {

@@ -10,7 +10,7 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
-use crate::host::host_controller::ViewCallResult;
+use crate::host::host_controller::ViewOutcome;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
@@ -37,6 +37,7 @@ use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID};
@@ -541,7 +542,6 @@ pub struct CallViewParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
     pub caller_connection_id: Option<ConnectionId>,
-    pub timer: Option<Instant>,
     pub view_id: ViewId,
     pub args: ArgsTuple,
     /// The expected return type of the view, used for deserialization.
@@ -712,6 +712,13 @@ pub enum ReducerCallError {
     LifecycleReducer(Lifecycle),
 }
 
+pub struct ViewCallResult {
+    pub outcome: ViewOutcome,
+    pub tx: MutTxId,
+    pub energy_used: EnergyQuanta,
+    pub execution_duration: Duration,
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum ViewCallError {
     #[error(transparent)]
@@ -720,6 +727,10 @@ pub enum ViewCallError {
     NoSuchModule(#[from] NoSuchModule),
     #[error("no such view")]
     NoSuchView,
+    #[error("missing client connection for view call trigged by subscription")]
+    MissingClientConnection,
+    #[error("DB error during view call: {0}")]
+    DatastoreError(#[from] DatastoreError),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -1454,11 +1465,10 @@ impl ModuleHost {
     pub async fn call_view(
         &self,
         tx: MutTxId,
-        caller_identity: Identity,
-        caller_connection_id: Option<ConnectionId>,
-        timer: Option<Instant>,
         view_name: &str,
         args: FunctionArgs,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
     ) -> Result<ViewCallResult, ViewCallError> {
         let (view_id, view_def) = self
             .info
@@ -1467,28 +1477,18 @@ impl ModuleHost {
             .ok_or(ViewCallError::NoSuchView)?;
 
         let view_seed = ArgsSeed(self.info.module_def.typespace().with_type(view_def));
-        //TODO: can we put the args into `ST_VIEW_ARG` table at this point?
         let args = args.into_tuple(view_seed).map_err(InvalidViewArguments)?;
-        let return_type = view_def.return_type.clone();
-        let is_anonymous = view_def.is_anonymous;
 
-        let res = Ok(self
-            .call(&view_def.name, move |inst| {
-                inst.call_view(
-                    tx,
-                    CallViewParams {
-                        timestamp: Timestamp::now(),
-                        caller_identity,
-                        caller_connection_id,
-                        timer,
-                        view_id,
-                        args,
-                        return_type,
-                        is_anonymous,
-                    },
-                )
-            })
-            .await?);
+        let res = self
+            .call_view_inner(
+                tx,
+                view_id,
+                view_def,
+                args.clone(),
+                caller_identity,
+                caller_connection_id,
+            )
+            .await;
 
         let log_message = match &res {
             Err(ViewCallError::NoSuchView) => Some(no_such_function_log_message("view", view_name)),
@@ -1501,6 +1501,36 @@ impl ModuleHost {
         }
 
         res
+    }
+
+    async fn call_view_inner(
+        &self,
+        tx: MutTxId,
+        view_id: ViewId,
+        view_def: &ViewDef,
+        args: ArgsTuple,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+    ) -> Result<ViewCallResult, ViewCallError> {
+        let return_type = view_def.return_type.clone();
+        let is_anonymous = view_def.is_anonymous;
+
+        Ok(self
+            .call(&view_def.name, move |inst| {
+                inst.call_view(
+                    tx,
+                    CallViewParams {
+                        timestamp: Timestamp::now(),
+                        caller_identity,
+                        caller_connection_id,
+                        view_id,
+                        args,
+                        return_type,
+                        is_anonymous,
+                    },
+                )
+            })
+            .await?)
     }
 
     pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {

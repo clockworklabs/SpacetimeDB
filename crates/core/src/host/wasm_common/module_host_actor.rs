@@ -14,9 +14,10 @@ use super::instrumentation::CallTimes;
 use crate::client::ClientConnectionSender;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
-use crate::host::host_controller::{ViewCallResult, ViewOutcome};
+use crate::host::host_controller::ViewOutcome;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
+use crate::host::module_host::ViewCallResult;
 use crate::host::module_host::{
     CallProcedureParams, CallReducerParams, CallViewParams, DatabaseUpdate, EventStatus, ModuleEvent,
     ModuleFunctionCall, ModuleInfo,
@@ -725,7 +726,7 @@ impl InstanceCommon {
         }
     }
 
-    pub(crate) fn call_function<F, R: FunctionResult>(
+    fn call_function<F, R: FunctionResult>(
         &mut self,
         caller_identity: Identity,
         function_name: &str,

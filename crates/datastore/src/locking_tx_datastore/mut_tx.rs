@@ -10,8 +10,9 @@ use super::{
 };
 use crate::system_tables::{
     system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
-    StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields, StViewSubRow,
-    ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
+    StViewArgFields, StViewArgRow, StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow,
+    StViewSubFields, StViewSubRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_ARG_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
+    ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
 };
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
@@ -34,7 +35,7 @@ use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
-use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics, Timestamp};
+use spacetimedb_lib::{bsatn::ToBsatn as _, db::raw_def::v9::RawSql, metrics::ExecutionMetrics, Timestamp};
 use spacetimedb_lib::{
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
     ConnectionId, Identity,
@@ -45,6 +46,7 @@ use spacetimedb_primitives::{
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
     de::{DeserializeSeed, WithBound},
+    product,
     ser::Serialize,
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
@@ -140,6 +142,10 @@ impl UniqueView {
             view_id,
             args,
         }
+    }
+
+    pub fn into_args(self) -> Bytes {
+        self.args
     }
 }
 
@@ -731,24 +737,29 @@ impl MutTxId {
         Ok((tx, commit))
     }
 
-    /// Check if a memoized view exists for the given view name, args, and sender identity.
-    /// if not, [`RelationalDB::evaluate_view`] should be called to compute and store it.
-    fn has_memoized_view(&self, view_name: &str, args: Bytes, sender: Identity) -> Result<(bool, Bytes)> {
+    /// Checks whether a memoized view exists for the given view name, arguments, and sender identity.
+    ///
+    /// If view is not materialized, [`RelationalDB::evaluate_view`] should be called to compute and store it.
+    ///
+    /// - `view_name`: The name of the view to look up.
+    /// - `args`: The serialized (bastn-encoded) arguments for the view.
+    /// - `sender`: The identity of the sender requesting the view.
+    pub fn is_materialized(&self, view_name: &str, args: Bytes, sender: Identity) -> Result<(bool, Bytes)> {
         let (view_id, is_anonymous) = self
             .view_from_name(view_name)?
             .map(|view_row| (view_row.view_id, view_row.is_anonymous))
             .ok_or_else(|| anyhow::anyhow!("view `{view_name}` not found"))?;
 
         let unique_view = if is_anonymous {
-            UniqueView::anonymous(view_id, args.clone())
+            UniqueView::anonymous(view_id, args)
         } else {
-            UniqueView::with_identity(sender, view_id, args.clone())
+            UniqueView::with_identity(sender, view_id, args)
         };
 
-        let has_memoized = self.read_sets.contains_key(&unique_view)
-            || self.committed_state_write_lock.has_memoized_view(&unique_view);
+        let is_materialized =
+            self.read_sets.contains_key(&unique_view) || self.committed_state_write_lock.is_materialized(&unique_view);
 
-        Ok((has_memoized, args))
+        Ok((is_materialized, unique_view.into_args()))
     }
 }
 
@@ -1935,6 +1946,66 @@ impl MutTxId {
             .filter_map(|row| row.table_id)
         {
             self.clear_table(table_id)?;
+        }
+        Ok(())
+    }
+
+    /// Get or insert view argument into `ST_VIEW_ARG_ID`.
+    pub fn get_or_insert_st_view_arg(&mut self, args: &Bytes) -> Result<u64> {
+        let bytes_av = AlgebraicValue::Bytes(args.to_vec().into());
+        let mut rows = self.iter_by_col_eq(ST_VIEW_ARG_ID, [StViewArgFields::Bytes], &bytes_av)?;
+
+        // Extract the first matching `arg_id`, if any.
+        if let Some(res) = rows.next() {
+            let row = StViewArgRow::try_from(res).expect("valid StViewArgRow");
+            return Ok(row.id);
+        }
+
+        let view_arg_bytes = product![0u64, bytes_av]
+            .to_bsatn_vec()
+            .expect("StViewArgRow serialization to never fail");
+
+        let (_, view_arg_row, _) = self.insert_via_serialize_bsatn(ST_VIEW_ARG_ID, &view_arg_bytes)?;
+        let StViewArgRow { id: arg_id, .. } = view_arg_row.collapse().try_into().expect("valid StViewArgRow");
+
+        Ok(arg_id)
+    }
+
+    /// Lookup a row in `st_view` by its primary key
+    fn st_view_row(&self, view_id: ViewId) -> Result<Option<StViewRow>> {
+        self.iter_by_col_eq(ST_VIEW_ID, col_list![StViewFields::ViewId], &view_id.into())?
+            .next()
+            .map(StViewRow::try_from)
+            .transpose()
+    }
+
+    /// Get the [`TableId`] for this view's backing table by probing `st_view`.
+    /// Note, all views with at least one subscriber are materialized.
+    pub fn get_table_id_for_view(&self, view_id: ViewId) -> Result<Option<(TableId, bool)>> {
+        Ok(self
+            .st_view_row(view_id)?
+            .and_then(|row| row.table_id.map(|id| (id, row.is_anonymous))))
+    }
+
+    /// Delete the rows of a view subscribed to by `sender`
+    fn delete_view_rows_for_identity(&mut self, view_id: ViewId, arg_id: u64, sender: Identity) -> Result<()> {
+        if let Some((table_id, is_anonymous)) = self.get_table_id_for_view(view_id)? {
+            let value = if is_anonymous {
+                let none_sender = AlgebraicValue::OptionNone();
+                AlgebraicValue::product([none_sender, arg_id.into()])
+            } else {
+                let sender = IdentityViaU256(sender);
+                let some_sender = AlgebraicValue::OptionSome(sender.into());
+                AlgebraicValue::product([some_sender, arg_id.into()])
+            };
+            for row_pointer in self
+                .iter_by_col_eq(table_id, col_list![0, 1], &value)?
+                .map(|row_ref| row_ref.pointer())
+                .collect::<Vec<_>>()
+                .into_iter()
+            {
+                self.delete(table_id, row_pointer)?;
+            }
         }
         Ok(())
     }

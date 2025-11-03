@@ -1,5 +1,5 @@
 use crate::db::MetricsRecorderQueue;
-use crate::error::{DBError, DatabaseError, RestoreSnapshotError, ViewError};
+use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
 use crate::host::ArgsTuple;
 use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
@@ -14,16 +14,16 @@ use spacetimedb_commitlog as commitlog;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
-use spacetimedb_datastore::error::{DatastoreError, TableError};
+use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
-use spacetimedb_datastore::system_tables::{system_tables, StModuleRow, StViewArgFields, StViewRow, ST_VIEW_ID};
+use spacetimedb_datastore::system_tables::ST_VIEW_ID;
+use spacetimedb_datastore::system_tables::{system_tables, StModuleRow, StViewRow};
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
-use spacetimedb_datastore::system_tables::{StViewArgRow, ST_VIEW_ARG_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
     UpdateFlags,
@@ -1510,27 +1510,6 @@ impl RelationalDB {
         })
     }
 
-    /// Get or insert view argument into `ST_VIEW_ARG_ID`.
-    pub fn get_or_insert_st_view_arg(&self, tx: &mut MutTxId, args: &Bytes) -> Result<u64, DBError> {
-        let bytes_av = AlgebraicValue::Bytes(args.to_vec().into());
-        let mut rows = self.iter_by_col_eq_mut(tx, ST_VIEW_ARG_ID, [StViewArgFields::Bytes], &bytes_av)?;
-
-        // Extract the first matching `arg_id`, if any.
-        if let Some(res) = rows.next() {
-            let row = StViewArgRow::try_from(res).expect("valid StViewArgRow");
-            return Ok(row.id);
-        }
-
-        let view_arg_bytes = product![0u64, bytes_av]
-            .to_bsatn_vec()
-            .map_err(|_| ViewError::SerializeArgs)?;
-
-        let (_, view_arg_row, _) = self.insert(tx, ST_VIEW_ARG_ID, &view_arg_bytes)?;
-        let StViewArgRow { id: arg_id, .. } = view_arg_row.try_into().expect("valid StViewArgRow");
-
-        Ok(arg_id)
-    }
-
     /// Evaluate and update View.
     /// This involves:
     /// 1. Serializing the view arguments into `ST_VIEW_ARG_ID`
@@ -1560,12 +1539,11 @@ impl RelationalDB {
         let (table_id, is_anonymous) = (
             st_view_row
                 .table_id
-                .ok_or_else(|| ViewError::ViewNotFound(view.to_string()))?,
+                .expect("Tables are always created for views upon view creation"),
             st_view_row.is_anonymous,
         );
 
-        // Insert the view arguments into ST_VIEW_ARG_ID
-        let arg_id = self.get_or_insert_st_view_arg(tx, &args.get_bsatn())?;
+        let arg_id = tx.get_or_insert_st_view_arg(&args.get_bsatn())?;
 
         let input_rows = product![
             if is_anonymous {
@@ -1589,7 +1567,7 @@ impl RelationalDB {
         let seed = spacetimedb_sats::WithTypespace::new(typespace, &return_type);
         let return_val = seed
             .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
-            .map_err(|e| ViewError::DeserializeReturn(e.to_string()))?;
+            .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
 
         let products: Vec<ProductValue> = if return_type.is_array() {
             let arr = return_val.into_array().expect("return type is array");
@@ -1598,7 +1576,7 @@ impl RelationalDB {
             let opt = return_val.into_option().expect("return type is option");
             Ok(opt.into_iter().map(|v| v.into_product().unwrap()).collect())
         } else {
-            Err(ViewError::InvalidReturnType(return_type.clone()))
+            Err(DatastoreError::from(ViewError::InvalidReturnType(return_type.clone())))
         }?;
 
         // Insert all rows from the return value into the view table
@@ -1612,7 +1590,9 @@ impl RelationalDB {
                     elements: elements.into_boxed_slice(),
                 }
             };
-            let row_bytes = row.to_bsatn_vec().map_err(|_| ViewError::SerializeRow)?;
+            let row_bytes = row
+                .to_bsatn_vec()
+                .map_err(|_| DatastoreError::from(ViewError::SerializeRow))?;
             self.insert(tx, table_id, &row_bytes)?;
         }
 
