@@ -97,7 +97,7 @@ impl OpenAiClient {
             .await
             .with_context(|| format!("POST {} send failed", url))?;
 
-        if std::env::var("LLM_DEBUG_VERBOSE").ok().as_deref() == Some("1") {
+        if debug_llm_verbose() {
             let preview = if body.len() > 2000 {
                 format!("{}…", &body[..2000])
             } else {

@@ -12,7 +12,7 @@ pub enum BuildTool {
 pub struct ScoreDetails {
     pub pass: bool,
     pub partial: f32,
-    pub notes: serde_json::Value,
+    pub notes: Value,
 }
 
 pub struct ReducerDataParityConfig<'a> {

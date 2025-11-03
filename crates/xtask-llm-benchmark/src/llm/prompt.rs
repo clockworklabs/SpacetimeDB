@@ -20,7 +20,7 @@ pub struct BuiltPrompt {
 
 impl PromptBuilder {
     pub fn build_segmented(&self, context: &str) -> BuiltPrompt {
-        let version = "1.5";
+        let version = "1.6";
 
         // SYSTEM: hygiene-only for Knowledge; hygiene + stricter output rules for Conformance.
         let system = Some(format!(

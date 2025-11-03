@@ -46,9 +46,17 @@ pub fn sanitize_db_name(raw: &str) -> String {
 }
 
 pub fn server_name() -> String {
-    env::var("SPACETIME_SERVER")
-        .or_else(|_| std::env::var("STDB_SERVER"))
-        .unwrap_or_else(|_| "local".to_string())
+    let raw = env::var("SPACETIME_SERVER").unwrap_or_else(|_| "local".to_string());
+    let s = raw
+        .trim()
+        .trim_matches(|c| matches!(c, '"' | '\'' | '`'))
+        .trim()
+        .to_string();
+    if s.is_empty() {
+        "local".to_string()
+    } else {
+        s
+    }
 }
 
 pub fn work_server_dir_scoped(category: &str, task: &str, lang: &str, phase: &str, route_tag: &str) -> PathBuf {

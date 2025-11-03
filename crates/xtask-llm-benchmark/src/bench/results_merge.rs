@@ -85,15 +85,16 @@ pub fn merge_task_runs(path: &Path, mode: &str, runs: &[RunOutcome]) -> Result<(
 
         for r in runs {
             let lang_v = ensure_lang(&mut root, &r.lang);
+
+            // Always bump the mode hash to the latest run's hash
             let mode_v = ensure_mode(lang_v, mode, Some(r.hash.clone()));
+
             let model_v = ensure_model(mode_v, &r.model_name);
 
-            // lift once at model level if available
-            if model_v.route_api_model.is_none() {
-                model_v.route_api_model = r.route_api_model.clone();
-            }
+            // Always replace with the latest value (even if None)
+            model_v.route_api_model = r.route_api_model.clone();
 
-            // store full RunOutcome per task id (overwrite)
+            // Always overwrite the task result
             model_v.tasks.insert(r.task.clone(), r.clone());
         }
 

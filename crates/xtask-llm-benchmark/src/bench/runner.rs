@@ -205,10 +205,9 @@ impl TaskRunner {
                 let r = s.score(&llm_output);
                 if r.pass {
                     passed += 1;
-                } else {
-                    partial_sum += r.partial.clamp(0.0, 1.0);
                 }
-                scorer_details.insert(s.id().to_string(), r.clone());
+                partial_sum += r.partial.clamp(0.0, 1.0);
+                scorer_details.insert(s.id().to_string(), r);
             }
         } else {
             println!(
@@ -220,7 +219,7 @@ impl TaskRunner {
                 ScoreDetails {
                     pass: false,
                     partial: 0.0,
-                    notes: serde_json::json!({
+                    notes: json!({
                         "phase": "build_or_publish",
                         "error": publish_error.as_deref().unwrap_or("unknown"),
                     }),
@@ -231,16 +230,18 @@ impl TaskRunner {
         let score_pct = if total_tasks == 0 {
             0.0
         } else {
-            ((passed as f32) + partial_sum) / (total_tasks as f32) * 100.0
+            (partial_sum / total_tasks as f32) * 100.0
         };
 
         let finished = Utc::now();
         let took = wall.elapsed();
         println!(
-            "→ [{}] {}: done (passed {}/{}, {:.1}%) — {}",
+            "→ [{}] {}/{}/{}: done (passed {}/{}, {:.1}%) — {}",
             cfg.lang_name,
+            category,
+            task_id,
             cfg.route.display_name,
-            passed,
+            passed as u32,
             total_tasks,
             score_pct,
             fmt_dur(took)

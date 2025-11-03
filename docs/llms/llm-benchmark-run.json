@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "generated_at": "2025-10-25T15:22:54.755644800+00:00",
+  "generated_at": "2025-11-03T22:57:35.363642600+00:00",
   "modes": [
     {
       "mode": "docs",
       "lang": "csharp",
-      "hash": "3845d046f84d2d4f7539bea5d13d8cc2c04b76e0cb25ad3504f18d17908116db",
+      "hash": "a5323ad16696d87950656381989e534ffd48b4b77f4b4d50a255801587bbd3b8",
       "models": [
         {
           "name": "GPT-5",
@@ -38,11 +38,11 @@
     {
       "mode": "rustdoc_json",
       "lang": "rust",
-      "hash": "dcc243c7909cfb083830aa5cc99b5e3791f51e453179c8f939efa7bfb32e4464",
+      "hash": "b679791492659bee17566e26f221d8ab9a807b16a8a68cba53d879414c8cabab",
       "models": [
         {
           "name": "GPT-5",
-          "score": 100.0
+          "score": 62.29508
         }
       ]
     }
