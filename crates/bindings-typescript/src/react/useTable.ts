@@ -9,6 +9,7 @@ import { useSpacetimeDB } from './useSpacetimeDB';
 import { DbConnectionImpl, TableCache } from '../sdk/db_connection_impl';
 import type { TableNamesFromDb } from '../sdk/table_handle';
 import type { ConnectionState } from './connection_state';
+import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 
 export interface UseQueryCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
@@ -212,7 +213,7 @@ type ColumnsFromRow<R> = {
  * ```
  */
 export function useTable<
-  DbConnection extends DbConnectionImpl,
+  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
   RowType extends Record<string, any>,
   TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
     DbConnection['db']
@@ -257,7 +258,7 @@ export function useTable<
  * ```
  */
 export function useTable<
-  DbConnection extends DbConnectionImpl,
+  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
   RowType extends Record<string, any>,
   TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
     DbConnection['db']
@@ -268,8 +269,7 @@ export function useTable<
 ): Snapshot<RowType>;
 
 export function useTable<
-  DbConnection extends DbConnectionImpl,
-  RowType extends Record<string, any>,
+  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
   TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
     DbConnection['db']
   >,
@@ -320,10 +320,10 @@ export function useTable<
     }
     const table = connection.db[
       tableName as keyof typeof connection.db
-    ] as unknown as TableCache<RowType>;
+    ];
     const result: readonly RowType[] = whereClause
-      ? table.iter().filter(row => evaluate(whereClause, row))
-      : table.iter();
+      ? Array.from(table.iter()).filter(row => evaluate(whereClause, row))
+      : Array.from(table.iter());
     return {
       rows: result,
       state: subscribeApplied ? 'ready' : 'loading',
@@ -412,7 +412,7 @@ export function useTable<
 
       const table = connection.db[
         tableName as keyof typeof connection.db
-      ] as unknown as TableCache<RowType>;
+      ];
       table.onInsert(onInsert);
       table.onDelete(onDelete);
       table.onUpdate?.(onUpdate);

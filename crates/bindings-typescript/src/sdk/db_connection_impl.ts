@@ -52,7 +52,7 @@ import {
 import { stdbLogger } from './logger.ts';
 import { fromByteArray } from 'base64-js';
 import type { ReducersView, SetReducerFlags, UntypedReducersDef } from './reducers.ts';
-import type { DbView } from '../server/db_view.ts';
+import type { ClientDbView, DbView } from '../server/db_view.ts';
 import type { UntypedTableDef } from '../server/table.ts';
 import { toCamelCase } from '../server/runtime.ts';
 
@@ -123,7 +123,7 @@ export class DbConnectionImpl<
    * The accessor field to access the tables in the database and associated
    * callback functions.
    */
-  db: DbView<RemoteModule>;
+  db: ClientDbView<RemoteModule>;
 
   /**
    * The accessor field to access the reducers in the database and associated
@@ -236,11 +236,11 @@ export class DbConnectionImpl<
     return queryId;
   };
 
-  #makeDbView(def: RemoteModule): DbView<RemoteModule> {
-    const view = Object.create(null) as DbView<RemoteModule>;
+  #makeDbView(def: RemoteModule): ClientDbView<RemoteModule> {
+    const view = Object.create(null) as ClientDbView<RemoteModule>;
 
     for (const tbl of def.tables) {
-      // DbView uses this name verbatim
+      // ClientDbView uses this name verbatim
       const key = tbl.accessorName; 
       Object.defineProperty(view, key, {
         enumerable: true,

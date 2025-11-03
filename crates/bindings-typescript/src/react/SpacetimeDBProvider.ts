@@ -8,26 +8,25 @@ import * as React from 'react';
 import { SpacetimeDBContext } from './useSpacetimeDB';
 import type { ConnectionState } from './connection_state';
 import { ConnectionId } from '../lib/connection_id';
+import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 
 export interface SpacetimeDBProviderProps<
-  DbConnection extends DbConnectionImpl,
-  ErrorContext extends ErrorContextInterface,
-  SubscriptionEventContext extends SubscriptionEventContextInterface,
+  RemoteModule extends UntypedRemoteModule,
+  DbConnection extends DbConnectionImpl<RemoteModule>,
 > {
-  connectionBuilder: DbConnectionBuilder<DbConnection, ErrorContext, SubscriptionEventContext>;
+  connectionBuilder: DbConnectionBuilder<RemoteModule, DbConnection>;
   children?: React.ReactNode;
 }
 
 export function SpacetimeDBProvider<
-  DbConnection extends DbConnectionImpl,
-  ErrorContext extends ErrorContextInterface,
-  SubscriptionEventContext extends SubscriptionEventContextInterface,
->({ connectionBuilder, children }: SpacetimeDBProviderProps<DbConnection, ErrorContext, SubscriptionEventContext>) {
+  RemoteModule extends UntypedRemoteModule,
+  DbConnection extends DbConnectionImpl<RemoteModule>,
+>({ connectionBuilder, children }: SpacetimeDBProviderProps<RemoteModule, DbConnection>) {
   // Holds the imperative connection instance when (and only when) we’re on the client.
   const connRef = React.useRef<DbConnection | null>(null);
   const getConnection = React.useCallback(() => connRef.current, []);
 
-  const [state, setState] = React.useState<ConnectionState<DbConnection>>({
+  const [state, setState] = React.useState<ConnectionState<RemoteModule, DbConnection>>({
     isActive: false,
     identity: undefined,
     token: undefined,
@@ -39,7 +38,7 @@ export function SpacetimeDBProvider<
   // Build on the client only; useEffect won't run during SSR.
   React.useEffect(() => {
     // Register callback for onConnect to update state
-      const onConnect = (conn: DbConnectionImpl) => {
+      const onConnect = (conn: DbConnectionImpl<RemoteModule>) => {
       setState(s => ({
         ...s,
         isActive: conn.isActive,
@@ -48,13 +47,13 @@ export function SpacetimeDBProvider<
         connectionId: conn.connectionId,
       }));
     };
-    const onDisconnect = (ctx: ErrorContextInterface) => {
+    const onDisconnect = (ctx: ErrorContextInterface<RemoteModule>) => {
       setState(s => ({
         ...s,
         isActive: ctx.isActive,
       }));
     };
-    const onConnectError = (ctx: ErrorContextInterface, err: Error) => {
+    const onConnectError = (ctx: ErrorContextInterface<RemoteModule>, err: Error) => {
       setState(s => ({
         ...s,
         isActive: ctx.isActive,
@@ -76,7 +75,7 @@ export function SpacetimeDBProvider<
 
     // Lazily build once
     if (!connRef.current) {
-      connRef.current = connectionBuilder.build();
+      connRef.current = connectionBuilder.build() as DbConnection;
     }
 
     return () => {

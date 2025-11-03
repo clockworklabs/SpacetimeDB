@@ -1,6 +1,6 @@
-import type { DbView } from '../server/db_view';
+import type { ClientDbView } from '../server/db_view';
 import type { ReducersView, SetReducerFlags, UntypedReducersDef } from './reducers';
-import type { SchemaDef, UntypedRemoteModule } from './spacetime_module';
+import type { UntypedRemoteModule } from './spacetime_module';
 import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
 
 /**
@@ -11,7 +11,7 @@ import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
  * @template SetReducerFlags - Type representing the reducer flags collection.
  */
 export interface DbContext<RemoteModule extends UntypedRemoteModule> {
-  db: DbView<RemoteModule>;
+  db: ClientDbView<RemoteModule>;
   reducers: ReducersView<RemoteModule>;
   setReducerFlags: SetReducerFlags<RemoteModule>;
   isActive: boolean;
