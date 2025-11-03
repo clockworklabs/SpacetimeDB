@@ -10,7 +10,7 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
-use crate::host::host_controller::ViewCallResult;
+use crate::host::host_controller::ViewOutcome;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
@@ -541,7 +541,6 @@ pub struct CallViewParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
     pub caller_connection_id: Option<ConnectionId>,
-    pub timer: Option<Instant>,
     pub view_id: ViewId,
     pub args: ArgsTuple,
     /// The expected return type of the view, used for deserialization.
@@ -710,6 +709,13 @@ pub enum ReducerCallError {
     ScheduleReducerNotFound,
     #[error("can't directly call special {0:?} lifecycle reducer")]
     LifecycleReducer(Lifecycle),
+}
+
+pub struct ViewCallResult {
+    pub outcome: ViewOutcome,
+    pub tx: MutTxId,
+    pub energy_used: EnergyQuanta,
+    pub execution_duration: Duration,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -1453,11 +1459,10 @@ impl ModuleHost {
     pub async fn call_view(
         &self,
         tx: MutTxId,
-        caller_identity: Identity,
-        caller_connection_id: Option<ConnectionId>,
-        timer: Option<Instant>,
         view_name: &str,
         args: FunctionArgs,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
     ) -> Result<ViewCallResult, ViewCallError> {
         let (view_id, view_def) = self
             .info
@@ -1479,7 +1484,6 @@ impl ModuleHost {
                         timestamp: Timestamp::now(),
                         caller_identity,
                         caller_connection_id,
-                        timer,
                         view_id,
                         args,
                         return_type,

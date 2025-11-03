@@ -733,6 +733,7 @@ impl MutTxId {
 
     /// Check if a memoized view exists for the given view name, args, and sender identity.
     /// if not, [`RelationalDB::evaluate_view`] should be called to compute and store it.
+    #[allow(dead_code)]
     fn has_memoized_view(&self, view_name: &str, args: Bytes, sender: Identity) -> Result<(bool, Bytes)> {
         let (view_id, is_anonymous) = self
             .view_from_name(view_name)?
