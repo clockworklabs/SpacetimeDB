@@ -1,13 +1,11 @@
 import { EventEmitter } from './event_emitter.ts';
-import type { TableRuntimeTypeInfo } from './spacetime_module.ts';
 
 import { stdbLogger } from './logger.ts';
 import type { ComparablePrimitive } from '../';
 import type { EventContextInterface, ClientTable } from './index.ts';
 import type { RowType, Table, UntypedTableDef } from '../server/table.ts';
-import type { UntypedSchemaDef } from '../server/schema.ts';
-import type { UntypedReducersDef } from './reducers.ts';
 import type { ClientTableCore } from './table_handle.ts';
+import type { UntypedRemoteModule } from './spacetime_module.ts';
 
 export type Operation<
   RowType extends Record<string, any> = Record<string, any>,
@@ -35,10 +33,9 @@ export type PendingCallback = {
  * Builder to generate calls to query a `table` in the database
  */
 export class TableCache<
-  SchemaDef extends UntypedSchemaDef,
-  Reducers extends UntypedReducersDef,
+  RemoteModule extends UntypedRemoteModule,
   TableDef extends UntypedTableDef,
-> implements ClientTableCore<SchemaDef, Reducers, TableDef> {
+> implements ClientTableCore<RemoteModule, TableDef> {
   private rows: Map<ComparablePrimitive, [RowType<TableDef>, number]>;
   private tableDef: TableDef;
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
@@ -84,7 +81,7 @@ export class TableCache<
 
   applyOperations = (
     operations: Operation<RowType<TableDef>>[],
-    ctx: EventContextInterface<SchemaDef, Reducers>
+    ctx: EventContextInterface<RemoteModule>
   ): PendingCallback[] => {
     const pendingCallbacks: PendingCallback[] = [];
     // TODO: performance
@@ -157,7 +154,7 @@ export class TableCache<
   };
 
   update = (
-    ctx: EventContextInterface<SchemaDef, Reducers>,
+    ctx: EventContextInterface<RemoteModule>,
     rowId: ComparablePrimitive,
     newRow: RowType<TableDef>,
     refCountDelta: number = 0
@@ -205,7 +202,7 @@ export class TableCache<
   };
 
   insert = (
-    ctx: EventContextInterface<SchemaDef, Reducers>,
+    ctx: EventContextInterface<RemoteModule>,
     operation: Operation<RowType<TableDef>>,
     count: number = 1
   ): PendingCallback | undefined => {
@@ -228,7 +225,7 @@ export class TableCache<
   };
 
   delete = (
-    ctx: EventContextInterface<SchemaDef, Reducers>,
+    ctx: EventContextInterface<RemoteModule>,
     operation: Operation<RowType<TableDef>>,
     count: number = 1
   ): PendingCallback | undefined => {
@@ -273,7 +270,7 @@ export class TableCache<
    * @param cb Callback to be called when a new row is inserted
    */
   onInsert = (
-    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void
+    cb: (ctx: EventContextInterface<RemoteModule>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.on('insert', cb);
   };
@@ -294,7 +291,7 @@ export class TableCache<
    * @param cb Callback to be called when a new row is inserted
    */
   onDelete = (
-    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void
+    cb: (ctx: EventContextInterface<RemoteModule>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.on('delete', cb);
   };
@@ -315,7 +312,7 @@ export class TableCache<
    * @param cb Callback to be called when a new row is inserted
    */
   onUpdate = (
-    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, oldRow: RowType<TableDef>, row: RowType<TableDef>) => void
+    cb: (ctx: EventContextInterface<RemoteModule>, oldRow: RowType<TableDef>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.on('update', cb);
   };
@@ -326,7 +323,7 @@ export class TableCache<
    * @param cb Callback to be removed
    */
   removeOnInsert = (
-    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void
+    cb: (ctx: EventContextInterface<RemoteModule>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.off('insert', cb);
   };
@@ -337,7 +334,7 @@ export class TableCache<
    * @param cb Callback to be removed
    */
   removeOnDelete = (
-    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void
+    cb: (ctx: EventContextInterface<RemoteModule>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.off('delete', cb);
   };
@@ -348,7 +345,7 @@ export class TableCache<
    * @param cb Callback to be removed
    */
   removeOnUpdate = (
-    cb: (ctx: EventContextInterface<SchemaDef, Reducers>, oldRow: RowType<TableDef>, row: RowType<TableDef>) => void
+    cb: (ctx: EventContextInterface<RemoteModule>, oldRow: RowType<TableDef>, row: RowType<TableDef>) => void
   ): void => {
     this.emitter.off('update', cb);
   };

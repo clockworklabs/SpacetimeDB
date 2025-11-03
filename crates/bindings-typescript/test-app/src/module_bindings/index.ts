@@ -57,7 +57,7 @@ import { schema } from '../../../src/server/schema.ts';
 import t from '../../../src/server/type_builders.ts';
 import { table } from '../../../src/server/table.ts';
 import { reducerSchema, reducers } from '../../../src/server/reducers.ts';
-import { RemoteModule2 } from '../../../src/sdk/spacetime_module.ts';
+import { RemoteModule } from '../../../src/sdk/spacetime_module.ts';
 export { User };
 
 const pointType = t.object('Point', {
@@ -97,47 +97,41 @@ const REMOTE_MODULE = {
   versionInfo: {
     cliVersion: '1.6.0' as const,
   },
-  tables: tablesSchema.schemaType,
-  reducers: reducersSchema.reducersType,
-} satisfies RemoteModule2<
+  tables: tablesSchema.schemaType.tables,
+  reducers: reducersSchema.reducersType.reducers,
+} satisfies RemoteModule<
   typeof tablesSchema.schemaType,
   typeof reducersSchema.reducersType
 >;
 
 export type EventContext = __EventContextInterface<
-  typeof tablesSchema.schemaType,
-  typeof reducersSchema.reducersType
+  typeof REMOTE_MODULE
 >;
 
 export type ReducerEventContext = __ReducerEventContextInterface<
-  typeof tablesSchema.schemaType,
-  typeof reducersSchema.reducersType
+  typeof REMOTE_MODULE
 >;
 
 export type SubscriptionEventContext = __SubscriptionEventContextInterface<
-  typeof tablesSchema.schemaType,
-  typeof reducersSchema.reducersType
+  typeof REMOTE_MODULE
 >;
 
 export type ErrorContext = __ErrorContextInterface<
-  typeof tablesSchema.schemaType,
-  typeof reducersSchema.reducersType
+  typeof REMOTE_MODULE
 >;
 
 export class SubscriptionBuilder extends __SubscriptionBuilderImpl<
-  typeof tablesSchema.schemaType,
-  typeof reducersSchema.reducersType
+  typeof REMOTE_MODULE
 > {}
 
 export class DbConnectionBuilder extends __DbConnectionBuilder<
-  typeof tablesSchema.schemaType,
-  typeof reducersSchema.reducersType,
+  typeof REMOTE_MODULE,
   DbConnection
 > {};
 
-export class DbConnection extends __DbConnectionImpl<typeof tablesSchema.schemaType, typeof reducersSchema.reducersType> {
+export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {
   static builder = (): DbConnectionBuilder => {
-    return new DbConnectionBuilder(REMOTE_MODULE, (config: DbConnectionConfig<typeof tablesSchema.schemaType, typeof reducersSchema.reducersType>) => new DbConnection(config));
+    return new DbConnectionBuilder(REMOTE_MODULE, (config: DbConnectionConfig<typeof REMOTE_MODULE>) => new DbConnection(config));
   };
   subscriptionBuilder = (): SubscriptionBuilder => {
     return new SubscriptionBuilder(this);

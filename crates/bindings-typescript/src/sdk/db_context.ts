@@ -1,6 +1,6 @@
 import type { DbView } from '../server/db_view';
-import type { UntypedSchemaDef } from '../server/schema';
 import type { ReducersView, SetReducerFlags, UntypedReducersDef } from './reducers';
+import type { SchemaDef, UntypedRemoteModule } from './spacetime_module';
 import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
 
 /**
@@ -10,10 +10,10 @@ import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
  * @template ReducersDef - Type representing the reducers.
  * @template SetReducerFlags - Type representing the reducer flags collection.
  */
-export interface DbContext<SchemaDef extends UntypedSchemaDef, ReducersDef extends UntypedReducersDef> {
-  db: DbView<SchemaDef>;
-  reducers: ReducersView<ReducersDef>;
-  setReducerFlags: SetReducerFlags<ReducersDef>;
+export interface DbContext<RemoteModule extends UntypedRemoteModule> {
+  db: DbView<RemoteModule>;
+  reducers: ReducersView<RemoteModule>;
+  setReducerFlags: SetReducerFlags<RemoteModule>;
   isActive: boolean;
 
   /**
@@ -22,8 +22,7 @@ export interface DbContext<SchemaDef extends UntypedSchemaDef, ReducersDef exten
    * @returns The subscription builder.
    */
   subscriptionBuilder(): SubscriptionBuilderImpl<
-    SchemaDef,
-    ReducersDef
+    RemoteModule
   >;
 
   /**

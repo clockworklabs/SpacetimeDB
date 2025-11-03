@@ -1,5 +1,5 @@
 import type { ClientTable } from "../sdk";
-import type { UntypedReducersDef } from "../sdk/reducers";
+import type { UntypedRemoteModule } from "../sdk/spacetime_module";
 import type { UntypedSchemaDef } from "./schema";
 import type { ReadonlyTable, Table } from "./table";
 
@@ -13,8 +13,8 @@ export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
 /**
  * A type representing a client-side database view, mapping table names to their corresponding client Table handles.
  */
-export type ClientDbView<SchemaDef extends UntypedSchemaDef, Reducers extends UntypedReducersDef> = {
-  readonly [Tbl in SchemaDef['tables'][number] as Tbl['accessorName']]: ClientTable<SchemaDef, Reducers, Tbl>;
+export type ClientDbView<RemoteModule extends UntypedRemoteModule> = {
+  readonly [Tbl in RemoteModule['tables'][number] as Tbl['accessorName']]: ClientTable<RemoteModule, Tbl>;
 };
 
 /**

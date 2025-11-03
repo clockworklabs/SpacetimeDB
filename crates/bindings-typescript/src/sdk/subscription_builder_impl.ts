@@ -1,24 +1,22 @@
-import type { UntypedSchemaDef } from '../server/schema';
 import type { DbConnectionImpl } from './db_connection_impl';
 import type {
   ErrorContextInterface,
   SubscriptionEventContextInterface,
 } from './event_context';
 import { EventEmitter } from './event_emitter';
-import type { UntypedReducersDef } from './reducers';
+import type { UntypedRemoteModule } from './spacetime_module';
 
 export class SubscriptionBuilderImpl<
-  SchemaDef extends UntypedSchemaDef,
-  Reducers extends UntypedReducersDef,
+  RemoteModule extends UntypedRemoteModule,
 > {
   #onApplied?: (
-    ctx: SubscriptionEventContextInterface<SchemaDef, Reducers>
+    ctx: SubscriptionEventContextInterface<RemoteModule>
   ) => void = undefined;
   #onError?: (
-    ctx: ErrorContextInterface<SchemaDef, Reducers>
+    ctx: ErrorContextInterface<RemoteModule>
   ) => void = undefined;
   constructor(
-    private db: DbConnectionImpl<SchemaDef, Reducers>
+    private db: DbConnectionImpl<RemoteModule>
   ) {}
 
   /**
@@ -38,9 +36,9 @@ export class SubscriptionBuilderImpl<
    */
   onApplied(
     cb: (
-      ctx: SubscriptionEventContextInterface<SchemaDef, Reducers>
+      ctx: SubscriptionEventContextInterface<RemoteModule>
     ) => void
-  ): SubscriptionBuilderImpl<SchemaDef, Reducers> {
+  ): SubscriptionBuilderImpl<RemoteModule> {
     this.#onApplied = cb;
     return this;
   }
@@ -66,8 +64,8 @@ export class SubscriptionBuilderImpl<
    * @returns The current `SubscriptionBuilder` instance.
    */
   onError(
-    cb: (ctx: ErrorContextInterface<SchemaDef, Reducers>) => void
-  ): SubscriptionBuilderImpl<SchemaDef, Reducers> {
+    cb: (ctx: ErrorContextInterface<RemoteModule>) => void
+  ): SubscriptionBuilderImpl<RemoteModule> {
     this.#onError = cb;
     return this;
   }
@@ -90,7 +88,7 @@ export class SubscriptionBuilderImpl<
    */
   subscribe(
     query_sql: string | string[]
-  ): SubscriptionHandleImpl<SchemaDef, Reducers> {
+  ): SubscriptionHandleImpl<RemoteModule> {
     const queries = Array.isArray(query_sql) ? query_sql : [query_sql];
     if (queries.length === 0) {
       throw new Error('Subscriptions must have at least one query');
@@ -127,16 +125,15 @@ export class SubscriptionBuilderImpl<
 
 export type SubscribeEvent = 'applied' | 'error' | 'end';
 
-export class SubscriptionManager<SchemaDef extends UntypedSchemaDef, Reducers extends UntypedReducersDef> {
+export class SubscriptionManager<RemoteModule extends UntypedRemoteModule> {
   subscriptions: Map<
     number,
-    { handle: SubscriptionHandleImpl<SchemaDef, Reducers>; emitter: EventEmitter<SubscribeEvent> }
+    { handle: SubscriptionHandleImpl<RemoteModule>; emitter: EventEmitter<SubscribeEvent> }
   > = new Map();
 }
 
 export class SubscriptionHandleImpl<
-  SchemaDef extends UntypedSchemaDef,
-  Reducers extends UntypedReducersDef,
+  RemoteModule extends UntypedRemoteModule,
 > {
   #queryId: number;
   #unsubscribeCalled: boolean = false;
@@ -146,23 +143,20 @@ export class SubscriptionHandleImpl<
     new EventEmitter();
 
   constructor(
-    private db: DbConnectionImpl<SchemaDef, Reducers>,
+    private db: DbConnectionImpl<RemoteModule>,
     querySql: string[],
     onApplied?: (
-      ctx: SubscriptionEventContextInterface<SchemaDef, Reducers>
+      ctx: SubscriptionEventContextInterface<RemoteModule>
     ) => void,
     onError?: (
-      ctx: ErrorContextInterface<SchemaDef, Reducers>,
+      ctx: ErrorContextInterface<RemoteModule>,
       error: Error
     ) => void
   ) {
     this.#emitter.on(
       'applied',
       (
-        ctx: SubscriptionEventContextInterface<
-          SchemaDef,
-          Reducers
-        >
+        ctx: SubscriptionEventContextInterface<RemoteModule>
       ) => {
         this.#activeState = true;
         if (onApplied) {
@@ -173,7 +167,7 @@ export class SubscriptionHandleImpl<
     this.#emitter.on(
       'error',
       (
-        ctx: ErrorContextInterface<SchemaDef, Reducers>,
+        ctx: ErrorContextInterface<RemoteModule>,
         error: Error
       ) => {
         this.#activeState = false;
@@ -200,10 +194,7 @@ export class SubscriptionHandleImpl<
     this.#emitter.on(
       'end',
       (
-        _ctx: SubscriptionEventContextInterface<
-          SchemaDef,
-          Reducers
-        >
+        _ctx: SubscriptionEventContextInterface<RemoteModule>
       ) => {
         this.#endedState = true;
         this.#activeState = false;
@@ -223,7 +214,7 @@ export class SubscriptionHandleImpl<
    */
   unsubscribeThen(
     onEnd: (
-      ctx: SubscriptionEventContextInterface<SchemaDef, Reducers>
+      ctx: SubscriptionEventContextInterface<RemoteModule>
     ) => void
   ): void {
     if (this.#endedState) {
@@ -237,10 +228,7 @@ export class SubscriptionHandleImpl<
     this.#emitter.on(
       'end',
       (
-        ctx: SubscriptionEventContextInterface<
-          SchemaDef,
-          Reducers
-        >
+        ctx: SubscriptionEventContextInterface<RemoteModule>
       ) => {
         this.#endedState = true;
         this.#activeState = false;

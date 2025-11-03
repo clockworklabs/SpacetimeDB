@@ -1,5 +1,4 @@
 import { type Operation, TableCache } from '../src/sdk/table_cache';
-import type { TableRuntimeTypeInfo } from '../src/sdk/spacetime_module';
 import { describe, expect, test } from 'vitest';
 
 import { Player } from '../test-app/src/module_bindings/player_type.ts';

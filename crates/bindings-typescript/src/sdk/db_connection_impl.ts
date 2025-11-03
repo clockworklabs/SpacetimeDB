@@ -34,7 +34,7 @@ import type {
   UnsubscribeAppliedMessage,
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
-import { type RemoteModule, type RemoteModule2 } from './spacetime_module.ts';
+import { type RemoteModule, type UntypedRemoteModule } from './spacetime_module.ts';
 import {
   TableCache,
   type Operation,
@@ -52,10 +52,8 @@ import {
 import { stdbLogger } from './logger.ts';
 import { fromByteArray } from 'base64-js';
 import type { ReducersView, SetReducerFlags, UntypedReducersDef } from './reducers.ts';
-import type { UntypedSchemaDef } from '../server/schema.ts';
 import type { DbView } from '../server/db_view.ts';
-import type { RowType, UntypedTableDef } from '../server/table.ts';
-import type { CamelCase } from '../server/type_util.ts';
+import type { UntypedTableDef } from '../server/table.ts';
 import { toCamelCase } from '../server/runtime.ts';
 
 export { DbConnectionBuilder, SubscriptionBuilderImpl, TableCache, type Event };
@@ -72,13 +70,13 @@ export type {
 export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
 export type CallReducerFlags = 'FullUpdate' | 'NoSuccessNotify';
 
-type ReducerEventCallback<SchemaDef extends UntypedSchemaDef, Reducers extends UntypedReducersDef, ReducerArgs extends any[] = any[]> = (
-  ctx: ReducerEventContextInterface<SchemaDef, Reducers>,
+type ReducerEventCallback<RemoteModule extends UntypedRemoteModule, ReducerArgs extends any[] = any[]> = (
+  ctx: ReducerEventContextInterface<RemoteModule>,
   ...args: ReducerArgs
 ) => void;
 
-type SubscriptionEventCallback<SchemaDef extends UntypedSchemaDef, Reducers extends UntypedReducersDef> = (
-  ctx: SubscriptionEventContextInterface<SchemaDef, Reducers>,
+type SubscriptionEventCallback<RemoteModule extends UntypedRemoteModule> = (
+  ctx: SubscriptionEventContextInterface<RemoteModule>,
 ) => void;
 
 function callReducerFlagsToNumber(flags: CallReducerFlags): number {
@@ -90,7 +88,7 @@ function callReducerFlagsToNumber(flags: CallReducerFlags): number {
   }
 }
 
-export type DbConnectionConfig<SchemaDef extends UntypedSchemaDef, Reducers extends UntypedReducersDef> = {
+export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   uri: URL;
   nameOrAddress: string;
   identity?: Identity;
@@ -100,13 +98,12 @@ export type DbConnectionConfig<SchemaDef extends UntypedSchemaDef, Reducers exte
   compression: 'gzip' | 'none';
   lightMode: boolean;
   confirmedReads?: boolean;
-  remoteModule: RemoteModule2<SchemaDef, Reducers>;
+  remoteModule: RemoteModule;
 };
 
 export class DbConnectionImpl<
-  SchemaDef extends UntypedSchemaDef,
-  ReducersDef extends UntypedReducersDef,
-> implements DbContext<SchemaDef, ReducersDef> {
+  RemoteModule extends UntypedRemoteModule,
+> implements DbContext<RemoteModule> {
   /**
    * Whether or not the connection is active.
    */
@@ -126,20 +123,20 @@ export class DbConnectionImpl<
    * The accessor field to access the tables in the database and associated
    * callback functions.
    */
-  db: DbView<SchemaDef>;
+  db: DbView<RemoteModule>;
 
   /**
    * The accessor field to access the reducers in the database and associated
    * callback functions.
    */
-  reducers: ReducersView<ReducersDef>;
+  reducers: ReducersView<RemoteModule>;
 
   /**
    * The accessor field to access functions related to setting flags on
    * reducers regarding how the server should handle the reducer call and
    * the events that it sends back to the client.
    */
-  setReducerFlags: SetReducerFlags<ReducersDef>;
+  setReducerFlags: SetReducerFlags<RemoteModule>;
 
   /**
    * The `ConnectionId` of the connection to to the database.
@@ -149,19 +146,19 @@ export class DbConnectionImpl<
   // These fields are meant to be strictly private.
   #queryId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
-  #reducerEmitter: EventEmitter<string, ReducerEventCallback<SchemaDef, ReducersDef>> =
+  #reducerEmitter: EventEmitter<string, ReducerEventCallback<RemoteModule>> =
     new EventEmitter();
-  #onApplied?: SubscriptionEventCallback<SchemaDef, ReducersDef>;
+  #onApplied?: SubscriptionEventCallback<RemoteModule>;
   #messageQueue = Promise.resolve();
-  #subscriptionManager = new SubscriptionManager<SchemaDef, ReducersDef>();
-  #remoteModule: RemoteModule2<SchemaDef, ReducersDef>;
+  #subscriptionManager = new SubscriptionManager<RemoteModule>();
+  #remoteModule: RemoteModule;
   #callReducerFlags = new Map<string, CallReducerFlags>();
 
   // These fields are not part of the public API, but in a pinch you
   // could use JavaScript to access them by bypassing TypeScript's
   // private fields.
   // We use them in testing.
-  private clientCache: ClientCache<SchemaDef, ReducersDef>;
+  private clientCache: ClientCache<RemoteModule>;
   private ws?: WebsocketDecompressAdapter | WebsocketTestAdapter;
   private wsPromise: Promise<
     WebsocketDecompressAdapter | WebsocketTestAdapter | undefined
@@ -178,7 +175,7 @@ export class DbConnectionImpl<
     compression,
     lightMode,
     confirmedReads,
-  }: DbConnectionConfig<SchemaDef, ReducersDef>) {
+  }: DbConnectionConfig<RemoteModule>) {
     stdbLogger('info', 'Connecting to SpacetimeDB WS...');
 
     // We use .toString() here because some versions of React Native contain a bug where the URL constructor
@@ -198,10 +195,10 @@ export class DbConnectionImpl<
     const connectionId = this.connectionId.toHexString();
     url.searchParams.set('connection_id', connectionId);
 
-    this.clientCache = new ClientCache<SchemaDef, ReducersDef>();
-    this.db = this.#makeDbView(remoteModule.tables);
-    this.reducers = this.#makeReducers(remoteModule.reducers);
-    this.setReducerFlags = this.#makeSetReducerFlags(remoteModule.reducers);
+    this.clientCache = new ClientCache<RemoteModule>();
+    this.db = this.#makeDbView(remoteModule);
+    this.reducers = this.#makeReducers(remoteModule);
+    this.setReducerFlags = this.#makeSetReducerFlags(remoteModule);
 
     this.wsPromise = createWSFn({
       url,
@@ -239,8 +236,8 @@ export class DbConnectionImpl<
     return queryId;
   };
 
-  #makeDbView(def: SchemaDef): DbView<SchemaDef> {
-    const view = Object.create(null) as DbView<SchemaDef>;
+  #makeDbView(def: RemoteModule): DbView<RemoteModule> {
+    const view = Object.create(null) as DbView<RemoteModule>;
 
     for (const tbl of def.tables) {
       // DbView uses this name verbatim
@@ -257,7 +254,7 @@ export class DbConnectionImpl<
     return view;
   }
 
-  #makeReducers(def: ReducersDef): ReducersView<ReducersDef> {
+  #makeReducers(def: RemoteModule): ReducersView<RemoteModule> {
     const out: Record<string, unknown> = {};
 
     for (const reducer of def.reducers) {
@@ -274,11 +271,11 @@ export class DbConnectionImpl<
       };
     }
 
-    return out as ReducersView<ReducersDef>;
+    return out as ReducersView<RemoteModule>;
   }
 
-  #makeSetReducerFlags(defs: ReducersDef): SetReducerFlags<ReducersDef> {
-    const out = Object.create(null) as SetReducerFlags<ReducersDef>;
+  #makeSetReducerFlags(defs: RemoteModule): SetReducerFlags<RemoteModule> {
+    const out = Object.create(null) as SetReducerFlags<RemoteModule>;
     for (const r of defs.reducers) {
       const key = toCamelCase(r.name);
       Object.defineProperty(out, key, {
@@ -293,8 +290,8 @@ export class DbConnectionImpl<
   }
 
   #makeEventContext(
-    event: Event<ReducersDef['reducers'][number]>
-  ): EventContextInterface<SchemaDef, ReducersDef> {
+    event: Event<RemoteModule['reducers'][number]>
+  ): EventContextInterface<RemoteModule> {
     // Bind methods to preserve `this` (#private fields safe)
     return {
       db: this.db,
@@ -314,13 +311,13 @@ export class DbConnectionImpl<
   // Do not remove this function, or shoot yourself in the foot please.
   // It's not clear what would be a better way to do this at this exact
   // moment.
-  subscriptionBuilder = (): SubscriptionBuilderImpl<SchemaDef, ReducersDef> => {
+  subscriptionBuilder = (): SubscriptionBuilderImpl<RemoteModule> => {
     return new SubscriptionBuilderImpl(this);
   };
 
   registerSubscription(
-    handle: SubscriptionHandleImpl<SchemaDef, ReducersDef>,
-    handleEmitter: EventEmitter<SubscribeEvent, SubscriptionEventCallback<SchemaDef, ReducersDef>>,
+    handle: SubscriptionHandleImpl<RemoteModule>,
+    handleEmitter: EventEmitter<SubscribeEvent, SubscriptionEventCallback<RemoteModule>>,
     querySql: string[]
   ): number {
     const queryId = this.#getNextQueryId();
@@ -365,7 +362,7 @@ export class DbConnectionImpl<
       const rows: Operation[] = [];
 
       // TODO: performance
-      const table = this.#remoteModule.tables.tables.find(t => t.name === tableName);
+      const table = this.#remoteModule.tables.find(t => t.name === tableName);
       const rowType = table!.rowType;
       const columnsArray = Object.entries(table!.columns);
       const primaryKeyColumnEntry = columnsArray.find(col => col[1].columnMetadata.isPrimaryKey);
@@ -593,14 +590,14 @@ export class DbConnectionImpl<
 
   #applyTableUpdates(
     tableUpdates: CacheTableUpdate<UntypedTableDef>[],
-    eventContext: EventContextInterface<SchemaDef, ReducersDef>
+    eventContext: EventContextInterface<RemoteModule>
   ): PendingCallback[] {
     const pendingCallbacks: PendingCallback[] = [];
     for (const tableUpdate of tableUpdates) {
       // Get table information for the table being updated
       const tableName = tableUpdate.tableName;
       // TODO: performance
-      const tableDef = this.#remoteModule.tables.tables.find(t => t.name === tableName)!;
+      const tableDef = this.#remoteModule.tables.find(t => t.name === tableName)!;
       const table = this.clientCache.getOrCreateTable(tableDef);
       const newCallbacks = table.applyOperations(
         tableUpdate.operations,
@@ -655,7 +652,7 @@ export class DbConnectionImpl<
         let reducerInfo = message.reducerInfo;
         let unknownTransaction = false;
         let reducerArgs: any | undefined;
-        const reducer = this.#remoteModule.reducers.reducers.find(t => t.name === reducerInfo!.reducerName)!;
+        const reducer = this.#remoteModule.reducers.find(t => t.name === reducerInfo!.reducerName)!;
         if (!reducerInfo) {
           unknownTransaction = true;
         } else {
@@ -899,63 +896,63 @@ export class DbConnectionImpl<
 
   private on(
     eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.on(eventName, callback);
   }
 
   private off(
     eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.off(eventName, callback);
   }
 
   private onConnect(
-    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.on('connect', callback);
   }
 
   private onDisconnect(
-    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.on('disconnect', callback);
   }
 
   private onConnectError(
-    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.on('connectError', callback);
   }
 
   removeOnConnect(
-    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.off('connect', callback);
   }
 
   removeOnDisconnect(
-    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.off('disconnect', callback);
   }
 
   removeOnConnectError(
-    callback: (ctx: DbConnectionImpl<SchemaDef, ReducersDef>, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.off('connectError', callback);
   }
 
   // Note: This is required to be public because it needs to be
   // called from the `RemoteReducers` class.
-  onReducer(reducerName: string, callback: ReducerEventCallback<SchemaDef, ReducersDef>): void {
+  onReducer(reducerName: string, callback: ReducerEventCallback<RemoteModule>): void {
     this.#reducerEmitter.on(reducerName, callback);
   }
 
   // Note: This is required to be public because it needs to be
   // called from the `RemoteReducers` class.
-  offReducer(reducerName: string, callback: ReducerEventCallback<SchemaDef, ReducersDef>): void {
+  offReducer(reducerName: string, callback: ReducerEventCallback<RemoteModule>): void {
     this.#reducerEmitter.off(reducerName, callback);
   }
 }

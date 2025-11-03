@@ -1,36 +1,34 @@
 import type { ReadonlyIndexes } from "../server/indexes";
-import type { UntypedSchemaDef } from "../server/schema";
 import type { ReadonlyTableMethods, RowType, TableIndexes, UntypedTableDef } from "../server/table";
 import type { Prettify } from "../server/type_util";
 import type { EventContextInterface } from "./event_context";
-import type { UntypedReducersDef } from "./reducers";
+import type { UntypedRemoteModule } from "./spacetime_module";
 
 export type ClientTableMethods<
-  SchemaDef extends UntypedSchemaDef,
-  Reducers extends UntypedReducersDef,
+  RemoteModule extends UntypedRemoteModule,
   TableDef extends UntypedTableDef,
 > = {
   /**
    * Registers a callback to be invoked when a row is inserted into the table.
    */
-  onInsert(cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void): void;
+  onInsert(cb: (ctx: EventContextInterface<RemoteModule>, row: RowType<TableDef>) => void): void;
 
   /**
    *  Removes a previously registered insert event listener. 
    * @param cb The callback to remove from the insert event listeners.
    */
-  removeOnInsert(cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void): void;
+  removeOnInsert(cb: (ctx: EventContextInterface<RemoteModule>, row: RowType<TableDef>) => void): void;
 
   /**
    * Registers a callback to be invoked when a row is deleted from the table.
    */
-  onDelete(cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void): void;
+  onDelete(cb: (ctx: EventContextInterface<RemoteModule>, row: RowType<TableDef>) => void): void;
 
   /**
    * Removes a previously registered delete event listener.
    * @param cb The callback to remove from the delete event listeners.
    */
-  removeOnDelete(cb: (ctx: EventContextInterface<SchemaDef, Reducers>, row: RowType<TableDef>) => void): void;
+  removeOnDelete(cb: (ctx: EventContextInterface<RemoteModule>, row: RowType<TableDef>) => void): void;
 };
 
 /**
@@ -41,11 +39,10 @@ export type ClientTableMethods<
  * - AIO: auto-increment overflow error type (never if none)
  */
 export type ClientTable<
-  SchemaDef extends UntypedSchemaDef,
-  Reducers extends UntypedReducersDef,
+  RemoteModule extends UntypedRemoteModule,
   TableDef extends UntypedTableDef
 > = Prettify<
-  ClientTableCore<SchemaDef, Reducers, TableDef> &
+  ClientTableCore<RemoteModule, TableDef> &
   ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
 >;
 
@@ -54,19 +51,17 @@ export type ClientTable<
  * Includes only staticly known methods.
  */
 export type ClientTableCore<
-  SchemaDef extends UntypedSchemaDef,
-  Reducers extends UntypedReducersDef,
+  RemoteModule extends UntypedRemoteModule,
   TableDef extends UntypedTableDef,
 > =
   ReadonlyTableMethods<TableDef> &
-  ClientTableMethods<SchemaDef, Reducers, TableDef>;
+  ClientTableMethods<RemoteModule, TableDef>;
 
 /**
  * Client database view, mapping table names to their corresponding ClientTable handles.
  */
 export type ClientDbView<
-  SchemaDef extends UntypedSchemaDef,
-  Reducers extends UntypedReducersDef,
+  RemoteModule extends UntypedRemoteModule,
 > = {
-  readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: ClientTable<SchemaDef, Reducers, Tbl>;
+  readonly [Tbl in RemoteModule['tables'][number] as Tbl['name']]: ClientTable<RemoteModule, Tbl>;
 };
