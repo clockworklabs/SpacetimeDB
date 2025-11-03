@@ -13,6 +13,8 @@ import sys
 import logging
 import itertools
 import tempfile
+from pathlib import Path
+import shutil
 
 def check_docker():
     docker_ps = smoketests.run_cmd("docker", "ps", "--format=json")
@@ -94,12 +96,9 @@ def main():
         try:
             os.symlink(update_bin_name, SPACETIME_BIN)
         except OSError:
-            import shutil
             shutil.copyfile(SPACETIME_BIN.with_name(update_bin_name), SPACETIME_BIN)
 
     os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
-
-    build_template_target()
 
     if args.docker:
         # have docker logs print concurrently with the test output
@@ -113,9 +112,9 @@ def main():
                 subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
 
-    with tempfile.NamedTemporaryFile(mode="w+b", suffix=".toml", buffering=0) as config_file:
-        config_file.write(BASE_STDB_CONFIG_PATH.read_bytes())
-        config_file.flush()
+    with tempfile.NamedTemporaryFile(mode="w+b", suffix=".toml", buffering=0, delete_on_close=False) as config_file:
+        with BASE_STDB_CONFIG_PATH.open("rb") as src, config_file.file as dst:
+            shutil.copyfileobj(src, dst)
 
         if args.remote_server is not None:
             smoketests.spacetime("--config-path", config_file.name, "server", "edit", "localhost", "--url", args.remote_server, "--yes")
@@ -128,8 +127,9 @@ def main():
         else:
             smoketests.new_identity(config_file.name)
 
-        config_file.seek(0)
-        smoketests.STDB_CONFIG = config_file.read().decode()
+        smoketests.STDB_CONFIG = Path(config_file.name).read_text()
+
+    build_template_target()
 
     if not args.skip_dotnet:
         smoketests.HAVE_DOTNET = check_dotnet()

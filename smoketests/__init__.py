@@ -237,7 +237,6 @@ class Smoketest(unittest.TestCase):
         return list(map(json.loads, logs.splitlines()))
 
     def publish_module(self, domain=None, *, clear=True, capture_stderr=True, num_replicas=None, break_clients=False):
-        print("publishing module", self.publish_module)
         publish_output = self.spacetime(
             "publish",
             *[domain] if domain is not None else [],
@@ -256,6 +255,8 @@ class Smoketest(unittest.TestCase):
 
     @classmethod
     def reset_config(cls):
+        if not STDB_CONFIG:
+            raise Exception("config toml has not been initialized yet")
         cls.config_path.write_text(STDB_CONFIG)
 
     def fingerprint(self):
