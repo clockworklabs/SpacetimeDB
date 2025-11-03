@@ -25,7 +25,7 @@ use std::io::Read;
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
-        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR>]")
+        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH> | --module-name <MODULE_NAME> | --uproject-dir <DIR> | --module-prefix <PREFIX>]")
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
@@ -94,6 +94,11 @@ pub fn cli() -> clap::Command {
                 .required_if_eq("lang", "unrealcpp")
         )
         .arg(
+            Arg::new("module_prefix")
+                .long("module-prefix")
+                .help("The module prefix to use for generated types (only used with --lang unrealcpp)")
+        )
+        .arg(
             Arg::new("lang")
                 .required(true)
                 .long("lang")
@@ -135,6 +140,7 @@ pub async fn exec_ex(
     let lang = *args.get_one::<Language>("lang").unwrap();
     let namespace = args.get_one::<String>("namespace").unwrap();
     let module_name = args.get_one::<String>("module_name");
+    let module_prefix = args.get_one::<String>("module_prefix");
     let force = args.get_flag("force");
     let build_options = args.get_one::<String>("build_options").unwrap();
 
@@ -186,6 +192,7 @@ pub async fn exec_ex(
             unreal_cpp_lang = UnrealCpp {
                 module_name: module_name.as_ref().unwrap(),
                 uproject_dir: out_dir,
+                module_prefix: module_prefix.as_ref().map(|s| s.as_str()).unwrap_or(""),
             };
             &unreal_cpp_lang as &dyn Lang
         }
