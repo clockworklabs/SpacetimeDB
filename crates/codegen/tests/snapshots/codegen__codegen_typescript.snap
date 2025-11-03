@@ -1639,73 +1639,49 @@ export class LoggedOutPlayerTableHandle<TableName extends string> implements __T
   iter(): Iterable<Player> {
     return this.tableCache.iter();
   }
+
   /**
-   * Access to the `identity` unique index on the table `logged_out_player`,
-   * which allows point queries on the field of the same name
-   * via the [`LoggedOutPlayerIdentityUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.loggedOutPlayer.identity().find(...)`.
-   *
-   * Get a handle on the `identity` unique index on the table `logged_out_player`.
+   * Access to the `identity` index on the table `logged_out_player`,
+   * with `ctx.db.loggedOutPlayer.identity.find(...)`.
    */
   identity = {
-    // Find the subscribed row whose `identity` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: __Identity): Player | undefined => {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: __Identity): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.identity, col_val)) {
+        if (__deepEqual(row.identity, col_vals)) {
           return row;
         }
       }
     },
   };
   /**
-   * Access to the `playerId` unique index on the table `logged_out_player`,
-   * which allows point queries on the field of the same name
-   * via the [`LoggedOutPlayerPlayerIdUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.loggedOutPlayer.playerId().find(...)`.
-   *
-   * Get a handle on the `playerId` unique index on the table `logged_out_player`.
-   */
-  playerId = {
-    // Find the subscribed row whose `playerId` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: bigint): Player | undefined => {
-      for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.playerId, col_val)) {
-          return row;
-        }
-      }
-    },
-  };
-  /**
-   * Access to the `name` unique index on the table `logged_out_player`,
-   * which allows point queries on the field of the same name
-   * via the [`LoggedOutPlayerNameUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.loggedOutPlayer.name().find(...)`.
-   *
-   * Get a handle on the `name` unique index on the table `logged_out_player`.
+   * Access to the `name` index on the table `logged_out_player`,
+   * with `ctx.db.loggedOutPlayer.name.find(...)`.
    */
   name = {
-    // Find the subscribed row whose `name` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: string): Player | undefined => {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: string): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.name, col_val)) {
+        if (__deepEqual(row.name, col_vals)) {
           return row;
         }
       }
     },
   };
-
+  /**
+   * Access to the `playerId` index on the table `logged_out_player`,
+   * with `ctx.db.loggedOutPlayer.playerId.find(...)`.
+   */
+  playerId = {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: bigint): Player | undefined => {
+      for (let row of this.tableCache.iter()) {
+        if (__deepEqual(row.playerId, col_vals)) {
+          return row;
+        }
+      }
+    },
+  };
   onInsert = (cb: (ctx: EventContext, row: Player) => void) => {
     return this.tableCache.onInsert(cb);
   }
@@ -2011,29 +1987,37 @@ export class PersonTableHandle<TableName extends string> implements __TableHandl
   iter(): Iterable<Person> {
     return this.tableCache.iter();
   }
+
   /**
-   * Access to the `id` unique index on the table `person`,
-   * which allows point queries on the field of the same name
-   * via the [`PersonIdUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.person.id().find(...)`.
-   *
-   * Get a handle on the `id` unique index on the table `person`.
+   * Access to the `age` index on the table `person`,
+   * with `ctx.db.person.age.filter(...)`.
+   */
+  age = {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    filter: (col_vals: number): Person[] => {
+      const result: Person[] = [];
+      for (let row of this.tableCache.iter()) {
+        if (__deepEqual(row.age, col_vals)) {
+          result.push(row);
+        }
+      }
+      return result;
+    },
+  };
+  /**
+   * Access to the `id` index on the table `person`,
+   * with `ctx.db.person.id.find(...)`.
    */
   id = {
-    // Find the subscribed row whose `id` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: number): Person | undefined => {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: number): Person | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.id, col_val)) {
+        if (__deepEqual(row.id, col_vals)) {
           return row;
         }
       }
     },
   };
-
   onInsert = (cb: (ctx: EventContext, row: Person) => void) => {
     return this.tableCache.onInsert(cb);
   }
@@ -2190,51 +2174,35 @@ export class PkMultiIdentityTableHandle<TableName extends string> implements __T
   iter(): Iterable<PkMultiIdentity> {
     return this.tableCache.iter();
   }
+
   /**
-   * Access to the `id` unique index on the table `pk_multi_identity`,
-   * which allows point queries on the field of the same name
-   * via the [`PkMultiIdentityIdUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.pkMultiIdentity.id().find(...)`.
-   *
-   * Get a handle on the `id` unique index on the table `pk_multi_identity`.
+   * Access to the `id` index on the table `pk_multi_identity`,
+   * with `ctx.db.pkMultiIdentity.id.find(...)`.
    */
   id = {
-    // Find the subscribed row whose `id` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: number): PkMultiIdentity | undefined => {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: number): PkMultiIdentity | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.id, col_val)) {
+        if (__deepEqual(row.id, col_vals)) {
           return row;
         }
       }
     },
   };
   /**
-   * Access to the `other` unique index on the table `pk_multi_identity`,
-   * which allows point queries on the field of the same name
-   * via the [`PkMultiIdentityOtherUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.pkMultiIdentity.other().find(...)`.
-   *
-   * Get a handle on the `other` unique index on the table `pk_multi_identity`.
+   * Access to the `other` index on the table `pk_multi_identity`,
+   * with `ctx.db.pkMultiIdentity.other.find(...)`.
    */
   other = {
-    // Find the subscribed row whose `other` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: number): PkMultiIdentity | undefined => {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: number): PkMultiIdentity | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.other, col_val)) {
+        if (__deepEqual(row.other, col_vals)) {
           return row;
         }
       }
     },
   };
-
   onInsert = (cb: (ctx: EventContext, row: PkMultiIdentity) => void) => {
     return this.tableCache.onInsert(cb);
   }
@@ -2389,73 +2357,49 @@ export class PlayerTableHandle<TableName extends string> implements __TableHandl
   iter(): Iterable<Player> {
     return this.tableCache.iter();
   }
+
   /**
-   * Access to the `identity` unique index on the table `player`,
-   * which allows point queries on the field of the same name
-   * via the [`PlayerIdentityUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.player.identity().find(...)`.
-   *
-   * Get a handle on the `identity` unique index on the table `player`.
+   * Access to the `identity` index on the table `player`,
+   * with `ctx.db.player.identity.find(...)`.
    */
   identity = {
-    // Find the subscribed row whose `identity` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: __Identity): Player | undefined => {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: __Identity): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.identity, col_val)) {
+        if (__deepEqual(row.identity, col_vals)) {
           return row;
         }
       }
     },
   };
   /**
-   * Access to the `playerId` unique index on the table `player`,
-   * which allows point queries on the field of the same name
-   * via the [`PlayerPlayerIdUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.player.playerId().find(...)`.
-   *
-   * Get a handle on the `playerId` unique index on the table `player`.
-   */
-  playerId = {
-    // Find the subscribed row whose `playerId` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: bigint): Player | undefined => {
-      for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.playerId, col_val)) {
-          return row;
-        }
-      }
-    },
-  };
-  /**
-   * Access to the `name` unique index on the table `player`,
-   * which allows point queries on the field of the same name
-   * via the [`PlayerNameUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.player.name().find(...)`.
-   *
-   * Get a handle on the `name` unique index on the table `player`.
+   * Access to the `name` index on the table `player`,
+   * with `ctx.db.player.name.find(...)`.
    */
   name = {
-    // Find the subscribed row whose `name` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: string): Player | undefined => {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: string): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.name, col_val)) {
+        if (__deepEqual(row.name, col_vals)) {
           return row;
         }
       }
     },
   };
-
+  /**
+   * Access to the `playerId` index on the table `player`,
+   * with `ctx.db.player.playerId.find(...)`.
+   */
+  playerId = {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: bigint): Player | undefined => {
+      for (let row of this.tableCache.iter()) {
+        if (__deepEqual(row.playerId, col_vals)) {
+          return row;
+        }
+      }
+    },
+  };
   onInsert = (cb: (ctx: EventContext, row: Player) => void) => {
     return this.tableCache.onInsert(cb);
   }
@@ -2682,6 +2626,22 @@ export class PointsTableHandle<TableName extends string> implements __TableHandl
     return this.tableCache.iter();
   }
 
+  /**
+   * Access to the `multiColumnIndex` index on the table `points`,
+   * with `ctx.db.points.multiColumnIndex.filter(...)`.
+   */
+  multiColumnIndex = {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    filter: (col_vals: [bigint,bigint]): Point[] => {
+      const result: Point[] = [];
+      for (let row of this.tableCache.iter()) {
+        if (__deepEqual([row.x,row.y], col_vals)) {
+          result.push(row);
+        }
+      }
+      return result;
+    },
+  };
   onInsert = (cb: (ctx: EventContext, row: Point) => void) => {
     return this.tableCache.onInsert(cb);
   }
@@ -2967,29 +2927,21 @@ export class RepeatingTestArgTableHandle<TableName extends string> implements __
   iter(): Iterable<RepeatingTestArg> {
     return this.tableCache.iter();
   }
+
   /**
-   * Access to the `scheduledId` unique index on the table `repeating_test_arg`,
-   * which allows point queries on the field of the same name
-   * via the [`RepeatingTestArgScheduledIdUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.repeatingTestArg.scheduledId().find(...)`.
-   *
-   * Get a handle on the `scheduledId` unique index on the table `repeating_test_arg`.
+   * Access to the `scheduledId` index on the table `repeating_test_arg`,
+   * with `ctx.db.repeatingTestArg.scheduledId.find(...)`.
    */
   scheduledId = {
-    // Find the subscribed row whose `scheduledId` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: bigint): RepeatingTestArg | undefined => {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: bigint): RepeatingTestArg | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.scheduledId, col_val)) {
+        if (__deepEqual(row.scheduledId, col_vals)) {
           return row;
         }
       }
     },
   };
-
   onInsert = (cb: (ctx: EventContext, row: RepeatingTestArg) => void) => {
     return this.tableCache.onInsert(cb);
   }
@@ -3280,6 +3232,22 @@ export class TestATableHandle<TableName extends string> implements __TableHandle
     return this.tableCache.iter();
   }
 
+  /**
+   * Access to the `foo` index on the table `test_a`,
+   * with `ctx.db.testA.foo.filter(...)`.
+   */
+  foo = {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    filter: (col_vals: number): TestA[] => {
+      const result: TestA[] = [];
+      for (let row of this.tableCache.iter()) {
+        if (__deepEqual(row.x, col_vals)) {
+          result.push(row);
+        }
+      }
+      return result;
+    },
+  };
   onInsert = (cb: (ctx: EventContext, row: TestA) => void) => {
     return this.tableCache.onInsert(cb);
   }
@@ -3711,29 +3679,37 @@ export class TestETableHandle<TableName extends string> implements __TableHandle
   iter(): Iterable<TestE> {
     return this.tableCache.iter();
   }
+
   /**
-   * Access to the `id` unique index on the table `test_e`,
-   * which allows point queries on the field of the same name
-   * via the [`TestEIdUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.testE.id().find(...)`.
-   *
-   * Get a handle on the `id` unique index on the table `test_e`.
+   * Access to the `id` index on the table `test_e`,
+   * with `ctx.db.testE.id.find(...)`.
    */
   id = {
-    // Find the subscribed row whose `id` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: bigint): TestE | undefined => {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: bigint): TestE | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.id, col_val)) {
+        if (__deepEqual(row.id, col_vals)) {
           return row;
         }
       }
     },
   };
-
+  /**
+   * Access to the `name` index on the table `test_e`,
+   * with `ctx.db.testE.name.filter(...)`.
+   */
+  name = {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    filter: (col_vals: string): TestE[] => {
+      const result: TestE[] = [];
+      for (let row of this.tableCache.iter()) {
+        if (__deepEqual(row.name, col_vals)) {
+          result.push(row);
+        }
+      }
+      return result;
+    },
+  };
   onInsert = (cb: (ctx: EventContext, row: TestE) => void) => {
     return this.tableCache.onInsert(cb);
   }

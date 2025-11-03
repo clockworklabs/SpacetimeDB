@@ -64,29 +64,21 @@ export class UserTableHandle<TableName extends string>
   iter(): Iterable<User> {
     return this.tableCache.iter();
   }
+
   /**
-   * Access to the `identity` unique index on the table `user`,
-   * which allows point queries on the field of the same name
-   * via the [`UserIdentityUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.user.identity().find(...)`.
-   *
-   * Get a handle on the `identity` unique index on the table `user`.
+   * Access to the `identity` index on the table `user`,
+   * with `ctx.db.user.identity.find(...)`.
    */
   identity = {
-    // Find the subscribed row whose `identity` column value is equal to `col_val`,
-    // if such a row is present in the client cache.
-    find: (col_val: __Identity): User | undefined => {
+    // Find the subscribed row matching the lookup value if present in the client cache.
+    find: (col_vals: __Identity): User | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.identity, col_val)) {
+        if (__deepEqual(row.identity, col_vals)) {
           return row;
         }
       }
     },
   };
-
   onInsert = (cb: (ctx: EventContext, row: User) => void) => {
     return this.tableCache.onInsert(cb);
   };
