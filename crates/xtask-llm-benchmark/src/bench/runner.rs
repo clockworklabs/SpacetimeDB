@@ -13,7 +13,7 @@ use tokio::task;
 use crate::bench::publishers::{DotnetPublisher, SpacetimeRustPublisher};
 use crate::bench::results_merge::merge_task_runs;
 use crate::bench::templates::materialize_project;
-use crate::bench::types::RunOneError;
+use crate::bench::types::{BenchRunContext, RunContext, RunOneError};
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
 use crate::bench::utils::{
     bench_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output, sanitize_db_name, task_slug,
@@ -24,7 +24,6 @@ use crate::context::constants::results_path_details;
 use crate::eval::{Lang, ScoreDetails};
 use crate::generated::resolve_by_path;
 use crate::llm::model_routes::ModelRoute;
-use crate::llm::provider::LlmProvider;
 
 pub struct TaskRunner {
     pub bench_root: PathBuf,
@@ -151,82 +150,71 @@ impl TaskRunner {
         Ok(())
     }
 
-    pub async fn run_one(
-        &self,
-        task: &TaskPaths,
-        lang_name: &str,
-        lang: Lang,
-        route: &ModelRoute,
-        context: &str,
-        hash: &str,
-        llm: &dyn LlmProvider,
-    ) -> Result<RunOutcome, RunOneError> {
+    pub async fn run_one(&self, task: &TaskPaths, cfg: &RunContext<'_>) -> Result<RunOutcome, RunOneError> {
         let wall = Instant::now();
         let started = Utc::now();
 
         let category = category_slug(&task.root);
         let task_id = task_slug(&task.root);
-        let route_tag = sanitize_db_name(&route.display_name);
+        let route_tag = sanitize_db_name(cfg.route.display_name);
         let golden_db = sanitize_db_name(&format!("{}-{}-golden", category, task_id));
         let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", category, task_id, route_tag));
 
-        // resolve spec + prompt
         let ctor = resolve_by_path(&task.root)?;
         let spec = ctor();
 
-        // fetch scorers up front
-        let scorers = spec.scorers_for(lang, &route_tag);
+        let scorers = spec.scorers_for(cfg.lang, &route_tag);
         let total_tasks = scorers.len();
 
-        let prompt_builder = (spec.make_prompt)(lang);
-        println!("→ [{}] {}: building prompt", lang_name, route.display_name);
-        let prompt = prompt_builder.build_segmented(context);
+        let prompt_builder = (spec.make_prompt)(cfg.lang);
+        println!("→ [{}] {}: building prompt", cfg.lang_name, cfg.route.display_name);
+        let prompt = prompt_builder.build_segmented(cfg.context);
 
-        println!("→ [{}] {}: calling provider", lang_name, route.display_name);
-        let llm_output = tokio::time::timeout(std::time::Duration::from_secs(200), llm.generate(route, &prompt))
-            .await
-            .map_err(|_| RunOneError::Other(anyhow!("LLM call timed out")))?
-            .map_err(RunOneError::Other)?;
+        println!("→ [{}] {}: calling provider", cfg.lang_name, cfg.route.display_name);
+        let llm_output = tokio::time::timeout(
+            std::time::Duration::from_secs(200),
+            cfg.llm.generate(cfg.route, &prompt),
+        )
+        .await
+        .map_err(|_| RunOneError::Other(anyhow!("LLM call timed out")))?
+        .map_err(RunOneError::Other)?;
 
         if debug_llm() {
-            print_llm_output(route.display_name, &task_id, &llm_output);
+            print_llm_output(cfg.route.display_name, &task_id, &llm_output);
         }
 
-        // Publish — NO early return. Capture error immutably.
         let publish_error: Option<String> = self
-            .publish_llm(lang, &category, &task_id, &route_tag, &llm_output, llm_db.clone())
+            .publish_llm(cfg.lang, &category, &task_id, &route_tag, &llm_output, llm_db.clone())
             .await
             .err()
             .map(|e| {
                 eprintln!(
                     "⚠️ publish failed for {}/{}/{}: {e:#}",
-                    category, task_id, route.display_name
+                    category, task_id, cfg.route.display_name
                 );
                 format!("{:#}", e)
             });
 
-        // Scoring (skip if publish failed)
         let mut passed = 0usize;
         let mut partial_sum = 0f32;
         let mut scorer_details: HashMap<String, ScoreDetails> = HashMap::new();
 
         if publish_error.is_none() {
-            println!("→ [{}] {}: scoring", lang_name, route.display_name);
+            println!("→ [{}] {}: scoring", cfg.lang_name, cfg.route.display_name);
             for s in &scorers {
                 let r = s.score(&llm_output);
                 if r.pass {
                     passed += 1;
                 } else {
-                    partial_sum += r.partial.max(0.0).min(1.0);
+                    partial_sum += r.partial.clamp(0.0, 1.0);
                 }
                 scorer_details.insert(s.id().to_string(), r.clone());
             }
         } else {
             println!(
                 "→ [{}] {}: publish failed — skipping scoring (0/{})",
-                lang_name, route.display_name, total_tasks
+                cfg.lang_name, cfg.route.display_name, total_tasks
             );
-            // Record the error in details
             scorer_details.insert(
                 "publish_error".into(),
                 ScoreDetails {
@@ -250,8 +238,8 @@ impl TaskRunner {
         let took = wall.elapsed();
         println!(
             "→ [{}] {}: done (passed {}/{}, {:.1}%) — {}",
-            lang_name,
-            route.display_name,
+            cfg.lang_name,
+            cfg.route.display_name,
             passed,
             total_tasks,
             score_pct,
@@ -259,36 +247,29 @@ impl TaskRunner {
         );
 
         Ok(RunOutcome {
-            hash: hash.to_string(),
+            hash: cfg.hash.to_string(),
             task: task_id.clone(),
-            lang: lang_name.to_string(),
-            model_name: route.display_name.to_string(),
-            vendor: route.vendor.slug().to_string(),
-
-            // publish status + scoring results
+            lang: cfg.lang_name.to_string(),
+            model_name: cfg.route.display_name.to_string(),
+            vendor: cfg.route.vendor.slug().to_string(),
             golden_published: publish_error.is_none(),
             total_tests: total_tasks as u32,
             passed_tests: passed as u32,
             category: Some(category.clone()),
-
-            // ALWAYS return the LLM code (even on publish error)
             llm_output: Some(llm_output),
-
-            // paths/dbs
-            route_api_model: Some(route.api_model.to_string()),
+            route_api_model: Some(cfg.route.api_model.to_string()),
             golden_db: Some(golden_db),
             llm_db: Some(llm_db),
             work_dir_golden: Some(
-                work_server_dir_scoped(&category, &task_id, lang_name, "golden", "")
+                work_server_dir_scoped(&category, &task_id, cfg.lang_name, "golden", "")
                     .to_string_lossy()
                     .into_owned(),
             ),
             work_dir_llm: Some(
-                work_server_dir_scoped(&category, &task_id, lang_name, "llm", &route_tag)
+                work_server_dir_scoped(&category, &task_id, cfg.lang_name, "llm", &route_tag)
                     .to_string_lossy()
                     .into_owned(),
             ),
-
             scorer_details: Some(scorer_details),
             started_at: Some(started),
             finished_at: Some(finished),
@@ -296,31 +277,37 @@ impl TaskRunner {
     }
 }
 
-pub async fn run_all_for_model_async_for_lang(
-    bench_root: &Path,
-    mode: &str,
-    hash: &str,
-    route: &ModelRoute,
-    context: &str,
-    llm: &dyn LlmProvider,
-    lang: Lang,
-) -> Result<Vec<RunOutcome>> {
+pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Result<Vec<RunOutcome>> {
     let total_wall = Instant::now();
 
     // 1) run per-task LLM builds + scoring
-    let tasks = discover_tasks(bench_root)?;
-    let runner = TaskRunner::new(PathBuf::from(bench_root), SpacetimeRustPublisher, DotnetPublisher);
-    let lang_name = lang.as_str();
+    let tasks = discover_tasks(cfg.bench_root)?;
+    let runner = TaskRunner::new(PathBuf::from(cfg.bench_root), SpacetimeRustPublisher, DotnetPublisher);
+    let lang_name = cfg.lang.as_str();
     let buf = bench_concurrency();
 
     let results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
         futures::stream::iter(tasks.into_iter().map(|task| {
             let runner = &runner;
-            let route = route;
+            let route = cfg.route;
+            let lang = cfg.lang;
             let lang_name = lang_name.to_string();
+            let context = cfg.context;
+            let hash = cfg.hash;
+            let llm = cfg.llm;
+
             async move {
                 let started = Utc::now();
-                let res = runner.run_one(&task, &lang_name, lang, route, context, hash, llm).await;
+                let run_cfg = RunContext {
+                    lang_name: &lang_name,
+                    lang,
+                    route,
+                    context,
+                    hash,
+                    llm,
+                };
+
+                let res = runner.run_one(&task, &run_cfg).await;
                 (
                     task,
                     res.map(|mut o| {
@@ -336,27 +323,26 @@ pub async fn run_all_for_model_async_for_lang(
 
     let mut outcomes = Vec::new();
     let mut errs = 0usize;
+
     for (task, r) in results {
         match r {
             Ok(v) => outcomes.push(v),
-            // error that *includes* the generated code
             Err(RunOneError::WithOutput { msg, llm_output }) => {
                 errs += 1;
                 eprintln!("⚠️ task failed but continuing: {msg}");
                 outcomes.push(build_fail_outcome(
                     &task,
                     lang_name,
-                    route,
-                    hash,
+                    cfg.route,
+                    cfg.hash,
                     anyhow::anyhow!(msg),
                     Some(llm_output),
                 ));
             }
-            // generic error, no code available
             Err(RunOneError::Other(e)) => {
                 errs += 1;
                 eprintln!("⚠️ task failed but continuing: {e:?}");
-                outcomes.push(build_fail_outcome(&task, lang_name, route, hash, e, None));
+                outcomes.push(build_fail_outcome(&task, lang_name, cfg.route, cfg.hash, e, None));
             }
         }
     }
@@ -364,7 +350,7 @@ pub async fn run_all_for_model_async_for_lang(
     println!("[runner] completed batch: ok={} err={}", outcomes.len(), errs);
 
     if !outcomes.is_empty() {
-        merge_task_runs(results_path_details().as_path(), mode, &outcomes)?;
+        merge_task_runs(results_path_details().as_path(), cfg.mode, &outcomes)?;
     } else {
         eprintln!("[runner] no successful runs; not calling merge_task_runs");
     }
@@ -372,31 +358,25 @@ pub async fn run_all_for_model_async_for_lang(
     println!(
         "✓ [{}] {}: total {}",
         lang_name,
-        route.display_name,
+        cfg.route.display_name,
         fmt_dur(total_wall.elapsed())
     );
+
     Ok(outcomes)
 }
 
 // run only selected tasks by selectors like 1/01/001 or t_001
-pub async fn run_selected_for_model_async_for_lang(
-    bench_root: &Path,
-    mode: &str,
-    hash: &str,
-    route: &ModelRoute,
-    context: &str,
-    llm: &dyn LlmProvider,
-    lang: Lang,
-    selectors: &[impl AsRef<str>],
-) -> Result<Vec<RunOutcome>> {
+pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Result<Vec<RunOutcome>> {
     let total_wall = Instant::now();
 
-    let wanted: HashSet<String> = selectors
+    let wanted: HashSet<String> = cfg
+        .selectors
         .iter()
-        .map(|s| normalize_task_selector(s.as_ref()))
+        .flat_map(|s| s.iter())
+        .map(|s| normalize_task_selector(s.as_str()))
         .collect::<Result<_>>()?;
 
-    let tasks = discover_tasks(bench_root)?;
+    let tasks = discover_tasks(cfg.bench_root)?;
     let selected: Vec<TaskPaths> = tasks
         .into_iter()
         .filter(|t| {
@@ -409,18 +389,32 @@ pub async fn run_selected_for_model_async_for_lang(
         bail!("no tasks matched {:?}", wanted);
     }
 
-    let runner = TaskRunner::new(PathBuf::from(bench_root), SpacetimeRustPublisher, DotnetPublisher);
-    let lang_name = lang.as_str();
+    let runner = TaskRunner::new(PathBuf::from(cfg.bench_root), SpacetimeRustPublisher, DotnetPublisher);
+    let lang_name = cfg.lang.as_str();
     let buf = bench_concurrency();
 
     let results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
         futures::stream::iter(selected.into_iter().map(|task| {
             let runner = &runner;
-            let route = route;
+            let route = cfg.route;
+            let lang = cfg.lang;
             let lang_name = lang_name.to_string();
+            let context = cfg.context;
+            let hash = cfg.hash;
+            let llm = cfg.llm;
+
             async move {
                 let started = Utc::now();
-                let res = runner.run_one(&task, &lang_name, lang, route, context, hash, llm).await;
+                let run_cfg = RunContext {
+                    lang_name: &lang_name,
+                    lang,
+                    route,
+                    context,
+                    hash,
+                    llm,
+                };
+
+                let res = runner.run_one(&task, &run_cfg).await;
                 (
                     task,
                     res.map(|mut o| {
@@ -446,8 +440,8 @@ pub async fn run_selected_for_model_async_for_lang(
                 outcomes.push(build_fail_outcome(
                     &task,
                     lang_name,
-                    route,
-                    hash,
+                    cfg.route,
+                    cfg.hash,
                     anyhow::anyhow!(msg),
                     Some(llm_output),
                 ));
@@ -455,42 +449,43 @@ pub async fn run_selected_for_model_async_for_lang(
             Err(RunOneError::Other(e)) => {
                 errs += 1;
                 eprintln!("⚠️ task failed but continuing: {e:?}");
-                outcomes.push(build_fail_outcome(&task, lang_name, route, hash, e, None));
+                outcomes.push(build_fail_outcome(&task, lang_name, cfg.route, cfg.hash, e, None));
             }
         }
     }
 
     if !outcomes.is_empty() {
-        merge_task_runs(results_path_details().as_path(), mode, &outcomes)?;
+        merge_task_runs(results_path_details().as_path(), cfg.mode, &outcomes)?;
     }
 
     println!(
         "✓ [{}] {}: total {} (err={})",
         lang_name,
-        route.display_name,
+        cfg.route.display_name,
         fmt_dur(total_wall.elapsed()),
         errs
     );
     Ok(outcomes)
 }
 
-pub async fn run_selected_or_all_for_model_async_for_lang(
-    bench_root: &Path,
-    mode: &str,
-    hash: &str,
-    route: &ModelRoute,
-    context: &str,
-    llm: &dyn LlmProvider,
-    lang: Lang,
-    selectors: Option<&[impl AsRef<str>]>,
-) -> Result<Vec<RunOutcome>> {
-    if let Some(sels) = selectors {
+pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<'_>) -> Result<Vec<RunOutcome>> {
+    if let Some(sels) = ctx.selectors {
         if !sels.is_empty() {
-            return run_selected_for_model_async_for_lang(bench_root, mode, hash, route, context, llm, lang, sels)
-                .await;
+            let sel_cfg = BenchRunContext {
+                bench_root: ctx.bench_root,
+                mode: ctx.mode,
+                hash: ctx.hash,
+                route: ctx.route,
+                context: ctx.context,
+                llm: ctx.llm,
+                lang: ctx.lang,
+                selectors: Option::from(sels),
+            };
+            return run_selected_for_model_async_for_lang(&sel_cfg).await;
         }
     }
-    run_all_for_model_async_for_lang(bench_root, mode, hash, route, context, llm, lang).await
+
+    run_all_for_model_async_for_lang(ctx).await
 }
 
 pub async fn build_goldens_only_for_lang(bench_root: &Path, lang: Lang, selectors: Option<&[String]>) -> Result<()> {

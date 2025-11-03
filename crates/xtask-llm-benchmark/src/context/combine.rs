@@ -2,7 +2,7 @@ use crate::context::paths::resolve_mode_paths;
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 
 pub fn build_context(mode: &str) -> Result<String> {
     if mode == "rustdoc_json" {
@@ -108,7 +108,7 @@ struct Row {
 fn belongs_to_crate(paths: &serde_json::Map<String, Value>, id: &str, crate_name: &str) -> bool {
     if let Some(p) = paths.get(id).and_then(Value::as_object) {
         if let Some(arr) = p.get("path").and_then(Value::as_array) {
-            return arr.get(0).and_then(Value::as_str) == Some(crate_name);
+            return arr.first().and_then(Value::as_str) == Some(crate_name);
         }
     }
     false
@@ -189,7 +189,7 @@ fn order_key(kind: &str) -> i32 {
     }
 }
 
-fn rel_display(p: &PathBuf) -> String {
+fn rel_display(p: &Path) -> String {
     let s = p.to_string_lossy();
     if cfg!(windows) {
         s.replace('\\', "/")

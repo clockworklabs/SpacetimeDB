@@ -36,7 +36,7 @@ impl<'a> Segment<'a> {
 
 /// Conservative heuristic
 pub fn estimate_tokens(s: &str) -> usize {
-    let by_bytes = s.as_bytes().len() / 4;
+    let by_bytes = s.len() / 4;
     let by_words = s.split_whitespace().count() / 2;
     by_bytes.max(by_words).max(1)
 }
@@ -96,8 +96,6 @@ pub fn openai_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
     if m.contains("gpt-5") || m.contains("gpt-4.1") {
         300_000
-    } else if m.contains("gpt-4o") || m.contains("o4") {
-        128_000
     } else {
         128_000
     }
@@ -189,7 +187,7 @@ pub fn headroom_tokens_env(vendor: Vendor) -> usize {
 
     // Clamp to a minimum (avoid absurdly small values) and round to 500 for stability.
     let clamped = raw.max(500);
-    ((clamped + 499) / 500) * 500
+    clamped.div_ceil(500)
 }
 
 fn default_headroom(vendor: Vendor) -> usize {
@@ -270,5 +268,5 @@ pub fn non_context_reserve_tokens_env(vendor: Vendor) -> usize {
 }
 
 fn round_500(n: usize) -> usize {
-    (n + 499) / 500 * 500
+    n.div_ceil(500) * 500
 }

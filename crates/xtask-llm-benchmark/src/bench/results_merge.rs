@@ -76,6 +76,7 @@ pub fn merge_task_runs(path: &Path, mode: &str, runs: &[RunOutcome]) -> Result<(
         .create(true)
         .read(true)
         .write(true)
+        .truncate(false)
         .open(&lock_path)?;
     lock.lock_exclusive()?;
 

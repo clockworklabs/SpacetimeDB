@@ -1,5 +1,5 @@
 use crate::eval::defaults::{default_schema_parity_scorers, make_reducer_data_parity_scorer, make_sql_count_only_scorer};
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -14,16 +14,20 @@ pub fn spec() -> BenchmarkSpec {
         // Compare the full row (including the product-typed column) across golden/llm
         let select = sb.select_by_id("results", &["id","value"], "id", 1);
 
-        v.push(make_reducer_data_parity_scorer(
-            file!(),
+        v.push(make_reducer_data_parity_scorer(ReducerDataParityConfig {
+            src_file: file!(),
             route_tag,
-            reducer,
-            vec![Value::from(1), Value::from(2), Value::from(3)],
-            &select,
-            "product_type_row_parity",
-            true,
-            Duration::from_secs(10),
-        ));
+            reducer: reducer.into(),
+            args: vec![
+                Value::from(1),
+                Value::from(2),
+                Value::from(3),
+            ],
+            select_query: select.clone(),
+            id_str: "product_type_row_parity",
+            collapse_ws: true,
+            timeout: Duration::from_secs(10),
+        }));
 
         // Absolute sanity: exactly one row with id=1 exists
         let count = sb.count_by_id("results", "id", 1);

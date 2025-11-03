@@ -2,7 +2,7 @@ use crate::eval::defaults::{
     default_schema_parity_scorers,
     make_reducer_sql_count_scorer,
 };
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerSqlCountConfig, SqlBuilder};
 use std::time::Duration;
 pub fn spec() -> BenchmarkSpec {
     BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag| {
@@ -18,55 +18,50 @@ pub fn spec() -> BenchmarkSpec {
         let x = ident("x", sb.case);
         let y = ident("y", sb.case);
 
-        v.push(make_reducer_sql_count_scorer(
-            file!(),
+        let base = |reducer: &str| ReducerSqlCountConfig {
+            src_file: file!(),
             route_tag,
-            &seed,
-            vec![],
-            "SELECT COUNT(*) AS n FROM positions",
-            2,
-            "ecs_seed_positions_count",
-            Duration::from_secs(10),
-        ));
+            reducer: reducer.to_string(),
+            args: vec![],
+            sql_count_query: String::new(),
+            expected_count: 0,
+            id_str: "",
+            timeout: Duration::from_secs(10),
+        };
 
-        v.push(make_reducer_sql_count_scorer(
-            file!(),
-            route_tag,
-            &step,
-            vec![],
-            "SELECT COUNT(*) AS n FROM next_positions",
-            2,
-            "ecs_step_next_positions_count",
-            Duration::from_secs(10),
-        ));
+        v.push(make_reducer_sql_count_scorer(ReducerSqlCountConfig {
+            sql_count_query: "SELECT COUNT(*) AS n FROM positions".into(),
+            expected_count: 2,
+            id_str: "ecs_seed_positions_count",
+            ..base(&seed) // or base("seed") if it's a &str
+        }));
 
-        v.push(make_reducer_sql_count_scorer(
-            file!(),
-            route_tag,
-            &step,
-            vec![],
-            &format!(
+        v.push(make_reducer_sql_count_scorer(ReducerSqlCountConfig {
+            sql_count_query: "SELECT COUNT(*) AS n FROM next_positions".into(),
+            expected_count: 2,
+            id_str: "ecs_step_next_positions_count",
+            ..base(&step) // or base("step")
+        }));
+
+        v.push(make_reducer_sql_count_scorer(ReducerSqlCountConfig {
+            sql_count_query: format!(
                 "SELECT COUNT(*) AS n FROM next_positions WHERE {eid}=1 AND {x}=1 AND {y}=0",
                 eid = entity_id, x = x, y = y
             ),
-            1,
-            "ecs_next_pos_entity1",
-            Duration::from_secs(10),
-        ));
+            expected_count: 1,
+            id_str: "ecs_next_pos_entity1",
+            ..base(&step)
+        }));
 
-        v.push(make_reducer_sql_count_scorer(
-            file!(),
-            route_tag,
-            &step,
-            vec![],
-            &format!(
+        v.push(make_reducer_sql_count_scorer(ReducerSqlCountConfig {
+            sql_count_query: format!(
                 "SELECT COUNT(*) AS n FROM next_positions WHERE {eid}=2 AND {x}=8 AND {y}=3",
                 eid = entity_id, x = x, y = y
             ),
-            1,
-            "ecs_next_pos_entity2",
-            Duration::from_secs(10),
-        ));
+            expected_count: 1,
+            id_str: "ecs_next_pos_entity2",
+            ..base(&step)
+        }));
 
         v
     })

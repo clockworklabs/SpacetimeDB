@@ -3,7 +3,7 @@ use crate::eval::defaults::{
     make_reducer_sql_count_scorer,
     make_sql_exec_both_scorer,
 };
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerSqlCountConfig, SqlBuilder};
 use serde_json::Value;
 use std::time;
 
@@ -25,16 +25,16 @@ pub fn spec() -> BenchmarkSpec {
             time::Duration::from_secs(10),
         ));
 
-        v.push(make_reducer_sql_count_scorer(
-            file!(),
+        v.push(make_reducer_sql_count_scorer(ReducerSqlCountConfig {
+            src_file: file!(),
             route_tag,
-            reducer_name,
-            vec![Value::from(1)],
-            &count,
-            0,
-            "delete_user_count_zero",
-            time::Duration::from_secs(10),
-        ));
+            reducer: reducer_name.into(),
+            args: vec![Value::from(1)],
+            sql_count_query: count.clone(),
+            expected_count: 0,
+            id_str: "delete_user_count_zero",
+            timeout: time::Duration::from_secs(10),
+        }));
 
         v
     })

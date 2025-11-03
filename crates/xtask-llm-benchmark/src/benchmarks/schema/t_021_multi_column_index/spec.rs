@@ -2,7 +2,7 @@ use crate::eval::defaults::{
     default_schema_parity_scorers,
     make_reducer_sql_count_scorer,
 };
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerSqlCountConfig, SqlBuilder};
 use std::time::Duration;
 
 pub fn spec() -> BenchmarkSpec {
@@ -17,23 +17,43 @@ pub fn spec() -> BenchmarkSpec {
         let user_id = ident("user_id", sb.case);
         let day     = ident("day", sb.case);
 
-        v.push(make_reducer_sql_count_scorer(
-            file!(), route_tag, &seed, vec![],
-            "SELECT COUNT(*) AS n FROM logs",
-            3, "mcindex_seed_count", Duration::from_secs(10),
-        ));
+        let base = |reducer: &str| ReducerSqlCountConfig {
+            src_file: file!(),
+            route_tag,
+            reducer: reducer.to_string(),
+            args: vec![],
+            sql_count_query: String::new(), // override per case
+            expected_count: 0,              // override per case
+            id_str: "",
+            timeout: Duration::from_secs(10),
+        };
 
-        v.push(make_reducer_sql_count_scorer(
-            file!(), route_tag, &seed, vec![],
-            &format!("SELECT COUNT(*) AS n FROM logs WHERE {u}=7 AND {d}=1", u=user_id, d=day),
-            1, "mcindex_lookup_u7_d1", Duration::from_secs(10),
-        ));
+        v.push(make_reducer_sql_count_scorer(ReducerSqlCountConfig {
+            sql_count_query: "SELECT COUNT(*) AS n FROM logs".into(),
+            expected_count: 3,
+            id_str: "mcindex_seed_count",
+            ..base(&seed)
+        }));
 
-        v.push(make_reducer_sql_count_scorer(
-            file!(), route_tag, &seed, vec![],
-            &format!("SELECT COUNT(*) AS n FROM logs WHERE {u}=7 AND {d}=2", u=user_id, d=day),
-            1, "mcindex_lookup_u7_d2", Duration::from_secs(10),
-        ));
+        v.push(make_reducer_sql_count_scorer(ReducerSqlCountConfig {
+            sql_count_query: format!(
+                "SELECT COUNT(*) AS n FROM logs WHERE {u}=7 AND {d}=1",
+                u = user_id, d = day
+            ),
+            expected_count: 1,
+            id_str: "mcindex_lookup_u7_d1",
+            ..base(&seed)
+        }));
+
+        v.push(make_reducer_sql_count_scorer(ReducerSqlCountConfig {
+            sql_count_query: format!(
+                "SELECT COUNT(*) AS n FROM logs WHERE {u}=7 AND {d}=2",
+                u = user_id, d = day
+            ),
+            expected_count: 1,
+            id_str: "mcindex_lookup_u7_d2",
+            ..base(&seed)
+        }));
 
         v
     })

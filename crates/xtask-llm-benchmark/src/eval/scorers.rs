@@ -100,13 +100,12 @@ fn describe_db(server: &str, db: &str, timeout: Duration) -> io::Result<Value> {
         .arg(db);
     let (code, out, err) = run_with_timeout(cmd, Path::new("."), timeout)?;
     if code != 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("describe failed: {}", String::from_utf8_lossy(&err)),
-        ));
+        return Err(io::Error::other(format!(
+            "describe failed: {}",
+            String::from_utf8_lossy(&err)
+        )));
     }
-    let v: Value =
-        serde_json::from_slice(&out).map_err(|e| io::Error::new(io::ErrorKind::Other, format!("parse json: {}", e)))?;
+    let v: Value = serde_json::from_slice(&out).map_err(|e| io::Error::other(format!("parse json: {}", e)))?;
     Ok(v)
 }
 

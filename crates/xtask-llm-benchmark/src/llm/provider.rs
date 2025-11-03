@@ -75,7 +75,7 @@ impl LlmProvider for RouterProvider {
                     .meta
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("Meta Llama not configured"))?;
-                c.generate(&route.api_model, prompt).await
+                c.generate(route.api_model, prompt).await
             }
         }
     }

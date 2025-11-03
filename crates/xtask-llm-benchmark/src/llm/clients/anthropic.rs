@@ -200,7 +200,7 @@ fn anthropic_max_output_tokens() -> u32 {
     desired_output_tokens().max(1) as u32
 }
 
-pub fn normalize_anthropic_model<'a>(id: &'a str) -> &'a str {
+pub fn normalize_anthropic_model(id: &str) -> &str {
     let lid = id.to_ascii_lowercase().replace('_', "-");
     match lid.as_str() {
         // Sonnet 4.5

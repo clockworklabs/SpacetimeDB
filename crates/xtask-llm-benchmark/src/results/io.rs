@@ -1,6 +1,4 @@
-use super::schema::{
-    BenchmarkRun, CategorySummary, GoldenAnswer, LangSummary, ModeSummary, ModelSummary, Results, Summary, Totals,
-};
+use super::schema::{BenchmarkRun, GoldenAnswer, LangSummary, ModeSummary, ModelSummary, Results, Summary, Totals};
 use crate::bench::results_merge::ensure_lang;
 use crate::context::constants::results_path_run;
 use anyhow::{Context, Result};
@@ -70,12 +68,9 @@ pub fn summary_from_results(results: &Results) -> Summary {
                     totals: Totals::default(),
                 });
 
-                for (_task_id, t) in &model_ent.tasks {
+                for t in model_ent.tasks.values() {
                     let cat_key = t.category.clone().expect("Missing category");
-                    let cat_sum = model_sum
-                        .categories
-                        .entry(cat_key)
-                        .or_insert_with(CategorySummary::default);
+                    let cat_sum = model_sum.categories.entry(cat_key).or_default();
 
                     // counts
                     cat_sum.tasks += 1;
@@ -223,57 +218,54 @@ pub fn update_golden_answers_on_disk(
 
             // rust.rs → lang "rust"
             let rust_path = answers_dir.join("rust.rs");
-            if rust_path.is_file() {
-                if all
+            if rust_path.is_file()
+                && (all
                     || seen
                         .get("rust")
-                        .map_or(false, |s| s.contains(&task_id_bare) || s.contains(&task_id_alias))
-                {
-                    let le = ensure_lang(&mut root, "rust");
-                    let text =
-                        fs::read_to_string(&rust_path).with_context(|| format!("read {}", rust_path.display()))?;
-                    if overwrite || !le.golden_answers.contains_key(&task_id_bare) {
-                        le.golden_answers.insert(
-                            task_id_bare.clone(),
-                            GoldenAnswer {
-                                answer: text.clone(),
-                                syntax: Some("rust".into()),
-                            },
-                        );
-                    }
-                    // comment out the next line to drop the alias entirely
-                    le.golden_answers.entry(task_id_alias.clone()).or_insert(GoldenAnswer {
-                        answer: text,
-                        syntax: Some("rust".into()),
-                    });
+                        .is_some_and(|s| s.contains(&task_id_bare) || s.contains(&task_id_alias)))
+            {
+                let le = ensure_lang(&mut root, "rust");
+                let text = fs::read_to_string(&rust_path).with_context(|| format!("read {}", rust_path.display()))?;
+                if overwrite || !le.golden_answers.contains_key(&task_id_bare) {
+                    le.golden_answers.insert(
+                        task_id_bare.clone(),
+                        GoldenAnswer {
+                            answer: text.clone(),
+                            syntax: Some("rust".into()),
+                        },
+                    );
                 }
+                // comment out the next line to drop the alias entirely
+                le.golden_answers.entry(task_id_alias.clone()).or_insert(GoldenAnswer {
+                    answer: text,
+                    syntax: Some("rust".into()),
+                });
             }
 
             // csharp.cs → lang "csharp"
             let cs_path = answers_dir.join("csharp.cs");
-            if cs_path.is_file() {
-                if all
+            if cs_path.is_file()
+                && (all
                     || seen
                         .get("csharp")
-                        .map_or(false, |s| s.contains(&task_id_bare) || s.contains(&task_id_alias))
-                {
-                    let le = ensure_lang(&mut root, "csharp");
-                    let text = fs::read_to_string(&cs_path).with_context(|| format!("read {}", cs_path.display()))?;
-                    if overwrite || !le.golden_answers.contains_key(&task_id_bare) {
-                        le.golden_answers.insert(
-                            task_id_bare.clone(),
-                            GoldenAnswer {
-                                answer: text.clone(),
-                                syntax: Some("csharp".into()),
-                            },
-                        );
-                    }
-                    // comment out the next line to drop the alias entirely
-                    le.golden_answers.entry(task_id_alias.clone()).or_insert(GoldenAnswer {
-                        answer: text,
-                        syntax: Some("csharp".into()),
-                    });
+                        .is_some_and(|s| s.contains(&task_id_bare) || s.contains(&task_id_alias)))
+            {
+                let le = ensure_lang(&mut root, "csharp");
+                let text = fs::read_to_string(&cs_path).with_context(|| format!("read {}", cs_path.display()))?;
+                if overwrite || !le.golden_answers.contains_key(&task_id_bare) {
+                    le.golden_answers.insert(
+                        task_id_bare.clone(),
+                        GoldenAnswer {
+                            answer: text.clone(),
+                            syntax: Some("csharp".into()),
+                        },
+                    );
                 }
+                // comment out the next line to drop the alias entirely
+                le.golden_answers.entry(task_id_alias.clone()).or_insert(GoldenAnswer {
+                    answer: text,
+                    syntax: Some("csharp".into()),
+                });
             }
         }
     }

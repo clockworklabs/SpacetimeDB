@@ -1,9 +1,14 @@
-use crate::eval::ScoreDetails;
+use crate::eval::{Lang, ScoreDetails};
+use crate::llm::types::Vendor;
+use crate::llm::{LlmProvider, ModelRoute};
+use crate::results::BenchmarkRun;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::runtime::Runtime;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RunOutcome {
@@ -49,4 +54,82 @@ pub enum RunOneError {
     WithOutput { msg: String, llm_output: String },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+pub struct RunContext<'a> {
+    pub lang_name: &'a str,
+    pub lang: Lang,
+    pub route: &'a ModelRoute,
+    pub context: &'a str,
+    pub hash: &'a str,
+    pub llm: &'a dyn LlmProvider,
+}
+
+impl<'a> RunContext<'a> {
+    pub fn new(
+        lang_name: &'a str,
+        lang: Lang,
+        route: &'a ModelRoute,
+        context: &'a str,
+        hash: &'a str,
+        llm: &'a dyn LlmProvider,
+    ) -> Self {
+        Self {
+            lang_name,
+            lang,
+            route,
+            context,
+            hash,
+            llm,
+        }
+    }
+}
+
+pub struct BenchRunContext<'a> {
+    pub bench_root: &'a Path,
+    pub mode: &'a str,
+    pub hash: &'a str,
+    pub route: &'a ModelRoute,
+    pub context: &'a str,
+    pub llm: &'a dyn LlmProvider,
+    pub lang: Lang,
+    pub selectors: Option<&'a [String]>,
+}
+
+pub struct RunAllContext<'a> {
+    pub rt: &'a Runtime,
+    pub bench_root: &'a Path,
+    pub mode: &'a str,
+    pub context: &'a str,
+    pub hash: &'a str,
+    pub lang: Lang,
+    pub llm: &'a dyn LlmProvider,
+    pub providers_filter: Option<&'a HashSet<Vendor>>,
+    pub selectors: Option<&'a [String]>,
+    pub model_filter: Option<&'a HashMap<Vendor, HashSet<String>>>,
+}
+
+pub struct BenchModeContext<'a> {
+    pub mode: &'a str,
+    pub lang_str: &'a str,
+    pub hash: &'a str,
+    pub config: &'a RunConfig,
+    pub results: &'a mut BenchmarkRun,
+    pub bench_root: &'a Path,
+    pub context: &'a str,
+    pub lang: Lang,
+    pub runtime: Option<&'a Runtime>,
+    pub llm_provider: Option<&'a Arc<dyn LlmProvider>>,
+}
+
+pub struct RunConfig {
+    pub mode_flag: Option<String>,
+    pub hash_only: bool,
+    pub goldens_only: bool,
+    pub lang: Lang,
+    pub providers_filter: Option<HashSet<Vendor>>,
+    pub selectors: Option<Vec<String>>,
+    pub force: bool,
+    pub categories: Option<HashSet<String>>,
+    pub model_filter: Option<HashMap<Vendor, HashSet<String>>>,
 }

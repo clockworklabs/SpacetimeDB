@@ -3,7 +3,7 @@ use crate::eval::defaults::{
     make_reducer_data_parity_scorer,
     make_sql_exec_both_scorer,
 };
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
 use serde_json::Value;
 use std::time;
 
@@ -25,16 +25,21 @@ pub fn spec() -> BenchmarkSpec {
             time::Duration::from_secs(10),
         ));
 
-        v.push(make_reducer_data_parity_scorer(
-            file!(),
+        v.push(make_reducer_data_parity_scorer(ReducerDataParityConfig {
+            src_file: file!(),
             route_tag,
-            reducer_name,
-            vec![Value::from(1), Value::from("Alice2"), Value::from(31), Value::from(false)],
-            &select,
-            "data_parity_update_user",
-            true,
-            time::Duration::from_secs(10),
-        ));
+            reducer: reducer_name.into(),
+            args: vec![
+                Value::from(1),
+                Value::from("Alice2"),
+                Value::from(31),
+                Value::from(false),
+            ],
+            select_query: select.clone(),
+            id_str: "data_parity_update_user",
+            collapse_ws: true,
+            timeout: time::Duration::from_secs(10),
+        }));
 
         v
     })

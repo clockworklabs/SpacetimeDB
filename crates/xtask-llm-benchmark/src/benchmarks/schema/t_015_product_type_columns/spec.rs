@@ -3,7 +3,7 @@ use crate::eval::defaults::{
     make_reducer_data_parity_scorer,
     make_sql_count_only_scorer,
 };
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
 use std::time::Duration;
 
 pub fn spec() -> BenchmarkSpec {
@@ -21,16 +21,16 @@ pub fn spec() -> BenchmarkSpec {
             1
         );
 
-        v.push(make_reducer_data_parity_scorer(
-            file!(),
+        v.push(make_reducer_data_parity_scorer(ReducerDataParityConfig {
+            src_file: file!(),
             route_tag,
-            reducer,
-            vec![],
-            &select,
-            "product_type_columns_row_parity",
-            true,
-            Duration::from_secs(10),
-        ));
+            reducer: reducer.into(),
+            args: vec![],
+            select_query: select.clone(),
+            id_str: "product_type_columns_row_parity",
+            collapse_ws: true,
+            timeout: Duration::from_secs(10),
+        }));
 
         let count = sb.count_by_id("profiles", "id", 1);
         v.push(make_sql_count_only_scorer(

@@ -1,5 +1,7 @@
+#![allow(clippy::disallowed_macros)]
+
 use anyhow::{bail, Context, Result};
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -10,7 +12,7 @@ use xtask_llm_benchmark::bench::runner::{
     build_goldens_only_for_lang, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
 };
 use xtask_llm_benchmark::bench::spacetime_guard::SpacetimeGuard;
-use xtask_llm_benchmark::bench::types::RouteRun;
+use xtask_llm_benchmark::bench::types::{BenchModeContext, BenchRunContext, RouteRun, RunAllContext, RunConfig};
 use xtask_llm_benchmark::context::constants::{
     results_path_details, results_path_run, results_path_summary, ALL_MODES,
 };
@@ -75,18 +77,6 @@ Notes:
 }
 
 /* ------------------------------ run ------------------------------ */
-
-struct RunConfig {
-    mode_flag: Option<String>,
-    hash_only: bool,
-    goldens_only: bool,
-    lang: Lang,
-    providers_filter: Option<HashSet<Vendor>>,
-    selectors: Option<Vec<String>>,
-    force: bool,
-    categories: Option<HashSet<String>>,
-    model_filter: Option<HashMap<Vendor, HashSet<String>>>,
-}
 
 fn parse_command_args(args: &[String]) -> Result<RunConfig> {
     let mut config = RunConfig {
@@ -210,23 +200,34 @@ fn parse_models_arg(raw: &str) -> Result<HashMap<Vendor, HashSet<String>>> {
     Ok(out)
 }
 
-fn initialize_runtime_and_provider(
-    hash_only: bool,
-    goldens_only: bool,
-) -> Result<(Option<Runtime>, Option<Arc<dyn LlmProvider>>)> {
+pub struct RuntimeInit {
+    pub runtime: Option<Runtime>,
+    pub provider: Option<Arc<dyn LlmProvider>>,
+}
+
+fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Result<RuntimeInit> {
     if hash_only {
-        return Ok((None, None));
+        return Ok(RuntimeInit {
+            runtime: None,
+            provider: None,
+        });
     }
 
     let _spacetime = SpacetimeGuard::acquire()?;
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
     if goldens_only {
-        return Ok((Some(runtime), None));
+        return Ok(RuntimeInit {
+            runtime: Some(runtime),
+            provider: None,
+        });
     }
 
     let llm_provider = make_provider_from_env()?;
-    Ok((Some(runtime), Some(llm_provider)))
+    Ok(RuntimeInit {
+        runtime: Some(runtime),
+        provider: Some(llm_provider),
+    })
 }
 
 fn process_mode(
@@ -244,158 +245,145 @@ fn process_mode(
 
     let mode_result_index = run.modes.iter().position(|m| m.mode == mode && m.lang == lang_str);
 
+    let mut ctx = BenchModeContext {
+        mode,
+        lang_str,
+        hash: &hash,
+        config,
+        results: run,
+        bench_root,
+        context: &context,
+        lang,
+        runtime,
+        llm_provider,
+    };
+
     match mode_result_index {
-        Some(index) => {
-            update_existing_mode(
-                index,
-                mode,
-                lang_str,
-                &hash,
-                config,
-                run,
-                bench_root,
-                &context,
-                lang,
-                runtime,
-                llm_provider,
-            )?;
-        }
-        None => {
-            add_new_mode(
-                mode,
-                lang_str,
-                &hash,
-                config,
-                run,
-                bench_root,
-                &context,
-                lang,
-                runtime,
-                llm_provider,
-            )?;
-        }
+        Some(index) => update_existing_mode(index, &mut ctx)?,
+        None => add_new_mode(&mut ctx)?,
     }
 
     Ok(())
 }
 
-fn update_existing_mode(
-    index: usize,
-    mode: &str,
-    lang_str: &str,
-    hash: &str,
-    config: &RunConfig,
-    run: &mut BenchmarkRun,
-    bench_root: &Path,
-    context: &str,
-    lang: Lang,
-    runtime: Option<&Runtime>,
-    llm_provider: Option<&Arc<dyn LlmProvider>>,
-) -> Result<()> {
+fn update_existing_mode(index: usize, ctx: &mut BenchModeContext<'_>) -> Result<()> {
+    let run = &mut ctx.results;
     let previous_hash = run.modes[index].hash.clone();
-    let hash_changed = previous_hash != hash;
+    let hash_changed = previous_hash != ctx.hash;
 
     if hash_changed {
         println!(
             "{:<12} [{:<10}] hash changed: {} -> {}",
-            mode,
-            lang_str,
+            ctx.mode,
+            ctx.lang_str,
             short_hash(&previous_hash),
-            short_hash(hash)
+            short_hash(ctx.hash)
         );
     } else {
-        println!("{:<12} [{:<10}] hash unchanged ({})", mode, lang_str, short_hash(hash));
+        println!(
+            "{:<12} [{:<10}] hash unchanged ({})",
+            ctx.mode,
+            ctx.lang_str,
+            short_hash(ctx.hash)
+        );
     }
 
-    run.modes[index].hash = hash.to_string();
+    run.modes[index].hash = ctx.hash.to_string();
 
-    if config.goldens_only {
-        let rt = runtime.expect("runtime required for --goldens-only");
-        let sels = config.selectors.as_deref();
-        rt.block_on(build_goldens_only_for_lang(bench_root, lang, sels))?;
-        println!("{:<12} [{:<10}] goldens-only build complete", mode, lang_str);
+    if ctx.config.goldens_only {
+        let rt = ctx.runtime.expect("runtime required for --goldens-only");
+        let sels = ctx.config.selectors.as_deref();
+
+        rt.block_on(build_goldens_only_for_lang(ctx.bench_root, ctx.lang, sels))?;
+        println!("{:<12} [{:<10}] goldens-only build complete", ctx.mode, ctx.lang_str);
         return Ok(());
     }
 
-    if !hash_changed && !config.force {
+    if !hash_changed && !ctx.config.force {
         println!(
             "{:<12} [{:<10}] hash unchanged ({}), skipped (use --force to rerun)",
-            mode,
-            lang_str,
-            short_hash(hash)
+            ctx.mode,
+            ctx.lang_str,
+            short_hash(ctx.hash)
         );
         return Ok(());
     }
 
-    if !config.hash_only && !config.goldens_only {
-        let models = run_all_routes_for_mode(
-            runtime.unwrap(),
-            bench_root,
-            mode,
-            context,
-            hash,
-            lang,
-            llm_provider.unwrap().as_ref(),
-            config.providers_filter.as_ref(),
-            config.selectors.as_deref(),
-            config.model_filter.as_ref(),
-        )?;
+    if !ctx.config.hash_only && !ctx.config.goldens_only {
+        let runtime = ctx.runtime.expect("runtime required for normal runs");
+        let llm_provider = ctx.llm_provider.expect("llm provider required for normal runs");
+
+        let run_ctx = RunAllContext {
+            rt: runtime,
+            bench_root: ctx.bench_root,
+            mode: ctx.mode,
+            context: ctx.context,
+            hash: ctx.hash,
+            lang: ctx.lang,
+            llm: llm_provider.as_ref(),
+            providers_filter: ctx.config.providers_filter.as_ref(),
+            selectors: ctx.config.selectors.as_deref(),
+            model_filter: ctx.config.model_filter.as_ref(),
+        };
+
+        let models = run_all_routes_for_mode(&run_ctx)?;
         run.modes[index].models = models;
     }
 
     Ok(())
 }
 
-fn add_new_mode(
-    mode: &str,
-    lang_str: &str,
-    hash: &str,
-    config: &RunConfig,
-    results: &mut BenchmarkRun,
-    bench_root: &Path,
-    context: &str,
-    lang: Lang,
-    runtime: Option<&Runtime>,
-    llm_provider: Option<&Arc<dyn LlmProvider>>,
-) -> Result<()> {
-    println!("{:<12} [{:<10}] added with hash {}", mode, lang_str, short_hash(hash));
+fn add_new_mode(ctx: &mut BenchModeContext<'_>) -> Result<()> {
+    println!(
+        "{:<12} [{:<10}] added with hash {}",
+        ctx.mode,
+        ctx.lang_str,
+        short_hash(ctx.hash)
+    );
 
-    if config.goldens_only {
-        let rt = runtime.expect("runtime required for --goldens-only");
-        let sels = config.selectors.as_deref();
-        rt.block_on(build_goldens_only_for_lang(bench_root, lang, sels))?;
-        println!("{:<12} [{:<10}] goldens-only build complete", mode, lang_str);
+    if ctx.config.goldens_only {
+        let rt = ctx.runtime.expect("runtime required for --goldens-only");
+        let sels = ctx.config.selectors.as_deref();
 
-        results.modes.push(ModeRun {
-            mode: mode.to_string(),
-            lang: lang_str.to_string(),
-            hash: hash.to_string(),
+        rt.block_on(build_goldens_only_for_lang(ctx.bench_root, ctx.lang, sels))?;
+        println!("{:<12} [{:<10}] goldens-only build complete", ctx.mode, ctx.lang_str);
+
+        ctx.results.modes.push(ModeRun {
+            mode: ctx.mode.to_string(),
+            lang: ctx.lang_str.to_string(),
+            hash: ctx.hash.to_string(),
             models: Vec::new(),
         });
+
         return Ok(());
     }
 
-    let models = if config.hash_only || config.goldens_only {
+    let models = if ctx.config.hash_only || ctx.config.goldens_only {
         Vec::new()
     } else {
-        run_all_routes_for_mode(
-            runtime.unwrap(),
-            bench_root,
-            mode,
-            context,
-            hash,
-            lang,
-            llm_provider.unwrap().as_ref(),
-            config.providers_filter.as_ref(),
-            config.selectors.as_deref(),
-            config.model_filter.as_ref(),
-        )?
+        let runtime = ctx.runtime.expect("runtime required for normal runs");
+        let llm_provider = ctx.llm_provider.expect("llm provider required for normal runs");
+
+        let run_ctx = RunAllContext {
+            rt: runtime,
+            bench_root: ctx.bench_root,
+            mode: ctx.mode,
+            context: ctx.context,
+            hash: ctx.hash,
+            lang: ctx.lang,
+            llm: llm_provider.as_ref(),
+            providers_filter: ctx.config.providers_filter.as_ref(),
+            selectors: ctx.config.selectors.as_deref(),
+            model_filter: ctx.config.model_filter.as_ref(),
+        };
+
+        run_all_routes_for_mode(&run_ctx)?
     };
 
-    results.modes.push(ModeRun {
-        mode: mode.to_string(),
-        lang: lang_str.to_string(),
-        hash: hash.to_string(),
+    ctx.results.modes.push(ModeRun {
+        mode: ctx.mode.to_string(),
+        lang: ctx.lang_str.to_string(),
+        hash: ctx.hash.to_string(),
         models,
     });
 
@@ -417,7 +405,10 @@ fn cmd_run(args: &[String]) -> Result<()> {
 
     let mut run: BenchmarkRun = load_run(results_path_run()).unwrap_or_default();
 
-    let (runtime, llm_provider) = initialize_runtime_and_provider(config.hash_only, config.goldens_only)?;
+    let RuntimeInit {
+        runtime,
+        provider: llm_provider,
+    } = initialize_runtime_and_provider(config.hash_only, config.goldens_only)?;
 
     config.selectors = apply_category_filter(&bench_root, config.categories.as_ref(), config.selectors.as_deref())?;
 
@@ -443,13 +434,13 @@ fn cmd_run(args: &[String]) -> Result<()> {
 
     if !config.goldens_only {
         run.generated_at = chrono::Utc::now().to_rfc3339();
-        fs::create_dir_all(PathBuf::from(docs_dir()).join("llms"))?;
+        fs::create_dir_all(docs_dir().join("llms"))?;
 
         write_run(&run)?;
 
         update_golden_answers_on_disk(
-            &*results_path_details(), // the merged JSON
-            &*bench_root,
+            &results_path_details(), // the merged JSON
+            &bench_root,
             /*all=*/ true,
             /*overwrite=*/ true,
         )?;
@@ -478,16 +469,13 @@ fn cmd_ci_check(args: &[String]) -> Result<()> {
     let mut langs: Vec<Lang> = Vec::new();
     let mut i = 0;
     while i < args.len() {
-        match args[i].as_str() {
-            "--lang" => {
-                i += 1;
-                if i >= args.len() {
-                    bail!("--lang needs a value");
-                }
-                let l = args[i].parse::<Lang>().map_err(anyhow::Error::msg)?;
-                langs.push(l);
+        if args[i].as_str() == "--lang" {
+            i += 1;
+            if i >= args.len() {
+                bail!("--lang needs a value");
             }
-            _ => {}
+            let l = args[i].parse::<Lang>().map_err(anyhow::Error::msg)?;
+            langs.push(l);
         }
         i += 1;
     }
@@ -576,24 +564,12 @@ fn short_hash(s: &str) -> &str {
     &s[..s.len().min(12)]
 }
 
-fn run_all_routes_for_mode(
-    rt: &Runtime,
-    bench_root: &Path,
-    mode: &str,
-    context: &str,
-    hash: &str,
-    lang: Lang,
-    llm: &dyn LlmProvider,
-    providers_filter: Option<&HashSet<Vendor>>,
-    selectors: Option<&[String]>,
-    model_filter: Option<&HashMap<Vendor, HashSet<String>>>,
-) -> Result<Vec<ModelRun>> {
+fn run_all_routes_for_mode(cfg: &RunAllContext<'_>) -> Result<Vec<ModelRun>> {
     let routes: Vec<ModelRoute> = default_model_routes()
         .iter()
-        .cloned()
-        .filter(|r| providers_filter.map_or(true, |f| f.contains(&r.vendor)))
+        .filter(|r| cfg.providers_filter.is_none_or(|f| f.contains(&r.vendor)))
         .filter(|r| {
-            if let Some(map) = model_filter {
+            if let Some(map) = cfg.model_filter {
                 if let Some(allowed) = map.get(&r.vendor) {
                     let api = r.api_model.to_ascii_lowercase();
                     let dn = r.display_name.to_ascii_lowercase();
@@ -602,69 +578,105 @@ fn run_all_routes_for_mode(
             }
             true
         })
+        .cloned()
         .collect();
 
-    let runs = rt.block_on(run_many_routes_for_lang(
-        bench_root, mode, hash, &routes, context, llm, lang, selectors,
-    ))?;
+    // Run each route
+    let models: Vec<ModelRun> = cfg.rt.block_on(async {
+        use futures::{stream, TryStreamExt};
 
-    let mut models = Vec::with_capacity(runs.len());
-    for r in runs {
-        let total: u32 = r.outcomes.iter().map(|o| o.total_tests).sum();
-        let passed: u32 = r.outcomes.iter().map(|o| o.passed_tests).sum();
-        let pct = if total == 0 {
-            0.0
-        } else {
-            (passed as f32 / total as f32) * 100.0
-        };
-        models.push(ModelRun {
-            name: r.route_name,
-            score: Some(pct),
-        });
-    }
+        stream::iter(routes.iter().map(|route| {
+            // Build per-route context
+            let per = BenchRunContext {
+                bench_root: cfg.bench_root,
+                mode: cfg.mode,
+                hash: cfg.hash,
+                route,
+                context: cfg.context,
+                llm: cfg.llm,
+                lang: cfg.lang,
+                selectors: cfg.selectors,
+            };
+
+            async move {
+                // Run (selected-or-all) for this route
+                let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
+
+                // Compute summary for ModelRun
+                let total: u32 = outcomes.iter().map(|o| o.total_tests).sum();
+                let passed: u32 = outcomes.iter().map(|o| o.passed_tests).sum();
+                let pct = if total == 0 {
+                    0.0
+                } else {
+                    (passed as f32 / total as f32) * 100.0
+                };
+
+                Ok::<ModelRun, anyhow::Error>(ModelRun {
+                    name: route.display_name.into(),
+                    score: Some(pct),
+                })
+            }
+        }))
+        .buffer_unordered(bench_route_concurrency())
+        .try_collect()
+        .await
+    })?;
 
     Ok(models)
 }
 
-pub async fn run_many_routes_for_lang(
-    bench_root: &Path,
-    mode: &str,
-    hash: &str,
-    routes: &[ModelRoute],
-    context: &str,
-    llm: &dyn LlmProvider,
-    lang: Lang,
-    selectors: Option<&[String]>,
-) -> Result<Vec<RouteRun>> {
+pub async fn run_many_routes_for_lang(cfg: &BenchRunContext<'_>, routes: &[ModelRoute]) -> Result<Vec<RouteRun>> {
     let rbuf = bench_route_concurrency();
 
-    stream::iter(routes.iter().cloned().map(|route| async move {
-        println!("→ running {}", route.display_name);
-        let selectors_ref = selectors.as_deref();
-        let outcomes = run_selected_or_all_for_model_async_for_lang(
-            bench_root,
-            mode,
-            hash,
-            &route,
-            context,
-            llm,
-            lang,
-            selectors_ref,
-        )
-        .await?;
-        let total: u32 = outcomes.iter().map(|o| o.total_tests).sum();
-        let passed: u32 = outcomes.iter().map(|o| o.passed_tests).sum();
-        let pct = if total == 0 {
-            0.0
-        } else {
-            (passed as f32 / total as f32) * 100.0
-        };
-        println!("   ↳ {}: {}/{} passed ({:.1}%)", route.display_name, passed, total, pct);
-        Ok::<_, anyhow::Error>(RouteRun {
-            route_name: route.display_name.to_string(),
-            api_model: route.api_model.to_string(),
-            outcomes,
-        })
+    let bench_root = cfg.bench_root;
+    let mode = cfg.mode;
+    let hash = cfg.hash;
+    let context = cfg.context;
+    let llm = cfg.llm;
+    let lang = cfg.lang;
+    let selectors = cfg.selectors;
+
+    futures::stream::iter(routes.iter().cloned().map(move |route| {
+        let bench_root = bench_root;
+        let mode = mode;
+        let hash = hash;
+        let context = context;
+        let llm = llm;
+        let lang = lang;
+        let selectors = selectors;
+
+        async move {
+            println!("→ running {}", route.display_name);
+
+            let per = BenchRunContext {
+                bench_root,
+                mode,
+                hash,
+                route: &route,
+                context,
+                llm,
+                lang,
+                selectors,
+            };
+
+            let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
+
+            let total: u32 = outcomes.iter().map(|o| o.total_tests).sum();
+            let passed: u32 = outcomes.iter().map(|o| o.passed_tests).sum();
+            let pct = if total == 0 {
+                0.0
+            } else {
+                (passed as f32 / total as f32) * 100.0
+            };
+
+            println!("   ↳ {}: {}/{} passed ({:.1}%)", route.display_name, passed, total, pct);
+
+            Ok::<_, anyhow::Error>(RouteRun {
+                route_name: route.display_name.to_string(),
+                api_model: route.api_model.to_string(),
+                outcomes,
+            })
+        }
     }))
     .buffer_unordered(rbuf)
     .try_collect::<Vec<_>>()
@@ -743,7 +755,7 @@ fn apply_category_filter(
     match categories {
         None => {
             // No category filter; keep selectors as-is
-            Ok(selectors.map(|s| s.iter().cloned().collect()))
+            Ok(selectors.map(|s| s.to_vec()))
         }
         Some(cats) => {
             let allowed = collect_task_numbers_in_categories(bench_root, cats)?;

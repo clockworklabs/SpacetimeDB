@@ -111,17 +111,6 @@ impl OpenAiClient {
         }
 
         #[derive(Deserialize)]
-        struct Usage {
-            #[serde(default)]
-            prompt_tokens_details: Option<PromptTokensDetails>,
-        }
-        #[derive(Deserialize)]
-        struct PromptTokensDetails {
-            #[serde(default)]
-            cached_tokens: Option<u32>,
-        }
-
-        #[derive(Deserialize)]
         struct ContentItem {
             #[serde(rename = "type")]
             #[serde(default)]
@@ -149,19 +138,9 @@ impl OpenAiClient {
             output_text: Option<String>,
             #[serde(default)]
             output: Option<Vec<OutputItem>>,
-            #[serde(default)]
-            usage: Option<Usage>,
         }
 
         let parsed: ResponsesPayload = serde_json::from_str(&body).context("parse OpenAI response")?;
-
-        if let Some(u) = &parsed.usage {
-            if let Some(ptd) = &u.prompt_tokens_details {
-                if let Some(ct) = ptd.cached_tokens {
-                    eprintln!("[openai] cached_prefix_tokens={}", ct);
-                }
-            }
-        }
 
         if let Some(t) = parsed.output_text.as_ref() {
             if !t.is_empty() {

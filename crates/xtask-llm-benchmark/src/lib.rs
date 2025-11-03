@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 pub mod bench;
 pub mod context;
 pub mod eval;

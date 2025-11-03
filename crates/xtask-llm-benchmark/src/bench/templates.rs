@@ -51,23 +51,21 @@ fn copy_tree_with_templates(src: &Path, dst: &Path) -> Result<()> {
             let out_path = to.join(rel);
             if entry.file_type()?.is_dir() {
                 recurse(&p, &out_path)?;
-            } else {
-                if out_path.extension().and_then(|e| e.to_str()) == Some("tmpl") {
-                    let rendered_path = out_path.with_extension("");
-                    let s = fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
-                    let s = replace_placeholders(&s);
-                    if let Some(dir) = rendered_path.parent() {
-                        fs::create_dir_all(dir)?;
-                    }
-                    fs::write(&rendered_path, s).with_context(|| format!("write {}", rendered_path.display()))?;
-                } else {
-                    if let Some(dir) = out_path.parent() {
-                        fs::create_dir_all(dir)?;
-                    }
-                    fs::copy(&p, &out_path)
-                        .map(|_| ())
-                        .with_context(|| format!("copy {} -> {}", p.display(), out_path.display()))?;
+            } else if out_path.extension().and_then(|e| e.to_str()) == Some("tmpl") {
+                let rendered_path = out_path.with_extension("");
+                let s = fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
+                let s = replace_placeholders(&s);
+                if let Some(dir) = rendered_path.parent() {
+                    fs::create_dir_all(dir)?;
                 }
+                fs::write(&rendered_path, s).with_context(|| format!("write {}", rendered_path.display()))?;
+            } else {
+                if let Some(dir) = out_path.parent() {
+                    fs::create_dir_all(dir)?;
+                }
+                fs::copy(&p, &out_path)
+                    .map(|_| ())
+                    .with_context(|| format!("copy {} -> {}", p.display(), out_path.display()))?;
             }
         }
         Ok(())

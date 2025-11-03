@@ -21,8 +21,8 @@ pub fn cmd_llm_benchmark_diff(base_file: &str, head_file: &str) -> Result<String
         out.push_str(&format!("## Mode: `{mode}`\n\n"));
 
         for lang in ["rust", "csharp"] {
-            let b = base.modes.iter().find(|m| m.mode == mode.to_string() && m.lang == lang);
-            let h = head.modes.iter().find(|m| m.mode == mode.to_string() && m.lang == lang);
+            let b = base.modes.iter().find(|m| m.mode == *mode && m.lang == lang);
+            let h = head.modes.iter().find(|m| m.mode == *mode && m.lang == lang);
 
             out.push_str(&format!("### Lang: `{lang}`\n"));
 

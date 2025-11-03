@@ -74,7 +74,7 @@ fn normalize_lf(bytes: &[u8]) -> Cow<'_, [u8]> {
 }
 
 pub fn gather_docs_files() -> Result<Vec<PathBuf>> {
-    let base = PathBuf::from(docs_dir()).join("docs");
+    let base = docs_dir().join("docs");
     let mut out = Vec::new();
     recurse_dir(&base, &mut out)?;
     out.retain(|p| matches!(p.extension().and_then(|e| e.to_str()), Some("md" | "mdc")));

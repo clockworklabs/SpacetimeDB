@@ -3,11 +3,14 @@ use crate::eval::Lang;
 use crate::llm::prompt::make_prompt_from_task;
 use crate::llm::PromptBuilder;
 
+type PromptFactory = Box<dyn Fn(Lang) -> PromptBuilder + Send + Sync>;
+type ScorerFactory = Box<dyn Fn(Lang, &str) -> Vec<Box<dyn Scorer>> + Send + Sync>;
+
 pub struct BenchmarkSpec {
     pub id: &'static str,
     pub category: &'static str,
-    pub make_prompt: Box<dyn Fn(Lang) -> PromptBuilder + Send + Sync>,
-    pub scorers: Box<dyn Fn(Lang, &str) -> Vec<Box<dyn Scorer>> + Send + Sync>,
+    pub make_prompt: PromptFactory,
+    pub scorers: ScorerFactory,
 }
 
 impl BenchmarkSpec {
@@ -17,7 +20,6 @@ impl BenchmarkSpec {
     ) -> Self {
         let (id, category) = infer_id_and_category(spec_file);
         let make_prompt = {
-            let spec_file = spec_file;
             Box::new(move |lang: Lang| {
                 make_prompt_from_task(spec_file, id, lang).expect("missing tasks/<lang>.md next to spec")
             }) as Box<dyn Fn(Lang) -> PromptBuilder + Send + Sync>
