@@ -420,5 +420,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Run hash check (both langs)
-        working-directory: public/crates/xtask-llm-benchmark
+        working-directory: crates/xtask-llm-benchmark
         run: cargo llm ci-check
