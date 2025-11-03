@@ -588,7 +588,52 @@ pub fn column_schemas_from_defs(module_def: &ModuleDef, columns: &[ColumnDef], t
 }
 
 impl TableSchema {
-    /// Every view is materialized by default. For example:
+    /// Generates a [`TableSchema`] for the purpose of client codegen.
+    ///
+    /// This is the schema defined in the module.
+    /// It does not have any internal columns like the schema for the datastore.
+    /// See [`Self::from_view_def_for_datastore`] for more details.
+    pub fn from_view_def_for_codegen(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
+        module_def.expect_contains(view_def);
+
+        let ViewDef {
+            name,
+            is_public,
+            return_columns,
+            ..
+        } = view_def;
+
+        let columns = return_columns
+            .iter()
+            .map(|def| ColumnSchema::from_view_column_def(module_def, def))
+            .enumerate()
+            .map(|(i, schema)| (ColId::from(i), schema))
+            .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema })
+            .collect();
+
+        let table_access = if *is_public {
+            StAccess::Public
+        } else {
+            StAccess::Private
+        };
+
+        TableSchema::new(
+            TableId::SENTINEL,
+            (*name).clone().into(),
+            columns,
+            vec![],
+            vec![],
+            vec![],
+            StTableType::User,
+            table_access,
+            None,
+            None,
+        )
+    }
+
+    /// Generate a [`TableSchema`] for the purpose of materializing in the datastore.
+    ///
+    /// Note, every view is materialized by default. For example:
     /// ```rust,ignore
     /// #[table]
     /// pub struct MyTable {
@@ -617,8 +662,9 @@ impl TableSchema {
     /// |-------------|--------|-----|-----|
     /// | (none = ()) | u64    | u32 | u32 |
     ///
-    /// Note, `arg_id` is a foreign key into `st_view_arg`.
-    pub fn from_view_def(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
+    /// Note, `sender` and `arg_id` are internal columns not defined by the module,
+    /// where `arg_id` is a foreign key into `st_view_arg`.
+    pub fn from_view_def_for_datastore(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
         module_def.expect_contains(view_def);
 
         let ViewDef {
