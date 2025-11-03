@@ -567,15 +567,24 @@ function renderMatrices(view){
 
     const bodyHtml=rows.length?rows.join(""):`<tr><td class="task-cell sticky" colspan="${2 + chosen.length}"><span class="hint">No tasks match filters in this category.</span></td></tr>`;
 
-    const totals=chosen.map(m=>{
-      const total=view.categories[cat].length;
-      let p=0; for(const tid of view.categories[cat]){const rec=view.modelTaskMap[m]?.[tid]; if(rec?.pass) p++}
-      const rate=total?Math.round(100*p/total):0;
-      const cls=rate===100?'ok':(rate===0?'bad':'muted');
-      return `<td class="cell-tight" title="${p}/${total} (${rate}%)">
-                <div><span class="${cls} mono">${p}/${total}</span></div>
-                <div class="mini">${rate}%</div>
-              </td>`;
+    const totals = chosen.map(m => {
+      const totalTasks = view.categories[cat].length;
+      let sumFrac = 0;
+      for (const tid of view.categories[cat]) {
+        const rec = view.modelTaskMap[m]?.[tid];
+        if (!rec) continue;
+        if (Number.isFinite(rec.tt) && rec.tt > 0) {
+          sumFrac += rec.pt / rec.tt;
+        } else if (rec.pass) {
+          sumFrac += 1;
+        }
+      }
+      const rate = totalTasks ? Math.round(100 * (sumFrac / totalTasks)) : 0;
+      const cls = rate === 100 ? 'ok' : (rate === 0 ? 'bad' : 'muted');
+      return `<td class="cell-tight" title="${sumFrac.toFixed(2)}/${totalTasks} (${rate}%)">
+            <div><span class="${cls} mono">${sumFrac.toFixed(2)}/${totalTasks}</span></div>
+            <div class="mini">${rate}%</div>
+          </td>`;
     }).join("");
 
     const header=`
