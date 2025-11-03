@@ -911,7 +911,7 @@ impl ModuleSubscriptions {
         tx: MutTx,
     ) -> Result<CommitAndBroadcastEventResult, DBError> {
         let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::SubscriptionUpdate);
+        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Update);
 
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
@@ -927,9 +927,7 @@ impl ModuleSubscriptions {
         // We'll later ensure tx is released/cleaned up once out of scope.
         let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let Some((tx_data, tx_metrics, read_tx)) =
-                    stdb.commit_tx_downgrade(tx, Workload::SubscriptionUpdate)?
-                else {
+                let Some((tx_data, tx_metrics, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
                     return Ok(Err(WriteConflict));
                 };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);

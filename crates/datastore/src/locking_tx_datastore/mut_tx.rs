@@ -146,6 +146,10 @@ impl UniqueView {
             args,
         }
     }
+
+    pub fn into_args(self) -> Bytes {
+        self.args
+    }
 }
 
 pub type ViewReadSets = HashMap<UniqueView, ReadSet>;
@@ -736,25 +740,29 @@ impl MutTxId {
         Ok((tx, commit))
     }
 
-    /// Check if a memoized view exists for the given view name, args, and sender identity.
-    /// if not, [`RelationalDB::evaluate_view`] should be called to compute and store it.
-    #[allow(dead_code)]
-    fn has_memoized_view(&self, view_name: &str, args: Bytes, sender: Identity) -> Result<(bool, Bytes)> {
+    /// Checks whether a memoized view exists for the given view name, arguments, and sender identity.
+    ///
+    /// If no memoized result is found, [`RelationalDB::evaluate_view`] should be called to compute and store it.
+    ///
+    /// - `view_name`: The name of the view to look up.
+    /// - `args`: The serialized (bastn-encoded) arguments for the view.
+    /// - `sender`: The identity of the sender requesting the view.
+    pub fn has_memoized_view(&self, view_name: &str, args: Bytes, sender: Identity) -> Result<(bool, Bytes)> {
         let (view_id, is_anonymous) = self
             .view_from_name(view_name)?
             .map(|view_row| (view_row.view_id, view_row.is_anonymous))
             .ok_or_else(|| anyhow::anyhow!("view `{view_name}` not found"))?;
 
         let unique_view = if is_anonymous {
-            UniqueView::anonymous(view_id, args.clone())
+            UniqueView::anonymous(view_id, args)
         } else {
-            UniqueView::with_identity(sender, view_id, args.clone())
+            UniqueView::with_identity(sender, view_id, args)
         };
 
         let has_memoized = self.read_sets.contains_key(&unique_view)
             || self.committed_state_write_lock.has_memoized_view(&unique_view);
 
-        Ok((has_memoized, args))
+        Ok((has_memoized, unique_view.into_args()))
     }
 }
 

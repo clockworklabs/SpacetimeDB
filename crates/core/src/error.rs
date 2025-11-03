@@ -8,7 +8,7 @@ use hex::FromHexError;
 use spacetimedb_commitlog::repo::TxOffset;
 use spacetimedb_durability::DurabilityExited;
 use spacetimedb_expr::errors::TypingError;
-use spacetimedb_lib::{AlgebraicType, Identity};
+use spacetimedb_lib::Identity;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::table::ReadViaBsatnError;

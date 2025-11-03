@@ -22,7 +22,7 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::{
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::system_tables::ST_VIEW_ID;
-use spacetimedb_datastore::system_tables::{system_tables, StModuleRow, StViewArgFields, StViewRow};
+use spacetimedb_datastore::system_tables::{system_tables, StModuleRow, StViewRow};
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
