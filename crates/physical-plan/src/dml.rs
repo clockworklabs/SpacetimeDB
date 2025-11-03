@@ -7,7 +7,7 @@ use spacetimedb_expr::{
 };
 use spacetimedb_lib::{AlgebraicValue, ProductValue};
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::TableOrViewSchema;
 
 use crate::{compile::compile_select, plan::ProjectPlan};
 
@@ -31,7 +31,7 @@ impl MutationPlan {
 
 /// A plan for inserting rows into a table
 pub struct InsertPlan {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub rows: Vec<ProductValue>,
 }
 
@@ -45,7 +45,7 @@ impl From<TableInsert> for InsertPlan {
 
 /// A plan for deleting rows from a table
 pub struct DeletePlan {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub filter: ProjectPlan,
 }
 
@@ -78,7 +78,7 @@ impl DeletePlan {
 
 /// A plan for updating rows in a table
 pub struct UpdatePlan {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub columns: Vec<(ColId, AlgebraicValue)>,
     pub filter: ProjectPlan,
 }
