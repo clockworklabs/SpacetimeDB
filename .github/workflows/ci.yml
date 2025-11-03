@@ -411,6 +411,8 @@ jobs:
 
   llm_ci_check:
     name: Verify docs/rustdoc_json hashes
+    permissions:
+      contents: read
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
