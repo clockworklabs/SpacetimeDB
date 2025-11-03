@@ -79,6 +79,29 @@
         /// </summary>
         public string ScheduledAt { get; init; } = "ScheduledAt";
     }
+    
+    /// <summary>
+    /// Registers a method as a SpacetimeDB view, enabling codegen for it.
+    /// Views are pure, read-only queries that run with a view context instead of a reducer context.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class ViewAttribute : Attribute
+    {
+        /// <summary>
+        /// Optional override for the exported view name. Defaults to the method name.
+        /// </summary>
+        public string? Name { get; init; }
+
+        /// <summary>
+        /// Marks the view as callable by any client. Leave false to restrict to the module owner.
+        /// </summary>
+        public bool Public { get; init; } = true;
+
+        /// <summary>
+        /// Set true to deny caller identity to the view logic (forces `AnonymousViewContext`).
+        /// </summary>
+        public bool Anonymous { get; init; } = false;
+    }
 
     [AttributeUsage(
         AttributeTargets.Struct | AttributeTargets.Class | AttributeTargets.Field,
@@ -136,14 +159,14 @@
                 }
                 if (value is bool)
                 {
-                    return value.ToString()?.ToLower();
+                    return value.ToString()?.ToLower()!;
                 }
                 var str = value.ToString();
                 if (value is string)
                 {
                     str = $"\"{str}\"";
                 }
-                return str;
+                return str!;
             }
         }
 

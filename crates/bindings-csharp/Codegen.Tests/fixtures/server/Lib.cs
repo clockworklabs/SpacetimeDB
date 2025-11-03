@@ -273,4 +273,16 @@ public class Module
 {
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly Filter ALL_PUBLIC_TABLES = new Filter.Sql("SELECT * FROM PublicTable");
+    
+    [SpacetimeDB.View(Name = "public_table_view", Public = true)]
+    public static PublicTable? PublicTableByIdentity(ViewContext ctx)
+    {
+        return ctx.Db.PublicTable.Identity().Find(ctx.Sender);
+    }
+
+    [SpacetimeDB.View(Name = "find_public_table__by_identity", Public = true)]
+    public static IEnumerable<PublicTable> FindPublicTableByIdentity(AnonymousViewContext ctx, Identity identity)
+    {
+        return ctx.Db.PublicTable.Identity().Find(identity);
+    }
 }

@@ -71,6 +71,12 @@ internal static class ErrorDescriptor
             ctx => Location.None
         );
 
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewContextParam =
+        new(group,
+            "Views must start with ViewContext or AnonymousViewContext",
+            method => $"View method {method.Identifier} must have a first parameter of type ViewContext or AnonymousViewContext.",
+            method => method.ParameterList);
+    
     public static readonly ErrorDescriptor<MethodDeclarationSyntax> ReducerContextParam =
         new(
             group,

@@ -37,6 +37,11 @@ partial class RawModuleDefV9
     internal void RegisterReducer(RawReducerDefV9 reducer) => Reducers.Add(reducer);
 
     internal void RegisterTable(RawTableDefV9 table) => Tables.Add(table);
+    
+    internal void RegisterView(RawViewDefV9 view)
+    {
+        MiscExports.Add(new RawMiscModuleExportV9.View(view));
+    }
 
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         RowLevelSecurity.Add(rls);
@@ -56,13 +61,24 @@ public static class Module
 {
     private static readonly RawModuleDefV9 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
+    private static readonly List<Action<BytesSink>> viewDefs = [];
+    private static readonly List<IView> viewDispatchers = [];
+    private static readonly List<IAnonymousView> anonymousDispatchers = [];
 
-    private static Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext>? newContext =
+    private static Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext>? newReducerContext =
         null;
+    private static Func<Identity, IViewContext>? newViewContext = null;
+    private static Func<IAnonymousViewContext>? newAnonymousViewContext = null;
 
     public static void SetReducerContextConstructor(
         Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext> ctor
-    ) => newContext = ctor;
+    ) => newReducerContext = ctor;
+    
+    public static void SetViewContextConstructor(Func<Identity, IViewContext> ctor) =>
+        newViewContext = ctor;
+
+    public static void SetAnonymousViewContextConstructor(Func<IAnonymousViewContext> ctor) =>
+        newAnonymousViewContext = ctor;
 
     readonly struct TypeRegistrar() : ITypeRegistrar
     {
@@ -107,6 +123,30 @@ public static class Module
         where T : IStructuralReadWrite, new()
         where View : ITableView<View, T>, new() =>
         moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
+
+    public static void RegisterView(RawViewDefV9 def, IView dispatcher)
+    {
+        viewDefs.Add(sink =>
+            {
+                var bytes = IStructuralReadWrite.ToBytes(new RawViewDefV9.BSATN(), def);
+                sink.Write(bytes);
+            });
+        if (def.IsAnonymous)
+            {
+                anonymousDispatchers.Add((IAnonymousView)dispatcher);
+            }
+        else
+        {
+                viewDispatchers.Add(dispatcher);
+            }
+    }
+    
+    // public static void RegisterView(string name, bool isPublic, bool isAnonymous, byte[] value, string returnType)
+    // {
+    //     List<SpacetimeDB.BSATN.AggregateElement> parameters = new List<SpacetimeDB.BSATN.AggregateElement>().FromBytes(value);
+    //     SpacetimeDB.BSATN.AlgebraicType type = new SpacetimeDB.BSATN.AlgebraicType().FromString(returnType);
+    //     moduleDef.RegisterView(new RawViewDefV9 { Name = name, IsPublic = isPublic, IsAnonymous = isAnonymous, Params = parameters, ReturnType = type });
+    // }
 
     public static void RegisterClientVisibilityFilter(Filter rlsFilter)
     {
@@ -204,6 +244,10 @@ public static class Module
             RawModuleDef versioned = new RawModuleDef.V9(moduleDef);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             description.Write(moduleBytes);
+            foreach (var writeView in viewDefs)
+            {
+                writeView(description);
+            }
         }
         catch (Exception e)
         {
@@ -235,7 +279,7 @@ public static class Module
             var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
             var time = timestamp.ToStd();
 
-            var ctx = newContext!(senderIdentity, connectionId, random, time);
+            var ctx = newReducerContext!(senderIdentity, connectionId, random, time);
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
@@ -254,4 +298,61 @@ public static class Module
             return Errno.HOST_CALL_FAILURE;
         }
     }
+    
+    public static Errno __call_view__(
+            uint id,
+            ulong sender_0,
+            ulong sender_1,
+            ulong sender_2,
+            ulong sender_3,
+            BytesSource args,
+            BytesSink rows
+    )
+    {
+            try
+            {
+                    var sender = Identity.From(
+                            MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+                        );
+                    var ctx = newViewContext!(sender);
+                    using var stream = new MemoryStream(args.Consume());
+                    using var reader = new BinaryReader(stream);
+                    viewDispatchers[(int)id].Invoke(reader, ctx);
+                    return Errno.OK;
+                }
+            catch (Exception e)
+            {
+                    Log.Error($"Error while invoking view: {e}");
+                    return Errno.HOST_CALL_FAILURE;
+                }
+        }
+
+    public static Errno __call_anonymous_view__(uint id, BytesSource args, BytesSink rows)
+    {
+        try
+        {
+                var ctx = newAnonymousViewContext!();
+                using var stream = new MemoryStream(args.Consume());
+                using var reader = new BinaryReader(stream);
+                anonymousDispatchers[(int)id].Invoke(reader, ctx);
+                return Errno.OK;
+            }
+        catch (Exception e)
+        {
+                Log.Error($"Error while invoking anonymous view: {e}");
+                return Errno.HOST_CALL_FAILURE;
+            }
+    }
+}
+
+/// <summary>
+/// Read-only database access for view contexts.
+/// The code generator will extend this partial class to add table accessors.
+/// </summary>
+public sealed partial class LocalReadOnly
+{
+    // This class is intentionally empty - the code generator will add
+    // read-only table accessors for each table in the module.
+    // Example generated code:
+    // public Internal.ViewHandles.UserReadOnly User => new();
 }

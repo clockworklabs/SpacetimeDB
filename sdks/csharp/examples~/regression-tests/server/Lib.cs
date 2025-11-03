@@ -15,6 +15,18 @@ public static partial class Module
         public uint Indexed;
     }
 
+    [SpacetimeDB.View]
+    public static ExampleData? GetExampleDataById(ViewContext ctx, uint id)
+    {
+        return ctx.Db.ExampleData.Id.Find(id);
+    }
+	
+    [SpacetimeDB.View]
+    public static ExampleData? GetAnonymousExampleDataById(AnonymousViewContext ctx, uint id)
+    {
+        return ctx.Db.ExampleData.Id.Find(id);
+    }
+
     [SpacetimeDB.Reducer]
     public static void Delete(ReducerContext ctx, uint id)
     {
