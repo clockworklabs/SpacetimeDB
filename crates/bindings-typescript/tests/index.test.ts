@@ -6,7 +6,7 @@ import {
   type IdentityTokenMessage,
 } from '../src/index';
 import type { ColumnBuilder } from '../src/server';
-import { t } from '../src/server/type_builders';
+import { t } from '../src/lib/type_builders';
 
 describe('TypeBuilder', () => {
   it('builds the correct algebraic type for a point', () => {

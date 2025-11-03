@@ -1,5 +1,5 @@
-import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
-import type Typespace from '../lib/autogen/typespace_type';
+import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
+import type Typespace from './autogen/typespace_type';
 import {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type ColumnBuilder,
@@ -16,13 +16,36 @@ import {
   type ParamsObj,
   type Reducer,
 } from './reducers';
-import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
+import type RawModuleDefV9 from './autogen/raw_module_def_v_9_type';
 import {
   AlgebraicType,
   type AlgebraicTypeVariants,
-} from '../lib/algebraic_type';
-import type RawScopedTypeNameV9 from '../lib/autogen/raw_scoped_type_name_v_9_type';
+} from './algebraic_type';
+import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
 import type { CamelCase } from './type_util';
+
+/**
+ * An untyped representation of the database schema.
+ */
+export type UntypedSchemaDef = {
+  tables: readonly UntypedTableDef[];
+};
+
+/**
+ * Helper type to convert an array of TableSchema into a schema definition
+ */
+type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
+  tables: {
+    /** @type {UntypedTableDef} */
+    readonly [i in keyof T]: {
+      name: T[i]['tableName'];
+      accessorName: CamelCase<T[i]['tableName']>;
+      columns: T[i]['rowType']['row'];
+      rowType: T[i]['rowSpacetimeType'];
+      indexes: T[i]['idxs'];
+    };
+  };
+};
 
 /**
  * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
@@ -71,29 +94,6 @@ export function splitName(name: string): RawScopedTypeNameV9 {
   const scope = name.split('.');
   return { name: scope.pop()!, scope };
 }
-
-/**
- * An untyped representation of the database schema.
- */
-export type UntypedSchemaDef = {
-  tables: readonly UntypedTableDef[];
-};
-
-/**
- * Helper type to convert an array of TableSchema into a schema definition
- */
-type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
-  tables: {
-    /** @type {UntypedTableDef} */
-    readonly [i in keyof T]: {
-      name: T[i]['tableName'];
-      accessorName: CamelCase<T[i]['tableName']>;
-      columns: T[i]['rowType']['row'];
-      rowType: T[i]['rowSpacetimeType'];
-      indexes: T[i]['idxs'];
-    };
-  };
-};
 
 /**
  * The Schema class represents the database schema for a SpacetimeDB application.

@@ -1,5 +1,5 @@
-import type { UntypedSchemaDef } from '../server/schema.ts';
-import type { UntypedTableDef } from '../server/table.ts';
+import type { UntypedSchemaDef } from '../lib/schema.ts';
+import type { UntypedTableDef } from '../lib/table.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
 import { TableCache } from './table_cache.ts';
 

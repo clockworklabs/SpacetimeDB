@@ -27,9 +27,17 @@ import {
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
   type TableHandle as __TableHandle,
 } from '../../../src/index';
+import { t } from '../../../src/server';
 import { Point } from './point_type';
 // Mark import as potentially unused
 declare type __keep_Point = Point;
+
+t.object('Player', {
+  ownerId: t.string(),
+  name: t.string(),
+  location: Point.getTypeScriptAlgebraicType(),
+});
+
 
 export type Player = {
   ownerId: string;

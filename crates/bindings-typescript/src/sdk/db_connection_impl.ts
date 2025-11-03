@@ -1,7 +1,6 @@
 import { ConnectionId, ProductType } from '../';
 import {
   AlgebraicType,
-  type AlgebraicTypeVariants,
   type ComparablePrimitive,
 } from '../';
 import { parseValue } from '../';
@@ -52,9 +51,9 @@ import {
 import { stdbLogger } from './logger.ts';
 import { fromByteArray } from 'base64-js';
 import type { ReducersView, SetReducerFlags, UntypedReducersDef } from './reducers.ts';
-import type { ClientDbView, DbView } from '../server/db_view.ts';
-import type { UntypedTableDef } from '../server/table.ts';
-import { toCamelCase } from '../server/runtime.ts';
+import type { ClientDbView } from './db_view.ts';
+import type { UntypedTableDef } from '../lib/table.ts';
+import { toCamelCase } from '../lib/utils.ts';
 
 export { DbConnectionBuilder, SubscriptionBuilderImpl, TableCache, type Event };
 

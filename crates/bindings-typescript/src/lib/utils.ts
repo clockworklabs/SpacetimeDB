@@ -1,5 +1,6 @@
 import BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
+import type { CamelCase } from './type_util';
 
 export function toPascalCase(s: string): string {
   const str = s.replace(/([-_][a-z])/gi, $1 => {
@@ -97,4 +98,13 @@ export function u256ToUint8Array(data: bigint): Uint8Array {
 
 export function u256ToHexString(data: bigint): string {
   return uint8ArrayToHexString(u256ToUint8Array(data));
+}
+
+/**
+ * Type safe conversion from a string like "some_identifier-name" to "someIdentifierName".
+ * @param str The string to convert
+ * @returns The converted string
+ */
+export function toCamelCase<T extends string>(str: T): CamelCase<T> {
+  return str.replace(/[-_]+(\w)/g, (_, c) => c.toUpperCase()) as CamelCase<T>;
 }

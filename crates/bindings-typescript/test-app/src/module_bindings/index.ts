@@ -54,9 +54,9 @@ import { UnindexedPlayer } from './unindexed_player_type.ts';
 export { UnindexedPlayer };
 import { User } from './user_type.ts';
 import { schema } from '../../../src/server/schema.ts';
-import t from '../../../src/server/type_builders.ts';
-import { table } from '../../../src/server/table.ts';
-import { reducerSchema, reducers } from '../../../src/server/reducers.ts';
+import t from '../../../src/lib/type_builders.ts';
+import { table } from '../../../src/lib/table.ts';
+import { reducerSchema, reducers } from '../../../src/lib/reducers.ts';
 import { RemoteModule } from '../../../src/sdk/spacetime_module.ts';
 export { User };
 

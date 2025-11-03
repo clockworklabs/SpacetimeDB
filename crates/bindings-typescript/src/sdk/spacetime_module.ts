@@ -1,4 +1,4 @@
-import type { UntypedSchemaDef } from '../server/schema';
+import type { UntypedSchemaDef } from '../lib/schema';
 import type { UntypedReducersDef } from './reducers';
 
 export type RemoteModule<

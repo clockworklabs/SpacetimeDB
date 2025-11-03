@@ -12,8 +12,8 @@ import {
   type TimeDurationAlgebraicType,
   type TimestampAlgebraicType,
 } from '..';
-import type { OptionAlgebraicType } from '../lib/option';
-import { addType, MODULE_DEF } from './schema';
+import type { OptionAlgebraicType } from './option';
+import { addType, MODULE_DEF } from '../server/schema';
 import type { CoerceRow } from './table';
 import { set, type Set } from './type_util';
 

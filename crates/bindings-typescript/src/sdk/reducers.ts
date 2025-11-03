@@ -1,6 +1,6 @@
 import type { ProductType } from "../lib/algebraic_type";
-import type { ParamsObj } from "../server/reducers";
-import type { CamelCase } from "../server/type_util";
+import type { ParamsObj } from "../lib/reducers";
+import type { CamelCase } from "../lib/type_util";
 import type { CallReducerFlags } from "./db_connection_impl";
 
 export type ReducersView<R extends UntypedReducersDef> = {

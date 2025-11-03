@@ -15,32 +15,23 @@ import {
   type IndexVal,
   type UniqueIndex,
   type RangedIndex,
-} from './indexes';
-import { type RowType, type Table, type TableMethods } from './table';
+} from '../lib/indexes';
+import { type RowType, type Table, type TableMethods } from '../lib/table';
 import {
   type ReducerCtx,
   REDUCERS,
   type JwtClaims,
   type AuthCtx,
   type JsonObject,
-} from './reducers';
-import { MODULE_DEF } from './schema';
+} from '../lib/reducers';
+import { MODULE_DEF } from '../lib/schema';
 
 import * as _syscalls from 'spacetime:sys@1.0';
 import type { u16, u32, ModuleHooks } from 'spacetime:sys@1.0';
 import type { DbView } from './db_view';
-import type { CamelCase } from './type_util';
+import { toCamelCase } from '../lib/utils';
 
 const { freeze } = Object;
-
-/**
- * Type safe conversion from a string like "some_identifier-name" to "someIdentifierName".
- * @param str The string to convert
- * @returns The converted string
- */
-export function toCamelCase<T extends string>(str: T): CamelCase<T> {
-  return str.replace(/[-_]+(\w)/g, (_, c) => c.toUpperCase()) as CamelCase<T>;
-}
 
 const sys: typeof _syscalls = freeze(
   Object.fromEntries(

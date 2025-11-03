@@ -1,9 +1,9 @@
-import { AlgebraicType, ProductType } from '../lib/algebraic_type';
-import type RawConstraintDefV9 from '../lib/autogen/raw_constraint_def_v_9_type';
-import RawIndexAlgorithm from '../lib/autogen/raw_index_algorithm_type';
-import type RawIndexDefV9 from '../lib/autogen/raw_index_def_v_9_type';
-import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
-import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
+import { AlgebraicType, ProductType } from './algebraic_type';
+import type RawConstraintDefV9 from './autogen/raw_constraint_def_v_9_type';
+import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
+import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
+import type RawSequenceDefV9 from './autogen/raw_sequence_def_v_9_type';
+import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
 import type { AllUnique } from './constraints';
 import type { ColumnIndex, IndexColumns, Indexes, IndexOpts, ReadonlyIndexes } from './indexes';
 import { MODULE_DEF, splitName } from './schema';

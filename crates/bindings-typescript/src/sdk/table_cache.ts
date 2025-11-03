@@ -3,8 +3,8 @@ import { EventEmitter } from './event_emitter.ts';
 import { stdbLogger } from './logger.ts';
 import type { ComparablePrimitive } from '../';
 import type { EventContextInterface, ClientTable } from './index.ts';
-import type { RowType, Table, UntypedTableDef } from '../server/table.ts';
-import type { ClientTableCore } from './table_handle.ts';
+import type { RowType, Table, UntypedTableDef } from '../lib/table.ts';
+import type { ClientTableCore } from './client_table.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
 
 export type Operation<
@@ -29,6 +29,7 @@ export type PendingCallback = {
   table: string;
   cb: () => void;
 };
+
 /**
  * Builder to generate calls to query a `table` in the database
  */

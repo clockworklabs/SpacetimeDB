@@ -1,4 +1,4 @@
-import type { ClientDbView } from '../server/db_view';
+import type { ClientDbView } from './db_view';
 import type { ReducersView, SetReducerFlags, UntypedReducersDef } from './reducers';
 import type { UntypedRemoteModule } from './spacetime_module';
 import type { SubscriptionBuilderImpl } from './subscription_builder_impl';

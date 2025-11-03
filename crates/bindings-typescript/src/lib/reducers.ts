@@ -1,11 +1,11 @@
-import type { ProductType } from '../lib/algebraic_type';
-import Lifecycle from '../lib/autogen/lifecycle_type';
-import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
-import type { ConnectionId } from '../lib/connection_id';
-import type { Identity } from '../lib/identity';
-import type { Timestamp } from '../lib/timestamp';
+import type { ProductType } from './algebraic_type';
+import Lifecycle from './autogen/lifecycle_type';
+import type RawReducerDefV9 from './autogen/raw_reducer_def_v_9_type';
+import type { ConnectionId } from './connection_id';
+import type { Identity } from './identity';
+import type { Timestamp } from './timestamp';
 import type { UntypedReducersDef } from '../sdk/reducers';
-import type { DbView } from './db_view';
+import type { DbView } from '../server/db_view';
 import { MODULE_DEF, type UntypedSchemaDef } from './schema';
 import type {
   InferTypeOfRow,

@@ -1,6 +1,6 @@
-import type { ReadonlyIndexes } from "../server/indexes";
-import type { ReadonlyTableMethods, RowType, TableIndexes, UntypedTableDef } from "../server/table";
-import type { Prettify } from "../server/type_util";
+import type { ReadonlyIndexes } from "../lib/indexes";
+import type { ReadonlyTableMethods, RowType, TableIndexes, UntypedTableDef } from "../lib/table";
+import type { Prettify } from "../lib/type_util";
 import type { EventContextInterface } from "./event_context";
 import type { UntypedRemoteModule } from "./spacetime_module";
 
