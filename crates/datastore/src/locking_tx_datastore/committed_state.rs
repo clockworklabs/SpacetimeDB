@@ -98,7 +98,6 @@ impl CommittedReadSets {
 
     /// Returns true if the given view exists in any read set.
     /// This is used to determine whether a view needs to be re-evaluated.
-
     fn has_memoized_view(&self, view: &UniqueView) -> bool {
         self.tables.values().any(|views| views.contains(view))
             || self.index_keys.values().any(|col_map| {

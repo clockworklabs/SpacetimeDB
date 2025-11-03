@@ -97,7 +97,6 @@ pub enum Workload {
     #[cfg(any(test, feature = "test"))]
     ForTests,
     Reducer(ReducerContext),
-    View,
     Sql,
     Subscribe,
     Unsubscribe,
@@ -116,7 +115,6 @@ impl Workload {
             Self::Unsubscribe => WorkloadType::Unsubscribe,
             Self::Update => WorkloadType::Update,
             Self::Internal => WorkloadType::Internal,
-            Self::View => WorkloadType::View,
         }
     }
 }
@@ -164,7 +162,6 @@ impl ExecutionContext {
             Workload::Subscribe => Self::new(database, None, WorkloadType::Subscribe),
             Workload::Unsubscribe => Self::new(database, None, WorkloadType::Unsubscribe),
             Workload::Update => Self::new(database, None, WorkloadType::Update),
-            Workload::View => Self::new(database, None, WorkloadType::View),
         }
     }
 

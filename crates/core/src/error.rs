@@ -147,8 +147,6 @@ pub enum DBError {
     RestoreSnapshot(#[from] RestoreSnapshotError),
     #[error(transparent)]
     DurabilityGone(#[from] DurabilityExited),
-    #[error("ViewError: {0}")]
-    View(#[from] ViewError),
 }
 
 impl DBError {
@@ -190,28 +188,6 @@ impl<'a, T: ?Sized + 'a> From<PoisonError<std::sync::MutexGuard<'a, T>>> for DBE
     fn from(err: PoisonError<MutexGuard<'_, T>>) -> Self {
         DBError::MessageLogPoisoned(err.to_string())
     }
-}
-
-#[derive(Error, Debug)]
-pub enum ViewError {
-    #[error("view '{0}' not found")]
-    ViewNotFound(String),
-    #[error("failed to deserialize view arguments from row")]
-    DeserializeArgs,
-    #[error("failed to deserialize view return value: {0}")]
-    DeserializeReturn(String),
-    #[error("failed to serialize row to BSATN")]
-    SerializeRow,
-    #[error("invalid return type: expected Array or Option, got {0:?}")]
-    InvalidReturnType(AlgebraicType),
-    #[error("return type is Array but deserialized value is not Array")]
-    TypeMismatchArray,
-    #[error("return type is Option but deserialized value is not Option")]
-    TypeMismatchOption,
-    #[error("expected ProductValue in view result")]
-    ExpectedProduct,
-    #[error("failed to serialize view arguments")]
-    SerializeArgs,
 }
 
 #[derive(Debug, Error)]

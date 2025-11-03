@@ -37,6 +37,7 @@ use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_CLIENT_ID};
@@ -726,6 +727,10 @@ pub enum ViewCallError {
     NoSuchModule(#[from] NoSuchModule),
     #[error("no such view")]
     NoSuchView,
+    #[error("missing client connection for view call trigged by subscription")]
+    MissingClientConnection,
+    #[error("DB error during view call: {0}")]
+    DatastoreError(#[from] DatastoreError),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -1458,7 +1463,7 @@ impl ModuleHost {
 
     pub async fn call_view(
         &self,
-        tx: MutTxId,
+        mut tx: MutTxId,
         view_name: &str,
         args: FunctionArgs,
         caller_identity: Identity,
@@ -1471,12 +1476,54 @@ impl ModuleHost {
             .ok_or(ViewCallError::NoSuchView)?;
 
         let view_seed = ArgsSeed(self.info.module_def.typespace().with_type(view_def));
-        //TODO: can we put the args into `ST_VIEW_ARG` table at this point?
         let args = args.into_tuple(view_seed).map_err(InvalidViewArguments)?;
+
+        match tx.ctx.workload() {
+            WorkloadType::Subscribe => {
+                // New subscription, update st_view_client table.
+                let connection_id = caller_connection_id.ok_or(ViewCallError::MissingClientConnection)?;
+                tx.insert_st_view_client(view_name, args.get_bsatn(), caller_identity, connection_id)?;
+            }
+            _ => {}
+        }
+
+        let res = self
+            .call_view_inner(
+                tx,
+                view_id,
+                view_def,
+                args.clone(),
+                caller_identity,
+                caller_connection_id,
+            )
+            .await;
+
+        let log_message = match &res {
+            Err(ViewCallError::NoSuchView) => Some(no_such_function_log_message("view", view_name)),
+            Err(ViewCallError::Args(_)) => Some(args_error_log_message("view", view_name)),
+            _ => None,
+        };
+
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, view_name, &log_message)
+        }
+
+        res
+    }
+
+    async fn call_view_inner(
+        &self,
+        tx: MutTxId,
+        view_id: ViewId,
+        view_def: &ViewDef,
+        args: ArgsTuple,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+    ) -> Result<ViewCallResult, ViewCallError> {
         let return_type = view_def.return_type.clone();
         let is_anonymous = view_def.is_anonymous;
 
-        let res = Ok(self
+        Ok(self
             .call(&view_def.name, move |inst| {
                 inst.call_view(
                     tx,
@@ -1491,19 +1538,7 @@ impl ModuleHost {
                     },
                 )
             })
-            .await?);
-
-        let log_message = match &res {
-            Err(ViewCallError::NoSuchView) => Some(no_such_function_log_message("view", view_name)),
-            Err(ViewCallError::Args(_)) => Some(args_error_log_message("view", view_name)),
-            _ => None,
-        };
-
-        if let Some(log_message) = log_message {
-            self.inject_logs(LogLevel::Error, view_name, &log_message)
-        }
-
-        res
+            .await?)
     }
 
     pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {

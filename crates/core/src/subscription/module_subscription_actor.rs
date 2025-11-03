@@ -216,6 +216,7 @@ impl ModuleSubscriptions {
             .get()
             .expect("ModuleSubscriptions::init not called before call_view");
         let module_host = module_host_rx.borrow();
+
         let _result = module_host
             .call_view(tx, view_name, args, sender.id.identity, Some(sender.id.connection_id))
             .await;
@@ -910,7 +911,7 @@ impl ModuleSubscriptions {
         tx: MutTx,
     ) -> Result<CommitAndBroadcastEventResult, DBError> {
         let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Update);
+        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::SubscriptionUpdate);
 
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
@@ -926,7 +927,9 @@ impl ModuleSubscriptions {
         // We'll later ensure tx is released/cleaned up once out of scope.
         let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let Some((tx_data, tx_metrics, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
+                let Some((tx_data, tx_metrics, read_tx)) =
+                    stdb.commit_tx_downgrade(tx, Workload::SubscriptionUpdate)?
+                else {
                     return Ok(Err(WriteConflict));
                 };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
