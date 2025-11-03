@@ -4,7 +4,7 @@ use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::v8::de::{deserialize_js, scratch_buf};
-use crate::host::v8::error::{ExcResult, ExceptionThrown, TypeError};
+use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown};
 use crate::host::v8::from_value::cast;
 use crate::host::v8::ser::serialize_to_js;
 use crate::host::v8::string::{str_from_ident, StringConst};
@@ -16,6 +16,7 @@ use crate::host::wasm_common::instrumentation::span;
 use crate::host::wasm_common::module_host_actor::{ReducerOp, ReducerResult};
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, TimingSpanIdx};
 use crate::host::AbiCall;
+use anyhow::Context;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::{errno, ColId, IndexId, ReducerId, TableId};
 use spacetimedb_sats::Serialize;
@@ -363,7 +364,10 @@ pub(super) fn call_call_reducer(
 }
 
 /// Calls the registered `__describe_module__` function hook.
-pub(super) fn call_describe_module(scope: &mut PinScope<'_, '_>, fun: Local<'_, Function>) -> ExcResult<RawModuleDef> {
+pub(super) fn call_describe_module(
+    scope: &mut PinScope<'_, '_>,
+    fun: Local<'_, Function>,
+) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
     // Call the function.
     let raw_mod_js = call_free_fun(scope, fun, &[])?;
 
@@ -377,8 +381,7 @@ pub(super) fn call_describe_module(scope: &mut PinScope<'_, '_>, fun: Local<'_, 
     .map_err(|e| e.throw(scope))?;
 
     let bytes = raw_mod.get_contents(&mut []);
-    let module =
-        bsatn::from_slice::<RawModuleDef>(bytes).map_err(|_e| TypeError("invalid bsatn module def").throw(scope))?;
+    let module = bsatn::from_slice::<RawModuleDef>(bytes).context("invalid bsatn module def")?;
     Ok(module)
 }
 

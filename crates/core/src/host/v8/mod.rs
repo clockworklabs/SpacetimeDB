@@ -659,9 +659,8 @@ fn extract_description<'scope>(
         |a, b, c| log_traceback(replica_ctx, a, b, c),
         || {
             catch_exception(scope, |scope| {
-                let Some(describe_module) = get_hook(scope, ModuleHookKey::DescribeModule) else {
-                    return Ok(RawModuleDef::V9(Default::default()));
-                };
+                let describe_module = get_hook(scope, ModuleHookKey::DescribeModule)
+                    .context("The `spacetimedb/server` package was never imported into the module")?;
                 let def = call_describe_module(scope, describe_module)?;
                 Ok(def)
             })
@@ -675,6 +674,7 @@ fn extract_description<'scope>(
 mod test {
     use super::to_value::test::with_scope;
     use super::*;
+    use crate::host::v8::error::{ErrorOrException, ExceptionThrown};
     use crate::host::wasm_common::module_host_actor::ReducerOp;
     use crate::host::ArgsTuple;
     use spacetimedb_lib::{ConnectionId, Identity};
@@ -682,7 +682,7 @@ mod test {
 
     fn with_module_catch<T>(
         code: &str,
-        logic: impl for<'scope> FnOnce(&mut PinScope<'scope, '_>) -> ExcResult<T>,
+        logic: impl for<'scope> FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
     ) -> anyhow::Result<T> {
         with_scope(|scope| {
             eval_user_module_catch(scope, code).unwrap();
@@ -708,7 +708,7 @@ mod test {
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),
                     args: &ArgsTuple::nullary(),
                 };
-                call_call_reducer(scope, fun, op)
+                Ok(call_call_reducer(scope, fun, op)?)
             })
         };
 

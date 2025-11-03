@@ -1,11 +1,8 @@
-use spacetimedb_lib::RawModuleDef;
-use spacetimedb_lib::VersionTuple;
+use spacetimedb_lib::{RawModuleDef, VersionTuple};
 use v8::{callback_scope, Context, FixedArray, Local, Module, PinScope};
 
 use crate::host::v8::de::scratch_buf;
-use crate::host::v8::error::ExcResult;
-use crate::host::v8::error::Throwable;
-use crate::host::v8::error::TypeError;
+use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown, Throwable, TypeError};
 use crate::host::wasm_common::abi::parse_abi_version;
 use crate::host::wasm_common::module_host_actor::{ReducerOp, ReducerResult};
 
@@ -85,7 +82,7 @@ pub(super) fn call_call_reducer(
 pub(super) fn call_describe_module<'scope>(
     scope: &mut PinScope<'scope, '_>,
     fun: HookFunction<'_>,
-) -> ExcResult<RawModuleDef> {
+) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
     let HookFunction(ver, fun) = fun;
     match ver {
         AbiVersion::V1 => v1::call_describe_module(scope, fun),
