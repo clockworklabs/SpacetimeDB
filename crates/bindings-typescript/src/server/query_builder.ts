@@ -10,6 +10,7 @@ import type {
   UntypedTableDef,
 } from './table';
 import type { IndexOpts } from './indexes';
+import type { Identity } from '../lib/identity';
 
 type ColumnNames<TableDef extends UntypedTableDef> = keyof RowType<TableDef> &
   string;
@@ -30,6 +31,7 @@ export type Semijoin<
   left: TableScan<LeftTable>;
   leftIndex: IndexExpr<LeftTable, LeftIndex>;
   rightIndex: IndexExpr<RightTable, RightIndex>;
+  toSql: () => string;
 }>;
 
   type SameIndexValueType<
@@ -239,6 +241,19 @@ function booleanExprToSql<TableDef extends UntypedTableDef>(
       return assertNever(expr as never);
     }
   }
+}
+
+function renderFilters<TableDef extends UntypedTableDef>(
+  filters: readonly BooleanExpr<TableDef>[],
+  tableAlias: string
+): string | undefined {
+  if (filters.length === 0) return undefined;
+  if (filters.length === 1) {
+    return booleanExprToSql(filters[0], { tableAlias });
+  }
+  return filters
+    .map(expr => `(${booleanExprToSql(expr, { tableAlias })})`)
+    .join(' AND ');
 }
 
 function isBooleanExpr<TableDef extends UntypedTableDef>(
@@ -534,16 +549,8 @@ export class TableScan<TableDef extends UntypedTableDef> {
     const tableName = this.table.tableName;
     const tableIdent = quoteIdentifier(tableName);
     let sql = `SELECT ${tableIdent}.* FROM ${tableIdent}`;
-    if (this.filters.length > 0) {
-      const where =
-        this.filters.length === 1
-          ? booleanExprToSql(this.filters[0], { tableAlias: tableName })
-          : this.filters
-              .map(
-                expr =>
-                  `(${booleanExprToSql(expr, { tableAlias: tableName })})`
-              )
-              .join(' AND ');
+    const where = renderFilters(this.filters, tableName);
+    if (where) {
       sql += ` WHERE ${where}`;
     }
     return sql;
@@ -558,7 +565,7 @@ export class TableScan<TableDef extends UntypedTableDef> {
     rightIndex: SameIndexValueType<TableDef, LeftIndex, RightTable, RightIndex> extends true
       ? IndexExpr<RightTable, RightIndex>
       : never
-  ): Semijoin<TableDef, RightTable, LeftIndex, RightIndex> {
+): Semijoin<TableDef, RightTable, LeftIndex, RightIndex> {
     if (leftIndex.table !== this.table.tableName) {
       throw new Error('Left index must belong to the same table as the scan');
     }
@@ -568,10 +575,40 @@ export class TableScan<TableDef extends UntypedTableDef> {
     if (leftIndex.columns.length !== rightIndex.columns.length) {
       throw new Error('Indexes must have the same number of columns for semijoin');
     }
+    const leftScan = this;
+    const normalizedRightIndex = rightIndex as IndexExpr<RightTable, RightIndex>;
     return {
-      left: this,
+      left: leftScan,
       leftIndex,
-      rightIndex: rightIndex as IndexExpr<RightTable, RightIndex>,
+      rightIndex: normalizedRightIndex,
+      toSql(): string {
+        const leftTableName = leftScan.table.tableName;
+        const leftIdent = quoteIdentifier(leftTableName);
+        const whereClauses: string[] = [];
+        const leftFiltersSql = renderFilters(leftScan.filters, leftTableName);
+        if (leftFiltersSql) {
+          whereClauses.push(leftFiltersSql);
+        }
+        const rightTableName = normalizedRightIndex.table;
+        const rightIdent = quoteIdentifier(rightTableName);
+        const joinConditions = leftIndex.columns.map((leftColumn, idx) => {
+          const rightColumn = normalizedRightIndex.columns[idx];
+          const leftSql = `${leftIdent}.${quoteIdentifier(leftColumn)}`;
+          const rightSql = `${rightIdent}.${quoteIdentifier(rightColumn)}`;
+          return `(${leftSql} = ${rightSql})`;
+        });
+        const joinConditionSql =
+          joinConditions.length === 1
+            ? joinConditions[0]
+            : joinConditions.join(' AND ');
+        const existsSql = `EXISTS (SELECT 1 FROM ${rightIdent} WHERE ${joinConditionSql})`;
+        whereClauses.push(existsSql);
+        let sql = `SELECT ${leftIdent}.* FROM ${leftIdent}`;
+        if (whereClauses.length > 0) {
+          sql += ` WHERE ${whereClauses.join(' AND ')}`;
+        }
+        return sql;
+      },
     } as Semijoin<TableDef, RightTable, LeftIndex, RightIndex>;
   }
 }
@@ -645,10 +682,22 @@ export function eq<
   ? Expr<TableDef, boolean>
   : never;
   */
+/**
+ * Other restrictions to consider encoding:
+ *  - eq shouldn't allow any option types.
+ *  - 
+ */
 
+type ValueTypesThatAreComparable = string | number | boolean | Identity;
+/**
+ * 
+ * @param left 
+ * @param right 
+ * @returns 
+ */
 export function eq<TableDef extends UntypedTableDef, Value>(
-  left: ValueExpr<TableDef, Value>,
-  right: ValueExpr<TableDef, Value>
+  left: ValueExpr<TableDef, Value & ValueTypesThatAreComparable>,
+  right: ValueExpr<TableDef, Value & ValueTypesThatAreComparable>
 ): Expr<TableDef, boolean> {
   const lk = 'type' in left && left.type === 'literal';
   const rk = 'type' in right && right.type === 'literal';

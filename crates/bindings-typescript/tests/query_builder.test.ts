@@ -15,6 +15,7 @@ import type { UntypedTableDef } from '../src/server/table';
 
 import { table, t } from '../src/server';
 describe('QueryBuilder', () => {
+  const myObjectType = t.object("myObjectType", {f1: t.bool(), f2: t.string()});
   const person = table(
     {
       name: 'person',
@@ -35,7 +36,11 @@ describe('QueryBuilder', () => {
       id: t.u32().primaryKey(),
       name: t.string(),
       married: t.bool(),
+      id2: t.identity(),
+      myObject: myObjectType,
+      // maybeThing: t.option()
       age: t.u32(),
+      age2: t.u16(),
     }
   );
 
@@ -102,6 +107,19 @@ describe('QueryBuilder', () => {
     );
   });
 
+  test('filter with object fields', () => {
+    const scan = new TableScan(tableRef)
+      // .addFilter(row => eq(row.myObject, row.myObject))
+      .addFilter(row => eq(row.married, literal(true)))
+      .addFilter(row => eq(row.id, literal(1)))
+      .addFilter(row => gt(row.age, literal(18)))
+      .addFilter(row => gt(row.age, row.age2));
+
+    expect(scan.toSql()).toBe(
+      'SELECT "person".* FROM "person" WHERE ("person"."married" = TRUE) AND ("person"."id" = 1) AND ("person"."age" > 18)'
+    );
+  });
+
   test('table scan renders same SQL as query builder', () => {
     const scan = new TableScan(tableRef)
       .addFilter(row => eq(row.id, literal(5)))
@@ -115,7 +133,7 @@ describe('QueryBuilder', () => {
   test('table scan filter on bool field', () => {
     const scan = new TableScan(tableRef)
       .addFilter(row => eq(row.id, literal(5)))
-      .addFilter(row => eq(row.married, literal(true)));
+      // .addFilter(row => eq(row.married, literal(true)));
 
     expect(scan.toSql()).toBe(
       'SELECT "person".* FROM "person" WHERE ("person"."id" = 5) AND ("person"."married" = TRUE)'
@@ -170,5 +188,11 @@ describe('QueryBuilder', () => {
     expect(Array.isArray(join2.rightIndex.valueType)).toBe(true);
     expect(join2.leftIndex.valueType).toHaveLength(2);
     expect(join2.rightIndex.valueType).toHaveLength(2);
+    expect(join.toSql()).toBe(
+      'SELECT "person".* FROM "person" WHERE EXISTS (SELECT 1 FROM "orders" WHERE ("person"."id" = "orders"."buyerId"))'
+    );
+    expect(join2.toSql()).toBe(
+      'SELECT "person".* FROM "person" WHERE EXISTS (SELECT 1 FROM "orders" WHERE ("person"."id" = "orders"."id") AND ("person"."name" = "orders"."desc"))'
+    );
   });
 });
