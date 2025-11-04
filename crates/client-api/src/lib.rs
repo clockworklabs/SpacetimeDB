@@ -85,16 +85,24 @@ impl Host {
                 let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
                 let _guard = sql_span.enter();
 
-                let result = sql::execute::run(&db, &body, auth, Some(&module_host), auth.caller, &mut header)
-                    .await
-                    .map_err(|e| {
-                        log::warn!("{e}");
-                        if let Some(auth_err) = e.get_auth_error() {
-                            (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                        } else {
-                            (StatusCode::BAD_REQUEST, e.to_string())
-                        }
-                    })?;
+                let result = sql::execute::run(
+                    &db,
+                    &body,
+                    auth,
+                    Some(&module_host.info.subscriptions),
+                    Some(&module_host),
+                    auth.caller,
+                    &mut header,
+                )
+                .await
+                .map_err(|e| {
+                    log::warn!("{e}");
+                    if let Some(auth_err) = e.get_auth_error() {
+                        (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                    } else {
+                        (StatusCode::BAD_REQUEST, e.to_string())
+                    }
+                })?;
 
                 let total_duration = sql_start.elapsed();
                 drop(_guard);

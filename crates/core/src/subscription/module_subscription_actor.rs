@@ -2161,18 +2161,39 @@ mod tests {
             "INSERT INTO t (x, y) VALUES (0, 1)",
             auth,
             Some(&subs),
+            None,
+            Identity::ZERO,
             &mut vec![],
-        )?;
+        )
+        .await?;
 
         // Client should receive insert
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 1_u8]], []).await;
 
-        run(&db, "UPDATE t SET y=2 WHERE x=0", auth, Some(&subs), &mut vec![])?;
+        run(
+            &db,
+            "UPDATE t SET y=2 WHERE x=0",
+            auth,
+            Some(&subs),
+            None,
+            Identity::ZERO,
+            &mut vec![],
+        )
+        .await?;
 
         // Client should receive update
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 2_u8]], [product![0_u8, 1_u8]]).await;
 
-        run(&db, "DELETE FROM t WHERE x=0", auth, Some(&subs), &mut vec![])?;
+        run(
+            &db,
+            "DELETE FROM t WHERE x=0",
+            auth,
+            Some(&subs),
+            None,
+            Identity::ZERO,
+            &mut vec![],
+        )
+        .await?;
 
         // Client should receive delete
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [], [product![0_u8, 2_u8]]).await;
@@ -3018,7 +3039,16 @@ mod tests {
         ));
         // Insert another row, using SQL.
         let auth = AuthCtx::new(identity_from_u8(0), identity_from_u8(0));
-        run(&db, "INSERT INTO t (x) VALUES (2)", auth, Some(&subs), &mut vec![])?;
+        run(
+            &db,
+            "INSERT INTO t (x) VALUES (2)",
+            auth,
+            Some(&subs),
+            None,
+            Identity::ZERO,
+            &mut vec![],
+        )
+        .await?;
 
         // Unconfirmed client should have received both rows.
         assert_tx_update_for_table(rx_for_unconfirmed.recv(), table, &schema, [product![1_u8]], []).await;
