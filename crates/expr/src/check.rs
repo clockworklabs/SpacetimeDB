@@ -232,7 +232,7 @@ pub mod test_utils {
                         self.0
                             .view(name)
                             .map(|def| Arc::new(TableSchema::from_view_def_for_datastore(&self.0, def)))
-                            .map(TableOrViewSchema::for_view)
+                            .map(TableOrViewSchema::from)
                     })
                     .map(Arc::new)
             })
