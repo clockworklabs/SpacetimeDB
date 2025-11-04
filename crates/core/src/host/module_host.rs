@@ -546,6 +546,7 @@ pub struct CallViewParams {
     /// The expected return type of the view, used for deserialization.
     /// This type information is obtained from the [`ModuleDef`].
     pub return_type: AlgebraicType,
+    /// Whether the view is being called anonymously (i.e., without a client identity).
     pub is_anonymous: bool,
 }
 

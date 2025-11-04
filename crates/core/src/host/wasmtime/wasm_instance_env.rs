@@ -126,6 +126,7 @@ const STANDARD_BYTES_SINK: u32 = 1;
 type WasmResult<T> = Result<T, WasmError>;
 type RtResult<T> = anyhow::Result<T>;
 
+/// The type of function call being performed.
 pub enum FuncCallType {
     Reducer,
     Procedure,

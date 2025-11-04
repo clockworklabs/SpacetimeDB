@@ -8,13 +8,16 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::system_tables::{
-    system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
-    StViewArgFields, StViewArgRow, StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow,
-    StViewSubFields, StViewSubRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_ARG_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
-    ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
-};
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
+use crate::{
+    error::ViewError,
+    system_tables::{
+        system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
+        StViewArgFields, StViewArgRow, StViewClientRow, StViewColumnFields, StViewFields, StViewParamFields,
+        StViewParamRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_ARG_ID, ST_VIEW_CLIENT_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
+        ST_VIEW_PARAM_ID,
+    },
+};
 use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
@@ -1985,29 +1988,6 @@ impl MutTxId {
         Ok(self
             .st_view_row(view_id)?
             .and_then(|row| row.table_id.map(|id| (id, row.is_anonymous))))
-    }
-
-    /// Delete the rows of a view subscribed to by `sender`
-    fn delete_view_rows_for_identity(&mut self, view_id: ViewId, arg_id: u64, sender: Identity) -> Result<()> {
-        if let Some((table_id, is_anonymous)) = self.get_table_id_for_view(view_id)? {
-            let value = if is_anonymous {
-                let none_sender = AlgebraicValue::OptionNone();
-                AlgebraicValue::product([none_sender, arg_id.into()])
-            } else {
-                let sender = IdentityViaU256(sender);
-                let some_sender = AlgebraicValue::OptionSome(sender.into());
-                AlgebraicValue::product([some_sender, arg_id.into()])
-            };
-            for row_pointer in self
-                .iter_by_col_eq(table_id, col_list![0, 1], &value)?
-                .map(|row_ref| row_ref.pointer())
-                .collect::<Vec<_>>()
-                .into_iter()
-            {
-                self.delete(table_id, row_pointer)?;
-            }
-        }
-        Ok(())
     }
 
     pub fn insert_st_client(

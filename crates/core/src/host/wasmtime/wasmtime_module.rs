@@ -97,6 +97,10 @@ fn handle_error_sink_code(code: i32, error: Vec<u8>) -> Result<(), Box<str>> {
     }
 }
 
+/// Handle the return code from a function using a result sink.
+///
+/// On success, returns the result bytes.
+/// On failure, returns the error message.
 fn handle_result_sink_code(code: i32, result: Vec<u8>) -> Result<Vec<u8>, Box<str>> {
     match code {
         0 => Ok(result),

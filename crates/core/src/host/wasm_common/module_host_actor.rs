@@ -726,6 +726,7 @@ impl InstanceCommon {
         }
     }
 
+    /// Calls a function (reducer, view) and performs energy monitoring.
     fn call_function<F, R: FunctionResult>(
         &mut self,
         caller_identity: Identity,
@@ -768,6 +769,11 @@ impl InstanceCommon {
         (tx, result)
     }
 
+    /// Execute a view.
+    ///
+    /// Similar to `call_reducer_with_tx`, but for views.
+    /// unlike to `call_reducer_with_tx`, It does not handle `tx`creation or commit,
+    /// It returns the updated `tx` instead.
     fn call_view_with_tx(
         &mut self,
         replica_ctx: &ReplicaContext,

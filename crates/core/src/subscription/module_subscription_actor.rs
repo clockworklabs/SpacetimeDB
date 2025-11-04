@@ -197,6 +197,7 @@ impl ModuleSubscriptions {
         }
     }
 
+    /// Should be called once to initialize the `ModuleSubscriptions` with a `ModuleHost` receiver.
     pub fn init(&self, module_host: watch::Receiver<ModuleHost>) {
         self.module_rx
             .set(module_host)
