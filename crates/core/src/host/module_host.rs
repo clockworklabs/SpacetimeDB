@@ -17,10 +17,10 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::parser::RowLevelExpr;
-use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::BuildableWebsocketFormat;
+use crate::subscription::{execute_plan, execute_plan_for_view};
 use crate::util::jobs::{SingleCoreExecutor, WeakSingleCoreExecutor};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -41,7 +41,7 @@ use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
-use spacetimedb_execution::pipelined::PipelinedProject;
+use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -1495,7 +1495,7 @@ impl ModuleHost {
                     // Optimize each fragment
                     let optimized = plans
                         .into_iter()
-                        .map(|plan| plan.optimize())
+                        .map(|plan| plan.optimize(&auth))
                         .collect::<Result<Vec<_>, _>>()?;
 
                     check_row_limit(
@@ -1507,11 +1507,30 @@ impl ModuleHost {
                         &auth,
                     )?;
 
+                    let return_table = || optimized.first().and_then(|plan| plan.return_table());
+
+                    let returns_view_table = optimized.first().is_some_and(|plan| plan.returns_view_table());
+                    let num_cols = return_table().map(|schema| schema.num_cols()).unwrap_or_default();
+                    let num_private_cols = return_table()
+                        .map(|schema| schema.num_private_cols())
+                        .unwrap_or_default();
+
                     let optimized = optimized
                         .into_iter()
                         // Convert into something we can execute
                         .map(PipelinedProject::from)
                         .collect::<Vec<_>>();
+
+                    if returns_view_table && num_private_cols > 0 {
+                        let optimized = optimized
+                            .into_iter()
+                            .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
+                            .collect::<Vec<_>>();
+                        // Execute the union and return the results
+                        return execute_plan_for_view::<_, F>(&optimized, &DeltaTx::from(&*tx))
+                            .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
+                            .context("One-off queries are not allowed to modify the database");
+                    }
 
                     // Execute the union and return the results
                     execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))

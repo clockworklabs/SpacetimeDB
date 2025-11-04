@@ -16,8 +16,8 @@ use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
-use crate::subscription::execute_plans;
 use crate::subscription::query::is_subscribe_to_all_tables;
+use crate::subscription::{collect_table_update_for_view, execute_plans};
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -34,7 +34,7 @@ use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_datastore::traits::TxData;
 use spacetimedb_durability::TxOffset;
-use spacetimedb_execution::pipelined::PipelinedProject;
+use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
@@ -253,19 +253,54 @@ impl ModuleSubscriptions {
             .plans_fragments()
             .map(|fragment| fragment.optimized_physical_plan())
             .cloned()
-            .map(|plan| plan.optimize())
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .map(PipelinedProject::from)
-            .collect::<Vec<_>>();
+            .map(|plan| plan.optimize(auth))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let view_info = plans
+            .first()
+            .and_then(|plan| plan.return_table())
+            .and_then(|schema| schema.view_info);
+
+        let num_cols = plans
+            .first()
+            .and_then(|plan| plan.return_table())
+            .map(|schema| schema.num_cols())
+            .unwrap_or_default();
 
         let tx = DeltaTx::from(tx);
 
-        Ok(match sender.config.protocol {
-            Protocol::Binary => collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics)),
-            Protocol::Text => collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics)),
+        // TODO: See the comment on `collect_table_update_for_view`.
+        // The following view and non-view branches should be merged together,
+        // since the only difference between them is the row type that is returned.
+        Ok(match (sender.config.protocol, view_info) {
+            (Protocol::Binary, Some(view_info)) => {
+                let plans = plans
+                    .into_iter()
+                    .map(PipelinedProject::from)
+                    .map(|plan| ViewProject::new(plan, num_cols, view_info.num_private_cols()))
+                    .collect::<Vec<_>>();
+                collect_table_update_for_view(&plans, table_id, table_name.into(), &tx, update_type)
+                    .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+            }
+            (Protocol::Binary, None) => {
+                let plans = plans.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
+                collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
+                    .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+            }
+            (Protocol::Text, Some(view_info)) => {
+                let plans = plans
+                    .into_iter()
+                    .map(PipelinedProject::from)
+                    .map(|plan| ViewProject::new(plan, num_cols, view_info.num_private_cols()))
+                    .collect::<Vec<_>>();
+                collect_table_update_for_view(&plans, table_id, table_name.into(), &tx, update_type)
+                    .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+            }
+            (Protocol::Text, None) => {
+                let plans = plans.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
+                collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
+                    .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+            }
         }?)
     }
 
@@ -292,11 +327,11 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
         match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics) = execute_plans(queries, &tx, update_type)?;
+                let (update, metrics) = execute_plans(auth, queries, &tx, update_type)?;
                 Ok((FormatSwitch::Bsatn(update), metrics))
             }
             Protocol::Text => {
-                let (update, metrics) = execute_plans(queries, &tx, update_type)?;
+                let (update, metrics) = execute_plans(auth, queries, &tx, update_type)?;
                 Ok((FormatSwitch::Json(update), metrics))
             }
         }
@@ -817,9 +852,9 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&queries, &tx, TableUpdateType::Subscribe)
+            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe)
                 .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(&queries, &tx, TableUpdateType::Subscribe)
+            Protocol::Text => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe)
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 
