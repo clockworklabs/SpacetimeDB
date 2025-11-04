@@ -1517,7 +1517,8 @@ impl RelationalDB {
     /// 3. Deserializing the return value from the view execution
     /// 4. Inserting all rows from the return value into the view table, with the arg_id
     ///    set to the inserted view argument's id.
-    /// The `typespace` is needed for deserializing the return value.
+    ///    The `typespace` is needed for deserializing the return value.
+    #[allow(clippy::too_many_arguments)]
     pub fn evaluate_view(
         &self,
         tx: &mut MutTxId,
@@ -1543,7 +1544,7 @@ impl RelationalDB {
             st_view_row.is_anonymous,
         );
 
-        let arg_id = tx.get_or_insert_st_view_arg(&args.get_bsatn())?;
+        let arg_id = tx.get_or_insert_st_view_arg(args.get_bsatn())?;
 
         let input_rows = product![
             if is_anonymous {

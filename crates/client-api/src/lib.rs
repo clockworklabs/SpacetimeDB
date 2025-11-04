@@ -85,7 +85,7 @@ impl Host {
                 let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
                 let _guard = sql_span.enter();
 
-                let result = sql::execute::run(&db, &body, auth.clone(), Some(&module_host), auth.caller, &mut header)
+                let result = sql::execute::run(&db, &body, auth, Some(&module_host), auth.caller, &mut header)
                     .await
                     .map_err(|e| {
                         log::warn!("{e}");

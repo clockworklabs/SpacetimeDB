@@ -712,7 +712,7 @@ impl InstanceCommon {
         WORKER_METRICS
             .wasm_instance_errors
             .with_label_values(
-                &caller_identity,
+                caller_identity,
                 &self.info.module_hash,
                 &caller_connection_id.unwrap_or(ConnectionId::ZERO),
                 reducer_name,
