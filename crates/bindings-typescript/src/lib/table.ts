@@ -4,10 +4,11 @@ import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
 import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
 import type RawSequenceDefV9 from './autogen/raw_sequence_def_v_9_type';
 import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
-import type { AllUnique } from './constraints';
+import type { AllUnique, ConstraintOpts } from './constraints';
 import type { ColumnIndex, IndexColumns, Indexes, IndexOpts, ReadonlyIndexes } from './indexes';
 import { MODULE_DEF, splitName } from './schema';
 import {
+  ProductBuilder,
   RowBuilder,
   type ColumnBuilder,
   type ColumnMetadata,
@@ -87,6 +88,7 @@ export type TableOpts<Row extends RowObj> = {
   name: string;
   public?: boolean;
   indexes?: IndexOpts<keyof Row & string>[]; // declarative multi‑column indexes
+  constraints?: ConstraintOpts<keyof Row & string>[];
   scheduled?: string;
 };
 
@@ -293,6 +295,22 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         break;
     }
     indexes.push({ name: undefined, accessorName: indexOpts.name, algorithm });
+  }
+
+  // add explicit constraints from options.constraints
+  for (const constraintOpts of opts.constraints ?? []) {
+    if (constraintOpts.constraint === 'unique') {
+      let data: RawConstraintDefV9['data'];
+      data = {
+        tag: 'Unique',
+        value: { columns: constraintOpts.columns.map(c => colIds.get(c)!) },
+      };
+      constraints.push({ name: constraintOpts.name, data });
+      continue;
+    } 
+    if (constraintOpts.constraint === 'primaryKey') {
+      pk.push(...constraintOpts.columns.map(c => colIds.get(c)!));
+    }
   }
 
   for (const index of indexes) {

@@ -2,6 +2,7 @@ import {
   DbConnectionBuilder,
   type DbConnectionImpl,
   type ErrorContextInterface,
+  type RemoteModuleOf,
   type SubscriptionEventContextInterface,
 } from '../sdk/db_connection_impl';
 import * as React from 'react';
@@ -12,21 +13,20 @@ import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 
 export interface SpacetimeDBProviderProps<
   RemoteModule extends UntypedRemoteModule,
-  DbConnection extends DbConnectionImpl<RemoteModule>,
+  DbConnection extends DbConnectionImpl<RemoteModule> = DbConnectionImpl<RemoteModule>,
 > {
   connectionBuilder: DbConnectionBuilder<RemoteModule, DbConnection>;
   children?: React.ReactNode;
 }
 
 export function SpacetimeDBProvider<
-  RemoteModule extends UntypedRemoteModule,
-  DbConnection extends DbConnectionImpl<RemoteModule>,
->({ connectionBuilder, children }: SpacetimeDBProviderProps<RemoteModule, DbConnection>) {
+  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
+>({ connectionBuilder, children }: SpacetimeDBProviderProps<RemoteModuleOf<DbConnection>>) {
   // Holds the imperative connection instance when (and only when) we’re on the client.
   const connRef = React.useRef<DbConnection | null>(null);
   const getConnection = React.useCallback(() => connRef.current, []);
 
-  const [state, setState] = React.useState<ConnectionState<RemoteModule, DbConnection>>({
+  const [state, setState] = React.useState<ConnectionState<DbConnection>>({
     isActive: false,
     identity: undefined,
     token: undefined,
@@ -38,7 +38,7 @@ export function SpacetimeDBProvider<
   // Build on the client only; useEffect won't run during SSR.
   React.useEffect(() => {
     // Register callback for onConnect to update state
-      const onConnect = (conn: DbConnectionImpl<RemoteModule>) => {
+      const onConnect = (conn: DbConnectionImpl<RemoteModuleOf<DbConnection>>) => {
       setState(s => ({
         ...s,
         isActive: conn.isActive,
@@ -47,13 +47,13 @@ export function SpacetimeDBProvider<
         connectionId: conn.connectionId,
       }));
     };
-    const onDisconnect = (ctx: ErrorContextInterface<RemoteModule>) => {
+    const onDisconnect = (ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>) => {
       setState(s => ({
         ...s,
         isActive: ctx.isActive,
       }));
     };
-    const onConnectError = (ctx: ErrorContextInterface<RemoteModule>, err: Error) => {
+    const onConnectError = (ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>, err: Error) => {
       setState(s => ({
         ...s,
         isActive: ctx.isActive,
@@ -75,13 +75,13 @@ export function SpacetimeDBProvider<
 
     // Lazily build once
     if (!connRef.current) {
-      connRef.current = connectionBuilder.build() as DbConnection;
+      connRef.current = connectionBuilder.build() as unknown as DbConnection;
     }
 
     return () => {
-      connRef.current?.removeOnConnect(onConnect);
-      connRef.current?.removeOnDisconnect(onDisconnect);
-      connRef.current?.removeOnConnectError(onConnectError);
+      connRef.current?.removeOnConnect(onConnect as any);
+      connRef.current?.removeOnDisconnect(onDisconnect as any);
+      connRef.current?.removeOnConnectError(onConnectError as any);
       connRef.current?.disconnect();
       connRef.current = null;
     };

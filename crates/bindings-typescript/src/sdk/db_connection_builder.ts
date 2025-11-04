@@ -1,16 +1,17 @@
 import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
-import type { DbConnectionConfig, ErrorContextInterface, Identity, SubscriptionEventContextInterface } from '../';
+import type { DbConnectionConfig, ErrorContextInterface, Identity, RemoteModuleOf, SubscriptionEventContextInterface } from '../';
 import { type UntypedRemoteModule } from './spacetime_module';
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
 
 /**
  * The database client connection to a SpacetimeDB server.
+ * NOTE: DbConnectionImpl<any> is used here 
  */
 export class DbConnectionBuilder<
   RemoteModule extends UntypedRemoteModule,
-  DbConnection extends DbConnectionImpl<RemoteModule>,
+  DbConnection extends DbConnectionImpl<RemoteModule>
 > {
   #uri?: URL;
   #nameOrAddress?: string;
@@ -31,8 +32,8 @@ export class DbConnectionBuilder<
    * @param dbConnectionConstructor The constructor to use to create a new `DbConnection`.
    */
   constructor(
-    private remoteModule: RemoteModule,
-    private dbConnectionCtor: (config: DbConnectionConfig<RemoteModule>) => DbConnection
+    private remoteModule: RemoteModuleOf<DbConnection>,
+    private dbConnectionCtor: (config: DbConnectionConfig<RemoteModuleOf<DbConnection>>) => DbConnection
   ) {
     this.#createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
   }
@@ -178,7 +179,7 @@ export class DbConnectionBuilder<
    * });
    * ```
    */
-  onConnectError(callback: (ctx: ErrorContextInterface<RemoteModule>, error: Error) => void): this {
+  onConnectError(callback: (ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>, error: Error) => void): this {
     this.#emitter.on('connectError', callback);
     return this;
   }
@@ -210,7 +211,7 @@ export class DbConnectionBuilder<
    * @throws {Error} Throws an error if called multiple times on the same `DbConnectionBuilder`.
    */
   onDisconnect(
-    callback: (ctx: ErrorContextInterface<RemoteModule>, error?: Error | undefined) => void
+    callback: (ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>, error?: Error | undefined) => void
   ): this {
     this.#emitter.on('disconnect', callback);
     return this;
@@ -230,7 +231,7 @@ export class DbConnectionBuilder<
    * DbConnection.builder().withUri(host).withModuleName(name_or_address).withToken(auth_token).build();
    * ```
    */
-  build(): DbConnectionImpl<RemoteModule> {
+  build(): DbConnection {
     if (!this.#uri) {
       throw new Error('URI is required to connect to SpacetimeDB');
     }

@@ -6,10 +6,13 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { useSpacetimeDB } from './useSpacetimeDB';
-import { DbConnectionImpl, TableCache } from '../sdk/db_connection_impl';
-import type { TableNamesFromDb } from '../sdk/client_table';
+import { DbConnectionImpl, TableCache, type EventContextInterface, type RemoteModuleOf } from '../sdk/db_connection_impl';
 import type { ConnectionState } from './connection_state';
-import type { UntypedRemoteModule } from '../sdk/spacetime_module';
+import type { RemoteModule, UntypedRemoteModule } from '../sdk/spacetime_module';
+import type { ClientDbView } from '../sdk/db_view';
+import type { RowType, UntypedTableDef } from '../lib/table';
+import type { ClientTable } from '../sdk/client_table';
+import type { Infer, InferTypeOfRow } from '../lib/type_builders';
 
 export interface UseQueryCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
@@ -69,7 +72,7 @@ export const isOr = <Column extends string>(
   e: Expr<Column>
 ): e is Extract<Expr<Column>, { type: 'or' }> => e.type === 'or';
 
-type RecordLike<Column extends string> = Record<Column, unknown>;
+type RecordLike<Column extends string> = Record<Column, any>;
 
 export function evaluate<Column extends string>(
   expr: Expr<Column>,
@@ -179,50 +182,14 @@ type ColumnsFromRow<R> = {
 }[keyof R] &
   string;
 
-/**
- * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
- *
- * This hook returns a snapshot of the table's rows, filtered by an optional `where` clause, and provides a loading state
- * until the initial subscription is applied. It also allows you to specify callbacks for row insertions, deletions, and updates.
- *
- * The hook must be used within a component tree wrapped by `SpacetimeDBProvider`.
- *
- * Overloads:
- * - `useTable(tableName, where, callbacks?)`: Subscribe to a table with a filter and optional callbacks.
- * - `useTable(tableName, callbacks?)`: Subscribe to a table without a filter, with optional callbacks.
- *
- * @template DbConnection The type of the SpacetimeDB connection.
- * @template RowType The type of the table row.
- * @template TableName The name of the table.
- *
- * @param tableName - The name of the table to subscribe to.
- * @param whereClauseOrCallbacks - (Optional) Either a filter expression (where clause) or the callbacks object.
- * @param callbacks - (Optional) Callbacks for row insert, delete, and update events.
- *
- * @returns A snapshot object containing the current rows and the subscription state (`'loading'` or `'ready'`).
- *
- * @throws Error if the hook is used outside of a `SpacetimeDBProvider`.
- *
- * @example
- * ```tsx
- * const { rows, state } = useTable('users', where(eq('isActive', true)), {
- *   onInsert: (row) => console.log('Inserted:', row),
- *   onDelete: (row) => console.log('Deleted:', row),
- *   onUpdate: (oldRow, newRow) => console.log('Updated:', oldRow, newRow),
- * });
- * ```
- */
-export function useTable<
-  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
-  RowType extends Record<string, any>,
-  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
-    DbConnection['db']
-  >,
->(
-  tableName: TableName,
-  where: Expr<ColumnsFromRow<RowType>>,
-  callbacks?: UseQueryCallbacks<RowType>
-): Snapshot<RowType>;
+// From a ClientTable<RM, Tbl>, get Tbl
+type TableDefOfClient<T> = T extends ClientTable<any, infer Tbl extends UntypedTableDef> ? Tbl : never;
+
+// Row type for a given connection + table key
+type RowTypeOfTable<
+  C extends DbConnectionImpl<any>,
+  K extends keyof ClientDbView<RemoteModuleOf<C>>
+> = InferTypeOfRow<RowType<TableDefOfClient<ClientDbView<RemoteModuleOf<C>>[K]>>>;
 
 /**
  * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
@@ -259,37 +226,75 @@ export function useTable<
  */
 export function useTable<
   DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
-  RowType extends Record<string, any>,
-  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
-    DbConnection['db']
-  >,
+  TableName extends keyof ClientDbView<RemoteModuleOf<DbConnection>> 
 >(
   tableName: TableName,
-  callbacks?: UseQueryCallbacks<RowType>
-): Snapshot<RowType>;
+  where: Expr<ColumnsFromRow<RowTypeOfTable<DbConnection, TableName>>> ,
+  callbacks?: UseQueryCallbacks<RowTypeOfTable<DbConnection, TableName>>
+): Snapshot<RowTypeOfTable<DbConnection, TableName>>;
+
+/**
+ * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
+ *
+ * This hook returns a snapshot of the table's rows, filtered by an optional `where` clause, and provides a loading state
+ * until the initial subscription is applied. It also allows you to specify callbacks for row insertions, deletions, and updates.
+ *
+ * The hook must be used within a component tree wrapped by `SpacetimeDBProvider`.
+ *
+ * Overloads:
+ * - `useTable(tableName, where, callbacks?)`: Subscribe to a table with a filter and optional callbacks.
+ * - `useTable(tableName, callbacks?)`: Subscribe to a table without a filter, with optional callbacks.
+ *
+ * @template DbConnection The type of the SpacetimeDB connection.
+ * @template RowType The type of the table row.
+ * @template TableName The name of the table.
+ *
+ * @param tableName - The name of the table to subscribe to.
+ * @param whereClauseOrCallbacks - (Optional) Either a filter expression (where clause) or the callbacks object.
+ * @param callbacks - (Optional) Callbacks for row insert, delete, and update events.
+ *
+ * @returns A snapshot object containing the current rows and the subscription state (`'loading'` or `'ready'`).
+ *
+ * @throws Error if the hook is used outside of a `SpacetimeDBProvider`.
+ *
+ * @example
+ * ```tsx
+ * const { rows, state } = useTable('users', where(eq('isActive', true)), {
+ *   onInsert: (row) => console.log('Inserted:', row),
+ *   onDelete: (row) => console.log('Deleted:', row),
+ *   onUpdate: (oldRow, newRow) => console.log('Updated:', oldRow, newRow),
+ * });
+ * ```
+ */
+export function useTable<
+  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
+  TableName extends keyof ClientDbView<RemoteModuleOf<DbConnection>> 
+>(
+  tableName: TableName,
+  callbacks?: UseQueryCallbacks<RowTypeOfTable<DbConnection, TableName>>
+): Snapshot<RowTypeOfTable<DbConnection, TableName>>;
 
 export function useTable<
   DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
-  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
-    DbConnection['db']
-  >,
+  TableName extends keyof ClientDbView<RemoteModuleOf<DbConnection>>,
 >(
   tableName: TableName,
   whereClauseOrCallbacks?:
-    | Expr<ColumnsFromRow<RowType>>
-    | UseQueryCallbacks<RowType>,
-  callbacks?: UseQueryCallbacks<RowType>
-): Snapshot<RowType> {
-  let whereClause: Expr<ColumnsFromRow<RowType>> | undefined;
+    | Expr<ColumnsFromRow<RowTypeOfTable<DbConnection, TableName>>>
+    | UseQueryCallbacks<RowTypeOfTable<DbConnection, TableName>>,
+  callbacks?: UseQueryCallbacks<RowTypeOfTable<DbConnection, TableName>>
+): Snapshot<RowTypeOfTable<DbConnection, TableName>> {
+  type UseTableRowType = RowTypeOfTable<DbConnection, TableName>;
+  let whereClause: Expr<ColumnsFromRow<UseTableRowType>> | undefined;
   if (
     whereClauseOrCallbacks &&
     typeof whereClauseOrCallbacks === 'object' &&
     'type' in whereClauseOrCallbacks
   ) {
-    whereClause = whereClauseOrCallbacks as Expr<ColumnsFromRow<RowType>>;
+    whereClause = whereClauseOrCallbacks as Expr<ColumnsFromRow<UseTableRowType>>;
   } else {
     callbacks = whereClauseOrCallbacks as
-      | UseQueryCallbacks<RowType>
+      | UseQueryCallbacks<UseTableRowType>
       | undefined;
   }
   const [subscribeApplied, setSubscribeApplied] = useState(false);
@@ -305,25 +310,23 @@ export function useTable<
   }
 
   const query =
-    `SELECT * FROM ${tableName}` +
+    `SELECT * FROM ${String(tableName)}` +
     (whereClause ? ` WHERE ${toString(whereClause)}` : '');
 
   const latestTransactionEvent = useRef<any>(null);
-  const lastSnapshotRef = useRef<Snapshot<RowType> | null>(null);
+  const lastSnapshotRef = useRef<Snapshot<UseTableRowType> | null>(null);
 
   const whereKey = whereClause ? toString(whereClause) : '';
 
-  const computeSnapshot = useCallback((): Snapshot<RowType> => {
+  const computeSnapshot = useCallback((): Snapshot<UseTableRowType> => {
     const connection = connectionState.getConnection();
     if (!connection) {
       return { rows: [], state: 'loading' };
     }
-    const table = connection.db[
-      tableName as keyof typeof connection.db
-    ];
-    const result: readonly RowType[] = whereClause
-      ? Array.from(table.iter()).filter(row => evaluate(whereClause, row))
-      : Array.from(table.iter());
+    const table = connection.db[tableName];
+    const result: readonly UseTableRowType[] = whereClause
+      ? Array.from(table.iter()).filter(row => evaluate(whereClause, row as any)) as unknown as readonly UseTableRowType[]
+      : Array.from(table.iter()) as unknown as readonly UseTableRowType[];
     return {
       rows: result,
       state: subscribeApplied ? 'ready' : 'loading',
@@ -348,7 +351,7 @@ export function useTable<
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
-      const onInsert = (ctx: any, row: RowType) => {
+      const onInsert = (ctx: EventContextInterface<UntypedRemoteModule>, row: any) => {
         if (whereClause && !evaluate(whereClause, row)) {
           return;
         }
@@ -363,7 +366,7 @@ export function useTable<
         }
       };
 
-      const onDelete = (ctx: any, row: RowType) => {
+      const onDelete = (ctx: EventContextInterface<UntypedRemoteModule>, row: any) => {
         if (whereClause && !evaluate(whereClause, row)) {
           return;
         }
@@ -378,7 +381,7 @@ export function useTable<
         }
       };
 
-      const onUpdate = (ctx: any, oldRow: RowType, newRow: RowType) => {
+      const onUpdate = (ctx: EventContextInterface<UntypedRemoteModule>, oldRow: any, newRow: any) => {
         const change = classifyMembership(whereClause, oldRow, newRow);
 
         switch (change) {
@@ -434,7 +437,7 @@ export function useTable<
     ]
   );
 
-  const getSnapshot = useCallback((): Snapshot<RowType> => {
+  const getSnapshot = useCallback((): Snapshot<UseTableRowType> => {
     if (!lastSnapshotRef.current) {
       lastSnapshotRef.current = computeSnapshot();
     }

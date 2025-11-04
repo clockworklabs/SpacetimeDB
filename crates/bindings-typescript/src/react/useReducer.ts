@@ -1,19 +1,16 @@
-import type { DbConnectionImpl } from "../sdk/db_connection_impl";
-import type { ReducerNamesFromReducers } from "../sdk/reducer_handle";
+import type { DbConnectionImpl, RemoteModuleOf } from "../sdk/db_connection_impl";
+import type { ReducersView } from "../sdk/reducers";
 import type { UntypedRemoteModule } from "../sdk/spacetime_module";
-import { useSpacetimeDB } from "./useSpacetimeDB";
+import { useSpacetimeDB, } from "./useSpacetimeDB";
+
 
 export function useReducer<
-  RemoteModule extends UntypedRemoteModule,
-  DbConnection extends DbConnectionImpl<RemoteModule>,
-  ReducerName extends ReducerNamesFromReducers<DbConnection['reducers']> = ReducerNamesFromReducers<
-    DbConnection['reducers']
-  >,
-  ReducerType = DbConnection['reducers'][ReducerName & keyof DbConnection['reducers']]
+  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
+  ReducerName extends keyof ReducersView<RemoteModuleOf<DbConnection>> = keyof ReducersView<RemoteModuleOf<DbConnection>>
 >(
-  reducerName: ReducerName,
-): ReducerType {
-    const connectionState = useSpacetimeDB<RemoteModule, DbConnection>();
+  reducerName: ReducerName 
+): ReducersView<RemoteModuleOf<DbConnection>>[ReducerName] {
+    const connectionState = useSpacetimeDB<DbConnection>();
     const connection = connectionState.getConnection()!;
-    return connection.reducers[reducerName as keyof typeof connection.reducers];
+    return connection.reducers[reducerName];
 }

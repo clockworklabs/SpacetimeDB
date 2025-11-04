@@ -57,6 +57,8 @@ import { toCamelCase } from '../lib/utils.ts';
 
 export { DbConnectionBuilder, SubscriptionBuilderImpl, TableCache, type Event };
 
+export type RemoteModuleOf<C> = C extends DbConnectionImpl<infer RM> ? RM : never;
+
 export type {
   DbContext,
   EventContextInterface,

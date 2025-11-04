@@ -1,5 +1,5 @@
 use crate::util::{
-    is_reducer_invokable, iter_indexes, iter_reducers, iter_tables, iter_types, iter_unique_cols, print_auto_generated_version_comment
+    is_reducer_invokable, iter_indexes, iter_reducers, iter_tables, iter_types, print_auto_generated_version_comment
 };
 use crate::{OutputFile};
 
@@ -15,7 +15,6 @@ use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
-use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, ProductTypeDef};
 
 use super::code_indenter::{CodeIndenter, Indenter};
@@ -124,21 +123,12 @@ impl Lang for TypeScript {
     /// }))
     /// ```
     fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
-        let schema = TableSchema::from_module_def(module, table, (), 0.into())
-            .validated()
-            .expect("Failed to generate table due to validation errors");
-
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out, false);
 
         let type_ref = table.product_type_ref;
-        let row_type = type_ref_name(module, type_ref);
-        let row_type_module = type_ref_module_name(module, type_ref);
-
-        writeln!(out, "import {{ {row_type} }} from \"./{row_type_module}\";");
-
         let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
 
         // Import the types of all fields.
@@ -154,65 +144,11 @@ impl Lang for TypeScript {
 
         writeln!(out);
 
-        writeln!(out, "export default table({{");
+        writeln!(out, "export default __t.row({{");
         out.indent(1);
-        writeln!(
-            out,
-            "name: '{}',",
-            table.name.deref()
-        );
-        writeln!(out, "indexes: [");
-        out.indent(1);
-        for index_def in iter_indexes(table) {
-            if !index_def.generated() {
-                // Skip system-defined indexes
-                continue;
-            }
-            match &index_def.algorithm {
-                IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
-                    let get_name_and_type = |col_pos: ColId| {
-                        let (field_name, field_type) = &product_def.elements[col_pos.idx()];
-                        let name_camel = field_name.deref().to_case(Case::Camel);
-                        (name_camel, field_type)
-                    };
-                    writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
-                    out.indent(1);
-                    for col_id in columns.iter() {
-                        writeln!(out, "'{}',", get_name_and_type(col_id).0);
-                    }
-                    out.dedent(1);
-                    writeln!(out, "] }},");
-                }
-                IndexAlgorithm::Direct(_) => {
-                    // Direct indexes are not implemented yet.
-                    continue;
-                }
-                _ => todo!(),
-            };
-        }
+        write_object_type_builder_fields(module, out, &product_def.elements, true).unwrap();
         out.dedent(1);
-        writeln!(out, "}}, {{");
-        out.indent(1);
-        for (field_ident, field_ty) in &product_def.elements {
-            let field_name = field_ident.deref().to_case(Case::Camel);
-            write!(out, "{field_name}: ");
-            write_type(module, out, field_ty, None, None).unwrap();
-
-            let mut annotations = Vec::new();
-            if schema.pk().map(|pk| *field_ident == Identifier::new(pk.col_name.clone()).unwrap()).unwrap_or(false) {
-                annotations.push("primaryKey()");
-            } else {
-                for (unique_field_ident, _) in
-                    iter_unique_cols(module.typespace_for_generate(), &schema, product_def)
-                {
-                    if field_ident == unique_field_ident {
-                        annotations.push("unique()");
-                    }
-                }
-            }
-        }
         writeln!(out, "}});");
-        out.dedent(1);
         OutputFile {
             filename: table_module_name(&table.name) + ".ts",
             code: output.into_inner(),
@@ -236,9 +172,7 @@ impl Lang for TypeScript {
             None,
         );
 
-        let args_type = reducer_args_type_name(&reducer.name);
-
-        define_body_for_product(module, out, &args_type, &reducer.params_for_generate.elements);
+        define_body_for_reducer(module, out, &reducer.params_for_generate.elements);
 
         OutputFile {
             filename: reducer_module_name(&reducer.name) + ".ts",
@@ -253,78 +187,6 @@ impl Lang for TypeScript {
         print_file_header(out, true);
 
         out.newline();
-
-        // const tablesSchema = schema(
-//   table({ name: 'player', }, t.row({
-//     ownerId: t.string(),
-//     name: t.string(),
-//     location: pointType,
-//   })),
-//   table({ name: 'unindexed_player', }, t.row({
-//     ownerId: t.string(),
-//     name: t.string(),
-//     location: pointType,
-//   })),
-//   table({ name: 'user', primaryKey: 'identity', }, t.row({
-//     identity: t.string(),
-//     name: t.string(),
-//   })),
-// );
-
-// const reducersSchema = reducers(
-//   reducerSchema('create_player', {
-//     name: t.string(),
-//     location: pointType,
-//   }),
-//   reducerSchema('foo_bar', {
-//     name: t.string(),
-//     location: pointType,
-//   }),
-// );
-
-// const REMOTE_MODULE = {
-//   versionInfo: {
-//     cliVersion: '1.6.0' as const,
-//   },
-//   tables: tablesSchema.schemaType.tables,
-//   reducers: reducersSchema.reducersType.reducers,
-// } satisfies RemoteModule<
-//   typeof tablesSchema.schemaType,
-//   typeof reducersSchema.reducersType
-// >;
-
-// export type EventContext = __EventContextInterface<
-//   typeof REMOTE_MODULE
-// >;
-
-// export type ReducerEventContext = __ReducerEventContextInterface<
-//   typeof REMOTE_MODULE
-// >;
-
-// export type SubscriptionEventContext = __SubscriptionEventContextInterface<
-//   typeof REMOTE_MODULE
-// >;
-
-// export type ErrorContext = __ErrorContextInterface<
-//   typeof REMOTE_MODULE
-// >;
-
-// export class SubscriptionBuilder extends __SubscriptionBuilderImpl<
-//   typeof REMOTE_MODULE
-// > {}
-
-// export class DbConnectionBuilder extends __DbConnectionBuilder<
-//   typeof REMOTE_MODULE,
-//   DbConnection
-// > {};
-
-// export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {
-//   static builder = (): DbConnectionBuilder => {
-//     return new DbConnectionBuilder(REMOTE_MODULE, (config: DbConnectionConfig<typeof REMOTE_MODULE>) => new DbConnection(config));
-//   };
-//   subscriptionBuilder = (): SubscriptionBuilder => {
-//     return new SubscriptionBuilder(this);
-//   };
 
         writeln!(out, "// Import and reexport all reducer arg types");
         for reducer in iter_reducers(module) {
@@ -341,8 +203,10 @@ impl Lang for TypeScript {
             let table_name = &table.name;
             let table_module_name = table_module_name(table_name) + ".ts";
             let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
-            writeln!(out, "import {table_name_pascalcase} from \"./{table_module_name}\";");
-            writeln!(out, "export {{ {table_name_pascalcase} }};");
+            // TODO: This really shouldn't be necessary. We could also have `table()` accept
+            // `__t.object(...)`s.
+            writeln!(out, "import {table_name_pascalcase}Row from \"./{table_module_name}\";");
+            writeln!(out, "export {{ {table_name_pascalcase}Row }};");
         }
 
         writeln!(out);
@@ -357,18 +221,23 @@ impl Lang for TypeScript {
         out.newline();
         
         writeln!(out);
-        writeln!(out, "const tablesSchema = schema(");
+        writeln!(out, "const tablesSchema = __schema(");
         out.indent(1);
         for table in iter_tables(module) {
-            let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
-            writeln!(out, "{},", table_name_pascalcase);
+            let type_ref = table.product_type_ref;
+            let row_type_name = type_ref_name(module, type_ref);
+            writeln!(out, "__table({{");
+            out.indent(1);
+            write_table_opts(module, out, table);
+            out.dedent(1);
+            writeln!(out, "}}, {}Row),", row_type_name);
         }
         out.dedent(1);
         writeln!(out, ");");
 
         writeln!(out);
 
-        writeln!(out, "const reducersSchema = reducers(");
+        writeln!(out, "const reducersSchema = __reducers(");
         out.indent(1);
         for reducer in iter_reducers(module) {
             if !is_reducer_invokable(reducer) {
@@ -377,7 +246,7 @@ impl Lang for TypeScript {
             }
             let reducer_name = &reducer.name;
             let args_type = reducer_args_type_name(&reducer.name);
-            writeln!(out, "reducerSchema(\"{}\", {}),", reducer_name, args_type);
+            writeln!(out, "__reducerSchema(\"{}\", {}),", reducer_name, args_type);
         }
         out.dedent(1);
         writeln!(out, ");");
@@ -451,7 +320,7 @@ impl Lang for TypeScript {
         out.indent(1);
         writeln!(
             out,
-            "return new DbConnectionBuilder(REMOTE_MODULE, (config: DbConnectionConfig<typeof REMOTE_MODULE>) => new DbConnection(config));"
+            "return new DbConnectionBuilder(REMOTE_MODULE, (config: __DbConnectionConfig<typeof REMOTE_MODULE>) => new DbConnection(config));"
         );
         out.dedent(1);
         writeln!(out, "}};");
@@ -492,9 +361,9 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "type CallReducerFlags as __CallReducerFlags",
         "type EventContextInterface as __EventContextInterface",
         "type ReducerEventContextInterface as __ReducerEventContextInterface",
-        "type RemoteModule as __RemoteModule",
         "type SubscriptionEventContextInterface as __SubscriptionEventContextInterface",
         "type ErrorContextInterface as __ErrorContextInterface",
+        "type RemoteModule as __RemoteModule",
         "SubscriptionBuilderImpl as __SubscriptionBuilderImpl",
         "BinaryReader as __BinaryReader",
         "DbConnectionImpl as __DbConnectionImpl",
@@ -505,7 +374,6 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "reducers as __reducers",
         "reducerSchema as __reducerSchema",
         "DbConnectionConfig as __DbConnectionConfig",
-        "RemoteModule as __RemoteModule",
         "t as __t",
     ];
     types.sort();
@@ -534,6 +402,29 @@ fn print_lint_suppression(output: &mut Indenter) {
 
 /// e.g.
 /// ```ts
+/// export default {
+///   x: __t.f32(),
+///   y: __t.f32(),
+///   fooBar: __t.string(),
+/// };
+/// ```
+fn define_body_for_reducer(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    params: &[(Identifier, AlgebraicTypeUse)],
+) {
+    write!(out, "export default {{");
+    if params.is_empty() {
+        writeln!(out, "}};");
+    } else {    
+        writeln!(out);
+        out.with_indent(|out| write_object_type_builder_fields(module, out, params, true).unwrap());
+        writeln!(out, "}};");
+    }
+}
+
+/// e.g.
+/// ```ts
 /// export default __t.object('Point', {
 ///   x: __t.f32(),
 ///   y: __t.f32(),
@@ -549,13 +440,54 @@ fn define_body_for_product(
 
     write!(out, "export default __t.object(\"{name}\", {{");
     if elements.is_empty() {
-        writeln!(out, "}};");
+        writeln!(out, "}});");
     } else {
         writeln!(out);
         out.with_indent(|out| write_object_type_builder_fields(module, out, elements, true).unwrap());
-        writeln!(out, "}};");
+        writeln!(out, "}});");
     }
     out.newline();
+}
+
+fn write_table_opts(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
+    let type_ref = table.product_type_ref;
+    let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
+    writeln!(
+        out,
+        "name: '{}',",
+        table.name.deref()
+    );
+    writeln!(out, "indexes: [");
+    out.indent(1);
+    for index_def in iter_indexes(table) {
+        if !index_def.generated() {
+            // Skip system-defined indexes
+            continue;
+        }
+        match &index_def.algorithm {
+            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
+                let get_name_and_type = |col_pos: ColId| {
+                    let (field_name, field_type) = &product_def.elements[col_pos.idx()];
+                    let name_camel = field_name.deref().to_case(Case::Camel);
+                    (name_camel, field_type)
+                };
+                writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
+                out.indent(1);
+                for col_id in columns.iter() {
+                    writeln!(out, "'{}',", get_name_and_type(col_id).0);
+                }
+                out.dedent(1);
+                writeln!(out, "] }},");
+            }
+            IndexAlgorithm::Direct(_) => {
+                // Direct indexes are not implemented yet.
+                continue;
+            }
+            _ => todo!(),
+        };
+    }
+    out.dedent(1);
+    writeln!(out, "],");
 }
 
 /// e.g.
@@ -838,14 +770,10 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports, suffi
         if let Some(suffix) = suffix {
             writeln!(
                 out,
-                "import {{ {type_name} as {type_name}{suffix} }} from \"./{module_name}\";"
+                "import {type_name}{suffix} from \"./{module_name}\";"
             );
-            writeln!(out, "// Mark import as potentially unused");
-            writeln!(out, "declare type __keep_{type_name}{suffix} = {type_name}{suffix};");
         } else {
-            writeln!(out, "import {{ {type_name} }} from \"./{module_name}\";");
-            writeln!(out, "// Mark import as potentially unused");
-            writeln!(out, "declare type __keep_{type_name} = {type_name};");
+            writeln!(out, "import {type_name} from \"./{module_name}\";");
         }
     }
 }

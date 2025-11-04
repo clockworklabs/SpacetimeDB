@@ -8,15 +8,21 @@ import {
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
   ClientCache as __ClientCache,
+  ClientTable as __ClientTable,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionConfig as __DbConnectionConfig,
   DbConnectionImpl as __DbConnectionImpl,
   Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
   TimeDuration as __TimeDuration,
   Timestamp as __Timestamp,
   deepEqual as __deepEqual,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
   type CallReducerFlags as __CallReducerFlags,
@@ -24,110 +30,13 @@ import {
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type ClientTable as __ClientTable,
-  table,
-  t,
 } from '../../../src/index';
-import { Player } from './player_type';
-import { Point } from './point_type';
-// Mark import as potentially unused
-declare type __keep_Point = Point;
+import Point from './point_type';
 
-import {
-  type EventContext,
-  type Reducer,
-  RemoteReducers,
-  RemoteTables,
-} from '.';
-declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
-
-
-export default table({ name: 'player' }, {
-  id: t.string().primaryKey().index(),
-  ownerId: t.string().unique(),
-  timestamp: t.timestamp(),
-  score: t.i32(),
+export default __t.row({
+  ownerId: __t.string(),
+  name: __t.string(),
   location: Point,
 });
-
-/**
- * Table handle for the table `player`.
- *
- * Obtain a handle from the [`player`] property on [`RemoteTables`],
- * like `ctx.db.player`.
- *
- * Users are encouraged not to explicitly reference this type,
- * but to directly chain method calls,
- * like `ctx.db.player.on_insert(...)`.
- */
-export class PlayerTableHandle<TableName extends string>
-  implements __ClientTable<TableName>
-{
-  // phantom type to track the table name
-  readonly tableName!: TableName;
-  tableCache: __TableCache<Player>;
-
-  constructor(tableCache: __TableCache<Player>) {
-    this.tableCache = tableCache;
-  }
-
-  count(): number {
-    return this.tableCache.count();
-  }
-
-  iter(): Iterable<Player> {
-    return this.tableCache.iter();
-  }
-  /**
-   * Access to the `ownerId` unique index on the table `player`,
-   * which allows point queries on the field of the same name
-   * via the [`PlayerOwnerIdUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.player.ownerId().find(...)`.
-   *
-   * Get a handle on the `ownerId` unique index on the table `player`.
-   */
-  ownerId = {
-    // Find the subscribed row whose `ownerId` column value is equal to `colVal`,
-    // if such a row is present in the client cache.
-    find: (colVal: string): Player | undefined => {
-      for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.ownerId, colVal)) {
-          return row;
-        }
-      }
-    },
-  };
-
-  onInsert = (cb: (ctx: EventContext, row: Player) => void) => {
-    return this.tableCache.onInsert(cb);
-  };
-
-  removeOnInsert = (cb: (ctx: EventContext, row: Player) => void) => {
-    return this.tableCache.removeOnInsert(cb);
-  };
-
-  onDelete = (cb: (ctx: EventContext, row: Player) => void) => {
-    return this.tableCache.onDelete(cb);
-  };
-
-  removeOnDelete = (cb: (ctx: EventContext, row: Player) => void) => {
-    return this.tableCache.removeOnDelete(cb);
-  };
-
-  // Updates are only defined for tables with primary keys.
-  onUpdate = (
-    cb: (ctx: EventContext, oldRow: Player, newRow: Player) => void
-  ) => {
-    return this.tableCache.onUpdate(cb);
-  };
-
-  removeOnUpdate = (
-    cb: (ctx: EventContext, onRow: Player, newRow: Player) => void
-  ) => {
-    return this.tableCache.removeOnUpdate(cb);
-  };
-}

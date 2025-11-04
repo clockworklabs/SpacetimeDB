@@ -56,12 +56,3 @@ export type ClientTableCore<
 > =
   ReadonlyTableMethods<TableDef> &
   ClientTableMethods<RemoteModule, TableDef>;
-
-/**
- * Client database view, mapping table names to their corresponding ClientTable handles.
- */
-export type ClientDbView<
-  RemoteModule extends UntypedRemoteModule,
-> = {
-  readonly [Tbl in RemoteModule['tables'][number] as Tbl['name']]: ClientTable<RemoteModule, Tbl>;
-};

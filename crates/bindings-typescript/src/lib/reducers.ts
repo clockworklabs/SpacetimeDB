@@ -11,7 +11,6 @@ import type {
   InferTypeOfRow,
   RowBuilder,
   RowObj,
-  StringBuilder,
   TypeBuilder,
 } from './type_builders';
 
@@ -265,7 +264,7 @@ export function clientDisconnected<
  */
 export type ReducerSchema<
   ReducerName extends string,
-  Params extends ParamsObj,
+  Params extends ParamsObj | RowObj,
 > = {
   /**
    * The name of the reducer.
@@ -347,7 +346,7 @@ export function reducerSchema<
   Params extends ParamsObj,
 >(
   name: ReducerName,
-  params: Params
+  params: Params 
 ): ReducerSchema<ReducerName, Params> {
   const paramType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({

@@ -7,7 +7,7 @@ function App() {
   const x = useReducer;
   const createPlayer = useReducer<DbConnection>('createPlayer');
   const connection = useSpacetimeDB<DbConnection>();
-  const players = useTable<DbConnection, Player>('player', {
+  const players = useTable<DbConnection, typeof Player>('player', {
     onInsert: player => {
       console.log(player);
     },

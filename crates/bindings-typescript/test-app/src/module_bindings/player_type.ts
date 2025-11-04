@@ -8,15 +8,21 @@ import {
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
   ClientCache as __ClientCache,
+  ClientTable as __ClientTable,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionConfig as __DbConnectionConfig,
   DbConnectionImpl as __DbConnectionImpl,
   Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
   TimeDuration as __TimeDuration,
   Timestamp as __Timestamp,
   deepEqual as __deepEqual,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
   type CallReducerFlags as __CallReducerFlags,
@@ -24,66 +30,13 @@ import {
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
 } from '../../../src/index';
-import { t } from '../../../src/server';
-import { Point } from './point_type';
-// Mark import as potentially unused
-declare type __keep_Point = Point;
+import Point from './point_type';
 
-t.object('Player', {
-  ownerId: t.string(),
-  name: t.string(),
-  location: Point.getTypeScriptAlgebraicType(),
+export default __t.object('Player', {
+  ownerId: __t.string(),
+  name: __t.string(),
+  location: Point,
 });
-
-const x = t.enum('PlayerEnum', {
-  foobar: t.f32(),
-  bazqux: t.string(),
-  quxfoo: t.bool(),
-});
-
-export type Player = {
-  ownerId: string;
-  name: string;
-  location: Point;
-};
-let _cached_Player_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const Player = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_Player_type_value) return _cached_Player_type_value;
-    _cached_Player_type_value = __AlgebraicTypeValue.Product({ elements: [] });
-    _cached_Player_type_value.value.elements.push(
-      { name: 'ownerId', algebraicType: __AlgebraicTypeValue.String },
-      { name: 'name', algebraicType: __AlgebraicTypeValue.String },
-      { name: 'location', algebraicType: Point.getTypeScriptAlgebraicType() }
-    );
-    return _cached_Player_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: Player): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      Player.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): Player {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      Player.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default Player;

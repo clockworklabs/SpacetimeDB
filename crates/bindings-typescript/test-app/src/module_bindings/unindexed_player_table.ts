@@ -8,15 +8,21 @@ import {
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
   ClientCache as __ClientCache,
+  ClientTable as __ClientTable,
   ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionConfig as __DbConnectionConfig,
   DbConnectionImpl as __DbConnectionImpl,
   Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
   TimeDuration as __TimeDuration,
   Timestamp as __Timestamp,
   deepEqual as __deepEqual,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
   type CallReducerFlags as __CallReducerFlags,
@@ -24,64 +30,13 @@ import {
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
 } from '../../../src/index';
-import { UnindexedPlayer } from './unindexed_player_type';
-import { Point } from './point_type';
-// Mark import as potentially unused
-declare type __keep_Point = Point;
+import Point from './point_type';
 
-import {
-  type EventContext,
-  type Reducer,
-  RemoteReducers,
-  RemoteTables,
-} from '.';
-declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
-
-/**
- * Table handle for the table `unindexed_player`.
- *
- * Obtain a handle from the [`unindexedPlayer`] property on [`RemoteTables`],
- * like `ctx.db.unindexedPlayer`.
- *
- * Users are encouraged not to explicitly reference this type,
- * but to directly chain method calls,
- * like `ctx.db.unindexedPlayer.on_insert(...)`.
- */
-export class UnindexedPlayerTableHandle<TableName extends string>
-  implements __TableHandle<TableName>
-{
-  // phantom type to track the table name
-  readonly tableName!: TableName;
-  tableCache: __TableCache<UnindexedPlayer>;
-
-  constructor(tableCache: __TableCache<UnindexedPlayer>) {
-    this.tableCache = tableCache;
-  }
-
-  count(): number {
-    return this.tableCache.count();
-  }
-
-  iter(): Iterable<UnindexedPlayer> {
-    return this.tableCache.iter();
-  }
-
-  onInsert = (cb: (ctx: EventContext, row: UnindexedPlayer) => void) => {
-    return this.tableCache.onInsert(cb);
-  };
-
-  removeOnInsert = (cb: (ctx: EventContext, row: UnindexedPlayer) => void) => {
-    return this.tableCache.removeOnInsert(cb);
-  };
-
-  onDelete = (cb: (ctx: EventContext, row: UnindexedPlayer) => void) => {
-    return this.tableCache.onDelete(cb);
-  };
-
-  removeOnDelete = (cb: (ctx: EventContext, row: UnindexedPlayer) => void) => {
-    return this.tableCache.removeOnDelete(cb);
-  };
-}
+export default __t.row({
+  ownerId: __t.string(),
+  name: __t.string(),
+  location: Point,
+});
