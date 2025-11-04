@@ -6,19 +6,46 @@ This document explains how to configure the environment, run the benchmark tool,
 
 ## Table of Contents
 
-1. [Environment Variables](#environment-variables)
-2. [Benchmark Suite](#benchmark-suite)
-3. [Troubleshooting](#troubleshooting)
+1. [Quick Checks & Fixes](#quick-checks-fixes)
+2. [Environment Variables](#environment-variables)
+3. [Benchmark Suite](#benchmark-suite)
+4. [Troubleshooting](#troubleshooting)
+---
+
+## Quick Checks & Fixes
+
+Run these commands to rerun the rust and C# tests for GPT-5. Understand this is a quick fix to unblock CI and different from running the full benchmark suite.
+
+**Rust**
+```bash
+cargo llm run --mode rustdoc_json --lang rust --providers openai --force --models "openai:gpt-5"
+```
+
+**C#**
+```bash
+cargo llm run --mode docs --lang csharp --providers openai --force --models "openai:gpt-5"
+```
+
+If you are really in a time-crunch, you can add `--tasks 0` to both commands to run just task 0, which will regenerate docs/json hash.
 
 ---
 
+> Model IDs passed to `--models` must match configured routes (see `model_routes.rs`), e.g. `"openai:gpt-5"`.
+
+
+### Spacetime CLI
+Publishing is performed via the `spacetime` CLI (`spacetime publish -c -y --server <name> <db>`). Ensure:
+- `spacetime` is on PATH
+- `SPACETIME_SERVER` is set (see Environment Variables) (defaults to local)
+- The target server is reachable/running
+
 ## Environment Variables
 
-> These are the **defaults** and/or recommended dev values. Production/CI may override them.
+> These are the **defaults** and/or recommended dev values.
 
 | Name | Purpose | Values / Example | Required |
 |---|---|---|---|
-| `SPACETIME_SERVER` | Target SpacetimeDB environment | `"local"` | ✅ |
+| `SPACETIME_SERVER` | Target SpacetimeDB environment | `local` | ✅ |
 | `LLM_DEBUG` | Print short debug info while generating | `true` / `false` (default `true` in dev) | ✅ |
 | `LLM_DEBUG_VERBOSE` | Extra‑verbose logs (payloads, scoring detail) | `false` | ✅ |
 | `LLM_BENCH_CONCURRENCY` | Parallel task concurrency across the whole bench run | `20` | ✅ |
@@ -31,14 +58,13 @@ This document explains how to configure the environment, run the benchmark tool,
 | `GOOGLE_BASE_URL` | Gemini base URL override | `https://generativelanguage.googleapis.com` | optional |
 | `XAI_API_KEY` | xAI Grok credential | `...` | optional |
 | `DEEPSEEK_API_KEY` | DeepSeek credential | `...` | optional |
-| `META_API_KEY` | Meta Llama credential (via provider) | `...` | optional |
+| `META_API_KEY` | Meta Llama credential  | `...` | optional* |
 
 \*Required only if you plan to run that provider locally.
 
 **Canonical dev block** (copy/paste into your shell profile):
 
 ```bash
-bash
 OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com/
 
@@ -93,6 +119,10 @@ $env:LLM_BENCH_ROUTE_CONCURRENCY="4"
 
 ## Benchmark Suite
 
+Results directory: `docs/llms`
+> Results writes are lock-safe and atomic. The tool takes an exclusive lock and writes via a temp file, then renames it, so concurrent runs won’t corrupt results.
+
+Open `llm_benchmark_stats_viewer.html` in a browser to inspect merged results locally.
 ### Current Benchmarks
 
 **basics**
@@ -125,24 +155,25 @@ Benchmarks live under `benchmarks/` with structure like:
 
 ```
 benchmarks/
-  t_001_foo/
-    tasks/
-      rust.txt
-      csharp.txt
-    answers/
-      rust.rs
-      csharp.cs
-    spec.rs          # scoring config, reducer/schema checks, etc.
+  category/
+    t_001_foo/
+      tasks/
+        rust.txt
+        csharp.txt
+      answers/
+        rust.rs
+        csharp.cs
+      spec.rs          # scoring config, reducer/schema checks, etc.
 ```
 
 ### Creating a new benchmark
 
-1. **Copy a template**
+1. **Copy existing benchmark**
 - Duplicate any existing benchmark folder.
 - Bump the numeric prefix to a new, unused ID: `t_123_my_task`.
 
 2. **Rename for the new task**
-- Rename the folder to your ID + short slug (snake-case): `t_123_my_task`.
+- Rename the folder to your ID + short slug: `t_123_my_task`.
 
 3. **Write the task prompt**
 - Create/update `tasks/rust.txt` and/or `tasks/csharp.txt`.
@@ -150,22 +181,16 @@ benchmarks/
 
 4. **Add golden answers**
 - Implement the canonical solution in `answers/rust.rs` and/or `answers/csharp.cs`.
-- Keep them minimal and correct; compile locally if applicable.
 
 5. **Define scoring**
 - Edit `spec.rs` to add scorers (e.g., schema/table/field checks, reducer/func exists).
-- Use existing scorer names where possible; keep checks specific.
 
 6. **Quick validation**
-- No provider calls (context only):  
-  `cargo llm run --hash-only --tasks t_123_my_task`
 - Build goldens only:  
   `cargo llm run --goldens-only --tasks t_123_my_task`
 
 7. **Categorize**
-- Ensure the folder sits under the right category path and/or set in `spec.rs`.  
-  Run a subset:  
-  `cargo llm run --categories basics`
+- Ensure the folder sits under the right category path.
 
 
 ### Typical Commands
@@ -220,31 +245,3 @@ Outputs:
 **Timeouts / Rate-limits**
 - Lower `LLM_BENCH_CONCURRENCY` or `LLM_BENCH_ROUTE_CONCURRENCY`.
 - Some providers aggressively throttle bursts; use backoff/retry when supported.
-
----
-
-```bash
-# OpenAI / Compat
-# export OPENAI_API_KEY=sk-...
-# export OPENAI_BASE_URL=https://api.openai.com
-
-# Anthropic
-# export ANTHROPIC_API_KEY=...
-# export ANTHROPIC_BASE_URL=https://api.anthropic.com
-
-# Google Gemini
-# export GOOGLE_API_KEY=...
-# export GOOGLE_BASE_URL=https://generativelanguage.googleapis.com
-
-# xAI Grok
-# export XAI_API_KEY=...
-# export XAI_BASE_URL=https://api.x.ai
-
-# DeepSeek
-# export DEEPSEEK_API_KEY=...
-# export DEEPSEEK_BASE_URL=https://api.deepseek.com
-
-# Meta (Llama) via provider
-# export META_API_KEY=...
-# export META_BASE_URL=...
-```
