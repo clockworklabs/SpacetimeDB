@@ -8,10 +8,7 @@ on:
   merge_group:
 
 concurrency:
-  group: ${{ github.workflow }}-${{
-    github.event_name == 'pull_request' && github.event.pull_request.number ||
-    ('sha-' + github.sha)
-  }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || ('sha-' + github.sha) }}
   cancel-in-progress: true
 
 jobs:
