@@ -1510,43 +1510,42 @@ impl RelationalDB {
         })
     }
 
-    /// Evaluate and update View.
-    /// This involves:
-    /// 1. Serializing the view arguments into `ST_VIEW_ARG_ID`
-    /// 2. Deleting all rows in the view table matching the view arguments
-    /// 3. Deserializing the return value from the view execution
-    /// 4. Inserting all rows from the return value into the view table, with the arg_id
-    ///    set to the inserted view argument's id.
-    ///    The `typespace` is needed for deserializing the return value.
+    /// Materialize View backing table.
+    ///
+    /// # Process
+    /// 1. Serializes view arguments into `ST_VIEW_ARG_ID`
+    /// 2. Deletes stale rows matching the view arguments
+    /// 3. Deserializes the new view execution results
+    /// 4. Inserts fresh rows with the corresponding arg_id
+    ///
+    /// # Arguments
+    /// * `tx` - Mutable transaction context
+    /// * `view` - Name of the view to update
+    /// * `args` - Arguments passed to the view call
+    /// * `return_type` - Expected return type of the view
+    /// * `bytes` - Serialized (bsatn encoded) return value from view execution
+    /// * `typespace` - Type information for deserialization
+    /// * `caller_identity` - Identity of the caller (for non-anonymous views)
     #[allow(clippy::too_many_arguments)]
-    pub fn evaluate_view(
+    pub fn materialize_view(
         &self,
         tx: &mut MutTxId,
-        // Name of the view to update
         view: &str,
-        // Arguments passed to the view call
         args: ArgsTuple,
-        // Return type of the view call
         return_type: AlgebraicType,
-        // Serialized bytes of the return value from the view call
-        //TODO: pass arg_id; do the insertion during starting of invoking view
         bytes: Bytes,
         typespace: &Typespace,
-        // Identity of the caller (for non-anonymous views)
         caller_identity: Identity,
     ) -> Result<(), DBError> {
+        // Fetch view metadata
         let st_view_row = tx.lookup_st_view_by_name(view)?;
-
-        let (table_id, is_anonymous) = (
-            st_view_row
-                .table_id
-                .expect("Tables are always created for views upon view creation"),
-            st_view_row.is_anonymous,
-        );
+        let table_id = st_view_row.table_id.expect("View table must exist for materialization");
+        let is_anonymous = st_view_row.is_anonymous;
 
         let arg_id = tx.get_or_insert_st_view_arg(args.get_bsatn())?;
 
-        let input_rows = product![
+        // Build the filter key for identifying rows to update
+        let input_args = product![
             if is_anonymous {
                 AlgebraicValue::OptionNone()
             } else {
@@ -1555,14 +1554,14 @@ impl RelationalDB {
             AlgebraicValue::U64(arg_id)
         ];
 
-        // Delete all existing rows in the view table matching the view arguments
+        // Remove stale View entries
         let rows_to_delete: Vec<_> = self
-            .iter_by_col_eq_mut(tx, table_id, [0, 1], &input_rows.clone().into())?
+            .iter_by_col_eq_mut(tx, table_id, [0, 1], &input_args.clone().into())?
             .map(|res| res.pointer())
             .collect();
 
-        let count = self.delete(tx, table_id, rows_to_delete);
-        trace!("Deleted {count} rows from view table {table_id} for arg_id {arg_id}");
+        let deleted_count = self.delete(tx, table_id, rows_to_delete);
+        trace!("Deleted {deleted_count} stale rows from view table {table_id} for arg_id {arg_id}");
 
         // Deserialize the return value
         let seed = spacetimedb_sats::WithTypespace::new(typespace, &return_type);
@@ -1570,37 +1569,46 @@ impl RelationalDB {
             .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
             .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
 
+        // Extract products from return value (must be array or option)
         let products: Vec<ProductValue> = if return_type.is_array() {
-            let arr = return_val.into_array().expect("return type is array");
-            Ok(arr.into_iter().map(|v| v.into_product().unwrap()).collect())
+            let arr = return_val
+                .into_array()
+                .expect("return_type.is_array() ensures this is an array");
+
+            arr.into_iter().map(|v| v.into_product().unwrap()).collect()
         } else if return_type.is_option() {
-            let opt = return_val.into_option().expect("return type is option");
-            Ok(opt.into_iter().map(|v| v.into_product().unwrap()).collect())
+            let opt = return_val
+                .into_option()
+                .expect("return_type.is_option() ensures this is an option");
+            opt.into_iter().map(|v| v.into_product().unwrap()).collect()
         } else {
-            Err(DatastoreError::from(ViewError::InvalidReturnType(return_type.clone())))
-        }?;
+            return Err(DatastoreError::from(ViewError::InvalidReturnType(return_type)).into());
+        };
 
-        // Insert all rows from the return value into the view table
+        // Insert fresh results into the view table
+        let mut elements: Vec<AlgebraicValue> =
+            Vec::with_capacity(input_args.elements.len() + products.first().map_or(0, |p| p.elements.len()));
         for product in products {
-            let row = {
-                let mut elements = Vec::with_capacity(2 + product.elements.len());
-                elements.extend_from_slice(&input_rows.elements);
-                elements.append(&mut product.elements.to_vec());
+            elements.clear();
+            // Build complete row by prepending filter key to product data
+            let mut elements = Vec::with_capacity(input_args.elements.len() + product.elements.len());
+            elements.extend_from_slice(&input_args.elements);
+            elements.extend_from_slice(&product.elements);
 
-                ProductValue {
-                    elements: elements.into_boxed_slice(),
-                }
+            let row = ProductValue {
+                elements: elements.into_boxed_slice(),
             };
+
             let row_bytes = row
                 .to_bsatn_vec()
                 .map_err(|_| DatastoreError::from(ViewError::SerializeRow))?;
+
             self.insert(tx, table_id, &row_bytes)?;
         }
 
         Ok(())
     }
 }
-
 #[allow(unused)]
 #[derive(Clone)]
 struct LockFile {

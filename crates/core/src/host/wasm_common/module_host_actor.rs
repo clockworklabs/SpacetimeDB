@@ -817,7 +817,7 @@ impl InstanceCommon {
             }
             Ok(res) => {
                 let db = &replica_ctx.relational_db.clone();
-                db.evaluate_view(
+                db.materialize_view(
                     &mut tx,
                     view_name,
                     args,
