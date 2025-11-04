@@ -72,54 +72,52 @@ impl Host {
         body: String,
     ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>> {
         let module_host = self
-            .host_controller
-            .get_or_launch_module_host(database, self.replica_id)
+            .module()
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        tracing::info!(sql = body);
-        // We need a header for query results
-        let mut header = vec![];
-        let sql_start = std::time::Instant::now();
-        let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty).entered();
-        let db = &module_host.module.replica_ctx().relational_db;
+        let (tx_offset, durable_offset, json) = self
+            .host_controller
+            .using_database(database, self.replica_id, move |db| async move {
+                tracing::info!(sql = body);
+                let mut header = vec![];
+                let sql_start = std::time::Instant::now();
+                let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
+                let _guard = sql_span.enter();
 
-        let result = sql::execute::run(
-            // Returns an empty result set for mutations
-            &db,
-            &body,
-            auth,
-            Some(&module_host),
-            auth.caller,
-            &mut header,
-        )
-        .await
-        .map_err(|e| {
-            log::warn!("{e}");
-            if let Some(auth_err) = e.get_auth_error() {
-                (StatusCode::UNAUTHORIZED, auth_err.to_string())
-            } else {
-                (StatusCode::BAD_REQUEST, e.to_string())
-            }
-        })?;
+                let result = sql::execute::run(&db, &body, auth.clone(), Some(&module_host), auth.caller, &mut header)
+                    .await
+                    .map_err(|e| {
+                        log::warn!("{e}");
+                        if let Some(auth_err) = e.get_auth_error() {
+                            (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                        } else {
+                            (StatusCode::BAD_REQUEST, e.to_string())
+                        }
+                    })?;
 
-        let total_duration = sql_start.elapsed();
-        sql_span.record("total_duration", tracing::field::debug(total_duration));
+                let total_duration = sql_start.elapsed();
+                drop(_guard);
+                sql_span.record("total_duration", tracing::field::debug(total_duration));
 
-        // Turn the header into a `ProductType`
-        let schema = header
-            .into_iter()
-            .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
-            .collect();
+                let schema = header
+                    .into_iter()
+                    .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
+                    .collect();
 
-        let tx_offset = result.tx_offset;
-        let durable_offset = db.durable_tx_offset();
-        let json = vec![SqlStmtResult {
-            schema,
-            rows: result.rows,
-            total_duration_micros: total_duration.as_micros() as u64,
-            stats: SqlStmtStats::from_metrics(&result.metrics),
-        }];
+                Ok::<_, (StatusCode, String)>((
+                    result.tx_offset,
+                    db.durable_tx_offset(),
+                    vec![SqlStmtResult {
+                        schema,
+                        rows: result.rows,
+                        total_duration_micros: total_duration.as_micros() as u64,
+                        stats: SqlStmtStats::from_metrics(&result.metrics),
+                    }],
+                ))
+            })
+            .await
+            .map_err(log_and_500)??;
 
         if confirmed_read {
             if let Some(mut durable_offset) = durable_offset {
@@ -130,6 +128,7 @@ impl Host {
 
         Ok(json)
     }
+
     pub async fn update(
         &self,
         database: Database,
@@ -142,7 +141,6 @@ impl Host {
             .await
     }
 }
-
 /// Parameters for publishing a database.
 ///
 /// See [`ControlStateDelegate::publish_database`].
