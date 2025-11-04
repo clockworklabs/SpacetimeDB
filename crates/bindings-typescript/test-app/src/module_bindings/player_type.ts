@@ -38,6 +38,11 @@ t.object('Player', {
   location: Point.getTypeScriptAlgebraicType(),
 });
 
+const x = t.enum('PlayerEnum', {
+  foobar: t.f32(),
+  bazqux: t.string(),
+  quxfoo: t.bool(),
+});
 
 export type Player = {
   ownerId: string;

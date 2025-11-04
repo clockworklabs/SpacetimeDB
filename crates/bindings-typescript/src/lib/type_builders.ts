@@ -13,7 +13,7 @@ import {
   type TimestampAlgebraicType,
 } from '..';
 import type { OptionAlgebraicType } from './option';
-import { addType, MODULE_DEF } from '../server/schema';
+import { addType, MODULE_DEF } from '../lib/schema';
 import type { CoerceRow } from './table';
 import { set, type Set } from './type_util';
 

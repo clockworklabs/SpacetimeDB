@@ -65,6 +65,19 @@ const pointType = t.object('Point', {
   y: t.number(),
 });
 
+table({
+  name: 'player',
+  primaryKey: 'ownerId',
+  
+  indexes: [
+    { name: 'this_is_an_index', algorithm: "btree", columns: [ "ownerId" ] } 
+  ],
+}, t.row({
+  ownerId: t.string(),
+  name: t.string(),
+  location: pointType,
+}))
+
 const tablesSchema = schema(
   table({ name: 'player', }, t.row({
     ownerId: t.string(),

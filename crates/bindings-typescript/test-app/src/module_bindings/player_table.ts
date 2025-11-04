@@ -26,6 +26,8 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
   type ClientTable as __ClientTable,
+  table,
+  t,
 } from '../../../src/index';
 import { Player } from './player_type';
 import { Point } from './point_type';
@@ -39,6 +41,15 @@ import {
   RemoteTables,
 } from '.';
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
+
+
+export default table({ name: 'player' }, {
+  id: t.string().primaryKey().index(),
+  ownerId: t.string().unique(),
+  timestamp: t.timestamp(),
+  score: t.i32(),
+  location: Point,
+});
 
 /**
  * Table handle for the table `player`.

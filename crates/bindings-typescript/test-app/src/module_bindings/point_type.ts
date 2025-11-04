@@ -25,47 +25,10 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
+  t as __t,
 } from '../../../src/index';
 
-export type Point = {
-  x: number;
-  y: number;
-};
-let _cached_Point_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const Point = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_Point_type_value) return _cached_Point_type_value;
-    _cached_Point_type_value = __AlgebraicTypeValue.Product({ elements: [] });
-    _cached_Point_type_value.value.elements.push(
-      { name: 'x', algebraicType: __AlgebraicTypeValue.U16 },
-      { name: 'y', algebraicType: __AlgebraicTypeValue.U16 }
-    );
-    return _cached_Point_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: Point): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      Point.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): Point {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      Point.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default Point;
+export default __t.object('Point', {
+  x: __t.number(),
+  y: __t.number(),
+});
