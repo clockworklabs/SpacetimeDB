@@ -9,6 +9,7 @@ use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationE
 use crate::host::wasm_common::*;
 use crate::util::string_from_utf8_lossy_owned;
 use futures_util::FutureExt;
+use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use wasmtime::{
     AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace, WasmParams,
@@ -39,7 +40,7 @@ impl WasmtimeModule {
         WasmtimeModule { module }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 2);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 3);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         const { assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION) };
@@ -49,7 +50,13 @@ impl WasmtimeModule {
                 linker$(.func_wrap($module, stringify!($func), WasmInstanceEnv::$func)?)*;
             }
         }
-        abi_funcs!(link_functions);
+        macro_rules! link_async_functions {
+            ($($module:literal :: $func:ident,)*) => {
+                #[allow(deprecated)]
+                linker$(.func_wrap_async($module, stringify!($func), WasmInstanceEnv::$func)?)*;
+            }
+        }
+        abi_funcs!(link_functions, link_async_functions);
         Ok(())
     }
 }
@@ -126,9 +133,11 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         store.epoch_deadline_callback(|store| {
             let env = store.data();
             let database = env.instance_env().replica_ctx.database_identity;
-            let reducer = env.reducer_name();
-            let dur = env.reducer_start().elapsed();
-            tracing::warn!(reducer, ?database, "Wasm has been running for {dur:?}");
+            let funcall = env.funcall_name();
+            let dur = env.funcall_start().elapsed();
+            // TODO(procedure-timing): This measurement is not super meaningful for procedures,
+            // which may (will) suspend execution and therefore may not have been continuously running since `env.funcall_start`.
+            tracing::warn!(funcall, ?database, "Wasm has been running for {dur:?}");
             Ok(wasmtime::UpdateDeadline::Continue(EPOCH_TICKS_PER_SECOND))
         });
 
@@ -162,22 +171,78 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
             .get_typed_func(&mut store, CALL_REDUCER_DUNDER)
             .expect("no call_reducer");
 
+        let call_procedure = get_call_procedure(&mut store, &instance);
+
         Ok(WasmtimeInstance {
             store,
             instance,
             call_reducer,
+            call_procedure,
         })
     }
 }
 
-type CallReducerType = TypedFunc<(u32, u64, u64, u64, u64, u64, u64, u64, u32, u32), i32>;
+/// Look up the `instance`'s export named by [`CALL_PROCEDURE_DUNDER`].
+///
+/// Return `None` if the `instance` has no such export.
+/// Modules from before the introduction of procedures will not have a `__call_procedure__` export,
+/// which is fine because they also won't define any procedures.
+///
+/// Panics if the `instance` has an export at the expected name,
+/// but it is not a function or is a function of an inappropriate type.
+/// For new modules, this will be caught during publish.
+/// Old modules from before the introduction of procedures might have an export at that name,
+/// but it follows the double-underscore pattern of reserved names,
+/// so we're fine to break those modules.
+fn get_call_procedure(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -> Option<CallProcedureType> {
+    // Wasmtime uses `anyhow` for error reporting, vexing library users the world over.
+    // This means we can't distinguish between the failure modes of `Instance::get_typed_func`.
+    // Instead, we type out the body of that method ourselves,
+    // but with error handling appropriate to our needs.
+    let export = instance.get_export(store.as_context_mut(), CALL_PROCEDURE_DUNDER)?;
+
+    Some(
+        export
+            .into_func()
+            .unwrap_or_else(|| panic!("{CALL_PROCEDURE_DUNDER} export is not a function"))
+            .typed(store)
+            .unwrap_or_else(|err| panic!("{CALL_PROCEDURE_DUNDER} export is a function with incorrect type: {err}")),
+    )
+}
+
+type CallReducerType = TypedFunc<
+    (
+        // Reducer ID,
+        u32,
+        // Sender `Identity`
+        u64,
+        u64,
+        u64,
+        u64,
+        // Sender `ConnectionId`, or 0 for none.
+        u64,
+        u64,
+        // Start timestamp.
+        u64,
+        // Args byte source.
+        u32,
+        // Errors byte sink.
+        u32,
+    ),
+    // Errno.
+    i32,
+>;
+// `__call_procedure__` takes the same arguments as `__call_reducer__`.
+type CallProcedureType = CallReducerType;
 
 pub struct WasmtimeInstance {
     store: Store<WasmInstanceEnv>,
     instance: Instance,
     call_reducer: CallReducerType,
+    call_procedure: Option<CallProcedureType>,
 }
 
+#[async_trait::async_trait]
 impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn extract_descriptions(&mut self) -> Result<Vec<u8>, DescribeError> {
         let describer_func_name = DESCRIBE_MODULE_DUNDER;
@@ -206,18 +271,17 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> module_host_actor::ExecuteResult {
         let store = &mut self.store;
-        // Set the fuel budget in WASM.
-        set_store_fuel(store, budget.into());
-        store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
+
+        prepare_store_for_call(store, budget);
 
         // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
-        let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(op.caller_identity.to_byte_array());
-        let [conn_id_0, conn_id_1] = bytemuck::must_cast(op.caller_connection_id.as_le_byte_array());
+        let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(*op.caller_identity);
+        let [conn_id_0, conn_id_1] = prepare_connection_id_for_call(*op.caller_connection_id);
 
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
-        let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, args_bytes, op.timestamp);
+        let (args_source, errors_sink) = store.data_mut().start_funcall(op.name, args_bytes, op.timestamp);
 
         let call_result = call_sync_typed_func(
             &self.call_reducer,
@@ -239,7 +303,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Signal that this reducer call is finished. This gets us the timings
         // associated to our reducer call, and clears all of the instance state
         // associated to the call.
-        let (timings, error) = store.data_mut().finish_reducer();
+        let (timings, error) = store.data_mut().finish_funcall();
 
         let call_result = call_result.map(|code| handle_error_sink_code(code, error));
 
@@ -260,6 +324,77 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn log_traceback(func_type: &str, func: &str, trap: &anyhow::Error) {
         log_traceback(func_type, func, trap)
     }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    async fn call_procedure(
+        &mut self,
+        op: module_host_actor::ProcedureOp,
+        budget: ReducerBudget,
+    ) -> module_host_actor::ProcedureExecuteResult {
+        let store = &mut self.store;
+        prepare_store_for_call(store, budget);
+
+        // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
+        let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(op.caller_identity);
+        let [conn_id_0, conn_id_1] = prepare_connection_id_for_call(op.caller_connection_id);
+
+        // Prepare arguments to the reducer + the error sink & start timings.
+        let (args_source, result_sink) = store.data_mut().start_funcall(&op.name, op.arg_bytes, op.timestamp);
+
+        let Some(call_procedure) = self.call_procedure.as_ref() else {
+            return module_host_actor::ProcedureExecuteResult {
+                energy: module_host_actor::EnergyStats::ZERO,
+                timings: module_host_actor::ExecutionTimings::zero(),
+                memory_allocation: get_memory_size(store),
+                call_result: Err(anyhow::anyhow!(
+                    "Module defines procedure {} but does not export `{}`",
+                    op.name,
+                    CALL_PROCEDURE_DUNDER,
+                )),
+            };
+        };
+        let call_result = call_procedure
+            .call_async(
+                &mut *store,
+                (
+                    op.id.0,
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    op.timestamp.to_micros_since_unix_epoch() as u64,
+                    args_source.0,
+                    result_sink,
+                ),
+            )
+            .await;
+
+        // Close the timing span for this procedure and get the BSATN bytes of its result.
+        let (timings, result_bytes) = store.data_mut().finish_funcall();
+
+        let call_result = call_result.and_then(|code| {
+            (code == 0).then_some(result_bytes.into()).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{CALL_PROCEDURE_DUNDER} returned unexpected code {code}. Procedures should return code 0 or trap."
+                )
+            })
+        });
+
+        let remaining_fuel = get_store_fuel(store);
+        let remaining = ReducerBudget::from(remaining_fuel);
+
+        let energy = module_host_actor::EnergyStats { budget, remaining };
+        let memory_allocation = get_memory_size(store);
+
+        module_host_actor::ProcedureExecuteResult {
+            energy,
+            timings,
+            memory_allocation,
+            call_result,
+        }
+    }
 }
 
 fn set_store_fuel(store: &mut impl AsContextMut, fuel: WasmtimeFuel) {
@@ -268,6 +403,48 @@ fn set_store_fuel(store: &mut impl AsContextMut, fuel: WasmtimeFuel) {
 
 fn get_store_fuel(store: &impl AsContext) -> WasmtimeFuel {
     WasmtimeFuel(store.as_context().get_fuel().unwrap())
+}
+
+fn prepare_store_for_call(store: &mut Store<WasmInstanceEnv>, budget: ReducerBudget) {
+    // note that ReducerBudget being a u64 is load-bearing here - although we convert budget right back into
+    // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
+    // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
+    set_store_fuel(store, budget.into());
+
+    // We enable epoch interruption only to log on long-running WASM functions.
+    // Our epoch interrupt callback logs and then immediately resumes execution.
+    store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
+}
+
+/// Convert `caller_identity` to the format used by `__call_reducer__` and `__call_procedure__`,
+/// i.e. an array of 4 `u64`s.
+///
+/// Callers should destructure this like:
+/// ```ignore
+/// # let identity = Identity::ZERO;
+/// let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(identity);
+/// ```
+fn prepare_identity_for_call(caller_identity: Identity) -> [u64; 4] {
+    // Encode this as a LITTLE-ENDIAN byte array
+    bytemuck::must_cast(caller_identity.to_byte_array())
+}
+
+/// Convert `caller_connection_id` to the format used by `__call_reducer` and `__call_procedure__`,
+/// i.e. an array of 2 `u64`s.
+///
+/// Callers should destructure this like:
+/// ```ignore
+/// # let connection_id = ConnectionId::ZERO;
+/// let [conn_id_0, conn_id_1] = prepare_connection_id_for_call(connection_id);
+/// ```
+///
+fn prepare_connection_id_for_call(caller_connection_id: ConnectionId) -> [u64; 2] {
+    // Encode this as a LITTLE-ENDIAN byte array
+    bytemuck::must_cast(caller_connection_id.as_le_byte_array())
+}
+
+fn get_memory_size(store: &Store<WasmInstanceEnv>) -> usize {
+    store.data().get_mem().memory.data_size(store)
 }
 
 #[cfg(test)]

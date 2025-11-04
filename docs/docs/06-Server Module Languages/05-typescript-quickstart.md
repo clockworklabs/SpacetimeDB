@@ -25,38 +25,19 @@ If you haven’t already, start by [installing SpacetimeDB](https://spacetimedb.
 
 ## Project structure
 
-Create and enter a directory `quickstart-chat`:
+Let's start by running `spacetime init` to initialize our project's directory structure:
 
 ```bash
-mkdir quickstart-chat
-cd quickstart-chat
+spacetime init --lang typescript quickstart-chat
 ```
 
-Initialize a **TypeScript** module project:
+`spacetime init` will ask you for a project path in which to put your project. By default this will be `./quickstart-chat`. This basic project will have a few helper files like Cursor rules for SpacetimeDB and a `spacetimedb` directory which is where your SpacetimeDB module code will go.
 
-```bash
-spacetime init --lang typescript server
-```
-
-This creates a `server/` project with a `src/index.ts` entrypoint (required for publishing).
-
-## How to Build & Publish
-
-> [!IMPORTANT]
-> TypeScript modules are built and published with the `spacetime` CLI. `spacetime publish` will transpile and bundle your server module for you starting with the `src/index.ts` entrypoint. If you bundle your js yourself, you can specify `spacetime publish --js-path <path-to-your-bundle-file>` when publishing.
-
-From the `server/` directory you can lint/typecheck locally if you like, but to make the module live you’ll publish it to a database:
-
-```bash
-cd server
-spacetime publish --project-path server quickstart-chat
-```
-
-Publishing bundles your TypeScript into a single artifact and installs it into the `quickstart-chat` database.
+Inside the `spacetimedb/` directory will be a `src/index.ts` entrypoint (required for publishing).
 
 ## Declare imports
 
-Open `server/src/index.ts`. Replace its contents with the following imports to start building a bare-bones real-time chat server:
+Open `spacetimedb/src/index.ts`. Replace its contents with the following imports to start building a bare-bones real-time chat server:
 
 ```ts
 import { schema, t, table, SenderError } from 'spacetimedb/server';
@@ -75,7 +56,7 @@ We’ll store two kinds of data: information about each user, and the messages t
 
 For each `User`, we’ll store their `identity` (the caller’s unique identifier), an optional display `name`, and whether they’re currently `online`. We’ll use `identity` as the primary key (unique and indexed).
 
-Add to `server/src/index.ts`:
+Add to `spacetimedb/src/index.ts`:
 
 ```ts
 const User = table(
@@ -205,10 +186,15 @@ spacetime start
 
 ## Publish the module
 
-From the `quickstart-chat` directory (the parent of `server/`):
+From the `spacetimedb/` directory you can lint/typecheck locally if you like, but to make the module live you’ll need to publish it to a database. Publishing bundles your TypeScript into a single artifact and installs it into the `quickstart-chat` database.
+
+> [!IMPORTANT]
+> TypeScript modules are built and published with the `spacetime` CLI. `spacetime publish` will transpile and bundle your server module for you starting with the `src/index.ts` entrypoint. If you bundle your js yourself, you can specify `spacetime publish --js-path <path-to-your-bundle-file>` when publishing.
+
+From the `quickstart-chat` directory (the parent of `spacetimedb/`):
 
 ```bash
-spacetime publish --project-path server quickstart-chat
+spacetime publish --server local --project-path spacetimedb quickstart-chat
 ```
 
 You can choose any unique, URL-safe database name in place of `quickstart-chat`. The CLI will show the database **Identity** (a hex string) as well; you can use either the name or identity with CLI commands.
@@ -220,13 +206,13 @@ Use the CLI to call reducers. Arguments are passed as JSON (strings may be given
 Send a message:
 
 ```bash
-spacetime call quickstart-chat send_message "Hello, World!"
+spacetime call --server local quickstart-chat send_message "Hello, World!"
 ```
 
 Check that it ran by viewing logs (owner-only):
 
 ```bash
-spacetime logs quickstart-chat
+spacetime logs --server local quickstart-chat
 ```
 
 You should see output similar to:
@@ -243,7 +229,7 @@ You should see output similar to:
 SpacetimeDB supports a subset of SQL so you can query your data:
 
 ```bash
-spacetime sql quickstart-chat "SELECT * FROM message"
+spacetime sql --server local quickstart-chat "SELECT * FROM message"
 ```
 
 Output will resemble:
