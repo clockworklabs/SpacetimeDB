@@ -1252,6 +1252,7 @@ mod tests {
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
             table_name.to_owned().into_boxed_str(),
+            None,
             columns
                 .iter()
                 .enumerate()

@@ -54,39 +54,33 @@ pub trait Schema: Sized {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableOrViewSchema {
     pub table_id: TableId,
+    pub view_id: Option<(ViewId, bool)>,
     pub table_name: Box<str>,
     pub table_access: StAccess,
     inner: Arc<TableSchema>,
-    is_view: bool,
 }
 
 impl From<Arc<TableSchema>> for TableOrViewSchema {
     fn from(inner: Arc<TableSchema>) -> Self {
         Self {
             table_id: inner.table_id,
+            view_id: inner.view_id,
             table_name: inner.table_name.clone(),
             table_access: inner.table_access,
-            is_view: false,
             inner,
         }
     }
 }
 
 impl TableOrViewSchema {
-    /// Creates a [`TableSchema`] for a view
-    pub fn for_view(inner: Arc<TableSchema>) -> Self {
-        Self {
-            table_id: inner.table_id,
-            table_name: inner.table_name.clone(),
-            table_access: inner.table_access,
-            is_view: true,
-            inner,
-        }
-    }
-
     /// Is this schema that of a view?
     pub fn is_view(&self) -> bool {
-        self.is_view
+        self.view_id.is_some()
+    }
+
+    /// Is this schema that of an anonymous view?
+    pub fn is_anonymous_view(&self) -> bool {
+        self.view_id.is_some_and(|(_, is_anonymous)| is_anonymous)
     }
 
     /// Returns the [`TableSchema`] of the underlying datastore table.
@@ -103,7 +97,7 @@ impl TableOrViewSchema {
     /// For views in particular it will not include the internal `sender` and `arg_id` columns.
     /// Hence columns in this list should be looked up by their [`ColId`] - not their position.
     pub fn public_columns(&self) -> &[ColumnSchema] {
-        if self.is_view {
+        if self.is_view() {
             return &self.inner.columns[2..];
         }
         &self.inner.columns
@@ -127,6 +121,10 @@ pub struct TableSchema {
     /// The name of the table.
     // TODO(perf): This should likely be an `Arc<str>`, not a `Box<str>`, as we `Clone` it somewhat frequently.
     pub table_name: Box<str>,
+
+    /// Is this the backing table of a view?
+    /// Is it an anonymous view?
+    pub view_id: Option<(ViewId, bool)>,
 
     /// The columns of the table.
     /// The ordering of the columns is significant. Columns are frequently identified by `ColId`, that is, position in this list.
@@ -173,6 +171,7 @@ impl TableSchema {
     pub fn new(
         table_id: TableId,
         table_name: Box<str>,
+        view_id: Option<(ViewId, bool)>,
         columns: Vec<ColumnSchema>,
         indexes: Vec<IndexSchema>,
         constraints: Vec<ConstraintSchema>,
@@ -186,6 +185,7 @@ impl TableSchema {
             row_type: columns_to_row_type(&columns),
             table_id,
             table_name,
+            view_id,
             columns,
             indexes,
             constraints,
@@ -216,6 +216,7 @@ impl TableSchema {
         TableSchema::new(
             TableId::SENTINEL,
             "TestTable".into(),
+            None,
             columns,
             vec![],
             vec![],
@@ -225,6 +226,16 @@ impl TableSchema {
             None,
             None,
         )
+    }
+
+    /// Is this the backing table for a view?
+    pub fn is_view(&self) -> bool {
+        self.view_id.is_some()
+    }
+
+    /// Is this the backing table for an anonymous view?
+    pub fn is_anonymous_view(&self) -> bool {
+        self.view_id.is_some_and(|(_, is_anonymous)| is_anonymous)
     }
 
     /// Update the table id of this schema.
@@ -263,6 +274,11 @@ impl TableSchema {
     /// The ordering of the columns is significant. Columns are frequently identified by `ColId`, that is, position in this list.
     pub fn columns(&self) -> &[ColumnSchema] {
         &self.columns
+    }
+
+    /// How many columns does this table have?
+    pub fn num_cols(&self) -> usize {
+        self.columns.len()
     }
 
     /// Extracts all the [Self::indexes], [Self::sequences], and [Self::constraints].
@@ -664,6 +680,7 @@ impl TableSchema {
         let ViewDef {
             name,
             is_public,
+            is_anonymous,
             return_columns,
             ..
         } = view_def;
@@ -685,6 +702,7 @@ impl TableSchema {
         TableSchema::new(
             TableId::SENTINEL,
             (*name).clone().into(),
+            Some((ViewId::SENTINEL, *is_anonymous)),
             columns,
             vec![],
             vec![],
@@ -735,6 +753,7 @@ impl TableSchema {
         let ViewDef {
             name,
             is_public,
+            is_anonymous,
             return_columns,
             ..
         } = view_def;
@@ -756,7 +775,7 @@ impl TableSchema {
             table_id: TableId::SENTINEL,
             col_pos: ColId(1),
             col_name: arg_id_col_name.into(),
-            col_type: AlgebraicType::U64,
+            col_type: AlgebraicType::option(AlgebraicType::U64),
         });
 
         columns.extend(
@@ -786,6 +805,7 @@ impl TableSchema {
         TableSchema::new(
             TableId::SENTINEL,
             (*name).clone().into(),
+            Some((ViewId::SENTINEL, *is_anonymous)),
             columns,
             indexes,
             vec![],
@@ -851,6 +871,7 @@ impl Schema for TableSchema {
         TableSchema::new(
             table_id,
             (*name).clone().into(),
+            None,
             columns,
             indexes,
             constraints,

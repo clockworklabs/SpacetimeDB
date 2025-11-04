@@ -1576,6 +1576,7 @@ mod tests {
         TableSchema::new(
             TableId::SENTINEL,
             "Foo".into(),
+            None,
             cols.into(),
             indices.into(),
             constraints.into(),
