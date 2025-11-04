@@ -6,12 +6,12 @@ import type { ColumnMetadata } from './type_builders';
  */
 export type AllUnique<
   TableDef extends UntypedTableDef,
-  Columns extends Array<keyof TableDef['columns']>,
+  Columns extends readonly (keyof TableDef['columns'])[],
 > = {
   [i in keyof Columns]: ColumnIsUnique<
     TableDef['columns'][Columns[i]]['columnMetadata']
   >;
-} extends true[]
+} extends readonly true[]
   ? true
   : false;
 

@@ -1,17 +1,46 @@
 import { describe, expect, test } from 'vitest';
-import { and, createQuery, eq, gt, literal, lt } from '../src/server/query_builder';
+import {
+  and,
+  createQuery,
+  createTableRef,
+  createTableScan,
+  TableScan,
+  eq,
+  gt,
+  literal,
+  lt,
+} from '../src/server/query_builder';
+import type { Semijoin } from '../src/server/query_builder';
 import type { UntypedTableDef } from '../src/server/table';
 
+import { table, t } from '../src/server';
 describe('QueryBuilder', () => {
-  const tableDef: UntypedTableDef = {
-    name: 'person',
-    columns: {
-      id: {} as any,
-      name: {} as any,
-      age: {} as any,
+  const person = table(
+    {
+      name: 'person',
+      indexes: [
+        {
+          name: 'id_name_idx',
+          algorithm: 'btree',
+          columns: ['id', 'name'] as const,
+        },
+        {
+          name: 'name_idx',
+          algorithm: 'btree',
+          columns: ['name'] as const,
+        }
+      ] as const,
     },
-    indexes: [],
-  };
+    {
+      id: t.u32().primaryKey(),
+      name: t.string(),
+      married: t.bool(),
+      age: t.u32(),
+    }
+  );
+
+  const tableRef = createTableRef(person);
+  const tableDef: UntypedTableDef = tableRef.tableDef;
 
   test('produces SQL for numeric equality filters', () => {
     const sql = createQuery(tableDef)
@@ -65,13 +94,81 @@ describe('QueryBuilder', () => {
 
   test('combines boolean expressions with AND', () => {
     const sql = createQuery(tableDef)
-      .filter(row =>
-        and(eq(row.id, literal(1)), gt(row.age, literal(18)))
-      )
+      .filter(row => and(eq(row.id, literal(1)), gt(row.age, literal(18))))
       .toSql();
 
     expect(sql).toBe(
       'SELECT "person".* FROM "person" WHERE ("person"."id" = 1) AND ("person"."age" > 18)'
     );
+  });
+
+  test('table scan renders same SQL as query builder', () => {
+    const scan = new TableScan(tableRef)
+      .addFilter(row => eq(row.id, literal(5)))
+      .addFilter(row => gt(row.age, literal(30)));
+
+    expect(scan.toSql()).toBe(
+      'SELECT "person".* FROM "person" WHERE ("person"."id" = 5) AND ("person"."age" > 30)'
+    );
+  });
+
+  test('table scan filter on bool field', () => {
+    const scan = new TableScan(tableRef)
+      .addFilter(row => eq(row.id, literal(5)))
+      .addFilter(row => eq(row.married, literal(true)));
+
+    expect(scan.toSql()).toBe(
+      'SELECT "person".* FROM "person" WHERE ("person"."id" = 5) AND ("person"."married" = TRUE)'
+    );
+  });
+
+  test('semijoin enforces matching index shapes', () => {
+    const orders = table(
+      {
+        name: 'orders',
+        indexes: [
+          {
+            name: 'id_desc_idx',
+            algorithm: 'btree',
+            columns: ['id', 'desc'] as const,
+          },
+        ] as const,
+      },
+      {
+        id: t.u32().primaryKey(),
+        buyerId: t.u32().index('btree'),
+        desc: t.string(),
+      }
+    );
+    const ordersRef = createTableRef(orders);
+    const personScan = new TableScan(tableRef);
+    expect(Object.keys(tableRef.indexes)).toContain('id_name_idx');
+    expect(tableRef.indexes.id.columns).toEqual(['id']);
+    expect(ordersRef.indexes.buyerId.columns).toEqual(['buyerId']);
+    const join = new TableScan(tableRef).semijoin(
+      tableRef.indexes.id,
+      ordersRef.indexes.buyerId
+    );
+    const join2 = personScan.semijoin(
+      tableRef.indexes.id_name_idx,
+      ordersRef.indexes.id_desc_idx
+    );
+
+    const _typeCheck: Semijoin<
+      typeof tableRef.tableDef,
+      typeof ordersRef.tableDef,
+      'id',
+      'buyerId'
+    > = join;
+
+    expect(join.leftIndex.columns).toEqual(['id']);
+    expect(join.rightIndex.columns).toEqual(['buyerId']);
+    expect(join.rightIndex.table).toBe('orders');
+    expect(join2.leftIndex.columns).toEqual(['id', 'name']);
+    expect(join2.rightIndex.columns).toEqual(['id', 'desc']);
+    expect(Array.isArray(join2.leftIndex.valueType)).toBe(true);
+    expect(Array.isArray(join2.rightIndex.valueType)).toBe(true);
+    expect(join2.leftIndex.valueType).toHaveLength(2);
+    expect(join2.rightIndex.valueType).toHaveLength(2);
   });
 });

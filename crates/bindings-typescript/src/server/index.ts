@@ -14,6 +14,12 @@ export {
   type Query,
   type Expr,
   type ValueExpr,
+  type TableRef,
+  createTableRef,
+  type TableScan,
+  createTableScan,
+  type Semijoin,
+  exprToSql,
 } from './query_builder';
 
 import './polyfills'; // Ensure polyfills are loaded

@@ -22,18 +22,21 @@ type UntypedIndex<AllowedCol extends string> = {
   name: string;
   unique: boolean;
   algorithm: 'btree' | 'direct';
-  columns: AllowedCol[];
+  columns: readonly AllowedCol[];
+  accessorName?: string;
 };
 
 /**
  * A helper type to extract the column names from an index definition.
  */
 export type IndexColumns<I extends IndexOpts<any>> = I extends {
-  columns: string[];
+  columns: infer Columns;
 }
-  ? I['columns']
-  : I extends { column: string }
-    ? [I['column']]
+  ? Columns extends readonly (infer Names extends string)[]
+    ? Columns
+  : never
+  : I extends { column: infer Name extends string }
+    ? readonly [Name]
     : never;
 
 /**
@@ -46,6 +49,12 @@ export type Indexes<
   [k in keyof I]: Index<TableDef, I[k]>;
 };
 
+function doSomething<
+  T1 extends UntypedTableDef,
+  I1 extends UntypedIndex<keyof T1['columns'] & string>,
+  T2 extends UntypedTableDef,
+  I2 extends UntypedIndex<keyof T2['columns'] & string>,
+>(left: Index<T1, I1>, right: Index<T2, I2>): void {}
 /**
  * A type representing a database index, which can be either unique or ranged.
  */
@@ -95,9 +104,18 @@ export type IndexVal<
 /**
  * A helper type to extract the types of the columns that make up an index.
  */
-type _IndexVal<TableDef extends UntypedTableDef, Columns extends string[]> = {
-  [i in keyof Columns]: TableDef['columns'][Columns[i]]['typeBuilder']['type'];
-};
+type _IndexVal<
+  TableDef extends UntypedTableDef,
+  Columns extends readonly string[],
+> = Columns extends readonly [
+  infer Head extends string,
+  ...infer Tail extends string[],
+]
+  ? [
+      TableDef['columns'][Head]['typeBuilder']['type'],
+      ..._IndexVal<TableDef, Tail>,
+    ]
+  : [];
 
 /**
  * A helper type to define the bounds for scanning an index.
@@ -141,7 +159,7 @@ export type ColumnIndex<
   {
     name: Name;
     unique: ColumnIsUnique<M>;
-    columns: [Name];
+    columns: readonly [Name];
     algorithm: 'btree' | 'direct';
   } & (M extends {
     indexType: infer I extends NonNullable<IndexTypes>;

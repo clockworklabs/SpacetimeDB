@@ -14,18 +14,17 @@ const example = table(
 type ExampleTableDef = {
   name: typeof example.tableName;
   columns: typeof example.rowType.row;
-  indexes: Array<typeof example.idxs[number]>;
+  indexes: Array<(typeof example.idxs)[number]>;
 };
 
 type StringsOnly = RowTypeWithValue<ExampleTableDef, string>;
 type Idk = RowExpr<ExampleTableDef>;
 
 function takesRowExpr(expr: Idk) {
-  expr.name
-  expr.name
-  expr.name
+  expr.name;
+  expr.name;
+  expr.name;
 }
-
 
 const strRecord: StringsOnly = {
   name: 'Ada',

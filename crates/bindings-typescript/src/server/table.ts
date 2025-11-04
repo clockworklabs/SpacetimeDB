@@ -5,7 +5,13 @@ import type RawIndexDefV9 from '../lib/autogen/raw_index_def_v_9_type';
 import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type { AllUnique } from './constraints';
-import type { ColumnIndex, IndexColumns, Indexes, IndexOpts } from './indexes';
+import type {
+  ColumnIndex,
+  IndexColumns,
+  Indexes,
+  IndexOpts,
+  IndexVal,
+} from './indexes';
 import { MODULE_DEF, splitName } from './schema';
 import {
   RowBuilder,
@@ -28,8 +34,25 @@ export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
   TableDef['columns']
 >;
 
-type ColumnNames<TableDef extends UntypedTableDef> =
-  keyof RowType<TableDef> & string;
+type ColumnNames<TableDef extends UntypedTableDef> = keyof RowType<TableDef> &
+  string;
+
+type NonNeverKeys<T> = {
+  [K in keyof T]: T[K] extends never ? never : K;
+}[keyof T];
+
+type TableAccessorIndexNames<TableDef extends UntypedTableDef> = TableDef['indexes'][number] extends infer I
+  ? I extends { accessorName?: infer A }
+    ? A extends string
+      ? A
+      : never
+    : never
+  : never;
+
+export type TableIndexNames<TableDef extends UntypedTableDef> = Extract<
+  NonNeverKeys<TableIndexes<TableDef>>,
+  string
+> | TableAccessorIndexNames<TableDef>;
 
 /**
  * Describes how a single column is referenced in a row expression. Carries the
@@ -56,13 +79,43 @@ export type RowExpr<TableDef extends UntypedTableDef> = {
 };
 
 /**
+ * Describes how an index is referenced inside the query builder. Includes
+ * stable metadata about the index so callers can reason about joins or other
+ * index-driven operations.
+ */
+export type IndexExpr<
+  TableDef extends UntypedTableDef,
+  IndexName extends TableIndexNames<TableDef>,
+> = Prettify<
+  {
+    type: 'index';
+    tableDef: TableDef;
+    table: TableDef['name'];
+    index: IndexName;
+    valueType: IndexValueType<TableDef, IndexName>;
+  } & Pick<
+    TableIndexes<TableDef>[IndexName],
+    'name' | 'unique' | 'columns' | 'algorithm'
+  >
+>;
+
+export type IndexValueType<
+  TableDef extends UntypedTableDef,
+  IndexName extends TableIndexNames<TableDef>,
+> = IndexVal<TableDef, TableIndexes<TableDef>[IndexName]>;
+
+/**
+ * A typed projection of every index defined on the table.
+ */
+export type IndexExprs<TableDef extends UntypedTableDef> = {
+  readonly [I in TableIndexNames<TableDef>]: IndexExpr<TableDef, I>;
+};
+
+/**
  * Extracts a narrower row type containing only the columns whose inferred value
  * type matches `Value`.
  */
-export type RowTypeWithValue<
-  TableDef extends UntypedTableDef,
-  Value,
-> = Pick<
+export type RowTypeWithValue<TableDef extends UntypedTableDef, Value> = Pick<
   RowType<TableDef>,
   {
     [K in keyof RowType<TableDef> & string]: RowType<TableDef>[K] extends Value

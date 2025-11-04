@@ -31,4 +31,8 @@ export type Values<T> = T[keyof T];
 /**
  * A helper type to collapse a tuple into a single type if it has only one element.
  */
-export type CollapseTuple<A extends any[]> = A extends [infer T] ? T : A;
+export type CollapseTuple<A extends readonly any[]> = A extends readonly [
+  infer T,
+]
+  ? T
+  : A;
