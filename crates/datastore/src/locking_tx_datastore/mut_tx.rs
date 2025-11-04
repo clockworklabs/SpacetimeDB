@@ -303,7 +303,7 @@ impl MutTxId {
     /// - The returned [`ViewId`] is unique and not [`ViewId::SENTINEL`].
     /// - All view metadata maintained by the datastore is created atomically
     pub fn create_view(&mut self, module_def: &ModuleDef, view_def: &ViewDef) -> Result<(ViewId, TableId)> {
-        let table_schema = TableSchema::from_view_def(module_def, view_def);
+        let table_schema = TableSchema::from_view_def_for_datastore(module_def, view_def);
         let table_id = self.create_table(table_schema)?;
 
         let ViewDef {

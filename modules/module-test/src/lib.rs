@@ -4,7 +4,7 @@ use std::time::Duration;
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
-    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
+    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp, ViewContext,
 };
 use spacetimedb::{log, ProcedureContext};
 
@@ -180,6 +180,16 @@ impl Foo<'_> {
         bsatn::from_slice(data).unwrap()
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VIEWS
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[spacetimedb::view(name = my_player, public)]
+fn my_player(ctx: &ViewContext) -> Option<Player> {
+    ctx.db.player().identity().find(ctx.sender)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // REDUCERS
 // ─────────────────────────────────────────────────────────────────────────────
