@@ -14,8 +14,11 @@ on:
 name: CI
 
 concurrency:
-  # Effectively put everything in its own group when it's not a PR event
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{
+    github.event_name == 'pull_request' && github.event.pull_request.number ||
+    github.event_name == 'workflow_dispatch' && github.event.inputs.pr_number ||
+    ('sha-' + github.sha)
+  }}
   cancel-in-progress: true
 
 jobs:
