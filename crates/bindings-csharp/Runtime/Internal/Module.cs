@@ -133,6 +133,7 @@ public static class Module
         });
     
         viewDispatchers.Add(dispatcher);
+        moduleDef.RegisterView(def);
     }
     
     public static void RegisterView(RawViewDefV9 def, IAnonymousView dispatcher)
@@ -144,14 +145,8 @@ public static class Module
         });
 
         anonymousViewDispatchers.Add(dispatcher);
+        moduleDef.RegisterView(def);
     }
-    
-    // public static void RegisterView(string name, bool isPublic, bool isAnonymous, byte[] value, string returnType)
-    // {
-    //     List<SpacetimeDB.BSATN.AggregateElement> parameters = new List<SpacetimeDB.BSATN.AggregateElement>().FromBytes(value);
-    //     SpacetimeDB.BSATN.AlgebraicType type = new SpacetimeDB.BSATN.AlgebraicType().FromString(returnType);
-    //     moduleDef.RegisterView(new RawViewDefV9 { Name = name, IsPublic = isPublic, IsAnonymous = isAnonymous, Params = parameters, ReturnType = type });
-    // }
 
     public static void RegisterClientVisibilityFilter(Filter rlsFilter)
     {
