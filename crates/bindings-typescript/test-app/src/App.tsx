@@ -1,23 +1,19 @@
-import { DbConnection, Player } from './module_bindings';
+import { tables, reducers, DbConnection } from './module_bindings';
 import { useEffect } from 'react';
 import './App.css';
 import { useReducer, useSpacetimeDB, useTable } from '../../src/react';
 
 function App() {
-  const x = useReducer;
-  const createPlayer = useReducer<DbConnection>('createPlayer');
-  const connection = useSpacetimeDB<DbConnection>();
-  const players = useTable<DbConnection, typeof Player>('player', {
-    onInsert: player => {
-      console.log(player);
-    },
-  });
+  const connection = useSpacetimeDB();
+  const players = useTable(tables.player);
+  const createPlayer = useReducer(reducers.createPlayer);
+  createPlayer({ name: 'Test', location: { x: 0, y: 0 } });
 
   useEffect(() => {
     setTimeout(() => {
-      console.log(Array.from(players.rows));
+      console.log(Array.from(players));
     }, 5000);
-  }, [connection, players.rows]);
+  }, [connection, players]);
 
   return (
     <div className="App">
@@ -26,7 +22,10 @@ function App() {
 
       <button
         onClick={() =>
-          connection.reducers.createPlayer('Hello', { x: 10, y: 40 })
+          connection.getConnection<DbConnection>()?.reducers.createPlayer({
+            name: 'Hello',
+            location: { x: 10, y: 40 },
+          })
         }
       >
         Update

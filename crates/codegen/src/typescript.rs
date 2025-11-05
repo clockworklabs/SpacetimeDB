@@ -271,6 +271,11 @@ impl Lang for TypeScript {
         writeln!(out, ">;");
         out.dedent(1);
 
+        writeln!(out);
+        writeln!(out, "export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);");
+        writeln!(out, "export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);");
+        writeln!(out);
+
         out.newline();
 
         // Write type aliases for EventContext, ReducerEventContext, SubscriptionEventContext, ErrorContext
@@ -302,7 +307,6 @@ impl Lang for TypeScript {
         writeln!(out);
         writeln!(out, "export class DbConnectionBuilder extends __DbConnectionBuilder<");
         out.indent(1);
-        writeln!(out, "typeof REMOTE_MODULE,");
         writeln!(out, "DbConnection");
         out.dedent(1);
         writeln!(out, "> {{}}");
@@ -330,6 +334,7 @@ impl Lang for TypeScript {
         );
         out.indent(1);
         writeln!(out, "return new SubscriptionBuilder(this);");
+        
         out.dedent(1);
         writeln!(out, "}};");
         out.dedent(1);
@@ -347,28 +352,16 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
     // All library imports are prefixed with `__` to avoid
     // clashing with the names of user generated types.
     let mut types = [
-        "type AlgebraicType as __AlgebraicTypeType",
-        "AlgebraicType as __AlgebraicTypeValue",
-        "type AlgebraicTypeVariants as __AlgebraicTypeVariants",
-        "Identity as __Identity",
-        "ClientCache as __ClientCache",
-        "ClientTable as __ClientTable",
-        "ConnectionId as __ConnectionId",
-        "Timestamp as __Timestamp",
-        "TimeDuration as __TimeDuration",
         "DbConnectionBuilder as __DbConnectionBuilder",
-        "BinaryWriter as __BinaryWriter",
-        "type CallReducerFlags as __CallReducerFlags",
+        "convertToAccessorMap as __convertToAccessorMap",
         "type EventContextInterface as __EventContextInterface",
         "type ReducerEventContextInterface as __ReducerEventContextInterface",
         "type SubscriptionEventContextInterface as __SubscriptionEventContextInterface",
         "type ErrorContextInterface as __ErrorContextInterface",
         "type RemoteModule as __RemoteModule",
         "SubscriptionBuilderImpl as __SubscriptionBuilderImpl",
-        "BinaryReader as __BinaryReader",
         "DbConnectionImpl as __DbConnectionImpl",
         "type Event as __Event",
-        "deepEqual as __deepEqual",
         "schema as __schema",
         "table as __table",
         "reducers as __reducers",

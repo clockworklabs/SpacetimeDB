@@ -7,6 +7,7 @@ import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
 import type { AllUnique, ConstraintOpts } from './constraints';
 import type { ColumnIndex, IndexColumns, Indexes, IndexOpts, ReadonlyIndexes } from './indexes';
 import { MODULE_DEF, splitName } from './schema';
+import type { TableSchema } from './table_schema';
 import {
   ProductBuilder,
   RowBuilder,
@@ -16,7 +17,7 @@ import {
   type RowObj,
   type TypeBuilder,
 } from './type_builders';
-import type { Prettify } from './type_util';
+import type { Prettify, PrettifyDeep } from './type_util';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
@@ -35,7 +36,7 @@ export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
 export type CoerceColumn<
   Col extends TypeBuilder<any, any> | ColumnBuilder<any, any, any>,
 > =
-  Col extends TypeBuilder<infer T, infer U> ? ColumnBuilder<T, U, object> : Col;
+  Col extends TypeBuilder<infer T, infer U> ? ColumnBuilder<T, U, ColumnMetadata<any>> : Col;
 
 /**
  * Coerces a RowObj where TypeBuilders are replaced with ColumnBuilders
@@ -55,7 +56,7 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
 export type UntypedTableDef = {
   name: string;
   accessorName: string;
-  columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
+  columns: CoerceRow<RowObj>;
   rowType: ProductType;
   indexes: IndexOpts<any>[];
 };
@@ -147,37 +148,6 @@ export type TableMethods<TableDef extends UntypedTableDef> = ReadonlyTableMethod
 
   /** Delete a row equal to `row`. Returns true if something was deleted. */
   delete(row: RowType<TableDef>): boolean;
-};
-
-/**
- * Represents a handle to a database table, including its name, row type, and row spacetime type.
- */
-export type TableSchema<
-  TableName extends string,
-  Row extends Record<string, ColumnBuilder<any, any, any>>,
-  Idx extends readonly IndexOpts<keyof Row & string>[],
-> = {
-  readonly rowType: RowBuilder<Row>;
-
-  /**
-   * The name of the table.
-   */
-  readonly tableName: TableName;
-
-  /**
-   * The {@link ProductType} representing the structure of a row in the table.
-   */
-  readonly rowSpacetimeType: ProductType;
-
-  /**
-   * The {@link RawTableDefV9} of the configured table
-   */
-  readonly tableDef: RawTableDefV9;
-
-  /**
-   * The indexes defined on the table.
-   */
-  readonly idxs: Idx;
 };
 
 /**

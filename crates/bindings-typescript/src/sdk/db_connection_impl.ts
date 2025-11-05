@@ -25,7 +25,7 @@ import {
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import { decompress } from './decompress.ts';
-import type { Identity } from '../';
+import type { Identity, InferTypeOfRow } from '../';
 import type {
   IdentityTokenMessage,
   Message,
@@ -50,7 +50,7 @@ import {
 } from './subscription_builder_impl.ts';
 import { stdbLogger } from './logger.ts';
 import { fromByteArray } from 'base64-js';
-import type { ReducersView, SetReducerFlags, UntypedReducersDef } from './reducers.ts';
+import type { ReducerEventInfo, ReducersView, SetReducerFlags, UntypedReducersDef } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
 import { toCamelCase } from '../lib/utils.ts';
@@ -261,11 +261,11 @@ export class DbConnectionImpl<
     for (const reducer of def.reducers) {
       const key = toCamelCase(reducer.name);
 
-      (out as any)[key] = (params: typeof reducer.params) => {
+      (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
         const flags = this.#callReducerFlags.get(reducer.name) ?? 'FullUpdate';
         this.callReducerWithParams(
           reducer.name,
-          reducer.paramsSpacetimeType,
+          reducer.paramsType,
           params,
           flags
         );
@@ -291,7 +291,7 @@ export class DbConnectionImpl<
   }
 
   #makeEventContext(
-    event: Event<RemoteModule['reducers'][number]>
+    event: Event<ReducerEventInfo<InferTypeOfRow<RemoteModule['reducers'][number]['params']>>>
   ): EventContextInterface<RemoteModule> {
     // Bind methods to preserve `this` (#private fields safe)
     return {
@@ -648,7 +648,7 @@ export class DbConnectionImpl<
       case 'TransactionUpdate': {
         let reducerInfo = message.reducerInfo;
         let unknownTransaction = false;
-        let reducerArgs: any | undefined;
+        let reducerArgs: InferTypeOfRow<typeof reducer.params> | undefined;
         const reducer = this.#remoteModule.reducers.find(t => t.name === reducerInfo!.reducerName)!;
         if (!reducerInfo) {
           unknownTransaction = true;
@@ -658,7 +658,7 @@ export class DbConnectionImpl<
             const reader = new BinaryReader(reducerInfo.args as Uint8Array);
             reducerArgs = ProductType.deserializeValue(
               reader,
-              reducer?.paramsSpacetimeType
+              reducer?.paramsType
             );
           } catch {
             // This should only be printed in development, since it's
@@ -686,6 +686,7 @@ export class DbConnectionImpl<
         // At this point, we know that `reducerInfo` is not null because
         // we return if `unknownTransaction` is true.
         reducerInfo = reducerInfo!;
+        reducerArgs = reducerArgs!;
 
         // Thus this must be a reducer event create it and emit it.
         const reducerEvent = {
@@ -696,9 +697,7 @@ export class DbConnectionImpl<
           energyConsumed: message.energyConsumed,
           reducer: {
             name: reducerInfo.reducerName,
-            // TODO(cloutiertyler): rename back to args to maintain API compatibility
-            params: reducerArgs,
-            paramsSpacetimeType: reducer.paramsSpacetimeType,
+            args: reducerArgs,
           },
         };
         const event: Event<typeof reducerEvent.reducer> = {
@@ -718,7 +717,7 @@ export class DbConnectionImpl<
 
         const argsArray: any[] = [];
         (
-          reducer.paramsSpacetimeType
+          reducer.paramsType
         ).elements.forEach(element => {
           argsArray.push(reducerArgs[element.name!]);
         });

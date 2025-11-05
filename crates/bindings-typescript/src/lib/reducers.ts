@@ -7,12 +7,17 @@ import type { Timestamp } from './timestamp';
 import type { UntypedReducersDef } from '../sdk/reducers';
 import type { DbView } from '../server/db_view';
 import { MODULE_DEF, type UntypedSchemaDef } from './schema';
-import type {
-  InferTypeOfRow,
+import {
   RowBuilder,
-  RowObj,
-  TypeBuilder,
+  type Infer,
+  type InferTypeOfRow,
+  type ProductBuilder,
+  type RowObj,
+  type TypeBuilder,
 } from './type_builders';
+import type { CamelCase } from './type_util';
+import type { ReducerSchema } from './reducer_schema';
+import { toCamelCase } from './utils';
 
 /**
  * Helper to extract the parameter types from an object type
@@ -259,34 +264,6 @@ export function clientDisconnected<
   pushReducer(name, params, fn, Lifecycle.OnDisconnect);
 }
 
-/**
- * Represents a handle to a database reducer, including its name and argument type.
- */
-export type ReducerSchema<
-  ReducerName extends string,
-  Params extends ParamsObj | RowObj,
-> = {
-  /**
-   * The name of the reducer.
-   */
-  readonly reducerName: ReducerName;
-
-  /**
-   * The type of the parameters object expected by the reducer.
-   */
-  readonly paramsType: Params;
-
-  /**
-   * 
-   */
-  readonly paramsSpacetimeType: ProductType;
-
-  /**
-   * The {@link RawReducerDefV9} of the configured reducer.
-   */
-  readonly reducerDef: RawReducerDefV9;
-};
-
 class Reducers<ReducersDef extends UntypedReducersDef> {
   /**
    * Phantom type to track the reducers definition 
@@ -302,8 +279,9 @@ type ReducersToSchema<T extends readonly ReducerSchema<any, any>[]> = {
     /** @type {UntypedReducerDef} */
     readonly [i in keyof T]: {
       name: T[i]['reducerName'];
-      params: T[i]['paramsType'];
-      paramsSpacetimeType: T[i]['paramsSpacetimeType'];
+      accessorName: T[i]['accessorName'];
+      params: T[i]['params']['row'];
+      paramsType: T[i]['paramsSpacetimeType'];
     };
   };
 };
@@ -356,7 +334,8 @@ export function reducerSchema<
   };
   return {
     reducerName: name,
-    paramsType: params,
+    accessorName: toCamelCase(name),
+    params: new RowBuilder<Params>(params),
     paramsSpacetimeType: paramType,
     reducerDef: {
       name,

@@ -1,20 +1,20 @@
-import type { UntypedSchemaDef } from '../lib/schema.ts';
+import type { TableNamesOf, UntypedSchemaDef } from '../lib/schema.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
 import { TableCache } from './table_cache.ts';
 
 type TableName<SchemaDef> =
-  [SchemaDef] extends [UntypedSchemaDef] ? SchemaDef['tables'][number]['name'] : string;
+  [SchemaDef] extends [UntypedSchemaDef] ? TableNamesOf<SchemaDef> : string;
 
-export type TableDefForTableName<SchemaDef, N> =
+export type TableDefForTableName<SchemaDef extends UntypedSchemaDef, N extends TableName<SchemaDef>> =
   [SchemaDef] extends [UntypedSchemaDef]
-    ? Extract<SchemaDef['tables'][number], { name: N }>
+    ? (SchemaDef['tables'][number] & { name: N })
     : UntypedTableDef;
 
 type TableCacheForTableName<
   RemoteModule extends UntypedRemoteModule,
-  N
-> = TableCache<RemoteModule, TableDefForTableName<RemoteModule, N>>;
+  TableName extends TableNamesOf<RemoteModule>,
+> = TableCache<RemoteModule, TableName>;
 
 /**
  * This is a helper class that provides a mapping from table names to their corresponding TableCache instances
@@ -92,7 +92,7 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
       return table;
     }
 
-    const newTable = new TableCache<RemoteModule, TableDefForTableName<RemoteModule, N>>(tableDef);
+    const newTable = new TableCache<RemoteModule, N>(tableDef);
     this.tables.set(name, newTable);
     return newTable;
   }

@@ -6,15 +6,15 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { useSpacetimeDB } from './useSpacetimeDB';
-import { DbConnectionImpl, TableCache, type EventContextInterface, type RemoteModuleOf } from '../sdk/db_connection_impl';
+import { DbConnectionImpl, type EventContextInterface, type RemoteModuleOf } from '../sdk/db_connection_impl';
 import type { ConnectionState } from './connection_state';
-import type { RemoteModule, UntypedRemoteModule } from '../sdk/spacetime_module';
-import type { ClientDbView } from '../sdk/db_view';
-import type { RowType, UntypedTableDef } from '../lib/table';
+import type { UntypedRemoteModule } from '../sdk/spacetime_module';
+import type { RowType, Table, UntypedTableDef } from '../lib/table';
 import type { ClientTable } from '../sdk/client_table';
-import type { Infer, InferTypeOfRow } from '../lib/type_builders';
+import type { InferTypeOfRow } from '../lib/type_builders';
+import type { PrettifyDeep } from '../lib/type_util';
 
-export interface UseQueryCallbacks<RowType> {
+export interface UseTableCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
   onDelete?: (row: RowType) => void;
   onUpdate?: (oldRow: RowType, newRow: RowType) => void;
@@ -72,11 +72,9 @@ export const isOr = <Column extends string>(
   e: Expr<Column>
 ): e is Extract<Expr<Column>, { type: 'or' }> => e.type === 'or';
 
-type RecordLike<Column extends string> = Record<Column, any>;
-
 export function evaluate<Column extends string>(
   expr: Expr<Column>,
-  row: RecordLike<Column>
+  row: Record<Column, any>
 ): boolean {
   switch (expr.type) {
     case 'eq': {
@@ -142,11 +140,6 @@ export function where<Column extends string>(expr: Expr<Column>): Expr<Column> {
   return expr;
 }
 
-type Snapshot<RowType> = {
-  readonly rows: readonly RowType[];
-  readonly state: 'loading' | 'ready';
-};
-
 type MembershipChange = 'enter' | 'leave' | 'stayIn' | 'stayOut';
 
 function classifyMembership<
@@ -182,14 +175,10 @@ type ColumnsFromRow<R> = {
 }[keyof R] &
   string;
 
-// From a ClientTable<RM, Tbl>, get Tbl
-type TableDefOfClient<T> = T extends ClientTable<any, infer Tbl extends UntypedTableDef> ? Tbl : never;
-
 // Row type for a given connection + table key
 type RowTypeOfTable<
-  C extends DbConnectionImpl<any>,
-  K extends keyof ClientDbView<RemoteModuleOf<C>>
-> = InferTypeOfRow<RowType<TableDefOfClient<ClientDbView<RemoteModuleOf<C>>[K]>>>;
+  TableDef extends UntypedTableDef,
+> = InferTypeOfRow<RowType<TableDef>>;
 
 /**
  * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
@@ -225,13 +214,12 @@ type RowTypeOfTable<
  * ```
  */
 export function useTable<
-  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
-  TableName extends keyof ClientDbView<RemoteModuleOf<DbConnection>> 
+  TableDef extends UntypedTableDef,
 >(
-  tableName: TableName,
-  where: Expr<ColumnsFromRow<RowTypeOfTable<DbConnection, TableName>>> ,
-  callbacks?: UseQueryCallbacks<RowTypeOfTable<DbConnection, TableName>>
-): Snapshot<RowTypeOfTable<DbConnection, TableName>>;
+  tableDef: TableDef,
+  where: Expr<ColumnsFromRow<RowTypeOfTable<TableDef>>>,
+  callbacks?: UseTableCallbacks<RowTypeOfTable<TableDef>>
+): PrettifyDeep<RowTypeOfTable<TableDef>>[];
 
 /**
  * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
@@ -266,25 +254,31 @@ export function useTable<
  * });
  * ```
  */
+// export function useTable<
+//   TableDef extends UntypedTableDef,
+// >(
+//   tableDef: TableDef,
+//   where: Expr<ColumnsFromRow<RowTypeOfTable<TableDef>>>,
+//   callbacks?: UseQueryCallbacks<RowTypeOfTable<TableDef>>
+// ): Snapshot<PrettifyDeep<RowTypeOfTable<TableDef>>>;
 export function useTable<
-  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
-  TableName extends keyof ClientDbView<RemoteModuleOf<DbConnection>> 
+  TableDef extends UntypedTableDef,
 >(
-  tableName: TableName,
-  callbacks?: UseQueryCallbacks<RowTypeOfTable<DbConnection, TableName>>
-): Snapshot<RowTypeOfTable<DbConnection, TableName>>;
+  tableDef: TableDef,
+  callbacks?: UseTableCallbacks<RowTypeOfTable<TableDef>>
+): PrettifyDeep<RowTypeOfTable<TableDef>>[];
 
 export function useTable<
-  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
-  TableName extends keyof ClientDbView<RemoteModuleOf<DbConnection>>,
+  TableDef extends UntypedTableDef,
 >(
-  tableName: TableName,
+  tableDef: TableDef,
   whereClauseOrCallbacks?:
-    | Expr<ColumnsFromRow<RowTypeOfTable<DbConnection, TableName>>>
-    | UseQueryCallbacks<RowTypeOfTable<DbConnection, TableName>>,
-  callbacks?: UseQueryCallbacks<RowTypeOfTable<DbConnection, TableName>>
-): Snapshot<RowTypeOfTable<DbConnection, TableName>> {
-  type UseTableRowType = RowTypeOfTable<DbConnection, TableName>;
+    | Expr<ColumnsFromRow<RowTypeOfTable<TableDef>>>
+    | UseTableCallbacks<RowTypeOfTable<TableDef>>,
+  callbacks?: UseTableCallbacks<RowTypeOfTable<TableDef>>
+): readonly RowTypeOfTable<TableDef>[] {
+  type UseTableRowType = RowTypeOfTable<TableDef>;
+  const tableName = tableDef.name;
   let whereClause: Expr<ColumnsFromRow<UseTableRowType>> | undefined;
   if (
     whereClauseOrCallbacks &&
@@ -294,13 +288,13 @@ export function useTable<
     whereClause = whereClauseOrCallbacks as Expr<ColumnsFromRow<UseTableRowType>>;
   } else {
     callbacks = whereClauseOrCallbacks as
-      | UseQueryCallbacks<UseTableRowType>
+      | UseTableCallbacks<UseTableRowType>
       | undefined;
   }
   const [subscribeApplied, setSubscribeApplied] = useState(false);
-  let connectionState: ConnectionState<DbConnection> | undefined;
+  let connectionState: ConnectionState | undefined;
   try {
-    connectionState = useSpacetimeDB<DbConnection>();
+    connectionState = useSpacetimeDB();
   } catch {
     throw new Error(
       'Could not find SpacetimeDB client! Did you forget to add a ' +
@@ -310,27 +304,24 @@ export function useTable<
   }
 
   const query =
-    `SELECT * FROM ${String(tableName)}` +
+    `SELECT * FROM ${tableName}` +
     (whereClause ? ` WHERE ${toString(whereClause)}` : '');
 
   const latestTransactionEvent = useRef<any>(null);
-  const lastSnapshotRef = useRef<Snapshot<UseTableRowType> | null>(null);
+  const lastSnapshotRef = useRef<readonly UseTableRowType[] | null>(null);
 
   const whereKey = whereClause ? toString(whereClause) : '';
 
-  const computeSnapshot = useCallback((): Snapshot<UseTableRowType> => {
+  const computeSnapshot = useCallback((): readonly UseTableRowType[] => {
     const connection = connectionState.getConnection();
     if (!connection) {
-      return { rows: [], state: 'loading' };
+      return [];
     }
-    const table = connection.db[tableName];
+    const table = connection.db[tableName] as ClientTable<UntypedRemoteModule, TableDef['name']>;
     const result: readonly UseTableRowType[] = whereClause
-      ? Array.from(table.iter()).filter(row => evaluate(whereClause, row as any)) as unknown as readonly UseTableRowType[]
-      : Array.from(table.iter()) as unknown as readonly UseTableRowType[];
-    return {
-      rows: result,
-      state: subscribeApplied ? 'ready' : 'loading',
-    };
+      ? (Array.from(table.iter()).filter(row => evaluate(whereClause, row as UseTableRowType)) as UseTableRowType[])
+      : (Array.from(table.iter()) as UseTableRowType[]);
+    return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionState, tableName, whereKey, subscribeApplied]);
 
@@ -413,9 +404,7 @@ export function useTable<
         return () => {};
       }
 
-      const table = connection.db[
-        tableName as keyof typeof connection.db
-      ];
+      const table = connection.db[tableName];
       table.onInsert(onInsert);
       table.onDelete(onDelete);
       table.onUpdate?.(onUpdate);
@@ -437,7 +426,7 @@ export function useTable<
     ]
   );
 
-  const getSnapshot = useCallback((): Snapshot<UseTableRowType> => {
+  const getSnapshot = useCallback((): readonly UseTableRowType[] => {
     if (!lastSnapshotRef.current) {
       lastSnapshotRef.current = computeSnapshot();
     }

@@ -12,33 +12,32 @@ import { ConnectionId } from '../lib/connection_id';
 import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 
 export interface SpacetimeDBProviderProps<
-  RemoteModule extends UntypedRemoteModule,
-  DbConnection extends DbConnectionImpl<RemoteModule> = DbConnectionImpl<RemoteModule>,
+  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
 > {
-  connectionBuilder: DbConnectionBuilder<RemoteModule, DbConnection>;
+  connectionBuilder: DbConnectionBuilder<DbConnection>;
   children?: React.ReactNode;
 }
 
 export function SpacetimeDBProvider<
   DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
->({ connectionBuilder, children }: SpacetimeDBProviderProps<RemoteModuleOf<DbConnection>>) {
+>({ connectionBuilder, children }: SpacetimeDBProviderProps<DbConnection>) {
   // Holds the imperative connection instance when (and only when) we’re on the client.
   const connRef = React.useRef<DbConnection | null>(null);
   const getConnection = React.useCallback(() => connRef.current, []);
 
-  const [state, setState] = React.useState<ConnectionState<DbConnection>>({
+  const [state, setState] = React.useState<ConnectionState>({
     isActive: false,
     identity: undefined,
     token: undefined,
     connectionId: ConnectionId.random(),
     connectionError: undefined,
-    getConnection,
+    getConnection: getConnection as ConnectionState["getConnection"],
   });
 
   // Build on the client only; useEffect won't run during SSR.
   React.useEffect(() => {
     // Register callback for onConnect to update state
-      const onConnect = (conn: DbConnectionImpl<RemoteModuleOf<DbConnection>>) => {
+      const onConnect = (conn: DbConnection) => {
       setState(s => ({
         ...s,
         isActive: conn.isActive,
@@ -75,7 +74,7 @@ export function SpacetimeDBProvider<
 
     // Lazily build once
     if (!connRef.current) {
-      connRef.current = connectionBuilder.build() as unknown as DbConnection;
+      connRef.current = connectionBuilder.build();
     }
 
     return () => {

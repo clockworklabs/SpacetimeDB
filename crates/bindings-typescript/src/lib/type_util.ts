@@ -3,10 +3,24 @@
  */
 export type Prettify<T> = { [K in keyof T]: T[K] } & {};
 
+type Builtin =
+  | string | number | boolean | symbol | bigint | null | undefined
+  | Function | Date | RegExp | Error
+  | Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any>
+  | Promise<any>;
+
+// Deep
+export type PrettifyDeep<T> =
+  T extends Builtin ? T :
+  T extends readonly [...infer _] ? { [K in keyof T]: PrettifyDeep<T[K]> } :
+  T extends ReadonlyArray<infer U> ? ReadonlyArray<PrettifyDeep<U>> :
+  T extends object ? Prettify<{ [K in keyof T]: PrettifyDeep<T[K]> }> :
+  T;
+
 /**
  * Helper function to sets a field in an object
  */
-export type Set<T, F extends string, V> = Prettify<
+export type SetField<T, F extends string, V> = Prettify<
   Omit<T, F> & { [K in F]: V }
 >;
 
@@ -19,7 +33,7 @@ export type Set<T, F extends string, V> = Prettify<
 export function set<T, F extends string, V>(
   x: T,
   t: { [k in F]: V }
-): Set<T, F, V> {
+): SetField<T, F, V> {
   return { ...x, ...t };
 }
 

@@ -2,9 +2,9 @@ import { ConnectionId } from '../';
 import { Timestamp } from '../';
 import type { UpdateStatus } from './client_api/index.ts';
 import { Identity } from '../';
-import type { UntypedReducerDef } from './reducers.ts';
+import type { ReducerEventInfo } from './reducers.ts';
 
-export type ReducerEvent<Reducer extends UntypedReducerDef> = {
+export type ReducerEvent<Reducer extends ReducerEventInfo> = {
   /**
    * The time when the reducer started running.
    *

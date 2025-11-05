@@ -7,7 +7,7 @@ import {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type TypeBuilder,
 } from './type_builders';
-import type { TableSchema, UntypedTableDef } from './table';
+import type { UntypedTableDef } from './table';
 import {
   clientConnected,
   clientDisconnected,
@@ -23,6 +23,9 @@ import {
 } from './algebraic_type';
 import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
 import type { CamelCase } from './type_util';
+import type { TableSchema } from './table_schema';
+
+export type TableNamesOf<S extends UntypedSchemaDef> = S['tables'][number]['name'];
 
 /**
  * An untyped representation of the database schema.
@@ -362,4 +365,14 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
   // );
 
   return new Schema(tableDefs, MODULE_DEF.typespace);
+}
+
+type HasAccessor = { accessorName: PropertyKey };
+
+export type ConvertToAccessorMap<TableDefs extends readonly HasAccessor[]> = {
+  [Tbl in TableDefs[number] as Tbl["accessorName"]]: Tbl
+};
+
+export function convertToAccessorMap<T extends readonly HasAccessor[]>(arr: T): ConvertToAccessorMap<T> {
+  return Object.fromEntries(arr.map(v => [v.accessorName, v])) as ConvertToAccessorMap<T>;
 }

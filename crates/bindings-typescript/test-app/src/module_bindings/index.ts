@@ -6,28 +6,16 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ClientTable as __ClientTable,
-  ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionConfig as __DbConnectionConfig,
   DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
+  convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
   type ErrorContextInterface as __ErrorContextInterface,
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
@@ -97,7 +85,10 @@ const REMOTE_MODULE = {
   typeof reducersSchema.reducersType
 >;
 
-export type Module = typeof REMOTE_MODULE;
+export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);
+export const reducers = __convertToAccessorMap(
+  reducersSchema.reducersType.reducers
+);
 
 export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;
 export type ReducerEventContext = __ReducerEventContextInterface<
@@ -112,10 +103,7 @@ export class SubscriptionBuilder extends __SubscriptionBuilderImpl<
   typeof REMOTE_MODULE
 > {}
 
-export class DbConnectionBuilder extends __DbConnectionBuilder<
-  typeof REMOTE_MODULE,
-  DbConnection
-> {}
+export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> {}
 
 export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {
   static builder = (): DbConnectionBuilder => {

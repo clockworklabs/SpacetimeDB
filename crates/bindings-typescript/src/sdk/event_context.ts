@@ -1,6 +1,8 @@
+import type { InferTypeOfRow } from '../lib/type_builders.ts';
 import type { DbContext } from './db_context';
 import type { Event } from './event.ts';
 import type { ReducerEvent } from './reducer_event.ts';
+import type { ReducerEventInfo } from './reducers.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
 
 export type UntypedEventContext = EventContextInterface<UntypedRemoteModule>;
@@ -9,14 +11,14 @@ export interface EventContextInterface<
   RemoteModule extends UntypedRemoteModule,
 > extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
-  event: Event<RemoteModule['reducers'][number]>;
+  event: Event<ReducerEventInfo<InferTypeOfRow<RemoteModule['reducers'][number]['params']>>>;
 }
 
 export interface ReducerEventContextInterface<
   RemoteModule extends UntypedRemoteModule,
 > extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
-  event: ReducerEvent<RemoteModule['reducers'][number]>;
+  event: ReducerEvent<ReducerEventInfo<InferTypeOfRow<RemoteModule['reducers'][number]['params']>>>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type

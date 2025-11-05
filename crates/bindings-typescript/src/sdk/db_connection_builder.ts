@@ -7,11 +7,14 @@ import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
 
 /**
  * The database client connection to a SpacetimeDB server.
- * NOTE: DbConnectionImpl<any> is used here 
+ * NOTE: DbConnectionImpl<any> is used here because UntypedRemoteModule causes
+ * variance issues with function paramters, and the end user will never be
+ * constructing a DbConnectionBuilder directly since it's code generated. We will
+ * always have a concrete RemoteModule type in those cases. Even if they user
+ * did do this, they would just lose type safety on the RemoteModule.
  */
 export class DbConnectionBuilder<
-  RemoteModule extends UntypedRemoteModule,
-  DbConnection extends DbConnectionImpl<RemoteModule>
+  DbConnection extends DbConnectionImpl<any>
 > {
   #uri?: URL;
   #nameOrAddress?: string;
