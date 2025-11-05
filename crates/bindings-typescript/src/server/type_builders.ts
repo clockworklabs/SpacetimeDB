@@ -109,7 +109,6 @@ type ObjectType<Elements extends ElementsObj> = {
 };
 
 type VariantsObj = Record<string, TypeBuilder<any, any>>;
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 type UnitBuilder = ProductBuilder<{}>;
 type SimpleVariantsObj = Record<string, UnitBuilder>;
 

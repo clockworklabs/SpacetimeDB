@@ -182,7 +182,6 @@ class Schema<S extends UntypedSchemaDef> {
     params: Params,
     fn: Reducer<S, Params>
   ): Reducer<S, Params>;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   reducer(name: string, fn: Reducer<S, {}>): Reducer<S, {}>;
   reducer<Params extends ParamsObj | RowObj>(
     name: string,
@@ -221,11 +220,8 @@ class Schema<S extends UntypedSchemaDef> {
    * });
    * ```
    */
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   init(fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   init(name: string, fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   init(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
     const [name, fn] =
       typeof nameOrFn === 'string' ? [nameOrFn, maybeFn] : ['init', nameOrFn];
@@ -248,11 +244,8 @@ class Schema<S extends UntypedSchemaDef> {
    *   }
    * );
    */
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientConnected(fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientConnected(name: string, fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientConnected(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
     const [name, fn] =
       typeof nameOrFn === 'string'
@@ -278,11 +271,8 @@ class Schema<S extends UntypedSchemaDef> {
    * );
    * ```
    */
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientDisconnected(fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientDisconnected(name: string, fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientDisconnected(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
     const [name, fn] =
       typeof nameOrFn === 'string'
