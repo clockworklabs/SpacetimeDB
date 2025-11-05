@@ -149,6 +149,14 @@ impl ViewCall {
     }
 }
 
+#[derive(Clone, Debug)]
+/// The type of operation being performed against the datastore.
+pub enum FuncCallType {
+    Reducer,
+    Procedure,
+    View(ViewCall),
+}
+
 pub type ViewReadSets = HashMap<ViewCall, ReadSet>;
 
 /// Represents a Mutable transaction. Holds locks for its duration
@@ -173,24 +181,31 @@ static_assert_size!(MutTxId, 448);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
-    pub fn record_table_scan(&mut self, view: Option<ViewCall>, table_id: TableId) {
-        if let Some(view) = view {
-            self.read_sets.entry(view).or_default().insert_table_scan(table_id)
+    pub fn record_table_scan(&mut self, op: &FuncCallType, table_id: TableId) {
+        if let FuncCallType::View(view) = op {
+            self.read_sets
+                // TODO: change `read_sets` to the use the `HashMap` from `spacetimedb_data_structures`
+                // and use `entry_ref()` here
+                .entry(view.clone())
+                .or_default()
+                .insert_table_scan(table_id)
         }
     }
 
     /// Record that a view performs an index scan in this transaction's read set
     pub fn record_index_scan(
         &mut self,
-        view: Option<ViewCall>,
+        op: &FuncCallType,
         table_id: TableId,
         index_id: IndexId,
         lower: Bound<AlgebraicValue>,
         upper: Bound<AlgebraicValue>,
     ) {
-        if let Some(view) = view {
+        if let FuncCallType::View(view) = op {
             self.read_sets
-                .entry(view)
+                // TODO: change `read_sets` to the use the `HashMap` from `spacetimedb_data_structures
+                // and use `entry_ref()` here
+                .entry(view.clone())
                 .or_default()
                 .insert_index_scan(table_id, index_id, lower, upper)
         }

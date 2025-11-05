@@ -9,7 +9,7 @@ use crate::host::wasm_common::module_host_actor::{ReducerOp, ReducerResult};
 mod hooks;
 mod v1;
 
-pub(super) use self::hooks::{get_hook, HookFunction, ModuleHookKey};
+pub(super) use self::hooks::{get_hooks, HookFunctions, ModuleHookKey};
 
 /// The return type of a module -> host syscall.
 pub(super) type FnRet<'scope> = ExcResult<Local<'scope, v8::Value>>;
@@ -67,12 +67,11 @@ fn resolve_sys_module_inner<'scope>(
 /// This handles any (future) ABI version differences.
 pub(super) fn call_call_reducer(
     scope: &mut PinScope<'_, '_>,
-    fun: HookFunction<'_>,
+    hooks: &HookFunctions<'_>,
     op: ReducerOp<'_>,
 ) -> ExcResult<ReducerResult> {
-    let HookFunction(ver, fun) = fun;
-    match ver {
-        AbiVersion::V1 => v1::call_call_reducer(scope, fun, op),
+    match hooks.abi {
+        AbiVersion::V1 => v1::call_call_reducer(scope, hooks, op),
     }
 }
 
@@ -81,10 +80,9 @@ pub(super) fn call_call_reducer(
 /// This handles any (future) ABI version differences.
 pub(super) fn call_describe_module<'scope>(
     scope: &mut PinScope<'scope, '_>,
-    fun: HookFunction<'_>,
+    hooks: &HookFunctions<'_>,
 ) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
-    let HookFunction(ver, fun) = fun;
-    match ver {
-        AbiVersion::V1 => v1::call_describe_module(scope, fun),
+    match hooks.abi {
+        AbiVersion::V1 => v1::call_describe_module(scope, hooks),
     }
 }

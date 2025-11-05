@@ -5,12 +5,13 @@ use super::{Mem, WasmtimeFuel, EPOCH_TICKS_PER_SECOND};
 use crate::energy::FunctionBudget;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_common::run_describer;
-use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, DescribeError, InitializationError, ViewOp};
+use crate::host::wasm_common::module_host_actor::{
+    AnonymousViewOp, DescribeError, ExecutionStats, InitializationError, ViewOp,
+};
 use crate::host::wasm_common::*;
-use crate::host::wasmtime::wasm_instance_env::FuncCallType;
 use crate::util::string_from_utf8_lossy_owned;
 use futures_util::FutureExt;
-use spacetimedb_datastore::locking_tx_datastore::ViewCall;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, ViewCall};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use wasmtime::{
@@ -356,7 +357,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> module_host_actor::ExecuteResult {
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> module_host_actor::ReducerExecuteResult {
         let store = &mut self.store;
 
         prepare_store_for_call(store, budget);
@@ -403,10 +404,12 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let energy = module_host_actor::EnergyStats { budget, remaining };
         let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
-        module_host_actor::ExecuteResult {
-            energy,
-            timings,
-            memory_allocation,
+        module_host_actor::ReducerExecuteResult {
+            stats: ExecutionStats {
+                energy,
+                timings,
+                memory_allocation,
+            },
             call_result,
         }
     }
@@ -429,9 +432,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let Some(call_view) = self.call_view.as_ref() else {
             return module_host_actor::ViewExecuteResult {
-                energy: module_host_actor::EnergyStats::ZERO,
-                timings: module_host_actor::ExecutionTimings::zero(),
-                memory_allocation: get_memory_size(store),
+                stats: ExecutionStats {
+                    energy: module_host_actor::EnergyStats::ZERO,
+                    timings: module_host_actor::ExecutionTimings::zero(),
+                    memory_allocation: get_memory_size(store),
+                },
                 call_result: Err(anyhow::anyhow!(
                     "Module defines view {} but does not export `{}`",
                     op.name,
@@ -470,9 +475,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
         module_host_actor::ViewExecuteResult {
-            energy,
-            timings,
-            memory_allocation,
+            stats: ExecutionStats {
+                energy,
+                timings,
+                memory_allocation,
+            },
             call_result,
         }
     }
@@ -496,9 +503,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let Some(call_view_anon) = self.call_view_anon.as_ref() else {
             return module_host_actor::ViewExecuteResult {
-                energy: module_host_actor::EnergyStats::ZERO,
-                timings: module_host_actor::ExecutionTimings::zero(),
-                memory_allocation: get_memory_size(store),
+                stats: ExecutionStats {
+                    energy: module_host_actor::EnergyStats::ZERO,
+                    timings: module_host_actor::ExecutionTimings::zero(),
+                    memory_allocation: get_memory_size(store),
+                },
                 call_result: Err(anyhow::anyhow!(
                     "Module defines anonymous view {} but does not export `{}`",
                     op.name,
@@ -524,9 +533,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
         module_host_actor::ViewExecuteResult {
-            energy,
-            timings,
-            memory_allocation,
+            stats: ExecutionStats {
+                energy,
+                timings,
+                memory_allocation,
+            },
             call_result,
         }
     }
@@ -556,9 +567,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             return module_host_actor::ProcedureExecuteResult {
-                energy: module_host_actor::EnergyStats::ZERO,
-                timings: module_host_actor::ExecutionTimings::zero(),
-                memory_allocation: get_memory_size(store),
+                stats: ExecutionStats {
+                    energy: module_host_actor::EnergyStats::ZERO,
+                    timings: module_host_actor::ExecutionTimings::zero(),
+                    memory_allocation: get_memory_size(store),
+                },
                 call_result: Err(anyhow::anyhow!(
                     "Module defines procedure {} but does not export `{}`",
                     op.name,
@@ -602,9 +615,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let memory_allocation = get_memory_size(store);
 
         module_host_actor::ProcedureExecuteResult {
-            energy,
-            timings,
-            memory_allocation,
+            stats: ExecutionStats {
+                energy,
+                timings,
+                memory_allocation,
+            },
             call_result,
         }
     }

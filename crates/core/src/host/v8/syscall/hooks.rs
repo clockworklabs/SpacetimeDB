@@ -95,29 +95,33 @@ impl HooksInfo {
     fn register(&self, hook: ModuleHookKey) -> Result<(), ()> {
         self.registered[hook].set(())
     }
-
-    /// Returns the `AbiVersion` for the given `hook`, if any.
-    fn get(&self, hook: ModuleHookKey) -> Option<AbiVersion> {
-        self.registered[hook].get().map(|_| self.abi)
-    }
 }
 
 #[derive(Copy, Clone)]
-/// The actual callable module hook function and its abi version.
-pub(in super::super) struct HookFunction<'scope>(pub AbiVersion, pub Local<'scope, Function>);
+/// The actual callable module hook functions and their abi version.
+pub(in super::super) struct HookFunctions<'scope> {
+    pub abi: AbiVersion,
+    /// describe_module and call_reducer existed in v1.0, but everything else is `Option`al
+    pub describe_module: Local<'scope, Function>,
+    pub call_reducer: Local<'scope, Function>,
+}
 
 /// Returns the hook function previously registered in [`register_hooks`].
-pub(in super::super) fn get_hook<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    hook: ModuleHookKey,
-) -> Option<HookFunction<'scope>> {
+pub(in super::super) fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> Option<HookFunctions<'scope>> {
     let ctx = scope.get_current_context();
     let hooks = ctx.get_slot::<HooksInfo>()?;
 
-    let abi_version = hooks.get(hook)?;
+    let get = |hook: ModuleHookKey| {
+        hooks.registered[hook].get().map(|()| {
+            ctx.get_embedder_data(scope, hook.to_slot_index())
+                .expect("if the hook is registered it must have been set")
+                .cast()
+        })
+    };
 
-    let hooks = ctx
-        .get_embedder_data(scope, hook.to_slot_index())
-        .expect("if `AbiVersion` is set the hook must be set");
-    Some(HookFunction(abi_version, hooks.cast()))
+    Some(HookFunctions {
+        abi: hooks.abi,
+        describe_module: get(ModuleHookKey::DescribeModule)?,
+        call_reducer: get(ModuleHookKey::CallReducer)?,
+    })
 }

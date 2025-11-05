@@ -8,6 +8,7 @@ use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown};
 use crate::host::v8::from_value::cast;
 use crate::host::v8::ser::serialize_to_js;
 use crate::host::v8::string::{str_from_ident, StringConst};
+use crate::host::v8::syscall::hooks::HookFunctions;
 use crate::host::v8::{
     call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace,
     TerminationError, Throwable,
@@ -335,7 +336,7 @@ fn register_hooks_v1_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionC
 /// Calls the `__call_reducer__` function `fun`.
 pub(super) fn call_call_reducer(
     scope: &mut PinScope<'_, '_>,
-    fun: Local<'_, Function>,
+    hooks: &HookFunctions<'_>,
     op: ReducerOp<'_>,
 ) -> ExcResult<ReducerResult> {
     let ReducerOp {
@@ -355,7 +356,7 @@ pub(super) fn call_call_reducer(
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     // Call the function.
-    let ret = call_free_fun(scope, fun, args)?;
+    let ret = call_free_fun(scope, hooks.call_reducer, args)?;
 
     // Deserialize the user result.
     let user_res = deserialize_js(scope, ret)?;
@@ -366,10 +367,10 @@ pub(super) fn call_call_reducer(
 /// Calls the registered `__describe_module__` function hook.
 pub(super) fn call_describe_module(
     scope: &mut PinScope<'_, '_>,
-    fun: Local<'_, Function>,
+    hooks: &HookFunctions<'_>,
 ) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
     // Call the function.
-    let raw_mod_js = call_free_fun(scope, fun, &[])?;
+    let raw_mod_js = call_free_fun(scope, hooks.describe_module, &[])?;
 
     // Deserialize the raw module.
     let raw_mod = cast!(
