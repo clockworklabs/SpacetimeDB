@@ -137,7 +137,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                 lhs: Box::new(compile_rel_expr(var, *lhs)),
                 rhs: Box::new(PhysicalPlan::TableScan(
                     TableScan {
-                        schema: rhs_schema,
+                        schema: rhs_schema.inner(),
                         limit: None,
                         delta,
                     },
