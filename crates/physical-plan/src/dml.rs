@@ -5,7 +5,7 @@ use spacetimedb_expr::{
     expr::{ProjectName, RelExpr, Relvar},
     statement::{TableDelete, TableInsert, TableUpdate},
 };
-use spacetimedb_lib::{AlgebraicValue, ProductValue};
+use spacetimedb_lib::{identity::AuthCtx, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::schema::TableOrViewSchema;
 
@@ -20,11 +20,11 @@ pub enum MutationPlan {
 
 impl MutationPlan {
     /// Optimizes the filters in updates and deletes
-    pub fn optimize(self) -> Result<Self> {
+    pub fn optimize(self, auth: &AuthCtx) -> Result<Self> {
         match self {
             Self::Insert(..) => Ok(self),
-            Self::Delete(plan) => Ok(Self::Delete(plan.optimize()?)),
-            Self::Update(plan) => Ok(Self::Update(plan.optimize()?)),
+            Self::Delete(plan) => Ok(Self::Delete(plan.optimize(auth)?)),
+            Self::Update(plan) => Ok(Self::Update(plan.optimize(auth)?)),
         }
     }
 }
@@ -51,9 +51,9 @@ pub struct DeletePlan {
 
 impl DeletePlan {
     /// Optimize the filter part of the delete
-    fn optimize(self) -> Result<Self> {
+    fn optimize(self, auth: &AuthCtx) -> Result<Self> {
         let Self { table, filter } = self;
-        let filter = filter.optimize()?;
+        let filter = filter.optimize(auth)?;
         Ok(Self { table, filter })
     }
 
@@ -85,9 +85,9 @@ pub struct UpdatePlan {
 
 impl UpdatePlan {
     /// Optimize the filter part of the update
-    fn optimize(self) -> Result<Self> {
+    fn optimize(self, auth: &AuthCtx) -> Result<Self> {
         let Self { table, columns, filter } = self;
-        let filter = filter.optimize()?;
+        let filter = filter.optimize(auth)?;
         Ok(Self { columns, table, filter })
     }
 
