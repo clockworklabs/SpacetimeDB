@@ -227,19 +227,16 @@ fn send_message(ctx: &ReducerContext, text: String) {
         cls.root_config = cls.project_path / "root_config"
         spacetime("--config-path", cls.root_config, "server", "set-default", "local")
 
-    def tearDown(self):
-        # Ensure containers that were brought down during a test are back up.
-        self.docker.compose("up", "-d")
-        super().tearDown()
-
-    # TODO: This function seems to run even when `--docker` is not passed, leading to errors unless `-x replication` is passed, due to the docker-related code below.
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
+    def setUp(self):
         self.docker = DockerManager(COMPOSE_FILE)
         self.root_token = self.docker.generate_root_token()
 
         self.cluster = Cluster(self.docker, self)
+
+    def tearDown(self):
+        # Ensure containers that were brought down during a test are back up.
+        self.docker.compose("up", "-d")
+        super().tearDown()
 
     def add_me_as_admin(self):
         """Add the current user as an admin account"""
