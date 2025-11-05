@@ -1483,7 +1483,9 @@ public class Module : IIncrementalGenerator
                             {{string.Join(
                                 "\n",
                                 views.Array.Select(v =>
-                                    $"{{ var dispatcher = new {v.Name}ViewDispatcher(); var registrar = new global::SpacetimeDB.Internal.Module.TypeRegistrar(); var def = dispatcher.{(v.IsAnonymous ? "MakeAnonymousViewDef" : "MakeViewDef")}(registrar); SpacetimeDB.Internal.Module.RegisterView(def, dispatcher); }}"
+                                    v.IsAnonymous
+                                        ? $"SpacetimeDB.Internal.Module.RegisterAnonymousView<{v.Name}ViewDispatcher>();"
+                                        : $"SpacetimeDB.Internal.Module.RegisterView<{v.Name}ViewDispatcher>();"
                                 )
                             )}}
                             {{string.Join(

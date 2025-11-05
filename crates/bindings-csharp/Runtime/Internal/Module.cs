@@ -122,28 +122,20 @@ public static class Module
         where T : IStructuralReadWrite, new()
         where View : ITableView<View, T>, new() =>
         moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
-
-    public static void RegisterView(RawViewDefV9 def, IView dispatcher)
-    {
-        viewDefs.Add(sink =>
-        {
-            var bytes = IStructuralReadWrite.ToBytes(new RawViewDefV9.BSATN(), def);
-            sink.Write(bytes);
-        });
     
-        viewDispatchers.Add(dispatcher);
+    public static void RegisterView<TDispatcher>()
+        where TDispatcher : IView, new()
+    {
+        var dispatcher = new TDispatcher();
+        var def = dispatcher.MakeViewDef(typeRegistrar);
         moduleDef.RegisterView(def);
     }
     
-    public static void RegisterView(RawViewDefV9 def, IAnonymousView dispatcher)
+    public static void RegisterAnonymousView<TDispatcher>()
+        where TDispatcher : IAnonymousView, new()
     {
-        viewDefs.Add(sink =>
-        {
-            var bytes = IStructuralReadWrite.ToBytes(new RawViewDefV9.BSATN(), def);
-            sink.Write(bytes);
-        });
-
-        anonymousViewDispatchers.Add(dispatcher);
+        var dispatcher = new TDispatcher();
+        var def = dispatcher.MakeAnonymousViewDef(typeRegistrar);
         moduleDef.RegisterView(def);
     }
 
