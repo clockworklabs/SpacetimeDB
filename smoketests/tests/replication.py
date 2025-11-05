@@ -225,6 +225,7 @@ fn send_message(ctx: &ReducerContext, text: String) {
     def setUpClass(cls):
         super().setUpClass()
         cls.root_config = cls.project_path / "root_config"
+        spacetime("--config-path", cls.root_config, "server", "set-default", "local")
 
     def tearDown(self):
         # Ensure containers that were brought down during a test are back up.
