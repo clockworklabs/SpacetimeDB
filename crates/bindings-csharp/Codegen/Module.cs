@@ -1404,7 +1404,7 @@ public class Module : IIncrementalGenerator
                             public readonly ConnectionId? ConnectionId;
                             public readonly Random Rng;
                             public readonly Timestamp Timestamp;
-                            public readonly AuthCtx AuthCtx;
+                            public readonly AuthCtx SenderAuth;
 
                             // We need this property to be non-static for parity with client SDK.
                             public Identity Identity => Internal.IReducerContext.GetIdentity();
@@ -1414,7 +1414,7 @@ public class Module : IIncrementalGenerator
                                 ConnectionId = connectionId;
                                 Rng = random;
                                 Timestamp = time;
-                                AuthCtx = AuthCtx.BuildFromSystemTables(connectionId, identity);
+                                SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
                             }
                         }
                         

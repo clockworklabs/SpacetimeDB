@@ -227,7 +227,7 @@ pub fn run(
             });
 
             // Evaluate the query
-            let rows = execute_select_stmt(stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
+            let rows = execute_select_stmt(&auth, stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
                 check_row_limit(
                     &[&plan],
                     db,
@@ -254,7 +254,7 @@ pub fn run(
             }
 
             // Evaluate the mutation
-            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(stmt, tx, &mut metrics))?;
+            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
@@ -332,7 +332,7 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit, TestDB};
+    use crate::db::relational_db::tests_utils::{self, begin_tx, insert, with_auto_commit, TestDB};
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
@@ -899,6 +899,158 @@ pub(crate) mod tests {
             "select t.x, s.y from t join s on t.id = s.id",
             &auth,
             [product![2_u8, 3_u8]],
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_view() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let table_id = tests_utils::create_view_for_test(&db, "my_view", &schema, false)?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            tests_utils::insert_into_view(&db, tx, table_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, table_id, Some(identity_from_u8(2)), product![0u8, 2u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(2);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(&db, "select * from my_view", &auth, [product![0u8, 2u8]]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_anonymous_view() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let table_id = tests_utils::create_view_for_test(&db, "my_view", &schema, true)?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            tests_utils::insert_into_view(&db, tx, table_id, None, product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, table_id, None, product![0u8, 2u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(1);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(&db, "select b from my_view", &auth, [product![1u8], product![2u8]]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_join_table() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let v_id = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
+
+        let schema = [("c", AlgebraicType::U8), ("d", AlgebraicType::U8)];
+        let t_id = db.create_table_for_test("t", &schema, &[0.into()])?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            db.insert(tx, t_id, &product![0u8, 3u8].to_bsatn_vec().unwrap())?;
+            db.insert(tx, t_id, &product![1u8, 4u8].to_bsatn_vec().unwrap())?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(2)), product![1u8, 2u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(2);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(
+            &db,
+            "select t.* from v join t on v.a = t.c",
+            &auth,
+            [product![1u8, 4u8]],
+        );
+        assert_query_results(
+            &db,
+            "select v.* from v join t on v.a = t.c",
+            &auth,
+            [product![1u8, 2u8]],
+        );
+        assert_query_results(
+            &db,
+            "select v.* from v join t where v.a = t.c",
+            &auth,
+            [product![1u8, 2u8]],
+        );
+        assert_query_results(
+            &db,
+            "select v.b as b, t.d as d from v join t on v.a = t.c",
+            &auth,
+            [product![2u8, 4u8]],
+        );
+        assert_query_results(
+            &db,
+            "select v.b as b, t.d as d from v join t where v.a = t.c",
+            &auth,
+            [product![2u8, 4u8]],
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_join_view() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let u_id = tests_utils::create_view_for_test(&db, "u", &schema, false)?;
+
+        let schema = [("c", AlgebraicType::U8), ("d", AlgebraicType::U8)];
+        let v_id = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            tests_utils::insert_into_view(&db, tx, u_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, u_id, Some(identity_from_u8(2)), product![1u8, 2u8])?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(1)), product![0u8, 3u8])?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(2)), product![1u8, 4u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(2);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(
+            &db,
+            "select u.* from u join v on u.a = v.c",
+            &auth,
+            [product![1u8, 2u8]],
+        );
+        assert_query_results(
+            &db,
+            "select v.* from u join v on u.a = v.c",
+            &auth,
+            [product![1u8, 4u8]],
+        );
+        assert_query_results(
+            &db,
+            "select v.* from u join v where u.a = v.c",
+            &auth,
+            [product![1u8, 4u8]],
+        );
+        assert_query_results(
+            &db,
+            "select u.b as b, v.d as d from u join v on u.a = v.c",
+            &auth,
+            [product![2u8, 4u8]],
+        );
+        assert_query_results(
+            &db,
+            "select u.b as b, v.d as d from u join v where u.a = v.c",
+            &auth,
+            [product![2u8, 4u8]],
         );
 
         Ok(())
