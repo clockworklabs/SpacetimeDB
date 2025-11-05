@@ -1209,7 +1209,7 @@ mod tests {
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
-        schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableSchema},
+        schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
     };
     use spacetimedb_sql_parser::ast::BinOp;
 
@@ -1221,7 +1221,7 @@ mod tests {
     use super::{PhysicalExpr, ProjectPlan, TableScan};
 
     struct SchemaViewer {
-        schemas: Vec<Arc<TableSchema>>,
+        schemas: Vec<Arc<TableOrViewSchema>>,
     }
 
     impl SchemaView for SchemaViewer {
@@ -1232,7 +1232,7 @@ mod tests {
                 .map(|schema| schema.table_id)
         }
 
-        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
             self.schemas.iter().find(|schema| schema.table_id == table_id).cloned()
         }
 
@@ -1248,10 +1248,11 @@ mod tests {
         indexes: &[&[usize]],
         unique: &[&[usize]],
         primary_key: Option<usize>,
-    ) -> TableSchema {
-        TableSchema::new(
+    ) -> TableOrViewSchema {
+        TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
             table_name.to_owned().into_boxed_str(),
+            None,
             columns
                 .iter()
                 .enumerate()
@@ -1291,7 +1292,7 @@ mod tests {
             StAccess::Public,
             None,
             primary_key.map(ColId::from),
-        )
+        )))
     }
 
     /// A wrapper around [spacetimedb_expr::check::parse_and_type_sub] that takes a dummy [AuthCtx]
