@@ -63,7 +63,7 @@ public static class Module
     private static readonly List<IReducer> reducers = [];
     private static readonly List<Action<BytesSink>> viewDefs = [];
     private static readonly List<IView> viewDispatchers = [];
-    private static readonly List<IAnonymousView> anonymousDispatchers = [];
+    private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
 
     private static Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext>? newReducerContext =
         null;
@@ -80,7 +80,7 @@ public static class Module
     public static void SetAnonymousViewContextConstructor(Func<IAnonymousViewContext> ctor) =>
         newAnonymousViewContext = ctor;
 
-    readonly struct TypeRegistrar() : ITypeRegistrar
+    public readonly struct TypeRegistrar() : ITypeRegistrar
     {
         private readonly Dictionary<Type, AlgebraicType.Ref> types = [];
 
@@ -127,18 +127,23 @@ public static class Module
     public static void RegisterView(RawViewDefV9 def, IView dispatcher)
     {
         viewDefs.Add(sink =>
-            {
-                var bytes = IStructuralReadWrite.ToBytes(new RawViewDefV9.BSATN(), def);
-                sink.Write(bytes);
-            });
-        if (def.IsAnonymous)
-            {
-                anonymousDispatchers.Add((IAnonymousView)dispatcher);
-            }
-        else
         {
-                viewDispatchers.Add(dispatcher);
-            }
+            var bytes = IStructuralReadWrite.ToBytes(new RawViewDefV9.BSATN(), def);
+            sink.Write(bytes);
+        });
+    
+        viewDispatchers.Add(dispatcher);
+    }
+    
+    public static void RegisterView(RawViewDefV9 def, IAnonymousView dispatcher)
+    {
+        viewDefs.Add(sink =>
+        {
+            var bytes = IStructuralReadWrite.ToBytes(new RawViewDefV9.BSATN(), def);
+            sink.Write(bytes);
+        });
+
+        anonymousViewDispatchers.Add(dispatcher);
     }
     
     // public static void RegisterView(string name, bool isPublic, bool isAnonymous, byte[] value, string returnType)
@@ -317,7 +322,8 @@ public static class Module
                     var ctx = newViewContext!(sender);
                     using var stream = new MemoryStream(args.Consume());
                     using var reader = new BinaryReader(stream);
-                    viewDispatchers[(int)id].Invoke(reader, ctx);
+                    var bytes = viewDispatchers[(int)id].Invoke(reader, ctx);
+                    rows.Write(bytes);
                     return Errno.OK;
                 }
             catch (Exception e)
@@ -334,7 +340,8 @@ public static class Module
                 var ctx = newAnonymousViewContext!();
                 using var stream = new MemoryStream(args.Consume());
                 using var reader = new BinaryReader(stream);
-                anonymousDispatchers[(int)id].Invoke(reader, ctx);
+                var bytes = anonymousViewDispatchers[(int)id].Invoke(reader, ctx);
+                rows.Write(bytes);
                 return Errno.OK;
             }
         catch (Exception e)

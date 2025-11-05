@@ -84,12 +84,9 @@ public abstract class IndexBase<Row>
     }
 }
 
-public abstract class ReadOnlyIndexBase<Row> : IndexBase<Row>
+public abstract class ReadOnlyIndexBase<Row>(string name) : IndexBase<Row>(name)
     where Row : IStructuralReadWrite, new()
 {
-    protected ReadOnlyIndexBase(string name)
-        : base(name) { }
-
     protected IEnumerable<Row> Filter<Bounds>(Bounds bounds)
         where Bounds : IBTreeIndexBounds =>
         DoFilter(bounds);
