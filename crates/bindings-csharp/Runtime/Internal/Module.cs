@@ -128,6 +128,7 @@ public static class Module
     {
         var dispatcher = new TDispatcher();
         var def = dispatcher.MakeViewDef(typeRegistrar);
+        viewDispatchers.Add(dispatcher);
         moduleDef.RegisterView(def);
     }
     
@@ -136,6 +137,7 @@ public static class Module
     {
         var dispatcher = new TDispatcher();
         var def = dispatcher.MakeAnonymousViewDef(typeRegistrar);
+        anonymousViewDispatchers.Add(dispatcher);
         moduleDef.RegisterView(def);
     }
 
