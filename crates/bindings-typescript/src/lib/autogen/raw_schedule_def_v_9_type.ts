@@ -4,67 +4,18 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
 
-export type RawScheduleDefV9 = {
-  name: string | undefined;
-  reducerName: string;
-  scheduledAtColumn: number;
-};
-let _cached_RawScheduleDefV9_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const RawScheduleDefV9 = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawScheduleDefV9_type_value)
-      return _cached_RawScheduleDefV9_type_value;
-    _cached_RawScheduleDefV9_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_RawScheduleDefV9_type_value.value.elements.push(
-      {
-        name: 'name',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.String
-        ),
-      },
-      { name: 'reducerName', algebraicType: __AlgebraicTypeValue.String },
-      { name: 'scheduledAtColumn', algebraicType: __AlgebraicTypeValue.U16 }
-    );
-    return _cached_RawScheduleDefV9_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: RawScheduleDefV9): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawScheduleDefV9.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): RawScheduleDefV9 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawScheduleDefV9.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default RawScheduleDefV9;
+export default __t.object('RawScheduleDefV9', {
+  name: __t.option(__t.string()),
+  reducerName: __t.string(),
+  scheduledAtColumn: __t.u16(),
+});

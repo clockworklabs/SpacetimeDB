@@ -13,11 +13,11 @@ import {
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
-import * as LifecycleVariants from './lifecycle_variants';
+import AlgebraicType from './algebraic_type_type';
+import ProductType from './product_type_type';
 
-// The tagged union or sum type for the algebraic type `Lifecycle`.
-export default __t.enum('Lifecycle', {
-  init: __t.unit(),
-  onConnect: __t.unit(),
-  onDisconnect: __t.unit(),
+export default __t.object('RawProcedureDefV9', {
+  name: __t.string(),
+  params: ProductType,
+  returnType: AlgebraicType,
 });

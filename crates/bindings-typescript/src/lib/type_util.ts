@@ -10,12 +10,14 @@ type Builtin =
   | Promise<any>;
 
 // Deep
-export type PrettifyDeep<T> =
+export type _PrettifyDeep<T> =
   T extends Builtin ? T :
   T extends readonly [...infer _] ? { [K in keyof T]: PrettifyDeep<T[K]> } :
   T extends ReadonlyArray<infer U> ? ReadonlyArray<PrettifyDeep<U>> :
   T extends object ? Prettify<{ [K in keyof T]: PrettifyDeep<T[K]> }> :
   T;
+
+export type PrettifyDeep<T> = T extends unknown ? _PrettifyDeep<T> : never;
 
 /**
  * Helper function to sets a field in an object

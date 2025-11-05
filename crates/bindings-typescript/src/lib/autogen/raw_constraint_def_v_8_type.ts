@@ -4,65 +4,18 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
 
-export type RawConstraintDefV8 = {
-  constraintName: string;
-  constraints: number;
-  columns: number[];
-};
-let _cached_RawConstraintDefV8_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const RawConstraintDefV8 = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawConstraintDefV8_type_value)
-      return _cached_RawConstraintDefV8_type_value;
-    _cached_RawConstraintDefV8_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_RawConstraintDefV8_type_value.value.elements.push(
-      { name: 'constraintName', algebraicType: __AlgebraicTypeValue.String },
-      { name: 'constraints', algebraicType: __AlgebraicTypeValue.U8 },
-      {
-        name: 'columns',
-        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U16),
-      }
-    );
-    return _cached_RawConstraintDefV8_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: RawConstraintDefV8): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawConstraintDefV8.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): RawConstraintDefV8 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawConstraintDefV8.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default RawConstraintDefV8;
+export default __t.object('RawConstraintDefV8', {
+  constraintName: __t.string(),
+  constraints: __t.u8(),
+  columns: __t.array(__t.u16()),
+});

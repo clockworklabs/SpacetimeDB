@@ -4,24 +4,20 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
-import { RawModuleDefV8 as RawModuleDefV8Type } from './raw_module_def_v_8_type';
-// Mark import as potentially unused
-declare type __keep_RawModuleDefV8Type = RawModuleDefV8Type;
-import { RawModuleDefV9 as RawModuleDefV9Type } from './raw_module_def_v_9_type';
-// Mark import as potentially unused
-declare type __keep_RawModuleDefV9Type = RawModuleDefV9Type;
+import RawModuleDefV8Type from './raw_module_def_v_8_type';
+import RawModuleDefV9Type from './raw_module_def_v_9_type';
 
-export type V8BackCompat = { tag: 'V8BackCompat'; value: RawModuleDefV8Type };
-export type V9 = { tag: 'V9'; value: RawModuleDefV9Type };
+export type V8BackCompat = {
+  tag: 'V8BackCompat';
+  value: __Infer<typeof RawModuleDefV8Type>;
+};
+export type V9 = { tag: 'V9'; value: __Infer<typeof RawModuleDefV9Type> };

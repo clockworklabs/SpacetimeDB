@@ -4,76 +4,20 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
-import { ProductType } from './product_type_type';
-// Mark import as potentially unused
-declare type __keep_ProductType = ProductType;
-import { Lifecycle } from './lifecycle_type';
-// Mark import as potentially unused
-declare type __keep_Lifecycle = Lifecycle;
+import ProductType from './product_type_type';
+import Lifecycle from './lifecycle_type';
 
-export type RawReducerDefV9 = {
-  name: string;
-  params: ProductType;
-  lifecycle: Lifecycle | undefined;
-};
-let _cached_RawReducerDefV9_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const RawReducerDefV9 = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawReducerDefV9_type_value)
-      return _cached_RawReducerDefV9_type_value;
-    _cached_RawReducerDefV9_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_RawReducerDefV9_type_value.value.elements.push(
-      { name: 'name', algebraicType: __AlgebraicTypeValue.String },
-      {
-        name: 'params',
-        algebraicType: ProductType.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'lifecycle',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          Lifecycle.getTypeScriptAlgebraicType()
-        ),
-      }
-    );
-    return _cached_RawReducerDefV9_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: RawReducerDefV9): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawReducerDefV9.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): RawReducerDefV9 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawReducerDefV9.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default RawReducerDefV9;
+export default __t.object('RawReducerDefV9', {
+  name: __t.string(),
+  params: ProductType,
+  lifecycle: __t.option(Lifecycle),
+});

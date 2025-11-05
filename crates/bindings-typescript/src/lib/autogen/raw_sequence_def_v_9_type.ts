@@ -4,88 +4,21 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
 
-export type RawSequenceDefV9 = {
-  name: string | undefined;
-  column: number;
-  start: bigint | undefined;
-  minValue: bigint | undefined;
-  maxValue: bigint | undefined;
-  increment: bigint;
-};
-let _cached_RawSequenceDefV9_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const RawSequenceDefV9 = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawSequenceDefV9_type_value)
-      return _cached_RawSequenceDefV9_type_value;
-    _cached_RawSequenceDefV9_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_RawSequenceDefV9_type_value.value.elements.push(
-      {
-        name: 'name',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.String
-        ),
-      },
-      { name: 'column', algebraicType: __AlgebraicTypeValue.U16 },
-      {
-        name: 'start',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.I128
-        ),
-      },
-      {
-        name: 'minValue',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.I128
-        ),
-      },
-      {
-        name: 'maxValue',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.I128
-        ),
-      },
-      { name: 'increment', algebraicType: __AlgebraicTypeValue.I128 }
-    );
-    return _cached_RawSequenceDefV9_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: RawSequenceDefV9): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawSequenceDefV9.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): RawSequenceDefV9 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawSequenceDefV9.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default RawSequenceDefV9;
+export default __t.object('RawSequenceDefV9', {
+  name: __t.option(__t.string()),
+  column: __t.u16(),
+  start: __t.option(__t.i128()),
+  minValue: __t.option(__t.i128()),
+  maxValue: __t.option(__t.i128()),
+  increment: __t.i128(),
+});

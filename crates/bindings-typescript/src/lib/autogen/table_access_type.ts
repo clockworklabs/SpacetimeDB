@@ -4,68 +4,19 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
 import * as TableAccessVariants from './table_access_variants';
 
 // The tagged union or sum type for the algebraic type `TableAccess`.
-export type TableAccess =
-  | TableAccessVariants.Public
-  | TableAccessVariants.Private;
-
-let _cached_TableAccess_type_value: __AlgebraicTypeType | null = null;
-
-// A value with helper functions to construct the type.
-export const TableAccess = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  Public: { tag: 'Public' } as const,
-  Private: { tag: 'Private' } as const,
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_TableAccess_type_value) return _cached_TableAccess_type_value;
-    _cached_TableAccess_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
-    _cached_TableAccess_type_value.value.variants.push(
-      {
-        name: 'Public',
-        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-      },
-      {
-        name: 'Private',
-        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-      }
-    );
-    return _cached_TableAccess_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: TableAccess): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      TableAccess.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): TableAccess {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      TableAccess.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default TableAccess;
+export default __t.enum('TableAccess', {
+  public: __t.unit(),
+  private: __t.unit(),
+});

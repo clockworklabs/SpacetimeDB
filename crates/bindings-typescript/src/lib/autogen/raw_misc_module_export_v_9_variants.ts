@@ -4,23 +4,25 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
-import { RawColumnDefaultValueV9 as RawColumnDefaultValueV9Type } from './raw_column_default_value_v_9_type';
-// Mark import as potentially unused
-declare type __keep_RawColumnDefaultValueV9Type = RawColumnDefaultValueV9Type;
+import RawColumnDefaultValueV9Type from './raw_column_default_value_v_9_type';
+import RawProcedureDefV9Type from './raw_procedure_def_v_9_type';
+import RawViewDefV9Type from './raw_view_def_v_9_type';
 
 export type ColumnDefaultValue = {
   tag: 'ColumnDefaultValue';
-  value: RawColumnDefaultValueV9Type;
+  value: __Infer<typeof RawColumnDefaultValueV9Type>;
 };
+export type Procedure = {
+  tag: 'Procedure';
+  value: __Infer<typeof RawProcedureDefV9Type>;
+};
+export type View = { tag: 'View'; value: __Infer<typeof RawViewDefV9Type> };

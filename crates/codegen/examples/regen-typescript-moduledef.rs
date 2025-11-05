@@ -58,6 +58,7 @@ fn main() -> anyhow::Result<()> {
             );
             let code = regex_replace!(&code, r"DbConnectionBuilder as __DbConnectionBuilder,", r"");
             let code = regex_replace!(&code, r"DbConnectionImpl as __DbConnectionImpl,", r"");
+            let code = regex_replace!(&code, r"DbConnectionConfig as __DbConnectionConfig,", r"");
             let code = regex_replace!(&code, r"SubscriptionBuilderImpl as __SubscriptionBuilderImpl,", r"");
             let code = regex_replace!(&code, r"TableCache as __TableCache,", r"");
             let code = regex_replace!(&code, r"ClientCache as __ClientCache,", r"");

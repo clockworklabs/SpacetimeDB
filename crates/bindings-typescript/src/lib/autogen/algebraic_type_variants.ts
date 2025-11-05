@@ -4,32 +4,26 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
-import { AlgebraicType as AlgebraicTypeType } from './algebraic_type_type';
-// Mark import as potentially unused
-declare type __keep_AlgebraicTypeType = AlgebraicTypeType;
-import { SumType as SumTypeType } from './sum_type_type';
-// Mark import as potentially unused
-declare type __keep_SumTypeType = SumTypeType;
-import { ProductType as ProductTypeType } from './product_type_type';
-// Mark import as potentially unused
-declare type __keep_ProductTypeType = ProductTypeType;
+import AlgebraicTypeType from './algebraic_type_type';
+import SumTypeType from './sum_type_type';
+import ProductTypeType from './product_type_type';
 
 export type Ref = { tag: 'Ref'; value: number };
-export type Sum = { tag: 'Sum'; value: SumTypeType };
-export type Product = { tag: 'Product'; value: ProductTypeType };
-export type Array = { tag: 'Array'; value: AlgebraicTypeType };
+export type Sum = { tag: 'Sum'; value: __Infer<typeof SumTypeType> };
+export type Product = {
+  tag: 'Product';
+  value: __Infer<typeof ProductTypeType>;
+};
+export type Array = { tag: 'Array'; value: __Infer<typeof AlgebraicTypeType> };
 export type String = { tag: 'String' };
 export type Bool = { tag: 'Bool' };
 export type I8 = { tag: 'I8' };

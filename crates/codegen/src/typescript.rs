@@ -364,6 +364,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "type Event as __Event",
         "schema as __schema",
         "table as __table",
+        "type Infer as __Infer",
         "reducers as __reducers",
         "reducerSchema as __reducerSchema",
         "DbConnectionConfig as __DbConnectionConfig",
@@ -569,18 +570,18 @@ fn write_sum_variant_type(module: &ModuleDef, out: &mut Indenter, ident: &Identi
 
     // If the contained type is not the unit type, write the tag and the value.
     // ```
-    // { tag: "Bar", value: BarType }
+    // { tag: "Bar", value: Infer<typeof BarType> }
     // { tag: "Bar", value: number }
     // { tag: "Bar", value: string }
     // ```
     // Note you could alternatively do:
     // ```
-    // { tag: "Bar" } & BarType
+    // { tag: "Bar" } & Infer<typeof BarType>
     // ```
     // for non-primitive types but that doesn't extend to primitives.
     // Another alternative would be to name the value field the same as the tag field, but lowercased
     // ```
-    // { tag: "Bar", bar: BarType }
+    // { tag: "Bar", bar: Infer<typeof BarType> }
     // { tag: "Bar", bar: number }
     // { tag: "Bar", bar: string }
     // ```
@@ -697,13 +698,13 @@ pub fn write_type<W: Write>(
     match ty {
         AlgebraicTypeUse::Unit => write!(out, "void")?,
         AlgebraicTypeUse::Never => write!(out, "never")?,
-        AlgebraicTypeUse::Identity => write!(out, "__Identity")?,
-        AlgebraicTypeUse::ConnectionId => write!(out, "__ConnectionId")?,
-        AlgebraicTypeUse::Timestamp => write!(out, "__Timestamp")?,
-        AlgebraicTypeUse::TimeDuration => write!(out, "__TimeDuration")?,
+        AlgebraicTypeUse::Identity => write!(out, "__Infer<typeof __t.identity()>")?,
+        AlgebraicTypeUse::ConnectionId => write!(out, "__Infer<typeof __t.connectionId()>")?,
+        AlgebraicTypeUse::Timestamp => write!(out, "__Infer<typeof __t.timestamp()>")?,
+        AlgebraicTypeUse::TimeDuration => write!(out, "__Infer<typeof __t.timeDuration()>")?,
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
-            "{{ tag: \"Interval\", value: __TimeDuration }} | {{ tag: \"Time\", value: __Timestamp }}"
+            "{{ tag: \"Interval\", value: __Infer<typeof __t.timeDuration()> }} | {{ tag: \"Time\", value: __Infer<typeof __t.timestamp()> }}"
         )?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write_type(module, out, inner_ty, ref_prefix, ref_suffix)?;
@@ -743,6 +744,7 @@ pub fn write_type<W: Write>(
             write!(out, "[]")?;
         }
         AlgebraicTypeUse::Ref(r) => {
+            write!(out, "__Infer<typeof ")?;;
             if let Some(prefix) = ref_prefix {
                 write!(out, "{prefix}")?;
             }
@@ -750,6 +752,7 @@ pub fn write_type<W: Write>(
             if let Some(suffix) = ref_suffix {
                 write!(out, "{suffix}")?;
             }
+            write!(out, ">")?;
         }
     }
     Ok(())

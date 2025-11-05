@@ -4,72 +4,24 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
-import { RawColumnDefaultValueV9 } from './raw_column_default_value_v_9_type';
-// Mark import as potentially unused
-declare type __keep_RawColumnDefaultValueV9 = RawColumnDefaultValueV9;
+import RawColumnDefaultValueV9 from './raw_column_default_value_v_9_type';
+import RawProcedureDefV9 from './raw_procedure_def_v_9_type';
+import RawViewDefV9 from './raw_view_def_v_9_type';
 
 import * as RawMiscModuleExportV9Variants from './raw_misc_module_export_v_9_variants';
 
 // The tagged union or sum type for the algebraic type `RawMiscModuleExportV9`.
-export type RawMiscModuleExportV9 =
-  RawMiscModuleExportV9Variants.ColumnDefaultValue;
-
-let _cached_RawMiscModuleExportV9_type_value: __AlgebraicTypeType | null = null;
-
-// A value with helper functions to construct the type.
-export const RawMiscModuleExportV9 = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  ColumnDefaultValue: (
-    value: RawColumnDefaultValueV9
-  ): RawMiscModuleExportV9Variants.ColumnDefaultValue => ({
-    tag: 'ColumnDefaultValue',
-    value,
-  }),
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawMiscModuleExportV9_type_value)
-      return _cached_RawMiscModuleExportV9_type_value;
-    _cached_RawMiscModuleExportV9_type_value = __AlgebraicTypeValue.Sum({
-      variants: [],
-    });
-    _cached_RawMiscModuleExportV9_type_value.value.variants.push({
-      name: 'ColumnDefaultValue',
-      algebraicType: RawColumnDefaultValueV9.getTypeScriptAlgebraicType(),
-    });
-    return _cached_RawMiscModuleExportV9_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: RawMiscModuleExportV9): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawMiscModuleExportV9.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): RawMiscModuleExportV9 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawMiscModuleExportV9.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default RawMiscModuleExportV9;
+export default __t.enum('RawMiscModuleExportV9', {
+  columnDefaultValue: RawColumnDefaultValueV9,
+  procedure: RawProcedureDefV9,
+  view: RawViewDefV9,
+});

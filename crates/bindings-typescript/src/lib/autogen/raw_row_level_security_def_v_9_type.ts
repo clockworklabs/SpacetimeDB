@@ -4,60 +4,16 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
 
-export type RawRowLevelSecurityDefV9 = {
-  sql: string;
-};
-let _cached_RawRowLevelSecurityDefV9_type_value: __AlgebraicTypeType | null =
-  null;
-
-/**
- * An object for generated helper functions.
- */
-export const RawRowLevelSecurityDefV9 = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawRowLevelSecurityDefV9_type_value)
-      return _cached_RawRowLevelSecurityDefV9_type_value;
-    _cached_RawRowLevelSecurityDefV9_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_RawRowLevelSecurityDefV9_type_value.value.elements.push({
-      name: 'sql',
-      algebraicType: __AlgebraicTypeValue.String,
-    });
-    return _cached_RawRowLevelSecurityDefV9_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: RawRowLevelSecurityDefV9): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawRowLevelSecurityDefV9.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): RawRowLevelSecurityDefV9 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawRowLevelSecurityDefV9.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default RawRowLevelSecurityDefV9;
+export default __t.object('RawRowLevelSecurityDefV9', {
+  sql: __t.string(),
+});

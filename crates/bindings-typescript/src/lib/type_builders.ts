@@ -1,5 +1,4 @@
 import {
-  AlgebraicType,
   ConnectionId,
   Identity,
   ScheduleAt,
@@ -9,10 +8,11 @@ import {
   type AlgebraicTypeVariants,
   type ConnectionIdAlgebraicType,
   type IdentityAlgebraicType,
+  type OptionAlgebraicType,
   type TimeDurationAlgebraicType,
   type TimestampAlgebraicType,
 } from '..';
-import type { OptionAlgebraicType } from './option';
+import { AlgebraicType } from '../lib/algebraic_type';
 import { addType, MODULE_DEF } from '../lib/schema';
 import type { CoerceRow } from './table';
 import { set, type SetField } from './type_util';
@@ -113,6 +113,8 @@ type VariantsObj = Record<string, TypeBuilder<any, any>>;
 type UnitBuilder = ProductBuilder<{}>;
 type SimpleVariantsObj = Record<string, UnitBuilder>;
 
+type IsUnit<B> = B extends UnitBuilder ? true : false;
+
 /**
  * A type which converts the elements of ElementsObj to a TypeScript object type.
  * It works by `Infer`ing the types of the column builders which are the values of
@@ -121,8 +123,10 @@ type SimpleVariantsObj = Record<string, UnitBuilder>;
  * e.g. { A: I32TypeBuilder, B: StringBuilder } -> { tag: "A", value: number } | { tag: "B", value: string }
  */
 type EnumType<Variants extends VariantsObj> = {
-  [K in keyof Variants]: { tag: K; value: InferTypeOfTypeBuilder<Variants[K]> };
-}[keyof Variants];
+  [K in keyof Variants & string]:
+    (IsUnit<Variants[K]> extends true ? { tag: K }
+     : { tag: K; value: InferTypeOfTypeBuilder<Variants[K]> })
+}[keyof Variants & string];
 
 /**
  * Type which converts the elements of VariantsObj to a SumType variants array
@@ -1205,10 +1209,17 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
   }
 }
 
+// Value type produced for a given variant key + builder
+type EnumValue<K extends string, B extends TypeBuilder<any, any>> =
+  IsUnit<B> extends true
+    ? { tag: K }
+    : { tag: K; value: InferTypeOfTypeBuilder<B> };
+
 export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
   EnumType<Variants>,
   { tag: 'Sum'; value: { variants: VariantsArrayFromVariantsObj<Variants> } }
 > {
+  protected readonly _variants: Variants;
   constructor(variants: Variants, name?: string) {
     function variantsArrayFromVariantsObj<Variants extends VariantsObj>(
       variants: Variants
@@ -1226,7 +1237,26 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
         })
       )
     );
+    this._variants = variants;
   }
+
+  /**
+   * Create a value of this sum type.
+   * - Unit variants: create('bar')
+   * - Payload variants: create('foo', value)
+   */
+  create<K extends keyof Variants & string>(
+    ...args: IsUnit<Variants[K]> extends true
+      ? [tag: K]                                 // unit variant: only the tag
+      : [tag: K, value: InferTypeOfTypeBuilder<Variants[K]>] // payload variant: tag + value
+  ): EnumValue<K, Variants[K]> {
+    const [tag, value] = args as [K, unknown];
+    // just return the shape, types guarantee correctness
+    return (value === undefined
+      ? { tag }
+      : { tag, value }) as EnumValue<K, Variants[K]>;
+  }
+
   default(
     value: EnumType<Variants>
   ): SumColumnBuilder<Variants, SetField<DefaultMetadata, 'defaultValue', any>> {
@@ -2295,11 +2325,11 @@ export class OptionColumnBuilder<
   >
   extends ColumnBuilder<
     InferTypeOfTypeBuilder<Value> | undefined,
-    OptionAlgebraicType,
+    OptionAlgebraicTypeType,
     M
   >
   implements
-    Defaultable<InferTypeOfTypeBuilder<Value> | undefined, OptionAlgebraicType>
+    Defaultable<InferTypeOfTypeBuilder<Value> | undefined, OptionAlgebraicTypeType>
 {
   default(
     value: InferTypeOfTypeBuilder<Value> | undefined

@@ -4,66 +4,16 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
 import * as TableTypeVariants from './table_type_variants';
 
 // The tagged union or sum type for the algebraic type `TableType`.
-export type TableType = TableTypeVariants.System | TableTypeVariants.User;
-
-let _cached_TableType_type_value: __AlgebraicTypeType | null = null;
-
-// A value with helper functions to construct the type.
-export const TableType = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  System: { tag: 'System' } as const,
-  User: { tag: 'User' } as const,
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_TableType_type_value) return _cached_TableType_type_value;
-    _cached_TableType_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
-    _cached_TableType_type_value.value.variants.push(
-      {
-        name: 'System',
-        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-      },
-      {
-        name: 'User',
-        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-      }
-    );
-    return _cached_TableType_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: TableType): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      TableType.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): TableType {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      TableType.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default TableType;
+export default __t.enum('TableType', { system: __t.unit(), user: __t.unit() });

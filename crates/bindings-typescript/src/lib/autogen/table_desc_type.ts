@@ -4,65 +4,18 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
-import { RawTableDefV8 } from './raw_table_def_v_8_type';
-// Mark import as potentially unused
-declare type __keep_RawTableDefV8 = RawTableDefV8;
+import RawTableDefV8 from './raw_table_def_v_8_type';
 
-export type TableDesc = {
-  schema: RawTableDefV8;
-  data: number;
-};
-let _cached_TableDesc_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const TableDesc = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_TableDesc_type_value) return _cached_TableDesc_type_value;
-    _cached_TableDesc_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_TableDesc_type_value.value.elements.push(
-      {
-        name: 'schema',
-        algebraicType: RawTableDefV8.getTypeScriptAlgebraicType(),
-      },
-      { name: 'data', algebraicType: __AlgebraicTypeValue.U32 }
-    );
-    return _cached_TableDesc_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: TableDesc): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      TableDesc.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): TableDesc {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      TableDesc.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default TableDesc;
+export default __t.object('TableDesc', {
+  schema: RawTableDefV8,
+  data: __t.u32(),
+});

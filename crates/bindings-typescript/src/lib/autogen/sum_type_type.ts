@@ -4,61 +4,17 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
-import { SumTypeVariant } from './sum_type_variant_type';
-// Mark import as potentially unused
-declare type __keep_SumTypeVariant = SumTypeVariant;
+import SumTypeVariant from './sum_type_variant_type';
 
-export type SumType = {
-  variants: SumTypeVariant[];
-};
-let _cached_SumType_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const SumType = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_SumType_type_value) return _cached_SumType_type_value;
-    _cached_SumType_type_value = __AlgebraicTypeValue.Product({ elements: [] });
-    _cached_SumType_type_value.value.elements.push({
-      name: 'variants',
-      algebraicType: __AlgebraicTypeValue.Array(
-        SumTypeVariant.getTypeScriptAlgebraicType()
-      ),
-    });
-    return _cached_SumType_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: SumType): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      SumType.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): SumType {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      SumType.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default SumType;
+export default __t.object('SumType', {
+  variants: __t.array(SumTypeVariant),
+});

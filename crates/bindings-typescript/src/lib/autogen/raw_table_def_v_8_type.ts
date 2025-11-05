@@ -4,109 +4,27 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type Infer as __Infer,
+  type RemoteModule as __RemoteModule,
 } from '../../index';
-import { RawColumnDefV8 } from './raw_column_def_v_8_type';
-// Mark import as potentially unused
-declare type __keep_RawColumnDefV8 = RawColumnDefV8;
-import { RawIndexDefV8 } from './raw_index_def_v_8_type';
-// Mark import as potentially unused
-declare type __keep_RawIndexDefV8 = RawIndexDefV8;
-import { RawConstraintDefV8 } from './raw_constraint_def_v_8_type';
-// Mark import as potentially unused
-declare type __keep_RawConstraintDefV8 = RawConstraintDefV8;
-import { RawSequenceDefV8 } from './raw_sequence_def_v_8_type';
-// Mark import as potentially unused
-declare type __keep_RawSequenceDefV8 = RawSequenceDefV8;
+import RawColumnDefV8 from './raw_column_def_v_8_type';
+import RawIndexDefV8 from './raw_index_def_v_8_type';
+import RawConstraintDefV8 from './raw_constraint_def_v_8_type';
+import RawSequenceDefV8 from './raw_sequence_def_v_8_type';
 
-export type RawTableDefV8 = {
-  tableName: string;
-  columns: RawColumnDefV8[];
-  indexes: RawIndexDefV8[];
-  constraints: RawConstraintDefV8[];
-  sequences: RawSequenceDefV8[];
-  tableType: string;
-  tableAccess: string;
-  scheduled: string | undefined;
-};
-let _cached_RawTableDefV8_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const RawTableDefV8 = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawTableDefV8_type_value)
-      return _cached_RawTableDefV8_type_value;
-    _cached_RawTableDefV8_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_RawTableDefV8_type_value.value.elements.push(
-      { name: 'tableName', algebraicType: __AlgebraicTypeValue.String },
-      {
-        name: 'columns',
-        algebraicType: __AlgebraicTypeValue.Array(
-          RawColumnDefV8.getTypeScriptAlgebraicType()
-        ),
-      },
-      {
-        name: 'indexes',
-        algebraicType: __AlgebraicTypeValue.Array(
-          RawIndexDefV8.getTypeScriptAlgebraicType()
-        ),
-      },
-      {
-        name: 'constraints',
-        algebraicType: __AlgebraicTypeValue.Array(
-          RawConstraintDefV8.getTypeScriptAlgebraicType()
-        ),
-      },
-      {
-        name: 'sequences',
-        algebraicType: __AlgebraicTypeValue.Array(
-          RawSequenceDefV8.getTypeScriptAlgebraicType()
-        ),
-      },
-      { name: 'tableType', algebraicType: __AlgebraicTypeValue.String },
-      { name: 'tableAccess', algebraicType: __AlgebraicTypeValue.String },
-      {
-        name: 'scheduled',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.String
-        ),
-      }
-    );
-    return _cached_RawTableDefV8_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: RawTableDefV8): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawTableDefV8.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): RawTableDefV8 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawTableDefV8.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default RawTableDefV8;
+export default __t.object('RawTableDefV8', {
+  tableName: __t.string(),
+  columns: __t.array(RawColumnDefV8),
+  indexes: __t.array(RawIndexDefV8),
+  constraints: __t.array(RawConstraintDefV8),
+  sequences: __t.array(RawSequenceDefV8),
+  tableType: __t.string(),
+  tableAccess: __t.string(),
+  scheduled: __t.option(__t.string()),
+});
