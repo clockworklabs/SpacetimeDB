@@ -48,6 +48,8 @@ pub(super) fn set_hook_slots(
 pub(in super::super) enum ModuleHookKey {
     DescribeModule,
     CallReducer,
+    CallView,
+    CallAnonymousView,
 }
 
 impl ModuleHookKey {
@@ -59,6 +61,8 @@ impl ModuleHookKey {
             // reverted to just 0, 1... once denoland/rusty_v8#1868 merges
             ModuleHookKey::DescribeModule => 20,
             ModuleHookKey::CallReducer => 21,
+            ModuleHookKey::CallView => 22,
+            ModuleHookKey::CallAnonymousView => 23,
         }
     }
 }
@@ -104,6 +108,8 @@ pub(in super::super) struct HookFunctions<'scope> {
     /// describe_module and call_reducer existed in v1.0, but everything else is `Option`al
     pub describe_module: Local<'scope, Function>,
     pub call_reducer: Local<'scope, Function>,
+    pub call_view: Option<Local<'scope, Function>>,
+    pub call_view_anon: Option<Local<'scope, Function>>,
 }
 
 /// Returns the hook function previously registered in [`register_hooks`].
@@ -123,5 +129,7 @@ pub(in super::super) fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> O
         abi: hooks.abi,
         describe_module: get(ModuleHookKey::DescribeModule)?,
         call_reducer: get(ModuleHookKey::CallReducer)?,
+        call_view: get(ModuleHookKey::CallView),
+        call_view_anon: get(ModuleHookKey::CallAnonymousView),
     })
 }

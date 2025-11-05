@@ -5,16 +5,19 @@ use self::error::{
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
-use self::syscall::{call_call_reducer, call_describe_module, get_hooks, resolve_sys_module, FnRet, HookFunctions};
+use self::syscall::{
+    call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks, resolve_sys_module, FnRet,
+    HookFunctions,
+};
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
-use crate::host::module_host::Instance;
+use crate::host::module_host::{CallViewParams, Instance, ViewCallResult};
 use crate::host::v8::error::{ErrorOrException, ExceptionThrown};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
-    DescribeError, ExecutionStats, ExecutionTimings, InstanceCommon, ReducerExecuteResult,
+    DescribeError, ExecutionStats, ExecutionTimings, InstanceCommon, ReducerExecuteResult, ViewExecuteResult,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ReducerCallResult, Scheduler};
@@ -25,7 +28,7 @@ use anyhow::Context as _;
 use core::str;
 use itertools::Either;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCall};
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
@@ -243,6 +246,7 @@ pub struct JsInstance {
     request_tx: SyncSender<JsWorkerRequest>,
     update_response_rx: Receiver<anyhow::Result<UpdateDatabaseResult>>,
     call_reducer_response_rx: Receiver<(ReducerCallResult, bool)>,
+    call_view_response_rx: Receiver<(ViewCallResult, bool)>,
     trapped: bool,
 }
 
@@ -297,6 +301,24 @@ impl JsInstance {
     ) -> Result<super::ProcedureCallResult, super::ProcedureCallError> {
         todo!("JS/TS module procedure support")
     }
+
+    pub fn call_view(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
+        // Send the request.
+        let request = JsWorkerRequest::CallView { tx, params };
+        self.request_tx
+            .send(request)
+            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
+
+        // Wait for the response.
+        let (response, trapped) = self
+            .call_view_response_rx
+            .recv()
+            .expect("worker's `call_view_response_tx` should be live as `JsInstance::drop` hasn't happened");
+
+        self.trapped = trapped;
+
+        response
+    }
 }
 
 /// A request for the worker in [`spawn_instance_worker`].
@@ -315,6 +337,8 @@ enum JsWorkerRequest {
         tx: Option<MutTxId>,
         params: CallReducerParams,
     },
+    /// See [`JsInstance::call_view`].
+    CallView { tx: MutTxId, params: CallViewParams },
 }
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
@@ -376,6 +400,8 @@ fn spawn_instance_worker(
     let (update_response_tx, update_response_rx) = mpsc::sync_channel(0);
     // The Worker --ReducerCallResult-> Instance channel:
     let (call_reducer_response_tx, call_reducer_response_rx) = mpsc::sync_channel(0);
+    // The Worker --ViewCallResult-> Instance channel:
+    let (call_view_response_tx, call_view_response_rx) = mpsc::sync_channel(0);
 
     // This one-shot channel is used for initial startup error handling within the thread.
     let (result_tx, result_rx) = oneshot::channel();
@@ -449,6 +475,13 @@ fn spawn_instance_worker(
                         unreachable!("should have receiver for `call_reducer` response, {e}");
                     }
                 }
+                JsWorkerRequest::CallView { tx, params } => {
+                    let res = call_view(&mut instance_common, replica_ctx, scope, &hooks, tx, params);
+
+                    if let Err(e) = call_view_response_tx.send(res) {
+                        unreachable!("should have receiver for `call_view` response, {e}");
+                    }
+                }
             }
         }
     });
@@ -460,6 +493,7 @@ fn spawn_instance_worker(
             request_tx,
             update_response_rx,
             call_reducer_response_rx,
+            call_view_response_rx,
             trapped: false,
         };
         (opt_mc, inst)
@@ -649,6 +683,43 @@ fn call_reducer<'scope>(
                     Ok(res)
                 });
             (tx, ReducerExecuteResult { stats, call_result })
+        },
+    );
+
+    (res, trapped)
+}
+
+fn call_view<'scope>(
+    instance_common: &mut InstanceCommon,
+    replica_ctx: &ReplicaContext,
+    scope: &mut PinScope<'scope, '_>,
+    hooks: &HookFunctions<'_>,
+    tx: MutTxId,
+    params: CallViewParams,
+) -> (ViewCallResult, bool) {
+    let mut trapped = false;
+
+    let is_anonymous = params.is_anonymous;
+    let (res, _) = instance_common.call_view_with_tx(
+        replica_ctx,
+        tx,
+        params,
+        move |a, b, c| log_traceback(replica_ctx, a, b, c),
+        |tx, op, budget| {
+            let func = FuncCallType::View(if is_anonymous {
+                ViewCall::anonymous(op.db_id, op.args.get_bsatn().clone())
+            } else {
+                ViewCall::with_identity(*op.caller_identity, op.db_id, op.args.get_bsatn().clone())
+            });
+            let (tx, stats, call_result) =
+                common_call(scope, tx, op.name, op.timestamp, budget, func, &mut trapped, |scope| {
+                    Ok(if is_anonymous {
+                        call_call_view_anon(scope, hooks, op.into())?
+                    } else {
+                        call_call_view(scope, hooks, op)?
+                    })
+                });
+            (tx, ViewExecuteResult { stats, call_result })
         },
     );
 
