@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -18,6 +20,8 @@ import RawUniqueConstraintDataV9 from './raw_unique_constraint_data_v_9_type';
 import * as RawConstraintDataV9Variants from './raw_constraint_data_v_9_variants';
 
 // The tagged union or sum type for the algebraic type `RawConstraintDataV9`.
-export default __t.enum('RawConstraintDataV9', {
-  unique: RawUniqueConstraintDataV9,
+const RawConstraintDataV9 = __t.enum('RawConstraintDataV9', {
+  Unique: __t.lazy(() => RawUniqueConstraintDataV9),
 });
+
+export default RawConstraintDataV9;

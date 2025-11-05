@@ -3,6 +3,7 @@ import type Typespace from './autogen/typespace_type';
 import {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type ColumnBuilder,
+  type Infer,
   type RowObj,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type TypeBuilder,
@@ -53,7 +54,7 @@ type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
 /**
  * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
  */
-export const MODULE_DEF: RawModuleDefV9 = {
+export const MODULE_DEF: Infer<typeof RawModuleDefV9> = {
   typespace: { types: [] },
   tables: [],
   reducers: [],
@@ -93,7 +94,7 @@ export function addType<T extends AlgebraicType>(
   }
 }
 
-export function splitName(name: string): RawScopedTypeNameV9 {
+export function splitName(name: string): Infer<typeof RawScopedTypeNameV9> {
   const scope = name.split('.');
   return { name: scope.pop()!, scope };
 }
@@ -133,11 +134,11 @@ export function splitName(name: string): RawScopedTypeNameV9 {
 // for the tables from the schema object, e.g. `spacetimedb.user.type` would
 // be the type of the user table.
 class Schema<S extends UntypedSchemaDef> {
-  readonly tablesDef: { tables: RawTableDefV9[] };
-  readonly typespace: Typespace;
+  readonly tablesDef: { tables: Infer<typeof RawTableDefV9>[] };
+  readonly typespace: Infer<typeof Typespace>;
   readonly schemaType!: S;
 
-  constructor(tables: RawTableDefV9[], typespace: Typespace) {
+  constructor(tables: Infer<typeof RawTableDefV9>[], typespace: Infer<typeof Typespace>) {
     this.tablesDef = { tables };
     this.typespace = typespace;
   }

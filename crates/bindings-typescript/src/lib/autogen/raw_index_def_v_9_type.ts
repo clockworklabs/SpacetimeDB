@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -18,5 +20,5 @@ import RawIndexAlgorithm from './raw_index_algorithm_type';
 export default __t.object('RawIndexDefV9', {
   name: __t.option(__t.string()),
   accessorName: __t.option(__t.string()),
-  algorithm: RawIndexAlgorithm,
+  algorithm: __t.lazy(() => RawIndexAlgorithm),
 });

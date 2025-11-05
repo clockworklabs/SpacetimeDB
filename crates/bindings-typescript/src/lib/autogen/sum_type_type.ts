@@ -4,17 +4,19 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
 import SumTypeVariant from './sum_type_variant_type';
 
 export default __t.object('SumType', {
-  variants: __t.array(SumTypeVariant),
+  variants: __t.array(__t.lazy(() => SumTypeVariant)),
 });

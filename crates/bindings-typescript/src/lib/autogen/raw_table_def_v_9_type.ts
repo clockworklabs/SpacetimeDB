@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -24,10 +26,10 @@ export default __t.object('RawTableDefV9', {
   name: __t.string(),
   productTypeRef: __t.u32(),
   primaryKey: __t.array(__t.u16()),
-  indexes: __t.array(RawIndexDefV9),
-  constraints: __t.array(RawConstraintDefV9),
-  sequences: __t.array(RawSequenceDefV9),
-  schedule: __t.option(RawScheduleDefV9),
-  tableType: TableType,
-  tableAccess: TableAccess,
+  indexes: __t.array(__t.lazy(() => RawIndexDefV9)),
+  constraints: __t.array(__t.lazy(() => RawConstraintDefV9)),
+  sequences: __t.array(__t.lazy(() => RawSequenceDefV9)),
+  schedule: __t.option(__t.lazy(() => RawScheduleDefV9)),
+  tableType: __t.lazy(() => TableType),
+  tableAccess: __t.lazy(() => TableAccess),
 });

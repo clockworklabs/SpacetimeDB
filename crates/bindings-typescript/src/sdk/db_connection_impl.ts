@@ -367,6 +367,7 @@ export class DbConnectionImpl<
       const rowType = table!.rowType;
       const columnsArray = Object.entries(table!.columns);
       const primaryKeyColumnEntry = columnsArray.find(col => col[1].columnMetadata.isPrimaryKey);
+      let previousOffset = 0;
       while (reader.remaining > 0) {
         const row = ProductType.deserializeValue(reader, rowType);
         let rowId: ComparablePrimitive | undefined = undefined;
@@ -379,11 +380,13 @@ export class DbConnectionImpl<
           );
         } else {
           // Get a view of the bytes for this row.
-          const rowBytes = buffer.subarray(0, reader.offset);
+          const rowBytes = buffer.subarray(previousOffset, reader.offset);
           // Convert it to a base64 string, so we can use it as a map key.
           const asBase64 = fromByteArray(rowBytes);
           rowId = asBase64;
         }
+
+        previousOffset = reader.offset;
 
         rows.push({
           type,

@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -20,6 +22,6 @@ export default __t.object('RawViewDefV9', {
   name: __t.string(),
   isPublic: __t.bool(),
   isAnonymous: __t.bool(),
-  params: ProductType,
-  returnType: AlgebraicType,
+  params: __t.lazy(() => ProductType),
+  returnType: __t.lazy(() => AlgebraicType),
 });

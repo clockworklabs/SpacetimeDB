@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -19,7 +21,9 @@ import RawModuleDefV9 from './raw_module_def_v_9_type';
 import * as RawModuleDefVariants from './raw_module_def_variants';
 
 // The tagged union or sum type for the algebraic type `RawModuleDef`.
-export default __t.enum('RawModuleDef', {
-  v8BackCompat: RawModuleDefV8,
-  v9: RawModuleDefV9,
+const RawModuleDef = __t.enum('RawModuleDef', {
+  V8BackCompat: __t.lazy(() => RawModuleDefV8),
+  V9: __t.lazy(() => RawModuleDefV9),
 });
+
+export default RawModuleDef;

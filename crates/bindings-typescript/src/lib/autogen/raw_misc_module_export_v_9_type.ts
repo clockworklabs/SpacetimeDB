@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -20,8 +22,10 @@ import RawViewDefV9 from './raw_view_def_v_9_type';
 import * as RawMiscModuleExportV9Variants from './raw_misc_module_export_v_9_variants';
 
 // The tagged union or sum type for the algebraic type `RawMiscModuleExportV9`.
-export default __t.enum('RawMiscModuleExportV9', {
-  columnDefaultValue: RawColumnDefaultValueV9,
-  procedure: RawProcedureDefV9,
-  view: RawViewDefV9,
+const RawMiscModuleExportV9 = __t.enum('RawMiscModuleExportV9', {
+  ColumnDefaultValue: __t.lazy(() => RawColumnDefaultValueV9),
+  Procedure: __t.lazy(() => RawProcedureDefV9),
+  View: __t.lazy(() => RawViewDefV9),
 });
+
+export default RawMiscModuleExportV9;

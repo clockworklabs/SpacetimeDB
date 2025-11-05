@@ -4,16 +4,23 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
 import * as TableTypeVariants from './table_type_variants';
 
 // The tagged union or sum type for the algebraic type `TableType`.
-export default __t.enum('TableType', { system: __t.unit(), user: __t.unit() });
+const TableType = __t.enum('TableType', {
+  System: __t.unit(),
+  User: __t.unit(),
+});
+
+export default TableType;

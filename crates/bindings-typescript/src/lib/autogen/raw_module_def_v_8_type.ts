@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -19,8 +21,8 @@ import ReducerDef from './reducer_def_type';
 import MiscModuleExport from './misc_module_export_type';
 
 export default __t.object('RawModuleDefV8', {
-  typespace: Typespace,
-  tables: __t.array(TableDesc),
-  reducers: __t.array(ReducerDef),
-  miscExports: __t.array(MiscModuleExport),
+  typespace: __t.lazy(() => Typespace),
+  tables: __t.array(__t.lazy(() => TableDesc)),
+  reducers: __t.array(__t.lazy(() => ReducerDef)),
+  miscExports: __t.array(__t.lazy(() => MiscModuleExport)),
 });

@@ -107,7 +107,6 @@ impl Lang for TypeScript {
         }
     }
 
-
     /// e.g.
     /// ```ts
     /// table({
@@ -352,6 +351,8 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
     // All library imports are prefixed with `__` to avoid
     // clashing with the names of user generated types.
     let mut types = [
+        "TypeBuilder as __TypeBuilder",
+        "type AlgebraicTypeType as __AlgebraicTypeType",
         "DbConnectionBuilder as __DbConnectionBuilder",
         "convertToAccessorMap as __convertToAccessorMap",
         "type EventContextInterface as __EventContextInterface",
@@ -550,7 +551,7 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
             write!(out, ")")?;
         },
         AlgebraicTypeUse::Ref(r) => {
-            write!(out, "{}", type_ref_name(module, *r))?;
+            write!(out, "__t.lazy(() => {})", type_ref_name(module, *r))?;
         },
     }
     Ok(())
@@ -615,10 +616,60 @@ fn define_body_for_sum(
     name: &str,
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
+
+// /* eslint-disable */
+// /* tslint:disable */
+// import {
+//   TypeBuilder,
+//   convertToAccessorMap as __convertToAccessorMap,
+//   reducerSchema as __reducerSchema,
+//   reducers as __reducers,
+//   schema as __schema,
+//   t as __t,
+//   table as __table,
+//   type AlgebraicTypeType,
+//   type Infer as __Infer,
+//   type RemoteModule as __RemoteModule,
+// } from '../../index';
+// import SumType from './sum_type_type';
+// import ProductType from './product_type_type';
+
+// // The tagged union or sum type for the algebraic type `AlgebraicType`.
+// const AlgebraicType: TypeBuilder<AlgebraicTypeType, AlgebraicTypeType> = __t.enum('AlgebraicType', {
+//   Ref: __t.u32(),
+//   Sum: SumType,
+//   Product: ProductType,
+//   Array: __t.lazy(() => AlgebraicType),
+//   String: __t.unit(),
+//   Bool: __t.unit(),
+//   I8: __t.unit(),
+//   U8: __t.unit(),
+//   I16: __t.unit(),
+//   U16: __t.unit(),
+//   I32: __t.unit(),
+//   U32: __t.unit(),
+//   I64: __t.unit(),
+//   U64: __t.unit(),
+//   I128: __t.unit(),
+//   U128: __t.unit(),
+//   I256: __t.unit(),
+//   U256: __t.unit(),
+//   F32: __t.unit(),
+//   F64: __t.unit(),
+// });
+
+// export default AlgebraicType;
+
     writeln!(out, "// The tagged union or sum type for the algebraic type `{name}`.");
-    write!(out, "export default __t.enum(\"{name}\", {{");
-    out.with_indent(|out| write_object_type_builder_fields(module, out, variants, true).unwrap());
+    write!(out, "const {name}");
+    if name == "AlgebraicType" {
+        write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
+    }
+    write!(out, " = __t.enum(\"{name}\", {{");
+    out.with_indent(|out| write_object_type_builder_fields(module, out, variants, false).unwrap());
     writeln!(out, "}});");
+    out.newline();
+    writeln!(out, "export default {name};");
     out.newline();
 }
 

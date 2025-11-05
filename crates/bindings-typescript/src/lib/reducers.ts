@@ -15,7 +15,6 @@ import {
   type RowObj,
   type TypeBuilder,
 } from './type_builders';
-import type { CamelCase } from './type_util';
 import type { ReducerSchema } from './reducer_schema';
 import { toCamelCase } from './utils';
 
@@ -130,7 +129,7 @@ export function pushReducer(
   name: string,
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
-  lifecycle?: RawReducerDefV9['lifecycle']
+  lifecycle?: Infer<typeof RawReducerDefV9>['lifecycle']
 ): void {
   if (existingReducers.has(name)) {
     throw new TypeError(`There is already a reducer with the name '${name}'`);
@@ -219,7 +218,7 @@ export function init<S extends UntypedSchemaDef, Params extends ParamsObj>(
   params: Params,
   fn: Reducer<S, Params>
 ): void {
-  pushReducer(name, params, fn, Lifecycle.Init);
+  pushReducer(name, params, fn, Lifecycle.create('Init'));
 }
 
 /**
@@ -235,7 +234,7 @@ export function clientConnected<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
 >(name: string, params: Params, fn: Reducer<S, Params>): void {
-  pushReducer(name, params, fn, Lifecycle.OnConnect);
+  pushReducer(name, params, fn, Lifecycle.create('OnConnect'));
 }
 
 /**
@@ -261,7 +260,7 @@ export function clientDisconnected<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
 >(name: string, params: Params, fn: Reducer<S, Params>): void {
-  pushReducer(name, params, fn, Lifecycle.OnDisconnect);
+  pushReducer(name, params, fn, Lifecycle.create('OnDisconnect'));
 }
 
 class Reducers<ReducersDef extends UntypedReducersDef> {

@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -17,5 +19,5 @@ import RawConstraintDataV9 from './raw_constraint_data_v_9_type';
 
 export default __t.object('RawConstraintDefV9', {
   name: __t.option(__t.string()),
-  data: RawConstraintDataV9,
+  data: __t.lazy(() => RawConstraintDataV9),
 });

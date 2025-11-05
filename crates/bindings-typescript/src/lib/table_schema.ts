@@ -1,7 +1,7 @@
 import type { ProductType } from "./algebraic_type";
 import type RawTableDefV9 from "./autogen/raw_table_def_v_9_type";
 import type { IndexOpts } from "./indexes";
-import type { ColumnBuilder, RowBuilder } from "./type_builders";
+import type { ColumnBuilder, Infer, RowBuilder } from "./type_builders";
 
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.
@@ -29,7 +29,7 @@ export type TableSchema<
   /**
    * The {@link RawTableDefV9} of the configured table
    */
-  readonly tableDef: RawTableDefV9;
+  readonly tableDef: Infer<typeof RawTableDefV9>;
 
   /**
    * The indexes defined on the table.

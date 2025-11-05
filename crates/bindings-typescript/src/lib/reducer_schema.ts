@@ -34,5 +34,5 @@ export type ReducerSchema<
   /**
    * The {@link RawReducerDefV9} of the configured reducer.
    */
-  readonly reducerDef: RawReducerDefV9;
+  readonly reducerDef: Infer<typeof RawReducerDefV9>;
 };

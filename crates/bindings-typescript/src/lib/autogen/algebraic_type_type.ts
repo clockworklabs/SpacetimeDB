@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -19,25 +21,28 @@ import ProductType from './product_type_type';
 import * as AlgebraicTypeVariants from './algebraic_type_variants';
 
 // The tagged union or sum type for the algebraic type `AlgebraicType`.
-export default __t.enum('AlgebraicType', {
-  ref: __t.u32(),
-  sum: SumType,
-  product: ProductType,
-  array: AlgebraicType,
-  string: __t.unit(),
-  bool: __t.unit(),
-  i8: __t.unit(),
-  u8: __t.unit(),
-  i16: __t.unit(),
-  u16: __t.unit(),
-  i32: __t.unit(),
-  u32: __t.unit(),
-  i64: __t.unit(),
-  u64: __t.unit(),
-  i128: __t.unit(),
-  u128: __t.unit(),
-  i256: __t.unit(),
-  u256: __t.unit(),
-  f32: __t.unit(),
-  f64: __t.unit(),
-});
+const AlgebraicType: __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType> =
+  __t.enum('AlgebraicType', {
+    Ref: __t.u32(),
+    Sum: __t.lazy(() => SumType),
+    Product: __t.lazy(() => ProductType),
+    Array: __t.lazy(() => AlgebraicType),
+    String: __t.unit(),
+    Bool: __t.unit(),
+    I8: __t.unit(),
+    U8: __t.unit(),
+    I16: __t.unit(),
+    U16: __t.unit(),
+    I32: __t.unit(),
+    U32: __t.unit(),
+    I64: __t.unit(),
+    U64: __t.unit(),
+    I128: __t.unit(),
+    U128: __t.unit(),
+    I256: __t.unit(),
+    U256: __t.unit(),
+    F32: __t.unit(),
+    F64: __t.unit(),
+  });
+
+export default AlgebraicType;

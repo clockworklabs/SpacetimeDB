@@ -4,20 +4,24 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
 import * as LifecycleVariants from './lifecycle_variants';
 
 // The tagged union or sum type for the algebraic type `Lifecycle`.
-export default __t.enum('Lifecycle', {
-  init: __t.unit(),
-  onConnect: __t.unit(),
-  onDisconnect: __t.unit(),
+const Lifecycle = __t.enum('Lifecycle', {
+  Init: __t.unit(),
+  OnConnect: __t.unit(),
+  OnDisconnect: __t.unit(),
 });
+
+export default Lifecycle;

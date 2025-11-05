@@ -4,20 +4,24 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
 import * as RawIndexAlgorithmVariants from './raw_index_algorithm_variants';
 
 // The tagged union or sum type for the algebraic type `RawIndexAlgorithm`.
-export default __t.enum('RawIndexAlgorithm', {
-  bTree: __t.array(__t.u16()),
-  hash: __t.array(__t.u16()),
-  direct: __t.u16(),
+const RawIndexAlgorithm = __t.enum('RawIndexAlgorithm', {
+  BTree: __t.array(__t.u16()),
+  Hash: __t.array(__t.u16()),
+  Direct: __t.u16(),
 });
+
+export default RawIndexAlgorithm;

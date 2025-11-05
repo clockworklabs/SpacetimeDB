@@ -13,6 +13,7 @@ import {
   RowBuilder,
   type ColumnBuilder,
   type ColumnMetadata,
+  type Infer,
   type InferTypeOfRow,
   type RowObj,
   type TypeBuilder,
@@ -192,9 +193,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // gather primary keys, per‑column indexes, uniques, sequences
   const pk: ColList = [];
-  const indexes: RawIndexDefV9[] = [];
-  const constraints: RawConstraintDefV9[] = [];
-  const sequences: RawSequenceDefV9[] = [];
+  const indexes: Infer<typeof RawIndexDefV9>[] = [];
+  const constraints: Infer<typeof RawConstraintDefV9>[] = [];
+  const sequences: Infer<typeof RawSequenceDefV9>[] = [];
 
   let scheduleAtCol: ColId | undefined;
 
@@ -211,13 +212,13 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     if (meta.indexType || isUnique) {
       const algo = meta.indexType ?? 'btree';
       const id = colIds.get(name)!;
-      let algorithm: RawIndexAlgorithm;
+      let algorithm: Infer<typeof RawIndexAlgorithm>;
       switch (algo) {
         case 'btree':
-          algorithm = RawIndexAlgorithm.BTree([id]);
+          algorithm = RawIndexAlgorithm.create('BTree', [id]);
           break;
         case 'direct':
-          algorithm = RawIndexAlgorithm.Direct(id);
+          algorithm = RawIndexAlgorithm.create('Direct', id);
           break;
       }
       indexes.push({
@@ -252,7 +253,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // convert explicit multi‑column indexes coming from options.indexes
   for (const indexOpts of userIndexes ?? []) {
-    let algorithm: RawIndexAlgorithm;
+    let algorithm: Infer<typeof RawIndexAlgorithm>;
     switch (indexOpts.algorithm) {
       case 'btree':
         algorithm = {
@@ -270,7 +271,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   // add explicit constraints from options.constraints
   for (const constraintOpts of opts.constraints ?? []) {
     if (constraintOpts.constraint === 'unique') {
-      let data: RawConstraintDefV9['data'];
+      let data: Infer<typeof RawConstraintDefV9>['data'];
       data = {
         tag: 'Unique',
         value: { columns: constraintOpts.columns.map(c => colIds.get(c)!) },
@@ -295,7 +296,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   // Temporarily set the type ref to 0. We will set this later
   // in the schema function.
 
-  const tableDef: RawTableDefV9 = {
+  const tableDef: Infer<typeof RawTableDefV9> = {
     name,
     productTypeRef: row.algebraicType.value as number,
     primaryKey: pk,

@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -21,10 +23,10 @@ import RawMiscModuleExportV9 from './raw_misc_module_export_v_9_type';
 import RawRowLevelSecurityDefV9 from './raw_row_level_security_def_v_9_type';
 
 export default __t.object('RawModuleDefV9', {
-  typespace: Typespace,
-  tables: __t.array(RawTableDefV9),
-  reducers: __t.array(RawReducerDefV9),
-  types: __t.array(RawTypeDefV9),
-  miscExports: __t.array(RawMiscModuleExportV9),
-  rowLevelSecurity: __t.array(RawRowLevelSecurityDefV9),
+  typespace: __t.lazy(() => Typespace),
+  tables: __t.array(__t.lazy(() => RawTableDefV9)),
+  reducers: __t.array(__t.lazy(() => RawReducerDefV9)),
+  types: __t.array(__t.lazy(() => RawTypeDefV9)),
+  miscExports: __t.array(__t.lazy(() => RawMiscModuleExportV9)),
+  rowLevelSecurity: __t.array(__t.lazy(() => RawRowLevelSecurityDefV9)),
 });

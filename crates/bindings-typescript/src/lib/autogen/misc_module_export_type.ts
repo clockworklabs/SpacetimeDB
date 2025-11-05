@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -18,4 +20,8 @@ import TypeAlias from './type_alias_type';
 import * as MiscModuleExportVariants from './misc_module_export_variants';
 
 // The tagged union or sum type for the algebraic type `MiscModuleExport`.
-export default __t.enum('MiscModuleExport', { typeAlias: TypeAlias });
+const MiscModuleExport = __t.enum('MiscModuleExport', {
+  TypeAlias: __t.lazy(() => TypeAlias),
+});
+
+export default MiscModuleExport;

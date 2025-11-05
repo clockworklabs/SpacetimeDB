@@ -4,12 +4,14 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
@@ -20,10 +22,10 @@ import RawSequenceDefV8 from './raw_sequence_def_v_8_type';
 
 export default __t.object('RawTableDefV8', {
   tableName: __t.string(),
-  columns: __t.array(RawColumnDefV8),
-  indexes: __t.array(RawIndexDefV8),
-  constraints: __t.array(RawConstraintDefV8),
-  sequences: __t.array(RawSequenceDefV8),
+  columns: __t.array(__t.lazy(() => RawColumnDefV8)),
+  indexes: __t.array(__t.lazy(() => RawIndexDefV8)),
+  constraints: __t.array(__t.lazy(() => RawConstraintDefV8)),
+  sequences: __t.array(__t.lazy(() => RawSequenceDefV8)),
   tableType: __t.string(),
   tableAccess: __t.string(),
   scheduled: __t.option(__t.string()),

@@ -4,18 +4,20 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
   type RemoteModule as __RemoteModule,
 } from '../../index';
 import RawTableDefV8 from './raw_table_def_v_8_type';
 
 export default __t.object('TableDesc', {
-  schema: RawTableDefV8,
+  schema: __t.lazy(() => RawTableDefV8),
   data: __t.u32(),
 });
