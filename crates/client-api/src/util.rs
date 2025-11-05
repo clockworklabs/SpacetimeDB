@@ -89,7 +89,7 @@ impl NameOrIdentity {
     /// Otherwise, if `self` is a [`NameOrIdentity::Name`], the [`Identity`] is
     /// looked up by that name in the SpacetimeDB DNS and returned.
     ///
-    /// Errors are returned if the DNS lookup fails.
+    /// Errors are returned if [`NameOrIdentity::Name`] the DNS lookup fails.
     ///
     /// An `Ok` result is itself a [`Result`], which is `Err(DatabaseName)` if the
     /// given [`NameOrIdentity::Name`] is not registered in the SpacetimeDB DNS,
@@ -111,7 +111,7 @@ impl NameOrIdentity {
         self.try_resolve(ctx)
             .await
             .map_err(log_and_500)?
-            .map_err(|name| (StatusCode::NOT_FOUND, format!("Could not resolve database `{name}`")).into())
+            .map_err(|_| StatusCode::NOT_FOUND.into())
     }
 }
 
