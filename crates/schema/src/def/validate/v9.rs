@@ -547,6 +547,7 @@ impl ModuleValidator<'_> {
             },
             return_type,
             return_type_for_generate,
+            product_type_ref,
             return_columns,
             param_columns,
         })
