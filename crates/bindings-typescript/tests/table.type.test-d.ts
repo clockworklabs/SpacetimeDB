@@ -39,24 +39,33 @@ const invalid: StringsOnly = {
 type ExampleRowExpr = RowExpr<ExampleTableDef>;
 
 const goodExpr: ExampleRowExpr = {
-  id: { type: 'column', column: 'id', table: 'example', valueType: 1 },
+  id: {
+    type: 'column',
+    column: 'id',
+    table: 'example',
+    valueType: 1,
+    spacetimeType: example.rowType.row.id.typeBuilder.algebraicType,
+  },
   name: {
     type: 'column',
     column: 'name',
     table: 'example',
     valueType: 'Ada',
+    spacetimeType: example.rowType.row.name.typeBuilder.algebraicType,
   },
   active: {
     type: 'column',
     column: 'active',
     table: 'example',
     valueType: true,
+    spacetimeType: example.rowType.row.active.typeBuilder.algebraicType,
   },
   score: {
     type: 'column',
     column: 'score',
     table: 'example',
     valueType: 1n,
+    spacetimeType: example.rowType.row.score.typeBuilder.algebraicType,
   },
 };
 
@@ -64,3 +73,10 @@ type NameValueType = ExampleRowExpr['name']['valueType'];
 const nameValueOk: NameValueType = 'Ada';
 // @ts-expect-error name column expects string values
 const nameValueBad: NameValueType = 123;
+
+type NameSpacetimeType = ExampleRowExpr['name']['spacetimeType'];
+const nameSpacetimeOk: NameSpacetimeType =
+  example.rowType.row.name.typeBuilder.algebraicType;
+// @ts-expect-error name column expects string spacetime type
+const nameSpacetimeBad: NameSpacetimeType =
+  example.rowType.row.id.typeBuilder.algebraicType;

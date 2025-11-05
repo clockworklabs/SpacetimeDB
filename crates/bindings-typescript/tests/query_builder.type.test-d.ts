@@ -52,6 +52,12 @@ createQuery(person).filter(row => eq(row.id, literal('oops')));
 // @ts-expect-error boolean column cannot be used directly as a filter expression
 createQuery(person).filter(row => row.married);
 
+// @ts-expect-error columns with differing spacetime types cannot be compared
+createQuery(person).filter(row => eq(row.id, row.age2));
+
+// @ts-expect-error columns with differing spacetime types cannot be compared
+createQuery(person).filter(row => eq(row.id, row.age2));
+
 const personRef = createTableRef(person);
 const orders = table(
   {
@@ -67,11 +73,17 @@ const orders = table(
         algorithm: 'btree',
         columns: ['id', 'desc'] as const,
       },
+      {
+        name: 'u16_desc_idx',
+        algorithm: 'btree',
+        columns: ['u16field', 'desc'] as const,
+      },
     ],
   },
   {
     id: t.u32().primaryKey(),
     buyerId: t.u32().index('btree'),
+    u16field: t.u16(),
     desc: t.string(),
   }
 );
@@ -82,3 +94,40 @@ const personScan = new TableScan(personRef);
 personScan.semijoin(personRef.indexes.id, ordersRef.indexes.buyer_idx);
 // @ts-expect-error mismatched index shapes should fail
 personScan.semijoin(personRef.indexes.id, ordersRef.indexes.id_desc_idx);
+// @ts-expect-error mismatched spacetime types should fail
+personScan.semijoin(
+  personRef.indexes.id_name_idx,
+  ordersRef.indexes.u16_desc_idx
+);
+
+const _spacetimeMismatch: typeof personRef.indexes.id_name_idx['valueInfo'] =
+  // @ts-expect-error spacetime metadata differs
+  ordersRef.indexes.u16_desc_idx.valueInfo;
+
+const _tagOk: typeof personRef.indexes.id_name_idx['valueInfo'][0]['spacetimeTag'] =
+  'U32';
+// @ts-expect-error tag mismatch
+const _tagBad: typeof personRef.indexes.id_name_idx['valueInfo'][0]['spacetimeTag'] =
+  'U16';
+
+const personIdTag: ColumnSpacetimeTag<
+  typeof tableRef.tableDef,
+  'id'
+> = 'U32';
+// @ts-expect-error tag mismatch
+const personIdTagBad: ColumnSpacetimeTag<
+  typeof tableRef.tableDef,
+  'id'
+> = 'U16';
+
+type PersonIdSpacetime = ColumnSpacetimeType<
+  typeof tableRef.tableDef,
+  'id'
+>;
+type OrdersU16Spacetime = ColumnSpacetimeType<
+  typeof ordersRef.tableDef,
+  'u16field'
+>;
+// @ts-expect-error spacetime types differ (u32 vs u16)
+const _spacetimeAssign: PersonIdSpacetime =
+  ordersRef.tableDef.columns.u16field.typeBuilder.algebraicType;

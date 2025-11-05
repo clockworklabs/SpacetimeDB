@@ -12,11 +12,16 @@ import type {
   IndexOpts,
   IndexVal,
 } from './indexes';
+import type {
+  IndexValWithSpacetime as _IndexValWithSpacetime,
+} from './indexes';
+export type { IndexValWithSpacetime } from './indexes';
 import { MODULE_DEF, splitName } from './schema';
 import {
   RowBuilder,
   type ColumnBuilder,
   type ColumnMetadata,
+  type InferSpacetimeTypeOfTypeBuilder,
   type InferTypeOfRow,
   type RowObj,
   type TypeBuilder,
@@ -41,18 +46,28 @@ type NonNeverKeys<T> = {
   [K in keyof T]: T[K] extends never ? never : K;
 }[keyof T];
 
-type TableAccessorIndexNames<TableDef extends UntypedTableDef> = TableDef['indexes'][number] extends infer I
-  ? I extends { accessorName?: infer A }
-    ? A extends string
-      ? A
-      : never
-    : never
-  : never;
+export type ColumnSpacetimeType<
+  TableDef extends UntypedTableDef,
+  ColumnName extends ColumnNames<TableDef>,
+> = TableDef['columns'][ColumnName]['spacetimeType'];
 
-export type TableIndexNames<TableDef extends UntypedTableDef> = Extract<
-  NonNeverKeys<TableIndexes<TableDef>>,
-  string
-> | TableAccessorIndexNames<TableDef>;
+export type ColumnSpacetimeTag<
+  TableDef extends UntypedTableDef,
+  ColumnName extends ColumnNames<TableDef>,
+> = TableDef['columns'][ColumnName]['spacetimeTag'];
+
+type TableAccessorIndexNames<TableDef extends UntypedTableDef> =
+  TableDef['indexes'][number] extends infer I
+    ? I extends { accessorName?: infer A }
+      ? A extends string
+        ? A
+        : never
+      : never
+    : never;
+
+export type TableIndexNames<TableDef extends UntypedTableDef> =
+  | Extract<NonNeverKeys<TableIndexes<TableDef>>, string>
+  | TableAccessorIndexNames<TableDef>;
 
 /**
  * Describes how a single column is referenced in a row expression. Carries the
@@ -67,6 +82,7 @@ export type ColumnExpr<
   column: ColumnName;
   table: TableDef['name'];
   valueType: RowType<TableDef>[ColumnName];
+  spacetimeType: ColumnSpacetimeType<TableDef, ColumnName>;
 };
 
 /**
@@ -93,6 +109,7 @@ export type IndexExpr<
     table: TableDef['name'];
     index: IndexName;
     valueType: IndexValueType<TableDef, IndexName>;
+    valueInfo: _IndexValWithSpacetime<TableDef, TableIndexes<TableDef>[IndexName]>;
   } & Pick<
     TableIndexes<TableDef>[IndexName],
     'name' | 'unique' | 'columns' | 'algorithm'
@@ -152,7 +169,7 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
 export type UntypedTableDef = {
   name: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
-  indexes: IndexOpts<any>[];
+  indexes: readonly IndexOpts<any>[];
 };
 
 /**

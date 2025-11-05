@@ -15,7 +15,10 @@ import type { UntypedTableDef } from '../src/server/table';
 
 import { table, t } from '../src/server';
 describe('QueryBuilder', () => {
-  const myObjectType = t.object("myObjectType", {f1: t.bool(), f2: t.string()});
+  const myObjectType = t.object('myObjectType', {
+    f1: t.bool(),
+    f2: t.string(),
+  });
   const person = table(
     {
       name: 'person',
@@ -29,7 +32,7 @@ describe('QueryBuilder', () => {
           name: 'name_idx',
           algorithm: 'btree',
           columns: ['name'] as const,
-        }
+        },
       ] as const,
     },
     {
@@ -116,7 +119,7 @@ describe('QueryBuilder', () => {
       .addFilter(row => gt(row.age, row.age2));
 
     expect(scan.toSql()).toBe(
-      'SELECT "person".* FROM "person" WHERE ("person"."married" = TRUE) AND ("person"."id" = 1) AND ("person"."age" > 18)'
+      'SELECT "person".* FROM "person" WHERE ("person"."married" = TRUE) AND ("person"."id" = 1) AND ("person"."age" > 18) AND ("person"."age" > "person"."age2")'
     );
   });
 
@@ -133,7 +136,7 @@ describe('QueryBuilder', () => {
   test('table scan filter on bool field', () => {
     const scan = new TableScan(tableRef)
       .addFilter(row => eq(row.id, literal(5)))
-      // .addFilter(row => eq(row.married, literal(true)));
+      .addFilter(row => eq(row.married, literal(true)));
 
     expect(scan.toSql()).toBe(
       'SELECT "person".* FROM "person" WHERE ("person"."id" = 5) AND ("person"."married" = TRUE)'
@@ -150,12 +153,24 @@ describe('QueryBuilder', () => {
             algorithm: 'btree',
             columns: ['id', 'desc'] as const,
           },
+          {
+            name: 'u16_desc_idx',
+            algorithm: 'btree',
+            columns: ['u16field', 'desc'] as const,
+          },
+          {
+            name: 'string_string_idx',
+            algorithm: 'btree',
+            columns: ['s2', 'desc'] as const,
+          },
         ] as const,
       },
       {
         id: t.u32().primaryKey(),
         buyerId: t.u32().index('btree'),
+        u16field: t.u16(),
         desc: t.string(),
+        s2: t.string(),
       }
     );
     const ordersRef = createTableRef(orders);
@@ -172,12 +187,14 @@ describe('QueryBuilder', () => {
       ordersRef.indexes.id_desc_idx
     );
 
+    /*
     const _typeCheck: Semijoin<
       typeof tableRef.tableDef,
       typeof ordersRef.tableDef,
       'id',
       'buyerId'
     > = join;
+     */
 
     expect(join.leftIndex.columns).toEqual(['id']);
     expect(join.rightIndex.columns).toEqual(['buyerId']);

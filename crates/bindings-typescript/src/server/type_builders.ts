@@ -1554,6 +1554,10 @@ export class ColumnBuilder<
 > {
   typeBuilder: TypeBuilder<Type, SpacetimeType>;
   columnMetadata: M;
+  readonly spacetimeType!: SpacetimeType;
+  readonly spacetimeTag!: SpacetimeType extends { tag: infer Tag }
+    ? Tag
+    : string;
 
   constructor(typeBuilder: TypeBuilder<Type, SpacetimeType>, metadata: M) {
     this.typeBuilder = typeBuilder;

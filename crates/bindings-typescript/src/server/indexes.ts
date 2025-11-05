@@ -1,4 +1,9 @@
-import type { RowType, UntypedTableDef } from './table';
+import type {
+  ColumnSpacetimeTag,
+  ColumnSpacetimeType,
+  RowType,
+  UntypedTableDef,
+} from './table';
 import type { ColumnMetadata, IndexTypes } from './type_builders';
 import type { CollapseTuple, Prettify } from './type_util';
 import { Range } from './range';
@@ -34,7 +39,7 @@ export type IndexColumns<I extends IndexOpts<any>> = I extends {
 }
   ? Columns extends readonly (infer Names extends string)[]
     ? Columns
-  : never
+    : never
   : I extends { column: infer Name extends string }
     ? readonly [Name]
     : never;
@@ -114,6 +119,33 @@ type _IndexVal<
   ? [
       TableDef['columns'][Head]['typeBuilder']['type'],
       ..._IndexVal<TableDef, Tail>,
+    ]
+  : [];
+
+/**
+ * Detailed value metadata for an index, carrying both the TypeScript value type
+ * and the associated Spacetime algebraic type for every column referenced by the index.
+ */
+export type IndexValWithSpacetime<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = CollapseTuple<_IndexValWithSpacetime<TableDef, I['columns']>>;
+
+type _IndexValWithSpacetime<
+  TableDef extends UntypedTableDef,
+  Columns extends readonly string[],
+> = Columns extends readonly [
+  infer Head extends string,
+  ...infer Tail extends string[],
+]
+  ? [
+      {
+        valueType: TableDef['columns'][Head]['typeBuilder']['type'];
+        spacetimeType: ColumnSpacetimeType<TableDef, Head>;
+        typeBuilder: TableDef['columns'][Head]['typeBuilder'];
+        spacetimeTag: ColumnSpacetimeTag<TableDef, Head>;
+      },
+      ..._IndexValWithSpacetime<TableDef, Tail>,
     ]
   : [];
 

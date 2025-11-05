@@ -1,10 +1,13 @@
 import type {
   ColumnExpr,
+  ColumnSpacetimeType,
   IndexExpr,
   IndexExprs,
   IndexValueType,
+  IndexValWithSpacetime,
   RowExpr,
   TableIndexNames,
+  TableIndexes,
   TableSchema,
   RowType,
   UntypedTableDef,
@@ -12,36 +15,59 @@ import type {
 import type { IndexOpts } from './indexes';
 import type { Identity } from '../lib/identity';
 
-type ColumnNames<TableDef extends UntypedTableDef> = keyof RowType<TableDef> &
+type TableLike = TableSchema<any, any, readonly any[]> | UntypedTableDef;
+
+type TableCtx<Table extends TableLike> = Table extends TableSchema<
+  any,
+  any,
+  readonly any[]
+>
+  ? TableSchemaAsTableDef<Table>
+  : Table;
+
+type ColumnNames<Table extends TableLike> = keyof RowType<TableCtx<Table>> &
   string;
 
-export type TableRef<TableDef extends UntypedTableDef> = {
-  tableDef: TableDef;
-  tableName: TableDef['name'];
-  row: RowExpr<TableDef>;
-  indexes: IndexExprs<TableDef>;
+export type TableRef<Table extends TableLike> = {
+  tableInput: Table;
+  tableDef: TableCtx<Table>;
+  tableName: TableCtx<Table>['name'];
+  row: RowExpr<TableCtx<Table>>;
+  indexes: IndexExprs<TableCtx<Table>>;
 };
 
 export type Semijoin<
-  LeftTable extends UntypedTableDef,
-  RightTable extends UntypedTableDef,
-  LeftIndex extends TableIndexNames<LeftTable>,
-  RightIndex extends TableIndexNames<RightTable>,
+  LeftTable extends TableLike,
+  RightTable extends TableLike,
+  LeftIndex extends TableIndexNames<TableCtx<LeftTable>>,
+  RightIndex extends TableIndexNames<TableCtx<RightTable>>,
 > = Readonly<{
   left: TableScan<LeftTable>;
-  leftIndex: IndexExpr<LeftTable, LeftIndex>;
-  rightIndex: IndexExpr<RightTable, RightIndex>;
+  leftIndex: IndexExpr<TableCtx<LeftTable>, LeftIndex>;
+  rightIndex: IndexExpr<TableCtx<RightTable>, RightIndex>;
   toSql: () => string;
 }>;
 
-  type SameIndexValueType<
-  T1 extends UntypedTableDef,
-  I1 extends TableIndexNames<T1>,
-  T2 extends UntypedTableDef,
-  I2 extends TableIndexNames<T2>,
-> = IndexValueType<T1, I1> extends IndexValueType<T2, I2>
-  ? IndexValueType<T2, I2> extends IndexValueType<T1, I1>
-    ? true
+type SameIndexSpacetimeType<
+  T1 extends TableLike,
+  I1 extends TableIndexNames<TableCtx<T1>>,
+  T2 extends TableLike,
+  I2 extends TableIndexNames<TableCtx<T2>>,
+> = SameIndexSpacetimeExpr<
+  IndexExpr<TableCtx<T1>, I1>,
+  IndexExpr<TableCtx<T2>, I2>
+>;
+
+type SameIndexSpacetimeExpr<
+  Left,
+  Right,
+> = Left extends { valueInfo: infer LeftInfo }
+  ? Right extends { valueInfo: infer RightInfo }
+    ? LeftInfo extends RightInfo
+      ? RightInfo extends LeftInfo
+        ? true
+        : false
+      : false
     : false
   : false;
 
@@ -53,29 +79,30 @@ export type ToSql = {
   toSql(): string;
 };
 
-type ColumnExprForValue<TableDef extends UntypedTableDef, Value> = {
-  [C in ColumnNames<TableDef>]: RowType<TableDef>[C] extends Value
-    ? ColumnExpr<TableDef, C>
+type ColumnExprForValue<Table extends TableLike, Value> = {
+  [C in ColumnNames<Table>]: RowType<TableCtx<Table>>[C] extends Value
+    ? ColumnExpr<TableCtx<Table>, C>
     : never;
-}[ColumnNames<TableDef>];
+}[ColumnNames<Table>];
 
 type LiteralExpr<Value> = {
   type: 'literal';
   value: Value;
 };
 
-export type ValueExpr<TableDef extends UntypedTableDef, Value> =
-  | ColumnExprForValue<TableDef, Value>
+export type ValueExpr<Table extends TableLike, Value> =
+  | ColumnExprForValue<Table, Value>
   | LiteralExpr<Value>;
 
-type ExprValueType<
-  TableDef extends UntypedTableDef,
-  ExprT,
-> = ExprT extends ColumnExpr<TableDef, infer Column extends ColumnNames<TableDef>>
-  ? RowType<TableDef>[Column]
-  : ExprT extends LiteralExpr<infer LiteralValue>
-    ? LiteralValue
-    : never;
+type ExprValueType<Table extends TableLike, ExprT> =
+  ExprT extends ColumnExpr<
+      TableCtx<Table>,
+      infer Column extends ColumnNames<Table>
+    >
+    ? RowType<TableCtx<Table>>[Column]
+    : ExprT extends LiteralExpr<infer LiteralValue>
+      ? LiteralValue
+      : never;
 
 type WidenComparableLiteral<T> = [T] extends [null | undefined]
   ? null | undefined
@@ -87,55 +114,93 @@ type WidenComparableLiteral<T> = [T] extends [null | undefined]
         ? boolean
         : T;
 
-type ComparableValueExprs<
-  TableDef extends UntypedTableDef,
+type ExprSpacetimeType<Table extends TableLike, ExprT> =
+  ExprT extends ColumnExpr<
+      TableCtx<Table>,
+      infer Column extends ColumnNames<Table>
+    >
+    ? ColumnSpacetimeType<TableCtx<Table>, Column>
+    : never;
+
+type ValueTypesComparable<
+  Table extends TableLike,
   LeftExpr,
   RightExpr,
-> = WidenComparableLiteral<ExprValueType<TableDef, LeftExpr>> extends
-  | null
-  | undefined
-  ? true
-  : WidenComparableLiteral<ExprValueType<TableDef, RightExpr>> extends
-        | null
-        | undefined
+> =
+  WidenComparableLiteral<ExprValueType<Table, LeftExpr>> extends
+    | null
+    | undefined
     ? true
-    : [
-          WidenComparableLiteral<ExprValueType<TableDef, LeftExpr>> &
-            WidenComparableLiteral<ExprValueType<TableDef, RightExpr>>,
-        ] extends [never]
-      ? false
-      : true;
+    : WidenComparableLiteral<ExprValueType<Table, RightExpr>> extends
+          | null
+          | undefined
+      ? true
+      : [
+            WidenComparableLiteral<ExprValueType<Table, LeftExpr>> &
+              WidenComparableLiteral<ExprValueType<Table, RightExpr>>,
+          ] extends [never]
+        ? false
+        : true;
 
-type BooleanExpr<TableDef extends UntypedTableDef> =
+type SpacetimeTypesComparable<
+  Table extends TableLike,
+  LeftExpr,
+  RightExpr,
+> =
+  ExprSpacetimeType<Table, LeftExpr> extends never
+    ? true
+    : ExprSpacetimeType<Table, RightExpr> extends never
+      ? true
+      : [
+            ExprSpacetimeType<Table, LeftExpr>,
+            ExprSpacetimeType<Table, RightExpr>,
+          ] extends [infer LeftSpace, infer RightSpace]
+        ? LeftSpace extends RightSpace
+          ? RightSpace extends LeftSpace
+            ? true
+            : false
+          : false
+        : false;
+
+type ComparableValueExprs<
+  Table extends TableLike,
+  LeftExpr,
+  RightExpr,
+> =
+  ValueTypesComparable<Table, LeftExpr, RightExpr> extends true
+    ? SpacetimeTypesComparable<Table, LeftExpr, RightExpr>
+    : false;
+
+type BooleanExpr<Table extends TableLike> =
   | {
       type: 'eq';
-      left: ValueExpr<TableDef, any>;
-      right: ValueExpr<TableDef, any>;
+      left: ValueExpr<Table, any>;
+      right: ValueExpr<Table, any>;
     }
   | {
       type: 'gt';
-      left: ValueExpr<TableDef, any>;
-      right: ValueExpr<TableDef, any>;
+      left: ValueExpr<Table, any>;
+      right: ValueExpr<Table, any>;
     }
   | {
       type: 'lt';
-      left: ValueExpr<TableDef, any>;
-      right: ValueExpr<TableDef, any>;
+      left: ValueExpr<Table, any>;
+      right: ValueExpr<Table, any>;
     }
   | {
-    type: 'not',
-    val: BooleanExpr<TableDef>;
-  }
+      type: 'not';
+      val: BooleanExpr<Table>;
+    }
   | {
       type: 'and';
-      left: BooleanExpr<TableDef>;
-      right: BooleanExpr<TableDef>;
+      left: BooleanExpr<Table>;
+      right: BooleanExpr<Table>;
     };
 
 export type Expr<
-  TableDef extends UntypedTableDef,
+  Table extends TableLike,
   Value,
-> = Value extends boolean ? BooleanExpr<TableDef> : ValueExpr<TableDef, Value>;
+> = Value extends boolean ? BooleanExpr<Table> : ValueExpr<Table, Value>;
 
 type RenderOptions = {
   tableAlias?: string;
@@ -183,17 +248,16 @@ function valueToSql(value: unknown): string {
   );
 }
 
-function isNullLiteral<TableDef extends UntypedTableDef>(
-  expr: ValueExpr<TableDef, any>
+function isNullLiteral<Table extends TableLike>(
+  expr: ValueExpr<Table, any>
 ): boolean {
   return (
-    expr.type === 'literal' &&
-    (expr.value === null || expr.value === undefined)
+    expr.type === 'literal' && (expr.value === null || expr.value === undefined)
   );
 }
 
-function valueExprToSql<TableDef extends UntypedTableDef>(
-  expr: ValueExpr<TableDef, any>,
+function valueExprToSql<Table extends TableLike>(
+  expr: ValueExpr<Table, any>,
   options: RenderOptions = {}
 ): string {
   if (expr.type === 'literal') {
@@ -203,8 +267,8 @@ function valueExprToSql<TableDef extends UntypedTableDef>(
   return `${quoteIdentifier(alias)}.${quoteIdentifier(expr.column)}`;
 }
 
-function booleanExprToSql<TableDef extends UntypedTableDef>(
-  expr: BooleanExpr<TableDef>,
+function booleanExprToSql<Table extends TableLike>(
+  expr: BooleanExpr<Table>,
   options: RenderOptions = {}
 ): string {
   switch (expr.type) {
@@ -243,8 +307,8 @@ function booleanExprToSql<TableDef extends UntypedTableDef>(
   }
 }
 
-function renderFilters<TableDef extends UntypedTableDef>(
-  filters: readonly BooleanExpr<TableDef>[],
+function renderFilters<Table extends TableLike>(
+  filters: readonly BooleanExpr<Table>[],
   tableAlias: string
 ): string | undefined {
   if (filters.length === 0) return undefined;
@@ -256,9 +320,9 @@ function renderFilters<TableDef extends UntypedTableDef>(
     .join(' AND ');
 }
 
-function isBooleanExpr<TableDef extends UntypedTableDef>(
-  expr: Expr<TableDef, any>
-): expr is BooleanExpr<TableDef> {
+function isBooleanExpr<Table extends TableLike>(
+  expr: Expr<Table, any>
+): expr is BooleanExpr<Table> {
   return (
     expr.type === 'eq' ||
     expr.type === 'gt' ||
@@ -267,14 +331,14 @@ function isBooleanExpr<TableDef extends UntypedTableDef>(
   );
 }
 
-export function exprToSql<TableDef extends UntypedTableDef, Value>(
-  expr: Expr<TableDef, Value>,
+export function exprToSql<Table extends TableLike, Value>(
+  expr: Expr<Table, Value>,
   options: RenderOptions = {}
 ): string {
   if (isBooleanExpr(expr)) {
     return booleanExprToSql(expr, options);
   }
-  return valueExprToSql(expr as ValueExpr<TableDef, Value>, options);
+  return valueExprToSql(expr as ValueExpr<Table, Value>, options);
 }
 
 type TableSchemaAsTableDef<
@@ -282,7 +346,7 @@ type TableSchemaAsTableDef<
 > = {
   name: TSchema['tableName'];
   columns: TSchema['rowType']['row'];
-  indexes: Array<TSchema['idxs'][number]>;
+  indexes: TSchema['idxs'];
 };
 
 function assertNever(value: never): never {
@@ -312,15 +376,15 @@ function assertNever(value: never): never {
  * Should I have a subscribable interface?
  */
 
-export type Query<TableDef extends UntypedTableDef> = {
+export type Query<Table extends TableLike> = {
   /**
    * Adds a filter expression to the query.
    * @param predicate A function that produces a condition when given a typed
    *                  projection of the table row.
    */
   filter(
-    predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
-  ): Query<TableDef>;
+    predicate: (row: RowExpr<TableCtx<Table>>) => BooleanExpr<Table>
+  ): Query<Table>;
 
   /**
    * Converts the query to its SQL representation.
@@ -338,11 +402,23 @@ function createRowExpr<TableDef extends UntypedTableDef>(
   for (const columnName of Object.keys(
     tableDef.columns
   ) as ColumnNames<TableDef>[]) {
+    const columnBuilder = tableDef.columns[columnName];
+    const spacetimeType =
+      columnBuilder != null
+        ? (columnBuilder.typeBuilder.algebraicType as ColumnSpacetimeType<
+            TableDef,
+            typeof columnName
+          >)
+        : (undefined as unknown as ColumnSpacetimeType<
+            TableDef,
+            typeof columnName
+          >);
     row[columnName] = {
       type: 'column',
       column: columnName,
       table: tableDef.name,
       valueType: undefined as unknown as RowType<TableDef>[typeof columnName],
+      spacetimeType,
     } as ColumnExpr<TableDef, typeof columnName>;
   }
   return row as RowExpr<TableDef>;
@@ -386,6 +462,7 @@ function createIndexExprs<TableDef extends UntypedTableDef>(
       columns: [columnName],
       algorithm,
       valueType: rowExpr[columnName].valueType,
+      valueInfo: undefined as IndexExpr<TableDef, typeof columnKey>['valueInfo'],
     } as IndexExpr<TableDef, TableIndexNames<TableDef>>;
     putIndex(columnKey, entry);
   }
@@ -403,17 +480,19 @@ function createIndexExprs<TableDef extends UntypedTableDef>(
       const metadata = tableDef.columns[columnName]?.columnMetadata ?? {};
       return metadata.isUnique === true || metadata.isPrimaryKey === true;
     });
-    const accessorName = indexOpt.name ??
+    const accessorName =
+      indexOpt.name ??
       `${tableDef.name}_${columnNamesExplicit.join('_')}_idx_${algorithm}`;
     const normalizedColumns =
       columnNamesExplicit as readonly ColumnNames<TableDef>[];
     const singleColumn =
       normalizedColumns.length === 1 ? normalizedColumns[0]! : undefined;
+    const indexName = accessorName as TableIndexNames<TableDef>;
     const entry = {
       type: 'index',
       tableDef,
       table: tableDef.name,
-      index: accessorName as TableIndexNames<TableDef>,
+      index: indexName,
       name: accessorName,
       unique,
       columns: columnNamesExplicit,
@@ -422,63 +501,12 @@ function createIndexExprs<TableDef extends UntypedTableDef>(
         singleColumn !== undefined
           ? rowExpr[singleColumn].valueType
           : normalizedColumns.map(column => rowExpr[column].valueType),
-    } as IndexExpr<TableDef, TableIndexNames<TableDef>>;
+      valueInfo: undefined as IndexExpr<TableDef, typeof indexName>['valueInfo'],
+    } as IndexExpr<TableDef, typeof indexName>;
     putIndex(accessorName, entry);
   }
 
   return indexes as IndexExprs<TableDef>;
-}
-
-function normalizeSchemaIndexes<
-  TSchema extends TableSchema<any, any, readonly any[]>,
->(
-  tableSchema: TSchema
-): IndexOpts<
-  keyof TableSchemaAsTableDef<TSchema>['columns'] & string
->[] {
-  const columnElements = tableSchema
-    .rowType
-    .resolveType()
-    .value.elements;
-  const columnNamesById = columnElements.map(element => element.name);
-  const normalized: IndexOpts<
-    keyof TableSchemaAsTableDef<TSchema>['columns'] & string
-  >[] = [];
-
-  for (const rawIndex of tableSchema.tableDef.indexes ?? []) {
-    const accessorName = rawIndex.accessorName ?? rawIndex.name ?? undefined;
-    switch (rawIndex.algorithm.tag) {
-      case 'Direct': {
-        const columnName = columnNamesById[rawIndex.algorithm.value];
-        if (columnName === undefined) continue;
-        normalized.push({
-          name: accessorName,
-          algorithm: 'direct',
-          column: columnName as keyof TableSchemaAsTableDef<TSchema>['columns'] & string,
-        });
-        break;
-      }
-      case 'BTree': {
-        const columnIds = rawIndex.algorithm.value;
-        const names = columnIds
-          .map(id => columnNamesById[id])
-          .filter((name): name is string => name !== undefined);
-        if (names.length !== columnIds.length) continue;
-        normalized.push({
-          name: accessorName,
-          algorithm: 'btree',
-          columns: names as readonly (keyof TableSchemaAsTableDef<TSchema>['columns'] & string)[],
-        });
-        break;
-      }
-      case 'Hash': {
-        // Hash indexes are not yet supported by the query builder.
-        break;
-      }
-    }
-  }
-
-  return normalized;
 }
 
 function createTableRefFromDef<TableDef extends UntypedTableDef>(
@@ -487,6 +515,7 @@ function createTableRefFromDef<TableDef extends UntypedTableDef>(
 ): TableRef<TableDef> {
   const row = createRowExpr(tableDef);
   return {
+    tableInput: tableDef,
     tableDef,
     tableName: tableDef.name,
     row,
@@ -494,14 +523,38 @@ function createTableRefFromDef<TableDef extends UntypedTableDef>(
   };
 }
 
+function materializeSchemaIndexes<
+  TSchema extends TableSchema<any, any, readonly any[]>,
+>(
+  tableSchema: TSchema
+): TableSchemaAsTableDef<TSchema>['indexes'] {
+  const columnNames = Object.keys(tableSchema.rowType.row);
+  const indexes = tableSchema.tableDef.indexes.map(index => {
+    const name = index.accessorName ?? index.name;
+    if (index.algorithm.tag === 'Direct') {
+      const column = columnNames[index.algorithm.value]!;
+      const base = {
+        algorithm: 'direct' as const,
+        column,
+      };
+      return name != null ? { ...base, name } : base;
+    }
+    const columns = index.algorithm.value.map(idx => columnNames[idx]!);
+    const base = {
+      algorithm: 'btree' as const,
+      columns: columns as readonly string[],
+    };
+    return name != null ? { ...base, name } : base;
+  });
+  return indexes as TableSchemaAsTableDef<TSchema>['indexes'];
+}
+
 export function createTableRef<TableDef extends UntypedTableDef>(
   tableDef: TableDef
 ): TableRef<TableDef>;
 export function createTableRef<
   TSchema extends TableSchema<any, any, readonly any[]>,
->(
-  tableSchema: TSchema
-): TableRef<TableSchemaAsTableDef<TSchema>>;
+>(tableSchema: TSchema): TableRef<TSchema>;
 export function createTableRef(
   tableDefOrSchema:
     | UntypedTableDef
@@ -509,41 +562,42 @@ export function createTableRef(
 ): TableRef<any> {
   if ('rowType' in tableDefOrSchema) {
     const tableSchema = tableDefOrSchema;
-    const normalizedIndexes = normalizeSchemaIndexes(tableSchema);
+    const materializedIndexes = materializeSchemaIndexes(tableSchema);
     const tableDef = {
       name: tableSchema.tableName,
       columns: tableSchema.rowType.row,
-      indexes: normalizedIndexes as TableSchemaAsTableDef<
-        typeof tableSchema
-      >['indexes'],
+      indexes: materializedIndexes,
     } as TableSchemaAsTableDef<typeof tableSchema>;
-    return createTableRefFromDef(tableDef, normalizedIndexes);
+    const ref = createTableRefFromDef(tableDef, materializedIndexes);
+    return {
+      ...ref,
+      tableInput: tableSchema,
+    } as TableRef<typeof tableSchema>;
   }
   return createTableRefFromDef(tableDefOrSchema);
 }
 
-export class TableScan<TableDef extends UntypedTableDef> {
-  readonly table: TableRef<TableDef>;
-  readonly filters: readonly BooleanExpr<TableDef>[];
+export class TableScan<Table extends TableLike> {
+  readonly table: TableRef<Table>;
+  readonly filters: readonly BooleanExpr<Table>[];
 
   constructor(
-    table: TableRef<TableDef>,
-    filters: readonly BooleanExpr<TableDef>[] = []
+    table: TableRef<Table>,
+    filters: readonly BooleanExpr<Table>[] = []
   ) {
     this.table = table;
     this.filters = filters;
   }
 
   addFilter(
-    predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
-  ): TableScan<TableDef> {
+    predicate: (row: RowExpr<TableCtx<Table>>) => BooleanExpr<Table>
+  ): TableScan<Table> {
     const filterExpr = predicate(this.table.row);
-    return new TableScan(
-      this.table,
-      [...this.filters, filterExpr] as readonly BooleanExpr<TableDef>[]
-    );
+    return new TableScan(this.table, [
+      ...this.filters,
+      filterExpr,
+    ] as readonly BooleanExpr<Table>[]);
   }
-
 
   toSql(): string {
     const tableName = this.table.tableName;
@@ -557,15 +611,20 @@ export class TableScan<TableDef extends UntypedTableDef> {
   }
 
   semijoin<
-    LeftIndex extends TableIndexNames<TableDef>,
-    RightTable extends UntypedTableDef,
-    RightIndex extends TableIndexNames<RightTable>,
+    LeftIndex extends TableIndexNames<TableCtx<Table>>,
+    RightTable extends TableLike,
+    RightIndex extends TableIndexNames<TableCtx<RightTable>>,
   >(
-    leftIndex: IndexExpr<TableDef, LeftIndex>,
-    rightIndex: SameIndexValueType<TableDef, LeftIndex, RightTable, RightIndex> extends true
-      ? IndexExpr<RightTable, RightIndex>
+    leftIndex: IndexExpr<TableCtx<Table>, LeftIndex>,
+    rightIndex: SameIndexSpacetimeType<
+      Table,
+      LeftIndex,
+      RightTable,
+      RightIndex
+    > extends true
+      ? IndexExpr<TableCtx<RightTable>, RightIndex>
       : never
-): Semijoin<TableDef, RightTable, LeftIndex, RightIndex> {
+  ): Semijoin<Table, RightTable, LeftIndex, RightIndex> {
     if (leftIndex.table !== this.table.tableName) {
       throw new Error('Left index must belong to the same table as the scan');
     }
@@ -573,10 +632,15 @@ export class TableScan<TableDef extends UntypedTableDef> {
       throw new Error('Right index must belong to a different table');
     }
     if (leftIndex.columns.length !== rightIndex.columns.length) {
-      throw new Error('Indexes must have the same number of columns for semijoin');
+      throw new Error(
+        'Indexes must have the same number of columns for semijoin'
+      );
     }
     const leftScan = this;
-    const normalizedRightIndex = rightIndex as IndexExpr<RightTable, RightIndex>;
+    const normalizedRightIndex = rightIndex as IndexExpr<
+      TableCtx<RightTable>,
+      RightIndex
+    >;
     return {
       left: leftScan,
       leftIndex,
@@ -609,28 +673,31 @@ export class TableScan<TableDef extends UntypedTableDef> {
         }
         return sql;
       },
-    } as Semijoin<TableDef, RightTable, LeftIndex, RightIndex>;
+    } as Semijoin<Table, RightTable, LeftIndex, RightIndex>;
   }
 }
 
-export function createTableScan<TableDef extends UntypedTableDef>(
-  tableDef: TableDef
-): TableScan<TableDef> {
-  return new TableScan(createTableRef(tableDef));
+export function createTableScan<Table extends TableLike>(
+  table: Table
+): TableScan<Table> {
+  const ref = (
+    'rowType' in table
+      ? createTableRef(table)
+      : createTableRef(table as UntypedTableDef)
+  ) as TableRef<Table>;
+  return new TableScan(ref);
 }
 
-class QueryBuilder<TableDef extends UntypedTableDef>
-  implements Query<TableDef>
-{
-  #scan: TableScan<TableDef>;
+class QueryBuilder<Table extends TableLike> implements Query<Table> {
+  #scan: TableScan<Table>;
 
-  constructor(scan: TableScan<TableDef>) {
+  constructor(scan: TableScan<Table>) {
     this.#scan = scan;
   }
 
   filter(
-    predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
-  ): Query<TableDef> {
+    predicate: (row: RowExpr<TableCtx<Table>>) => BooleanExpr<Table>
+  ): Query<Table> {
     const nextScan = this.#scan.addFilter(predicate);
     return new QueryBuilder(nextScan);
   }
@@ -640,30 +707,22 @@ class QueryBuilder<TableDef extends UntypedTableDef>
   }
 }
 
-export function createQuery<TableDef extends UntypedTableDef>(
-  tableDef: TableDef
-): Query<TableDef>;
-
+export function createQuery<Table extends TableLike>(
+  table: Table
+): Query<Table>;
 export function createQuery<
   TSchema extends TableSchema<any, any, readonly any[]>,
->(tableSchema: TSchema): Query<TableSchemaAsTableDef<TSchema>>;
+>(tableSchema: TSchema): Query<TSchema>;
 export function createQuery(
-  tableDefOrSchema:
-    | UntypedTableDef
-    | TableSchema<any, Record<string, any>, readonly any[]>
-): Query<UntypedTableDef> {
-  if ('rowType' in tableDefOrSchema) {
-    const tableSchema = tableDefOrSchema;
-    const tableDef = {
-      name: tableSchema.tableName,
-      columns: tableSchema.rowType.row,
-      indexes: tableSchema.idxs as TableSchemaAsTableDef<
-        typeof tableSchema
-      >['indexes'],
-    } as TableSchemaAsTableDef<typeof tableSchema>;
-    return new QueryBuilder(createTableScan(tableDef));
+  table: TableLike
+): Query<TableLike> {
+  if ('rowType' in table) {
+    const tableSchema = table;
+    const tableRef = createTableRef(tableSchema);
+    return new QueryBuilder(new TableScan(tableRef));
   }
-  return new QueryBuilder(createTableScan(tableDefOrSchema));
+  const scan = createTableScan(table as UntypedTableDef);
+  return new QueryBuilder(scan);
 }
 
 export function literal<Value>(value: Value): LiteralExpr<Value> {
@@ -672,33 +731,33 @@ export function literal<Value>(value: Value): LiteralExpr<Value> {
 
 /*
 export function eq<
-  TableDef extends UntypedTableDef,
-  LeftExpr extends ValueExpr<TableDef, any>,
-  RightExpr extends ValueExpr<TableDef, any>,
+  Table extends TableLike,
+  LeftExpr extends ValueExpr<Table, any>,
+  RightExpr extends ValueExpr<Table, any>,
 >(
   left: LeftExpr,
   right: RightExpr
-): ComparableValueExprs<TableDef, LeftExpr, RightExpr> extends true
-  ? Expr<TableDef, boolean>
+): ComparableValueExprs<Table, LeftExpr, RightExpr> extends true
+  ? Expr<Table, boolean>
   : never;
   */
 /**
  * Other restrictions to consider encoding:
  *  - eq shouldn't allow any option types.
- *  - 
+ *  -
  */
 
 type ValueTypesThatAreComparable = string | number | boolean | Identity;
 /**
- * 
- * @param left 
- * @param right 
- * @returns 
+ *
+ * @param left
+ * @param right
+ * @returns
  */
-export function eq<TableDef extends UntypedTableDef, Value>(
-  left: ValueExpr<TableDef, Value & ValueTypesThatAreComparable>,
-  right: ValueExpr<TableDef, Value & ValueTypesThatAreComparable>
-): Expr<TableDef, boolean> {
+export function eq<Table extends TableLike, Value>(
+  left: ValueExpr<Table, Value & ValueTypesThatAreComparable>,
+  right: ValueExpr<Table, Value & ValueTypesThatAreComparable>
+): Expr<Table, boolean> {
   const lk = 'type' in left && left.type === 'literal';
   const rk = 'type' in right && right.type === 'literal';
   if (lk && !rk) {
@@ -715,10 +774,10 @@ export function eq<TableDef extends UntypedTableDef, Value>(
   };
 }
 /*
-export function eq<TableDef extends UntypedTableDef>(
-  left: ValueExpr<TableDef, any>,
-  right: ValueExpr<TableDef, any>
-): Expr<TableDef, boolean> {
+export function eq<Table extends TableLike>(
+  left: ValueExpr<Table, any>,
+  right: ValueExpr<Table, any>
+): Expr<Table, boolean> {
   const lk = 'type' in left && left.type === 'literal';
   const rk = 'type' in right && right.type === 'literal';
   if (lk && !rk) {
@@ -736,10 +795,10 @@ export function eq<TableDef extends UntypedTableDef>(
 }
   */
 
-export function gt<TableDef extends UntypedTableDef, Value>(
-  left: ValueExpr<TableDef, Value>,
-  right: ValueExpr<TableDef, Value>
-): Expr<TableDef, boolean> {
+export function gt<Table extends TableLike, Value>(
+  left: ValueExpr<Table, Value>,
+  right: ValueExpr<Table, Value>
+): Expr<Table, boolean> {
   return {
     type: 'gt',
     left,
@@ -747,10 +806,10 @@ export function gt<TableDef extends UntypedTableDef, Value>(
   };
 }
 
-export function lt<TableDef extends UntypedTableDef, Value>(
-  left: ValueExpr<TableDef, Value>,
-  right: ValueExpr<TableDef, Value>
-): Expr<TableDef, boolean> {
+export function lt<Table extends TableLike, Value>(
+  left: ValueExpr<Table, Value>,
+  right: ValueExpr<Table, Value>
+): Expr<Table, boolean> {
   return {
     type: 'lt',
     left,
@@ -758,10 +817,10 @@ export function lt<TableDef extends UntypedTableDef, Value>(
   };
 }
 
-export function and<TableDef extends UntypedTableDef>(
-  left: Expr<TableDef, boolean>,
-  right: Expr<TableDef, boolean>
-): Expr<TableDef, boolean> {
+export function and<Table extends TableLike>(
+  left: Expr<Table, boolean>,
+  right: Expr<Table, boolean>
+): Expr<Table, boolean> {
   return {
     type: 'and',
     left,
