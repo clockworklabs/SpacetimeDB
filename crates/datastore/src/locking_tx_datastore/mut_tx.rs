@@ -39,7 +39,7 @@ use spacetimedb_lib::{
     ConnectionId, Identity,
 };
 use spacetimedb_primitives::{
-    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
+    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
@@ -1796,7 +1796,7 @@ impl MutTxId {
     }
 
     /// Is anyone is subscribed to the view arguments identified by `arg_id`?
-    fn is_identity_subscribed_to_view_args(&self, view_id: ViewId, arg_id: u64, sender: Identity) -> Result<bool> {
+    fn is_identity_subscribed_to_view_args(&self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<bool> {
         Ok(self
             .iter_by_col_eq(
                 ST_VIEW_CLIENT_ID,
@@ -1828,7 +1828,7 @@ impl MutTxId {
     }
 
     /// Deletes the rows of a view subscribed to by `sender`.
-    fn delete_view_rows_for_identity(&mut self, view_id: ViewId, arg_id: u64, sender: Identity) -> Result<()> {
+    fn delete_view_rows_for_identity(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
         if let Some((table_id, is_anonymous)) = self.get_table_id_for_view(view_id)? {
             let value = if is_anonymous {
                 let none_sender = AlgebraicValue::OptionNone();

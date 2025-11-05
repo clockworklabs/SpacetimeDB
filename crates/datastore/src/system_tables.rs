@@ -932,7 +932,7 @@ pub struct StViewParamRow {
 #[sats(crate = spacetimedb_lib)]
 pub struct StViewClientRow {
     pub view_id: ViewId,
-    pub arg_id: u64,
+    pub arg_id: ArgId,
     pub identity: IdentityViaU256,
     pub connection_id: ConnectionIdViaU128,
 }
