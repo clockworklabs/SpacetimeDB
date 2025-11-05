@@ -80,7 +80,7 @@ export const AlgebraicType = {
     tag: 'Product',
     value,
   }),
-  Array: <T extends MaybeLazy<AlgebraicTypeType>[]>(value: T): { tag: 'Array'; value: T } => ({
+  Array: <T extends MaybeLazy<AlgebraicTypeType>>(value: T): { tag: 'Array'; value: T } => ({
     tag: 'Array',
     value,
   }),

@@ -4,64 +4,64 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
+  TypeBuilder as __TypeBuilder,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type DbConnectionConfig as __DbConnectionConfig,
   type ErrorContextInterface as __ErrorContextInterface,
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
+  type Infer as __Infer,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { CallReducer as CallReducerType } from './call_reducer_type';
-// Mark import as potentially unused
-declare type __keep_CallReducerType = CallReducerType;
-import { Subscribe as SubscribeType } from './subscribe_type';
-// Mark import as potentially unused
-declare type __keep_SubscribeType = SubscribeType;
-import { OneOffQuery as OneOffQueryType } from './one_off_query_type';
-// Mark import as potentially unused
-declare type __keep_OneOffQueryType = OneOffQueryType;
-import { SubscribeSingle as SubscribeSingleType } from './subscribe_single_type';
-// Mark import as potentially unused
-declare type __keep_SubscribeSingleType = SubscribeSingleType;
-import { SubscribeMulti as SubscribeMultiType } from './subscribe_multi_type';
-// Mark import as potentially unused
-declare type __keep_SubscribeMultiType = SubscribeMultiType;
-import { Unsubscribe as UnsubscribeType } from './unsubscribe_type';
-// Mark import as potentially unused
-declare type __keep_UnsubscribeType = UnsubscribeType;
-import { UnsubscribeMulti as UnsubscribeMultiType } from './unsubscribe_multi_type';
-// Mark import as potentially unused
-declare type __keep_UnsubscribeMultiType = UnsubscribeMultiType;
+} from '../../';
+import CallReducerType from './call_reducer_type';
+import SubscribeType from './subscribe_type';
+import OneOffQueryType from './one_off_query_type';
+import SubscribeSingleType from './subscribe_single_type';
+import SubscribeMultiType from './subscribe_multi_type';
+import UnsubscribeType from './unsubscribe_type';
+import UnsubscribeMultiType from './unsubscribe_multi_type';
+import CallProcedureType from './call_procedure_type';
 
-export type CallReducer = { tag: 'CallReducer'; value: CallReducerType };
-export type Subscribe = { tag: 'Subscribe'; value: SubscribeType };
-export type OneOffQuery = { tag: 'OneOffQuery'; value: OneOffQueryType };
+export type CallReducer = {
+  tag: 'CallReducer';
+  value: __Infer<typeof CallReducerType>;
+};
+export type Subscribe = {
+  tag: 'Subscribe';
+  value: __Infer<typeof SubscribeType>;
+};
+export type OneOffQuery = {
+  tag: 'OneOffQuery';
+  value: __Infer<typeof OneOffQueryType>;
+};
 export type SubscribeSingle = {
   tag: 'SubscribeSingle';
-  value: SubscribeSingleType;
+  value: __Infer<typeof SubscribeSingleType>;
 };
 export type SubscribeMulti = {
   tag: 'SubscribeMulti';
-  value: SubscribeMultiType;
+  value: __Infer<typeof SubscribeMultiType>;
 };
-export type Unsubscribe = { tag: 'Unsubscribe'; value: UnsubscribeType };
+export type Unsubscribe = {
+  tag: 'Unsubscribe';
+  value: __Infer<typeof UnsubscribeType>;
+};
 export type UnsubscribeMulti = {
   tag: 'UnsubscribeMulti';
-  value: UnsubscribeMultiType;
+  value: __Infer<typeof UnsubscribeMultiType>;
+};
+export type CallProcedure = {
+  tag: 'CallProcedure';
+  value: __Infer<typeof CallProcedureType>;
 };

@@ -6,12 +6,12 @@ import {
 import { parseValue } from '../';
 import { BinaryReader } from '../';
 import { BinaryWriter } from '../';
-import { BsatnRowList } from './client_api/bsatn_row_list_type.ts';
-import { ClientMessage } from './client_api/client_message_type.ts';
-import { DatabaseUpdate } from './client_api/database_update_type.ts';
-import { QueryUpdate } from './client_api/query_update_type.ts';
-import { ServerMessage } from './client_api/server_message_type.ts';
-import { TableUpdate as RawTableUpdate } from './client_api/table_update_type.ts';
+import BsatnRowList from './client_api/bsatn_row_list_type.ts';
+import ClientMessage from './client_api/client_message_type.ts';
+import DatabaseUpdate from './client_api/database_update_type.ts';
+import QueryUpdate from './client_api/query_update_type.ts';
+import ServerMessage from './client_api/server_message_type.ts';
+import RawTableUpdate from './client_api/table_update_type.ts';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { type DbContext } from './db_context.ts';
@@ -25,7 +25,7 @@ import {
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import { decompress } from './decompress.ts';
-import type { Identity, InferTypeOfRow } from '../';
+import type { Identity, Infer, InferTypeOfRow } from '../';
 import type {
   IdentityTokenMessage,
   Message,
@@ -327,7 +327,7 @@ export class DbConnectionImpl<
       emitter: handleEmitter,
     });
     this.#sendMessage(
-      ClientMessage.SubscribeMulti({
+      ClientMessage.create('SubscribeMulti', {
         queryStrings: querySql,
         queryId: { id: queryId },
         // The TypeScript SDK doesn't currently track `request_id`s,
@@ -340,7 +340,7 @@ export class DbConnectionImpl<
 
   unregisterSubscription(queryId: number): void {
     this.#sendMessage(
-      ClientMessage.UnsubscribeMulti({
+      ClientMessage.create('UnsubscribeMulti', {
         queryId: { id: queryId },
         // The TypeScript SDK doesn't currently track `request_id`s,
         // so always use 0.
@@ -351,12 +351,12 @@ export class DbConnectionImpl<
 
   // This function is async because we decompress the message async
   async #processParsedMessage(
-    message: ServerMessage
+    message: Infer<typeof ServerMessage>
   ): Promise<Message | undefined> {
     const parseRowList = (
       type: 'insert' | 'delete',
       tableName: string,
-      rowList: BsatnRowList
+      rowList: Infer<typeof BsatnRowList>
     ): Operation[] => {
       const buffer = rowList.rowsData;
       const reader = new BinaryReader(buffer);
@@ -398,16 +398,17 @@ export class DbConnectionImpl<
     };
 
     const parseTableUpdate = async (
-      rawTableUpdate: RawTableUpdate
+      rawTableUpdate: Infer<typeof RawTableUpdate>
     ): Promise<CacheTableUpdate<UntypedTableDef>> => {
       const tableName = rawTableUpdate.tableName;
       let operations: Operation[] = [];
       for (const update of rawTableUpdate.updates) {
-        let decompressed: QueryUpdate;
+        let decompressed: Infer<typeof QueryUpdate>;
         if (update.tag === 'Gzip') {
           const decompressedBuffer = await decompress(update.value, 'gzip');
-          decompressed = QueryUpdate.deserialize(
-            new BinaryReader(decompressedBuffer)
+          decompressed = AlgebraicType.deserializeValue(
+            new BinaryReader(decompressedBuffer),
+            QueryUpdate.algebraicType
           );
         } else if (update.tag === 'Brotli') {
           throw new Error(
@@ -430,7 +431,7 @@ export class DbConnectionImpl<
     };
 
     const parseDatabaseUpdate = async (
-      dbUpdate: DatabaseUpdate
+      dbUpdate: Infer<typeof DatabaseUpdate>
     ): Promise<CacheTableUpdate<UntypedTableDef>[]> => {
       const tableUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
       for (const rawTableUpdate of dbUpdate.tables) {
@@ -570,11 +571,11 @@ export class DbConnectionImpl<
     }
   }
 
-  #sendMessage(message: ClientMessage): void {
+  #sendMessage(message: Infer<typeof ClientMessage>): void {
     this.wsPromise.then(wsResolved => {
       if (wsResolved) {
         const writer = new BinaryWriter(1024);
-        ClientMessage.serialize(writer, message);
+        AlgebraicType.serializeValue(writer, ClientMessage.algebraicType, message);
         const encoded = writer.getBuffer();
         wsResolved.send(encoded);
       }
@@ -611,7 +612,7 @@ export class DbConnectionImpl<
   }
 
   async #processMessage(data: Uint8Array): Promise<void> {
-    const serverMessage = parseValue(ServerMessage, data);
+    const serverMessage = AlgebraicType.deserializeValue(new BinaryReader(data), ServerMessage.algebraicType);
     const message = await this.#processParsedMessage(serverMessage);
     if (!message) {
       return;
@@ -847,7 +848,7 @@ export class DbConnectionImpl<
     argsBuffer: Uint8Array,
     flags: CallReducerFlags
   ): void {
-    const message = ClientMessage.CallReducer({
+    const message = ClientMessage.create('CallReducer', {
       reducer: reducerName,
       args: argsBuffer,
       // The TypeScript SDK doesn't currently track `request_id`s,

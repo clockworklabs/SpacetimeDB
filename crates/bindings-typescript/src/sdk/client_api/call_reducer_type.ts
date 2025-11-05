@@ -4,77 +4,30 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
+  TypeBuilder as __TypeBuilder,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type DbConnectionConfig as __DbConnectionConfig,
   type ErrorContextInterface as __ErrorContextInterface,
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
+  type Infer as __Infer,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
+} from '../../';
 
-export type CallReducer = {
-  reducer: string;
-  args: Uint8Array;
-  requestId: number;
-  flags: number;
-};
-let _cached_CallReducer_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const CallReducer = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_CallReducer_type_value) return _cached_CallReducer_type_value;
-    _cached_CallReducer_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_CallReducer_type_value.value.elements.push(
-      { name: 'reducer', algebraicType: __AlgebraicTypeValue.String },
-      {
-        name: 'args',
-        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
-      },
-      { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
-      { name: 'flags', algebraicType: __AlgebraicTypeValue.U8 }
-    );
-    return _cached_CallReducer_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: CallReducer): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      CallReducer.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): CallReducer {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      CallReducer.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default CallReducer;
+export default __t.object('CallReducer', {
+  reducer: __t.string(),
+  args: __t.byteArray(),
+  requestId: __t.u32(),
+  flags: __t.u8(),
+});

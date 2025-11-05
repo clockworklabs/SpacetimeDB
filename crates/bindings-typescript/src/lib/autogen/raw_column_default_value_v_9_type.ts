@@ -19,5 +19,5 @@ import {
 export default __t.object('RawColumnDefaultValueV9', {
   table: __t.string(),
   colId: __t.u16(),
-  value: __t.array(__t.u8()),
+  value: __t.byteArray(),
 });

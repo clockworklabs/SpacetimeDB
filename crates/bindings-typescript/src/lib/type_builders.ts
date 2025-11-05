@@ -1094,6 +1094,25 @@ export class ArrayBuilder<Element extends TypeBuilder<any, any>>
   }
 }
 
+export class ByteArrayBuilder
+  extends TypeBuilder<
+    Uint8Array,
+    { tag: 'Array'; value: AlgebraicTypeVariants.U8 }
+  >
+  implements Defaultable<Uint8Array, any> {
+
+  constructor() {
+    super(AlgebraicType.Array(AlgebraicType.U8));
+  }
+  default(
+    value: Uint8Array 
+  ): ByteArrayColumnBuilder<SetField<DefaultMetadata, 'defaultValue', any>> {
+    return new ByteArrayColumnBuilder(
+      set(defaultMetadata, { defaultValue: value })
+    );
+  }
+}
+
 export class OptionBuilder<Value extends TypeBuilder<any, any>>
   extends TypeBuilder<
     InferTypeOfTypeBuilder<Value> | undefined,
@@ -2284,6 +2303,16 @@ export class ArrayColumnBuilder<
   }
 }
 
+export class ByteArrayColumnBuilder<M extends ColumnMetadata<Uint8Array> = DefaultMetadata>
+  extends ColumnBuilder<Uint8Array, {
+    tag: 'Array';
+    value: AlgebraicTypeVariants.U8;
+  }, M> {
+  constructor(metadata: M) {
+    super(new TypeBuilder(AlgebraicType.Array(AlgebraicType.U8)), metadata);
+  }
+}
+
 export class OptionColumnBuilder<
   Value extends TypeBuilder<any, any>,
   M extends ColumnMetadata<
@@ -2864,24 +2893,24 @@ export const t = {
     ScheduleAt,
     ReturnType<typeof ScheduleAt.getAlgebraicType>,
     Omit<ColumnMetadata<ScheduleAt>, 'isScheduleAt'> & { isScheduleAt: true }
-    > => {
-  return new ColumnBuilder(
-    new TypeBuilder(ScheduleAt.getAlgebraicType()),
-    set(defaultMetadata, { isScheduleAt: true })
-  );
-},
+  > => {
+    return new ColumnBuilder(
+      new TypeBuilder(ScheduleAt.getAlgebraicType()),
+      set(defaultMetadata, { isScheduleAt: true })
+    );
+  },
 
-/**
- * This is a convenience method for creating a column with the {@link Option} type.
- * You can create a column of the same type by constructing an enum with a `some` and `none` variant.
- * @param value The type of the value contained in the `some` variant of the `Option`.
- * @returns A new {@link OptionBuilder} instance with the {@link Option} type.
- */
-option<Value extends TypeBuilder<any, any>>(
-  value: Value
-): OptionBuilder < Value > {
-  return new OptionBuilder(value);
-},
+  /**
+   * This is a convenience method for creating a column with the {@link Option} type.
+   * You can create a column of the same type by constructing an enum with a `some` and `none` variant.
+   * @param value The type of the value contained in the `some` variant of the `Option`.
+   * @returns A new {@link OptionBuilder} instance with the {@link Option} type.
+   */
+  option<Value extends TypeBuilder<any, any>>(
+    value: Value
+  ): OptionBuilder<Value> {
+    return new OptionBuilder(value);
+  },
 
   /**
    * This is a convenience method for creating a column with the {@link Identity} type.
@@ -2892,31 +2921,41 @@ option<Value extends TypeBuilder<any, any>>(
     return new IdentityBuilder();
   },
 
-    /**
-     * This is a convenience method for creating a column with the {@link ConnectionId} type.
-     * You can create a column of the same type by constructing an `object` with a single `__connection_id__` element.
-     * @returns A new {@link TypeBuilder} instance with the {@link ConnectionId} type.
-     */
-    connectionId: (): ConnectionIdBuilder => {
-      return new ConnectionIdBuilder();
-    },
+  /**
+   * This is a convenience method for creating a column with the {@link ConnectionId} type.
+   * You can create a column of the same type by constructing an `object` with a single `__connection_id__` element.
+   * @returns A new {@link TypeBuilder} instance with the {@link ConnectionId} type.
+   */
+  connectionId: (): ConnectionIdBuilder => {
+    return new ConnectionIdBuilder();
+  },
 
-      /**
-       * This is a convenience method for creating a column with the {@link Timestamp} type.
-       * You can create a column of the same type by constructing an `object` with a single `__timestamp_micros_since_unix_epoch__` element.
-       * @returns A new {@link TypeBuilder} instance with the {@link Timestamp} type.
-       */
-      timestamp: (): TimestampBuilder => {
-        return new TimestampBuilder();
-      },
+  /**
+   * This is a convenience method for creating a column with the {@link Timestamp} type.
+   * You can create a column of the same type by constructing an `object` with a single `__timestamp_micros_since_unix_epoch__` element.
+   * @returns A new {@link TypeBuilder} instance with the {@link Timestamp} type.
+   */
+  timestamp: (): TimestampBuilder => {
+    return new TimestampBuilder();
+  },
 
-        /**
-         * This is a convenience method for creating a column with the {@link TimeDuration} type.
-         * You can create a column of the same type by constructing an `object` with a single `__time_duration_micros__` element.
-         * @returns A new {@link TypeBuilder} instance with the {@link TimeDuration} type.
-         */
-        timeDuration: (): TimeDurationBuilder => {
-          return new TimeDurationBuilder();
-        },
-} as const ;
+  /**
+   * This is a convenience method for creating a column with the {@link TimeDuration} type.
+   * You can create a column of the same type by constructing an `object` with a single `__time_duration_micros__` element.
+   * @returns A new {@link TypeBuilder} instance with the {@link TimeDuration} type.
+   */
+  timeDuration: (): TimeDurationBuilder => {
+    return new TimeDurationBuilder();
+  },
+
+  /**
+   * This is a convenience method for creating a column with the {@link ByteArray} type.
+   * You can create a column of the same type by constructing an `array` of `u8`. 
+   * The TypeScript representation is {@link Uint8Array}.
+   * @returns A new {@link ByteArrayBuilder} instance with the {@link ByteArray} type.
+   */
+  byteArray: (): ByteArrayBuilder => {
+    return new ByteArrayBuilder();
+  },
+} as const;
 export default t;

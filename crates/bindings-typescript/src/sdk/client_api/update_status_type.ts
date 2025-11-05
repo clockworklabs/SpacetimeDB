@@ -4,94 +4,35 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
+  TypeBuilder as __TypeBuilder,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type DbConnectionConfig as __DbConnectionConfig,
   type ErrorContextInterface as __ErrorContextInterface,
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
+  type Infer as __Infer,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { DatabaseUpdate } from './database_update_type';
-// Mark import as potentially unused
-declare type __keep_DatabaseUpdate = DatabaseUpdate;
+} from '../../';
+import DatabaseUpdate from './database_update_type';
 
 import * as UpdateStatusVariants from './update_status_variants';
 
 // The tagged union or sum type for the algebraic type `UpdateStatus`.
-export type UpdateStatus =
-  | UpdateStatusVariants.Committed
-  | UpdateStatusVariants.Failed
-  | UpdateStatusVariants.OutOfEnergy;
-
-let _cached_UpdateStatus_type_value: __AlgebraicTypeType | null = null;
-
-// A value with helper functions to construct the type.
-export const UpdateStatus = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  Committed: (value: DatabaseUpdate): UpdateStatusVariants.Committed => ({
-    tag: 'Committed',
-    value,
-  }),
-  Failed: (value: string): UpdateStatusVariants.Failed => ({
-    tag: 'Failed',
-    value,
-  }),
-  OutOfEnergy: { tag: 'OutOfEnergy' } as const,
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_UpdateStatus_type_value) return _cached_UpdateStatus_type_value;
-    _cached_UpdateStatus_type_value = __AlgebraicTypeValue.Sum({
-      variants: [],
-    });
-    _cached_UpdateStatus_type_value.value.variants.push(
-      {
-        name: 'Committed',
-        algebraicType: DatabaseUpdate.getTypeScriptAlgebraicType(),
-      },
-      { name: 'Failed', algebraicType: __AlgebraicTypeValue.String },
-      {
-        name: 'OutOfEnergy',
-        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-      }
-    );
-    return _cached_UpdateStatus_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: UpdateStatus): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      UpdateStatus.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): UpdateStatus {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      UpdateStatus.getTypeScriptAlgebraicType()
-    );
-  },
-};
+const UpdateStatus = __t.enum('UpdateStatus', {
+  Committed: __t.lazy(() => DatabaseUpdate),
+  Failed: __t.string(),
+  OutOfEnergy: __t.unit(),
+});
 
 export default UpdateStatus;

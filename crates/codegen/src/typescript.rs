@@ -368,7 +368,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "type Infer as __Infer",
         "reducers as __reducers",
         "reducerSchema as __reducerSchema",
-        "DbConnectionConfig as __DbConnectionConfig",
+        "type DbConnectionConfig as __DbConnectionConfig",
         "t as __t",
     ];
     types.sort();
@@ -546,6 +546,9 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
         },
         AlgebraicTypeUse::String => write!(out, "__t.string()")?,
         AlgebraicTypeUse::Array(elem_ty) => {
+            if matches!(&**elem_ty, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) {
+                return write!(out, "__t.byteArray()");
+            }
             write!(out, "__t.array(")?;
             write_type_builder(module, out, elem_ty)?;
             write!(out, ")")?;
@@ -616,50 +619,6 @@ fn define_body_for_sum(
     name: &str,
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
-
-// /* eslint-disable */
-// /* tslint:disable */
-// import {
-//   TypeBuilder,
-//   convertToAccessorMap as __convertToAccessorMap,
-//   reducerSchema as __reducerSchema,
-//   reducers as __reducers,
-//   schema as __schema,
-//   t as __t,
-//   table as __table,
-//   type AlgebraicTypeType,
-//   type Infer as __Infer,
-//   type RemoteModule as __RemoteModule,
-// } from '../../index';
-// import SumType from './sum_type_type';
-// import ProductType from './product_type_type';
-
-// // The tagged union or sum type for the algebraic type `AlgebraicType`.
-// const AlgebraicType: TypeBuilder<AlgebraicTypeType, AlgebraicTypeType> = __t.enum('AlgebraicType', {
-//   Ref: __t.u32(),
-//   Sum: SumType,
-//   Product: ProductType,
-//   Array: __t.lazy(() => AlgebraicType),
-//   String: __t.unit(),
-//   Bool: __t.unit(),
-//   I8: __t.unit(),
-//   U8: __t.unit(),
-//   I16: __t.unit(),
-//   U16: __t.unit(),
-//   I32: __t.unit(),
-//   U32: __t.unit(),
-//   I64: __t.unit(),
-//   U64: __t.unit(),
-//   I128: __t.unit(),
-//   U128: __t.unit(),
-//   I256: __t.unit(),
-//   U256: __t.unit(),
-//   F32: __t.unit(),
-//   F64: __t.unit(),
-// });
-
-// export default AlgebraicType;
-
     writeln!(out, "// The tagged union or sum type for the algebraic type `{name}`.");
     write!(out, "const {name}");
     if name == "AlgebraicType" {
@@ -795,7 +754,7 @@ pub fn write_type<W: Write>(
             write!(out, "[]")?;
         }
         AlgebraicTypeUse::Ref(r) => {
-            write!(out, "__Infer<typeof ")?;;
+            write!(out, "__Infer<typeof ")?;
             if let Some(prefix) = ref_prefix {
                 write!(out, "{prefix}")?;
             }

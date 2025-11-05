@@ -4,67 +4,27 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
+  TypeBuilder as __TypeBuilder,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type DbConnectionConfig as __DbConnectionConfig,
   type ErrorContextInterface as __ErrorContextInterface,
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
+  type Infer as __Infer,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
+} from '../../';
 
-export type QueryId = {
-  id: number;
-};
-let _cached_QueryId_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const QueryId = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_QueryId_type_value) return _cached_QueryId_type_value;
-    _cached_QueryId_type_value = __AlgebraicTypeValue.Product({ elements: [] });
-    _cached_QueryId_type_value.value.elements.push({
-      name: 'id',
-      algebraicType: __AlgebraicTypeValue.U32,
-    });
-    return _cached_QueryId_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: QueryId): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      QueryId.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): QueryId {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      QueryId.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default QueryId;
+export default __t.object('QueryId', {
+  id: __t.u32(),
+});

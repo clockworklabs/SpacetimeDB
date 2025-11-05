@@ -4,94 +4,79 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
+  TypeBuilder as __TypeBuilder,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type DbConnectionConfig as __DbConnectionConfig,
   type ErrorContextInterface as __ErrorContextInterface,
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
+  type Infer as __Infer,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { InitialSubscription as InitialSubscriptionType } from './initial_subscription_type';
-// Mark import as potentially unused
-declare type __keep_InitialSubscriptionType = InitialSubscriptionType;
-import { TransactionUpdate as TransactionUpdateType } from './transaction_update_type';
-// Mark import as potentially unused
-declare type __keep_TransactionUpdateType = TransactionUpdateType;
-import { TransactionUpdateLight as TransactionUpdateLightType } from './transaction_update_light_type';
-// Mark import as potentially unused
-declare type __keep_TransactionUpdateLightType = TransactionUpdateLightType;
-import { IdentityToken as IdentityTokenType } from './identity_token_type';
-// Mark import as potentially unused
-declare type __keep_IdentityTokenType = IdentityTokenType;
-import { OneOffQueryResponse as OneOffQueryResponseType } from './one_off_query_response_type';
-// Mark import as potentially unused
-declare type __keep_OneOffQueryResponseType = OneOffQueryResponseType;
-import { SubscribeApplied as SubscribeAppliedType } from './subscribe_applied_type';
-// Mark import as potentially unused
-declare type __keep_SubscribeAppliedType = SubscribeAppliedType;
-import { UnsubscribeApplied as UnsubscribeAppliedType } from './unsubscribe_applied_type';
-// Mark import as potentially unused
-declare type __keep_UnsubscribeAppliedType = UnsubscribeAppliedType;
-import { SubscriptionError as SubscriptionErrorType } from './subscription_error_type';
-// Mark import as potentially unused
-declare type __keep_SubscriptionErrorType = SubscriptionErrorType;
-import { SubscribeMultiApplied as SubscribeMultiAppliedType } from './subscribe_multi_applied_type';
-// Mark import as potentially unused
-declare type __keep_SubscribeMultiAppliedType = SubscribeMultiAppliedType;
-import { UnsubscribeMultiApplied as UnsubscribeMultiAppliedType } from './unsubscribe_multi_applied_type';
-// Mark import as potentially unused
-declare type __keep_UnsubscribeMultiAppliedType = UnsubscribeMultiAppliedType;
+} from '../../';
+import InitialSubscriptionType from './initial_subscription_type';
+import TransactionUpdateType from './transaction_update_type';
+import TransactionUpdateLightType from './transaction_update_light_type';
+import IdentityTokenType from './identity_token_type';
+import OneOffQueryResponseType from './one_off_query_response_type';
+import SubscribeAppliedType from './subscribe_applied_type';
+import UnsubscribeAppliedType from './unsubscribe_applied_type';
+import SubscriptionErrorType from './subscription_error_type';
+import SubscribeMultiAppliedType from './subscribe_multi_applied_type';
+import UnsubscribeMultiAppliedType from './unsubscribe_multi_applied_type';
+import ProcedureResultType from './procedure_result_type';
 
 export type InitialSubscription = {
   tag: 'InitialSubscription';
-  value: InitialSubscriptionType;
+  value: __Infer<typeof InitialSubscriptionType>;
 };
 export type TransactionUpdate = {
   tag: 'TransactionUpdate';
-  value: TransactionUpdateType;
+  value: __Infer<typeof TransactionUpdateType>;
 };
 export type TransactionUpdateLight = {
   tag: 'TransactionUpdateLight';
-  value: TransactionUpdateLightType;
+  value: __Infer<typeof TransactionUpdateLightType>;
 };
-export type IdentityToken = { tag: 'IdentityToken'; value: IdentityTokenType };
+export type IdentityToken = {
+  tag: 'IdentityToken';
+  value: __Infer<typeof IdentityTokenType>;
+};
 export type OneOffQueryResponse = {
   tag: 'OneOffQueryResponse';
-  value: OneOffQueryResponseType;
+  value: __Infer<typeof OneOffQueryResponseType>;
 };
 export type SubscribeApplied = {
   tag: 'SubscribeApplied';
-  value: SubscribeAppliedType;
+  value: __Infer<typeof SubscribeAppliedType>;
 };
 export type UnsubscribeApplied = {
   tag: 'UnsubscribeApplied';
-  value: UnsubscribeAppliedType;
+  value: __Infer<typeof UnsubscribeAppliedType>;
 };
 export type SubscriptionError = {
   tag: 'SubscriptionError';
-  value: SubscriptionErrorType;
+  value: __Infer<typeof SubscriptionErrorType>;
 };
 export type SubscribeMultiApplied = {
   tag: 'SubscribeMultiApplied';
-  value: SubscribeMultiAppliedType;
+  value: __Infer<typeof SubscribeMultiAppliedType>;
 };
 export type UnsubscribeMultiApplied = {
   tag: 'UnsubscribeMultiApplied';
-  value: UnsubscribeMultiAppliedType;
+  value: __Infer<typeof UnsubscribeMultiAppliedType>;
+};
+export type ProcedureResult = {
+  tag: 'ProcedureResult';
+  value: __Infer<typeof ProcedureResultType>;
 };

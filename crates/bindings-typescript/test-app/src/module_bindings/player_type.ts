@@ -5,18 +5,21 @@
 /* tslint:disable */
 import {
   DbConnectionBuilder as __DbConnectionBuilder,
-  DbConnectionConfig as __DbConnectionConfig,
   DbConnectionImpl as __DbConnectionImpl,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TypeBuilder as __TypeBuilder,
   convertToAccessorMap as __convertToAccessorMap,
   reducerSchema as __reducerSchema,
   reducers as __reducers,
   schema as __schema,
   t as __t,
   table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type DbConnectionConfig as __DbConnectionConfig,
   type ErrorContextInterface as __ErrorContextInterface,
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
+  type Infer as __Infer,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
@@ -26,5 +29,5 @@ import Point from './point_type';
 export default __t.object('Player', {
   ownerId: __t.string(),
   name: __t.string(),
-  location: Point,
+  location: __t.lazy(() => Point),
 });

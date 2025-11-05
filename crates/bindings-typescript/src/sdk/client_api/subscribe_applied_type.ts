@@ -4,87 +4,32 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
+  TypeBuilder as __TypeBuilder,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type DbConnectionConfig as __DbConnectionConfig,
   type ErrorContextInterface as __ErrorContextInterface,
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
+  type Infer as __Infer,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { QueryId } from './query_id_type';
-// Mark import as potentially unused
-declare type __keep_QueryId = QueryId;
-import { SubscribeRows } from './subscribe_rows_type';
-// Mark import as potentially unused
-declare type __keep_SubscribeRows = SubscribeRows;
+} from '../../';
+import QueryId from './query_id_type';
+import SubscribeRows from './subscribe_rows_type';
 
-export type SubscribeApplied = {
-  requestId: number;
-  totalHostExecutionDurationMicros: bigint;
-  queryId: QueryId;
-  rows: SubscribeRows;
-};
-let _cached_SubscribeApplied_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const SubscribeApplied = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_SubscribeApplied_type_value)
-      return _cached_SubscribeApplied_type_value;
-    _cached_SubscribeApplied_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_SubscribeApplied_type_value.value.elements.push(
-      { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
-      {
-        name: 'totalHostExecutionDurationMicros',
-        algebraicType: __AlgebraicTypeValue.U64,
-      },
-      { name: 'queryId', algebraicType: QueryId.getTypeScriptAlgebraicType() },
-      {
-        name: 'rows',
-        algebraicType: SubscribeRows.getTypeScriptAlgebraicType(),
-      }
-    );
-    return _cached_SubscribeApplied_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: SubscribeApplied): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      SubscribeApplied.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): SubscribeApplied {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      SubscribeApplied.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default SubscribeApplied;
+export default __t.object('SubscribeApplied', {
+  requestId: __t.u32(),
+  totalHostExecutionDurationMicros: __t.u64(),
+  queryId: __t.lazy(() => QueryId),
+  rows: __t.lazy(() => SubscribeRows),
+});

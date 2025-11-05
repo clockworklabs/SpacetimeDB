@@ -4,104 +4,35 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
+  TypeBuilder as __TypeBuilder,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type DbConnectionConfig as __DbConnectionConfig,
   type ErrorContextInterface as __ErrorContextInterface,
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
+  type Infer as __Infer,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { QueryUpdate } from './query_update_type';
-// Mark import as potentially unused
-declare type __keep_QueryUpdate = QueryUpdate;
+} from '../../';
+import QueryUpdate from './query_update_type';
 
 import * as CompressableQueryUpdateVariants from './compressable_query_update_variants';
 
 // The tagged union or sum type for the algebraic type `CompressableQueryUpdate`.
-export type CompressableQueryUpdate =
-  | CompressableQueryUpdateVariants.Uncompressed
-  | CompressableQueryUpdateVariants.Brotli
-  | CompressableQueryUpdateVariants.Gzip;
-
-let _cached_CompressableQueryUpdate_type_value: __AlgebraicTypeType | null =
-  null;
-
-// A value with helper functions to construct the type.
-export const CompressableQueryUpdate = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  Uncompressed: (
-    value: QueryUpdate
-  ): CompressableQueryUpdateVariants.Uncompressed => ({
-    tag: 'Uncompressed',
-    value,
-  }),
-  Brotli: (value: Uint8Array): CompressableQueryUpdateVariants.Brotli => ({
-    tag: 'Brotli',
-    value,
-  }),
-  Gzip: (value: Uint8Array): CompressableQueryUpdateVariants.Gzip => ({
-    tag: 'Gzip',
-    value,
-  }),
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_CompressableQueryUpdate_type_value)
-      return _cached_CompressableQueryUpdate_type_value;
-    _cached_CompressableQueryUpdate_type_value = __AlgebraicTypeValue.Sum({
-      variants: [],
-    });
-    _cached_CompressableQueryUpdate_type_value.value.variants.push(
-      {
-        name: 'Uncompressed',
-        algebraicType: QueryUpdate.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'Brotli',
-        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
-      },
-      {
-        name: 'Gzip',
-        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
-      }
-    );
-    return _cached_CompressableQueryUpdate_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: CompressableQueryUpdate): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      CompressableQueryUpdate.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): CompressableQueryUpdate {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      CompressableQueryUpdate.getTypeScriptAlgebraicType()
-    );
-  },
-};
+const CompressableQueryUpdate = __t.enum('CompressableQueryUpdate', {
+  Uncompressed: __t.lazy(() => QueryUpdate),
+  Brotli: __t.byteArray(),
+  Gzip: __t.byteArray(),
+});
 
 export default CompressableQueryUpdate;

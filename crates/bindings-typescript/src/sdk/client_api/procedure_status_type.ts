@@ -24,11 +24,13 @@ import {
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../../';
-import CompressableQueryUpdate from './compressable_query_update_type';
+import * as ProcedureStatusVariants from './procedure_status_variants';
 
-export default __t.object('TableUpdate', {
-  tableId: __t.u32(),
-  tableName: __t.string(),
-  numRows: __t.u64(),
-  updates: __t.array(__t.lazy(() => CompressableQueryUpdate)),
+// The tagged union or sum type for the algebraic type `ProcedureStatus`.
+const ProcedureStatus = __t.enum('ProcedureStatus', {
+  Returned: __t.byteArray(),
+  OutOfEnergy: __t.unit(),
+  InternalError: __t.string(),
 });
+
+export default ProcedureStatus;

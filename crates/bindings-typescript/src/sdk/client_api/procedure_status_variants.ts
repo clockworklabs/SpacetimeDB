@@ -24,11 +24,7 @@ import {
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
 } from '../../';
-import CompressableQueryUpdate from './compressable_query_update_type';
 
-export default __t.object('TableUpdate', {
-  tableId: __t.u32(),
-  tableName: __t.string(),
-  numRows: __t.u64(),
-  updates: __t.array(__t.lazy(() => CompressableQueryUpdate)),
-});
+export type Returned = { tag: 'Returned'; value: Uint8Array };
+export type OutOfEnergy = { tag: 'OutOfEnergy' };
+export type InternalError = { tag: 'InternalError'; value: string };

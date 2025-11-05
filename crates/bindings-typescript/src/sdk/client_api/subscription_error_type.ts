@@ -4,95 +4,31 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
   DbConnectionBuilder as __DbConnectionBuilder,
   DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
+  TypeBuilder as __TypeBuilder,
+  convertToAccessorMap as __convertToAccessorMap,
+  reducerSchema as __reducerSchema,
+  reducers as __reducers,
+  schema as __schema,
+  t as __t,
+  table as __table,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type DbConnectionConfig as __DbConnectionConfig,
   type ErrorContextInterface as __ErrorContextInterface,
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
+  type Infer as __Infer,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
+} from '../../';
 
-export type SubscriptionError = {
-  totalHostExecutionDurationMicros: bigint;
-  requestId: number | undefined;
-  queryId: number | undefined;
-  tableId: number | undefined;
-  error: string;
-};
-let _cached_SubscriptionError_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const SubscriptionError = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_SubscriptionError_type_value)
-      return _cached_SubscriptionError_type_value;
-    _cached_SubscriptionError_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_SubscriptionError_type_value.value.elements.push(
-      {
-        name: 'totalHostExecutionDurationMicros',
-        algebraicType: __AlgebraicTypeValue.U64,
-      },
-      {
-        name: 'requestId',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.U32
-        ),
-      },
-      {
-        name: 'queryId',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.U32
-        ),
-      },
-      {
-        name: 'tableId',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.U32
-        ),
-      },
-      { name: 'error', algebraicType: __AlgebraicTypeValue.String }
-    );
-    return _cached_SubscriptionError_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: SubscriptionError): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      SubscriptionError.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): SubscriptionError {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      SubscriptionError.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default SubscriptionError;
+export default __t.object('SubscriptionError', {
+  totalHostExecutionDurationMicros: __t.u64(),
+  requestId: __t.option(__t.u32()),
+  queryId: __t.option(__t.u32()),
+  tableId: __t.option(__t.u32()),
+  error: __t.string(),
+});
