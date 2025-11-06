@@ -36,8 +36,10 @@ jobs:
               jq '.[] | select(.state != "SUCCESS")' |
               jq -r '"\(.workflow) / \(.name): \(.state)"'
           )"
-          if [[ -n "${FAILED_CHECKS}" ]]; then
-            message+=$'\n'
+          message+=$'\n'
+          if [[ -z "${FAILED_CHECKS}" ]]; then
+            message+='All checks passed.'
+          else
             message+="${FAILED_CHECKS}"
             message+=$'\n'
             # This uses special Discord syntax for pinging a particular role.
