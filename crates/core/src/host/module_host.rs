@@ -10,7 +10,8 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
-use crate::host::InvalidFunctionArguments;
+use crate::host::host_controller::ViewOutcome;
+use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -36,6 +37,7 @@ use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID};
@@ -47,9 +49,9 @@ use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_primitives::{ProcedureId, TableId};
+use spacetimedb_primitives::{ProcedureId, TableId, ViewDatabaseId, ViewId};
 use spacetimedb_query::compile_subscription;
-use spacetimedb_sats::ProductValue;
+use spacetimedb_sats::{AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::deserialize::ArgsSeed;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
@@ -341,7 +343,7 @@ pub enum Instance {
 }
 
 impl Module {
-    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+    pub fn replica_ctx(&self) -> &Arc<ReplicaContext> {
         match self {
             Module::Wasm(module) => module.replica_ctx(),
             Module::Js(module) => module.replica_ctx(),
@@ -400,6 +402,13 @@ impl Instance {
         match self {
             Instance::Wasm(inst) => inst.call_reducer(tx, params),
             Instance::Js(inst) => inst.call_reducer(tx, params),
+        }
+    }
+
+    fn call_view(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
+        match self {
+            Instance::Wasm(inst) => inst.call_view(tx, params),
+            Instance::Js(_inst) => unimplemented!("JS views are not implemented yet"),
         }
     }
 
@@ -528,6 +537,21 @@ pub struct CallReducerParams {
     pub args: ArgsTuple,
 }
 
+pub struct CallViewParams {
+    pub timestamp: Timestamp,
+    pub caller_identity: Identity,
+    pub caller_connection_id: Option<ConnectionId>,
+    pub view_id: ViewId,
+    pub view_db_id: ViewDatabaseId,
+    pub args: ArgsTuple,
+
+    /// The reference of return type of the view, used for deserializing the view call result.
+    /// This type information is obtained from the [`ViewDef::product_type_ref`].
+    pub return_type: AlgebraicTypeRef,
+    /// Whether the view is being called anonymously (i.e., without a client identity).
+    pub is_anonymous: bool,
+}
+
 pub struct CallProcedureParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
@@ -622,7 +646,7 @@ impl ModuleInstanceManager {
 #[derive(Clone)]
 pub struct ModuleHost {
     pub info: Arc<ModuleInfo>,
-    module: Arc<Module>,
+    pub module: Arc<Module>,
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
     instance_manager: Arc<Mutex<ModuleInstanceManager>>,
@@ -688,6 +712,27 @@ pub enum ReducerCallError {
     ScheduleReducerNotFound,
     #[error("can't directly call special {0:?} lifecycle reducer")]
     LifecycleReducer(Lifecycle),
+}
+
+pub struct ViewCallResult {
+    pub outcome: ViewOutcome,
+    pub tx: MutTxId,
+    pub energy_used: EnergyQuanta,
+    pub execution_duration: Duration,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ViewCallError {
+    #[error(transparent)]
+    Args(#[from] InvalidViewArguments),
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error("no such view")]
+    NoSuchView,
+    #[error("missing client connection for view call trigged by subscription")]
+    MissingClientConnection,
+    #[error("DB error during view call: {0}")]
+    DatastoreError(#[from] DatastoreError),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -800,6 +845,29 @@ impl ModuleHost {
         Ok(res)
     }
 
+    /// Run an async function on the JobThread for this module.
+    /// Similar to `on_module_thread`, but for async functions.
+    pub async fn on_module_thread_async<Fun, Fut, R>(&self, label: &str, f: Fun) -> Result<R, anyhow::Error>
+    where
+        Fun: (FnOnce() -> Fut) + Send + 'static,
+        Fut: Future<Output = R> + Send + 'static,
+        R: Send + 'static,
+    {
+        self.guard_closed()?;
+
+        let timer_guard = self.start_call_timer(label);
+
+        let res = self
+            .executor
+            .run_job(async move {
+                drop(timer_guard);
+                f().await
+            })
+            .await;
+
+        Ok(res)
+    }
+
     fn start_call_timer(&self, label: &str) -> ScopeGuard<(), impl FnOnce(())> {
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
@@ -826,7 +894,7 @@ impl ModuleHost {
         })
     }
 
-    async fn call_async_with_instance<Fun, Fut, R>(&self, label: &str, f: Fun) -> Result<R, NoSuchModule>
+    pub async fn call_async_with_instance<Fun, Fut, R>(&self, label: &str, f: Fun) -> Result<R, NoSuchModule>
     where
         Fun: (FnOnce(Instance) -> Fut) + Send + 'static,
         Fut: Future<Output = (R, Instance)> + Send + 'static,
@@ -1417,6 +1485,81 @@ impl ModuleHost {
             }
         })
         .await?
+    }
+
+    pub async fn call_view(
+        &self,
+        tx: MutTxId,
+        view_name: &str,
+        args: FunctionArgs,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+    ) -> Result<ViewCallResult, ViewCallError> {
+        let (view_id, view_def) = self
+            .info
+            .module_def
+            .view_full(view_name)
+            .ok_or(ViewCallError::NoSuchView)?;
+
+        let view_seed = ArgsSeed(self.info.module_def.typespace().with_type(view_def));
+        let args = args.into_tuple(view_seed).map_err(InvalidViewArguments)?;
+
+        let res = self
+            .call_view_inner(
+                tx,
+                view_id,
+                view_def,
+                args.clone(),
+                caller_identity,
+                caller_connection_id,
+            )
+            .await;
+
+        let log_message = match &res {
+            Err(ViewCallError::NoSuchView) => Some(no_such_function_log_message("view", view_name)),
+            Err(ViewCallError::Args(_)) => Some(args_error_log_message("view", view_name)),
+            _ => None,
+        };
+
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, view_name, &log_message)
+        }
+
+        res
+    }
+
+    async fn call_view_inner(
+        &self,
+        tx: MutTxId,
+        view_id: ViewId,
+        view_def: &ViewDef,
+        args: ArgsTuple,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+    ) -> Result<ViewCallResult, ViewCallError> {
+        let return_type = view_def.product_type_ref;
+        let is_anonymous = view_def.is_anonymous;
+        let view_db_id = tx
+            .view_id_from_name(&view_def.name)?
+            .ok_or_else(|| ViewCallError::NoSuchView)?;
+
+        Ok(self
+            .call(&view_def.name, move |inst| {
+                inst.call_view(
+                    tx,
+                    CallViewParams {
+                        timestamp: Timestamp::now(),
+                        view_db_id,
+                        caller_identity,
+                        caller_connection_id,
+                        view_id,
+                        args,
+                        return_type,
+                        is_anonymous,
+                    },
+                )
+            })
+            .await?)
     }
 
     pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
