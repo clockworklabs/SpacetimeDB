@@ -20,7 +20,7 @@ public static partial class Module
     {
         return ctx.Db.ExampleData.Id.Find(id);
     }
-	
+
     [SpacetimeDB.View]
     public static ExampleData? GetAnonymousExampleDataById(AnonymousViewContext ctx, uint id)
     {

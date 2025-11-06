@@ -79,7 +79,7 @@
         /// </summary>
         public string ScheduledAt { get; init; } = "ScheduledAt";
     }
-    
+
     /// <summary>
     /// Registers a method as a SpacetimeDB view, enabling codegen for it.
     /// Views are pure, read-only queries that run with a view context instead of a reducer context.

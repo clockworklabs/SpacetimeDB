@@ -377,6 +377,19 @@ public partial struct TestScheduleIssues
         IsEnabledByDefault: true
       }
     },
+    {
+      Location: ,
+      Message: TableReadOnly with the same export name TestDuplicateTableNameReadOnly is registered in multiple places: global::TestDuplicateTableName, global::InAnotherNamespace.TestDuplicateTableName,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0007,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
     {/*
     [SpacetimeDB.ClientVisibilityFilter]
     private Filter MY_FILTER = new Filter.Sql("SELECT * FROM TestAutoIncNotInteger");

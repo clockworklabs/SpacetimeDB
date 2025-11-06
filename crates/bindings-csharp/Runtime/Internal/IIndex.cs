@@ -1,10 +1,11 @@
 ﻿namespace SpacetimeDB.Internal;
 
 using System;
-using System.Text;
-using SpacetimeDB.BSATN;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
+using SpacetimeDB.BSATN;
+
 public abstract class IndexBase<Row>
     where Row : IStructuralReadWrite, new()
 {
@@ -88,8 +89,7 @@ public abstract class ReadOnlyIndexBase<Row>(string name) : IndexBase<Row>(name)
     where Row : IStructuralReadWrite, new()
 {
     protected IEnumerable<Row> Filter<Bounds>(Bounds bounds)
-        where Bounds : IBTreeIndexBounds =>
-        DoFilter(bounds);
+        where Bounds : IBTreeIndexBounds => DoFilter(bounds);
 }
 
 public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<Row>(name)
@@ -124,8 +124,7 @@ public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW>(string name)
 
     protected IEnumerable<Row> Filter(T key) => Filter(ToBounds(key));
 
-    protected Row? FindSingle(T key) =>
-        Filter(key).Cast<Row?>().SingleOrDefault();
+    protected Row? FindSingle(T key) => Filter(key).Cast<Row?>().SingleOrDefault();
 }
 
 public abstract class ReadOnlyTableView<Row>

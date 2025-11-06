@@ -36,7 +36,7 @@ partial class RawModuleDefV9
     internal void RegisterReducer(RawReducerDefV9 reducer) => Reducers.Add(reducer);
 
     internal void RegisterTable(RawTableDefV9 table) => Tables.Add(table);
-    
+
     internal void RegisterView(RawViewDefV9 view)
     {
         MiscExports.Add(new RawMiscModuleExportV9.View(view));
@@ -64,15 +64,20 @@ public static class Module
     private static readonly List<IView> viewDispatchers = [];
     private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
 
-    private static Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext>? newReducerContext =
-        null;
+    private static Func<
+        Identity,
+        ConnectionId?,
+        Random,
+        Timestamp,
+        IReducerContext
+    >? newReducerContext = null;
     private static Func<Identity, IViewContext>? newViewContext = null;
     private static Func<IAnonymousViewContext>? newAnonymousViewContext = null;
 
     public static void SetReducerContextConstructor(
         Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext> ctor
     ) => newReducerContext = ctor;
-    
+
     public static void SetViewContextConstructor(Func<Identity, IViewContext> ctor) =>
         newViewContext = ctor;
 
@@ -122,7 +127,7 @@ public static class Module
         where T : IStructuralReadWrite, new()
         where View : ITableView<View, T>, new() =>
         moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
-    
+
     public static void RegisterView<TDispatcher>()
         where TDispatcher : IView, new()
     {
@@ -131,7 +136,7 @@ public static class Module
         viewDispatchers.Add(dispatcher);
         moduleDef.RegisterView(def);
     }
-    
+
     public static void RegisterAnonymousView<TDispatcher>()
         where TDispatcher : IAnonymousView, new()
     {
@@ -291,52 +296,52 @@ public static class Module
             return Errno.HOST_CALL_FAILURE;
         }
     }
-    
+
     public static Errno __call_view__(
-            uint id,
-            ulong sender_0,
-            ulong sender_1,
-            ulong sender_2,
-            ulong sender_3,
-            BytesSource args,
-            BytesSink rows
+        uint id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        BytesSource args,
+        BytesSink rows
     )
     {
-            try
-            {
-                    var sender = Identity.From(
-                            MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
-                        );
-                    var ctx = newViewContext!(sender);
-                    using var stream = new MemoryStream(args.Consume());
-                    using var reader = new BinaryReader(stream);
-                    var bytes = viewDispatchers[(int)id].Invoke(reader, ctx);
-                    rows.Write(bytes);
-                    return Errno.OK;
-                }
-            catch (Exception e)
-            {
-                    Log.Error($"Error while invoking view: {e}");
-                    return Errno.HOST_CALL_FAILURE;
-                }
+        try
+        {
+            var sender = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var ctx = newViewContext!(sender);
+            using var stream = new MemoryStream(args.Consume());
+            using var reader = new BinaryReader(stream);
+            var bytes = viewDispatchers[(int)id].Invoke(reader, ctx);
+            rows.Write(bytes);
+            return Errno.OK;
         }
+        catch (Exception e)
+        {
+            Log.Error($"Error while invoking view: {e}");
+            return Errno.HOST_CALL_FAILURE;
+        }
+    }
 
     public static Errno __call_anonymous_view__(uint id, BytesSource args, BytesSink rows)
     {
         try
         {
-                var ctx = newAnonymousViewContext!();
-                using var stream = new MemoryStream(args.Consume());
-                using var reader = new BinaryReader(stream);
-                var bytes = anonymousViewDispatchers[(int)id].Invoke(reader, ctx);
-                rows.Write(bytes);
-                return Errno.OK;
-            }
+            var ctx = newAnonymousViewContext!();
+            using var stream = new MemoryStream(args.Consume());
+            using var reader = new BinaryReader(stream);
+            var bytes = anonymousViewDispatchers[(int)id].Invoke(reader, ctx);
+            rows.Write(bytes);
+            return Errno.OK;
+        }
         catch (Exception e)
         {
-                Log.Error($"Error while invoking anonymous view: {e}");
-                return Errno.HOST_CALL_FAILURE;
-            }
+            Log.Error($"Error while invoking anonymous view: {e}");
+            return Errno.HOST_CALL_FAILURE;
+        }
     }
 }
 
