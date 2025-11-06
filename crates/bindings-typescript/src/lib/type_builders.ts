@@ -2844,6 +2844,12 @@ export const t = {
     return new ProductBuilder({});
   },
 
+  /**
+   * Creates a lazily-evaluated {@link TypeBuilder}. This is useful for creating
+   * recursive types, such as a tree or linked list. 
+   * @param thunk A function that returns a {@link TypeBuilder}.
+   * @returns A proxy {@link TypeBuilder} that evaluates the thunk on first access. 
+   */
   lazy<Build extends () => TypeBuilder<any, any>>(
     thunk: Build
   ): ReturnType<Build> {
