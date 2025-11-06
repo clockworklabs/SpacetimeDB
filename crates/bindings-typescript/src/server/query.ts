@@ -1,4 +1,5 @@
 import type { Index, IndexOpts, UntypedIndex } from './indexes';
+import type { UntypedSchemaDef } from './schema';
 import type { RowType, TableIndexes, TableSchema } from './table';
 import type {
   ColumnBuilder,
@@ -7,6 +8,19 @@ import type {
   TypeBuilder,
 } from './type_builders';
 import type { CollapseTuple } from './type_util';
+
+export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
+  readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: TableRef<Tbl>;
+};
+
+/**
+ * A type representing a 
+ */
+export type TableRef<Table extends TypedTableDef> = {
+  type: "table",
+  row: RowExpr<Table>;
+  tableName: Table['name']
+};
 
 // TODO: Just use UntypedTableDef if they end up being the same.
 export type TypedTableDef = {
