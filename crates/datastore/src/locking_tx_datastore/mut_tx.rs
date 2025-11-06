@@ -9,9 +9,9 @@ use super::{
     SharedMutexGuard, SharedWriteGuard,
 };
 use crate::system_tables::{
-    system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow, StViewColumnFields,
-    StViewFields, StViewParamFields, StViewParamRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
-    ST_VIEW_PARAM_ID,
+    system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
+    StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields, StViewSubRow,
+    ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
 };
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
@@ -33,13 +33,13 @@ use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
-use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
+use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics, Timestamp};
 use spacetimedb_lib::{
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
     ConnectionId, Identity,
 };
 use spacetimedb_primitives::{
-    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
+    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
@@ -1767,6 +1767,114 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
+    /// Does this caller have an entry for `view_id` in `st_view_sub`?
+    pub fn is_view_materialized(&self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<bool> {
+        use StViewSubFields::*;
+        let sender = IdentityViaU256(sender);
+        let cols = col_list![ViewId, ArgId, Identity];
+        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), sender.into()]);
+        Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
+    }
+
+    /// Does this caller have an entry for `view_id` in `st_view_sub`?
+    /// If so, update the `last_called` column.
+    /// Otherwise insert a row into `st_view_sub` with no subscribers.
+    pub fn st_view_sub_update_or_insert_last_called(
+        &mut self,
+        view_id: ViewId,
+        arg_id: ArgId,
+        sender: Identity,
+    ) -> Result<()> {
+        use StViewSubFields::*;
+
+        let identity = IdentityViaU256(sender);
+        let cols = col_list![ViewId, ArgId, Identity];
+        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
+        let last_called = Timestamp::now().into();
+
+        // Update `last_called` of `st_view_sub` row
+        if let Some((row, ptr)) = self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .next()
+            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+            .transpose()?
+        {
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
+            self.insert_via_serialize_bsatn(ST_VIEW_SUB_ID, &StViewSubRow { last_called, ..row })?;
+            return Ok(());
+        }
+
+        // Insert `st_view_sub` row with 0 subscribers
+        self.insert_via_serialize_bsatn(
+            ST_VIEW_SUB_ID,
+            &StViewSubRow {
+                view_id,
+                arg_id,
+                identity,
+                num_subscribers: 0,
+                has_subscribers: false,
+                last_called,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Decrements the number of subscribers in `st_view_sub` for a client identity.
+    pub fn dec_st_view_subscribers(&mut self, sender: Identity) -> Result<()> {
+        let sender = IdentityViaU256(sender);
+        let cols = col_list![StViewSubFields::Identity];
+        let value = sender.into();
+
+        // Collect the rows for this identity.
+        // These are rows for which we will decrement the subscriber count.
+        let rows_to_delete = self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+            .filter(|result| match result {
+                Ok((row, _)) => row.has_subscribers && row.num_subscribers > 0,
+                _ => true,
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Copy the rows to delete and decrement their subscriber count.
+        // These are the rows that we will insert.
+        let rows_to_insert = rows_to_delete
+            .iter()
+            .map(|(row, _)| row.clone())
+            .map(|row| StViewSubRow {
+                num_subscribers: row.num_subscribers - 1,
+                has_subscribers: row.num_subscribers > 1,
+                ..row
+            })
+            .collect::<Vec<_>>();
+
+        // Delete the old rows
+        for (_, ptr) in rows_to_delete {
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
+        }
+
+        // Insert the new rows
+        for row in rows_to_insert {
+            self.insert_via_serialize_bsatn(ST_VIEW_SUB_ID, &row)?;
+        }
+
+        Ok(())
+    }
+
+    /// Clear all rows from all view tables without dropping them.
+    pub fn clear_all_views(&mut self) -> Result<()> {
+        for table_id in self
+            .iter(ST_VIEW_ID)?
+            .map(StViewRow::try_from)
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|row| row.table_id)
+        {
+            self.clear_table(table_id)?;
+        }
+        Ok(())
+    }
+
     pub fn insert_st_client(
         &mut self,
         identity: Identity,

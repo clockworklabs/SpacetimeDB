@@ -1403,6 +1403,11 @@ impl RelationalDB {
         Ok(rows_deleted)
     }
 
+    /// Clear all rows from all view tables without dropping them.
+    pub fn clear_all_views(&self, tx: &mut MutTx) -> Result<(), DBError> {
+        Ok(tx.clear_all_views()?)
+    }
+
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
         Ok(self.inner.create_sequence_mut_tx(tx, sequence_schema)?)
     }
