@@ -35,6 +35,7 @@ use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
+use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::{bsatn::ToBsatn as _, db::raw_def::v9::RawSql, metrics::ExecutionMetrics, Timestamp};
 use spacetimedb_lib::{
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
@@ -65,7 +66,7 @@ use spacetimedb_table::{
     table_index::TableIndex,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -1849,6 +1850,19 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
+    /// Materialize views for `sender`, collected from `view_collector`.
+    pub fn materialize_views(&mut self, view_collector: &impl CollectViews, sender: Identity) -> Result<()> {
+        let mut view_ids = HashSet::new();
+        view_collector.collect_views(&mut view_ids);
+        for view_id in view_ids {
+            if !self.is_view_materialized(view_id, ArgId::SENTINEL, sender)? {
+                // TODO: __call_view__
+            }
+            self.st_view_sub_update_or_insert_last_called(view_id, ArgId::SENTINEL, sender)?;
+        }
+        Ok(())
+    }
+
     /// Does this caller have an entry for `view_id` in `st_view_sub`?
     pub fn is_view_materialized(&self, view_id: ViewDatabaseId, arg_id: ArgId, sender: Identity) -> Result<bool> {
         use StViewSubFields::*;
