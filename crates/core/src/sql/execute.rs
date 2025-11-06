@@ -981,7 +981,7 @@ pub(crate) mod tests {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
-        let table_id = tests_utils::create_view_for_test(&db, "my_view", &schema, false)?;
+        let (_, table_id) = tests_utils::create_view_for_test(&db, "my_view", &schema, false)?;
 
         with_auto_commit(&db, |tx| -> Result<_, DBError> {
             tests_utils::insert_into_view(&db, tx, table_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
@@ -1002,7 +1002,7 @@ pub(crate) mod tests {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
-        let table_id = tests_utils::create_view_for_test(&db, "my_view", &schema, true)?;
+        let (_, table_id) = tests_utils::create_view_for_test(&db, "my_view", &schema, true)?;
 
         with_auto_commit(&db, |tx| -> Result<_, DBError> {
             tests_utils::insert_into_view(&db, tx, table_id, None, product![0u8, 1u8])?;
@@ -1023,7 +1023,7 @@ pub(crate) mod tests {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
-        let v_id = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
+        let (_, v_id) = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
 
         let schema = [("c", AlgebraicType::U8), ("d", AlgebraicType::U8)];
         let t_id = db.create_table_for_test("t", &schema, &[0.into()])?;
@@ -1083,10 +1083,10 @@ pub(crate) mod tests {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
-        let u_id = tests_utils::create_view_for_test(&db, "u", &schema, false)?;
+        let (_, u_id) = tests_utils::create_view_for_test(&db, "u", &schema, false)?;
 
         let schema = [("c", AlgebraicType::U8), ("d", AlgebraicType::U8)];
-        let v_id = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
+        let (_, v_id) = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
 
         with_auto_commit(&db, |tx| -> Result<_, DBError> {
             tests_utils::insert_into_view(&db, tx, u_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;

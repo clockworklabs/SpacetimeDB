@@ -35,7 +35,7 @@ pub enum Statement {
 impl Statement {
     pub fn views(&self) -> Vec<(&str, Bytes)> {
         //TODO: implement view name extraction
-        todo!()
+        vec![]
     }
 }
 

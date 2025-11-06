@@ -2202,7 +2202,7 @@ pub mod tests_utils {
         name: &str,
         schema: &[(&str, AlgebraicType)],
         is_anonymous: bool,
-    ) -> Result<TableId, DBError> {
+    ) -> Result<(ViewDatabaseId, TableId), DBError> {
         let mut builder = RawModuleDefV9Builder::new();
 
         // Add the view's product type to the typespace
@@ -2226,7 +2226,6 @@ pub mod tests_utils {
 
         // Allocate a backing table and return its table id
         db.with_auto_commit(Workload::Internal, |tx| db.create_view(tx, &module_def, view_def))
-            .map(|(_, table_id)| table_id)
     }
 
     /// Insert a row into a view's backing table
@@ -2321,7 +2320,7 @@ mod tests {
     use super::tests_utils::begin_mut_tx;
     use super::*;
     use crate::db::relational_db::tests_utils::{
-        begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
+        begin_tx, create_view_for_test, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
     };
     use anyhow::bail;
     use bytes::Bytes;
@@ -2332,6 +2331,7 @@ mod tests {
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_datastore::error::{DatastoreError, IndexError};
     use spacetimedb_datastore::execution_context::ReducerContext;
+    use spacetimedb_datastore::locking_tx_datastore::ViewCall;
     use spacetimedb_datastore::system_tables::{
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
@@ -2961,6 +2961,54 @@ mod tests {
 
         // iter should only return a single row, so this count should now be 0.
         assert_eq!(iter.count(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_materialized() -> anyhow::Result<()> {
+        let stdb = TestDB::in_memory()?;
+        let schema = [("col1", AlgebraicType::I64), ("col2", AlgebraicType::I64)];
+        let table_schema = table("MyTable", ProductType::from(schema), |b| b);
+
+        let view_schema = [("view_col", AlgebraicType::U64)];
+        let view_name = "MyView";
+        let args: Bytes = vec![].into();
+        let sender = Identity::ZERO;
+        let (view_id, _) = create_view_for_test(&stdb, view_name, &view_schema, true)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let table_id = stdb.create_table(&mut tx, table_schema)?;
+
+        assert!(
+            !tx.is_materialized(view_name, args.clone(), sender)?.0,
+            "view should not be materialized as read set is not recorded yet"
+        );
+
+        let view_call = Some(ViewCall::anonymous(view_id, args));
+        tx.record_table_scan(view_call, table_id);
+        assert!(
+            tx.is_materialized(view_name, vec![].into(), sender)?.0,
+            "view should be materialized as read set is recorded"
+        );
+        stdb.commit_tx(tx)?;
+
+        let tx = begin_mut_tx(&stdb);
+        assert!(
+            tx.is_materialized(view_name, vec![].into(), sender)?.0,
+            "view should be materialized after commit"
+        );
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        stdb.insert(
+            &mut tx,
+            table_id,
+            &product![AlgebraicValue::I64(1), AlgebraicValue::I64(2)].to_bsatn_vec()?,
+        )?;
+        assert!(
+            !tx.is_materialized(view_name, vec![].into(), sender)?.0,
+            "view should not be materialized after table modification"
+        );
         Ok(())
     }
 
