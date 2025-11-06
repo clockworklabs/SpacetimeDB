@@ -18,6 +18,7 @@ namespace SpacetimeDB.ClientApi
         UnsubscribeApplied UnsubscribeApplied,
         SubscriptionError SubscriptionError,
         SubscribeMultiApplied SubscribeMultiApplied,
-        UnsubscribeMultiApplied UnsubscribeMultiApplied
+        UnsubscribeMultiApplied UnsubscribeMultiApplied,
+        ProcedureResult ProcedureResult
     )>;
 }

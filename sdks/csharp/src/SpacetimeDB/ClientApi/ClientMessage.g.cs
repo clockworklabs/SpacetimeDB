@@ -15,6 +15,7 @@ namespace SpacetimeDB.ClientApi
         SubscribeSingle SubscribeSingle,
         SubscribeMulti SubscribeMulti,
         Unsubscribe Unsubscribe,
-        UnsubscribeMulti UnsubscribeMulti
+        UnsubscribeMulti UnsubscribeMulti,
+        CallProcedure CallProcedure
     )>;
 }
