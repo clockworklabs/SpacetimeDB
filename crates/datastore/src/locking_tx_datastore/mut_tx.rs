@@ -750,16 +750,16 @@ impl MutTxId {
             .map(|view_row| (view_row.view_id, view_row.is_anonymous))
             .ok_or_else(|| anyhow::anyhow!("view `{view_name}` not found"))?;
 
-        let unique_view = if is_anonymous {
+        let view_call = if is_anonymous {
             ViewCall::anonymous(view_id, args)
         } else {
             ViewCall::with_identity(sender, view_id, args)
         };
 
         let is_materialized =
-            self.read_sets.contains_key(&unique_view) || self.committed_state_write_lock.is_materialized(&unique_view);
+            self.read_sets.contains_key(&view_call) || self.committed_state_write_lock.is_materialized(&view_call);
 
-        Ok((is_materialized, unique_view.into_args()))
+        Ok((is_materialized, view_call.into_args()))
     }
 }
 

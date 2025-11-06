@@ -711,6 +711,7 @@ impl CommittedState {
 
         // Merge read sets from the `MutTxId` into the `CommittedState`.
         // It's important that this happens after applying the changes to `tx_data`,
+        // which implies `tx_data` already contains inserts and deletes for view tables
         // so that we can pass updated set of table ids.
         self.merge_read_sets(read_sets, tx_data.table_ids_and_names().map(|(id, _)| id));
 

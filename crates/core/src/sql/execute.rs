@@ -976,8 +976,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_view() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_view() -> anyhow::Result<()> {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
@@ -992,13 +992,13 @@ pub(crate) mod tests {
         let id = identity_from_u8(2);
         let auth = AuthCtx::new(Identity::ZERO, id);
 
-        assert_query_results(&db, "select * from my_view", &auth, [product![0u8, 2u8]]);
+        assert_query_results(&db, "select * from my_view", &auth, [product![0u8, 2u8]]).await;
 
         Ok(())
     }
 
-    #[test]
-    fn test_anonymous_view() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_anonymous_view() -> anyhow::Result<()> {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
@@ -1013,13 +1013,13 @@ pub(crate) mod tests {
         let id = identity_from_u8(1);
         let auth = AuthCtx::new(Identity::ZERO, id);
 
-        assert_query_results(&db, "select b from my_view", &auth, [product![1u8], product![2u8]]);
+        assert_query_results(&db, "select b from my_view", &auth, [product![1u8], product![2u8]]).await;
 
         Ok(())
     }
 
-    #[test]
-    fn test_view_join_table() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_view_join_table() -> anyhow::Result<()> {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
@@ -1044,37 +1044,42 @@ pub(crate) mod tests {
             "select t.* from v join t on v.a = t.c",
             &auth,
             [product![1u8, 4u8]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select v.* from v join t on v.a = t.c",
             &auth,
             [product![1u8, 2u8]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select v.* from v join t where v.a = t.c",
             &auth,
             [product![1u8, 2u8]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select v.b as b, t.d as d from v join t on v.a = t.c",
             &auth,
             [product![2u8, 4u8]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select v.b as b, t.d as d from v join t where v.a = t.c",
             &auth,
             [product![2u8, 4u8]],
-        );
+        )
+        .await;
 
         Ok(())
     }
 
-    #[test]
-    fn test_view_join_view() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_view_join_view() -> anyhow::Result<()> {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
@@ -1099,31 +1104,36 @@ pub(crate) mod tests {
             "select u.* from u join v on u.a = v.c",
             &auth,
             [product![1u8, 2u8]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select v.* from u join v on u.a = v.c",
             &auth,
             [product![1u8, 4u8]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select v.* from u join v where u.a = v.c",
             &auth,
             [product![1u8, 4u8]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select u.b as b, v.d as d from u join v on u.a = v.c",
             &auth,
             [product![2u8, 4u8]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select u.b as b, v.d as d from u join v where u.a = v.c",
             &auth,
             [product![2u8, 4u8]],
-        );
+        )
+        .await;
 
         Ok(())
     }

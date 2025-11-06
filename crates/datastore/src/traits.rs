@@ -170,7 +170,7 @@ pub enum IsolationLevel {
 ///
 /// Some extra information is embedded here
 /// so that the recording of execution metrics can be done without holding the tx lock.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct TxData {
     /// The inserted rows per table.
     inserts: BTreeMap<TableId, Arc<[ProductValue]>>,
