@@ -2,15 +2,12 @@ name: Discord notifications
 
 on:
   pull_request:
-    # revert before merging
-    types: [closed, synchronize]
+    types: [closed]
 
 jobs:
   discordNotification:
     runs-on: ubuntu-latest
-    # Revert before merging
-    # if: github.event.pull_request.merged == true &&
-    # github.event.pull_request.base.ref == 'master'
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master'
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -32,9 +29,8 @@ jobs:
         run: |
           message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](<${PR_URL}>)"
           # Note that anything besides success is treated as a failure (e.g. if the check did not run at all, or if it is still pending).
-            # gh pr checks "${{github.event.pull_request.html_url}}" \
           FAILED_CHECKS="$(
-            gh pr checks https://github.com/clockworklabs/SpacetimeDB/pull/3591  \
+            gh pr checks "${{github.event.pull_request.html_url}}" \
               --json 'workflow,state,name' |
               jq '.[] | select(.state != "SUCCESS")' |
               jq -r '"\(.workflow) / \(.name): \(.state)"'
