@@ -23,13 +23,6 @@ pub fn add_user(ctx: &ReducerContext, name: String) {
 }
 """
 
-    def assertSql(self, sql, expected):
-        self.maxDiff = None
-        sql_out = self.spacetime("sql", self.database_identity, sql)
-        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
-        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
-        self.assertMultiLineEqual(sql_out, expected)
-
     def test_rls_rules(self):
         """Tests for querying tables with RLS rules"""
 
