@@ -38,7 +38,7 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID};
+use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
@@ -903,7 +903,7 @@ impl ModuleHost {
                 // Call the `client_disconnected` reducer, if it exists.
                 // This is a no-op if the module doesn't define such a reducer.
                 this.subscriptions().remove_subscriber(client_id);
-                this.call_identity_disconnected_inner(client_id.identity, client_id.connection_id, inst)
+                this.call_identity_disconnected_inner(client_id.identity, client_id.connection_id, inst, true)
             })
             .await
         {
@@ -1024,6 +1024,7 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
         inst: &mut Instance,
+        drop_view_subscribers: bool,
     ) -> Result<(), ReducerCallError> {
         let reducer_lookup = self.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
         let reducer_name = reducer_lookup
@@ -1046,10 +1047,22 @@ impl ModuleHost {
         let me = self.clone();
         let stdb = me.module.replica_ctx().relational_db.clone();
 
+        // Decrement the number of subscribers for each view this caller is subscribed to
+        let dec_view_subscribers = |tx: &mut MutTxId| {
+            if drop_view_subscribers {
+                if let Err(err) = tx.dec_st_view_subscribers(caller_identity) {
+                    log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
+                }
+            }
+        };
+
         // A fallback transaction that deletes the client from `st_client`.
         let fallback = || {
             let database_identity = me.info.database_identity;
             stdb.with_auto_commit(workload(), |mut_tx| {
+
+                dec_view_subscribers(mut_tx);
+
                 if !is_client_exist(mut_tx) {
                     // The client is already gone. Nothing to do.
                     log::debug!(
@@ -1076,7 +1089,9 @@ impl ModuleHost {
 
         if let Some((reducer_id, reducer_def)) = reducer_lookup {
             let stdb = me.module.replica_ctx().relational_db.clone();
-            let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload());
+            let mut mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload());
+
+            dec_view_subscribers(&mut mut_tx);
 
             if !is_client_exist(&mut_tx) {
                 // The client is already gone. Nothing to do.
@@ -1151,10 +1166,11 @@ impl ModuleHost {
         &self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
+        drop_view_subscribers: bool,
     ) -> Result<(), ReducerCallError> {
         let me = self.clone();
         self.call("call_identity_disconnected", move |inst| {
-            me.call_identity_disconnected_inner(caller_identity, caller_connection_id, inst)
+            me.call_identity_disconnected_inner(caller_identity, caller_connection_id, inst, drop_view_subscribers)
         })
         .await?
     }
@@ -1166,8 +1182,10 @@ impl ModuleHost {
             let stdb = &me.module.replica_ctx().relational_db;
             let workload = Workload::Internal;
             stdb.with_auto_commit(workload, |mut_tx| {
+                stdb.clear_all_views(mut_tx)?;
                 stdb.clear_table(mut_tx, ST_CONNECTION_CREDENTIALS_ID)?;
                 stdb.clear_table(mut_tx, ST_CLIENT_ID)?;
+                stdb.clear_table(mut_tx, ST_VIEW_SUB_ID)?;
                 Ok::<(), DBError>(())
             })
         })
