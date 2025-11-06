@@ -3,7 +3,7 @@ name: Discord notifications
 on:
   pull_request:
     # revert before merging
-    types: [closed, synchronized]
+    types: [closed, synchronize]
 
 jobs:
   discordNotification:
