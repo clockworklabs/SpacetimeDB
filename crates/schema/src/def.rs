@@ -37,7 +37,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
-use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId, ViewId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 
@@ -245,6 +245,12 @@ impl ModuleDef {
         self.views.get(name)
     }
 
+    /// Convenience method to look up a view, possibly by a string, returning its id as well.
+    pub fn view_full<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<(ViewId, &ViewDef)> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.views.get_full(name).map(|(idx, _, def)| (idx.into(), def))
+    }
+
     /// Convenience method to look up a reducer, possibly by a string.
     pub fn reducer<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ReducerDef> {
         // If the string IS a valid identifier, we can just look it up.
@@ -287,6 +293,11 @@ impl ModuleDef {
     /// Look up a procuedure by its id, returning `None` if it doesn't exist.
     pub fn get_procedure_by_id(&self, id: ProcedureId) -> Option<&ProcedureDef> {
         self.procedures.get_index(id.idx()).map(|(_, def)| def)
+    }
+
+    /// Look up a view by its id, panicking if it doesn't exist.
+    pub fn view_by_id(&self, id: ViewId) -> &ViewDef {
+        &self.views[id.idx()]
     }
 
     /// Looks up a lifecycle reducer defined in the module.

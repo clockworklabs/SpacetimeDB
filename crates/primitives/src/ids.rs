@@ -80,9 +80,9 @@ auto_inc_system_id!(TableId);
 
 system_id! {
     /// An identifier for a view, unique within a database.
-    pub struct ViewId(pub u32);
+    pub struct ViewDatabaseId(pub u32);
 }
-auto_inc_system_id!(ViewId);
+auto_inc_system_id!(ViewDatabaseId);
 
 system_id! {
     /// An identifier for a list of arguments passed to a view.
@@ -135,6 +135,12 @@ system_id! {
     /// The index of a procedure as defined in a module's procedure list.
     // This is never stored in a system table, but is useful to have defined here.
     pub struct ProcedureId(pub u32);
+}
+
+system_id! {
+    /// the index of a view as defined in a module's view list.
+    // This is never stored in a system table, but is useful to have defined here.
+    pub struct ViewId(pub u32);
 }
 
 /// An id for a function exported from a module, which may be a reducer or a procedure.

@@ -170,6 +170,22 @@ impl From<&EventStatus> for ReducerOutcome {
     }
 }
 
+pub enum ViewOutcome {
+    Success,
+    Failed(String),
+    BudgetExceeded,
+}
+
+impl From<EventStatus> for ViewOutcome {
+    fn from(status: EventStatus) -> Self {
+        match status {
+            EventStatus::Committed(_) => ViewOutcome::Success,
+            EventStatus::Failed(e) => ViewOutcome::Failed(e),
+            EventStatus::OutOfEnergy => ViewOutcome::BudgetExceeded,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ProcedureCallResult {
     pub return_val: AlgebraicValue,
@@ -326,9 +342,10 @@ impl HostController {
     /// If the computation `F` panics, the host is removed from this controller,
     /// releasing its resources.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn using_database<F, T>(&self, database: Database, replica_id: u64, f: F) -> anyhow::Result<T>
+    pub async fn using_database<F, Fut, T>(&self, database: Database, replica_id: u64, f: F) -> anyhow::Result<T>
     where
-        F: FnOnce(&RelationalDB) -> T + Send + 'static,
+        F: FnOnce(Arc<RelationalDB>) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
         trace!("using database {}/{}", database.database_identity, replica_id);
@@ -340,10 +357,9 @@ impl HostController {
         });
 
         let db = module.replica_ctx().relational_db.clone();
-        let result = module.on_module_thread("using_database", move || f(&db)).await?;
+        let result = module.on_module_thread_async("using_database", move || f(db)).await?;
         Ok(result)
     }
-
     /// Update the [`ModuleHost`] identified by `replica_id` to the given
     /// program.
     ///
@@ -869,8 +885,10 @@ impl Host {
         scheduler_starter.start(&module_host)?;
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
 
+        let module = watch::Sender::new(module_host);
+        replica_ctx.subscriptions.init(module.subscribe());
         Ok(Host {
-            module: watch::Sender::new(module_host),
+            module,
             replica_ctx,
             scheduler,
             disk_metrics_recorder_task,

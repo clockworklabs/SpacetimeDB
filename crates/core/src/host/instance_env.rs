@@ -9,9 +9,9 @@ use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCall};
 use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
-use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
     buffer::{CountWriter, TeeWriter},
@@ -31,7 +31,7 @@ pub struct InstanceEnv {
     pub tx: TxSlot,
     /// The timestamp the current reducer began running.
     pub start_time: Timestamp,
-    pub view_id: Option<ViewId>,
+    pub view: Option<ViewCall>,
 }
 
 #[derive(Clone, Default)]
@@ -173,7 +173,7 @@ impl InstanceEnv {
             scheduler,
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
-            view_id: None,
+            view: None,
         }
     }
 
@@ -182,15 +182,16 @@ impl InstanceEnv {
         &self.replica_ctx.database.database_identity
     }
 
-    /// Signal to this `InstanceEnv` that a reducer or procedure call is beginning.
+    /// Signal to this `InstanceEnv` that a reducer, procedure call is beginning.
     pub fn start_funcall(&mut self, ts: Timestamp) {
         self.start_time = ts;
-        self.view_id = None;
+        self.view = None;
     }
 
-    /// Signal to this `InstanceEnv` that a we're going to execute a view and compute its read set.
-    pub fn start_view(&mut self, view_id: ViewId) {
-        self.view_id = Some(view_id);
+    /// Signal to this `InstanceEnv` that a view is starting.
+    pub fn start_view(&mut self, ts: Timestamp, view: ViewCall) {
+        self.start_time = ts;
+        self.view = Some(view);
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
@@ -471,7 +472,7 @@ impl InstanceEnv {
         stdb.table_row_count_mut(tx, table_id)
             .ok_or(NodesError::TableNotFound)
             .inspect(|_| {
-                tx.record_table_scan(self.view_id, table_id);
+                tx.record_table_scan(self.view.clone(), table_id);
             })
     }
 
@@ -496,7 +497,7 @@ impl InstanceEnv {
             &mut bytes_scanned,
         );
 
-        tx.record_table_scan(self.view_id, table_id);
+        tx.record_table_scan(self.view.clone(), table_id);
 
         tx.metrics.rows_scanned += rows_scanned;
         tx.metrics.bytes_scanned += bytes_scanned;
@@ -527,7 +528,7 @@ impl InstanceEnv {
         // Scan the index and serialize rows to bsatn
         let chunks = ChunkedWriter::collect_iter(pool, iter, &mut rows_scanned, &mut bytes_scanned);
 
-        tx.record_index_scan(self.view_id, table_id, index_id, lower, upper);
+        tx.record_index_scan(self.view.clone(), table_id, index_id, lower, upper);
 
         tx.metrics.index_seeks += 1;
         tx.metrics.rows_scanned += rows_scanned;
@@ -664,7 +665,7 @@ mod test {
                 scheduler,
                 tx: TxSlot::default(),
                 start_time: Timestamp::now(),
-                view_id: None,
+                view: None,
             },
             runtime,
         ))

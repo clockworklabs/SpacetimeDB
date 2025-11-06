@@ -10,7 +10,10 @@ use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, IndexError, TableError},
     execution_context::ExecutionContext,
-    locking_tx_datastore::{mut_tx::ViewReadSets, state_view::iter_st_column_for_table},
+    locking_tx_datastore::{
+        mut_tx::{ViewCall, ViewReadSets},
+        state_view::iter_st_column_for_table,
+    },
     system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
         StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
@@ -33,7 +36,7 @@ use core::{convert::Infallible, ops::RangeBounds};
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
-use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId, ViewId};
+use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::{
@@ -50,29 +53,31 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use thin_vec::ThinVec;
 
-type IndexKeyReadSet = HashMap<AlgebraicValue, IntSet<ViewId>>;
+type IndexKeyReadSet = HashMap<AlgebraicValue, HashSet<ViewCall>>;
 type IndexColReadSet = HashMap<ColList, IndexKeyReadSet>;
 
 #[derive(Default)]
 struct CommittedReadSets {
-    tables: IntMap<TableId, IntSet<ViewId>>,
+    tables: IntMap<TableId, HashSet<ViewCall>>,
     index_keys: IntMap<TableId, IndexColReadSet>,
 }
 
 impl MemoryUsage for CommittedReadSets {
     fn heap_usage(&self) -> usize {
-        self.tables.heap_usage() + self.index_keys.heap_usage()
+        //TODO: fix this
+        //self.tables.heap_usage() + self.index_keys.heap_usage() + self.views.heap_usage()
+        0
     }
 }
 
 impl CommittedReadSets {
     /// Record in the [`CommittedState`] that this view scans this table
-    fn view_scans_table(&mut self, view_id: ViewId, table_id: TableId) {
-        self.tables.entry(table_id).or_default().insert(view_id);
+    fn view_scans_table(&mut self, view: ViewCall, table_id: TableId) {
+        self.tables.entry(table_id).or_default().insert(view);
     }
 
     /// Record in the [`CommittedState`] that this view reads this index `key` for these table `cols`
-    fn view_reads_index_key(&mut self, view_id: ViewId, table_id: TableId, cols: ColList, key: &AlgebraicValue) {
+    fn view_reads_index_key(&mut self, view: ViewCall, table_id: TableId, cols: ColList, key: &AlgebraicValue) {
         self.index_keys
             .entry(table_id)
             .or_default()
@@ -80,7 +85,26 @@ impl CommittedReadSets {
             .or_default()
             .entry(key.clone())
             .or_default()
-            .insert(view_id);
+            .insert(view);
+    }
+
+    /// Clear all read sets for views involving `table_id`.
+    /// This is called when a table is modified,
+    fn clear_views_for_table(&mut self, table_id: TableId) {
+        self.tables.remove(&table_id);
+        //TODO: clear from index only if stored indexed row has been updated
+        self.index_keys.remove(&table_id);
+    }
+
+    /// Returns true if the given view exists in any read set.
+    /// This is used to determine whether a view needs to be re-evaluated.
+    fn is_materialized(&self, view: &ViewCall) -> bool {
+        self.tables.values().any(|views| views.contains(view))
+            || self.index_keys.values().any(|col_map| {
+                col_map
+                    .values()
+                    .any(|key_map| key_map.values().any(|views| views.contains(view)))
+            })
     }
 }
 
@@ -665,9 +689,6 @@ impl CommittedState {
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
 
-        // Merge read sets from the `MutTxId` into the `CommittedState`
-        self.merge_read_sets(read_sets);
-
         // First, apply deletes. This will free up space in the committed tables.
         self.merge_apply_deletes(
             &mut tx_data,
@@ -688,6 +709,12 @@ impl CommittedState {
         // Record any truncated tables in the `TxData`.
         tx_data.add_truncates(truncates);
 
+        // Merge read sets from the `MutTxId` into the `CommittedState`.
+        // It's important that this happens after applying the changes to `tx_data`,
+        // which implies `tx_data` already contains inserts and deletes for view tables
+        // so that we can pass updated set of table ids.
+        self.merge_read_sets(read_sets, tx_data.table_ids_and_names().map(|(id, _)| id));
+
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
         if self.tx_consumes_offset(&tx_data, ctx) {
@@ -698,23 +725,26 @@ impl CommittedState {
         tx_data
     }
 
-    fn merge_read_set(&mut self, view_id: ViewId, read_set: ReadSet) {
+    fn merge_read_set(&mut self, view: ViewCall, read_set: ReadSet) {
         for table_id in read_set.tables_scanned() {
-            self.read_sets.view_scans_table(view_id, *table_id);
+            self.read_sets.view_scans_table(view.clone(), *table_id);
         }
         for (table_id, index_id, key) in read_set.index_keys_scanned() {
             if let Some(cols) = self
                 .get_schema(*table_id)
                 .map(|table_schema| table_schema.col_list_for_index_id(*index_id))
             {
-                self.read_sets.view_reads_index_key(view_id, *table_id, cols, key);
+                self.read_sets.view_reads_index_key(view.clone(), *table_id, cols, key);
             }
         }
     }
 
-    fn merge_read_sets(&mut self, read_sets: ViewReadSets) {
-        for (view_id, read_set) in read_sets {
-            self.merge_read_set(view_id, read_set);
+    fn merge_read_sets(&mut self, read_sets: ViewReadSets, updated_tables: impl IntoIterator<Item = TableId>) {
+        for (view, read_set) in read_sets {
+            self.merge_read_set(view, read_set);
+        }
+        for table_id in updated_tables {
+            self.read_sets.clear_views_for_table(table_id);
         }
     }
 
@@ -1030,6 +1060,10 @@ impl CommittedState {
             .data_size_blob_store_bytes_used_by_blobs
             .with_label_values(&database_identity)
             .set(self.blob_store.bytes_used_by_blobs() as _);
+    }
+
+    pub(super) fn is_materialized(&self, view: &ViewCall) -> bool {
+        self.read_sets.is_materialized(view)
     }
 }
 
