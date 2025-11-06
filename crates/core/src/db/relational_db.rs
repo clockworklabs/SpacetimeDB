@@ -46,7 +46,7 @@ use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType, ProductValue, Typespace};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductValue, Typespace};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -1531,7 +1531,7 @@ impl RelationalDB {
         tx: &mut MutTxId,
         view: &str,
         args: ArgsTuple,
-        return_type: AlgebraicType,
+        return_type: AlgebraicTypeRef,
         bytes: Bytes,
         typespace: &Typespace,
         caller_identity: Identity,
@@ -1539,23 +1539,26 @@ impl RelationalDB {
         // Fetch view metadata
         let st_view_row = tx.lookup_st_view_by_name(view)?;
         let table_id = st_view_row.table_id.expect("View table must exist for materialization");
+        let view_id = st_view_row.view_id;
         let is_anonymous = st_view_row.is_anonymous;
-
         let arg_id = tx.get_or_insert_st_view_arg(args.get_bsatn())?;
 
         // Build the filter key for identifying rows to update
-        let input_args = product![
-            if is_anonymous {
-                AlgebraicValue::OptionNone()
-            } else {
-                AlgebraicValue::OptionSome(caller_identity.into())
-            },
-            AlgebraicValue::U64(arg_id)
-        ];
+        let mut input_args = Vec::new();
+        if !is_anonymous {
+            input_args.push(AlgebraicValue::OptionSome(caller_identity.into()));
+        }
+        if !tx.is_view_parameterized(view_id)? {
+            input_args.push(AlgebraicValue::U64(arg_id));
+        }
+        let input_args = ProductValue {
+            elements: input_args.into_boxed_slice(),
+        };
+        let col_list: ColList = (0..input_args.elements.len()).collect();
 
         // Remove stale View entries
         let rows_to_delete: Vec<_> = self
-            .iter_by_col_eq_mut(tx, table_id, [0, 1], &input_args.clone().into())?
+            .iter_by_col_eq_mut(tx, table_id, col_list, &input_args.clone().into())?
             .map(|res| res.pointer())
             .collect();
 
@@ -1563,39 +1566,29 @@ impl RelationalDB {
         trace!("Deleted {deleted_count} stale rows from view table {table_id} for arg_id {arg_id}");
 
         // Deserialize the return value
-        let seed = spacetimedb_sats::WithTypespace::new(typespace, &return_type);
+        let seed = spacetimedb_sats::WithTypespace::new(typespace, &return_type).resolve(return_type);
         let return_val = seed
             .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
             .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
 
-        // Extract products from return value (must be array or option)
-        let products: Vec<ProductValue> = if return_type.is_array() {
-            let arr = return_val
-                .into_array()
-                .expect("return_type.is_array() ensures this is an array");
-
-            arr.into_iter().map(|v| v.into_product().unwrap()).collect()
-        } else if return_type.is_option() {
-            let opt = return_val
-                .into_option()
-                .expect("return_type.is_option() ensures this is an option");
-            opt.into_iter().map(|v| v.into_product().unwrap()).collect()
-        } else {
-            return Err(DatastoreError::from(ViewError::InvalidReturnType(return_type)).into());
-        };
+        // Extract products from return value (must be array)
+        let products: Vec<ProductValue> = return_val
+            .into_array()
+            .expect("Expected return_val to be an array")
+            .into_iter()
+            .map(|v| v.into_product().expect("Expected array elements to be ProductValue"))
+            .collect();
 
         // Insert fresh results into the view table
         let mut elements: Vec<AlgebraicValue> =
             Vec::with_capacity(input_args.elements.len() + products.first().map_or(0, |p| p.elements.len()));
         for product in products {
             elements.clear();
-            // Build complete row by prepending filter key to product data
-            let mut elements = Vec::with_capacity(input_args.elements.len() + product.elements.len());
             elements.extend_from_slice(&input_args.elements);
             elements.extend_from_slice(&product.elements);
 
             let row = ProductValue {
-                elements: elements.into_boxed_slice(),
+                elements: elements.as_slice().into(),
             };
 
             let row_bytes = row

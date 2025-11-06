@@ -47,11 +47,11 @@ use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_lib::{AlgebraicType, ConnectionId};
 use spacetimedb_primitives::{ProcedureId, TableId, ViewDatabaseId, ViewId};
 use spacetimedb_query::compile_subscription;
-use spacetimedb_sats::ProductValue;
+use spacetimedb_sats::{AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::deserialize::ArgsSeed;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
@@ -545,10 +545,9 @@ pub struct CallViewParams {
     pub view_db_id: ViewDatabaseId,
     pub args: ArgsTuple,
 
-    /// The return type of the view, used for deserializing the view call result.
-    /// Either Option<T>`, or `Vec<T>` where `T` is a `ProductType`.
-    /// This type information is obtained from the [`ModuleDef`]
-    pub return_type: AlgebraicType,
+    /// The reference of return type of the view, used for deserializing the view call result.
+    /// This type information is obtained from the [`ViewDef::product_type_ref`].
+    pub return_type: AlgebraicTypeRef,
     /// Whether the view is being called anonymously (i.e., without a client identity).
     pub is_anonymous: bool,
 }
@@ -1538,7 +1537,7 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
     ) -> Result<ViewCallResult, ViewCallError> {
-        let return_type = view_def.return_type.clone();
+        let return_type = view_def.product_type_ref;
         let is_anonymous = view_def.is_anonymous;
         let view_db_id = tx
             .view_id_from_name(&view_def.name)?

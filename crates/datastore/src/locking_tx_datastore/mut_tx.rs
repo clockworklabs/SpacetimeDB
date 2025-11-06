@@ -495,6 +495,13 @@ impl MutTxId {
         StViewRow::try_from(st_view_row)
     }
 
+    /// Check if view has parameters.
+    pub fn is_view_parameterized(&self, view_id: ViewDatabaseId) -> Result<bool> {
+        let view_id = view_id.into();
+        let mut iter = self.iter_by_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId, &view_id)?;
+        Ok(iter.next().is_some())
+    }
+
     /// Insert a row into `st_view`, auto-increments and returns the [`ViewId`].
     fn insert_into_st_view(
         &mut self,
