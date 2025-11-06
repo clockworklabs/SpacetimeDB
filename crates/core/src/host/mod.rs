@@ -69,7 +69,7 @@ impl FunctionArgs {
 
 #[derive(Debug, Clone)]
 pub struct ArgsTuple {
-    pub tuple: ProductValue,
+    tuple: ProductValue,
     bsatn: OnceCell<Bytes>,
     json: OnceCell<ByteString>,
 }

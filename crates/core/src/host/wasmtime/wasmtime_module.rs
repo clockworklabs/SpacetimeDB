@@ -10,7 +10,7 @@ use crate::host::wasm_common::*;
 use crate::host::wasmtime::wasm_instance_env::FuncCallType;
 use crate::util::string_from_utf8_lossy_owned;
 use futures_util::FutureExt;
-use spacetimedb_datastore::locking_tx_datastore::UniqueView;
+use spacetimedb_datastore::locking_tx_datastore::ViewCall;
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use wasmtime::{
@@ -393,7 +393,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let store = &mut self.store;
         prepare_store_for_call(store, budget);
 
-        let view = UniqueView::with_identity(*op.caller_identity, op.id, op.args.get_bsatn().clone());
+        let view = ViewCall::with_identity(*op.caller_identity, op.id, op.args.get_bsatn().clone());
 
         // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
         let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(*op.caller_identity);
@@ -419,8 +419,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             ),
         );
 
-        // Signal that this reducer call is finished. This gets us the timings
-        // associated to our reducer call, and clears all of the instance state
+        // Signal that this view call is finished. This gets us the timings
+        // associated to our view call, and clears all of the instance state
         // associated to the call.
         let (timings, result_bytes) = store.data_mut().finish_funcall();
 
@@ -450,7 +450,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let store = &mut self.store;
         prepare_store_for_call(store, budget);
 
-        let view = UniqueView::anonymous(op.id, op.args.get_bsatn().clone());
+        let view = ViewCall::anonymous(op.id, op.args.get_bsatn().clone());
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
@@ -462,8 +462,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let call_result =
             call_sync_typed_func(&self.call_view_anon, &mut *store, (op.id.0, args_source.0, errors_sink));
 
-        // Signal that this reducer call is finished. This gets us the timings
-        // associated to our reducer call, and clears all of the instance state
+        // Signal that this view call is finished. This gets us the timings
+        // associated to our view call, and clears all of the instance state
         // associated to the call.
         let (timings, result_bytes) = store.data_mut().finish_funcall();
 

@@ -11,7 +11,7 @@ use crate::{
     error::{DatastoreError, IndexError, TableError},
     execution_context::ExecutionContext,
     locking_tx_datastore::{
-        mut_tx::{UniqueView, ViewReadSets},
+        mut_tx::{ViewCall, ViewReadSets},
         state_view::iter_st_column_for_table,
     },
     system_tables::{
@@ -53,12 +53,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use thin_vec::ThinVec;
 
-type IndexKeyReadSet = HashMap<AlgebraicValue, HashSet<UniqueView>>;
+type IndexKeyReadSet = HashMap<AlgebraicValue, HashSet<ViewCall>>;
 type IndexColReadSet = HashMap<ColList, IndexKeyReadSet>;
 
 #[derive(Default)]
 struct CommittedReadSets {
-    tables: IntMap<TableId, HashSet<UniqueView>>,
+    tables: IntMap<TableId, HashSet<ViewCall>>,
     index_keys: IntMap<TableId, IndexColReadSet>,
 }
 
@@ -72,12 +72,12 @@ impl MemoryUsage for CommittedReadSets {
 
 impl CommittedReadSets {
     /// Record in the [`CommittedState`] that this view scans this table
-    fn view_scans_table(&mut self, view: UniqueView, table_id: TableId) {
+    fn view_scans_table(&mut self, view: ViewCall, table_id: TableId) {
         self.tables.entry(table_id).or_default().insert(view);
     }
 
     /// Record in the [`CommittedState`] that this view reads this index `key` for these table `cols`
-    fn view_reads_index_key(&mut self, view: UniqueView, table_id: TableId, cols: ColList, key: &AlgebraicValue) {
+    fn view_reads_index_key(&mut self, view: ViewCall, table_id: TableId, cols: ColList, key: &AlgebraicValue) {
         self.index_keys
             .entry(table_id)
             .or_default()
@@ -98,7 +98,7 @@ impl CommittedReadSets {
 
     /// Returns true if the given view exists in any read set.
     /// This is used to determine whether a view needs to be re-evaluated.
-    fn is_materialized(&self, view: &UniqueView) -> bool {
+    fn is_materialized(&self, view: &ViewCall) -> bool {
         self.tables.values().any(|views| views.contains(view))
             || self.index_keys.values().any(|col_map| {
                 col_map
@@ -724,7 +724,7 @@ impl CommittedState {
         tx_data
     }
 
-    fn merge_read_set(&mut self, view: UniqueView, read_set: ReadSet) {
+    fn merge_read_set(&mut self, view: ViewCall, read_set: ReadSet) {
         for table_id in read_set.tables_scanned() {
             self.read_sets.view_scans_table(view.clone(), *table_id);
         }
@@ -1061,7 +1061,7 @@ impl CommittedState {
             .set(self.blob_store.bytes_used_by_blobs() as _);
     }
 
-    pub(super) fn is_materialized(&self, view: &UniqueView) -> bool {
+    pub(super) fn is_materialized(&self, view: &ViewCall) -> bool {
         self.read_sets.is_materialized(view)
     }
 }

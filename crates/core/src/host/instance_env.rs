@@ -9,7 +9,7 @@ use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::locking_tx_datastore::{MutTxId, UniqueView};
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCall};
 use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
@@ -31,7 +31,7 @@ pub struct InstanceEnv {
     pub tx: TxSlot,
     /// The timestamp the current reducer began running.
     pub start_time: Timestamp,
-    pub view: Option<UniqueView>,
+    pub view: Option<ViewCall>,
 }
 
 #[derive(Clone, Default)]
@@ -189,7 +189,7 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a view is starting.
-    pub fn start_view(&mut self, ts: Timestamp, view: UniqueView) {
+    pub fn start_view(&mut self, ts: Timestamp, view: ViewCall) {
         self.start_time = ts;
         self.view = Some(view);
     }

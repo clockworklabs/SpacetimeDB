@@ -123,14 +123,14 @@ impl ReadSet {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct UniqueView {
+pub struct ViewCall {
     identity: Option<Identity>,
     view_id: ViewId,
     //TODO: use arg_id from [`ST_VIEW_ARGS`]
     args: Bytes,
 }
 
-impl UniqueView {
+impl ViewCall {
     pub fn anonymous(view_id: ViewId, args: Bytes) -> Self {
         Self {
             identity: None,
@@ -152,7 +152,7 @@ impl UniqueView {
     }
 }
 
-pub type ViewReadSets = HashMap<UniqueView, ReadSet>;
+pub type ViewReadSets = HashMap<ViewCall, ReadSet>;
 
 /// Represents a Mutable transaction. Holds locks for its duration
 ///
@@ -176,7 +176,7 @@ static_assert_size!(MutTxId, 448);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
-    pub fn record_table_scan(&mut self, view: Option<UniqueView>, table_id: TableId) {
+    pub fn record_table_scan(&mut self, view: Option<ViewCall>, table_id: TableId) {
         if let Some(view) = view {
             self.read_sets.entry(view).or_default().insert_table_scan(table_id)
         }
@@ -185,7 +185,7 @@ impl MutTxId {
     /// Record that a view performs an index scan in this transaction's read set
     pub fn record_index_scan(
         &mut self,
-        view: Option<UniqueView>,
+        view: Option<ViewCall>,
         table_id: TableId,
         index_id: IndexId,
         lower: Bound<AlgebraicValue>,
@@ -754,9 +754,9 @@ impl MutTxId {
             .ok_or_else(|| anyhow::anyhow!("view `{view_name}` not found"))?;
 
         let unique_view = if is_anonymous {
-            UniqueView::anonymous(view_id, args)
+            ViewCall::anonymous(view_id, args)
         } else {
-            UniqueView::with_identity(sender, view_id, args)
+            ViewCall::with_identity(sender, view_id, args)
         };
 
         let is_materialized =

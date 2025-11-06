@@ -9,7 +9,7 @@ use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, Timin
 use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_datastore::locking_tx_datastore::UniqueView;
+use spacetimedb_datastore::locking_tx_datastore::ViewCall;
 use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
 use std::future::Future;
@@ -130,7 +130,7 @@ type RtResult<T> = anyhow::Result<T>;
 pub enum FuncCallType {
     Reducer,
     Procedure,
-    View(UniqueView),
+    View(ViewCall),
 }
 
 /// Wraps an `InstanceEnv` with the magic necessary to push
@@ -257,7 +257,6 @@ impl WasmInstanceEnv {
                 self.instance_env.start_view(ts, view);
             }
         }
-        self.instance_env.start_funcall(ts);
 
         (args, errors)
     }
