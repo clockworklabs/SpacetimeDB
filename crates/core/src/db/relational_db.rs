@@ -2970,7 +2970,7 @@ mod tests {
         let schema = [("col1", AlgebraicType::I64), ("col2", AlgebraicType::I64)];
         let table_schema = table("MyTable", ProductType::from(schema), |b| b);
 
-        let view_schema = [("view_col", AlgebraicType::U64)];
+        let view_schema = [("view_col", AlgebraicType::I64)];
         let view_name = "MyView";
         let args: Bytes = vec![].into();
         let sender = Identity::ZERO;
@@ -3005,6 +3005,9 @@ mod tests {
             table_id,
             &product![AlgebraicValue::I64(1), AlgebraicValue::I64(2)].to_bsatn_vec()?,
         )?;
+        stdb.commit_tx(tx)?;
+
+        let tx = begin_mut_tx(&stdb);
         assert!(
             !tx.is_materialized(view_name, vec![].into(), sender)?.0,
             "view should not be materialized after table modification"
