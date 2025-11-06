@@ -10,8 +10,8 @@ use super::{
 };
 use crate::system_tables::{
     system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
-    StViewClientFields, StViewClientRow, StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow,
-    ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_CLIENT_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
+    StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubsFields, StViewSubsRow,
+    ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
 };
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
@@ -39,7 +39,7 @@ use spacetimedb_lib::{
     ConnectionId, Identity,
 };
 use spacetimedb_primitives::{
-    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
+    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
@@ -1767,85 +1767,58 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
-    /// Delete view data and metadata for a client connection.
-    pub fn delete_view_data_for_client(&mut self, sender: Identity, connection_id: ConnectionId) -> Result<()> {
-        for row in self.delete_st_view_client_rows(sender, connection_id)? {
-            if !self.is_identity_subscribed_to_view_args(row.view_id, row.arg_id, sender)? {
-                self.delete_view_rows_for_identity(row.view_id, row.arg_id, sender)?;
-            }
+    /// Decrements the number of subscribers in `st_view_sub` for a client identity.
+    pub fn dec_st_view_subscribers(&mut self, sender: Identity) -> Result<()> {
+        let sender = IdentityViaU256(sender);
+        let cols = col_list![StViewSubsFields::Identity];
+        let value = sender.into();
+
+        // Collect the rows for this identity.
+        // These are rows for which we will decrement the subscriber count.
+        let rows_to_delete = self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .map(|row_ref| StViewSubsRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+            .filter(|result| match result {
+                Ok((row, _)) => row.has_subscribers && row.num_subscribers > 0,
+                _ => true,
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Copy the rows to delete and decrement their subscriber count.
+        // These are the rows that we will insert.
+        let rows_to_insert = rows_to_delete
+            .iter()
+            .map(|(row, _)| row.clone())
+            .map(|row| StViewSubsRow {
+                num_subscribers: row.num_subscribers - 1,
+                has_subscribers: row.num_subscribers > 1,
+                ..row
+            })
+            .collect::<Vec<_>>();
+
+        // Delete the old rows
+        for (_, ptr) in rows_to_delete {
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
         }
+
+        // Insert the new rows
+        for row in rows_to_insert {
+            self.insert_via_serialize_bsatn(ST_VIEW_SUB_ID, &row)?;
+        }
+
         Ok(())
     }
 
-    /// Deletes and return the rows in `st_view_client` for a client connection.
-    fn delete_st_view_client_rows(
-        &mut self,
-        sender: Identity,
-        connection_id: ConnectionId,
-    ) -> Result<Vec<StViewClientRow>> {
-        let sender = IdentityViaU256(sender);
-        let conn_id = ConnectionIdViaU128(connection_id);
-        let cols = col_list![StViewClientFields::Identity, StViewClientFields::ConnectionId];
-        let value = AlgebraicValue::product([sender.into(), conn_id.into()]);
-        self.iter_by_col_eq(ST_VIEW_CLIENT_ID, cols, &value)?
-            .map(|row_ref| StViewClientRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+    /// Clear all rows from all view tables without dropping them.
+    pub fn clear_all_views(&mut self) -> Result<()> {
+        for table_id in self
+            .iter(ST_VIEW_ID)?
+            .map(StViewRow::try_from)
             .collect::<Result<Vec<_>>>()?
             .into_iter()
-            .map(|(row, ptr)| self.delete(ST_VIEW_CLIENT_ID, ptr).map(|_| row))
-            .collect()
-    }
-
-    /// Is anyone is subscribed to the view arguments identified by `arg_id`?
-    fn is_identity_subscribed_to_view_args(&self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<bool> {
-        Ok(self
-            .iter_by_col_eq(
-                ST_VIEW_CLIENT_ID,
-                col_list![
-                    StViewClientFields::ViewId,
-                    StViewClientFields::ArgId,
-                    StViewClientFields::Identity
-                ],
-                &AlgebraicValue::product([view_id.into(), arg_id.into(), sender.into()]),
-            )?
-            .next()
-            .is_some())
-    }
-
-    /// Looks up a row in `st_view` by its primary key.
-    fn st_view_row(&self, view_id: ViewId) -> Result<Option<StViewRow>> {
-        self.iter_by_col_eq(ST_VIEW_ID, col_list![StViewFields::ViewId], &view_id.into())?
-            .next()
-            .map(StViewRow::try_from)
-            .transpose()
-    }
-
-    /// Returns the [`TableId`] for this view's backing table by probing `st_view`.
-    /// Note, all views with at least one subscriber are materialized.
-    fn get_table_id_for_view(&self, view_id: ViewId) -> Result<Option<(TableId, bool)>> {
-        Ok(self
-            .st_view_row(view_id)?
-            .and_then(|row| row.table_id.map(|id| (id, row.is_anonymous))))
-    }
-
-    /// Deletes the rows of a view subscribed to by `sender`.
-    fn delete_view_rows_for_identity(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
-        if let Some((table_id, is_anonymous)) = self.get_table_id_for_view(view_id)? {
-            let value = if is_anonymous {
-                let none_sender = AlgebraicValue::OptionNone();
-                AlgebraicValue::product([none_sender, arg_id.into()])
-            } else {
-                let sender = IdentityViaU256(sender);
-                let some_sender = AlgebraicValue::OptionSome(sender.into());
-                AlgebraicValue::product([some_sender, arg_id.into()])
-            };
-            for row_pointer in self
-                .iter_by_col_eq(table_id, col_list![0, 1], &value)?
-                .map(|row_ref| row_ref.pointer())
-                .collect::<Vec<_>>()
-                .into_iter()
-            {
-                self.delete(table_id, row_pointer)?;
-            }
+            .filter_map(|row| row.table_id)
+        {
+            self.clear_table(table_id)?;
         }
         Ok(())
     }
