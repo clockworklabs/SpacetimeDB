@@ -20,14 +20,14 @@ import { set, type SetField } from './type_util';
 /**
  * Helper type to extract the TypeScript type from a TypeBuilder
  */
-export type InferTypeOfTypeBuilder<T extends MaybeLazy<TypeBuilder<any, any>>> =
-  UnwrapLazy<T> extends TypeBuilder<infer U, any> ? U : never;
+export type InferTypeOfTypeBuilder<T extends TypeBuilder<any, any>> =
+  T extends TypeBuilder<infer U, any> ? U : never;
 
 /**
  * Helper type to extract the Spacetime type from a TypeBuilder
  */
-export type InferSpacetimeTypeOfTypeBuilder<T extends MaybeLazy<TypeBuilder<any, any>>> =
-  UnwrapLazy<T> extends TypeBuilder<any, infer U> ? U : never;
+export type InferSpacetimeTypeOfTypeBuilder<T extends TypeBuilder<any, any>> =
+  T extends TypeBuilder<any, infer U> ? U : never;
 
 /**
  * Helper type to extract the TypeScript type from a TypeBuilder
@@ -83,7 +83,7 @@ type RowType<Row extends RowObj> = {
 /**
  * Type which represents a valid argument to the ProductColumnBuilder
  */
-type ElementsObj = Record<string, MaybeLazy<TypeBuilder<any, any>>>;
+type ElementsObj = Record<string, TypeBuilder<any, any>>;
 
 /**
  * Type which converts the elements of ElementsObj to a ProductType elements array
@@ -108,17 +108,10 @@ type ObjectType<Elements extends ElementsObj> = {
   [K in keyof Elements]: InferTypeOfTypeBuilder<Elements[K]>;
 };
 
-// A value or a thunk returning that value
-export type MaybeLazy<T> = T;
-
-// Recursively peel off () => layers, if any
-type UnwrapLazy<T> = T extends () => infer R ? UnwrapLazy<R> : T;
-
-// type VariantsObj = Record<string, TypedPropertyDescriptor<TypeBuilder<any, any>>>;
-type VariantsObj = Record<string, MaybeLazy<TypeBuilder<any, any>>>;
+type VariantsObj = Record<string, TypeBuilder<any, any>>;
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 type UnitBuilder = ProductBuilder<{}>;
-type SimpleVariantsObj = Record<string, MaybeLazy<UnitBuilder>>;
+type SimpleVariantsObj = Record<string, UnitBuilder>;
 
 type IsUnit<B> = B extends UnitBuilder ? true : false;
 
@@ -1218,7 +1211,7 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
 }
 
 // Value type produced for a given variant key + builder
-type EnumValue<K extends string, B extends MaybeLazy<TypeBuilder<any, any>>> =
+type EnumValue<K extends string, B extends TypeBuilder<any, any>> =
   IsUnit<B> extends true
   ? { tag: K }
   : { tag: K; value: InferTypeOfTypeBuilder<B> };

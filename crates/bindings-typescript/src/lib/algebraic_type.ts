@@ -5,7 +5,6 @@ import type BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
 import { Identity } from './identity';
 import * as AlgebraicTypeVariants from './algebraic_type_variants';
-import type { MaybeLazy } from './type_builders';
 
 type TypespaceType = {
   types: AlgebraicTypeType[];
@@ -75,12 +74,12 @@ export { AlgebraicTypeVariants }
 // A value with helper functions to construct the type.
 export const AlgebraicType = {
   Ref: (value: number): AlgebraicTypeVariants.Ref => ({ tag: 'Ref', value }),
-  Sum: <T extends MaybeLazy<SumTypeType>>(value: T): { tag: 'Sum'; value: T } => ({ tag: 'Sum', value }),
-  Product: <T extends MaybeLazy<ProductTypeType>>(value: T): { tag: 'Product'; value: T } => ({
+  Sum: <T extends SumTypeType>(value: T): { tag: 'Sum'; value: T } => ({ tag: 'Sum', value }),
+  Product: <T extends ProductTypeType>(value: T): { tag: 'Product'; value: T } => ({
     tag: 'Product',
     value,
   }),
-  Array: <T extends MaybeLazy<AlgebraicTypeType>>(value: T): { tag: 'Array'; value: T } => ({
+  Array: <T extends AlgebraicTypeType>(value: T): { tag: 'Array'; value: T } => ({
     tag: 'Array',
     value,
   }),

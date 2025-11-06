@@ -1,4 +1,4 @@
-import { ConnectionId } from '../';
+import { ConnectionId, type Infer } from '../';
 import { Timestamp } from '../';
 import type { UpdateStatus } from './client_api/index.ts';
 import { Identity } from '../';
@@ -16,7 +16,7 @@ export type ReducerEvent<Reducer extends ReducerEventInfo> = {
   /**
    * Whether the reducer committed, was aborted due to insufficient energy, or failed with an error message.
    */
-  status: UpdateStatus;
+  status: Infer<typeof UpdateStatus>;
 
   /**
    * The identity of the caller.

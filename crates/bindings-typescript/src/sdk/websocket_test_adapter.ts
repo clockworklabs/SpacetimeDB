@@ -1,4 +1,4 @@
-import { AlgebraicType, BinaryWriter } from '../';
+import { AlgebraicType, BinaryWriter, type Infer } from '../';
 import { ServerMessage } from './client_api/index.ts';
 
 class WebsocketTestAdapter {
@@ -28,11 +28,11 @@ class WebsocketTestAdapter {
     this.onopen();
   }
 
-  sendToClient(message: ServerMessage): void {
+  sendToClient(message: Infer<typeof ServerMessage>): void {
     const writer = new BinaryWriter(1024);
     AlgebraicType.serializeValue(
       writer,
-      ServerMessage.getTypeScriptAlgebraicType(),
+      ServerMessage.algebraicType,
       message
     );
     const rawBytes = writer.getBuffer();

@@ -1,4 +1,4 @@
-import { ConnectionId } from '../';
+import { ConnectionId, type Infer } from '../';
 import type { UpdateStatus } from './client_api/index.ts';
 import { Identity } from '../';
 import type { TableUpdate } from './table_cache.ts';
@@ -19,7 +19,7 @@ export type TransactionUpdateMessage = {
     reducerName: string;
     args: Uint8Array;
   };
-  status: UpdateStatus;
+  status: Infer<typeof UpdateStatus>;
   message: string;
   timestamp: Timestamp;
   energyConsumed: bigint;

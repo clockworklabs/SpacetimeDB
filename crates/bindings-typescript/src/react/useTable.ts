@@ -317,7 +317,7 @@ export function useTable<
     if (!connection) {
       return [];
     }
-    const table = connection.db[tableName] as ClientTable<UntypedRemoteModule, TableDef['name']>;
+    const table = connection.db[tableName];
     const result: readonly UseTableRowType[] = whereClause
       ? (Array.from(table.iter()).filter(row => evaluate(whereClause, row as UseTableRowType)) as UseTableRowType[])
       : (Array.from(table.iter()) as UseTableRowType[]);
