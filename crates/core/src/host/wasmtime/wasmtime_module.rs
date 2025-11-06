@@ -186,14 +186,8 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
             .expect("no call_reducer");
 
         let call_procedure = get_call_procedure(&mut store, &instance);
-
-        let call_view = instance
-            .get_typed_func(&mut store, CALL_VIEW_DUNDER)
-            .expect("no call_view");
-
-        let call_view_anon = instance
-            .get_typed_func(&mut store, CALL_VIEW_ANON_DUNDER)
-            .expect("no call_view_anon");
+        let call_view = get_call_view(&mut store, &instance);
+        let call_view_anon = get_call_view_anon(&mut store, &instance);
 
         Ok(WasmtimeInstance {
             store,
@@ -231,6 +225,34 @@ fn get_call_procedure(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -
             .unwrap_or_else(|| panic!("{CALL_PROCEDURE_DUNDER} export is not a function"))
             .typed(store)
             .unwrap_or_else(|err| panic!("{CALL_PROCEDURE_DUNDER} export is a function with incorrect type: {err}")),
+    )
+}
+
+/// Look up the `instance`'s export named by [`CALL_VIEW_DUNDER`].
+///
+/// Similar to [`get_call_procedure`], but for views.
+fn get_call_view(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -> Option<CallViewType> {
+    let export = instance.get_export(store.as_context_mut(), CALL_VIEW_DUNDER)?;
+    Some(
+        export
+            .into_func()
+            .unwrap_or_else(|| panic!("{CALL_VIEW_DUNDER} export is not a function"))
+            .typed(store)
+            .unwrap_or_else(|err| panic!("{CALL_VIEW_DUNDER} export is a function with incorrect type: {err}")),
+    )
+}
+
+/// Look up the `instance`'s export named by [`CALL_VIEW_ANON_DUNDER`].
+///
+/// Similar to [`get_call_procedure`], but for anonymous views.
+fn get_call_view_anon(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -> Option<CallViewAnonType> {
+    let export = instance.get_export(store.as_context_mut(), CALL_VIEW_ANON_DUNDER)?;
+    Some(
+        export
+            .into_func()
+            .unwrap_or_else(|| panic!("{CALL_VIEW_ANON_DUNDER} export is not a function"))
+            .typed(store)
+            .unwrap_or_else(|err| panic!("{CALL_VIEW_ANON_DUNDER} export is a function with incorrect type: {err}")),
     )
 }
 
@@ -303,8 +325,8 @@ pub struct WasmtimeInstance {
     instance: Instance,
     call_reducer: CallReducerType,
     call_procedure: Option<CallProcedureType>,
-    call_view: CallViewType,
-    call_view_anon: CallViewAnonType,
+    call_view: Option<CallViewType>,
+    call_view_anon: Option<CallViewAnonType>,
 }
 
 #[async_trait::async_trait]
@@ -405,8 +427,21 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 .data_mut()
                 .start_funcall(op.name, args_bytes, op.timestamp, FuncCallType::View(view));
 
+        let Some(call_view) = self.call_view.as_ref() else {
+            return module_host_actor::ViewExecuteResult {
+                energy: module_host_actor::EnergyStats::ZERO,
+                timings: module_host_actor::ExecutionTimings::zero(),
+                memory_allocation: get_memory_size(store),
+                call_result: Err(anyhow::anyhow!(
+                    "Module defines view {} but does not export `{}`",
+                    op.name,
+                    CALL_VIEW_DUNDER,
+                )),
+            };
+        };
+
         let call_result = call_sync_typed_func(
-            &self.call_view,
+            call_view,
             &mut *store,
             (
                 op.id.0,
@@ -459,8 +494,20 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 .data_mut()
                 .start_funcall(op.name, args_bytes, op.timestamp, FuncCallType::View(view));
 
-        let call_result =
-            call_sync_typed_func(&self.call_view_anon, &mut *store, (op.id.0, args_source.0, errors_sink));
+        let Some(call_view_anon) = self.call_view_anon.as_ref() else {
+            return module_host_actor::ViewExecuteResult {
+                energy: module_host_actor::EnergyStats::ZERO,
+                timings: module_host_actor::ExecutionTimings::zero(),
+                memory_allocation: get_memory_size(store),
+                call_result: Err(anyhow::anyhow!(
+                    "Module defines anonymous view {} but does not export `{}`",
+                    op.name,
+                    CALL_VIEW_ANON_DUNDER,
+                )),
+            };
+        };
+
+        let call_result = call_sync_typed_func(call_view_anon, &mut *store, (op.id.0, args_source.0, errors_sink));
 
         // Signal that this view call is finished. This gets us the timings
         // associated to our view call, and clears all of the instance state
