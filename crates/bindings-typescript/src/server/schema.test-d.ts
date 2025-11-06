@@ -33,4 +33,9 @@ const spacetimedb = schema(person);
 spacetimedb.init(ctx => {
   ctx.db.person.id_name_idx.filter(1);
   ctx.db.person.id_name_idx.filter([1, "aname"]);
+
+  // @ts-expect-error id2 is not indexed, so this should not exist at all.
+  ctx.db.person.id2;
+
+  ctx.db.person.id.find(2);
 });
