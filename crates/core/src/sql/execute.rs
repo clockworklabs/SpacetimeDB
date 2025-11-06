@@ -1483,8 +1483,8 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_row_limit() -> ResultTest<()> {
+    #[test]
+    fn test_row_limit() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
@@ -1502,29 +1502,22 @@ pub(crate) mod tests {
         let external_auth = AuthCtx::new(server, client);
 
         let tmp_vec = Vec::new();
-        let run = |db, sql, auth, subs, mut tmp_vec| async move {
-            run(db, sql, auth, subs, None, Identity::ZERO, &mut tmp_vec).await
+
+        let rt = db.runtime().expect("runtime should be there");
+
+        let run = |db, sql, auth, subs, mut tmp_vec| {
+            rt.block_on(run(db, sql, auth, subs, None, Identity::ZERO, &mut tmp_vec))
         };
         // No row limit, both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone())
-            .await
-            .is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone())
-            .await
-            .is_ok());
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone()).is_ok());
 
         // Set row limit.
-        assert!(run(&db, "SET row_limit = 4", internal_auth, None, tmp_vec.clone())
-            .await
-            .is_ok());
+        assert!(run(&db, "SET row_limit = 4", internal_auth, None, tmp_vec.clone()).is_ok());
 
         // External query fails.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone())
-            .await
-            .is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone())
-            .await
-            .is_err());
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone()).is_err());
 
         // Increase row limit.
         assert!(run(
@@ -1534,26 +1527,19 @@ pub(crate) mod tests {
             None,
             tmp_vec.clone()
         )
-        .await
         .is_ok());
-        assert!(run(&db, "SET row_limit = 5", internal_auth, None, tmp_vec.clone())
-            .await
-            .is_ok());
+        assert!(run(&db, "SET row_limit = 5", internal_auth, None, tmp_vec.clone()).is_ok());
 
         // Both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone())
-            .await
-            .is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone())
-            .await
-            .is_ok());
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone()).is_ok());
 
         Ok(())
     }
 
     // Verify we don't return rows on DML
-    #[tokio::test]
-    async fn test_row_dml() -> ResultTest<()> {
+    #[test]
+    fn test_row_dml() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
@@ -1564,6 +1550,8 @@ pub(crate) mod tests {
             Ok(())
         })?;
 
+        let rt = db.runtime().expect("runtime should be there");
+
         let server = Identity::from_claims("issuer", "server");
 
         let internal_auth = AuthCtx::new(server, server);
@@ -1573,8 +1561,8 @@ pub(crate) mod tests {
             run(db, sql, auth, subs, None, Identity::ZERO, &mut tmp_vec).await
         };
 
-        let check = async |db, sql, auth, metrics: ExecutionMetrics| {
-            let result = run(db, sql, auth, None, tmp_vec.clone()).await?;
+        let check = |db, sql, auth, metrics: ExecutionMetrics| {
+            let result = rt.block_on(run(db, sql, auth, None, tmp_vec.clone()))?;
             assert_eq!(result.rows, vec![]);
             assert_eq!(result.metrics.rows_inserted, metrics.rows_inserted);
             assert_eq!(result.metrics.rows_deleted, metrics.rows_deleted);
@@ -1596,15 +1584,14 @@ pub(crate) mod tests {
             ..ExecutionMetrics::default()
         };
 
-        check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth, ins).await?;
-        check(&db, "UPDATE T SET a = 2", internal_auth, upd).await?;
+        check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth, ins)?;
+        check(&db, "UPDATE T SET a = 2", internal_auth, upd)?;
         assert_eq!(
-            run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone())
-                .await?
+            rt.block_on(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()))?
                 .rows,
             vec![product!(2u8)]
         );
-        check(&db, "DELETE FROM T", internal_auth, del).await?;
+        check(&db, "DELETE FROM T", internal_auth, del)?;
 
         Ok(())
     }
