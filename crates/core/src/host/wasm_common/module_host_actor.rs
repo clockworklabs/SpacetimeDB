@@ -791,11 +791,11 @@ impl InstanceCommon {
             return_type,
             timestamp,
             view_db_id,
-            ..
+            is_anonymous,
         } = params;
 
         let info = self.info.clone();
-        let view_def = info.module_def.view_by_id(view_id);
+        let view_def = info.module_def.view_by_id(view_id, is_anonymous);
         let view_name = &*view_def.name;
 
         let _outer_span = start_call_function_span(view_name, &caller_identity, caller_connection_id);

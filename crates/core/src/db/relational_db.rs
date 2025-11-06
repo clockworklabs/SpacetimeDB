@@ -2208,6 +2208,7 @@ pub mod tests_utils {
 
         builder.add_view(
             name,
+            0,
             true,
             is_anonymous,
             ProductType::unit(),
