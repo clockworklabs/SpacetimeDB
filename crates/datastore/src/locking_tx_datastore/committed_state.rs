@@ -738,11 +738,11 @@ impl CommittedState {
         }
     }
 
-    fn merge_read_sets(&mut self, read_sets: ViewReadSets, tables: impl IntoIterator<Item = TableId>) {
+    fn merge_read_sets(&mut self, read_sets: ViewReadSets, updated_tables: impl IntoIterator<Item = TableId>) {
         for (view, read_set) in read_sets {
             self.merge_read_set(view, read_set);
         }
-        for table_id in tables {
+        for table_id in updated_tables {
             self.read_sets.clear_views_for_table(table_id);
         }
     }

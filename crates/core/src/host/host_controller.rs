@@ -357,7 +357,7 @@ impl HostController {
         });
 
         let db = module.replica_ctx().relational_db.clone();
-        let result = module.on_module_thread("using_database", move || f(db)).await?.await;
+        let result = module.on_module_thread_async("using_database", move || f(db)).await?;
         Ok(result)
     }
     /// Update the [`ModuleHost`] identified by `replica_id` to the given

@@ -8,16 +8,13 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
-use crate::{
-    error::ViewError,
-    system_tables::{
-        system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
-        StViewArgFields, StViewArgRow, StViewClientRow, StViewColumnFields, StViewFields, StViewParamFields,
-        StViewParamRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_ARG_ID, ST_VIEW_CLIENT_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
-        ST_VIEW_PARAM_ID,
-    },
+use crate::system_tables::{
+    system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
+    StViewArgFields, StViewArgRow, StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow,
+    StViewSubFields, StViewSubRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_ARG_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
+    ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
 };
+use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
@@ -740,7 +737,7 @@ impl MutTxId {
         Ok((tx, commit))
     }
 
-    /// Checks whether a memoized view exists for the given view name, arguments, and sender identity.
+    /// Checks whether a materialized view exists for the given view name, arguments, and sender identity.
     ///
     /// If view is not materialized, [`RelationalDB::evaluate_view`] should be called to compute and store it.
     ///

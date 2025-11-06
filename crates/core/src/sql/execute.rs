@@ -204,12 +204,12 @@ pub async fn run(
     let mut metrics = ExecutionMetrics::default();
 
     for (view_name, args) in stmt.views() {
-        let (is_memoized, args) = tx
+        let (is_materialized, args) = tx
             .is_materialized(view_name, args, caller_identity)
             .map_err(|e| DBError::Other(anyhow!("Failed to check memoized view: {e}")))?;
 
         // Skip if already memoized
-        if is_memoized {
+        if is_materialized {
             continue;
         }
 

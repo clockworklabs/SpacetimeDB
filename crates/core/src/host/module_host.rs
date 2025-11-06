@@ -543,8 +543,10 @@ pub struct CallViewParams {
     pub caller_connection_id: Option<ConnectionId>,
     pub view_id: ViewId,
     pub args: ArgsTuple,
-    /// The expected return type of the view, used for deserialization.
-    /// This type information is obtained from the [`ModuleDef`].
+
+    /// The return type of the view, used for deserializing the view call result.
+    /// Either Option<T>`, or `Vec<T>` where `T` is a `ProductType`.
+    /// This type information is obtained from the [`ModuleDef`]
     pub return_type: AlgebraicType,
     /// Whether the view is being called anonymously (i.e., without a client identity).
     pub is_anonymous: bool,
@@ -843,6 +845,29 @@ impl ModuleHost {
         Ok(res)
     }
 
+    /// Run an async function on the JobThread for this module.
+    /// Similar to `on_module_thread`, but for async functions.
+    pub async fn on_module_thread_async<Fun, Fut, R>(&self, label: &str, f: Fun) -> Result<R, anyhow::Error>
+    where
+        Fun: (FnOnce() -> Fut) + Send + 'static,
+        Fut: Future<Output = R> + Send + 'static,
+        R: Send + 'static,
+    {
+        self.guard_closed()?;
+
+        let timer_guard = self.start_call_timer(label);
+
+        let res = self
+            .executor
+            .run_job(async move {
+                drop(timer_guard);
+                f().await
+            })
+            .await;
+
+        Ok(res)
+    }
+
     fn start_call_timer(&self, label: &str) -> ScopeGuard<(), impl FnOnce(())> {
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
@@ -869,7 +894,7 @@ impl ModuleHost {
         })
     }
 
-    async fn call_async_with_instance<Fun, Fut, R>(&self, label: &str, f: Fun) -> Result<R, NoSuchModule>
+    pub async fn call_async_with_instance<Fun, Fut, R>(&self, label: &str, f: Fun) -> Result<R, NoSuchModule>
     where
         Fun: (FnOnce(Instance) -> Fut) + Send + 'static,
         Fut: Future<Output = (R, Instance)> + Send + 'static,
