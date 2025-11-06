@@ -85,6 +85,12 @@ system_id! {
 auto_inc_system_id!(ViewId);
 
 system_id! {
+    /// An identifier for a list of arguments passed to a view.
+    pub struct ArgId(pub u64);
+}
+auto_inc_system_id!(ArgId);
+
+system_id! {
     /// An identifier for a sequence, unique within a database.
     pub struct SequenceId(pub u32);
 }
