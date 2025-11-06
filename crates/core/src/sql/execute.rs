@@ -233,8 +233,9 @@ pub async fn run(
 
     match stmt {
         Statement::Select(stmt) => {
-            // Up to this point, the tx has been read-only,
-            // and hence there are no deltas to process.
+            // Materialize views before we downgrade to a read-only transaction
+            tx.materialize_views(&stmt, auth.caller)?;
+
             let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
 
             let (tx_offset_send, tx_offset) = oneshot::channel();
