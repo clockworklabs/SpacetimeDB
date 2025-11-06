@@ -63,6 +63,7 @@ export type RowExpr<TableDef extends TypedTableDef> = {
   readonly [C in ColumnNames<TableDef>]: ColumnExpr<TableDef, C>;
 };
 
+/*
 type IndexNames<TableDef extends TypedTableDef> = TableIndexes<TableDef>;
 
 export type IndexNameUnion<TableDef extends TypedTableDef> = Extract<
@@ -75,26 +76,26 @@ export type IndexExpr<TableDef extends TypedTableDef,
 I extends IndexNameUnion<TableDef> = CollapseTuple<_IndexVal<TableDef, TableIndexes<TableDef>[I]['columns'];
 */
 
-export type IndexExprs<TableDef extends TypedTableDef> = {
-  readonly [I in IndexNameUnion<TableDef>]: IndexExpr<
-    TableDef,
-    TableIndexes<TableDef>[I]
-  >;
-};
+// export type IndexExprs<TableDef extends TypedTableDef> = {
+//   readonly [I in IndexNameUnion<TableDef>]: IndexExpr<
+//     TableDef,
+//     TableIndexes<TableDef>[I]
+//   >;
+// };
 
-/**
- * A helper type to extract the types of the columns that make up an index.
- */
-type _IndexVal<TableDef extends TypedTableDef, Columns extends string[]> = {
-  [i in keyof Columns]: TableDef['columns'][Columns[i]]['typeBuilder'] extends TypeBuilder<
-    any,
-    infer U
-  >
-    ? U
-    : never;
-};
+// /**
+//  * A helper type to extract the types of the columns that make up an index.
+//  */
+// type _IndexVal<TableDef extends TypedTableDef, Columns extends string[]> = {
+//   [i in keyof Columns]: TableDef['columns'][Columns[i]]['typeBuilder'] extends TypeBuilder<
+//     any,
+//     infer U
+//   >
+//     ? U
+//     : never;
+// };
 
-export type IndexExpr<
-  TableDef extends TypedTableDef,
-  I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> = CollapseTuple<_IndexVal<TableDef, I['columns']>>;
+// export type IndexExpr<
+//   TableDef extends TypedTableDef,
+//   I extends UntypedIndex<keyof TableDef['columns'] & string>,
+// > = CollapseTuple<_IndexVal<TableDef, I['columns']>>;
