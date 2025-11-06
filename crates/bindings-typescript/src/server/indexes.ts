@@ -29,7 +29,7 @@ export type UntypedIndex<AllowedCol extends string> = {
  * A helper type to extract the column names from an index definition.
  */
 export type IndexColumns<I extends IndexOpts<any>> = I extends {
-  columns: readonly (infer Names extends string)[];
+  columns: readonly string[];
 }
   ? readonly [...I['columns']]
   : I extends { column: infer Name extends string }

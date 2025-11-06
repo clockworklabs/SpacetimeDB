@@ -66,10 +66,7 @@ export type TableIndexes<TableDef extends UntypedTableDef> = {
     TableDef['columns'][K]['columnMetadata']
   > extends never
     ? never
-    : K]: ColumnIndex<
-    K,
-    TableDef['columns'][K]['columnMetadata']
-  >;
+    : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
 } & {
   [I in TableDef['indexes'][number] as I['name'] & {}]: TableIndexFromDef<
     TableDef,
@@ -96,9 +93,7 @@ type NormalizeIndexColumns<
   TableDef extends UntypedTableDef,
   I extends IndexOpts<keyof TableDef['columns'] & string>,
 > =
-  IndexColumns<I> extends ReadonlyArray<
-    infer Col extends keyof TableDef['columns'] & string
-  >
+  IndexColumns<I> extends ReadonlyArray<keyof TableDef['columns'] & string>
     ? IndexColumns<I>
     : never;
 
