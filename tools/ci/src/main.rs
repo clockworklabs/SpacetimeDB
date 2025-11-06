@@ -83,7 +83,13 @@ enum CiCmd {
     /// Unreal environment is set up correctly.
     UnrealTests,
     /// Generates CLI documentation and checks for changes
-    CliDocs,
+    CliDocs {
+        #[arg(
+            long,
+            long_help = "specify a custom path to the SpacetimeDB repository root (where the main Cargo.toml is located)"
+        )]
+        spacetime_path: Option<String>,
+    },
     SelfDocs {
         #[arg(
             long,
@@ -161,11 +167,7 @@ fn main() -> Result<()> {
             run!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
         }
 
-        Some(CiCmd::Smoketests { mut args }) => {
-            let default_args = ["-x", "clear_database", "replication"];
-            if args.is_empty() {
-                args = default_args.iter().map(ToString::to_string).collect();
-            }
+        Some(CiCmd::Smoketests { args }) => {
             // Note: clear_database and replication only work in private
             run!(&format!("python -m smoketests {}", args.join(" ")))?;
         }
@@ -210,7 +212,18 @@ cargo run {github_token_auth_flag}--target {target} -p spacetimedb-update -- sel
             run!("sudo -E -H -u ue4 env HOME=/home/ue4 CARGO_HOME=\"$CARGO_HOME\" RUSTUP_HOME=\"$RUSTUP_HOME\" PATH=\"$CARGO_HOME/bin:$PATH\" bash -lc 'set -euxo pipefail; if ! command -v cargo >/dev/null 2>&1; then curl -sSf https://sh.rustup.rs | sh -s -- -y; fi; rustup show >/dev/null; git config --global --add safe.directory \"$GITHUB_WORKSPACE\" || true; cd \"$GITHUB_WORKSPACE/sdks/unreal\"; cargo --version; cargo test'")?;
         }
 
-        Some(CiCmd::CliDocs) => {
+        Some(CiCmd::CliDocs { spacetime_path }) => {
+            if let Some(path) = spacetime_path {
+                env::set_current_dir(path).ok();
+            }
+            let current_dir = env::current_dir().expect("No current directory!");
+            let dir_name = current_dir.file_name().expect("No current directory!");
+            if dir_name != "SpacetimeDB" && dir_name != "public" {
+                anyhow::bail!(
+                    "You must execute this binary from inside of the SpacetimeDB directory, or use --spacetime-path"
+                );
+            }
+
             run!("pnpm install --recursive")?;
             run!("cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md")?;
             run!("pnpm format")?;
