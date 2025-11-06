@@ -1403,6 +1403,11 @@ impl RelationalDB {
         Ok(rows_deleted)
     }
 
+    /// Clear all rows from all view tables without dropping them.
+    pub fn clear_all_views(&self, tx: &mut MutTx) -> Result<(), DBError> {
+        Ok(tx.clear_all_views()?)
+    }
+
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
         Ok(self.inner.create_sequence_mut_tx(tx, sequence_schema)?)
     }
@@ -2086,6 +2091,57 @@ pub mod tests_utils {
         let (gen_cols, row_ref, _) = db.insert(tx, table_id, &to_vec(row).unwrap())?;
         let gen_cols = row_ref.project(&gen_cols).unwrap();
         Ok((gen_cols, row_ref))
+    }
+
+    /// Allocate a backing table in the datastore for a view
+    pub fn create_view_for_test(
+        db: &RelationalDB,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        is_anonymous: bool,
+    ) -> Result<TableId, DBError> {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        // Add the view's product type to the typespace
+        let type_ref = builder.add_algebraic_type(
+            [],
+            name,
+            AlgebraicType::Product(ProductType::from_iter(schema.iter().cloned())),
+            true,
+        );
+
+        builder.add_view(
+            name,
+            true,
+            is_anonymous,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(type_ref)),
+        );
+
+        let module_def: ModuleDef = builder.finish().try_into()?;
+        let view_def: &ViewDef = module_def.view(name).expect("view not found");
+
+        // Allocate a backing table and return its table id
+        db.with_auto_commit(Workload::Internal, |tx| db.create_view(tx, &module_def, view_def))
+            .map(|(_, table_id)| table_id)
+    }
+
+    /// Insert a row into a view's backing table
+    pub fn insert_into_view<'a>(
+        db: &'a RelationalDB,
+        tx: &'a mut MutTx,
+        table_id: TableId,
+        sender: Option<Identity>,
+        row: ProductValue,
+    ) -> Result<RowRef<'a>, DBError> {
+        let meta_cols = match sender {
+            Some(identity) => vec![identity.into()],
+            None => vec![],
+        };
+        let cols = meta_cols.into_iter().chain(row.elements);
+        let row = ProductValue::from_iter(cols);
+        db.insert(tx, table_id, &to_vec(&row).unwrap())
+            .map(|(_, row_ref, _)| row_ref)
     }
 
     /// An in-memory commitlog used for tests that want to replay a known history.
