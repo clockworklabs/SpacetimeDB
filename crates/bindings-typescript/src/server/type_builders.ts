@@ -42,6 +42,15 @@ export type InferTypeOfRow<T extends RowObj> = {
 };
 
 /**
+ * Helper type to extract the type of a row from an object.
+ */
+export type InferSpacetimeTypeOfRow<T extends RowObj> = {
+  [K in keyof T & string]: InferSpacetimeTypeOfTypeBuilder<
+    CollapseColumn<T[K]>
+  >;
+};
+
+/**
  * Helper type to extract the Spacetime type from a row object.
  */
 type CollapseColumn<
