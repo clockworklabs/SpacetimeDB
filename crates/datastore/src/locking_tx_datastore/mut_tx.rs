@@ -41,7 +41,7 @@ use spacetimedb_lib::{
     ConnectionId, Identity,
 };
 use spacetimedb_primitives::{
-    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
+    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewDatabaseId,
 };
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
@@ -122,13 +122,13 @@ impl ReadSet {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ViewCall {
     identity: Option<Identity>,
-    view_id: ViewId,
+    view_id: ViewDatabaseId,
     //TODO: use arg_id from [`ST_VIEW_ARGS`]
     args: Bytes,
 }
 
 impl ViewCall {
-    pub fn anonymous(view_id: ViewId, args: Bytes) -> Self {
+    pub fn anonymous(view_id: ViewDatabaseId, args: Bytes) -> Self {
         Self {
             identity: None,
             view_id,
@@ -136,7 +136,7 @@ impl ViewCall {
         }
     }
 
-    pub fn with_identity(identity: Identity, view_id: ViewId, args: Bytes) -> Self {
+    pub fn with_identity(identity: Identity, view_id: ViewDatabaseId, args: Bytes) -> Self {
         Self {
             identity: Some(identity),
             view_id,
@@ -335,7 +335,7 @@ impl MutTxId {
     /// - Everything [`Self::create_table`] ensures.
     /// - The returned [`ViewId`] is unique and not [`ViewId::SENTINEL`].
     /// - All view metadata maintained by the datastore is created atomically
-    pub fn create_view(&mut self, module_def: &ModuleDef, view_def: &ViewDef) -> Result<(ViewId, TableId)> {
+    pub fn create_view(&mut self, module_def: &ModuleDef, view_def: &ViewDef) -> Result<(ViewDatabaseId, TableId)> {
         let table_schema = TableSchema::from_view_def_for_datastore(module_def, view_def);
         let table_id = self.create_table(table_schema)?;
 
@@ -355,7 +355,7 @@ impl MutTxId {
     }
 
     /// Drop the backing table of a view and update the system tables.
-    pub fn drop_view(&mut self, view_id: ViewId) -> Result<()> {
+    pub fn drop_view(&mut self, view_id: ViewDatabaseId) -> Result<()> {
         // Drop the view's metadata
         self.drop_st_view(view_id)?;
         self.drop_st_view_param(view_id)?;
@@ -477,7 +477,7 @@ impl MutTxId {
         })
     }
 
-    pub fn lookup_st_view(&self, view_id: ViewId) -> Result<StViewRow> {
+    pub fn lookup_st_view(&self, view_id: ViewDatabaseId) -> Result<StViewRow> {
         let row = self
             .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewId, &view_id.into())?
             .next()
@@ -502,12 +502,12 @@ impl MutTxId {
         table_id: TableId,
         is_public: bool,
         is_anonymous: bool,
-    ) -> Result<ViewId> {
+    ) -> Result<ViewDatabaseId> {
         Ok(self
             .insert_via_serialize_bsatn(
                 ST_VIEW_ID,
                 &StViewRow {
-                    view_id: ViewId::SENTINEL,
+                    view_id: ViewDatabaseId::SENTINEL,
                     view_name,
                     table_id: Some(table_id),
                     is_public,
@@ -521,7 +521,7 @@ impl MutTxId {
 
     /// For each parameter of a view, insert a row into `st_view_param`.
     /// This does not include the context parameter.
-    fn insert_into_st_view_param(&mut self, view_id: ViewId, params: &ProductType) -> Result<()> {
+    fn insert_into_st_view_param(&mut self, view_id: ViewDatabaseId, params: &ProductType) -> Result<()> {
         for (i, field) in params.elements.iter().enumerate() {
             self.insert_via_serialize_bsatn(
                 ST_VIEW_PARAM_ID,
@@ -540,7 +540,7 @@ impl MutTxId {
     }
 
     /// For each column or field returned in a view, insert a row into `st_view_column`.
-    fn insert_into_st_view_column(&mut self, view_id: ViewId, columns: &[ViewColumnDef]) -> Result<()> {
+    fn insert_into_st_view_column(&mut self, view_id: ViewDatabaseId, columns: &[ViewColumnDef]) -> Result<()> {
         for def in columns {
             self.insert_via_serialize_bsatn(
                 ST_VIEW_COLUMN_ID,
@@ -606,17 +606,17 @@ impl MutTxId {
     }
 
     /// Drops the row in `st_view` for this `view_id`
-    fn drop_st_view(&mut self, view_id: ViewId) -> Result<()> {
+    fn drop_st_view(&mut self, view_id: ViewDatabaseId) -> Result<()> {
         self.delete_col_eq(ST_VIEW_ID, StViewFields::ViewId.col_id(), &view_id.into())
     }
 
     /// Drops the rows in `st_view_param` for this `view_id`
-    fn drop_st_view_param(&mut self, view_id: ViewId) -> Result<()> {
+    fn drop_st_view_param(&mut self, view_id: ViewDatabaseId) -> Result<()> {
         self.delete_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId.col_id(), &view_id.into())
     }
 
     /// Drops the rows in `st_view_column` for this `view_id`
-    fn drop_st_view_column(&mut self, view_id: ViewId) -> Result<()> {
+    fn drop_st_view_column(&mut self, view_id: ViewDatabaseId) -> Result<()> {
         self.delete_col_eq(ST_VIEW_COLUMN_ID, StViewColumnFields::ViewId.col_id(), &view_id.into())
     }
 
@@ -687,7 +687,7 @@ impl MutTxId {
         Ok(ret)
     }
 
-    pub fn view_id_from_name(&self, view_name: &str) -> Result<Option<ViewId>> {
+    pub fn view_id_from_name(&self, view_name: &str) -> Result<Option<ViewDatabaseId>> {
         let view_name = &view_name.into();
         let row = self
             .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, view_name)?
@@ -1843,7 +1843,7 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 
 impl MutTxId {
     /// Does this caller have an entry for `view_id` in `st_view_sub`?
-    pub fn is_view_materialized(&self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<bool> {
+    pub fn is_view_materialized(&self, view_id: ViewDatabaseId, arg_id: ArgId, sender: Identity) -> Result<bool> {
         use StViewSubFields::*;
         let sender = IdentityViaU256(sender);
         let cols = col_list![ViewId, ArgId, Identity];
@@ -1856,7 +1856,7 @@ impl MutTxId {
     /// Otherwise insert a row into `st_view_sub` with no subscribers.
     pub fn st_view_sub_update_or_insert_last_called(
         &mut self,
-        view_id: ViewId,
+        view_id: ViewDatabaseId,
         arg_id: ArgId,
         sender: Identity,
     ) -> Result<()> {
@@ -1972,7 +1972,7 @@ impl MutTxId {
     }
 
     /// Lookup a row in `st_view` by its primary key
-    fn st_view_row(&self, view_id: ViewId) -> Result<Option<StViewRow>> {
+    fn st_view_row(&self, view_id: ViewDatabaseId) -> Result<Option<StViewRow>> {
         self.iter_by_col_eq(ST_VIEW_ID, col_list![StViewFields::ViewId], &view_id.into())?
             .next()
             .map(StViewRow::try_from)
@@ -1981,7 +1981,7 @@ impl MutTxId {
 
     /// Get the [`TableId`] for this view's backing table by probing `st_view`.
     /// Note, all views with at least one subscriber are materialized.
-    pub fn get_table_id_for_view(&self, view_id: ViewId) -> Result<Option<(TableId, bool)>> {
+    pub fn get_table_id_for_view(&self, view_id: ViewDatabaseId) -> Result<Option<(TableId, bool)>> {
         Ok(self
             .st_view_row(view_id)?
             .and_then(|row| row.table_id.map(|id| (id, row.is_anonymous))))

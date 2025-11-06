@@ -1078,11 +1078,11 @@ impl RelationalDB {
         tx: &mut MutTx,
         module_def: &ModuleDef,
         view_def: &ViewDef,
-    ) -> Result<(ViewId, TableId), DBError> {
+    ) -> Result<(ViewDatabaseId, TableId), DBError> {
         Ok(tx.create_view(module_def, view_def)?)
     }
 
-    pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewId) -> Result<(), DBError> {
+    pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewDatabaseId) -> Result<(), DBError> {
         Ok(tx.drop_view(view_id)?)
     }
 
@@ -1173,7 +1173,7 @@ impl RelationalDB {
         Ok(self.inner.rename_table_mut_tx(tx, table_id, new_name)?)
     }
 
-    pub fn view_id_from_name_mut(&self, tx: &MutTx, view_name: &str) -> Result<Option<ViewId>, DBError> {
+    pub fn view_id_from_name_mut(&self, tx: &MutTx, view_name: &str) -> Result<Option<ViewDatabaseId>, DBError> {
         Ok(self.inner.view_id_from_name_mut_tx(tx, view_name)?)
     }
 

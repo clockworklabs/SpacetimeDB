@@ -393,7 +393,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let store = &mut self.store;
         prepare_store_for_call(store, budget);
 
-        let view = ViewCall::with_identity(*op.caller_identity, op.id, op.args.get_bsatn().clone());
+        let view = ViewCall::with_identity(*op.caller_identity, op.db_id, op.args.get_bsatn().clone());
 
         // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
         let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(*op.caller_identity);
@@ -450,7 +450,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let store = &mut self.store;
         prepare_store_for_call(store, budget);
 
-        let view = ViewCall::anonymous(op.id, op.args.get_bsatn().clone());
+        let view = ViewCall::anonymous(op.db_id, op.args.get_bsatn().clone());
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 

@@ -798,7 +798,7 @@ impl From<StTableRow> for ProductValue {
 #[sats(crate = spacetimedb_lib)]
 pub struct StViewRow {
     /// An auto-inc id for each view
-    pub view_id: ViewId,
+    pub view_id: ViewDatabaseId,
     /// The name of the view function as defined in the module
     pub view_name: Box<str>,
     /// The [`TableId`] for this view if materialized.
@@ -907,7 +907,7 @@ impl From<ColumnSchema> for StColumnRow {
 #[sats(crate = spacetimedb_lib)]
 pub struct StViewColumnRow {
     /// A foreign key referencing [`ST_VIEW_NAME`].
-    pub view_id: ViewId,
+    pub view_id: ViewDatabaseId,
     pub col_pos: ColId,
     pub col_name: Box<str>,
     pub col_type: AlgebraicTypeViaBytes,
@@ -922,7 +922,7 @@ pub struct StViewColumnRow {
 #[sats(crate = spacetimedb_lib)]
 pub struct StViewParamRow {
     /// A foreign key referencing [`ST_VIEW_NAME`].
-    pub view_id: ViewId,
+    pub view_id: ViewDatabaseId,
     pub param_pos: ColId,
     pub param_name: Box<str>,
     pub param_type: AlgebraicTypeViaBytes,
@@ -936,7 +936,7 @@ pub struct StViewParamRow {
 #[derive(Debug, Clone, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StViewSubRow {
-    pub view_id: ViewId,
+    pub view_id: ViewDatabaseId,
     pub arg_id: ArgId,
     pub identity: IdentityViaU256,
     pub num_subscribers: u64,

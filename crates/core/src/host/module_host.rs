@@ -49,7 +49,7 @@ use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ConnectionId};
-use spacetimedb_primitives::{ProcedureId, TableId, ViewId};
+use spacetimedb_primitives::{ProcedureId, TableId, ViewDatabaseId, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
@@ -542,6 +542,7 @@ pub struct CallViewParams {
     pub caller_identity: Identity,
     pub caller_connection_id: Option<ConnectionId>,
     pub view_id: ViewId,
+    pub view_db_id: ViewDatabaseId,
     pub args: ArgsTuple,
 
     /// The return type of the view, used for deserializing the view call result.
@@ -1539,6 +1540,9 @@ impl ModuleHost {
     ) -> Result<ViewCallResult, ViewCallError> {
         let return_type = view_def.return_type.clone();
         let is_anonymous = view_def.is_anonymous;
+        let view_db_id = tx
+            .view_id_from_name(&view_def.name)?
+            .ok_or_else(|| ViewCallError::NoSuchView)?;
 
         Ok(self
             .call(&view_def.name, move |inst| {
@@ -1546,6 +1550,7 @@ impl ModuleHost {
                     tx,
                     CallViewParams {
                         timestamp: Timestamp::now(),
+                        view_db_id,
                         caller_identity,
                         caller_connection_id,
                         view_id,

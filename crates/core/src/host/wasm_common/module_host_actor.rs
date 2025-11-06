@@ -3,6 +3,7 @@ use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_primitives::ProcedureId;
+use spacetimedb_primitives::ViewDatabaseId;
 use spacetimedb_primitives::ViewId;
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use std::future::Future;
@@ -789,6 +790,7 @@ impl InstanceCommon {
             args,
             return_type,
             timestamp,
+            view_db_id,
             ..
         } = params;
 
@@ -800,6 +802,7 @@ impl InstanceCommon {
 
         let op = ViewOp {
             id: view_id,
+            db_id: view_db_id,
             name: view_name,
             caller_identity: &caller_identity,
             args: &args,
@@ -990,6 +993,7 @@ fn commit_and_broadcast_event(
 #[derive(Clone, Debug)]
 pub struct ViewOp<'a> {
     pub id: ViewId,
+    pub db_id: ViewDatabaseId,
     pub name: &'a str,
     pub args: &'a ArgsTuple,
     pub caller_identity: &'a Identity,
@@ -1000,6 +1004,7 @@ pub struct ViewOp<'a> {
 #[derive(Clone, Debug)]
 pub struct AnonymousViewOp<'a> {
     pub id: ViewId,
+    pub db_id: ViewDatabaseId,
     pub name: &'a str,
     pub args: &'a ArgsTuple,
     pub timestamp: Timestamp,
@@ -1009,6 +1014,7 @@ impl<'a> From<ViewOp<'a>> for AnonymousViewOp<'a> {
     fn from(
         ViewOp {
             id,
+            db_id,
             name,
             args,
             timestamp,
@@ -1017,6 +1023,7 @@ impl<'a> From<ViewOp<'a>> for AnonymousViewOp<'a> {
     ) -> Self {
         Self {
             id,
+            db_id,
             name,
             args,
             timestamp,
