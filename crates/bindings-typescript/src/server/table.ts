@@ -54,25 +54,53 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
 export type UntypedTableDef = {
   name: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
-  indexes: IndexOpts<any>[];
+  indexes: readonly IndexOpts<any>[];
 };
 
 /**
  * A type representing the indexes defined on a table.
  */
 export type TableIndexes<TableDef extends UntypedTableDef> = {
-  [k in keyof TableDef['columns'] & string]: ColumnIndex<
-    k,
-    TableDef['columns'][k]['columnMetadata']
+  [K in keyof TableDef['columns'] & string as ColumnIndex<
+    K,
+    TableDef['columns'][K]['columnMetadata']
+  > extends never
+    ? never
+    : K]: ColumnIndex<
+    K,
+    TableDef['columns'][K]['columnMetadata']
   >;
 } & {
-  [I in TableDef['indexes'][number] as I['name'] & {}]: {
-    name: I['name'];
-    unique: AllUnique<TableDef, IndexColumns<I>>;
-    algorithm: Lowercase<I['algorithm']>;
-    columns: IndexColumns<I>;
-  };
+  [I in TableDef['indexes'][number] as I['name'] & {}]: TableIndexFromDef<
+    TableDef,
+    I
+  >;
 };
+
+type TableIndexFromDef<
+  TableDef extends UntypedTableDef,
+  I extends IndexOpts<keyof TableDef['columns'] & string>,
+> =
+  NormalizeIndexColumns<TableDef, I> extends infer Cols extends ReadonlyArray<
+    keyof TableDef['columns'] & string
+  >
+    ? {
+        name: I['name'];
+        unique: AllUnique<TableDef, Cols>;
+        algorithm: Lowercase<I['algorithm']>;
+        columns: Cols;
+      }
+    : never;
+
+type NormalizeIndexColumns<
+  TableDef extends UntypedTableDef,
+  I extends IndexOpts<keyof TableDef['columns'] & string>,
+> =
+  IndexColumns<I> extends ReadonlyArray<
+    infer Col extends keyof TableDef['columns'] & string
+  >
+    ? IndexColumns<I>
+    : never;
 
 /**
  * Options for configuring a database table.
