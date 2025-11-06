@@ -250,7 +250,7 @@ st_fields_enum!(enum StViewColumnFields {
     "col_type", ColType = 3,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
-st_fields_enum!(enum StViewSubsFields {
+st_fields_enum!(enum StViewSubFields {
     "view_id", ViewId = 0,
     "arg_id", ArgId = 1,
     "identity", Identity = 2,
@@ -400,12 +400,17 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(st_view_param_unique_cols)
         .with_index_no_accessor_name(btree(st_view_param_unique_cols));
 
-    let st_view_sub_type = builder.add_type::<StViewSubsRow>();
+    let st_view_sub_type = builder.add_type::<StViewSubRow>();
     builder
         .build_table(ST_VIEW_SUB_NAME, *st_view_sub_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_index_no_accessor_name(btree(StViewSubsFields::Identity))
-        .with_index_no_accessor_name(btree(StViewSubsFields::HasSubscribers));
+        .with_index_no_accessor_name(btree(StViewSubFields::Identity))
+        .with_index_no_accessor_name(btree(StViewSubFields::HasSubscribers))
+        .with_index_no_accessor_name(btree([
+            StViewSubFields::ViewId,
+            StViewSubFields::ArgId,
+            StViewSubFields::Identity,
+        ]));
 
     let st_view_arg_type = builder.add_type::<StViewArgRow>();
     builder
@@ -515,7 +520,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StViewFields>(&result, ST_VIEW_NAME);
     validate_system_table::<StViewParamFields>(&result, ST_VIEW_PARAM_NAME);
     validate_system_table::<StViewColumnFields>(&result, ST_VIEW_COLUMN_NAME);
-    validate_system_table::<StViewSubsFields>(&result, ST_VIEW_SUB_NAME);
+    validate_system_table::<StViewSubFields>(&result, ST_VIEW_SUB_NAME);
     validate_system_table::<StViewArgFields>(&result, ST_VIEW_ARG_NAME);
 
     result
@@ -586,8 +591,9 @@ lazy_static::lazy_static! {
         m.insert("st_view_column_view_id_col_pos_idx_btree", IndexId(17));
         m.insert("st_view_sub_identity_idx_btree", IndexId(18));
         m.insert("st_view_sub_has_subscribers_idx_btree", IndexId(19));
-        m.insert("st_view_arg_id_idx_btree", IndexId(20));
-        m.insert("st_view_arg_bytes_idx_btree", IndexId(21));
+        m.insert("st_view_sub_view_id_arg_id_identity_idx_btree", IndexId(20));
+        m.insert("st_view_arg_id_idx_btree", IndexId(21));
+        m.insert("st_view_arg_bytes_idx_btree", IndexId(22));
         m
     };
 }
@@ -929,7 +935,7 @@ pub struct StViewParamRow {
 /// | 1       | 2      | 0x...    | 3               | true            | <timestamp> |
 #[derive(Debug, Clone, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
-pub struct StViewSubsRow {
+pub struct StViewSubRow {
     pub view_id: ViewId,
     pub arg_id: ArgId,
     pub identity: IdentityViaU256,
@@ -938,7 +944,7 @@ pub struct StViewSubsRow {
     pub last_called: TimestampViaI64,
 }
 
-impl TryFrom<RowRef<'_>> for StViewSubsRow {
+impl TryFrom<RowRef<'_>> for StViewSubRow {
     type Error = DatastoreError;
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
