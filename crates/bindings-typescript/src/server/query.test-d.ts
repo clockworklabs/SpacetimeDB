@@ -1,6 +1,6 @@
 import type { U32 } from '../lib/autogen/algebraic_type_variants';
 import type { Indexes } from './indexes';
-import type { ColumnExpr, IndexExprs, IndexNameUnion, RowExpr } from './query';
+import type { ColumnExpr, IndexExprs, IndexNameUnion, RowExpr, TableSchemaAsTableDef } from './query';
 import { schema } from './schema';
 import { table, type TableIndexes } from './table';
 import t from './type_builders';
@@ -33,20 +33,41 @@ const person = table(
 
 const spacetimedb = schema(person);
 
+/*
 type PersonDef = {
   name: typeof person.tableName;
   columns: typeof person.rowType.row;
   indexes: typeof person.idxs;
 };
+*/
 
-declare const row: RowExpr<PersonDef>;
+const tableDef = {
+  name: person.tableName,
+  columns: person.rowType.row,
+  indexes: person.idxs,          // keep the typed, literal tuples here
+} as TableSchemaAsTableDef<typeof person>;
+
+type PersonDef = typeof tableDef;
+
+declare const row: RowExpr<typeof tableDef>;
 const x: U32 = row.age.spacetimeType;
 
 declare const idxs: IndexExprs<PersonDef>;
+idxs.name_idx
 
 declare const xyz: IndexNameUnion<PersonDef>;
 
 declare const xx: TableIndexes<PersonDef>;
 
+//idxs.
 declare const idxs2: Indexes<PersonDef, TableIndexes<PersonDef>>;
-idxs2.name_idx;
+idxs2.id_name_idx
+//idxs2.
+
+spacetimedb.init((ctx) => {
+  // ctx.db.person.
+  //ctx.db.person.
+  //ctx.db
+  // ctx.db.person.id_name_idx.find
+  ctx.db.person.id
+})

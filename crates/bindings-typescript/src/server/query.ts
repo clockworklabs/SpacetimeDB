@@ -3,7 +3,6 @@ import type { RowType, TableIndexes, TableSchema } from './table';
 import type {
   ColumnBuilder,
   ColumnMetadata,
-  InferSpacetimeTypeOfRow,
   InferSpacetimeTypeOfTypeBuilder,
   TypeBuilder,
 } from './type_builders';
@@ -16,7 +15,7 @@ export type TypedTableDef = {
   indexes: readonly IndexOpts<any>[];
 };
 
-type TableSchemaAsTableDef<
+export type TableSchemaAsTableDef<
   TSchema extends TableSchema<any, any, readonly any[]>,
 > = {
   name: TSchema['tableName'];
@@ -95,7 +94,19 @@ I extends IndexNameUnion<TableDef> = CollapseTuple<_IndexVal<TableDef, TableInde
 //     : never;
 // };
 
+<<<<<<< HEAD
 // export type IndexExpr<
 //   TableDef extends TypedTableDef,
 //   I extends UntypedIndex<keyof TableDef['columns'] & string>,
 // > = CollapseTuple<_IndexVal<TableDef, I['columns']>>;
+||||||| parent of 6df213d13 (WIP trying to fix index types)
+export type IndexExpr<
+  TableDef extends TypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = CollapseTuple<_IndexVal<TableDef, I['columns']>>;
+=======
+export type IndexExpr<
+  TableDef extends TypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = _IndexVal<TableDef, I['columns']>;
+>>>>>>> 6df213d13 (WIP trying to fix index types)
