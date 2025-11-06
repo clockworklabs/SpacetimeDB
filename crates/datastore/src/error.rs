@@ -40,7 +40,7 @@ pub enum DatastoreError {
 #[derive(Error, Debug)]
 pub enum ViewError {
     #[error("view '{0}' not found")]
-    ViewNotFound(String),
+    NotFound(Box<str>),
     #[error("failed to deserialize view arguments from row")]
     DeserializeArgs,
     #[error("failed to deserialize view return value: {0}")]

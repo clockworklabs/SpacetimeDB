@@ -39,8 +39,7 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
-use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
-use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
@@ -1120,7 +1119,7 @@ impl ModuleHost {
         // Decrement the number of subscribers for each view this caller is subscribed to
         let dec_view_subscribers = |tx: &mut MutTxId| {
             if drop_view_subscribers {
-                if let Err(err) = tx.dec_st_view_subscribers(caller_identity) {
+                if let Err(err) = tx.unsubscribe_views(caller_identity) {
                     log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
                 }
             }
@@ -1489,16 +1488,19 @@ impl ModuleHost {
         .await?
     }
 
-    /// Downgrade this mutable `tx` after:
-    /// 1. Collecting view ids from `view_collector` and
-    /// 2. Materializing them if necessary
-    pub async fn materialize_views_and_downgrade_tx(
+    /// Materializes the views return by the `view_collector`, if not already materialized,
+    /// and updates `st_view_sub` accordingly.
+    ///
+    /// Passing [`Workload::Sql`] will update `st_view_sub.last_called`.
+    /// Passing [`Workload::Subscribe`] will also increment `st_view_sub.num_subscribers`,
+    /// in addition to updating `st_view_sub.last_called`.
+    pub async fn materialize_views(
         &self,
         mut tx: MutTxId,
         view_collector: &impl CollectViews,
         sender: Identity,
         workload: Workload,
-    ) -> Result<(TxData, TxMetrics, TxId), ViewCallError> {
+    ) -> Result<MutTxId, ViewCallError> {
         use FunctionArgs::*;
         let mut view_ids = HashSet::new();
         view_collector.collect_views(&mut view_ids);
@@ -1507,9 +1509,16 @@ impl ModuleHost {
             if !tx.is_view_materialized(view_id, ArgId::SENTINEL, sender)? {
                 tx = self.call_view(tx, &name, Nullary, sender, None).await?.tx;
             }
-            tx.st_view_sub_update_or_insert_last_called(view_id, ArgId::SENTINEL, sender)?;
+            // If this is a sql call, we only update this view's "last called" timestamp
+            if let Workload::Sql = workload {
+                tx.update_view_timestamp(view_id, ArgId::SENTINEL, sender)?;
+            }
+            // If this is a subscribe call, we also increment this view's subscriber count
+            if let Workload::Subscribe = workload {
+                tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+            }
         }
-        Ok(tx.commit_downgrade(workload))
+        Ok(tx)
     }
 
     pub async fn call_view(

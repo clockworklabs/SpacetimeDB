@@ -194,24 +194,23 @@ pub async fn run(
     module: Option<&ModuleHost>,
     head: &mut Vec<(Box<str>, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
-    let module = module
-        .as_ref()
-        .ok_or_else(|| anyhow!("Cannot execute views without module context"))?;
-
-    let mut metrics = ExecutionMetrics::default();
-
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
         compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth)
     })?;
 
+    let mut metrics = ExecutionMetrics::default();
+
     match stmt {
         Statement::Select(stmt) => {
             // Materialize views and downgrade to a read-only transaction
-            let (tx_data, tx_metrics_mut, tx) = module
-                .materialize_views_and_downgrade_tx(tx, &stmt, auth.caller, Workload::Sql)
-                .await?;
+            let tx = match module {
+                Some(module) => module.materialize_views(tx, &stmt, auth.caller, Workload::Sql).await?,
+                None => tx,
+            };
+
+            let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
 
             let (tx_offset_send, tx_offset) = oneshot::channel();
             // Release the tx on drop, so that we record metrics

@@ -254,23 +254,16 @@ pub enum PhysicalPlan {
 
 impl CollectViews for PhysicalPlan {
     fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
-        self.visit(&mut |plan| match plan {
-            Self::TableScan(scan, _) => {
-                if let Some(info) = &scan.schema.view_info {
-                    views.insert(info.view_id);
-                }
+        self.visit(&mut |plan| {
+            let view_info = match plan {
+                Self::TableScan(scan, _) => &scan.schema.view_info,
+                Self::IxScan(scan, _) => &scan.schema.view_info,
+                Self::IxJoin(join, _) => &join.rhs.view_info,
+                _ => return,
+            };
+            if let Some(info) = view_info {
+                views.insert(info.view_id);
             }
-            Self::IxScan(scan, _) => {
-                if let Some(info) = &scan.schema.view_info {
-                    views.insert(info.view_id);
-                }
-            }
-            Self::IxJoin(join, _) => {
-                if let Some(info) = &join.rhs.view_info {
-                    views.insert(info.view_id);
-                }
-            }
-            _ => {}
         });
     }
 }

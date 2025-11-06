@@ -34,6 +34,7 @@ use anyhow::Context;
 use itertools::Either;
 use spacetimedb_client_api_messages::websocket::Compression;
 use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
@@ -42,13 +43,13 @@ use spacetimedb_primitives::TableId;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::def::error::AuthError;
 use spacetimedb_schema::relation::DbTable;
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::hash::Hash;
 use std::iter;
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -611,11 +612,18 @@ impl AuthAccess for ExecutionSet {
 /// Queries all the [`StTableType::User`] tables *right now*
 /// and turns them into [`QueryExpr`],
 /// the moral equivalent of `SELECT * FROM table`.
-pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Vec<Plan>, DBError> {
-    Ok(relational_db
-        .get_all_tables(tx)?
-        .iter()
-        .map(Deref::deref)
+pub(crate) fn get_all<T, F, I>(
+    get_all_tables: F,
+    relational_db: &RelationalDB,
+    tx: &T,
+    auth: &AuthCtx,
+) -> Result<Vec<Plan>, DBError>
+where
+    T: StateView,
+    F: Fn(&RelationalDB, &T) -> Result<I, DBError>,
+    I: Iterator<Item = Arc<TableSchema>>,
+{
+    Ok(get_all_tables(relational_db, tx)?
         .filter(|t| t.table_type == StTableType::User && (auth.is_owner() || t.table_access == StAccess::Public))
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
@@ -648,6 +656,8 @@ pub(crate) fn legacy_get_all(
     tx: &Tx,
     auth: &AuthCtx,
 ) -> Result<Vec<SupportedQuery>, DBError> {
+    use std::ops::Deref;
+
     Ok(relational_db
         .get_all_tables(tx)?
         .iter()
