@@ -124,12 +124,13 @@ Usage: unreal-tests
 
 **Usage:**
 ```bash
-Usage: cli-docs
+Usage: cli-docs [OPTIONS]
 ```
 
 **Options:**
 
-- `--help`: 
+- `--spacetime-path`: specify a custom path to the SpacetimeDB repository root (where the main Cargo.toml is located)
+- `--help`: Print help (see a summary with '-h')
 
 ### `self-docs`
 
