@@ -8,10 +8,10 @@ on:
 jobs:
   discordNotification:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true &&
-      github.event.pull_request.base.ref == 'master'
+    # Revert before merging
+    # if: github.event.pull_request.merged == true &&
+    # github.event.pull_request.base.ref == 'master'
     env:
-      CHECK_NAME: Internal Tests
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Set up GitHub CLI
