@@ -4,12 +4,15 @@ use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
+use crate::util::asyncify;
 use chrono::{DateTime, Utc};
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
@@ -204,6 +207,14 @@ impl InstanceEnv {
         self.tx.get()
     }
 
+    pub(crate) fn take_tx(&self) -> Result<MutTxId, GetTxError> {
+        self.tx.take()
+    }
+
+    pub(crate) fn relational_db(&self) -> &Arc<RelationalDB> {
+        &self.replica_ctx.relational_db
+    }
+
     pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
         let tx = &mut *self.get_tx()?;
         Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?)
@@ -274,7 +285,7 @@ impl InstanceEnv {
     }
 
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         let (row_len, row_ptr, insert_flags) = stdb
@@ -343,7 +354,7 @@ impl InstanceEnv {
     }
 
     pub fn update(&self, table_id: TableId, index_id: IndexId, buffer: &mut [u8]) -> Result<usize, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         let (row_len, row_ptr, update_flags) = stdb
@@ -386,8 +397,8 @@ impl InstanceEnv {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<u32, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
 
         // Find all rows in the table to delete.
         let (table_id, _, _, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
@@ -416,7 +427,7 @@ impl InstanceEnv {
     /// - a row couldn't be decoded to the table schema type.
     #[tracing::instrument(level = "trace", skip(self, relation))]
     pub fn datastore_delete_all_by_eq_bsatn(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Track the number of bytes coming from the caller
@@ -443,7 +454,7 @@ impl InstanceEnv {
     /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn table_id_from_name(&self, table_name: &str) -> Result<TableId, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
@@ -457,7 +468,7 @@ impl InstanceEnv {
     /// and `IndexNotFound` if the index does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn index_id_from_name(&self, index_name: &str) -> Result<IndexId, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the index id from the name.
@@ -471,7 +482,7 @@ impl InstanceEnv {
     /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_row_count(&self, table_id: TableId) -> Result<u64, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the row count for id.
@@ -488,8 +499,8 @@ impl InstanceEnv {
         pool: &mut ChunkPool,
         table_id: TableId,
     ) -> Result<Vec<Vec<u8>>, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
 
         // Track the number of rows and the number of bytes scanned by the iterator
         let mut rows_scanned = 0;
@@ -521,8 +532,8 @@ impl InstanceEnv {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<Vec<Vec<u8>>, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
 
         // Track rows and bytes scanned by the iterator
         let mut rows_scanned = 0;
@@ -569,25 +580,51 @@ impl InstanceEnv {
 
         written
     }
+
+    pub async fn start_mutable_tx(&mut self) -> Result<(), NodesError> {
+        if self.get_tx().is_ok() {
+            return Err(NodesError::WouldBlockTransaction);
+        }
+
+        let stdb = self.replica_ctx.relational_db.clone();
+        // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
+        let tx = asyncify(move || stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal)).await;
+        self.tx.set_raw(tx);
+
+        Ok(())
+    }
 }
 
 impl TxSlot {
-    pub fn set<T>(&mut self, tx: MutTxId, f: impl FnOnce() -> T) -> (MutTxId, T) {
+    /// Sets the slot to `tx`, ensuring that there was no tx before.
+    pub fn set_raw(&mut self, tx: MutTxId) {
         let prev = self.inner.lock().replace(tx);
         assert!(prev.is_none(), "reentrant TxSlot::set");
-        let remove_tx = || self.inner.lock().take();
+    }
+
+    /// Sets the slot to `tx` runs `work`, and returns back `tx`.
+    pub fn set<T>(&mut self, tx: MutTxId, work: impl FnOnce() -> T) -> (MutTxId, T) {
+        self.set_raw(tx);
+
+        let remove_tx = || self.take().expect("tx was removed during transaction");
 
         let res = {
             scopeguard::defer_on_unwind! { remove_tx(); }
-            f()
+            work()
         };
 
-        let tx = remove_tx().expect("tx was removed during transaction");
+        let tx = remove_tx();
         (tx, res)
     }
 
+    /// Returns the tx in the slot.
     pub fn get(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         MutexGuard::try_map(self.inner.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
+    }
+
+    /// Steals th tx from the slot.
+    pub fn take(&self) -> Result<MutTxId, GetTxError> {
+        self.inner.lock().take().ok_or(GetTxError)
     }
 }
 

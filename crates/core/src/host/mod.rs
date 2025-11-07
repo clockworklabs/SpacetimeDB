@@ -178,4 +178,7 @@ pub enum AbiCall {
     VolatileNonatomicScheduleImmediate,
 
     ProcedureSleepUntil,
+    ProcedureStartMutTransaction,
+    ProcedureCommitMutTransaction,
+    ProcedureAbortMutTransaction,
 }

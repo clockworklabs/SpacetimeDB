@@ -1,15 +1,14 @@
 use super::instrumentation::CallTimes;
-use crate::client::{ClientActorId, ClientConnectionSender};
+use super::*;
+use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
-use crate::host::instance_env::InstanceEnv;
-use crate::host::instance_env::TxSlot;
+use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
-use crate::host::module_host::ViewCallResult;
-use crate::host::module_host::ViewOutcome;
 use crate::host::module_host::{
     call_identity_connected, call_scheduled_reducer, init_database, CallProcedureParams, CallReducerParams,
     CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
+    ViewCallResult, ViewOutcome,
 };
 use crate::host::scheduler::QueueItem;
 use crate::host::{
@@ -20,17 +19,17 @@ use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContextLimited;
 use crate::replica_context::ReplicaContext;
-use crate::subscription::module_subscription_actor::WriteConflict;
+use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
+use core::future::Future;
+use core::time::Duration;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
@@ -40,12 +39,8 @@ use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
-use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::span::EnteredSpan;
-
-use super::*;
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
@@ -519,7 +514,7 @@ impl InstanceCommon {
                         timer: None,
                     };
                     //TODO: Return back event in `UpdateDatabaseResult`?
-                    let _ = commit_and_broadcast_event(&self.info, None, event, tx);
+                    let _ = commit_and_broadcast_event(&self.info.subscriptions, None, event, tx);
                 } else {
                     let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
                     stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
@@ -821,7 +816,7 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let event = commit_and_broadcast_event(&self.info, client, event, out.tx);
+        let event = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx).event;
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
@@ -1220,24 +1215,6 @@ fn lifecyle_modifications_to_tx(
     .map_err(|e| e.to_string().into())
 }
 */
-
-/// Commits the transaction
-/// and evaluates and broadcasts subscriptions updates.
-fn commit_and_broadcast_event(
-    info: &ModuleInfo,
-    client: Option<Arc<ClientConnectionSender>>,
-    event: ModuleEvent,
-    tx: MutTxId,
-) -> Arc<ModuleEvent> {
-    match info
-        .subscriptions
-        .commit_and_broadcast_event(client, event, tx)
-        .unwrap()
-    {
-        Ok(res) => res.event,
-        Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
-    }
-}
 
 pub trait InstanceOp {
     fn name(&self) -> &str;
