@@ -8,6 +8,7 @@ use spacetimedb_client_api_messages::name::{DatabaseNameError, PrePublishResult,
 use std::path::PathBuf;
 use std::{env, fs};
 
+use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
@@ -17,12 +18,8 @@ pub fn cli() -> clap::Command {
     clap::Command::new("publish")
         .about("Create and update a SpacetimeDB database")
         .arg(
-            Arg::new("clear_database")
-                .long("delete-data")
-                .short('c')
-                .action(SetTrue)
+            common_args::clear_database()
                 .requires("name|identity")
-                .help("When publishing to an existing database identity, first DESTROY all data associated with the module"),
         )
         .arg(
             Arg::new("build_options")
@@ -71,7 +68,7 @@ pub fn cli() -> clap::Command {
             Arg::new("break_clients")
                 .long("break-clients")
                 .action(SetTrue)
-                .help("Allow breaking changes when publishing to an existing database identity. This will break existing clients.")
+                .help("Allow breaking changes when publishing to an existing database identity. This will force publish even if it will break existing clients, but will NOT delete any data in the database.")
         )
         .arg(
             common_args::anonymous()
@@ -109,7 +106,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let server = args.get_one::<String>("server").map(|s| s.as_str());
     let name_or_identity = args.get_one::<String>("name|identity");
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
-    let clear_database = args.get_flag("clear_database");
+    let clear_database = args
+        .get_one::<ClearMode>("clear-database")
+        .copied()
+        .unwrap_or(ClearMode::Never);
     let force = args.get_flag("force");
     let anon_identity = args.get_flag("anon_identity");
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
@@ -117,7 +117,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
     let num_replicas = args.get_one::<u8>("num_replicas");
-    let break_clients_flag = args.get_flag("break_clients");
+    let force_break_clients = args.get_flag("break_clients");
     let parent = args.get_one::<String>("parent");
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
@@ -175,7 +175,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
         let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
 
-        if !clear_database {
+        if !(matches!(clear_database, ClearMode::Always)) {
             builder = apply_pre_publish_if_needed(
                 builder,
                 &client,
@@ -184,7 +184,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 host_type,
                 &program_bytes,
                 &auth_header,
-                break_clients_flag,
+                clear_database,
+                force_break_clients,
+                force,
             )
             .await?;
         }
@@ -194,7 +196,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         client.post(format!("{database_host}/v1/database"))
     };
 
-    if clear_database {
+    if matches!(clear_database, ClearMode::Always) || matches!(clear_database, ClearMode::OnConflict) {
         // Note: `name_or_identity` should be set, because it is `required` in the CLI arg config.
         println!(
             "This will DESTROY the current {} module, and ALL corresponding data.",
@@ -336,25 +338,55 @@ async fn apply_pre_publish_if_needed(
     host_type: &str,
     program_bytes: &[u8],
     auth_header: &AuthHeader,
-    break_clients_flag: bool,
+    clear_database: ClearMode,
+    force_break_clients: bool,
+    force: bool,
 ) -> Result<reqwest::RequestBuilder, anyhow::Error> {
-    if let Some(pre) = call_pre_publish(client, base_url, domain, host_type, program_bytes, auth_header).await? {
-        println!("{}", pre.migrate_plan);
-
-        if pre.break_clients
-            && !y_or_n(
-                break_clients_flag,
-                "The above changes will BREAK existing clients. Do you want to proceed?",
-            )?
-        {
-            println!("Aborting");
-            // Early exit: return an error or a special signal. Here we bail out by returning Err.
-            anyhow::bail!("Publishing aborted by user");
+    if let Some(pre) = call_pre_publish(
+        client,
+        base_url,
+        &domain.to_string(),
+        host_type,
+        program_bytes,
+        auth_header,
+    )
+    .await?
+    {
+        match pre {
+            PrePublishResult::ManualMigrate(manual) => {
+                if matches!(clear_database, ClearMode::OnConflict) {
+                    println!("{}", manual.reason);
+                    println!("Proceeding with database clear due to --delete-data=on-conflict.");
+                }
+                if matches!(clear_database, ClearMode::Never) {
+                    println!("{}", manual.reason);
+                    println!("Aborting publish due to required manual migration.");
+                    anyhow::bail!("Publishing aborted by user");
+                }
+            }
+            PrePublishResult::AutoMigrate(auto) => {
+                println!("{}", auto.migrate_plan);
+                // If the automigration plan will break clients and the user has not selected
+                // ClearMode::Always or ClearMode::OnConflict and the user has not passed the
+                // `--force` flag, then we need to prompt the user to ask if it is ok to break clients.
+                // OnConflict is assumed to be okay to break clients because all manual migrations
+                // are assumed to break clients as well, so it is likely what the user intended.
+                if auto.break_clients
+                    && matches!(clear_database, ClearMode::Never)
+                    && !y_or_n(
+                        force_break_clients || force,
+                        "The above changes will BREAK existing clients. Do you want to proceed?",
+                    )?
+                {
+                    println!("Aborting");
+                    // Early exit: return an error or a special signal. Here we bail out by returning Err.
+                    anyhow::bail!("Publishing aborted by user");
+                }
+                builder = builder
+                    .query(&[("token", auto.token)])
+                    .query(&[("policy", "BreakClients")]);
+            }
         }
-
-        builder = builder
-            .query(&[("token", pre.token)])
-            .query(&[("policy", "BreakClients")]);
     }
 
     Ok(builder)
@@ -369,7 +401,7 @@ async fn call_pre_publish(
     auth_header: &AuthHeader,
 ) -> Result<Option<PrePublishResult>, anyhow::Error> {
     let mut builder = client.post(format!("{database_host}/v1/database/{domain}/pre_publish"));
-    let style = pretty_print_style_from_env();
+    let style: PrettyPrintStyle = pretty_print_style_from_env();
     builder = builder
         .query(&[("pretty_print_style", style)])
         .query(&[("host_type", host_type)]);
