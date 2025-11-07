@@ -137,6 +137,15 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
                 .map(|ColumnSchema { col_type, .. }| col_type),
         ) {
             match (value, ty) {
+                (SqlLiteral::Null, _) if ty.is_unit() => {
+                    values.push(AlgebraicValue::unit())
+                }
+                (SqlLiteral::Null, _) if ty.is_option() => {
+                    values.push(AlgebraicValue::OptionNone())
+                }
+                (SqlLiteral::Null, _) => {
+                    return Err(UnexpectedType::new(ty, &AlgebraicType::unit()).into());
+                }
                 (SqlLiteral::Bool(v), AlgebraicType::Bool) => {
                     values.push(AlgebraicValue::Bool(v));
                 }
@@ -212,6 +221,15 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
             .get_column_by_name(&field)
             .ok_or_else(|| Unresolved::field(&table_name, &field))?;
         match (lit, ty) {
+            (SqlLiteral::Null, _) if ty.is_unit() => {
+                values.push((*col_id, AlgebraicValue::unit()));
+            }
+            (SqlLiteral::Null, _) if ty.is_option() => {
+                values.push((*col_id, AlgebraicValue::OptionNone()));
+            }
+            (SqlLiteral::Null, _) => {
+                return Err(UnexpectedType::new(ty, &AlgebraicType::unit()).into());
+            }
             (SqlLiteral::Bool(v), AlgebraicType::Bool) => {
                 values.push((*col_id, AlgebraicValue::Bool(v)));
             }
@@ -286,6 +304,7 @@ pub fn type_and_rewrite_set(set: SqlSet, tx: &impl SchemaView) -> TypingResult<T
     }
 
     match lit {
+        SqlLiteral::Null => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::unit()).into()),
         SqlLiteral::Bool(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::Bool).into()),
         SqlLiteral::Str(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::String).into()),
         SqlLiteral::Hex(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::bytes()).into()),

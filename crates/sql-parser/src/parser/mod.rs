@@ -291,6 +291,7 @@ pub(crate) fn parse_binop(op: BinaryOperator) -> SqlParseResult<BinOp> {
 /// Parse a literal expression
 pub(crate) fn parse_literal(value: Value) -> SqlParseResult<SqlLiteral> {
     match value {
+        Value::Null => Ok(SqlLiteral::Null),
         Value::Boolean(v) => Ok(SqlLiteral::Bool(v)),
         Value::Number(v, _) => Ok(SqlLiteral::Num(v.into_boxed_str())),
         Value::SingleQuotedString(s) => Ok(SqlLiteral::Str(s.into_boxed_str())),

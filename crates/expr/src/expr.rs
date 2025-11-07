@@ -351,6 +351,23 @@ impl Expr {
         }
     }
 
+    /// A literal unit value
+    pub fn unit() -> Self {
+        Self::Value(AlgebraicValue::unit(), AlgebraicType::unit())
+    }
+
+    /// A literal option none value
+    #[allow(non_snake_case)]
+    pub fn OptionNone(ty: AlgebraicType) -> Self {
+        Self::Value(AlgebraicValue::OptionNone(), AlgebraicType::option(ty))
+    }
+
+    /// A literal option none value
+    #[allow(non_snake_case)]
+    pub fn OptionSome(ty: AlgebraicType, v: AlgebraicValue) -> Self {
+        Self::Value(AlgebraicValue::OptionSome(v), AlgebraicType::option(ty))
+    }
+
     /// A literal boolean value
     pub const fn bool(v: bool) -> Self {
         Self::Value(AlgebraicValue::Bool(v), AlgebraicType::Bool)
