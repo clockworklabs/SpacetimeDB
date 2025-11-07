@@ -91,7 +91,6 @@ impl Host {
                     auth,
                     Some(&module_host.info.subscriptions),
                     Some(&module_host),
-                    auth.caller,
                     &mut header,
                 )
                 .await

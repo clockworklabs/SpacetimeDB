@@ -2163,7 +2163,6 @@ mod tests {
             auth,
             Some(&subs),
             None,
-            Identity::ZERO,
             &mut vec![],
         )
         .await?;
@@ -2171,30 +2170,12 @@ mod tests {
         // Client should receive insert
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 1_u8]], []).await;
 
-        run(
-            &db,
-            "UPDATE t SET y=2 WHERE x=0",
-            auth,
-            Some(&subs),
-            None,
-            Identity::ZERO,
-            &mut vec![],
-        )
-        .await?;
+        run(&db, "UPDATE t SET y=2 WHERE x=0", auth, Some(&subs), None, &mut vec![]).await?;
 
         // Client should receive update
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 2_u8]], [product![0_u8, 1_u8]]).await;
 
-        run(
-            &db,
-            "DELETE FROM t WHERE x=0",
-            auth,
-            Some(&subs),
-            None,
-            Identity::ZERO,
-            &mut vec![],
-        )
-        .await?;
+        run(&db, "DELETE FROM t WHERE x=0", auth, Some(&subs), None, &mut vec![]).await?;
 
         // Client should receive delete
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [], [product![0_u8, 2_u8]]).await;
@@ -3046,7 +3027,6 @@ mod tests {
             auth,
             Some(&subs),
             None,
-            Identity::ZERO,
             &mut vec![],
         )
         .await?;

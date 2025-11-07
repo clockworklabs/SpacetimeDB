@@ -273,6 +273,7 @@ impl TableSchema {
     /// Will only be non-zero in the case of views.
     pub fn num_private_cols(&self) -> usize {
         self.view_info
+            .as_ref()
             .map(|view_info| view_info.num_private_cols())
             .unwrap_or_default()
     }

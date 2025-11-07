@@ -19,7 +19,6 @@ spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true
 spacetimedb-snapshot.workspace = true
 spacetimedb-execution.workspace = true
-spacetimedb-expr.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
 bytes.workspace = true

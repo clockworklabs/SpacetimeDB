@@ -256,17 +256,17 @@ impl CollectViews for PhysicalPlan {
     fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
         self.visit(&mut |plan| match plan {
             Self::TableScan(scan, _) => {
-                if let Some(info) = scan.schema.view_info {
+                if let Some(info) = &scan.schema.view_info {
                     views.insert(info.view_id);
                 }
             }
             Self::IxScan(scan, _) => {
-                if let Some(info) = scan.schema.view_info {
+                if let Some(info) = &scan.schema.view_info {
                     views.insert(info.view_id);
                 }
             }
             Self::IxJoin(join, _) => {
-                if let Some(info) = join.rhs.view_info {
+                if let Some(info) = &join.rhs.view_info {
                     views.insert(info.view_id);
                 }
             }
